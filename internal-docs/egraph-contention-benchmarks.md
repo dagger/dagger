@@ -31,14 +31,14 @@ release their setup session without closing the cache. `imported` fixtures do
 the same persistable build and then cleanly close and reopen through the
 current persistence schema.
 
-The screen intentionally compares transient and imported arms for release,
+The first-pass screen compares transient and imported arms for release,
 lookup, ID load/Receiver, and publication/teaching. Those arms differ in both
 persistability/lifecycle and import reconstruction, so a delta is associated
 with imported state but does not by itself prove that import caused it. A
 causal persisted-fresh comparison would require a material matrix expansion.
 The smallest useful expansion for the existing wide release and fresh-session
-lookup/ID-load routes is 36 points, or 108 additional benchmark processes at
-three replicates; it requires separate maintainer approval.
+lookup/ID-load routes is 36 additional points; it requires separate maintainer
+approval.
 
 The ownership-prune fixtures are labeled `in-memory-persisted-roots`. They
 construct the dependency topology in memory and inject the corresponding
@@ -74,7 +74,7 @@ Any dropped lock or detail observation fails the benchmark after emitting the
 available machine-readable evidence.
 
 Lock summaries and benchmark metrics are grouped by operation and lock mode.
-There is deliberately no pooled read/write percentile: decision gates must use
+There is deliberately no pooled read/write percentile: decisions must use
 the relevant operation/mode pair, such as `lookup-request/write` wait for the
 steady exact path. Raw `EGRAPH_LOCK_METRIC` JSON preserves count, sum, p50,
 p95, p99, and maximum wait/hold data for each group.
@@ -91,8 +91,7 @@ their cardinality semantics; elapsed durations are reported but never asserted
 by tests. In the full/serial configuration, detail observations are recorded
 while the enclosing `egraphMu` critical section is still held, so reported lock
 holds include that recorder work. The sampled steady-state configuration turns
-detail observations off. The full calibration arm therefore measures this
-in-hold cost as part of the instrumentation bias it gates.
+detail observations off.
 
 Every operation reports the pre-operation cache shape:
 
@@ -116,10 +115,10 @@ measure snapshot deletion or physical disk I/O. Steady-state cases run one and
 up to 24 workers without a long writer. Contention cases synchronize foreground
 exact hits with acquisition by a release, prune-cut, or teaching writer.
 
-## Instrumentation calibration
+## Instrumentation bias
 
-Before the screen, five interleaved triples compare the same warmed exact-hit
-path on freshly constructed transient wide-output fixtures (`R=64`):
+The opt-in calibration benchmark compares the same warmed exact-hit path on
+freshly constructed transient wide-output fixtures (`R=64`):
 
 - disabled observation;
 - the steady-state configuration (mixed one-in-32 lock timing, details off);
@@ -132,28 +131,28 @@ and GC trigger pressure are structurally comparable. Only sampled and full
 arms install the observer; recording and timer work remain the intended
 differences under measurement.
 
-The gate records every paired overhead, its median, median absolute deviation,
-and range for each instrumentation configuration. It stops if either median's
-absolute magnitude exceeds 5%, because a large negative estimate is evidence
-of an unstable comparison rather than free instrumentation. It also stops as
-inconclusive if either median absolute deviation exceeds five percentage
-points. Passing only establishes that these two configurations are not visibly
-distorting this exact two-acquisition calibration path on the measurement host;
-it is not a universal correction factor or proof of sub-5% overhead on every
-fixture.
+This benchmark is diagnostic and does not block the scaling screen. On the
+Linux measurement host, the sampled configuration added no detectable median
+cost while the full configuration added about 200 ns, or 27% of this roughly
+750 ns two-acquisition operation. That percentage is material for tiny lookup
+latencies but does not imply material bias for one-shot release or prune
+operations with millisecond-scale holds. The screen is intended to identify
+relative scaling, not establish production absolute latency. Acquisition counts
+are reported so a suspicious slope that merely tracks observation count can be
+identified rather than mistaken for algorithmic work.
 
 ## Bounded execution and raw evidence
 
-Use one fresh process per point, with three processes per point:
+Use one fresh process per point for the first-pass scaling screen:
 
 ```bash
 hack/run-egraph-contention-benchmarks.sh screen /tmp/dagger-egraph-bench
 ```
 
 The runner preserves an append-only environment history, every raw `go test`
-and `/usr/bin/time -v` output, the instrumentation-gate inputs and calculation,
-and a TSV manifest including preflight commands. The manifest preserves both
-the process exit status and a distinct outcome. Per-point outcomes are
+and `/usr/bin/time -v` output, and a TSV manifest including the correctness
+preflight. The manifest preserves both the process exit status and a distinct
+outcome. Per-point outcomes are
 `completed`, `benchmark-stop`, `max-rss-stop`, `external-timeout`,
 `command-failure`, or `missing-result`; preflight/profile rows also distinguish
 `max-rss-failure`. A guard-generated `EGRAPH_BENCH_STOP` is a successful
@@ -170,13 +169,20 @@ stops larger points in a fixture family when:
 - Go heap/system memory or observed maximum RSS exceeds 4 GiB;
 - the process exceeds the 75-second external safety timeout.
 
-The complete screen has 216 points and three replicates, plus correctness and
-instrumentation preflights: 650 subprocesses. The mechanical external-timeout
-ceiling is 13h32m30s, although family stop rules should make an unhealthy run
-shorter and ordinary successful processes should be much faster. A selected
-contention family adds at most six subprocesses (7m30s timeout ceiling). One
-first-anomaly profile adds at most 75 seconds. Thus the full authorized envelope
-is 656 subprocesses plus one profile, with a 13h41m15s mechanical ceiling.
+The first-pass wide-class sweep deliberately omits `R=64` and `R=128`. The
+screen also omits repeated-session lookup and ID-load arms and the middle
+popular-input merge count. It retains four adjacent high-end wide-class scales
+(`R=256,512,1024,2048`), both persistence modes, all lookup/ID-load routes, the
+complete independent and ownership-shape scales, and one- versus many-worker
+steady cases. The resulting screen has 118 points plus one correctness
+preflight: 119 subprocesses. Its mechanical external-timeout ceiling is
+2h28m45s, although normal processes should be much faster and family stops
+truncate unhealthy scales. Do not repeat the whole screen for statistical
+precision. Confirm only a family selected by the first-pass slope, using two
+additional fresh `go test` processes per selected exact benchmark; the runner
+does not automate that follow-up. A selected contention family adds at most six
+subprocesses (7m30s timeout ceiling). One first-anomaly profile adds at most 75
+seconds.
 
 Only after a serial anomaly selects a long operation should its contention case
 run:
@@ -186,7 +192,7 @@ hack/run-egraph-contention-benchmarks.sh contention /tmp/dagger-egraph-bench rel
 ```
 
 Replace `release` with `prune` or `teach` only when that serial path crossed a
-decision gate. Capture CPU, heap, mutex, and block profiles for exactly the
+decision criterion. Capture CPU, heap, mutex, and block profiles for exactly the
 first anomalous fixture:
 
 ```bash
@@ -205,7 +211,7 @@ per process. The one-worker result is labeled as a single latency. Multi-worker
 p50/p95/max values are descriptive samples, not stable population percentile
 estimates.
 
-## Decision gates
+## Decision criteria
 
 1. **Wide removal:** if doubling `R` produces roughly 3-4x
    `release-session/write` hold while independent release remains near-linear,

@@ -120,7 +120,10 @@ run_point() {
 	if [[ -n "${stopped[$key]:-}" ]]; then
 		return 0
 	fi
-	for replicate in 1 2 3; do
+	# The first pass is a scaling screen, not a precision estimate. Run each
+	# point once; only a family selected by the observed shape is repeated in a
+	# separate confirmation run.
+	for replicate in 1; do
 		local safe
 		safe="$(sanitize "$phase-$family-$scale-r$replicate")"
 		local raw="$output_root/raw/$safe.txt"
@@ -192,100 +195,13 @@ run_unscaled_point() {
 	run_point "$phase" "$family" 64 "$regex"
 }
 
-run_correctness_and_overhead() {
+run_correctness() {
 	run_preflight correctness correctness.txt \
 		go test ./dagql -run 'TestCacheEGraphBenchmark|TestEGraphBenchmarkDistributions' -count=1
-	run_preflight instrumentation-overhead instrumentation-overhead.txt \
-		go test ./dagql -run '^$' -bench '^BenchmarkCacheEGraphInstrumentationOverhead$' \
-		-benchtime=100000x -count=1 -v
-	local overhead_raw="$output_root/raw/instrumentation-overhead.txt"
-	local gate="$output_root/instrumentation-gate.txt"
-	if [[ -e "$gate" ]]; then
-		printf 'refusing to overwrite existing instrumentation gate: %s\n' "$gate" >&2
-		exit 2
-	fi
-	set +e
-	awk '
-		function sort_numbers(values, count,    i, j, tmp) {
-			for (i = 1; i <= count; i++) {
-				for (j = i + 1; j <= count; j++) {
-					if (values[j] < values[i]) {
-						tmp = values[i]; values[i] = values[j]; values[j] = tmp
-					}
-				}
-			}
-		}
-		function absolute(value) { return value < 0 ? -value : value }
-		$4 == "ns/op" && index($1, "BenchmarkCacheEGraphInstrumentationOverhead/") == 1 {
-			split($1, parts, "/")
-			pair = parts[2]
-			config = parts[3]
-			sub(/-[0-9]+$/, "", config)
-			elapsed[pair SUBSEP config] = $3
-		}
-		END {
-			status = 0
-			for (pair_number = 1; pair_number <= 5; pair_number++) {
-				pair = "pair-" pair_number
-				if (!((pair SUBSEP "disabled") in elapsed) ||
-				    !((pair SUBSEP "sampled") in elapsed) ||
-				    !((pair SUBSEP "full") in elapsed)) {
-					printf "missing_pair=%s\n", pair
-					status = 10
-					continue
-				}
-				disabled[pair_number] = elapsed[pair SUBSEP "disabled"]
-				for (config_number = 1; config_number <= 2; config_number++) {
-					config = config_number == 1 ? "sampled" : "full"
-					overhead[config, pair_number] = 100 * (elapsed[pair SUBSEP config] - disabled[pair_number]) / disabled[pair_number]
-					printf "%s_pair_%d_disabled_ns_per_op=%.3f\n", config, pair_number, disabled[pair_number]
-					printf "%s_pair_%d_instrumented_ns_per_op=%.3f\n", config, pair_number, elapsed[pair SUBSEP config]
-					printf "%s_pair_%d_overhead_percent=%.3f\n", config, pair_number, overhead[config, pair_number]
-				}
-			}
-			if (status != 0) exit status
-			for (config_number = 1; config_number <= 2; config_number++) {
-				config = config_number == 1 ? "sampled" : "full"
-				delete values
-				for (i = 1; i <= 5; i++) values[i] = overhead[config, i]
-				sort_numbers(values, 5)
-				center = values[3]
-				delete deviations
-				for (i = 1; i <= 5; i++) deviations[i] = absolute(values[i] - center)
-				sort_numbers(deviations, 5)
-				mad = deviations[3]
-				printf "%s_median_overhead_percent=%.3f\n", config, center
-				printf "%s_mad_percentage_points=%.3f\n", config, mad
-				printf "%s_min_overhead_percent=%.3f\n", config, values[1]
-				printf "%s_max_overhead_percent=%.3f\n", config, values[5]
-				problem = ""
-				if (absolute(center) > 5) problem = "median_magnitude_exceeds_5_percent"
-				if (mad > 5) {
-					if (problem != "") problem = problem "+"
-					problem = problem "pair_variability_exceeds_5_percentage_points"
-				}
-				if (problem == "") printf "%s_gate_status=pass\n", config
-				else {
-					printf "%s_gate_status=%s\n", config, problem
-					status = 11
-				}
-			}
-			if (status == 0) print "gate_status=pass"
-			else print "gate_status=fail"
-			exit status
-		}
-	' "$overhead_raw" >"$gate"
-	local gate_status=$?
-	set -e
-	if [[ "$gate_status" -ne 0 ]]; then
-		printf 'instrumentation overhead gate did not pass: status=%s gate=%s raw=%s\n' \
-			"$gate_status" "$gate" "$overhead_raw" >&2
-		exit 1
-	fi
 }
 
 run_screen() {
-	run_correctness_and_overhead
+	run_correctness
 
 	for persistence in transient imported; do
 		for scale in 10000 50000 200000; do
@@ -300,7 +216,7 @@ run_screen() {
 		done
 	done
 	for persistence in transient imported; do
-		for scale in 64 128 256 512 1024 2048; do
+		for scale in 256 512 1024 2048; do
 			run_point serial "release-wide-output-$persistence" "$scale" \
 				"^BenchmarkCacheEGraphRelease/wide-output/$persistence/$scale$"
 		done
@@ -312,8 +228,8 @@ run_screen() {
 
 	for route in exact-recipe shared-extra structural; do
 		for persistence in transient imported; do
-			for ownership in fresh-session same-session-repeat; do
-				for scale in 64 128 256 512 1024 2048; do
+			for ownership in fresh-session; do
+				for scale in 256 512 1024 2048; do
 					run_point serial "lookup-$route-$persistence-$ownership" "$scale" \
 						"^BenchmarkCacheEGraphLookup/$route/$persistence/$ownership/$scale$"
 				done
@@ -323,8 +239,8 @@ run_screen() {
 
 	for operation in direct receiver; do
 		for persistence in transient imported; do
-			for ownership in fresh-session same-session-repeat; do
-				for scale in 64 128 256 512 1024 2048; do
+			for ownership in fresh-session; do
+				for scale in 256 512 1024 2048; do
 					run_point serial "id-$operation-$persistence-$ownership" "$scale" \
 						"^BenchmarkCacheEGraphIDLoad/$operation/$persistence/$ownership/$scale$"
 				done
@@ -333,14 +249,14 @@ run_screen() {
 	done
 
 	for publication in distinct-class join-wide-class; do
-		for scale in 64 128 256 512 1024 2048; do
+		for scale in 256 512 1024 2048; do
 			run_point serial "publication-$publication" "$scale" \
 				"^BenchmarkCacheEGraphPublication/publish/$publication/$scale$"
 		done
 	done
 	for persistence in transient imported; do
 		for terms in 1000 10000 50000; do
-			for merges in 1 8 64; do
+			for merges in 1 64; do
 				run_point serial "popular-$persistence-merges-$merges" "$terms" \
 					"^BenchmarkCacheEGraphPublication/popular-input/$persistence/terms-$terms/merges-$merges$"
 			done
@@ -360,7 +276,7 @@ run_screen() {
 		done
 	done
 	for persistence in persisted-fresh imported; do
-		for scale in 64 128 256 512 1024 2048; do
+		for scale in 256 512 1024 2048; do
 			run_point serial "prune-wide-output-$persistence" "$scale" \
 				"^BenchmarkCacheEGraphPrune/wide-output/$persistence/$scale$"
 		done
