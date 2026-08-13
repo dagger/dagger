@@ -179,8 +179,20 @@ func TestEngineIntegrationUsesTheFocusedSourceGraph(t *testing.T) {
 		}
 	}
 	integration := findFunction(t, source, "EngineIntegration")
-	if got := selectorCount(integration, "integrationRunner"); got != 1 {
+	if got := selectorCount(integration, "installedBaseline"); got != 1 {
 		t.Fatalf("EngineIntegration must construct one shared installed runner baseline, got %d", got)
+	}
+	resolution := findFunction(t, source, "Resolution")
+	if got := selectorCount(resolution, "installedBaseline"); got != 1 {
+		t.Fatalf("Resolution must use the common installed runner baseline, got %d", got)
+	}
+	baseline := findFunction(t, source, "installedBaseline")
+	if got := stringLiteralCount(baseline, "--here"); got != 1 {
+		t.Fatalf("the common baseline must contain exactly one Rust SDK install, got %d", got)
+	}
+	runResolution := findFunction(t, source, "runResolution")
+	if got := stringLiteralCount(runResolution, "--here"); got != 0 {
+		t.Fatalf("the resolution case must not reinstall the shared Rust baseline, got %d", got)
 	}
 
 	baseImage := constantString(t, source, "focusedEngineBaseImage")

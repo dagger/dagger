@@ -1,4 +1,4 @@
-//! Focused generated-client observations against the checked Dagger engine target.
+// Focused generated-client observations against the checked Dagger engine target.
 
 use std::error::Error;
 use std::time::Duration;
@@ -162,11 +162,52 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let exec_error = query
         .container()
         .from("alpine:3.22")
-        .with_exec(vec!["sh".to_owned(), "-c".to_owned(), "exit 17".to_owned()])
+        .with_exec(vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            "printf rust-stdout; printf rust-stderr >&2; exit 17".to_owned(),
+        ])
         .stdout()
         .await
         .expect_err("non-zero process exit must surface an engine-domain error");
-    assert!(matches!(exec_error, QueryError::Exec { .. }));
+    match exec_error {
+        QueryError::Exec { error, .. } => {
+            assert_eq!(error.exit_code(), Some(17));
+            assert_eq!(error.stdout(), Some("rust-stdout"));
+            assert_eq!(error.stderr(), Some("rust-stderr"));
+            assert_eq!(
+                error.command(),
+                Some(
+                    [
+                        "sh".to_owned(),
+                        "-c".to_owned(),
+                        "printf rust-stdout; printf rust-stderr >&2; exit 17".to_owned(),
+                    ]
+                    .as_slice()
+                )
+            );
+        }
+        other => panic!("non-zero process exit returned {other:?}"),
+    }
+
+    let empty_exec_error = match query
+        .container()
+        .from("alpine:3.22")
+        .with_exec(vec!["false".to_owned()])
+        .sync()
+        .await
+    {
+        Ok(_) => panic!("empty execution failure unexpectedly passed"),
+        Err(error) => error,
+    };
+    match empty_exec_error {
+        QueryError::Exec { error, .. } => {
+            assert_eq!(error.exit_code(), Some(1));
+            assert_eq!(error.stdout(), Some(""));
+            assert_eq!(error.stderr(), Some(""));
+        }
+        other => panic!("empty execution failure returned {other:?}"),
+    }
 
     let timeout_config = ClientConfig::builder()
         .graphql_execution_timeout(Duration::from_millis(250))

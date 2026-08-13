@@ -564,8 +564,8 @@
     source graph and its generated dependency binding compile, and scoped public
     dispatch generation remains owned by the executable sign-off facade.
 
-- [ ] 21. Materialize one exact installed Rust baseline and honest connector case
-  - [ ] 21.1 Add exact engine and CLI identity validation before installation
+- [x] 21. Materialize one exact installed Rust baseline and honest connector case
+  - [x] 21.1 Add exact engine and CLI identity validation before installation
     - Validate the imported/built container's engine version, target revision, Rust
       manifest/descriptor, platform, and extracted CLI digest before service or
       baseline creation.
@@ -573,14 +573,14 @@
       `dagger sdk install --here rust`; reject ambient repository path dependencies,
       host CLI use, duplicate installs, and stale installed configuration.
     - _Requirements: 6.1-6.6, 6.11-6.13, 6.21-6.22_
-  - [ ] 21.2 Add immutable baseline identity and workspace branching
+  - [x] 21.2 Add immutable baseline identity and workspace branching
     - Bind artifact, exact engine, CLI, installed config, dependency descriptor, and
       runner-image digests into `InstalledRustBaseline`. Branch every case from that
       immutable value with a distinct workspace/environment/cache/session namespace.
     - Refactor Feature 5 `resolution` to use this common baseline instead of a separate
       install path.
     - _Requirements: 6.3-6.6, 6.11-6.15, 6.17-6.22_
-  - [ ] 21.3 Implement the stable default connector observation
+  - [x] 21.3 Implement the stable default connector observation
     - Leave explicit local CLI selection unset, place only the exact artifact CLI on
       `PATH`, run the production distribution path, validate the target version and an
       authenticated query, close the client, and prove child reaping.
@@ -588,7 +588,7 @@
       `Verified_Download`; automatically require verified download when the production
       checksum manifest becomes available.
     - _Requirements: 6.6-6.10, 7.1-7.3_
-  - [ ] 21.4 Property test: Property 9 — exact CLI installation and distribution observation are honest
+  - [x] 21.4 Property test: Property 9 — exact CLI installation and distribution observation are honest
     - Implement `property_09_exact_cli_install_distribution_honest` over at least 100
       artifacts, engine/CLI/descriptor identities, installed states, explicit-local
       flags, production HTTP outcomes, selected CLIs, and claim variants.
@@ -596,15 +596,15 @@
       or exact PATH-fallback result.
     - _Requirements: 6.2-6.10_
 
-- [ ] 22. Implement isolated case execution and retry honesty
-  - [ ] 22.1 Add execution binding, namespace, and attempt models
+- [x] 22. Implement isolated case execution and retry honesty
+  - [x] 22.1 Add execution binding, namespace, and attempt models
     - Derive one execution binding from catalog case, artifact manifest/payload, exact
       engine, and baseline; derive distinct workspace/environment/cache namespaces from
       binding plus attempt number.
     - Add ordered contiguous attempts, assertion/infrastructure outcome variants,
       aggregate timing, final outcome, and safe diagnostics with canonical decoding.
     - _Requirements: 6.11-6.19, 12.14, 12.19-12.22_
-  - [ ] 22.2 Add one-service bounded fan-out and cleanup adapter
+  - [x] 22.2 Add one-service bounded fan-out and cleanup adapter
     - Start one exact target service after all pre-engine gates, clone every case from
       the common immutable baseline, dispatch with catalog-bounded concurrency, retain
       results by stable index, isolate all mutable state, and stop/reap once on complete
@@ -613,21 +613,21 @@
       starts, baseline materializations, cross-case state, or cleanup failures as
       atomic failures.
     - _Requirements: 6.1, 6.3, 6.11-6.15, 6.19-6.22_
-  - [ ] 22.3 Add the closed retry state machine
+  - [x] 22.3 Add the closed retry state machine
     - Permit only declared orchestration-transport, immutable-remote-fetch, and
       runner-capacity infrastructure classes within each case's attempt bound.
     - Make assertion failure absorbing; retain every failed attempt; require identical
       artifact/engine/baseline/case identity; reject catch-all transient failures,
       attempt gaps, retry after assertion failure, or a retry needing new shared work.
     - _Requirements: 6.16-6.18, 12.14, 12.20-12.26_
-  - [ ] 22.4 Property test: Property 10 — fan-out uses one engine and one immutable baseline
+  - [x] 22.4 Property test: Property 10 — fan-out uses one engine and one immutable baseline
     - Implement `property_10_fanout_one_engine_one_baseline_isolated` over at least 256
       catalogs, schedules, mutable namespace assignments, failures, cross-access
       probes, start/install/reap counts, and completion orders.
     - Compare with an immutable shared-ID/unique-namespace model; require one target
       engine and one baseline with total isolation and cleanup.
     - _Requirements: 6.1, 6.3-6.5, 6.11-6.15, 6.19-6.22_
-  - [ ] 22.5 Property test: Property 11 — retry history cannot erase failure or duplicate work
+  - [x] 22.5 Property test: Property 11 — retry history cannot erase failure or duplicate work
     - Implement `property_11_retry_history_absorbing_and_reused` over at least 256
       policies and attempt sequences; compare with an absorbing assertion-failure list
       fold.
@@ -635,22 +635,22 @@
       reject every assertion retry or duplicate artifact/engine/baseline event.
     - _Requirements: 6.16-6.18_
 
-- [ ] 23. Implement the fixed exact-engine case programs
-  - [ ] 23.1 Add the common harness and Core generated API programs
+- [x] 23. Implement the fixed exact-engine case programs
+  - [x] 23.1 Add the common harness and Core generated API programs
     - Dispatch all 17 pinned sdk-sdk subject checks and no harness-self check; map each
       result only to reviewed harness capabilities.
     - Add scalar, enum, input, object, interface, nullable, list-object, expected-type,
       and Void Core programs through the public generated Rust API and exact packaged
       SDK.
     - _Requirements: 3.6-3.9, 7.5-7.7, 7.10, 7.14_
-  - [ ] 23.2 Refactor the complete Feature 5 matrix onto the shared service/baseline
+  - [x] 23.2 Refactor the complete Feature 5 matrix onto the shared service/baseline
     - Retain resolution, empty/existing/no-generate initialization, operations,
       checked/legacy runtime, generated-lock-toolchain negatives, path/ownership
       negatives, and redaction with exact existing production assertions.
     - Remove per-case content/service/install construction and return typed safe
       observations, operation provenance, and timings through the umbrella executor.
     - _Requirements: 3.10, 6.1-6.22, 7.17_
-  - [ ] 23.3 Add the complete Feature 6 packaged authoring programs
+  - [x] 23.3 Add the complete Feature 6 packaged authoring programs
     - Exercise the packaged self-consumer and initialization/development/generation/
       loading/execution/dependency lifecycle plus constructor, sync, async, state,
       Core, self, dependency, interface, enum, default, error, panic, cancellation,
@@ -658,21 +658,21 @@
     - Resolve SDK content only from the artifact and return capability-local assertions
       without checkout paths or fixture-only dispatcher substitutes.
     - _Requirements: 3.11, 7.8-7.9, 7.11_
-  - [ ] 23.4 Add the five Feature 7 standalone-client programs
+  - [x] 23.4 Add the five Feature 7 standalone-client programs
     - Run initialized local client, immutable pinned remote dependency client, schema
       regeneration, public Core query, and namespaced bound-module query outside the
       repository Cargo workspace.
     - Prove authored preservation/owned change, exact Git revision, packaged SDK
       dependency, public generated APIs, and no ambient path dependency.
     - _Requirements: 3.12, 7.7, 7.12-7.15_
-  - [ ] 23.5 Add the nine definitive Go-client observable programs
+  - [x] 23.5 Add the nine definitive Go-client observable programs
     - Execute equivalent Rust directory, Git, container, mutation, list, and typed
       execution-error cases through public Rust APIs and compare exact observable
       results/error fields.
     - Keep Go source as authority evidence only; do not build or run the Go SDK suite.
     - _Requirements: 3.13, 7.1-7.4, 7.17-7.18_
 
-- [ ] 24. Checkpoint: baseline, executor, retry, and fixed case construction are green
+- [x] 24. Checkpoint: baseline, executor, retry, and fixed case construction are green
   - Run formatting; locked baseline/connector/execution model tests and Properties
     9–11; fixed case-program fixture tests; engine-free Go graph/registry tests;
     source-policy tests; and focused warning-denied Clippy/rustdoc.
@@ -683,6 +683,17 @@
   - Require no Dagger command, engine, module invocation, other SDK suite, target
     artifact work, unscoped generation, or distribution build.
   - _Requirements: 3.6-3.13, 6.1-6.22, 7.1-7.15, 11.1-11.20_
+  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-baseline-executor-checkpoint.json`
+    records the exact installed-baseline model, one-service isolated fan-out, absorbing
+    retry state machine, canonical 60-program registry, and Properties 9–11 at 256
+    cases each. The complete engine-free matrix passed on macOS/arm64 and the dedicated
+    Linux/amd64 XL host with 156 native tests passed and only the two intentional
+    helper/exact-engine ignores. The transferred Linux tree was byte-checked before
+    execution, contained zero AppleDouble sidecars, and used a fresh Cargo target
+    namespace so compile-time repository paths could not reference an earlier tree.
+    No Dagger command, engine, module, foreign SDK, target artifact, unscoped
+    generation, or distribution build ran; Windows remains deferred to ultimate SDK
+    sign-off.
 
 - [ ] 25. Complete the additional integration assertion fixtures and observable parity
   - [ ] 25.1 Implement every remaining applicable reviewed assertion program

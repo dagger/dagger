@@ -89,6 +89,59 @@ func TestArtifactToolIsEngineFreeAndClosed(t *testing.T) {
 	}
 }
 
+func TestInstalledBaselineOwnsOneServiceOneInstallAndTheArtifactCLI(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../signoff.go")
+	baseline := findFunction(t, source, "installedRustBaseline")
+	for selector, expected := range map[string]int{
+		"AsService":          1,
+		"WithMountedFile":    1,
+		"WithServiceBinding": 1,
+		"WithoutEnvVariable": 1,
+	} {
+		if got := selectorCount(baseline, selector); got != expected {
+			t.Fatalf("installed baseline %s count: got %d, want %d", selector, got, expected)
+		}
+	}
+	if got := stringLiteralCount(baseline, "--here"); got != 1 {
+		t.Fatalf("installed baseline must perform exactly one Rust SDK install, got %d", got)
+	}
+	for _, forbidden := range []string{"EngineContent", "DaggerCli", "ContainerWithFocusedRustSdkcontent", "Import"} {
+		if got := selectorCount(baseline, forbidden); got != 0 {
+			t.Fatalf("installed baseline must not reconstruct artifact content through %s", forbidden)
+		}
+	}
+}
+
+func TestProgramBranchesIsolateEveryMutableCoordinateWithoutSharedWork(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../signoff.go")
+	branch := findFunction(t, source, "programBranch")
+	for selector, expected := range map[string]int{
+		"FixedProgramRegistry": 1,
+		"WithWorkdir":          1,
+		"WithMountedCache":     1,
+	} {
+		if got := selectorCount(branch, selector); got != expected {
+			t.Fatalf("program branch %s count: got %d, want %d", selector, got, expected)
+		}
+	}
+	for _, forbidden := range []string{"AsService", "Import", "EngineContent", "RustSdkcontent"} {
+		if got := selectorCount(branch, forbidden); got != 0 {
+			t.Fatalf("isolated program branch must not perform shared work through %s", forbidden)
+		}
+	}
+	if got := stringLiteralCount(branch, "--here"); got != 0 {
+		t.Fatalf("isolated program branch must not reinstall the Rust SDK, got %d", got)
+	}
+	stop := findFunction(t, source, "stop")
+	if got := selectorCount(stop, "Stop"); got != 1 {
+		t.Fatalf("exact-target cleanup must have one stop site, got %d", got)
+	}
+}
+
 func TestFocusedSourceClosureExcludesUnrelatedSDKs(t *testing.T) {
 	t.Parallel()
 

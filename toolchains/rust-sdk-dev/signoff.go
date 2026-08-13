@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 
 	"dagger/rust-sdk-dev/internal/dagger"
+	signoffmodel "dagger/rust-sdk-dev/internal/signoff"
 )
 
 const (
@@ -16,6 +18,8 @@ const (
 	signoffImportedPath   = "/artifact/imported-engine.oci.tar.zst"
 	signoffCliPath        = "/usr/local/bin/dagger"
 	signoffArtifactBinary = "dagger-rust-sdk-signoff"
+	signoffEngineAlias    = "dagger-engine"
+	signoffEngineEndpoint = "tcp://dagger-engine:1234"
 )
 
 // RustSignoffArtifact is one exportable exact-target bundle and its retained build graph.
@@ -38,6 +42,11 @@ type verifiedSignoffTarget struct {
 	container *dagger.Container
 	cli       *dagger.File
 	payload   *dagger.File
+}
+
+type installedSignoffBaseline struct {
+	runner  *dagger.Container
+	service *dagger.Service
 }
 
 // SignoffArtifact constructs and exports one focused target without starting an engine service.
@@ -117,4 +126,73 @@ func (t *RustSdkDev) artifactTool(planJSON string, source *dagger.File) *dagger.
 	return t.DevContainer(false).
 		WithNewFile(signoffPlanPath, planJSON).
 		WithMountedFile(signoffPayloadPath, source)
+}
+
+// installedRustBaseline owns the sole exact-target service and SDK installation sites.
+// Its input type can be produced only after the artifact verifier, so graph construction cannot
+// start a service and then discover that the retained bytes belong to another target.
+func (target *verifiedSignoffTarget) installedRustBaseline() *installedSignoffBaseline {
+	service := target.container.
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args:                     []string{"--addr", "tcp://0.0.0.0:1234"},
+			UseEntrypoint:            true,
+			InsecureRootCapabilities: true,
+		})
+	runner := dag.Container().
+		From(goHelperImage+"@"+goHelperDigest).
+		WithDirectory("/work", dag.Directory()).
+		WithWorkdir("/work").
+		WithMountedFile(signoffCliPath, target.cli).
+		WithEnvVariable("PATH", "/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin").
+		WithoutEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN").
+		WithServiceBinding(signoffEngineAlias, service).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", signoffEngineEndpoint).
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"git", "config", "user.name", "Rust SDK Sign-off"}).
+		WithExec([]string{"git", "config", "user.email", "rust-sdk-signoff@dagger.invalid"}).
+		WithExec([]string{"git", "commit", "--allow-empty", "-m", "initialize exact baseline"}).
+		WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
+	return &installedSignoffBaseline{runner: runner, service: service}
+}
+
+// programBranch derives every mutable coordinate from the reviewed program and attempt while
+// retaining the exact CLI, engine service, installed config, and packaged dependency graph.
+func (baseline *installedSignoffBaseline) programBranch(
+	program signoffmodel.Program,
+	attempt uint32,
+) (*dagger.Container, error) {
+	if attempt == 0 {
+		return nil, fmt.Errorf("sign-off case attempt must be one-based")
+	}
+	spec, ok := signoffmodel.FixedProgramRegistry()[program.Key()]
+	if !ok || spec.Program != program {
+		return nil, fmt.Errorf("unknown fixed sign-off program %q", program.Key())
+	}
+	identity := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d", program.Key(), attempt)))
+	namespace := fmt.Sprintf("%x", identity)
+	workspace := "/work/cases/" + namespace
+	runner := baseline.runner.
+		WithExec([]string{"mkdir", "-p", workspace}).
+		WithWorkdir(workspace).
+		WithEnvVariable("RUST_SDK_SIGNOFF_PROGRAM", program.Key()).
+		WithEnvVariable("RUST_SDK_SIGNOFF_ENVIRONMENT", namespace).
+		WithEnvVariable("RUST_SDK_SIGNOFF_SESSION", "session-"+namespace).
+		WithEnvVariable("CARGO_TARGET_DIR", "/tmp/cargo-target-"+namespace).
+		WithMountedCache(
+			"/var/cache/rust-signoff",
+			dag.CacheVolume("rust-signoff-"+namespace),
+		)
+	if spec.Boundary == signoffmodel.BoundaryStableConnector {
+		// The distribution path must first try its compiled release. The exact artifact CLI
+		// remains discoverable only through PATH for the beta compatibility transition.
+		runner = runner.WithoutEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	}
+	return runner, nil
+}
+
+// stop terminates the sole exact-target service on both success and failed fan-out paths.
+func (baseline *installedSignoffBaseline) stop(ctx context.Context) error {
+	_, err := baseline.service.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+	return err
 }

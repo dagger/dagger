@@ -1,0 +1,152 @@
+{
+  "asset_decisions": {
+    "cargo_deny": "reused-dependency-inputs-unchanged",
+    "client_generation_evidence": "unchanged-after-supported-refresh",
+    "harness_mappings": "refreshed-after-rust-artifact-identity-change",
+    "repository_wide_generation": false,
+    "top_level_dagger_adapter": "deferred-no-dagger-checkpoint"
+  },
+  "cargo_invocation_counts": {
+    "linux_checkpoint": 11,
+    "native_platform_per_host": 2
+  },
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "elapsed_millis": 851,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-sdk-completeness --locked",
+      "elapsed_millis": 188764,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-sdk --test module_authoring_compile --test generated_client_compile --test generated_client_query_properties --test signoff_program_fixture_compile --test source_policy --locked",
+      "elapsed_millis": 38767,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-codegen --test client_source_policy --locked",
+      "elapsed_millis": 12164,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo clippy -p dagger-sdk-completeness --all-targets --no-deps --locked -- -D warnings",
+      "elapsed_millis": 17356,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo clippy -p dagger-sdk --test signoff_program_fixture_compile --no-deps --locked -- -D warnings",
+      "elapsed_millis": 7432,
+      "outcome": "passed"
+    },
+    {
+      "command": "RUSTDOCFLAGS=-Dwarnings cargo doc -p dagger-sdk-completeness --no-deps --locked",
+      "elapsed_millis": 16027,
+      "outcome": "passed"
+    },
+    {
+      "command": "./scripts/ci-platform-preflight.sh platform-observation-linux.json",
+      "elapsed_millis": 47408,
+      "outcome": "passed"
+    },
+    {
+      "command": "go test ./...",
+      "elapsed_millis": 8217,
+      "outcome": "passed"
+    },
+    {
+      "command": "./scripts/ci-platform-preflight.sh platform-observation-macos.json",
+      "elapsed_millis": 9900,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-sdk-completeness --test signoff_execution_properties --locked",
+      "elapsed_millis": 1930,
+      "outcome": "passed-after-final-property-refinement-linux-amd64"
+    },
+    {
+      "command": "cargo clippy -p dagger-sdk-completeness --test signoff_execution_properties --no-deps --locked -- -D warnings",
+      "elapsed_millis": 230,
+      "outcome": "passed-after-final-property-refinement-linux-amd64"
+    }
+  ],
+  "fixed_inventory": {
+    "case_catalog_digest": "sha256:2f918db3827f0e24b959e9977450e4061b64264ed8b8f7990a271ab8e8ebb6c9",
+    "case_count": 672,
+    "common_harness_programs": 17,
+    "core_programs": 9,
+    "definitive_go_programs": 9,
+    "engine_integration_programs": 10,
+    "fixed_program_count": 60,
+    "module_authoring_programs": 9,
+    "program_registry_digest": "sha256:49b7bad6c123e2c7c5ab51cb76a77bb01b488cfeea2355da5984d0d152fc225d",
+    "stable_connector_programs": 1,
+    "standalone_client_programs": 5
+  },
+  "fixture_digests": {
+    "cargo_lock": "sha256:64e23cb11cc25a3d304a579fd4f288d8d3a1056021fa8876dfc68d2347490f35",
+    "conformance_cases": "sha256:cfbcd7e79008f6e33399139bd54c7771dd4d3f46dd43c39dc583bd5b69a83165",
+    "core_program_fixture": "sha256:f112d9924ccc5ec66c94d02abe752037b28a5201e5174d3dfe378ff79384aae1",
+    "execution_model_source": "sha256:4cea1857f94d4ea559a1ea9149d4d9d766b6f2d3d2c5510cac0f13587d615a3a",
+    "execution_property_source": "sha256:0e53c423ad198eaa67b493742e2df24b48aa8bcf7f3fee89c8d0046da3b01eb3",
+    "go_program_registry_source": "sha256:10b80dd70e0ed645f4ee49f96ddf1bf4383409f6d5da06d4a86a8d049e470a58",
+    "program_registry_source": "sha256:d80946726067562159e901a62354d6345c754baaab05177417bd5445a6eafde4",
+    "rust_artifact": "sha256:e3c68e278b27c1371423472cb7128d8e115223cdfdd94423521ad50977f1ec9d",
+    "rust_identity_file_manifest": "sha256:2bb9590b9f1d0cef0048c688643e69d982ea42b3eb7b080079bd1d11c788c6ec",
+    "signoff_graph_source": "sha256:eb726f7d6f93d8d54154b5a8b029f39952f98af39cf4962027c98e248f646136"
+  },
+  "format_version": "1.0.0",
+  "local_boundary": {
+    "dagger_command": false,
+    "distribution_build": false,
+    "engine_build_or_start": false,
+    "module_execution": false,
+    "other_sdk_build_or_test": false,
+    "target_artifact_build": false,
+    "unscoped_generation": false
+  },
+  "native_preflight": {
+    "linux_amd64": {
+      "elapsed_millis": 47408,
+      "ignored_exact_engine_tests": 1,
+      "ignored_subprocess_helper_tests": 1,
+      "observation_digest": "sha256:eaf62dd93e8ecd5a8c1ccf7b12ed95f7295baf497fba23573f9b2394de09505d",
+      "outcome": "passed",
+      "passed_tests": 156,
+      "rust_version": "1.97.1"
+    },
+    "macos_arm64": {
+      "elapsed_millis": 9900,
+      "ignored_exact_engine_tests": 1,
+      "ignored_subprocess_helper_tests": 1,
+      "observation_digest": "sha256:a3b07f01edb793237f46f09d2e24df04d329c15be5034b13e30e5e3d697998fd",
+      "outcome": "passed",
+      "passed_tests": 156,
+      "rust_version": "1.97.1"
+    },
+    "windows": "deferred-ultimate-sdk-signoff"
+  },
+  "properties": {
+    "property_09_cases": 256,
+    "property_10_cases": 256,
+    "property_11_cases": 256
+  },
+  "scope": "installed-baseline-isolated-executor-fixed-programs",
+  "shared_work_proof": {
+    "artifact_builds_per_case": 0,
+    "baseline_materializations": 1,
+    "engine_starts": 1,
+    "engine_stops": 1,
+    "rust_installs": 1,
+    "service_construction_sites": 1
+  },
+  "transfer_preflight": {
+    "appledouble_files": 0,
+    "candidate_archive_digest": "sha256:4e160f1a7fe8d6bf70db03a3cb9022858b55d85fbf86dc967c98864197cea355",
+    "cargo_target_policy": "fresh-per-extracted-repository-root",
+    "identity_file_count": 503,
+    "outcome": "byte-identical"
+  }
+}

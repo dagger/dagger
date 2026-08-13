@@ -136,7 +136,7 @@ The closed case inventory is:
 
 | Case | Boundary proved |
 | --- | --- |
-| `resolution` | Canonical built-in selection, idempotent installation, and pre-fallback shorthand rejection |
+| `resolution` | Canonical installed built-in selection from the common baseline and pre-fallback shorthand rejection |
 | `init-empty` | New Cargo package, lockfile, toolchain, starter source, and checked generation |
 | `init-existing` | Semantic Cargo adoption and byte-preservation of caller-owned source |
 | `init-no-generate` | Initialization without accidental generated publication |
@@ -146,6 +146,11 @@ The closed case inventory is:
 | `negative-generated-lock-toolchain` | Missing generation, stale lockfile, and incompatible toolchain rejection |
 | `negative-path-ownership` | Lexical escape, symlink escape, and unknown generated-file ownership rejection |
 | `negative-redaction` | Credential-bearing immutable-dependency rejection without secret rendering |
+
+The engine-free installation state-machine property retains the reinstall no-op and
+collision assertions. Exact-target sign-off does not replay a second installation:
+all cases branch from the one installed baseline, so the run can prove that SDK
+installation happened exactly once.
 
 The checked target is declared in `sdk/rust/completeness/target.json`. The packaged
 dependency descriptor may select the canonical crates.io release or a credential-free

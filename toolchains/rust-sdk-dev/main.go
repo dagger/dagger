@@ -475,7 +475,8 @@ func (content *RustEngineContent) Resolution(ctx context.Context) (string, error
 	if content.Engine == nil || content.Built == nil {
 		return "", fmt.Errorf("Rust SDK content is detached from its engine construction graph")
 	}
-	return content.runResolution(ctx, content.focusedService("rust-sdk-resolution"))
+	service := content.focusedService("rust-sdk-resolution")
+	return content.runResolution(ctx, content.installedBaseline(service))
 }
 
 func (content *RustEngineContent) focusedService(name string) *dagger.Service {
@@ -492,43 +493,23 @@ func (content *RustEngineContent) focusedService(name string) *dagger.Service {
 
 func (content *RustEngineContent) runResolution(
 	ctx context.Context,
-	service *dagger.Service,
+	installed *dagger.Container,
 ) (string, error) {
-	runner := content.Engine.InstallClient(
-		dag.Container().
-			From(goHelperImage+"@"+goHelperDigest).
-			WithDirectory("/work", dag.Directory()).
-			WithWorkdir("/work").
-			WithExec([]string{"git", "init"}).
-			WithExec([]string{"git", "config", "user.name", "Rust SDK Check"}).
-			WithExec([]string{"git", "config", "user.email", "rust-sdk-check@dagger.invalid"}).
-			WithExec([]string{"git", "commit", "--allow-empty", "-m", "initialize workspace"}),
-		dagger.DaggerEngineInstallClientOpts{
-			Service: service,
-			Version: coreTargetVersion,
-		},
-	)
-	first := runner.WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
-	firstConfig, err := first.File("/work/dagger.toml").Contents(ctx)
+	installedConfig, err := installed.File("/work/dagger.toml").Contents(ctx)
 	if err != nil {
 		return "", fmt.Errorf("install bare Rust SDK: %w", err)
 	}
-	second := first.WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
-	secondConfig, err := second.File("/work/dagger.toml").Contents(ctx)
-	if err != nil {
-		return "", fmt.Errorf("reinstall bare Rust SDK: %w", err)
+	if !strings.Contains(installedConfig, "dagger-rust-sdk") {
+		return "", fmt.Errorf("installed workspace configuration omitted the Rust SDK")
 	}
-	if firstConfig != secondConfig {
-		return "", fmt.Errorf("bare Rust SDK reinstall changed workspace configuration")
-	}
-	installed, err := second.WithExec([]string{"dagger", "sdk", "installed"}).Stdout(ctx)
+	installedList, err := installed.WithExec([]string{"dagger", "sdk", "installed"}).Stdout(ctx)
 	if err != nil {
 		return "", fmt.Errorf("list installed Rust SDK: %w", err)
 	}
-	if !strings.Contains(installed, "rust") {
+	if !strings.Contains(installedList, "rust") {
 		return "", fmt.Errorf("installed SDK listing omitted canonical Rust entry")
 	}
-	rejected := second.WithExec(
+	rejected := installed.WithExec(
 		[]string{"dagger", "-y", "sdk", "install", "rust@v1.0.0-beta.10"},
 		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
 	)
@@ -550,13 +531,13 @@ func (content *RustEngineContent) runResolution(
 		DescriptorDigest  string `json:"descriptor_digest"`
 		Installed         bool   `json:"installed"`
 		ManifestDigest    string `json:"manifest_digest"`
-		ReinstallNoop     bool   `json:"reinstall_noop"`
+		SingleInstall     bool   `json:"single_install"`
 		ShorthandRejected bool   `json:"shorthand_rejected"`
 	}{
 		DescriptorDigest:  content.DescriptorDigest,
 		Installed:         true,
 		ManifestDigest:    content.ManifestDigest,
-		ReinstallNoop:     true,
+		SingleInstall:     true,
 		ShorthandRejected: true,
 	})
 	if err != nil {
@@ -594,8 +575,7 @@ func (content *RustEngineContent) EngineIntegration(
 	}
 
 	service := content.focusedService("rust-sdk-engine-integration")
-	installed := content.integrationRunner(service).
-		WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
+	installed := content.installedBaseline(service)
 	type caseResult struct {
 		identity                 string
 		operationInputDigests    []string
@@ -614,7 +594,7 @@ func (content *RustEngineContent) EngineIntegration(
 			var identity string
 			var err error
 			if name == "resolution" {
-				identity, err = content.runResolution(ctx, service)
+				identity, err = content.runResolution(ctx, installed)
 			} else {
 				runner := installed.WithEnvVariable("RUST_SDK_ENGINE_INTEGRATION_CASE", name)
 				identity, err = content.runEngineIntegrationCase(ctx, runner, name)
@@ -730,7 +710,7 @@ func (content *RustEngineContent) EngineEvidence(ctx context.Context) (string, e
 	return string(evidence), nil
 }
 
-func (content *RustEngineContent) integrationRunner(
+func (content *RustEngineContent) installedBaseline(
 	service *dagger.Service,
 ) *dagger.Container {
 	base := dag.Container().
@@ -743,7 +723,7 @@ func (content *RustEngineContent) integrationRunner(
 		WithExec([]string{"git", "commit", "--allow-empty", "-m", "initialize workspace"})
 	return content.Engine.InstallClient(base, dagger.DaggerEngineInstallClientOpts{
 		Service: service, Version: coreTargetVersion,
-	})
+	}).WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
 }
 
 func (content *RustEngineContent) runEngineIntegrationCase(

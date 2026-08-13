@@ -41,6 +41,9 @@ pub enum DigestDomain {
     ConformancePlatformMatrix,
     ConformanceSecurity,
     ConformancePolicy,
+    ConformanceInstalledBaseline,
+    ConformanceCaseExecution,
+    ConformanceProgramRegistry,
 }
 
 impl DigestDomain {
@@ -75,6 +78,11 @@ impl DigestDomain {
             Self::ConformancePlatformMatrix => b"dagger-rust-sdk-conformance-platform-matrix-v1\0",
             Self::ConformanceSecurity => b"dagger-rust-sdk-conformance-security-v1\0",
             Self::ConformancePolicy => b"dagger-rust-sdk-conformance-policy-v1\0",
+            Self::ConformanceInstalledBaseline => {
+                b"dagger-rust-sdk-signoff-installed-baseline-v1\0"
+            }
+            Self::ConformanceCaseExecution => b"dagger-rust-sdk-signoff-case-execution-v1\0",
+            Self::ConformanceProgramRegistry => b"dagger-rust-sdk-signoff-program-registry-v1\0",
         }
     }
 }

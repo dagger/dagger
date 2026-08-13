@@ -118,6 +118,13 @@ and reject the extracted candidate if it contains any `._*` file before running 
 shared scripts. Those sidecars are real extra inputs to recursive source hashing even
 though they are invisible in the macOS checkout.
 
+Give each extracted candidate its own Cargo target directory. Do not reuse test
+binaries across different repository roots: compile-time paths such as
+`CARGO_MANIFEST_DIR` would still name the earlier tree and can make an otherwise exact
+candidate observe the wrong authority files. Run `ci-platform-preflight.sh` with
+`CARGO_TARGET_DIR` unset because its fixed producer intentionally executes the binary
+from `./target/debug`.
+
 An engine is not a local checkpoint fallback. If a contract cannot be represented by
 the direct production harness, document the precise model gap and smallest proposed
 sign-off case for maintainer approval. Exact-engine cases run only through the bounded

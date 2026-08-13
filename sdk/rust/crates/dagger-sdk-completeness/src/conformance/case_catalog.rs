@@ -394,6 +394,21 @@ pub struct CaseCatalog {
 }
 
 impl CaseCatalog {
+    /// Borrows the exact target shared by every case.
+    pub fn target_digest(&self) -> &TargetDigest {
+        &self.target_digest
+    }
+
+    /// Borrows the immutable Rust implementation identity.
+    pub fn subject(&self) -> &SubjectIdentity {
+        &self.subject
+    }
+
+    /// Borrows the platform on which the catalog may execute.
+    pub fn platform(&self) -> &PlatformDescriptor {
+        &self.platform
+    }
+
     /// Borrows cases in canonical identity order.
     pub fn cases(&self) -> &BTreeMap<SignoffCaseId, CaseDefinition> {
         &self.cases
