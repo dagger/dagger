@@ -47,19 +47,23 @@ If the repository does not have a `dagger.toml` yet, use `dagger sdk install --h
 
 ### Where the module is created
 
-By default, `dagger module init` places the new module under the workspace root:
+By default, `dagger module init` places the new module beside the `dagger.toml`
+it is editing:
 
 ```
-<workspace>/.dagger/modules/<name>
+<dagger.toml directory>/.dagger/modules/<name>
 ```
 
-Pass `--path` to choose a different location (the target must not already contain a Dagger module):
+That is the workspace root unless the config lives in a subdirectory, as it does
+when several projects share one repository.
+
+Pass `--path` to choose a different workspace-root-relative location (the target must not already contain a Dagger module). The workspace root is the git root, not the shell's current directory; from any subdirectory, `--path ci` means `<workspace>/ci`.
 
 ```shell
-dagger module init go my-module --path ./ci
+dagger module init go my-module --path ci
 ```
 
-A custom path is registered as a module authored by the SDK, but is not automatically installed as a callable workspace module. Use `dagger install ./ci` to install it too.
+A custom path is registered as a module authored by the SDK, but is not automatically installed as a callable workspace module. Use `dagger install ./ci` from the workspace root to install it too.
 
 Pass `--legacy-template` to use the Go SDK's legacy starter instead of its default minimal `main.go`:
 

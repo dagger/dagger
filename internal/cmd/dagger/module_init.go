@@ -144,15 +144,17 @@ What the engine does (atomically, in one Changeset):
      scaffold at <path>.
   3. Records [[modules.<sdk-module>.as-sdk.modules]] authoring entry for
      <path>.
-  4. When --path is the default (.dagger/modules/<name>), also installs
-     the new module as [modules.<name>] so it's callable here.
+  4. When --path is omitted, also installs the new module as
+     [modules.<name>] so it's callable here.
   5. Runs the SDK's generators scoped to <path>, so the new module is
      loadable without a separate 'dagger generate'. Pass --no-generate to
      skip this.
 
---path defaults to .dagger/modules/<name>. Custom paths skip the
-[modules.<name>] install (the user is managing workspace layout
-explicitly).`,
+When --path is omitted, the module is created under .dagger/modules/<name>
+beside the dagger.toml being edited (workspace-root-relative as
+<dagger.toml dir>/.dagger/modules/<name>). Custom paths are
+workspace-root-relative and skip the [modules.<name>] install (the user is
+managing workspace layout explicitly).`,
 	Example: "dagger sdk install go && dagger module init go my-module",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -161,7 +163,7 @@ explicitly).`,
 }
 
 func init() {
-	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
+	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Workspace-root-relative module path (default: <dagger.toml dir>/.dagger/modules/<name>)")
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
 	moduleCmd.AddCommand(moduleInitCmd)
 }

@@ -2241,15 +2241,17 @@ What the engine does (atomically, in one Changeset):
      scaffold at &lt;path&gt;.
   3. Records [[modules.&lt;sdk-module&gt;.as-sdk.modules]] authoring entry for
      &lt;path&gt;.
-  4. When --path is the default (.dagger/modules/&lt;name&gt;), also installs
-     the new module as [modules.&lt;name&gt;] so it's callable here.
+  4. When --path is omitted, also installs the new module as
+     [modules.&lt;name&gt;] so it's callable here.
   5. Runs the SDK's generators scoped to &lt;path&gt;, so the new module is
      loadable without a separate 'dagger generate'. Pass --no-generate to
      skip this.
 
---path defaults to .dagger/modules/&lt;name&gt;. Custom paths skip the
-[modules.&lt;name&gt;] install (the user is managing workspace layout
-explicitly).
+When --path is omitted, the module is created under .dagger/modules/&lt;name&gt;
+beside the dagger.toml being edited (workspace-root-relative as
+&lt;dagger.toml dir&gt;/.dagger/modules/&lt;name&gt;). Custom paths are
+workspace-root-relative and skip the [modules.&lt;name&gt;] install (the user is
+managing workspace layout explicitly).
 
 ```
 dagger module init <sdk> <name> [flags]
@@ -2265,7 +2267,7 @@ dagger sdk install go && dagger module init go my-module
 
 ```
       --no-generate   Skip running the SDK's generators for the new module
-      --path string   Module path relative to the workspace root (default: .dagger/modules/<name>)
+      --path string   Workspace-root-relative module path (default: <dagger.toml dir>/.dagger/modules/<name>)
 ```
 
 ### Options inherited from parent commands
