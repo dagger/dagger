@@ -2115,16 +2115,6 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 	return depCfg, nil
 }
 
-func isLocalLegacyModuleRef(source, pin string) bool {
-	if pin != "" {
-		return false
-	}
-	if len(source) > 0 && (source[0] == '/' || source[0] == '.') {
-		return true
-	}
-	return !strings.Contains(source, ".")
-}
-
 func replaceModuleRefVersion(refString, version string) string {
 	before, _, found := strings.Cut(refString, "@")
 	if found {
@@ -2236,7 +2226,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
 			}
 			matched = true
 			delete(updateReqs, req)
-			if !isLocalLegacyModuleRef(cfg.Source, cfg.Pin) {
+			if !workspace.IsLocalRef(cfg.Source, cfg.Pin) {
 				refString := cfg.Source
 				if req.version != "" {
 					refString = replaceModuleRefVersion(refString, req.version)
@@ -2365,7 +2355,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	}
 
 	cfg := parentSrc.Self().ConfigBlueprint
-	if isLocalLegacyModuleRef(cfg.Source, cfg.Pin) {
+	if workspace.IsLocalRef(cfg.Source, cfg.Pin) {
 		return parentSrc.Result, nil
 	}
 
