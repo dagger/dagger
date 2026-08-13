@@ -157,7 +157,7 @@ func (r *Resolver) ResolveImageConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -239,7 +239,7 @@ func (r *Resolver) ResolveImageConfig(
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pulling "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "pulling "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -575,7 +575,7 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 }
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
