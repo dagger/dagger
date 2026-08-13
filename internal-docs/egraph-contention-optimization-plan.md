@@ -318,9 +318,9 @@ plus one central helper such as:
 
 ```go
 func (c *Cache) addResultDigestPostingLocked(
-	resID sharedResultID,
-	digest string,
-	kind resultDigestPostingKind,
+ resID sharedResultID,
+ digest string,
+ kind resultDigestPostingKind,
 )
 ```
 
@@ -370,12 +370,12 @@ Add paired helpers so the two directions cannot drift:
 
 ```go
 func (c *Cache) addResultOutputEqClassLocked(
-	resID sharedResultID,
-	outputEqID eqClassID,
+ resID sharedResultID,
+ outputEqID eqClassID,
 )
 
 func (c *Cache) removeResultOutputEqClassesLocked(
-	resID sharedResultID,
+ resID sharedResultID,
 )
 ```
 
@@ -466,8 +466,8 @@ existence check:
 
 ```go
 func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
-	outputEqID eqClassID,
-	nowUnix int64,
+ outputEqID eqClassID,
+ nowUnix int64,
 ) bool
 ```
 
@@ -515,8 +515,8 @@ Preserve the existing early return:
 
 ```go
 if len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0 {
-	c.maybeResetEgraphLocked()
-	return
+ c.maybeResetEgraphLocked()
+ return
 }
 ```
 
