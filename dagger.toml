@@ -50,6 +50,13 @@ test = "e2e/**"
 source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
 legacy-default-path = true
 
+[modules.helm.settings]
+# The module installs the wolfi `helm` package as `helm~<version>`, and that
+# package moved to the 4.x line, so 3.x versions no longer resolve. Charts are
+# still packaged with helm 3 (see .dagger/modules/release/helm.go); revisit once
+# the module can select the `helm-3` package.
+version = "4.0.1"
+
 [modules.java-client]
 source = ".dagger/modules/java-client-dev"
 legacy-default-path = true
