@@ -235,6 +235,15 @@ class QueryBuilder {
     return rv;
   }
 
+  QueryBuilder executeNullableObjectQuery(String graphqlTypeName)
+      throws ExecutionException, InterruptedException, DaggerQueryException {
+    String id = chain(List.of("id")).executeQuery(String.class);
+    if (id == null) {
+      return null;
+    }
+    return new QueryBuilder(this.client).chainNode(graphqlTypeName, id);
+  }
+
   /**
    * Execute a list query for objects, returning QueryBuilders that load each element via node(id:).
    *
