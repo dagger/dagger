@@ -423,12 +423,6 @@ type Container implements Exportable & Node & Syncer {
 
     """If specified, do not follow symlinks."""
     doNotFollowSymlinks: Boolean = false
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
   ): Boolean!
 
   """
@@ -1326,20 +1320,6 @@ type Container implements Exportable & Node & Syncer {
     name: String!
   ): Container!
 
-  """
-  Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
-
-  This is an expert-only escape hatch. If a volatile value affects observable
-  exec results, stale cached results may be reused.
-  """
-  withVolatileVariable(
-    """Name of the volatile variable (e.g., "CI_RUN_ID")."""
-    name: String!
-
-    """Value of the volatile variable."""
-    value: String!
-  ): Container!
-
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
   withWorkdir(
     """The path to set as the working directory (e.g., "/app")."""
@@ -1494,14 +1474,6 @@ type Container implements Exportable & Node & Syncer {
   Should default to root.
   """
   withoutUser: Container!
-
-  """
-  Retrieves this container minus the given volatile environment variable.
-  """
-  withoutVolatileVariable(
-    """The name of the volatile environment variable (e.g., "CI_RUN_ID")."""
-    name: String!
-  ): Container!
 
   """
   Unset the container's working directory.
@@ -3278,13 +3250,6 @@ type LLM implements Node & Syncer {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
 
-  """
-  Report whether anything is queued to send to the model: an unsent prompt or
-  unevaluated tool results. When true, another step will do work; when false,
-  the turn is complete.
-  """
-  hasPending: Boolean!
-
   """A unique identifier for this LLM."""
   id: ID!
 
@@ -4000,11 +3965,6 @@ type Query implements Node {
   The TypeDef representations of the objects currently being served in the session.
   """
   currentTypeDefs(
-    """
-    Return the full referenced typedef closure instead of only top-level served typedefs.
-    """
-    returnAllTypes: Boolean = false
-
     """
     Strip core API functions from the Query type, leaving only module-sourced
     functions (constructors, entrypoint proxies, etc.).

@@ -202,6 +202,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.Func("hasPending", s.hasPending).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete."),
 		dagql.Func("fork", s.fork).
 			View(AfterVersion("v1.0.0-0")).
