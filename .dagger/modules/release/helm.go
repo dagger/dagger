@@ -23,7 +23,7 @@ func (r *Release) helmChart() *dagger.Container {
 	return dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
-				"helm~3.18.4",
+				"helm-3~3.19.2",
 			},
 		}).
 		WithDirectory("/dagger-helm", r.helmChartSource()).

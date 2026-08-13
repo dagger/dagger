@@ -220,7 +220,7 @@ func helmContainer(dag *dagger.Client) *dagger.Container {
 
 	return dag.Container().
 		From(helmImage).
-		WithExec([]string{"apk", "add", "--no-cache", "helm~3.18.4", "kubectl"}).
+		WithExec([]string{"apk", "add", "--no-cache", "helm-3~3.19.2", "kubectl"}).
 		WithDirectory("/dagger-helm", chart).
 		WithWorkdir("/dagger-helm")
 }
