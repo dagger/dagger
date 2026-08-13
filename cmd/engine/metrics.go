@@ -24,6 +24,11 @@ var (
 		Help: "Number of entries in the dagql cache",
 	})
 
+	dagqlCacheMetadataEstimatedBytesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dagger_dagql_cache_metadata_estimated_bytes",
+		Help: "Coarse structural memory estimate for the dagql cache in bytes",
+	})
+
 	localCacheTotalDiskSizeGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dagger_local_cache_total_disk_size_bytes",
 		Help: "Total disk space consumed by the local cache in bytes",
@@ -46,6 +51,9 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 		return err
 	}
 	if err := prometheus.Register(dagqlCacheEntriesGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(dagqlCacheMetadataEstimatedBytesGauge); err != nil {
 		return err
 	}
 	if err := prometheus.Register(localCacheTotalDiskSizeGauge); err != nil {
@@ -100,6 +108,7 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		connectedClientsGauge.Set(float64(srv.ConnectedClients()))
 		dagqlCacheEntriesGauge.Set(float64(srv.DagqlCacheEntries()))
+		dagqlCacheMetadataEstimatedBytesGauge.Set(float64(srv.DagqlCacheMetadataEstimatedBytes()))
 
 		var dbReset float64
 		if srv.CorruptDBReset() {

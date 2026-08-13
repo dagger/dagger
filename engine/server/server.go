@@ -37,7 +37,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
-	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
@@ -132,9 +131,13 @@ type Server struct {
 	//
 	// gc related
 	//
-	throttledGC             func()
-	throttledDiskPressureGC func()
-	gcmu                    sync.Mutex
+	throttledSessionGC             func()
+	throttledLocalCachePressureGC  func()
+	gcmu                           sync.Mutex
+	localCacheGCEnabled            bool
+	dagqlCacheMaxEstimatedBytes    int64
+	dagqlCacheTargetEstimatedBytes int64
+	metadataPruneMonitorBlocked    atomic.Bool
 
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelCauseFunc
@@ -173,6 +176,7 @@ type NewServerOpts struct {
 	BuildkitConfig *bkconfig.Config
 }
 
+//nolint:gocyclo // NewServer performs the engine's existing linear initialization sequence.
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
@@ -200,6 +204,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
+	var err error
+	if err := srv.configureLocalCacheGC(cfg.GC, ociCfg.GCConfig); err != nil {
+		return nil, err
+	}
+
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
 	engineutil.GetGlobalNamespaceWorkerPool().Start()
@@ -208,7 +217,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	var err error
 	srv.rootDir, err = filepath.Abs(srv.rootDir)
 	if err != nil {
 		return nil, err
@@ -410,12 +418,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup solver
 	//
 
-	srv.throttledGC = throttle.After(localCacheSessionGCThrottle, srv.gc)
-	srv.throttledDiskPressureGC = throttle.After(localCacheDiskPressureGCThrottle, srv.gcIfDiskPressure)
+	srv.throttledSessionGC = throttle.After(localCacheSessionGCThrottle, srv.gcAfterSessionCompletion)
+	srv.throttledLocalCachePressureGC = throttle.After(localCachePressureGCThrottle, srv.gcIfLocalCachePressure)
 	defer func() {
 		time.AfterFunc(time.Second, srv.gc)
 	}()
-	srv.startDiskPressureGCMonitor()
+	srv.startLocalCachePressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -439,6 +447,17 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+func (srv *Server) configureLocalCacheGC(gcConfig config.GCConfig, workerGCConfig bkconfig.GCConfig) error {
+	enabled, maximum, target, err := resolveDagqlCacheGCConfig(gcConfig, workerGCConfig)
+	if err != nil {
+		return err
+	}
+	srv.localCacheGCEnabled = enabled
+	srv.dagqlCacheMaxEstimatedBytes = maximum
+	srv.dagqlCacheTargetEstimatedBytes = target
+	return nil
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
@@ -740,19 +759,9 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		s.stateMu.Unlock()
 	}
 
-	if srv.engineCache != nil && len(srv.workerGCPolicies) > 0 {
-		dstat, statErr := disk.GetDiskStat(srv.rootDir)
-		if statErr != nil {
-			err = errors.Join(err, fmt.Errorf("failed to get disk stats for graceful shutdown prune: %w", statErr))
-		} else {
-			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
-			for i := range prunePolicies {
-				prunePolicies[i].CurrentFreeSpace = dstat.Available
-			}
-			_, pruneErr := srv.engineCache.Prune(ctx, prunePolicies)
-			if pruneErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to prune dagql cache during graceful shutdown: %w", pruneErr))
-			}
+	if srv.engineCache != nil && srv.localCacheGCEnabled {
+		if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
 		}
 	}
 
@@ -872,6 +881,13 @@ func (srv *Server) DagqlCacheEntries() int {
 		return 0
 	}
 	return srv.engineCache.Size()
+}
+
+func (srv *Server) DagqlCacheMetadataEstimatedBytes() int64 {
+	if srv.engineCache == nil {
+		return 0
+	}
+	return srv.engineCache.MetadataEstimate().EstimatedBytes
 }
 
 func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {

@@ -5949,13 +5949,17 @@ func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
 	c.resultOutputEqClasses[1] = map[eqClassID]struct{}{a: {}}
 	c.resultOutputEqClasses[2] = map[eqClassID]struct{}{b: {}}
 	c.resultOutputEqClasses[3] = map[eqClassID]struct{}{c1: {}}
-	compacted, oldSlots, newSlots := c.compactEqClassesLocked()
+	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
+	forced, forcedOldSlots, forcedNewSlots := c.compactEqClassesLocked(true)
 	c.egraphMu.Unlock()
 
 	assert.Assert(t, !compacted)
 	assert.Equal(t, 5, oldSlots)
 	assert.Equal(t, 3, newSlots)
-	assert.Equal(t, 6, len(c.egraphParents))
+	assert.Assert(t, forced)
+	assert.Equal(t, 5, forcedOldSlots)
+	assert.Equal(t, 3, forcedNewSlots)
+	assert.Equal(t, 4, len(c.egraphParents))
 }
 
 func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
