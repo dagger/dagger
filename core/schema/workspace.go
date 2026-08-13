@@ -116,6 +116,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.`),
 			),
+		dagql.NodeFunc("findRoots", s.findRoots).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc(`Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.`,
+				`Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.`,
+				`Each returned path is usable as-is with other workspace APIs, e.g. directory(path).`).
+			Args(
+				dagql.Arg("start").Doc(`Directory to start from. Relative paths resolve from the workspace cwd.`),
+				dagql.Arg("markers").Doc(`File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).`),
+				dagql.Arg("exclude").Doc(`Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).`),
+			),
 		dagql.NodeFunc("git", s.git).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -2548,6 +2559,159 @@ func (s *workspaceSchema) findUp(
 	}
 
 	return none, nil
+}
+
+type workspaceFindRootsArgs struct {
+	Start   string `default:"."`
+	Markers []string
+	Exclude []string `default:"[]"`
+}
+
+func (s *workspaceSchema) findRoots(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceFindRootsArgs,
+) (dagql.Array[dagql.String], error) {
+	if len(args.Markers) == 0 {
+		return nil, fmt.Errorf("workspace findRoots requires at least one marker")
+	}
+	for _, name := range args.Markers {
+		if !isWorkspaceBasename(name) {
+			return nil, fmt.Errorf("workspace findRoots marker must be a basename: %q", name)
+		}
+	}
+	start, err := resolveWorkspacePath(args.Start, parent.Self().Cwd)
+	if err != nil {
+		return nil, err
+	}
+
+	var dirs []string
+	seen := map[string]bool{}
+	add := func(dir string) {
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+
+	ancestor, err := s.nearestAncestorRoot(ctx, parent, start, args.Markers)
+	if err != nil {
+		return nil, err
+	}
+	if ancestor != "" {
+		add(ancestor)
+	}
+
+	descendants, err := s.descendantRoots(ctx, parent, start, args.Markers, args.Exclude)
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range descendants {
+		add(dir)
+	}
+
+	return dagql.NewStringArray(dirs...), nil
+}
+
+// nearestAncestorRoot returns the closest strict ancestor of start holding a
+// marker, as a cwd-relative path, or "" when there is none.
+func (s *workspaceSchema) nearestAncestorRoot(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	start string,
+	markers []string,
+) (string, error) {
+	bestDir := ""
+	bestDepth := -1
+	for _, name := range markers {
+		hit, err := s.findUp(ctx, parent, workspaceFindUpArgs{Name: name, From: workspaceAPIPath(start)})
+		if err != nil {
+			return "", err
+		}
+		if !hit.Valid {
+			continue
+		}
+		// findUp returns a workspace-absolute path like "/sub/deno.json".
+		dir := strings.TrimPrefix(path.Dir(hit.Value.String()), "/")
+		if dir == "" {
+			dir = "."
+		}
+		if depth := workspaceDirDepth(dir); depth > bestDepth {
+			bestDepth = depth
+			bestDir = dir
+		}
+	}
+	if bestDepth < 0 {
+		return "", nil
+	}
+	if bestDir == cleanWorkspaceRelPath(start) {
+		return "", nil
+	}
+	return workspacePathRelativeToCwd(bestDir, parent.Self().Cwd)
+}
+
+// workspaceDirDepth returns the depth of a workspace-root-relative directory,
+// 0 at the root.
+func workspaceDirDepth(dir string) int {
+	if dir == "." {
+		return 0
+	}
+	return strings.Count(dir, "/") + 1
+}
+
+// descendantRoots returns every directory at or below start holding one of the
+// markers, as cwd-relative paths.
+func (s *workspaceSchema) descendantRoots(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	start string,
+	markers []string,
+	exclude []string,
+) ([]string, error) {
+	ws := parent.Self()
+	include := make([]string, len(markers))
+	for i, name := range markers {
+		include[i] = "**/" + name
+	}
+	dir, err := s.directoryAt(ctx, ws, start, workspaceDirectoryArgs{
+		Path: ".",
+		CopyFilter: core.CopyFilter{
+			Include: include,
+			Exclude: exclude,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for _, name := range markers {
+		var matches dagql.Array[dagql.String]
+		if err := srv.Select(ctx, dir, &matches, dagql.Selector{
+			Field: "glob",
+			Args: []dagql.NamedInput{
+				{Name: "pattern", Value: dagql.NewString("**/" + name)},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("glob %s: %w", name, err)
+		}
+		for _, match := range matches {
+			descendant := path.Dir(match.String())
+			if descendant == "/" || descendant == "" {
+				descendant = "."
+			}
+			root := cleanWorkspaceRelPath(filepath.Join(start, descendant))
+			rel, err := workspacePathRelativeToCwd(root, ws.Cwd)
+			if err != nil {
+				return nil, err
+			}
+			dirs = append(dirs, rel)
+		}
+	}
+	return dirs, nil
 }
 
 func isWorkspaceBasename(name string) bool {
