@@ -5474,8 +5474,11 @@ class EngineCache(Type):
         Parameters
         ----------
         use_default_policy:
-            Use the engine-wide default pruning policy if true, otherwise
-            prune the whole cache of any releasable entries.
+            Use enabled engine-wide default disk and structural policies. If
+            no default disk policy is enabled, the disk stage falls back to
+            pruning all releasable disk-cache entries. If false, explicit
+            options select stages; with no options, all releasable disk-cache
+            entries are pruned.
         max_used_space:
             Override the maximum disk space to keep before pruning (e.g.
             "200GB" or "80%").
@@ -5490,10 +5493,13 @@ class EngineCache(Type):
             or "50%").
         max_estimated_bytes:
             Override the maximum structural metadata estimate in absolute
-            bytes. The configured/default value is used when omitted.
+            bytes. Explicit values must be positive; the configured/default
+            value is used when omitted.
         target_estimated_bytes:
             Override the structural metadata estimate to target in absolute
-            bytes. The configured/default value is used when omitted.
+            bytes. Explicit values must be positive and lower than the
+            resolved maximum; the configured/default value is used when
+            omitted.
 
         Returns
         -------

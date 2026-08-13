@@ -1392,7 +1392,7 @@ export type EngineCacheEntrySetOpts = {
 
 export type EngineCachePruneOpts = {
   /**
-   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
    */
   useDefaultPolicy?: boolean
 
@@ -1417,12 +1417,12 @@ export type EngineCachePruneOpts = {
   targetSpace?: string
 
   /**
-   * Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.
+   * Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
    */
   maxEstimatedBytes?: number
 
   /**
-   * Override the structural metadata estimate to target in absolute bytes. The configured/default value is used when omitted.
+   * Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
    */
   targetEstimatedBytes?: number
 }
@@ -6866,13 +6866,13 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
-   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * @param opts.useDefaultPolicy Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
    * @param opts.maxUsedSpace Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
    * @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
    * @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
    * @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
-   * @param opts.maxEstimatedBytes Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.
-   * @param opts.targetEstimatedBytes Override the structural metadata estimate to target in absolute bytes. The configured/default value is used when omitted.
+   * @param opts.maxEstimatedBytes Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
+   * @param opts.targetEstimatedBytes Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
    */
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {

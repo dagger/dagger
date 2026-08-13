@@ -765,7 +765,7 @@ func (LocalCacheSuite) TestLocalCacheManualMetadataPruneCLI(ctx context.Context,
 			"--target-estimated-bytes=3221225472",
 		}).
 		Sync(ctx)
-	require.NoError(t, err, "explicit structural pruning must remain available when automatic GC is disabled")
+	require.NoError(t, err, "the CLI must accept 64-bit structural thresholds when automatic GC is disabled")
 }
 
 func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {

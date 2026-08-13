@@ -832,21 +832,34 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 }
 
 func (c *Cache) snapshotSessionResultIDs() map[sharedResultID]struct{} {
+	roots, _ := c.snapshotSessionResultIDsCancelable(nil)
+	return roots
+}
+
+func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChecker) (map[sharedResultID]struct{}, error) {
 	if c == nil {
-		return nil
+		return nil, nil
 	}
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
+	if err := checker.checkNow(); err != nil {
+		return nil, err
+	}
 	if len(c.sessionResultIDsBySession) == 0 {
-		return nil
+		return nil, nil
 	}
 	roots := make(map[sharedResultID]struct{})
 	for _, resultIDs := range c.sessionResultIDsBySession {
 		for resultID := range resultIDs {
+			if checker != nil {
+				if err := checker.check(); err != nil {
+					return nil, err
+				}
+			}
 			roots[resultID] = struct{}{}
 		}
 	}
-	return roots
+	return roots, nil
 }
 
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {

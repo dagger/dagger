@@ -332,7 +332,14 @@ holding the existing server `gcmu` for the complete request:
 
 When automatic GC is disabled, `useDefaultPolicy` does not enable the disabled
 structural policy. Explicit structural options still run because they are a
-direct operator action rather than automatic scheduling.
+direct operator action rather than automatic scheduling. No default disk
+policies are active in this state, so the existing manual disk path falls back
+to its all-releasable policy when `useDefaultPolicy=true`.
+
+Structural-only means that the disk-policy stage is skipped, not that the
+request cannot reclaim disk. Cutting persisted roots can release owned cache
+entries, and a successful structural removal invokes snapshot GC. Disk-policy
+retention rules and filters do not apply to the structural pass.
 
 Manual structural options are optional absolute byte integers. Each omitted
 member of the pair inherits the server's already-resolved configured/default
@@ -435,6 +442,11 @@ The cache briefly takes a snapshot of the information it needs:
 - active session roots
 
 Then it releases the lock and does the expensive reasoning outside the lock.
+Structural planning carries the request context through active-root snapshotting,
+graph snapshotting, active-closure traversal, candidate ordering, and ownership
+simulation. It checks cancellation between phases and at bounded intervals
+inside those O(N) loops, and discards partial planning state without cutting
+persisted roots when canceled.
 
 ### 2. Apply actual cuts later
 

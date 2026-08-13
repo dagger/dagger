@@ -244,6 +244,16 @@ func TestEngineLocalCachePruneModes(t *testing.T) {
 			opts:     core.EngineCachePruneOptions{UseDefaultPolicy: true},
 			wantDisk: true,
 		},
+		{
+			name: "disabled default policy with explicit metadata",
+			opts: core.EngineCachePruneOptions{
+				UseDefaultPolicy:     true,
+				MaxEstimatedBytes:    &maximum,
+				TargetEstimatedBytes: &target,
+			},
+			wantDisk:     true,
+			wantMetadata: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			disk, metadata := engineLocalCachePruneModes(tc.opts, tc.automaticGC)
@@ -262,6 +272,7 @@ func TestResolveEngineLocalCacheMetadataPruneOptions(t *testing.T) {
 	maximumOverride := int64(1200)
 	targetOverride := int64(600)
 	zero := int64(0)
+	negative := int64(-1)
 	conflictingMaximum := int64(600)
 	conflictingTarget := int64(1000)
 
@@ -307,6 +318,16 @@ func TestResolveEngineLocalCacheMetadataPruneOptions(t *testing.T) {
 		{
 			name:      "zero target",
 			opts:      core.EngineCachePruneOptions{TargetEstimatedBytes: &zero},
+			wantError: "targetEstimatedBytes must be positive and lower",
+		},
+		{
+			name:      "negative maximum",
+			opts:      core.EngineCachePruneOptions{MaxEstimatedBytes: &negative},
+			wantError: "maxEstimatedBytes must be positive",
+		},
+		{
+			name:      "negative target",
+			opts:      core.EngineCachePruneOptions{TargetEstimatedBytes: &negative},
 			wantError: "targetEstimatedBytes must be positive and lower",
 		},
 		{
@@ -374,6 +395,32 @@ func TestManualMetadataPruneOnlySkipsDiskAndProtectsRoots(t *testing.T) {
 	require.NoError(t, cache.ReleaseSession(activeCtx, "manual-metadata-active"))
 }
 
+func TestManualMetadataPruneBelowMaximumIsNoOp(t *testing.T) {
+	cache := newGCTestCache(t)
+	sizeCalls := &atomic.Int32{}
+	ctx := addGCTestPersistable(t, cache, "manual-metadata-below-maximum", "manualMetadataBelowMaximum", gcTestTrackedInt{
+		Int:       dagql.NewInt(1),
+		sizeBytes: 100,
+		identity:  "manual-metadata-below-maximum",
+		sizeCalls: sizeCalls,
+	})
+	require.NoError(t, cache.ReleaseSession(ctx, "manual-metadata-below-maximum"))
+
+	before := cache.MetadataEstimate()
+	maximum := before.EstimatedBytes + 1
+	target := int64(1)
+	srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+	set, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+		MaxEstimatedBytes:    &maximum,
+		TargetEstimatedBytes: &target,
+	})
+	require.NoError(t, err)
+	require.Zero(t, set.EntryCount)
+	require.Zero(t, sizeCalls.Load(), "metadata-only pruning must not measure physical disk usage")
+	require.Equal(t, 1, cache.EntryStats().RetainedCalls, "an estimate below the maximum must not be pruned toward the target")
+	require.Equal(t, before, cache.MetadataEstimate())
+}
+
 func TestManualCombinedDiskAndMetadataPrune(t *testing.T) {
 	cache := newGCTestCache(t)
 	sizeCalls := &atomic.Int32{}
@@ -398,7 +445,10 @@ func TestManualCombinedDiskAndMetadataPrune(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, set.EntryCount, "the detailed response contains only the disk-stage removal")
-	require.Greater(t, sizeCalls.Load(), int32(0), "the disk stage must run before the structural stage")
+	require.Greater(t, sizeCalls.Load(), int32(0), "the combined request must run the disk stage")
+	// The disk report contains the physically sized root while no roots remain,
+	// proving that disk pruning ran before structural pruning removed the
+	// zero-disk root left behind by the disk stage.
 	require.Zero(t, cache.EntryStats().RetainedCalls, "both stages must complete before the manual call returns")
 }
 
@@ -481,20 +531,47 @@ func TestManualMetadataPruneCancellationAndReleaseError(t *testing.T) {
 }
 
 func TestManualCombinedPruneValidatesBeforeMutation(t *testing.T) {
-	cache := newGCTestCache(t)
-	ctx := addGCTestPersistable(t, cache, "manual-combined-invalid", "manualCombinedInvalid", dagql.NewInt(1))
-	require.NoError(t, cache.ReleaseSession(ctx, "manual-combined-invalid"))
-	maximum := cache.MetadataEstimate().EstimatedBytes - 1
-	target := int64(1)
+	t.Run("disk options before metadata mutation", func(t *testing.T) {
+		cache := newGCTestCache(t)
+		ctx := addGCTestPersistable(t, cache, "manual-combined-invalid-disk", "manualCombinedInvalidDisk", dagql.NewInt(1))
+		require.NoError(t, cache.ReleaseSession(ctx, "manual-combined-invalid-disk"))
+		maximum := cache.MetadataEstimate().EstimatedBytes - 1
+		target := int64(1)
 
-	srv := &Server{rootDir: t.TempDir(), engineCache: cache}
-	_, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
-		MaxUsedSpace:         "not-a-size",
-		MaxEstimatedBytes:    &maximum,
-		TargetEstimatedBytes: &target,
+		srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+		_, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+			MaxUsedSpace:         "not-a-size",
+			MaxEstimatedBytes:    &maximum,
+			TargetEstimatedBytes: &target,
+		})
+		require.ErrorContains(t, err, "invalid maxUsedSpace value")
+		require.Equal(t, 1, cache.EntryStats().RetainedCalls, "neither stage may mutate before the complete request validates")
 	})
-	require.ErrorContains(t, err, "invalid maxUsedSpace value")
-	require.Equal(t, 1, cache.EntryStats().RetainedCalls, "neither stage may mutate before the complete request validates")
+
+	t.Run("metadata options before disk mutation", func(t *testing.T) {
+		cache := newGCTestCache(t)
+		sizeCalls := &atomic.Int32{}
+		ctx := addGCTestPersistable(t, cache, "manual-combined-invalid-metadata", "manualCombinedInvalidMetadata", gcTestTrackedInt{
+			Int:       dagql.NewInt(1),
+			sizeBytes: 100,
+			identity:  "manual-combined-invalid-metadata",
+			sizeCalls: sizeCalls,
+		})
+		require.NoError(t, cache.ReleaseSession(ctx, "manual-combined-invalid-metadata"))
+		maximum := int64(0)
+		target := int64(1)
+
+		srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+		_, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+			MaxUsedSpace:         "1",
+			TargetSpace:          "1",
+			MaxEstimatedBytes:    &maximum,
+			TargetEstimatedBytes: &target,
+		})
+		require.ErrorContains(t, err, "maxEstimatedBytes must be positive")
+		require.Zero(t, sizeCalls.Load(), "disk pruning must not measure physical usage before metadata options validate")
+		require.Equal(t, 1, cache.EntryStats().RetainedCalls, "neither stage may mutate before the complete request validates")
+	})
 }
 
 func TestLocalCacheDiskPressureGCNeeded(t *testing.T) {

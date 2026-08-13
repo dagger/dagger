@@ -57,8 +57,11 @@ policy](./engine.mdx), use the following command:
 dagger -m core api call engine local-cache prune --use-default-policy
 ```
 
-If automatic garbage collection is disabled, `--use-default-policy` does not
-re-enable its policies.
+If automatic garbage collection is disabled, no default disk policies are
+active. For compatibility, `--use-default-policy` then falls back to the same
+all-releasable disk prune as a request with no options; it does not enable the
+structural stage. Use explicit structural options to run that stage while
+automatic garbage collection is disabled.
 
 Structural metadata can also be pruned explicitly with absolute byte limits:
 
@@ -68,13 +71,20 @@ dagger -m core api call engine local-cache prune \
   --target-estimated-bytes=3221225472
 ```
 
+These example values match the built-in 4 GiB maximum and 3 GiB target. A
+structural pass removes roots only when the current estimate exceeds the
+maximum.
+
 Supplying either structural option enables structural pruning for that request,
 even when automatic garbage collection is disabled. An omitted option inherits
 the engine's resolved configured/default value. Explicit values must be
 positive, and the resolved target must be lower than the resolved maximum.
 Percentages and size strings are not accepted.
 
-A request containing only structural options does not prune disk cache entries.
-Disk options and structural options can be combined; the disk stage runs first,
-followed by the structural stage in the same serialized request. Active session
-closures and engine-lifetime unpruneable roots remain protected in both stages.
+A request containing only structural options does not run the disk-policy
+stage. Structural pruning can still release cache entries and trigger snapshot
+garbage collection, which may reclaim disk; disk-policy retention rules and
+filters do not constrain that structural pass. Disk options and structural
+options can be combined; the disk stage runs first, followed by the structural
+stage in the same serialized request. Active session closures and
+engine-lifetime unpruneable roots remain protected in both stages.

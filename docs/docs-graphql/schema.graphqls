@@ -2382,7 +2382,10 @@ type EngineCache implements Node {
   """Prune the cache of releaseable entries"""
   prune(
     """
-    Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    Use enabled engine-wide default disk and structural policies. If no default
+    disk policy is enabled, the disk stage falls back to pruning all releasable
+    disk-cache entries. If false, explicit options select stages; with no
+    options, all releasable disk-cache entries are pruned.
     """
     useDefaultPolicy: Boolean = false
 
@@ -2407,12 +2410,15 @@ type EngineCache implements Node {
     targetSpace: String = ""
 
     """
-    Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.
+    Override the maximum structural metadata estimate in absolute bytes.
+    Explicit values must be positive; the configured/default value is used when
+    omitted.
     """
     maxEstimatedBytes: Int
 
     """
-    Override the structural metadata estimate to target in absolute bytes. The
+    Override the structural metadata estimate to target in absolute bytes.
+    Explicit values must be positive and lower than the resolved maximum; the
     configured/default value is used when omitted.
     """
     targetEstimatedBytes: Int
