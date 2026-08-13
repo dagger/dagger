@@ -1077,14 +1077,7 @@ func workspaceAddressLooksRemote(address string) bool {
 	if address == "" || strings.HasPrefix(address, "file://") {
 		return false
 	}
-	switch gitref.FastKindCheck(address, "") {
-	case gitref.KindLocal:
-		return false
-	case gitref.KindGit:
-		return true
-	default:
-		return strings.Contains(address, ".") && !strings.HasPrefix(address, "/")
-	}
+	return !workspacepkg.IsLocalRef(address, "")
 }
 
 func parseWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, bool, error) {

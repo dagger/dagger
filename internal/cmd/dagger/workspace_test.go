@@ -541,6 +541,10 @@ func TestWorkspaceAddressLooksRemote(t *testing.T) {
 	require.False(t, workspaceAddressLooksRemote("."))
 	require.False(t, workspaceAddressLooksRemote("./services/api"))
 	require.False(t, workspaceAddressLooksRemote("file:///repo/services/api"))
+
+	// A dot below the first path segment names a directory, not a host.
+	require.False(t, workspaceAddressLooksRemote("services/api.v2"))
+	require.False(t, workspaceAddressLooksRemote("common/.dagger/mymod"))
 }
 
 func TestWorkspaceRemoteVersionKind(t *testing.T) {
