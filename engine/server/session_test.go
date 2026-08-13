@@ -3,17 +3,22 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -38,11 +43,11 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	// Without the lock, ranging the map while another goroutine writes it is a
 	// fatal "concurrent map iteration and map write" (caught here under -race).
 	sess := &daggerSession{
-		state: sessionStateInitialized,
 		clients: map[string]*daggerClient{
 			"client-a": {clientID: "client-a"},
 		},
 	}
+	sess.state.Store(sessionStateInitialized)
 	srv := &Server{
 		daggerSessions: map[string]*daggerSession{
 			"session-a": sess,
@@ -85,13 +90,12 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
 	t.Parallel()
 
-	// Regression test: clientFromIDs must read sess.state/sess.clients under
-	// stateMu while another goroutine reassigns those fields during session
-	// initialization. Without the stateMu gate this is a data race (caught
+	// Regression test: clientFromIDs must read sess.state (atomically) and
+	// sess.clients (under clientMu) while another goroutine mutates them during
+	// session initialization. Without that discipline this is a data race (caught
 	// here under -race).
-	sess := &daggerSession{
-		state: sessionStateUninitialized,
-	}
+	sess := &daggerSession{}
+	sess.state.Store(sessionStateUninitialized)
 	srv := &Server{
 		daggerSessions: map[string]*daggerSession{
 			"session-a": sess,
@@ -124,29 +128,424 @@ func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
 	<-started
 
 	for i := 0; i < 1000; i++ {
-		sess.stateMu.Lock()
+		sess.clientMu.Lock()
 		sess.clients = map[string]*daggerClient{
 			"client-a": {clientID: "client-a"},
 		}
-		sess.state = sessionStateInitialized
-		sess.state = sessionStateUninitialized
+		sess.clientMu.Unlock()
+		sess.state.Store(sessionStateInitialized)
+		sess.state.Store(sessionStateUninitialized)
+		sess.clientMu.Lock()
 		sess.clients = nil
-		sess.stateMu.Unlock()
+		sess.clientMu.Unlock()
 	}
 
 	client := &daggerClient{clientID: "client-a"}
-	sess.stateMu.Lock()
 	sess.clientMu.Lock()
 	sess.clients = map[string]*daggerClient{
 		client.clientID: client,
 	}
 	sess.clientMu.Unlock()
-	sess.state = sessionStateInitialized
-	sess.stateMu.Unlock()
+	sess.state.Store(sessionStateInitialized)
 
 	got, err := srv.clientFromIDs("session-a", client.clientID)
 	require.NoError(t, err)
 	require.Same(t, client, got)
+}
+
+func TestClientsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
+	t.Parallel()
+
+	// Regression for the >15s active-clients stall (Discord: "Session lock might
+	// be causing unwanted session shutdowns"): Clients() must never acquire a
+	// session's lifecycleMu. A session stuck initializing or tearing down holds
+	// lifecycleMu for a long time (teardown has a 60s safeguard), but that must
+	// not stall the active-clients API the cloud keepalive polls.
+	live := &daggerSession{sessionID: "live", mainClientCallerID: "main-live"}
+	live.state.Store(sessionStateInitialized)
+	busy := &daggerSession{sessionID: "busy", mainClientCallerID: "main-busy"}
+	busy.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{
+		"live": live,
+		"busy": busy,
+	}}
+
+	// Simulate an in-progress init/teardown holding busy's lifecycleMu.
+	busy.lifecycleMu.Lock()
+	defer busy.lifecycleMu.Unlock()
+
+	done := make(chan []string, 1)
+	go func() { done <- srv.Clients() }()
+
+	select {
+	case clients := <-done:
+		require.ElementsMatch(t, []string{"main-live", "main-busy"}, clients)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Clients() blocked while a session's lifecycleMu was held")
+	}
+}
+
+func TestActiveClientIDsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
+	t.Parallel()
+
+	// activeClientIDs() (the client-DB GC ticker) must also never acquire a
+	// session's lifecycleMu, for the same reason as Clients().
+	live := &daggerSession{
+		sessionID: "live",
+		clients:   map[string]*daggerClient{"c-live": {clientID: "c-live"}},
+	}
+	live.state.Store(sessionStateInitialized)
+	busy := &daggerSession{
+		sessionID: "busy",
+		clients:   map[string]*daggerClient{"c-busy": {clientID: "c-busy"}},
+	}
+	busy.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{
+		"live": live,
+		"busy": busy,
+	}}
+
+	busy.lifecycleMu.Lock()
+	defer busy.lifecycleMu.Unlock()
+
+	done := make(chan map[string]bool, 1)
+	go func() { done <- srv.activeClientIDs() }()
+
+	select {
+	case keep := <-done:
+		require.True(t, keep["c-live"], "expected live session's client to be kept")
+		require.True(t, keep["c-busy"], "expected initialized busy session's client to be kept")
+	case <-time.After(10 * time.Second):
+		t.Fatal("activeClientIDs() blocked while a session's lifecycleMu was held")
+	}
+}
+
+func TestGetOrInitClientReturnsFastForRemovedTombstone(t *testing.T) {
+	t.Parallel()
+
+	// A session mid-teardown holds lifecycleMu and is marked removed (a tombstone
+	// left in the registry until cleanup completes). A same-id getOrInitClient
+	// must bail immediately via the lock-free removed pre-check rather than block
+	// on lifecycleMu for the (possibly ~60s) teardown.
+	tombstone := &daggerSession{sessionID: "s", mainClientCallerID: "m"}
+	tombstone.state.Store(sessionStateRemoved)
+	srv := &Server{daggerSessions: map[string]*daggerSession{"s": tombstone}}
+
+	// Hold lifecycleMu to simulate an in-progress teardown.
+	tombstone.lifecycleMu.Lock()
+	defer tombstone.lifecycleMu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+			ClientMetadata: &engine.ClientMetadata{
+				SessionID:         "s",
+				ClientID:          "m",
+				ClientSecretToken: "token",
+			},
+		})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		var retryable flightcontrol.RetryableError
+		require.ErrorAs(t, err, &retryable, "removed tombstone should yield a retryable error")
+	case <-time.After(10 * time.Second):
+		t.Fatal("getOrInitClient blocked on lifecycleMu for a removed tombstone")
+	}
+}
+
+func TestClientFromIDsStateGating(t *testing.T) {
+	t.Parallel()
+
+	// clientFromIDs gates on the session's (atomic) lifecycle state without ever
+	// taking lifecycleMu, and never returns a client whose session isn't usable.
+	client := &daggerClient{clientID: "c"}
+	sess := &daggerSession{
+		sessionID: "s",
+		clients:   map[string]*daggerClient{"c": client},
+	}
+	srv := &Server{daggerSessions: map[string]*daggerSession{"s": sess}}
+
+	// uninitialized: not yet usable.
+	sess.state.Store(sessionStateUninitialized)
+	_, err := srv.clientFromIDs("s", "c")
+	require.ErrorContains(t, err, "not initialized")
+
+	// removed: retryable not-found (session is tearing down).
+	sess.state.Store(sessionStateRemoved)
+	_, err = srv.clientFromIDs("s", "c")
+	var retryable flightcontrol.RetryableError
+	require.ErrorAs(t, err, &retryable)
+
+	// initialized: returns the client.
+	sess.state.Store(sessionStateInitialized)
+	got, err := srv.clientFromIDs("s", "c")
+	require.NoError(t, err)
+	require.Same(t, client, got)
+}
+
+func TestSessionLifecycleObserverConcurrency(t *testing.T) {
+	t.Parallel()
+
+	// Stress the observer paths (Clients/activeClientIDs/clientFromIDs) against
+	// concurrent session churn. The churners exercise the observer-visible state
+	// the way the real lifecycle does — registry writes under daggerSessionsMu,
+	// the clients map under clientMu, the lifecycle state via the atomic, and a
+	// pointer-conditional deleteSession on teardown — but deliberately do NOT take
+	// lifecycleMu, since the whole point of the redesign is that observers don't
+	// depend on it. Run under -race to catch data races; the observers must also
+	// never block (completing while churn runs is the liveness assertion).
+	srv := &Server{daggerSessions: map[string]*daggerSession{}}
+
+	const (
+		churners         = 4
+		cyclesPerChurner = 1000
+	)
+	var wg sync.WaitGroup
+	for i := range churners {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			id := fmt.Sprintf("s%d", n)
+			for range cyclesPerChurner {
+				sess := &daggerSession{
+					sessionID:          id,
+					mainClientCallerID: "m" + id,
+					clients:            map[string]*daggerClient{},
+				}
+				// publish, then populate clients, then flip to initialized last.
+				srv.daggerSessionsMu.Lock()
+				srv.daggerSessions[id] = sess
+				srv.daggerSessionsMu.Unlock()
+				sess.clientMu.Lock()
+				sess.clients["c"] = &daggerClient{clientID: "c"}
+				sess.clientMu.Unlock()
+				sess.state.Store(sessionStateInitialized)
+
+				// teardown: removed first, then pointer-conditional delete.
+				sess.state.Store(sessionStateRemoved)
+				srv.deleteSession(sess)
+			}
+		}(i)
+	}
+
+	churnDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(churnDone)
+	}()
+
+	// Hammer the observers concurrently until every churner has finished its
+	// fixed workload, so the race window is exercised deterministically rather
+	// than depending on scheduler timing.
+	for {
+		select {
+		case <-churnDone:
+			return
+		default:
+		}
+		_ = srv.Clients()
+		_ = srv.activeClientIDs()
+		_, _ = srv.clientFromIDs("s0", "c")
+	}
+}
+
+// newTeardownTestServer builds a Server with just enough real state for
+// removeDaggerSession to run: an empty in-memory dagql cache and a stubbed GC
+// callback (scheduled via time.AfterFunc at the end of teardown).
+func newTeardownTestServer(t *testing.T) *Server {
+	t.Helper()
+	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
+	require.NoError(t, err)
+	return &Server{
+		daggerSessions: map[string]*daggerSession{},
+		engineCache:    cache,
+		throttledGC:    func() {},
+	}
+}
+
+// newTeardownTestSession publishes an initialized session whose main client
+// has the given number of active connections. dagqlInFlight starts at 1 so
+// teardown deterministically blocks in the in-flight drain until
+// releaseTeardownDrain is called.
+func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *daggerClient) {
+	client := &daggerClient{
+		clientID:    mainClientID,
+		activeCount: activeCount,
+	}
+	sess := &daggerSession{
+		sessionID:          sessionID,
+		mainClientCallerID: mainClientID,
+		clients:            map[string]*daggerClient{mainClientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		shutdownCh:         make(chan struct{}),
+	}
+	client.daggerSession = sess
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.dagqlInFlight = 1
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.state.Store(sessionStateInitialized)
+
+	srv.daggerSessionsMu.Lock()
+	srv.daggerSessions[sessionID] = sess
+	srv.daggerSessionsMu.Unlock()
+	return sess, client
+}
+
+func releaseTeardownDrain(sess *daggerSession) {
+	sess.dagqlMu.Lock()
+	sess.dagqlInFlight = 0
+	sess.dagqlCond.Broadcast()
+	sess.dagqlMu.Unlock()
+}
+
+func sessionInRegistry(srv *Server, sessionID string) bool {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	_, ok := srv.daggerSessions[sessionID]
+	return ok
+}
+
+func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
+	t.Parallel()
+
+	// Regression for the client-side `shutdown: ... context deadline exceeded`
+	// timeout: the main client's last connection cleanup runs in the request
+	// handler before the /shutdown response is flushed, so it must only
+	// SCHEDULE teardown, never run it. Teardown here is deterministically
+	// blocked in the in-flight dagql drain; the cleanup must return anyway.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.releaseClientConnection(context.Background(), sess, client)
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("last-connection cleanup blocked on session teardown")
+	}
+
+	// The background reap marks the session removed (tombstone) but stays
+	// blocked in the drain, so the registry entry must survive for now.
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond, "background teardown never started")
+	require.True(t, sessionInRegistry(srv, "s"), "tombstone dropped before teardown finished")
+
+	releaseTeardownDrain(sess)
+
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond, "session never finished background teardown")
+	select {
+	case <-sess.shutdownCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("session shutdownCh never closed by background teardown")
+	}
+}
+
+func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
+	t.Parallel()
+
+	// While a background reap is mid-teardown (removed tombstone in the
+	// registry, lifecycleMu held), a same-id getOrInitClient must bail out
+	// fast with a retryable error instead of blocking on the teardown.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	require.NoError(t, srv.releaseClientConnection(context.Background(), sess, client))
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+			ClientMetadata: &engine.ClientMetadata{
+				SessionID:         "s",
+				ClientID:          "m",
+				ClientSecretToken: "token",
+			},
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		var retryable flightcontrol.RetryableError
+		require.ErrorAs(t, err, &retryable)
+	case <-time.After(10 * time.Second):
+		t.Fatal("same-id getOrInitClient blocked on background teardown")
+	}
+
+	releaseTeardownDrain(sess)
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond)
+}
+
+func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
+	t.Parallel()
+
+	// A new main-client connection can land between the last disconnect and
+	// the scheduled reap running. The reap re-checks activeCount under
+	// lifecycleMu and must leave the now-live session alone.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	// Simulate the reconnect winning the race: activeCount is back above zero
+	// by the time the reap runs.
+	client.stateMu.Lock()
+	client.activeCount = 1
+	client.stateMu.Unlock()
+
+	srv.reapDaggerSession(context.Background(), sess, client)
+
+	require.Equal(t, sessionStateInitialized, sess.state.Load())
+	require.True(t, sessionInRegistry(srv, "s"))
+	select {
+	case <-sess.shutdownCh:
+		t.Fatal("reap tore down a session with a live main client")
+	default:
+	}
+}
+
+func TestConcurrentReapsSingleTeardown(t *testing.T) {
+	t.Parallel()
+
+	// Duplicate reaps can be scheduled (disconnect, reconnect, disconnect).
+	// Whichever acquires lifecycleMu first tears down; the loser must observe
+	// the removed state and no-op (double teardown would double-close
+	// shutdownCh and panic).
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 0)
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srv.reapDaggerSession(context.Background(), sess, client)
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond)
+	releaseTeardownDrain(sess)
+	wg.Wait()
+
+	require.False(t, sessionInRegistry(srv, "s"))
+	select {
+	case <-sess.shutdownCh:
+	default:
+		t.Fatal("session shutdownCh not closed after teardown")
+	}
 }
 
 func TestPendingLegacyModule(t *testing.T) {
