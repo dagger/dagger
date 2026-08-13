@@ -22,6 +22,9 @@ func TestParseReferenceTokens(t *testing.T) {
 		{"look at @~/a.txt, @~/b.txt;", []string{"~/a.txt", "~/b.txt"}},
 		// quoted tokens (quotes stripped; whitespace still delimits words)
 		{`open @"foo.txt"`, []string{`foo.txt`}},
+		// URLs survive tokenization, trailing punctuation still stripped
+		{"curl @https://localhost:6060/api.", []string{"https://localhost:6060/api"}},
+		{"(also @http://localhost:8080)", []string{"http://localhost:8080"}},
 		// non-references are ignored
 		{"email me@example.com", nil},
 		{"a bare @ is ignored", nil},
@@ -65,6 +68,57 @@ func TestExpandReferencePath(t *testing.T) {
 	got, err = expandReferencePath("/etc/hosts")
 	require.NoError(t, err)
 	require.Equal(t, "/etc/hosts", got)
+}
+
+func TestParseReferenceURL(t *testing.T) {
+	cases := []struct {
+		tok  string
+		host string
+		port int
+		ok   bool
+	}{
+		{"https://localhost:6060", "localhost", 6060, true},
+		{"http://localhost:8080/metrics?x=1", "localhost", 8080, true},
+		// well-known schemes imply a port
+		{"http://localhost", "localhost", 80, true},
+		{"https://localhost", "localhost", 443, true},
+		{"ws://localhost/socket", "localhost", 80, true},
+		{"wss://localhost", "localhost", 443, true},
+		// any scheme works with an explicit port
+		{"postgres://127.0.0.1:5432/db", "127.0.0.1", 5432, true},
+		{"tcp://localhost:9000", "localhost", 9000, true},
+		// unknown scheme without an explicit port: no way to pick one
+		{"postgres://localhost/db", "", 0, false},
+		// out-of-range port
+		{"http://localhost:0", "", 0, false},
+		// host paths and other non-URLs keep their path meaning
+		{"~/foo/bar.txt", "", 0, false},
+		{"./rel.go", "", 0, false},
+		{"localhost:6060", "", 0, false},
+		{"me@example.com", "", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tok, func(t *testing.T) {
+			u, port, ok := parseReferenceURL(tc.tok)
+			require.Equal(t, tc.ok, ok)
+			if !tc.ok {
+				return
+			}
+			require.Equal(t, tc.host, u.Hostname())
+			require.Equal(t, tc.port, port)
+		})
+	}
+}
+
+func TestTunnelURL(t *testing.T) {
+	u, port, ok := parseReferenceURL("https://localhost:6060/metrics?x=1")
+	require.True(t, ok)
+	require.Equal(t, "https://svc123:6060/metrics?x=1", tunnelURL(u, "svc123", port))
+
+	// A scheme-default port becomes explicit in the remapped address.
+	u, port, ok = parseReferenceURL("http://localhost")
+	require.True(t, ok)
+	require.Equal(t, "http://svc123:80", tunnelURL(u, "svc123", port))
 }
 
 func TestCompleteReferencePath(t *testing.T) {
@@ -129,6 +183,13 @@ func TestReferenceAnnotation(t *testing.T) {
 	})
 	require.Contains(t, out, "~/foo/bar.txt → .refs/~/foo/bar.txt")
 	require.Contains(t, out, "~/proj (directory) → .refs/~/proj")
+}
+
+func TestTunnelAnnotation(t *testing.T) {
+	out := tunnelAnnotation([]tunnelInfo{
+		{original: "https://localhost:6060", tunneled: "https://svc123:6060"},
+	})
+	require.Contains(t, out, "https://localhost:6060 (as typed) → https://svc123:6060")
 }
 
 func TestRewriteReferenceTokens(t *testing.T) {
