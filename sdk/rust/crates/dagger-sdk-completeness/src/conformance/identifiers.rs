@@ -168,6 +168,9 @@ impl PlatformDescriptor {
 pub enum ToolchainRole {
     PreflightHost,
     ArtifactBuilder,
+    EngineBase,
+    RustToolchain,
+    GoToolchain,
     NativeVerification,
     ArtifactScanner,
 }

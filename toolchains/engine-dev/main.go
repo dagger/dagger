@@ -245,6 +245,33 @@ func (dev *EngineDev) ContainerWithRustSDKContent(
 	return dev.container(ctx, platform, gpuSupport, version, rustSDKContent)
 }
 
+// ContainerWithFocusedRustSDKContent returns the exact focused Rust target without starting it.
+// Keeping export on the same constructor as the service path prevents sign-off from acquiring a
+// second, subtly different engine/CLI/Go-runtime composition.
+func (dev *EngineDev) ContainerWithFocusedRustSDKContent(
+	ctx context.Context,
+	rustSDKContent *RustEngineContent,
+	baseImage string,
+	baseRevision string,
+	targetRepository string,
+	targetRevision string,
+	// +optional
+	platform dagger.Platform,
+	// +optional
+	version string,
+) (*dagger.Container, error) {
+	return dev.focusedRustContainer(
+		ctx,
+		rustSDKContent,
+		baseImage,
+		baseRevision,
+		targetRepository,
+		targetRevision,
+		platform,
+		version,
+	)
+}
+
 func (dev *EngineDev) container(
 	ctx context.Context,
 	platform dagger.Platform,

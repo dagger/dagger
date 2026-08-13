@@ -94,12 +94,50 @@ standalone-client fixture materializes one SDK baseline and fans out isolated Ca
 projects from it; investigate fixture sequencing and its owning input before a broader
 rerun.
 
+Treat GitHub Actions as confirmation, not as the diagnostic loop. Before the first
+push of a checkpoint, replay every affected required job against the exact candidate
+tree: run the native macOS slice locally, run the Linux workflow commands on the
+dedicated development host, and run workflow/security source policy locally. Keep the
+pull request in draft until those results agree. If a hosted-only boundary cannot be
+reproduced, record that fact and the smallest intentional hosted check rather than
+discovering ordinary build, lint, packaging, or policy failures through repeated
+whole-matrix reruns. Windows remains outside the ordinary development gate until the
+explicit ultimate sign-off matrix described below.
+
+The checked-in entry points are the CI contract and the preflight interface. Run
+`./scripts/ci-platform-preflight.sh platform-observation-linux.json` on the dedicated
+Linux host, use `platform-observation-macos.json` for the native macOS run, and run
+`./scripts/ci-security-preflight.sh all` on Linux after installing the same pinned
+`cargo-deny` version as CI. GitHub invokes the individual security phases from that
+same script, so a successful exact-tree devbox run covers the commands the hosted job
+will execute rather than a hand-maintained approximation.
+
+An unpushed macOS candidate transferred to Linux must not acquire AppleDouble sidecar
+files. Create archive input with `COPYFILE_DISABLE=1`, exclude build and VCS metadata,
+and reject the extracted candidate if it contains any `._*` file before running the
+shared scripts. Those sidecars are real extra inputs to recursive source hashing even
+though they are invisible in the macOS checkout.
+
 An engine is not a local checkpoint fallback. If a contract cannot be represented by
 the direct production harness, document the precise model gap and smallest proposed
 sign-off case for maintainer approval. Exact-engine cases run only through the bounded
 SDK sign-off workflow documented in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
 Standalone-client exact-engine cases follow the same separation and remain the
 deferred five-case inventory in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
+
+The `Rust SDK Development Platforms` workflow exercises Linux and macOS during
+ordinary fork development. It deliberately does not admit a `PortablePlatformMatrix`:
+that durable claim requires exact current Linux, macOS, and Windows observations and
+remains an ultimate SDK sign-off obligation.
+
+For focused native Windows iteration, maintainers can manually dispatch the
+`Rust SDK Windows Preflight` GitHub workflow for the branch under test. It runs the
+same fixed, engine-free native producer on a clean GitHub-hosted Windows 2025 runner,
+fetches the exact public revision without credentials, and publishes only a bounded
+job summary. It does not use a cross-run cache, run another SDK, generate
+repository-wide content, or start Dagger. The preflight can expose Windows-specific
+failures before a feature pull request, but it does not by itself admit the three-OS
+matrix or close the ultimate sign-off obligation.
 
 For non-module work whose owning contract genuinely requires a running Dagger engine,
 the relevant repository checks may be run through Dagger:

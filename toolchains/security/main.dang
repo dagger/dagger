@@ -2,6 +2,7 @@ pub description = "A toolchain for supply chain security of the Dagger project"
 
 type Security {
   let source: Directory!
+  let trivyImage = "aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c"
 
   new(
     ws: Workspace!,
@@ -15,7 +16,7 @@ type Security {
   }
 
   let trivyBase = container
-    .from("aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c")
+    .from(trivyImage)
     .withMountedCache(
       path: "/root/.cache",
       cache: cacheVolume("trivy-cache"),
@@ -67,5 +68,38 @@ type Security {
       .sync
 
     null
+  }
+
+  """
+  Scan one existing exact-target OCI archive without rebuilding it or scanning source.
+
+  The returned directory is raw bounded scanner evidence. Rust owns canonical translation,
+  payload binding, finding policy, and the final security report.
+  """
+  pub scanExactArtifact(artifact: File!): Directory! {
+    trivyBase
+      .withMountedFile("/artifact/engine.oci.tar.zst", artifact)
+      .withExec([
+        "sh", "-euc", """
+          mkdir -p /scan-output
+          start=$(date +%s)
+          trivy image \
+            --scanners=vuln \
+            --pkg-types=os,library \
+            --exit-code=0 \
+            --format=json \
+            --output=/scan-output/findings.json \
+            --input=/artifact/engine.oci.tar.zst
+          end=$(date +%s)
+          elapsed=$(( (end - start) * 1000 ))
+          if [ "$elapsed" -eq 0 ]; then elapsed=1; fi
+          test "$(wc -c < /scan-output/findings.json)" -le 16777216
+          trivy --version --format=json > /scan-output/scanner-version.json
+          cp /root/.cache/trivy/db/metadata.json /scan-output/database-metadata.json
+          sha256sum /artifact/engine.oci.tar.zst > /scan-output/payload.sha256
+          printf '%s\n' "$elapsed" > /scan-output/elapsed-millis
+        """,
+      ])
+      .directory("/scan-output")
   }
 }

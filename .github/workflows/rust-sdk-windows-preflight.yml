@@ -1,0 +1,83 @@
+name: Rust SDK Windows Preflight
+
+on:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: rust-sdk-windows-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-windows:
+    name: rust-sdk-windows-preflight
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: sdk/rust
+    steps:
+      - name: Fetch the exact public revision without credentials
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          if ($env:SOURCE_REPOSITORY -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+            throw "GitHub repository identity is not safe for anonymous fetch"
+          }
+          if ($env:SOURCE_REVISION -notmatch '^[0-9a-f]{40}$') {
+            throw "GitHub revision is not an exact SHA-1 identity"
+          }
+
+          git init .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git remote add origin "https://github.com/$env:SOURCE_REPOSITORY.git"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -c protocol.version=2 fetch --no-tags --depth=1 origin $env:SOURCE_REVISION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git checkout --detach --force FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the fixed native producer
+        run: cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
+      - name: Exercise the native Rust SDK and record its observation
+        shell: pwsh
+        run: |
+          $producer = "target/debug/dagger-rust-sdk-platform.exe"
+          & $producer native --output platform-observation-windows-preflight.json
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+      - name: Publish the bounded observation summary
+        shell: pwsh
+        run: |
+          $path = "platform-observation-windows-preflight.json"
+          $observation = Get-Content -Path $path -Raw | ConvertFrom-Json
+          if (
+            $observation.platform.operating_system -ne "windows" -or
+            $observation.outcome -ne "passed" -or
+            !$observation.native_execution -or
+            $observation.dagger_invocations -ne 0 -or
+            $observation.engine_starts -ne 0 -or
+            $observation.docker_invocations -ne 0 -or
+            $observation.other_sdk_invocations -ne 0
+          ) {
+            throw "Native observation violates the engine-free Windows contract"
+          }
+
+          $digest = (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          $summary = @(
+            "## Windows preflight observation",
+            "",
+            "- Revision: ``$env:GITHUB_SHA``",
+            "- Platform: ``$($observation.platform.operating_system)/$($observation.platform.architecture)``",
+            "- Rust: ``$($observation.rust_version)``",
+            "- Outcome: ``$($observation.outcome)``",
+            "- Observation: ``sha256:$digest``",
+            "- Dagger / engine / Docker / other SDK invocations: ``0 / 0 / 0 / 0``"
+          )
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $summary | Write-Output

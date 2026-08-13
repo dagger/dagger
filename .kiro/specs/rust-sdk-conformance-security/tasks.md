@@ -428,13 +428,13 @@
       or unsafe identity must reject the whole observation.
     - _Requirements: 10.1-10.17_
 
-- [x] 16. Checkpoint: native-platform and security policy are green
+- [x] 16. Checkpoint: development native-platform and security policy are green
   - Run formatting; locked platform, security, provenance, exception, and canary tests;
     Properties 16–20; Cargo Deny when dependency/security inputs changed; source-policy
     tests; and focused warning-denied Clippy/rustdoc.
-  - Run the native job locally only for the current OS as a fixture producer; validate
-    complete three-OS aggregation against checked/CI observations rather than
-    simulating missing native jobs.
+  - Run the native job locally only for the current OS as a fixture producer. Ordinary
+    fork CI may exercise Linux and macOS independently but SHALL NOT aggregate or claim
+    a complete portable matrix without an exact current Windows observation.
   - Record commands, timings, Cargo counts, provenance/security artifact decisions,
     and platform/security digests. Keep canary values out of the record.
   - Require no Dagger, engine, module, another SDK, target artifact build, unscoped
@@ -445,12 +445,13 @@
     subprocess-helper test ignored by their owning parent cases,
     Properties 16–20, all locked Cargo roots, current Cargo Deny, checked Aqua Security
     provenance, and zero Dagger, Docker, engine, module, foreign-SDK, target-artifact, or
-    distribution work. The three-OS matrix is aggregated by the new native CI workflow;
-    the local checkpoint retains only the current native observation and does not simulate
-    Linux or Windows.
+    distribution work. The local checkpoint retains only the current native observation
+    and does not simulate Linux or Windows. The `PortablePlatformMatrix` remains
+    deliberately unadmitted: ultimate SDK sign-off must expressly run Linux, macOS, and
+    Windows and aggregate their exact current observations before closing Requirement 8.
 
-- [ ] 17. Implement the exact-target artifact manifest and state machine
-  - [ ] 17.1 Add every artifact manifest, component, and provenance field
+- [x] 17. Implement the exact-target artifact manifest and state machine
+  - [x] 17.1 Add every artifact manifest, component, and provenance field
     - Implement target/subject/platform, separate engine/CLI/Go-runtime/Rust manifest/
       Rust descriptor inputs, Rust/Go/base/builder/scanner toolchains, exact component
       input/content/provenance maps, payload digest/size, and provenance digest.
@@ -458,7 +459,7 @@
       workspace; reject dirty, mutable, unreachable, cross-target, or cross-platform
       identities.
     - _Requirements: 5.1-5.6, 5.10-5.11, 5.17, 5.20, 12.2-12.10_
-  - [ ] 17.2 Add exclusive Build/Import planning and counter admission
+  - [x] 17.2 Add exclusive Build/Import planning and counter admission
     - Model Build and Import as mutually exclusive state machines. Build permits one
       construction, zero imports, and at most one component build; Import permits one
       import, zero construction/component builds, and exact manifest/payload/component
@@ -467,7 +468,7 @@
       unrelated SDK builders/tests/generation, complete Go tests, distribution paths,
       and imported-byte mismatch before engine startup.
     - _Requirements: 5.1-5.20_
-  - [ ] 17.3 Add canonical real-byte bundle assembly and round-trip fixtures
+  - [x] 17.3 Add canonical real-byte bundle assembly and round-trip fixtures
     - Define deterministic outer tar membership for `manifest.json`,
       `provenance.json`, `engine.oci.tar.zst`, and non-recursive checksums with fixed
       order, modes, ownership, timestamps, and compression policy.
@@ -475,22 +476,22 @@
       payload identity survives process/session restart. Do not use Dagger object IDs
       or host cache keys as portable content.
     - _Requirements: 2.14-2.15, 5.7-5.11, 5.18-5.20_
-  - [ ] 17.4 Property test: Property 7 — artifact identity accounts for every immutable byte source
+  - [x] 17.4 Property test: Property 7 — artifact identity accounts for every immutable byte source
     - Implement `property_07_artifact_identity_accounts_every_immutable_source` over at
       least 256 targets, subjects, platforms, component/toolchain/provenance sets,
       payload bytes, and manifest mutations.
     - Require deterministic admission only for the complete compatible manifest and
       actual bytes; every semantic input or payload mutation must change identity.
     - _Requirements: 5.1-5.6, 5.10-5.11, 5.17-5.18, 5.20_
-  - [ ] 17.5 Property test: Property 8 — Build and Import are exclusive at-most-once state machines
+  - [x] 17.5 Property test: Property 8 — Build and Import are exclusive at-most-once state machines
     - Implement `property_08_build_import_exclusive_at_most_once` over at least 256
       event sequences, counters, verification results, and forbidden graph entries.
     - Compare with an independent two-branch automaton; reject mixed/fallback/
       duplicated/mismatched/unrelated sequences.
     - _Requirements: 5.7-5.9, 5.12-5.16, 5.19_
 
-- [ ] 18. Add one focused Dagger artifact build/export/import graph
-  - [ ] 18.1 Extend the existing focused engine builder with an exportable sign-off object
+- [x] 18. Add one focused Dagger artifact build/export/import graph
+  - [x] 18.1 Extend the existing focused engine builder with an exportable sign-off object
     - Reuse one `RustSDKContent` and one fully configured focused target container whose
       OCI bytes include the exact engine, exact CLI, mandatory target Go content, and
       packaged Rust SDK. Retain base-support equivalence validation and focused source
@@ -499,14 +500,14 @@
       assemble the Rust-authored manifest/provenance/bundle without running a target
       service or another SDK suite.
     - _Requirements: 5.1-5.6, 5.10-5.20_
-  - [ ] 18.2 Add verified artifact import and exact CLI extraction
+  - [x] 18.2 Add verified artifact import and exact CLI extraction
     - Accept one host bundle only for the Import strategy; verify envelope, checksums,
       canonical manifest, payload, components, target, subject, platform, and
       provenance before `Container.Import`.
     - Return one verified target container and the CLI file extracted from those bytes;
       never call engine, CLI, Go-runtime, or Rust-content builders on import.
     - _Requirements: 5.7-5.11, 5.17-5.20, 6.2-6.6_
-  - [ ] 18.3 Add engine-free Go graph-construction tests
+  - [x] 18.3 Add engine-free Go graph-construction tests
     - Extend `toolchains/rust-sdk-dev/internal/enginefree` and add
       `internal/signoff` AST/fixture tests proving exactly one build/import branch, one
       OCI export/import site, one focused source closure, no unrelated SDK/distribution
@@ -516,15 +517,15 @@
       Dagger bindings or start an engine.
     - _Requirements: 5.1-5.20, 11.1-11.10_
 
-- [ ] 19. Bind exact artifact scanning to the reusable payload
-  - [ ] 19.1 Extend `toolchains/security` with canonical scanner/database observations
+- [x] 19. Bind exact artifact scanning to the reusable payload
+  - [x] 19.1 Extend `toolchains/security` with canonical scanner/database observations
     - Accept the exact existing OCI archive file, run the digest-pinned reviewed Trivy
       image read-only, record scanner version/image digest and database metadata
       digest, and emit bounded canonical JSON findings plus elapsed time.
     - Do not invoke an engine/Rust SDK builder, reconstruct a container from source, or
       broaden to repository/source scanning in the exact-artifact function.
     - _Requirements: 9.11-9.18, 12.10, 12.18_
-  - [ ] 19.2 Add scanner-result translation and security report assembly
+  - [x] 19.2 Add scanner-result translation and security report assembly
     - Decode scanner output through the Rust security model, require exact payload
       identity, apply only current finding-specific exceptions, join ordinary Rust
       security/provenance/canary evidence, and derive one `ArtifactSecurityReport`.
@@ -532,7 +533,7 @@
       payload mismatch, rebuild counters, missing timing, stale exception, or canary
       leak.
     - _Requirements: 9.14-9.23, 10.3-10.17, 12.10, 12.18, 12.28-12.29_
-  - [ ] 19.3 Add engine-free scanner fixture and graph-source tests
+  - [x] 19.3 Add engine-free scanner fixture and graph-source tests
     - Use checked canonical Trivy JSON/database metadata fixtures and a small OCI
       canary archive to prove payload binding, finding/exception policy, and no rebuild
       without pulling or scanning the target engine at local checkpoints.
@@ -540,7 +541,7 @@
       once and retains the immutable scanner digest.
     - _Requirements: 9.14-9.23, 11.1-11.10_
 
-- [ ] 20. Checkpoint: artifact planning, export/import graph, and scan policy are green
+- [x] 20. Checkpoint: artifact planning, export/import graph, and scan policy are green
   - Run formatting; locked artifact/security tests and Properties 7–8; small real-byte
     bundle round trips; engine-free Go graph/source tests; Cargo Deny when inputs
     changed; and focused warning-denied Clippy/rustdoc.
@@ -551,6 +552,17 @@
   - Require no Dagger command, engine, module, other SDK, target build, target scan,
     unscoped generation, or distribution build.
   - _Requirements: 5.1-5.20, 9.11-9.23, 11.1-11.20_
+  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-artifact-security-checkpoint.json`
+    records the canonical real-byte artifact model, exclusive Build/Import properties,
+    focused Go graph audit, exact-payload scanner translation, and current Cargo Deny,
+    Clippy, rustdoc, Actionlint, and Zizmor results. The same checked-in scripts passed
+    natively on macOS/arm64 and on the dedicated Linux/amd64 host with 156 tests passed,
+    two intentional fixture/sign-off ignores, and zero Dagger, Docker, engine,
+    foreign-SDK, target-artifact, or distribution work. Windows remains deliberately
+    deferred to ultimate SDK sign-off. The top-level generated Dagger adapter was not
+    regenerated because this engine-free checkpoint forbids a Dagger command; the
+    source graph and its generated dependency binding compile, and scoped public
+    dispatch generation remains owned by the executable sign-off facade.
 
 - [ ] 21. Materialize one exact installed Rust baseline and honest connector case
   - [ ] 21.1 Add exact engine and CLI identity validation before installation

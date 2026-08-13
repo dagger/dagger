@@ -1,0 +1,124 @@
+{
+  "asset_decisions": {
+    "cargo_deny": "executed-dependency-inputs-changed",
+    "client_generation_evidence": "refreshed-after-implementation-identity-change",
+    "harness_mappings": "refreshed-after-rust-artifact-identity-change",
+    "repository_wide_generation": false,
+    "top_level_dagger_adapter": "deferred-no-dagger-checkpoint"
+  },
+  "cargo_invocation_counts": {
+    "linux_security_preflight": 30,
+    "local_checkpoint": 8,
+    "native_platform_per_host": 2
+  },
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "elapsed_millis": 1350,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-sdk-completeness --test artifact_scanner_fixture --test security_repository_policy --test signoff_artifact_properties --test signoff_security_properties --locked",
+      "elapsed_millis": 1510,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-sdk-completeness --locked",
+      "outcome": "passed"
+    },
+    {
+      "command": "go test . ./internal/enginefree ./internal/signoff",
+      "elapsed_millis": 4330,
+      "outcome": "passed"
+    },
+    {
+      "command": "go test . -run '^$'",
+      "elapsed_millis": 1660,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo clippy -p dagger-sdk-completeness --all-targets --no-deps --locked -- -D warnings",
+      "elapsed_millis": 1120,
+      "outcome": "passed"
+    },
+    {
+      "command": "RUSTDOCFLAGS=-Dwarnings cargo doc -p dagger-sdk-completeness --no-deps --locked",
+      "elapsed_millis": 280,
+      "outcome": "passed"
+    },
+    {
+      "command": "actionlint .github/workflows/rust-sdk-platform.yml .github/workflows/rust-sdk-security.yml",
+      "elapsed_millis": 4000,
+      "outcome": "passed"
+    },
+    {
+      "command": "zizmor --pedantic .github/workflows/rust-sdk-platform.yml .github/workflows/rust-sdk-security.yml",
+      "elapsed_millis": 3800,
+      "outcome": "passed"
+    }
+  ],
+  "fixture_digests": {
+    "artifact_model_source": "sha256:732d6ff8f1a6b801ee235b198aa4e1b584aaf450c65b369fb9532abe0aa71f2b",
+    "artifact_scanner_observation": "sha256:14b9748b9227b6af0f6934f3aefe338f940a141fca313dff1f716d12f57a9f0e",
+    "cargo_lock": "sha256:64e23cb11cc25a3d304a579fd4f288d8d3a1056021fa8876dfc68d2347490f35",
+    "focused_signoff_graph": "sha256:eec4dc2f21780cb57bdbdc761c6f7fd0a644e7c69216c44529f82faac8140660",
+    "scanner_graph_source": "sha256:d2b5881e3391322fc216acff563f4b1c49f6d5d0ca2e2611ed2fe9e1418f8a5c",
+    "small_oci_payload": "sha256:b96695b1656293ab8fa66ac3d22dc1a110638555444d75d1eb097a657f496309"
+  },
+  "format_version": "1.0.0",
+  "local_boundary": {
+    "dagger_command": false,
+    "distribution_build": false,
+    "engine_build_or_start": false,
+    "module_execution": false,
+    "other_sdk_build_or_test": false,
+    "target_artifact_build": false,
+    "target_artifact_scan": false,
+    "unscoped_generation": false
+  },
+  "native_preflight": {
+    "linux_amd64": {
+      "elapsed_millis": 51350,
+      "ignored_exact_engine_tests": 1,
+      "ignored_subprocess_helper_tests": 1,
+      "observation_digest": "sha256:eaf62dd93e8ecd5a8c1ccf7b12ed95f7295baf497fba23573f9b2394de09505d",
+      "outcome": "passed",
+      "passed_tests": 156,
+      "rust_version": "1.97.1"
+    },
+    "macos_arm64": {
+      "elapsed_millis": 10480,
+      "ignored_exact_engine_tests": 1,
+      "ignored_subprocess_helper_tests": 1,
+      "observation_digest": "sha256:a3b07f01edb793237f46f09d2e24df04d329c15be5034b13e30e5e3d697998fd",
+      "outcome": "passed",
+      "passed_tests": 156,
+      "rust_version": "1.97.1"
+    },
+    "windows": "deferred-ultimate-sdk-signoff"
+  },
+  "properties": {
+    "property_07_cases": 256,
+    "property_08_cases": 256
+  },
+  "scope": "artifact-planning-export-import-scan-policy",
+  "security_preflight_linux_amd64": {
+    "dependencies": {
+      "elapsed_millis": 1430,
+      "outcome": "passed-with-reviewed-warnings"
+    },
+    "packages": {
+      "elapsed_millis": 14590,
+      "outcome": "passed"
+    },
+    "runtime": {
+      "elapsed_millis": 2410,
+      "outcome": "passed"
+    },
+    "source_policy": {
+      "elapsed_millis": 108920,
+      "outcome": "passed"
+    },
+    "warm_exact_tree_total_elapsed_millis": 65610
+  }
+}

@@ -289,6 +289,7 @@ fn repository_security_inputs_cover_derived_shipped_graph() {
     const ENGINE_BUILDER: &str = include_str!("../../../../../toolchains/engine-dev/build/sdk.go");
     const SECURITY_WORKFLOW: &str =
         include_str!("../../../../../.github/workflows/rust-sdk-security.yml");
+    const SECURITY_PREFLIGHT: &str = include_str!("../../../scripts/ci-security-preflight.sh");
 
     let manifest = synthetic_manifest(1);
     let graph = derive_shipped_audit_graph(&manifest).unwrap();
@@ -311,7 +312,10 @@ fn repository_security_inputs_cover_derived_shipped_graph() {
                 "rust:1.97.1-bookworm@sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb",
             ),
             "distribution:rust-sdk" => {
-                SECURITY_WORKFLOW.contains("packaging_properties")
+                SECURITY_WORKFLOW.contains("ci-security-preflight.sh source-policy")
+                    && SECURITY_PREFLIGHT.contains(
+                        "cargo test -p dagger-sdk-engine --test packaging_properties --locked",
+                    )
             }
             id if id.starts_with("asset:") => manifest
                 .assets

@@ -92,6 +92,20 @@ func TestReusableEngineContentBoundaryIsGenerated(t *testing.T) {
 	}
 }
 
+func TestFocusedContainerAndServiceShareOneConstructionBoundary(t *testing.T) {
+	t.Parallel()
+
+	engineSource := parseGoFile(t, "../../../engine-dev/main.go")
+	container := findFunction(t, engineSource, "ContainerWithFocusedRustSDKContent")
+	if got := identifierCount(container, "focusedRustContainer"); got != 1 {
+		t.Fatalf("focused export must delegate to the shared constructor exactly once, got %d", got)
+	}
+	service := findFunction(t, engineSource, "ServiceWithFocusedRustSDKContent")
+	if got := identifierCount(service, "focusedRustContainer"); got != 1 {
+		t.Fatalf("focused service must delegate to the shared constructor exactly once, got %d", got)
+	}
+}
+
 func TestEngineEvidenceOwnsTheCompleteClosedCaseSet(t *testing.T) {
 	t.Parallel()
 

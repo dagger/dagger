@@ -1,6 +1,7 @@
 //! Standalone-client implementation-closure and deferred sign-off properties.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use dagger_sdk_completeness::{
     CanonicalSet, ClientClosureGateDisposition, ClientClosureGateObservation,
@@ -211,6 +212,41 @@ fn checked_client_generation_artifacts_are_canonical_and_current() {
         canonical_bytes(&report).unwrap(),
         include_bytes!("../../../completeness/artifacts/client-generation-report.json")
     );
+}
+
+#[test]
+#[ignore = "explicitly refreshes reviewed client-generation evidence"]
+fn refresh_checked_client_generation_artifacts() {
+    let (scope, observation) = current_feature_end_observation();
+    let closure = admit_client_generation_closure(&scope, &observation)
+        .expect("current feature-end evidence closes implementation");
+    let report = derive_client_generation_report(&scope, Some(&closure), None)
+        .expect("current closure produces honest report");
+    let artifact = ClientGenerationEvidenceArtifact {
+        format_version: dagger_sdk_completeness::ClientGenerationFormatVersion::current(),
+        observation: observation.clone(),
+        closure,
+        deferred_signoff_cases: CanonicalSet::new(
+            dagger_sdk_completeness::required_client_signoff_cases(),
+        ),
+    };
+    let completeness = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../completeness");
+
+    std::fs::write(
+        completeness.join("evidence/client-generation-closure-observation.json"),
+        canonical_bytes(&observation).expect("observation is canonical"),
+    )
+    .expect("checked observation is writable");
+    std::fs::write(
+        completeness.join("evidence/client-generation-closure.json"),
+        canonical_bytes(&artifact).expect("artifact is canonical"),
+    )
+    .expect("checked closure is writable");
+    std::fs::write(
+        completeness.join("artifacts/client-generation-report.json"),
+        canonical_bytes(&report).expect("report is canonical"),
+    )
+    .expect("checked report is writable");
 }
 
 fn current_feature_end_observation() -> (ClientGenerationScope, ClientGenerationClosureObservation)

@@ -6,6 +6,7 @@
 
 mod applicability;
 mod applicability_review;
+mod artifact;
 mod assertion;
 mod case_catalog;
 mod closure;
@@ -18,6 +19,7 @@ mod security;
 
 pub use applicability::*;
 pub use applicability_review::*;
+pub use artifact::*;
 pub use assertion::*;
 pub use case_catalog::*;
 pub use closure::*;

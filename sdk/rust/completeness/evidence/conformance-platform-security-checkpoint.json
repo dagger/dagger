@@ -1,7 +1,7 @@
 {
   "asset_decisions": {
     "cargo_deny": "executed-security-inputs-changed",
-    "checked_platform_matrix": "pending-native-ci-aggregation",
+    "checked_platform_matrix": "deferred-ultimate-signoff-three-os-aggregation",
     "regenerated": [
       "completeness/security-provenance.json"
     ],

@@ -230,7 +230,7 @@
         "decision": "reuse-checked",
         "manifest_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41"
       },
-      "implementation_digest": "sha256:fff834f46eccbafcc6a55386df4b5d582aa4a85242e58a386fbb994610167fee"
+      "implementation_digest": "sha256:dc5ea9f490d75391fbe8ec88614389ae60ca731e3fdadf4108a3031b1acebf3c"
     },
     "disposition": "checked-generated-reused"
   },
@@ -338,9 +338,9 @@
         "disposition": "executed",
         "elapsed_millis": 32150
       },
-      "expected_input_digest": "sha256:d1d5fcbd9d4430a436c0c1e4424e20681d1b2eb5e88d3fa1718491c2d4f02383",
+      "expected_input_digest": "sha256:ac6350520b677bf48b247347f08896bf4a59d4bebabc1f1d013b46b851184b31",
       "gate": "project-reconciliation",
-      "observed_input_digest": "sha256:d1d5fcbd9d4430a436c0c1e4424e20681d1b2eb5e88d3fa1718491c2d4f02383",
+      "observed_input_digest": "sha256:ac6350520b677bf48b247347f08896bf4a59d4bebabc1f1d013b46b851184b31",
       "result": {
         "evidence_digest": "sha256:4c9bc9f4cdabdeaa58c9785b34e61cfaf10226c8d904c491dc4f690009341b55",
         "outcome": "passed"
@@ -352,9 +352,9 @@
         "disposition": "executed",
         "elapsed_millis": 32150
       },
-      "expected_input_digest": "sha256:a8f0fddbe12a5efbad8122880d34bbd34e11efc859cf46715099d2ea5d496ebf",
+      "expected_input_digest": "sha256:a644f05e4c4642af06216f3d84b47558f7abda5d5ff11a354d51e512ef492e1e",
       "gate": "publication",
-      "observed_input_digest": "sha256:a8f0fddbe12a5efbad8122880d34bbd34e11efc859cf46715099d2ea5d496ebf",
+      "observed_input_digest": "sha256:a644f05e4c4642af06216f3d84b47558f7abda5d5ff11a354d51e512ef492e1e",
       "result": {
         "evidence_digest": "sha256:093e6996587a3ed8bda1aefab63029adc1881f8a4e3f2106a8c72267b4ac8f52",
         "outcome": "passed"
@@ -379,9 +379,9 @@
         "disposition": "executed",
         "elapsed_millis": 310
       },
-      "expected_input_digest": "sha256:bdd22c065380ab60fa10311db6657a3034ff4e0679ae8d35bc4b32b6aad2e632",
+      "expected_input_digest": "sha256:6c1c7adff3dc3c3d13c917e97dc4319ad26261aa21b6efab2ef698aae1a02554",
       "gate": "diagnostic-security",
-      "observed_input_digest": "sha256:bdd22c065380ab60fa10311db6657a3034ff4e0679ae8d35bc4b32b6aad2e632",
+      "observed_input_digest": "sha256:6c1c7adff3dc3c3d13c917e97dc4319ad26261aa21b6efab2ef698aae1a02554",
       "result": {
         "evidence_digest": "sha256:73fc55d71a0d03c20aa97381d53a1f4663fb42a0ddcf5a83d3b61d86bbe7bdf4",
         "outcome": "passed"
@@ -393,9 +393,9 @@
         "disposition": "executed",
         "elapsed_millis": 28535
       },
-      "expected_input_digest": "sha256:ea5120f0eed724b72686e8283e7469c2811a445ab06e295e43ba4558390f140e",
+      "expected_input_digest": "sha256:73753d9350e80cfb2d01715ce8e1f1258946d3ae5621dee779028652b1553513",
       "gate": "cargo-hygiene",
-      "observed_input_digest": "sha256:ea5120f0eed724b72686e8283e7469c2811a445ab06e295e43ba4558390f140e",
+      "observed_input_digest": "sha256:73753d9350e80cfb2d01715ce8e1f1258946d3ae5621dee779028652b1553513",
       "result": {
         "evidence_digest": "sha256:ef2ae78e81b418c24a27c1cb2bcffd4d5861539e2a0e12d42b631bfe80382c3f",
         "outcome": "passed"
@@ -433,9 +433,9 @@
         "disposition": "executed",
         "elapsed_millis": 1320
       },
-      "expected_input_digest": "sha256:d92bae62f9a1286464404935dc0f0d40b8e112ed642159489e8ca16ce680edaf",
+      "expected_input_digest": "sha256:ce4601dd2909f3cbe95fef61a0b95e0d1b2e543516de02e9e6645fa85e123cc6",
       "gate": "derived-reporting",
-      "observed_input_digest": "sha256:d92bae62f9a1286464404935dc0f0d40b8e112ed642159489e8ca16ce680edaf",
+      "observed_input_digest": "sha256:ce4601dd2909f3cbe95fef61a0b95e0d1b2e543516de02e9e6645fa85e123cc6",
       "result": {
         "evidence_digest": "sha256:a16ee5df8d1b628a3028e517c31249100a82db77f8c9f194f9c760507686dcd8",
         "outcome": "passed"
@@ -447,16 +447,16 @@
         "disposition": "executed",
         "elapsed_millis": 1
       },
-      "expected_input_digest": "sha256:78e67afe2cac35a6840b811e8cc2fe1b859ae8c12726825c076a37383d94e7a8",
+      "expected_input_digest": "sha256:a3f38d77b22f375797bf57c62fab5cef8ca21360084f6a3b8b1e347df9f4652d",
       "gate": "clean-output",
-      "observed_input_digest": "sha256:78e67afe2cac35a6840b811e8cc2fe1b859ae8c12726825c076a37383d94e7a8",
+      "observed_input_digest": "sha256:a3f38d77b22f375797bf57c62fab5cef8ca21360084f6a3b8b1e347df9f4652d",
       "result": {
         "evidence_digest": "sha256:42680aff07edb28095178c53a133273bdc12c0f8a040f9dc6da687dcc9dff8d0",
         "outcome": "passed"
       }
     }
   ],
-  "implementation_digest": "sha256:fff834f46eccbafcc6a55386df4b5d582aa4a85242e58a386fbb994610167fee",
+  "implementation_digest": "sha256:dc5ea9f490d75391fbe8ec88614389ae60ca731e3fdadf4108a3031b1acebf3c",
   "manifest_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41",
   "mapping_digest": "sha256:9cf302052d932e7a7ec1bdfba7a74af7ba276223ff55c0f675da5a4affcb98c3",
   "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"

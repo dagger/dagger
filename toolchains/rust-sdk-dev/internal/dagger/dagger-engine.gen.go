@@ -120,6 +120,36 @@ func (r *DaggerEngine) ContainerWithRustSdkcontent(rustSdkcontent *DaggerEngineR
 	}
 }
 
+// DaggerEngineContainerWithFocusedRustSdkcontentOpts contains options for DaggerEngine.ContainerWithFocusedRustSdkcontent
+type DaggerEngineContainerWithFocusedRustSdkcontentOpts struct {
+	Platform Platform
+
+	Version string
+}
+
+// ContainerWithFocusedRustSDKContent returns the exact focused Rust target without starting it.
+// Keeping export on the same constructor as the service path prevents sign-off from acquiring a
+// second, subtly different engine/CLI/Go-runtime composition.
+func (r *DaggerEngine) ContainerWithFocusedRustSdkcontent(rustSdkcontent *DaggerEngineRustEngineContent, baseImage string, baseRevision string, targetRepository string, targetRevision string, opts ...DaggerEngineContainerWithFocusedRustSdkcontentOpts) *Container {
+	assertNotNil("rustSdkcontent", rustSdkcontent)
+	q := r.query.Select("containerWithFocusedRustSdkcontent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("rustSdkcontent", rustSdkcontent)
+	q = q.Arg("baseImage", baseImage)
+	q = q.Arg("baseRevision", baseRevision)
+	q = q.Arg("targetRepository", targetRepository)
+	q = q.Arg("targetRevision", targetRevision)
+
+	return &Container{query: q}
+}
+
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 func (r *DaggerEngine) Generate() *Changeset { // dagger-engine (../../../../toolchains/engine-dev/main.go:779:1)

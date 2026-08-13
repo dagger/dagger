@@ -7,7 +7,9 @@ on:
       - main
     paths:
       - ".github/dependabot.yml"
+      - ".github/workflows/rust-sdk-platform.yml"
       - ".github/workflows/rust-sdk-security.yml"
+      - ".github/workflows/rust-sdk-windows-preflight.yml"
       - "dagger.toml"
       - "core/schema/workspace_install.go"
       - "core/sdk/**"
@@ -16,6 +18,7 @@ on:
       - "sdk/rust/**"
       - "toolchains/engine-dev/**"
       - "toolchains/rust-sdk-dev/**"
+      - "toolchains/security/**"
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch: {}
@@ -38,74 +41,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install cargo-deny
         run: cargo install --locked cargo-deny@0.19.9
-      - name: Resolve every supported Rust root with committed lockfiles
-        run: |
-          cargo metadata --no-deps --format-version 1 --locked >/dev/null
-          cargo metadata --manifest-path examples/backend/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
-          cargo metadata --manifest-path examples/cli/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
-          cargo metadata --manifest-path examples/frontend/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
-      - name: Check dependency security and policy
-        run: cargo deny check
-      - name: Check crate publication policy
-        run: |
-          cargo metadata --no-deps --format-version 1 --locked |
-            jq -e '
-              ([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk", "dagger-sdk-macros"] and
-              (.packages[] | select(.name == "dagger-sdk") |
-                (.features == {"default": ["gen"], "gen": []}) and
-                ([.dependencies[] | select(.name == "dagger-sdk-macros" and .req == "=1.0.0-beta.10" and .kind == null)] | length) == 1 and
-                ([.dependencies[] | select(.req == "*")] | length == 0) and
-                ([.dependencies[] | select(.source != null and (.source | startswith("registry+https://github.com/rust-lang/crates.io-index") | not))] | length == 0)
-              ) and
-              (.packages[] | select(.name == "dagger-sdk-macros") |
-                (.edition == "2024") and
-                (.rust_version == "1.97.1") and
-                ([.dependencies[] | select(.name == "dagger-sdk")] | length) == 0
-              )'
+      - name: Check dependencies and publication policy
+        run: ./scripts/ci-security-preflight.sh dependencies
       - name: Check generated source and security boundaries
-        run: |
-          cargo test -p dagger-sdk-macros --locked
-          cargo test -p dagger-sdk --test source_policy --all-features --locked
-          cargo test -p dagger-sdk --test module_authoring_compile --locked
-          cargo test -p dagger-bootstrap --test generation --locked
-          cargo test -p dagger-codegen --test render --test projection --locked
-          cargo test -p dagger-codegen --test engine_operations --locked
-          cargo test -p dagger-codegen --test module_diagnostics --locked
-          cargo test -p dagger-sdk-engine --test packaging_properties --locked
-          cargo test -p dagger-sdk-engine --test project_properties --locked
-          cargo test -p dagger-sdk-engine --test protocol_properties --locked
-          cargo test -p dagger-sdk-engine --test checkpoint_properties --locked
-          cargo test -p dagger-sdk-completeness --test engine_integration --locked
-          cargo test -p dagger-sdk-completeness --test module_authoring_evidence --locked
-          cargo test -p dagger-sdk-completeness --test signoff_security_properties --locked
-          cargo test -p dagger-sdk-completeness --test security_repository_policy --locked
-          cargo run -p dagger-sdk-completeness --bin dagger-conformance-security-policy --locked -- --check
-          cargo test -p dagger-sdk --all-features --locked \
-            public_error_rendering_is_redacted_while_sources_remain_inspectable
-          cargo test -p dagger-sdk --all-features --locked \
-            session_control_and_process_input_debug_never_render_credentials
+        run: ./scripts/ci-security-preflight.sh source-policy
       - name: Check packaged runtime metadata boundary
         working-directory: sdk/rust/runtime
-        env:
-          # The generated Go client validates these coordinates during package init,
-          # but the direct adapter tests make no request or network connection.
-          DAGGER_SESSION_PORT: "1"
-          DAGGER_SESSION_TOKEN: engine-free-static-check
-        run: go test ./...
+        run: ../scripts/ci-security-preflight.sh runtime
       - name: Verify the public SDK package
-        run: |
-          cargo package -p dagger-sdk-macros --locked
-          macro_files="$(cargo package -p dagger-sdk-macros --list --locked)"
-          grep -Fqx -- 'README.md' <<<"$macro_files"
-          grep -Fqx -- 'src/lib.rs' <<<"$macro_files"
-          # The local patch lets Cargo verify both halves before their first ordered
-          # release; the packaged SDK manifest still contains the exact registry edge.
-          cargo package -p dagger-sdk --all-features --locked \
-            --config 'patch.crates-io.dagger-sdk-macros.path="crates/dagger-sdk-macros"'
-          package_files="$(cargo package -p dagger-sdk --list --locked)"
-          grep -Fqx -- 'README.md' <<<"$package_files"
-          grep -Fqx -- 'LICENSE' <<<"$package_files"
-          grep -Fqx -- 'examples/first-pipeline/main.rs' <<<"$package_files"
-          grep -Fqx -- 'src/gen/mod.rs' <<<"$package_files"
+        run: ./scripts/ci-security-preflight.sh packages

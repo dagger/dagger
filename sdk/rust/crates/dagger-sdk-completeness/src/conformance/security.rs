@@ -20,8 +20,9 @@ use crate::model::{
 };
 
 use super::{
-    ConformanceDiagnostic, ConformanceDiagnosticCode, ConformanceDiagnosticSet,
-    ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase, FindingId, ProvenanceId,
+    AdmittedArtifact, ConformanceDiagnostic, ConformanceDiagnosticCode, ConformanceDiagnosticSet,
+    ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase, FindingId, NonZeroMillis,
+    ProvenanceId,
 };
 
 const MAX_INSPECTED_BYTES: u64 = 16 * 1024 * 1024;
@@ -358,6 +359,97 @@ pub struct VulnerabilityAdmission {
     pub exceptions: CanonicalSet<SecurityException>,
     /// Domain-separated policy identity.
     pub admission_digest: Digest,
+}
+
+/// One normalized scanner finding before it is bound to the enclosing payload identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScannerFindingObservation {
+    /// Stable advisory or scanner finding identity.
+    pub finding_id: FindingId,
+    /// Affected operating-system or language package.
+    pub package: NonEmptyText,
+    /// Version observed in the exact OCI payload.
+    pub installed_version: NonEmptyText,
+    /// Closed severity; unknown values fail canonical decoding.
+    pub severity: VulnerabilitySeverity,
+}
+
+/// Canonical bounded observation emitted for one supplied OCI archive.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactScannerObservation {
+    /// Durable scanner-observation format.
+    pub format_version: ConformanceFormatVersion,
+    /// Direct SHA-256 identity of the existing file passed to the scanner.
+    pub payload_digest: Digest,
+    /// Reviewed scanner provenance record.
+    pub scanner_provenance: ProvenanceId,
+    /// Scanner semantic version observed from the running image.
+    pub scanner_version: SemverVersion,
+    /// Immutable image identity selected by the graph.
+    pub scanner_image_digest: Digest,
+    /// Reviewed database-source provenance record.
+    pub database_provenance: ProvenanceId,
+    /// Identity of the exact database metadata used by this scan.
+    pub database_metadata_digest: Digest,
+    /// Every scanner finding, before exception policy is evaluated.
+    pub findings: Vec<ScannerFindingObservation>,
+    /// Digest of the bounded canonical raw scanner result retained for audit.
+    pub scanner_result_digest: Digest,
+    /// Positive bounded target scan duration.
+    pub elapsed: NonZeroMillis,
+    /// The exact archive must enter the scanner once.
+    pub artifact_input_count: u32,
+    /// Rebuilding target content in the scanner graph is forbidden.
+    pub target_build_count: u32,
+    /// Repository/source scans are outside this exact-artifact function.
+    pub source_scan_count: u32,
+}
+
+/// Complete artifact-security input joined with already admitted ordinary and canary evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactSecurityObservation {
+    /// Exact scanner output translated from bounded canonical bytes.
+    pub scanner: ArtifactScannerObservation,
+    /// Current finding-specific exceptions; findings are never removed.
+    pub exceptions: Vec<SecurityException>,
+    /// Already admitted exhaustive canary and durable-evidence result.
+    pub secret_report: SecretEvidenceReport,
+    /// Positive bounded Rust policy-evaluation duration.
+    pub policy_elapsed: NonZeroMillis,
+}
+
+/// Atomic security result bound to the exact reusable artifact.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactSecurityReport {
+    /// Durable report format.
+    pub format_version: ConformanceFormatVersion,
+    /// Exact canonical artifact manifest identity.
+    pub artifact_manifest_digest: Digest,
+    /// Exact existing OCI payload identity.
+    pub artifact_payload_digest: Digest,
+    /// Ordinary locked dependency/security closure.
+    pub rust_security_digest: Digest,
+    /// Reviewed external-input registry identity.
+    pub provenance_registry_digest: Digest,
+    /// Immutable scanner image identity.
+    pub scanner_image_digest: Digest,
+    /// Exact vulnerability database metadata identity.
+    pub database_metadata_digest: Digest,
+    /// All scanner findings and current exceptions.
+    pub vulnerability: VulnerabilityAdmission,
+    /// Exhaustive canary and redaction report identity.
+    pub secret_report_digest: Digest,
+    /// Exact inspected secret domains.
+    pub inspected_domains: CanonicalSet<SecretInspectionDomain>,
+    /// Target scan duration.
+    pub scan_elapsed: NonZeroMillis,
+    /// Rust policy evaluation duration.
+    pub policy_elapsed: NonZeroMillis,
+    /// Domain-separated identity of this complete pass result.
+    pub report_digest: Digest,
 }
 
 /// Credential boundary represented by one independent non-production canary.
@@ -833,6 +925,109 @@ pub fn admit_vulnerability_findings(
         findings: finding_set,
         exceptions: exception_set,
         admission_digest,
+    })
+}
+
+/// Decodes a canonical scanner observation and binds every finding to its one enclosing payload.
+pub fn decode_artifact_scanner_observation(
+    bytes: &[u8],
+) -> Result<ArtifactScannerObservation, ConformanceDiagnosticSet> {
+    crate::canonical::decode_canonical(bytes).map_err(|_| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner observation is malformed or not canonical",
+            None,
+        )
+    })
+}
+
+/// Admits exact-file scanner output and joins it with ordinary and canary security closure.
+pub fn admit_artifact_security(
+    artifact: &AdmittedArtifact,
+    rust_security: &RustDependencySecurityReport,
+    registry: &ExternalProvenanceRegistry,
+    exception_context: &ExceptionEvaluationContext,
+    observation: ArtifactSecurityObservation,
+) -> Result<ArtifactSecurityReport, ConformanceDiagnosticSet> {
+    let scanner_record = registry.records.get(&ExternalInputRole::ScannerImage);
+    let database_record = registry
+        .records
+        .get(&ExternalInputRole::VulnerabilityDatabaseSource);
+    let scanner_valid = scanner_record.is_some_and(|record| {
+        record.id == observation.scanner.scanner_provenance
+            && record.immutable_digest == observation.scanner.scanner_image_digest
+    });
+    let database_valid =
+        database_record.is_some_and(|record| record.id == observation.scanner.database_provenance);
+    let input_valid = observation.scanner.format_version == ConformanceFormatVersion::V1
+        && &observation.scanner.payload_digest == artifact.payload_digest()
+        && observation.scanner.scanner_version
+            == SemverVersion::new("0.69.3").expect("reviewed Trivy version is valid")
+        && scanner_valid
+        && database_valid
+        && observation.scanner.database_metadata_digest != Digest::sha256([])
+        && observation.scanner.scanner_result_digest != Digest::sha256([])
+        && observation.scanner.artifact_input_count == 1
+        && observation.scanner.target_build_count == 0
+        && observation.scanner.source_scan_count == 0;
+    if !input_valid {
+        return Err(one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scan is stale rebuilt duplicated or provenance mismatched",
+            None,
+        ));
+    }
+    let findings = observation
+        .scanner
+        .findings
+        .iter()
+        .map(|finding| VulnerabilityFinding {
+            finding_id: finding.finding_id.clone(),
+            package: finding.package.clone(),
+            installed_version: finding.installed_version.clone(),
+            severity: finding.severity,
+            artifact_payload_digest: artifact.payload_digest().clone(),
+        })
+        .collect();
+    let vulnerability = admit_vulnerability_findings(
+        artifact.payload_digest().clone(),
+        observation.scanner.scanner_provenance.clone(),
+        observation.scanner.database_metadata_digest.clone(),
+        registry,
+        findings,
+        observation.exceptions,
+        exception_context,
+        false,
+    )?;
+    let report_input = (
+        artifact.manifest_digest().clone(),
+        artifact.payload_digest().clone(),
+        rust_security.security_digest.clone(),
+        registry.registry_digest.clone(),
+        observation.scanner.scanner_image_digest.clone(),
+        observation.scanner.database_metadata_digest.clone(),
+        vulnerability.clone(),
+        observation.secret_report.report_digest.clone(),
+        observation.secret_report.inspected_domains.clone(),
+        observation.scanner.elapsed,
+        observation.policy_elapsed,
+    );
+    let report_digest = canonical_digest(DigestDomain::ConformanceSecurity, &report_input)
+        .expect("validated artifact security report is canonically encodable");
+    Ok(ArtifactSecurityReport {
+        format_version: ConformanceFormatVersion::V1,
+        artifact_manifest_digest: artifact.manifest_digest().clone(),
+        artifact_payload_digest: artifact.payload_digest().clone(),
+        rust_security_digest: rust_security.security_digest.clone(),
+        provenance_registry_digest: registry.registry_digest.clone(),
+        scanner_image_digest: observation.scanner.scanner_image_digest,
+        database_metadata_digest: observation.scanner.database_metadata_digest,
+        vulnerability,
+        secret_report_digest: observation.secret_report.report_digest,
+        inspected_domains: observation.secret_report.inspected_domains,
+        scan_elapsed: observation.scanner.elapsed,
+        policy_elapsed: observation.policy_elapsed,
+        report_digest,
     })
 }
 

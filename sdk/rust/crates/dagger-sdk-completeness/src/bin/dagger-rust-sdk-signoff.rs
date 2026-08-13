@@ -15,12 +15,15 @@ use std::time::{Duration, Instant};
 
 use clap::{Arg, Command as ClapCommand, value_parser};
 use dagger_sdk_completeness::{
-    ConformanceDiagnostic, ConformanceDiagnosticCode, ConformanceDiagnosticSet,
+    ArtifactCounters, ArtifactEvent, ArtifactMaterialization, ArtifactObservation, ArtifactPlan,
+    CanonicalSet, ConformanceDiagnostic, ConformanceDiagnosticCode, ConformanceDiagnosticSet,
     ContainerDaemonObservation, DiagnosticCoordinate, DiagnosticPhase, Digest, HostPreflightPlan,
     HostPreflightRecord, HostPreflightStep, HostProbe, HostProbeError, HostProbeErrorKind,
     HostResourceObservation, HostStepObservation, HostStepResult, NonEmptyText, NonZeroBytes,
-    NonZeroCount, NonZeroMillis, PlatformDescriptor, SignoffHostProfile, canonical_bytes,
-    decode_canonical, plan_host_preflight, run_host_preflight, scan_retained_output,
+    NonZeroCount, NonZeroMillis, PlatformDescriptor, SignoffHostProfile, admit_artifact,
+    artifact_manifest_for_payload, artifact_provenance_document, assemble_artifact_bundle,
+    canonical_bytes, decode_artifact_bundle, decode_canonical, plan_host_preflight,
+    required_artifact_components, run_host_preflight, scan_retained_output,
 };
 
 const MAX_PROCESS_OUTPUT: usize = 1024 * 1024;
@@ -76,17 +79,173 @@ fn run() -> Result<(), BinaryError> {
                         .value_parser(value_parser!(PathBuf)),
                 ),
         )
+        .subcommand(
+            ClapCommand::new("artifact-build")
+                .about("Assemble one canonical exact-target bundle from existing OCI bytes")
+                .arg(path_argument("plan"))
+                .arg(path_argument("payload"))
+                .arg(path_argument("bundle-output"))
+                .arg(path_argument("manifest-output")),
+        )
+        .subcommand(
+            ClapCommand::new("artifact-import")
+                .about("Verify one exact-target bundle and extract its admitted OCI bytes")
+                .arg(path_argument("plan"))
+                .arg(path_argument("bundle"))
+                .arg(path_argument("payload-output")),
+        )
         .get_matches();
-    let ("preflight", values) = matches.subcommand().expect("subcommand is required") else {
-        unreachable!("the CLI exposes only the preflight subcommand")
-    };
-    let profile_path = values
-        .get_one::<PathBuf>("profile")
-        .expect("profile is required");
-    let output_path = values
-        .get_one::<PathBuf>("output")
-        .expect("output is required");
-    preflight(profile_path, output_path)
+    match matches.subcommand().expect("subcommand is required") {
+        ("preflight", values) => preflight(
+            required_path(values, "profile"),
+            required_path(values, "output"),
+        ),
+        ("artifact-build", values) => artifact_build(
+            required_path(values, "plan"),
+            required_path(values, "payload"),
+            required_path(values, "bundle-output"),
+            required_path(values, "manifest-output"),
+        ),
+        ("artifact-import", values) => artifact_import(
+            required_path(values, "plan"),
+            required_path(values, "bundle"),
+            required_path(values, "payload-output"),
+        ),
+        _ => unreachable!("clap admits only the closed sign-off commands"),
+    }
+}
+
+fn path_argument(name: &'static str) -> Arg {
+    Arg::new(name)
+        .long(name)
+        .required(true)
+        .value_parser(value_parser!(PathBuf))
+}
+
+fn required_path<'a>(values: &'a clap::ArgMatches, name: &str) -> &'a PathBuf {
+    values
+        .get_one::<PathBuf>(name)
+        .expect("clap requires every path argument")
+}
+
+fn artifact_build(
+    plan_path: &Path,
+    payload_path: &Path,
+    bundle_output: &Path,
+    manifest_output: &Path,
+) -> Result<(), BinaryError> {
+    let plan = read_artifact_plan(plan_path)?;
+    if !matches!(plan.materialization, ArtifactMaterialization::Build) {
+        return Err(BinaryError::Operational(
+            "artifact-build requires the Build strategy",
+        ));
+    }
+    let payload = fs::read(payload_path)
+        .map_err(|_| BinaryError::Operational("could not read exact-target OCI payload"))?;
+    let manifest = artifact_manifest_for_payload(&plan, &payload)?;
+    let provenance = artifact_provenance_document(&plan)?;
+    let bundle = assemble_artifact_bundle(manifest.clone(), provenance, payload)?;
+    let component_builds = required_artifact_components()
+        .into_iter()
+        .map(|component| (component, 1))
+        .collect::<BTreeMap<_, _>>();
+    let mut events = vec![ArtifactEvent::ConstructionStarted];
+    events.extend(
+        component_builds
+            .keys()
+            .copied()
+            .map(|component| ArtifactEvent::ComponentBuilt { component }),
+    );
+    events.extend([
+        ArtifactEvent::PayloadExported,
+        ArtifactEvent::ManifestVerified,
+        ArtifactEvent::PayloadVerified,
+        ArtifactEvent::ComponentsVerified,
+        ArtifactEvent::ArtifactReady,
+    ]);
+    let admitted = admit_artifact(
+        &plan,
+        ArtifactObservation {
+            strategy: ArtifactMaterialization::Build,
+            manifest: manifest.clone(),
+            verified_component_digests: component_digests(&manifest),
+            bundle,
+            events,
+            counters: ArtifactCounters {
+                construction: 1,
+                imports: 0,
+                component_builds,
+                forbidden_work: CanonicalSet::default(),
+            },
+            elapsed_millis: 1,
+        },
+    )?;
+    write_new(bundle_output, admitted.bundle().bytes())?;
+    let manifest_bytes = canonical_bytes(&manifest)
+        .map_err(|_| BinaryError::Operational("could not encode exact-target manifest"))?;
+    write_new(manifest_output, &manifest_bytes)
+}
+
+fn artifact_import(
+    plan_path: &Path,
+    bundle_path: &Path,
+    payload_output: &Path,
+) -> Result<(), BinaryError> {
+    let plan = read_artifact_plan(plan_path)?;
+    if !matches!(plan.materialization, ArtifactMaterialization::Import { .. }) {
+        return Err(BinaryError::Operational(
+            "artifact-import requires the Import strategy",
+        ));
+    }
+    let bytes = fs::read(bundle_path)
+        .map_err(|_| BinaryError::Operational("could not read exact-target artifact bundle"))?;
+    let bundle = decode_artifact_bundle(&bytes)?;
+    let manifest = bundle.manifest().clone();
+    let admitted = admit_artifact(
+        &plan,
+        ArtifactObservation {
+            strategy: plan.materialization.clone(),
+            manifest: manifest.clone(),
+            verified_component_digests: component_digests(&manifest),
+            bundle,
+            events: vec![
+                ArtifactEvent::BundleSupplied,
+                ArtifactEvent::ManifestVerified,
+                ArtifactEvent::PayloadVerified,
+                ArtifactEvent::ComponentsVerified,
+                ArtifactEvent::ContainerImported,
+                ArtifactEvent::ArtifactReady,
+            ],
+            counters: ArtifactCounters {
+                construction: 0,
+                imports: 1,
+                component_builds: required_artifact_components()
+                    .into_iter()
+                    .map(|component| (component, 0))
+                    .collect(),
+                forbidden_work: CanonicalSet::default(),
+            },
+            elapsed_millis: 1,
+        },
+    )?;
+    write_new(payload_output, admitted.bundle().payload())
+}
+
+fn read_artifact_plan(path: &Path) -> Result<ArtifactPlan, BinaryError> {
+    let bytes = fs::read(path)
+        .map_err(|_| BinaryError::Operational("could not read exact-target artifact plan"))?;
+    decode_canonical(&bytes)
+        .map_err(|_| BinaryError::Operational("exact-target artifact plan is not canonical"))
+}
+
+fn component_digests(
+    manifest: &dagger_sdk_completeness::ExactTargetArtifactManifest,
+) -> BTreeMap<dagger_sdk_completeness::ArtifactComponent, Digest> {
+    manifest
+        .components
+        .iter()
+        .map(|(component, record)| (*component, record.content_digest.clone()))
+        .collect()
 }
 
 fn preflight(profile_path: &Path, output_path: &Path) -> Result<(), BinaryError> {
@@ -120,14 +279,18 @@ fn preflight(profile_path: &Path, output_path: &Path) -> Result<(), BinaryError>
 }
 
 fn write_record(path: &Path, record: &HostPreflightRecord) -> Result<(), BinaryError> {
-    if path.exists() {
-        return Err(BinaryError::Operational("preflight output already exists"));
-    }
     let bytes = canonical_bytes(record)
         .map_err(|_| BinaryError::Operational("could not encode preflight record"))?;
+    write_new(path, &bytes)
+}
+
+fn write_new(path: &Path, bytes: &[u8]) -> Result<(), BinaryError> {
+    if path.exists() {
+        return Err(BinaryError::Operational("sign-off output already exists"));
+    }
     let parent = path
         .parent()
-        .ok_or(BinaryError::Operational("preflight output has no parent"))?;
+        .ok_or(BinaryError::Operational("sign-off output has no parent"))?;
     fs::create_dir_all(parent)
         .map_err(|_| BinaryError::Operational("could not create preflight output directory"))?;
     let temporary = parent.join(format!(
@@ -138,12 +301,12 @@ fn write_record(path: &Path, record: &HostPreflightRecord) -> Result<(), BinaryE
         .create_new(true)
         .write(true)
         .open(&temporary)
-        .map_err(|_| BinaryError::Operational("could not create preflight output"))?;
-    file.write_all(&bytes)
+        .map_err(|_| BinaryError::Operational("could not create sign-off output"))?;
+    file.write_all(bytes)
         .and_then(|()| file.sync_all())
-        .map_err(|_| BinaryError::Operational("could not persist preflight output"))?;
+        .map_err(|_| BinaryError::Operational("could not persist sign-off output"))?;
     fs::rename(&temporary, path)
-        .map_err(|_| BinaryError::Operational("could not publish preflight output"))?;
+        .map_err(|_| BinaryError::Operational("could not publish sign-off output"))?;
     Ok(())
 }
 

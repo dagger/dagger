@@ -1,0 +1,22 @@
+{
+  "artifact_input_count": 1,
+  "database_metadata_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "database_provenance": "source/trivy-db/0e0340a01b57209346d88dd061342a857776e403",
+  "elapsed": 17,
+  "findings": [
+    {
+      "finding_id": "cve-2026-0001",
+      "installed_version": "1.0.0",
+      "package": "fixture-package",
+      "severity": "low"
+    }
+  ],
+  "format_version": "1.0.0",
+  "payload_digest": "sha256:b96695b1656293ab8fa66ac3d22dc1a110638555444d75d1eb097a657f496309",
+  "scanner_image_digest": "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
+  "scanner_provenance": "image/trivy/0.69.3",
+  "scanner_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "scanner_version": "0.69.3",
+  "source_scan_count": 0,
+  "target_build_count": 0
+}

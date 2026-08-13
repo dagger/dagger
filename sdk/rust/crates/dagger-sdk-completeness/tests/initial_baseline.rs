@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:3e0635e53de76565e15c2500cf3328cfc67298712921ea0ee985ecae1bad4c42";
+    "sha256:691d16a0028037a2bd74c7433af5dc1547fa0b91d213c163057ddab852f23eb7";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -110,13 +110,13 @@ fn target_locks_authorities_harness_status_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:b464cfb08bde5fd41a085cc0400163d1019a61b699e8b38b901b2351e93358d3"
+        "sha256:52bad4d60818d348d1b4fa209d14a39fbcd40e9349c28386e584abb69e190f09"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:0ca7dd487feb996d122d7ad13635601a76ad470ef996dc63a53fe26cf89d4e44"
+        "sha256:a87b4de2d67bc30c288d2cffff418d76f83a6bfe4e22ceb250531cfd714c6af4"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 3_877);
+    assert_eq!(derived.report.blocking_capabilities.len(), 3_898);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
     assert!(
         derived
@@ -155,7 +155,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (AuthorityId::new("go-codegen").unwrap(), 83),
             (AuthorityId::new("go-engine-sdk").unwrap(), 13),
             (AuthorityId::new("go-integration-tests").unwrap(), 1_072),
-            (AuthorityId::new("rust-policy").unwrap(), 85),
+            (AuthorityId::new("rust-policy").unwrap(), 106),
             (AuthorityId::new("sdk-contract-harness").unwrap(), 17),
         ])
     );
@@ -165,7 +165,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (Status::IdiomaticEquivalent, 10),
             (Status::Implemented, 733),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_124),
+            (Status::Missing, 1_145),
             (Status::Partial, 2_753),
         ])
     );
@@ -209,7 +209,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (FeatureId::Feature5, 53),
             (FeatureId::Feature6, 96),
             (FeatureId::Feature7, 1),
-            (FeatureId::Feature8, 1_081),
+            (FeatureId::Feature8, 1_102),
             (FeatureId::Feature9, 20),
         ])
     );
