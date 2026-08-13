@@ -1365,6 +1365,9 @@ type Cache struct {
 	// currently associated with
 	resultOutputEqClasses map[sharedResultID]map[eqClassID]struct{}
 
+	// inverse of resultOutputEqClasses, keyed by canonical output eq-class root
+	outputEqClassResults map[eqClassID]map[sharedResultID]struct{}
+
 	// explicit result<->term associations. These are distinct from output eq
 	// class membership: multiple results can share an output eq class, but
 	// cache lookup for a matched term should first prefer results that were

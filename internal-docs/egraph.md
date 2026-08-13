@@ -182,9 +182,16 @@ This is a major design point: the e-graph decides equivalence, but the
 The bridge between symbolic graph and concrete payload is:
 
 - `resultOutputEqClasses`
+- `outputEqClassResults`
 - `termResults`
 - `resultTerms`
 - `egraphResultsByDigest`
+
+`resultOutputEqClasses` and `outputEqClassResults` are paired forward and
+inverse indexes. The inverse is keyed by canonical output eq-class roots and
+lets lifecycle cleanup find surviving results without re-deriving membership
+from every digest posting in the class. Association helpers update both
+directions together.
 
 These let the cache answer questions like:
 
@@ -213,8 +220,7 @@ Because of that, lookup prefers:
 That behavior lives mainly in:
 
 - `appendTermSetResultsLocked`
-- `firstResultForTermSetDeterministicallyAtLocked`
-- `firstResultForOutputEqClassDeterministicallyAtLocked`
+- `appendDigestResultsLocked`
 
 ## How Call Identity Feeds The E-Graph
 
@@ -340,9 +346,13 @@ This reconstructs:
 - digests
 - results
 - terms
-- result/term associations
+- result/output-eq-class associations
 - persisted edges
 - snapshot ownership links
+
+Exact result/term associations are not persisted or reconstructed; imported
+results are recovered through their output classes and conservative broad
+digest postings.
 
 This is how the in-memory e-graph is restored after restart.
 
@@ -354,8 +364,14 @@ It:
 
 - removes result-term associations
 - removes digest indexes for the result
-- removes terms that no longer have any live results in their output eq-class
+- removes paired forward/inverse output-class associations
+- removes terms whose output eq-class has no remaining unexpired result
 - possibly resets the whole e-graph if nothing remains
+
+The survivor check walks `outputEqClassResults` and applies the same expiry
+filter used by lookup. An expired-but-not-yet-collected result therefore does
+not delay term cleanup. It does not opportunistically collect expired results
+or change ownership timing.
 
 ### 10. `compactEqClassesLocked`
 
@@ -366,6 +382,11 @@ can get sparse. Compaction rebuilds the live eq-class space to keep it smaller
 and more coherent.
 
 Today this runs after prune when needed.
+
+Compaction remaps `resultOutputEqClasses` and rebuilds
+`outputEqClassResults` from the remapped forward associations before publishing
+the pair. A full e-graph reset clears both maps with `resultsByID` and the other
+derived indexes.
 
 ## Lookup In Detail
 
@@ -494,14 +515,20 @@ The most e-graph-specific logic lives in `mergeEqClassesLocked` and
 When output digests or extra digests are merged:
 
 1. union-find merges the eq-classes
-2. any terms that mention the merged class as an input may now have different
+2. the losing root's inverse result set is moved to the winning root, and each
+   moved result's forward association is rewritten eagerly
+3. any terms that mention the merged class as an input may now have different
    canonical input roots
-3. those terms get repaired:
+4. those terms get repaired:
    - input roots are rewritten
    - their `termDigest` is recomputed
    - reverse indexes are updated
-4. if previously distinct terms become congruent under the repaired digest, their
+5. if previously distinct terms become congruent under the repaired digest, their
    output eq-classes are merged too
+
+Production result/output associations therefore contain current roots. Read
+paths still normalize defensively, and compaction rebuilds both association
+directions under remapped roots.
 
 That last step is the actual congruence-closure behavior.
 
