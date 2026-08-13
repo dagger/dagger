@@ -932,7 +932,9 @@ HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --
 `
 		dir := baseDir.WithNewFile("Dockerfile", dockerfile)
 
-		healthcheck := dir.DockerBuild().DockerHealthcheck()
+		healthcheck, err := dir.DockerBuild().DockerHealthcheck(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, healthcheck)
 
 		interval, err := healthcheck.Interval(ctx)
 		require.NoError(t, err)
