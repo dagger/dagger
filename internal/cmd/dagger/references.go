@@ -3,11 +3,14 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -29,6 +32,19 @@ type referenceInfo struct {
 	original string // path as typed after @, e.g. ~/foo/bar.txt
 	mount    string // workspace-relative mount path, e.g. .refs/~/foo/bar.txt
 	isDir    bool
+}
+
+// tunnelInfo records a URL the user attached with @, along with the
+// engine-side address it was remapped to. The address points at a
+// container-to-host tunnel (Host.service): a service on the session network
+// that forwards each connection through the CLI's own network, so the agent's
+// containers can reach endpoints only the user's machine can see — localhost
+// dev servers, VPN'd or intranet hosts. Forwarding is per connection and
+// wholly lazy: the endpoint does not need to be listening when the reference
+// is attached, only whenever the agent actually connects.
+type tunnelInfo struct {
+	original string // URL as typed after @, e.g. https://localhost:6060
+	tunneled string // rewritten URL reachable from containers, e.g. https://<hostname>:6060
 }
 
 // completeReferencePath completes an @-path against the host filesystem. frag
@@ -114,6 +130,46 @@ func expandReferencePath(p string) (string, error) {
 		return filepath.Join(home, rest), nil
 	}
 	return filepath.Abs(p)
+}
+
+// parseReferenceURL reports whether an @-token is a URL reference rather than
+// a host path. Only tokens with an explicit "scheme://" count — everything
+// else keeps its host-path meaning — and the endpoint must resolve to a TCP
+// port, either explicitly or implied by a well-known scheme, because the
+// tunnel forwards raw TCP.
+func parseReferenceURL(tok string) (u *url.URL, port int, ok bool) {
+	if !strings.Contains(tok, "://") {
+		return nil, 0, false
+	}
+	u, err := url.Parse(tok)
+	if err != nil || u.Scheme == "" || u.Hostname() == "" {
+		return nil, 0, false
+	}
+	port, ok = referenceURLPort(u)
+	if !ok {
+		return nil, 0, false
+	}
+	return u, port, true
+}
+
+// referenceURLPort resolves the TCP port of a URL reference: the explicit
+// port when one was typed, or the scheme's well-known default. URLs with
+// neither can't be tunneled, so they are not URL references.
+func referenceURLPort(u *url.URL) (int, bool) {
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return 0, false
+		}
+		return n, true
+	}
+	switch u.Scheme {
+	case "http", "ws":
+		return 80, true
+	case "https", "wss":
+		return 443, true
+	}
+	return 0, false
 }
 
 // referenceMountRel computes the reference-relative mount path for an absolute
@@ -229,15 +285,26 @@ func (a *sessionAgent) hasReference(mount string) bool {
 	return false
 }
 
-// attachReferences resolves any @-path tokens in input. Paths that already live
-// inside the current workspace need no mounting: the agent can read them
-// directly, so the token is simply rewritten in place to a path relative to the
-// workspace's cwd (e.g. "@/abs/path/to/foo.go" → "./foo.go"). Paths outside the
-// workspace are mounted into the LLM's workspace read-only under the references
-// prefix (see workspaceReferencePrefix); those are sticky for the session
-// and shown in the "References" sidebar, and the prompt is annotated with their
-// workspace locations so the model knows where to read them. Nonexistent paths
-// are left untouched.
+// attachReferences resolves any @-path and @-URL tokens in input.
+//
+// Paths that already live inside the current workspace need no mounting: the
+// agent can read them directly, so the token is simply rewritten in place to a
+// path relative to the workspace's cwd (e.g. "@/abs/path/to/foo.go" →
+// "./foo.go"). Paths outside the workspace are mounted into the LLM's
+// workspace read-only under the references prefix (see
+// workspaceReferencePrefix); those are sticky for the session and shown in the
+// "References" sidebar, and the prompt is annotated with their workspace
+// locations so the model knows where to read them. Nonexistent paths are left
+// untouched.
+//
+// URLs (e.g. "@https://localhost:6060") name endpoints on the user's side of
+// the network, so they get the container-to-host equivalent of a mount: a
+// tunnel service on the session network forwarding to the endpoint via the
+// host (see attachTunnel), with the token rewritten in place to the tunnel's
+// engine-side address and the prompt annotated with the mapping. The upstream
+// is dialed per connection, so a tunnel attaches even while nothing is
+// listening yet; only URLs whose tunnel itself fails to start are left
+// untouched.
 func (a *sessionAgent) attachReferences(ctx context.Context, input string) string {
 	tokens := parseReferenceTokens(input)
 	if len(tokens) == 0 {
@@ -246,10 +313,30 @@ func (a *sessionAgent) attachReferences(ctx context.Context, input string) strin
 
 	llm := a.llm
 	changed := false
+	tunneled := false
 	seen := map[string]bool{}
-	local := map[string]string{}
+	rewrites := map[string]string{}
 	var mentioned []referenceInfo
+	var mentionedTunnels []tunnelInfo
 	for _, tok := range tokens {
+		if u, port, ok := parseReferenceURL(tok); ok {
+			if seen[tok] {
+				continue
+			}
+			seen[tok] = true
+			info, fresh, err := a.attachTunnel(ctx, tok, u, port)
+			if err != nil {
+				// Leave the token as typed: the model at least sees what the
+				// user meant, even if it can't reach it.
+				slog.Warn("failed to tunnel @-referenced URL", "url", tok, "error", err)
+				continue
+			}
+			tunneled = tunneled || fresh
+			rewrites[tok] = info.tunneled
+			mentionedTunnels = append(mentionedTunnels, info)
+			continue
+		}
+
 		abs, err := expandReferencePath(tok)
 		if err != nil {
 			continue
@@ -263,7 +350,7 @@ func (a *sessionAgent) attachReferences(ctx context.Context, input string) strin
 		// Already in the workspace: no need to copy it into .refs, just point
 		// the model at it relative to the workspace cwd.
 		if rel, ok := a.session.workspaceRelativePath(ctx, abs); ok {
-			local[tok] = rel
+			rewrites[tok] = rel
 			continue
 		}
 
@@ -299,18 +386,81 @@ func (a *sessionAgent) attachReferences(ctx context.Context, input string) strin
 		if err := a.updateLLM(llm); err != nil {
 			slog.Warn("failed to refresh LLM after attaching references", "error", err)
 		}
+	}
+	if changed || tunneled {
 		a.updateReferencesPreview()
 	}
-	if len(local) > 0 {
+	if len(rewrites) > 0 {
 		input = rewriteReferenceTokens(input, func(tok string) (string, bool) {
-			rel, ok := local[tok]
-			return rel, ok
+			r, ok := rewrites[tok]
+			return r, ok
 		})
 	}
-	if len(mentioned) == 0 {
-		return input
+	if len(mentioned) > 0 {
+		input += referenceAnnotation(mentioned)
 	}
-	return input + referenceAnnotation(mentioned)
+	if len(mentionedTunnels) > 0 {
+		input += tunnelAnnotation(mentionedTunnels)
+	}
+	return input
+}
+
+// tunnelStartTimeout bounds how long a prompt submit blocks waiting for a
+// container-to-host tunnel to come up. Starting one provisions a network
+// namespace and health-checks the tunnel's listener (not the upstream: that
+// is dialed per connection, so an endpoint nobody is listening on still
+// attaches and simply refuses connections until it comes up). The timeout
+// keeps a wedged engine from stalling the prompt indefinitely.
+const tunnelStartTimeout = 10 * time.Second
+
+// attachTunnel resolves an @-URL to its tunnelInfo, starting a
+// container-to-host tunnel for it on first mention. Tunnels are sticky for
+// the conversation like mounted references: a URL mentioned again reuses the
+// address already handed out. fresh reports whether a new tunnel was
+// attached.
+func (a *sessionAgent) attachTunnel(ctx context.Context, tok string, u *url.URL, port int) (tunnelInfo, bool, error) {
+	for _, t := range a.tunnels {
+		if t.original == tok {
+			return t, false, nil
+		}
+	}
+
+	// Host.service proxies each connection through the CLI's own network, so
+	// the upstream address resolves exactly as it does for the user:
+	// localhost is the user's localhost. The frontend port mirrors the
+	// backend, so the engine-side address keeps the port the user typed.
+	svc := a.session.dag.Host().Service(
+		[]dagger.PortForward{{
+			Backend:  port,
+			Frontend: port,
+			Protocol: dagger.NetworkProtocolTcp,
+		}},
+		dagger.HostServiceOpts{Host: u.Hostname()},
+	)
+	ctx, cancel := context.WithTimeout(ctx, tunnelStartTimeout)
+	defer cancel()
+	// Start explicitly: nothing ever binds this service — containers reach it
+	// by hostname on the session network — so it has to already be running.
+	svc, err := svc.Start(ctx)
+	if err != nil {
+		return tunnelInfo{}, false, err
+	}
+	hostname, err := svc.Hostname(ctx)
+	if err != nil {
+		return tunnelInfo{}, false, err
+	}
+
+	info := tunnelInfo{original: tok, tunneled: tunnelURL(u, hostname, port)}
+	a.tunnels = append(a.tunnels, info)
+	return info, true, nil
+}
+
+// tunnelURL rewrites u to point at the tunnel's engine-side address, keeping
+// everything but the authority's host and port.
+func tunnelURL(u *url.URL, hostname string, port int) string {
+	rewritten := *u
+	rewritten.Host = net.JoinHostPort(hostname, strconv.Itoa(port))
+	return rewritten.String()
 }
 
 // workspaceRelativePath reports whether abs (an absolute host path) lies inside
@@ -410,20 +560,36 @@ func referenceAnnotation(refs []referenceInfo) string {
 	return b.String()
 }
 
-// updateReferencesPreview refreshes the "References" sidebar section listing the
-// host paths attached to this conversation. An empty list clears the section.
-// Like the other conversation-scoped surfaces it follows focus: a background
-// conversation's references are not what the user is typing against.
+// tunnelAnnotation renders the trailing block appended to a prompt that maps
+// each @-referenced URL (rewritten in place) back to what the user typed, so
+// the model knows the tunneled address stands in for the original endpoint.
+func tunnelAnnotation(tunnels []tunnelInfo) string {
+	var b strings.Builder
+	b.WriteString("\n\n[Referenced URLs, remapped to tunnels reachable from your containers:")
+	for _, t := range tunnels {
+		fmt.Fprintf(&b, "\n- %s (as typed) → %s", t.original, t.tunneled)
+	}
+	b.WriteString("\nUse the remapped addresses; the originals only resolve on the user's machine. Connections are forwarded on demand, so a connection that is refused, reset, or closed without a response just means the endpoint is not up on the user's side right now — the same address works as soon as it is. TLS certificates, if any, are still issued for the original hostname.]")
+	return b.String()
+}
+
+// updateReferencesPreview refreshes the "References" sidebar section listing
+// the host paths and tunneled URLs attached to this conversation. An empty
+// list clears the section. Like the other conversation-scoped surfaces it
+// follows focus: a background conversation's references are not what the user
+// is typing against.
 func (a *sessionAgent) updateReferencesPreview() {
 	if !a.uiActive() {
 		return
 	}
-	if len(a.references) == 0 {
+	if len(a.references) == 0 && len(a.tunnels) == 0 {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "References"})
 		return
 	}
 	refs := make([]referenceInfo, len(a.references))
 	copy(refs, a.references)
+	tunnels := make([]tunnelInfo, len(a.tunnels))
+	copy(tunnels, a.tunnels)
 	a.session.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title: "References",
 		ContentFunc: func(width int) string {
@@ -435,6 +601,9 @@ func (a *sessionAgent) updateReferencesPreview() {
 					name += "/"
 				}
 				fmt.Fprintln(&buf, out.String(name).Foreground(termenv.ANSICyan).String())
+			}
+			for _, t := range tunnels {
+				fmt.Fprintln(&buf, out.String(t.original).Foreground(termenv.ANSICyan).String())
 			}
 			return strings.TrimRight(buf.String(), "\n")
 		},

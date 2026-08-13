@@ -910,6 +910,11 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 			idtui.KeyEnabled(h.mode == modeShell),
 		),
 		key.NewBinding(
+			key.WithKeys("ctrl+t"),
+			key.WithHelp("ctrl+t", "context"),
+			idtui.KeyEnabled(h.llmSession != nil),
+		),
+		key.NewBinding(
 			key.WithKeys("ctrl+x"),
 			key.WithHelp("ctrl+x", autoCompactHelp),
 			idtui.KeyEnabled(h.llmSession != nil),
@@ -931,6 +936,14 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 		if inputValue == "" {
 			h.mode = modeShell
 			return noop // handled, no async work
+		}
+	case key.MatchString("ctrl+t"):
+		if h.llmSession != nil {
+			// Run async: starting the server and querying the engine for the
+			// sidebar/browser handoff must not block the input goroutine.
+			return func() {
+				h.llmSession.ShowContextViz()
+			}
 		}
 	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
