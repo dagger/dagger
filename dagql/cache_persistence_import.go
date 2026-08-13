@@ -364,14 +364,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 		for resultID := range c.resultsByID {
 			outputEqClasses := c.outputEqClassesForResultLocked(resultID)
+			if len(outputEqClasses) > 0 {
+				c.markResultBroadlyIndexedLocked(resultID)
+			}
 			for outputEqID := range outputEqClasses {
 				for dig := range c.eqClassToDigests[outputEqID] {
-					set := c.egraphResultsByDigest[dig]
-					if set == nil {
-						set = newSharedResultIDSet()
-						c.egraphResultsByDigest[dig] = set
-					}
-					set.Insert(resultID)
+					c.addResultDigestPostingLocked(resultID, dig, resultDigestPostingBroad)
 				}
 			}
 		}

@@ -17,6 +17,13 @@ import (
 type eqClassID uint64
 type egraphTermID uint64
 
+type resultDigestPostingKind uint8
+
+const (
+	resultDigestPostingExact resultDigestPostingKind = iota
+	resultDigestPostingBroad
+)
+
 // egraphTerm is purely symbolic: operation shape + canonicalized input/output
 // equivalence state.
 //
@@ -201,6 +208,12 @@ func (c *Cache) initEgraphLocked() {
 	}
 	if c.egraphResultsByDigest == nil {
 		c.egraphResultsByDigest = make(map[string]*set.TreeSet[sharedResultID])
+	}
+	if c.resultIndexedDigests == nil {
+		c.resultIndexedDigests = make(map[sharedResultID][]string)
+	}
+	if c.broadlyIndexedResults == nil {
+		c.broadlyIndexedResults = make(map[sharedResultID]struct{})
 	}
 	if c.termInputProvenance == nil {
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
@@ -762,18 +775,6 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 	}
 	c.initEgraphLocked()
 
-	indexDigest := func(dig digest.Digest) {
-		if dig == "" {
-			return
-		}
-		set := c.egraphResultsByDigest[dig.String()]
-		if set == nil {
-			set = newSharedResultIDSet()
-			c.egraphResultsByDigest[dig.String()] = set
-		}
-		set.Insert(res.id)
-	}
-
 	indexFrame := func(frame *ResultCall) error {
 		if frame == nil {
 			return nil
@@ -782,9 +783,9 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 		if err != nil {
 			return err
 		}
-		indexDigest(dig)
+		c.addResultDigestPostingLocked(res.id, dig.String(), resultDigestPostingExact)
 		for _, extra := range frame.ExtraDigests {
-			indexDigest(extra.Digest)
+			c.addResultDigestPostingLocked(res.id, extra.Digest.String(), resultDigestPostingExact)
 		}
 		return nil
 	}
@@ -797,27 +798,72 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 	return nil
 }
 
+// addResultDigestPostingLocked requires egraphMu and an e-graph initialized by
+// initEgraphLocked.
+func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind) {
+	if resID == 0 || dig == "" {
+		return
+	}
+	switch kind {
+	case resultDigestPostingExact, resultDigestPostingBroad:
+	default:
+		return
+	}
+	results := c.egraphResultsByDigest[dig]
+	if results == nil {
+		results = newSharedResultIDSet()
+		c.egraphResultsByDigest[dig] = results
+	}
+	inserted := results.Insert(resID)
+	if kind == resultDigestPostingExact && inserted {
+		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
+	}
+}
+
+// markResultBroadlyIndexedLocked requires egraphMu and an e-graph initialized
+// by initEgraphLocked.
+func (c *Cache) markResultBroadlyIndexedLocked(resID sharedResultID) {
+	if resID == 0 {
+		return
+	}
+	c.broadlyIndexedResults[resID] = struct{}{}
+}
+
+func (c *Cache) removeResultDigestPostingLocked(resID sharedResultID, dig string) {
+	if resID == 0 || dig == "" {
+		return
+	}
+	results := c.egraphResultsByDigest[dig]
+	if results == nil {
+		return
+	}
+	results.Remove(resID)
+	if results.Empty() {
+		delete(c.egraphResultsByDigest, dig)
+	}
+}
+
 func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses map[eqClassID]struct{}) {
-	if resID == 0 || len(outputEqClasses) == 0 {
+	if resID == 0 {
 		return
 	}
 
-	for outputEqID := range outputEqClasses {
-		outputEqID = c.findEqClassLocked(outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		for dig := range c.eqClassToDigests[outputEqID] {
-			set := c.egraphResultsByDigest[dig]
-			if set == nil {
+	for _, dig := range c.resultIndexedDigests[resID] {
+		c.removeResultDigestPostingLocked(resID, dig)
+	}
+	if _, broad := c.broadlyIndexedResults[resID]; broad {
+		for outputEqID := range outputEqClasses {
+			outputEqID = c.findEqClassLocked(outputEqID)
+			if outputEqID == 0 {
 				continue
 			}
-			set.Remove(resID)
-			if set.Empty() {
-				delete(c.egraphResultsByDigest, dig)
+			for dig := range c.eqClassToDigests[outputEqID] {
+				c.removeResultDigestPostingLocked(resID, dig)
 			}
 		}
 	}
+	delete(c.resultIndexedDigests, resID)
+	delete(c.broadlyIndexedResults, resID)
 }
 
 // lookupCacheForRequestLocked checks if the given call ID has an equivalent result in the cache.
@@ -1805,6 +1851,8 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.termInputProvenance = nil
 	c.egraphTermsByTermDigest = nil
 	c.egraphResultsByDigest = nil
+	c.resultIndexedDigests = nil
+	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0

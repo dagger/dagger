@@ -257,11 +257,24 @@ Important omissions:
 - per-session tracking state
 - per-session lazy span state
 - arbitrary in-memory cache entries from `cache_arbitrary.go`
+- exact runtime result-to-digest posting membership
 
 Those are runtime-only.
 
 The persisted store is about retained dagql call-cache state and snapshot
 metadata, not every transient runtime structure.
+
+The result-to-output-eq-class rows and eq-class digest rows are sufficient to
+reconstruct safe digest lookup candidates, but not the smaller exact set of
+postings originally created for each result. Import therefore rebuilds
+class-wide digest postings for each result's output classes and marks those
+results as broadly indexed. Lifecycle removal scans those classes only for
+broad imported results; ordinary runtime and persisted-fresh results use their
+in-memory exact reverse posting lists.
+
+This is intentionally schema-compatible. Persisting exact result-to-digest
+membership would require a separate schema/version change and migration and is
+not part of the current format.
 
 ## Persistable Roots
 
@@ -466,7 +479,7 @@ than accidental ownership loss.
 7. rebuild exact dependency edges and increment ownership
 8. load result snapshot links
 9. recompute required session resources
-10. rebuild digest indexes
+10. rebuild conservative class-wide digest indexes and mark their results broad
 11. opportunistically decode some persisted payloads eagerly
 12. load snapshot-manager metadata and restore owner leases
 

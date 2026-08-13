@@ -4391,7 +4391,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	assert.Equal(t, 0, len(c.resultOutputEqClasses))
 }
 
-func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) {
+func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -4441,12 +4441,9 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
 	assert.Assert(t, ok)
 
-	foreignSet := c.egraphResultsByDigest[foreignDigest.String()]
-	if foreignSet == nil {
-		foreignSet = newSharedResultIDSet()
-		c.egraphResultsByDigest[foreignDigest.String()] = foreignSet
-	}
-	foreignSet.Insert(shared.id)
+	// Removal covers production-recorded exact postings and broad imported
+	// postings, not arbitrary white-box mutations that bypass bookkeeping.
+	c.addResultDigestPostingLocked(shared.id, foreignDigest.String(), resultDigestPostingExact)
 	c.egraphMu.Unlock()
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
