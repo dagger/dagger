@@ -1280,6 +1280,22 @@ func TestCacheEGraphBenchmarkFixtureShapes(t *testing.T) {
 		assert.NilError(t, egraphBenchmarkRunLookup(f, egraphBenchmarkLookupStructural, "wide-route-check"))
 	})
 
+	t.Run("wide-output metadata prune", func(t *testing.T) {
+		const width = 4
+		for _, mode := range []egraphBenchmarkPersistence{egraphBenchmarkPersistedFresh, egraphBenchmarkImported} {
+			t.Run(string(mode), func(t *testing.T) {
+				f := egraphBenchmarkWideOutputFixture(t, width, mode, nil)
+				defer f.close(t)
+				report, err := f.cache.PruneMetadataEstimate(f.ctx, 2, 1)
+				assert.NilError(t, err)
+				assert.Assert(t, report.Triggered)
+				assert.Equal(t, report.RemovedPersistedRootCount, len(f.allResultIDs))
+				assert.Equal(t, report.AfterPrune.ResultCount, 0)
+				assert.Equal(t, len(f.cache.resultsByID), 0)
+			})
+		}
+	})
+
 	t.Run("wide-digest", func(t *testing.T) {
 		const width = 16
 		f := egraphBenchmarkWideDigestFixture(t, width, nil)

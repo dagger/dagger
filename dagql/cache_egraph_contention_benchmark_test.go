@@ -383,7 +383,10 @@ func egraphBenchmarkRunMetadataPrune(b *testing.B, f *egraphBenchmarkFixture) {
 	var report CacheMetadataPruneReport
 	egraphBenchmarkRunMeasured(b, f, len(f.allResultIDs)+128, func() error {
 		var err error
-		report, err = f.cache.PruneMetadataEstimate(f.ctx, estimate.EstimatedBytes-1, 1)
+		// Force pruning even when the mandatory initial equivalence-class
+		// compaction reduces the estimate. Using pre-compaction estimate-1 can
+		// legitimately become satisfied by compaction alone on wide fixtures.
+		report, err = f.cache.PruneMetadataEstimate(f.ctx, 2, 1)
 		return err
 	})
 	b.ReportMetric(float64(report.CandidateCount), "prune-candidates")
