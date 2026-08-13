@@ -3,6 +3,8 @@ package schema
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -63,6 +65,7 @@ func (s *moduleSchema) currentModuleAsSDK(
 	for _, mod := range entry.AsSDK.Modules {
 		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: mod.Path})
 	}
+	result.Modules = currentModuleAsSDKModulesInScopeForCwd(result.Modules, ws.Cwd)
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
 			Path:           client.Path,
@@ -95,6 +98,53 @@ func (s *moduleSchema) currentModuleAsSDKModules(
 	_ struct{},
 ) ([]*core.CurrentModuleAsSDKModule, error) {
 	return parent.Modules, nil
+}
+
+// currentModuleAsSDKModulesInScopeForCwd applies the same cwd selection policy
+// SDKs previously reconstructed with polyfill.findConfigDirs: all registered
+// modules at or below cwd, and, when cwd itself is not registered, the nearest
+// enclosing registered module. Results are the nearest ancestor first followed
+// by descendants in workspace-config order.
+func currentModuleAsSDKModulesInScopeForCwd(
+	modules []*core.CurrentModuleAsSDKModule,
+	cwd string,
+) []*core.CurrentModuleAsSDKModule {
+	cwd = cleanWorkspaceRelPath(cwd)
+
+	var descendants []*core.CurrentModuleAsSDKModule
+	var nearestAncestor *core.CurrentModuleAsSDKModule
+	hasExact := false
+	seen := map[string]bool{}
+
+	for _, mod := range modules {
+		if mod == nil {
+			continue
+		}
+		modPath := cleanWorkspaceRelPath(mod.Path)
+		if seen[modPath] {
+			continue
+		}
+		seen[modPath] = true
+
+		if cwd == "." || modPath == cwd || strings.HasPrefix(modPath, cwd+string(filepath.Separator)) {
+			descendants = append(descendants, mod)
+			if modPath == cwd {
+				hasExact = true
+			}
+			continue
+		}
+
+		if modPath == "." || strings.HasPrefix(cwd, modPath+string(filepath.Separator)) {
+			if nearestAncestor == nil || len(modPath) > len(cleanWorkspaceRelPath(nearestAncestor.Path)) {
+				nearestAncestor = mod
+			}
+		}
+	}
+
+	if hasExact || nearestAncestor == nil {
+		return descendants
+	}
+	return append([]*core.CurrentModuleAsSDKModule{nearestAncestor}, descendants...)
 }
 
 func (s *moduleSchema) currentModuleAsSDKClients(
