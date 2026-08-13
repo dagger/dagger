@@ -3,7 +3,9 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -154,6 +156,95 @@ func cacheTestPublishContentResult(
 	assert.NilError(t, err)
 	assert.Assert(t, !res.HitCache())
 	return res
+}
+
+type cacheDerivedIndexFixture struct {
+	cache        *Cache
+	ctx          context.Context
+	dbPath       string
+	setupSession string
+	allResultIDs []sharedResultID
+}
+
+func (f *cacheDerivedIndexFixture) close(t testing.TB) {
+	t.Helper()
+	if f == nil || f.cache == nil {
+		return
+	}
+	assert.NilError(t, f.cache.CloseDiscardingPersistence())
+	f.cache = nil
+}
+
+func newCacheDerivedIndexFixtureCache(t testing.TB, sessionID, dbPath string) (*Cache, context.Context) {
+	t.Helper()
+	ctx := cacheTestSessionContext(t.Context(), sessionID)
+	c, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	return c, ContextWithCache(ctx, c)
+}
+
+func cacheDerivedIndexPublishPersistedResult(
+	t testing.TB,
+	f *cacheDerivedIndexFixture,
+	requestCall, responseCall *ResultCall,
+	value int,
+) AnyResult {
+	t.Helper()
+	res, err := f.cache.GetOrInitCall(f.ctx, f.setupSession, noopTypeResolver{}, &CallRequest{
+		ResultCall:    requestCall,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(responseCall, value), nil
+	})
+	assert.NilError(t, err)
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil && shared.id != 0)
+	f.allResultIDs = append(f.allResultIDs, shared.id)
+	return res
+}
+
+func cacheDerivedIndexWideOutputFixture(t testing.TB, width int, imported bool) *cacheDerivedIndexFixture {
+	t.Helper()
+	f := &cacheDerivedIndexFixture{setupSession: "derived-index-wide-output"}
+	if imported {
+		f.dbPath = filepath.Join(t.TempDir(), "cache.db")
+	}
+	f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
+
+	sharedInputDigest := digest.FromString("derived-index-wide-input-content")
+	parents := make([]AnyResult, 0, width+1)
+	for i := range width + 1 {
+		request := cacheTestIntCall("derived-index-wide-input-request-" + strconv.Itoa(i))
+		response := cacheTestIntCall("derived-index-wide-input-response-"+strconv.Itoa(i), call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: sharedInputDigest,
+		})
+		parents = append(parents, cacheDerivedIndexPublishPersistedResult(t, f, request, response, i))
+	}
+
+	sharedOutputDigest := digest.FromString("derived-index-wide-output-content")
+	for i := range width {
+		publishCall := cacheTestIntCall("derived-index-wide-output-publish-" + strconv.Itoa(i))
+		response := cacheTestIntCall(publishCall.Field, call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: sharedOutputDigest,
+		})
+		res := cacheDerivedIndexPublishPersistedResult(t, f, publishCall, response, i)
+		structural := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "derived-index-wide-structural",
+			Receiver: &ResultCallRef{ResultID: uint64(parents[i].cacheSharedResult().id)},
+		}
+		assert.NilError(t, f.cache.TeachCallEquivalentToResult(f.ctx, f.setupSession, structural, res))
+	}
+
+	assert.NilError(t, f.cache.ReleaseSession(f.ctx, f.setupSession))
+	if imported {
+		assert.NilError(t, f.cache.Close(t.Context()))
+		f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
+	}
+	return f
 }
 
 func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
@@ -414,7 +505,7 @@ func TestCacheExactDigestPostingRemoval(t *testing.T) {
 
 func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	const width = 4
-	f := egraphBenchmarkWideOutputFixture(t, width, egraphBenchmarkImported, nil)
+	f := cacheDerivedIndexWideOutputFixture(t, width, true)
 	defer f.close(t)
 
 	f.cache.egraphMu.Lock()
@@ -479,7 +570,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 
 func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
 	const width = 4
-	f := egraphBenchmarkWideOutputFixture(t, width, egraphBenchmarkPersistedFresh, nil)
+	f := cacheDerivedIndexWideOutputFixture(t, width, false)
 	defer f.close(t)
 
 	f.cache.egraphMu.Lock()

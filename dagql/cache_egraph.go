@@ -886,11 +886,6 @@ func (c *Cache) lookupCacheForRequestLocked(
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
-	candidateCount := 0
-	if match.candidates != nil {
-		candidateCount = match.candidates.Size()
-	}
-	c.observeEgraphMeasurement("request-lookup-candidates", candidateCount, match.termSetSize)
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 
@@ -972,16 +967,16 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 
-	lock := c.lockEgraphMeasured("lookup-request")
+	c.egraphMu.Lock()
 	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil || !hit {
-		c.unlockEgraphMeasured(lock)
+		c.egraphMu.Unlock()
 		return retRes, hit, err
 	}
 
 	hitShared := retRes.cacheSharedResult()
 	if hitShared == nil || hitShared.id == 0 {
-		c.unlockEgraphMeasured(lock)
+		c.egraphMu.Unlock()
 		return nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
 	}
 
@@ -1002,11 +997,11 @@ func (c *Cache) lookupCacheForRequest(
 	}
 	trackedCount = len(c.sessionResultIDsBySession[sessionID])
 	c.sessionMu.Unlock()
-	c.unlockEgraphMeasured(lock)
+	c.egraphMu.Unlock()
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
-		rollbackLock := c.lockEgraphMeasured("lookup-request-rollback")
+		c.egraphMu.Lock()
 		c.sessionMu.Lock()
 		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
 			delete(resultIDs, hitShared.id)
@@ -1021,7 +1016,7 @@ func (c *Cache) lookupCacheForRequest(
 			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
 		}
 		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.unlockEgraphMeasured(rollbackLock)
+		c.egraphMu.Unlock()
 		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
 	}
 
@@ -1072,8 +1067,8 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 		requestInputs = append(requestInputs, dig)
 	}
 
-	lock := c.lockEgraphMeasured("teach-call-equivalent")
-	defer c.unlockEgraphMeasured(lock)
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
 	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
 }
 
@@ -1134,28 +1129,28 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			requestInputs = append(requestInputs, dig)
 		}
 
-		lock := c.lockEgraphMeasured("teach-content-digest")
+		c.egraphMu.Lock()
 		shared = c.resultsByID[shared.id]
 		if shared == nil {
-			c.unlockEgraphMeasured(lock)
+			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %T missing from cache", res)
 		}
 		if shared.loadResultCall() == nil {
-			c.unlockEgraphMeasured(lock)
+			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
 		if shared.loadResultCall() != baseFrame {
-			c.unlockEgraphMeasured(lock)
+			c.egraphMu.Unlock()
 			continue
 		}
 		c.traceTeachContentDigest(ctx, shared, oldContentDigest.String(), contentDigest.String(), requestDigest.String(), requestSelf.String(), requestInputs, frame)
 		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-			c.unlockEgraphMeasured(lock)
+			c.egraphMu.Unlock()
 			return err
 		}
 		shared.storeResultCall(frame)
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
-		c.unlockEgraphMeasured(lock)
+		c.egraphMu.Unlock()
 		return nil
 	}
 }
@@ -1182,8 +1177,8 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 		requestInputs = append(requestInputs, dig)
 	}
 
-	lock := c.lockEgraphMeasured("result-id-for-call")
-	defer c.unlockEgraphMeasured(lock)
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
