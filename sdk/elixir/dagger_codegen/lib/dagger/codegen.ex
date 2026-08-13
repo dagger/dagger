@@ -5,11 +5,32 @@ defmodule Dagger.Codegen do
 
   alias Dagger.Codegen.Introspection.Types.Schema
 
+  @nullable_objects_version Version.parse!("1.0.0-beta.10")
+
   def generate(generator, introspection_schema) do
+    supports_nullable_objects = supports_nullable_objects?(introspection_schema.version)
+
     visit(introspection_schema, fn type ->
-      code = do_generate(type, generator)
+      code = do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
       {generator.filename(type), generator.format(code)}
     end)
+  end
+
+  defp supports_nullable_objects?(nil), do: true
+
+  defp supports_nullable_objects?(version) do
+    version = String.trim_leading(version, "v")
+
+    version =
+      case Regex.run(~r/^\d+\.\d+\.\d+-beta\.\d+/, version) do
+        [beta_version] -> beta_version
+        nil -> version
+      end
+
+    case Version.parse(version) do
+      {:ok, version} -> Version.compare(version, @nullable_objects_version) != :lt
+      :error -> true
+    end
   end
 
   defp visit(%Schema{types: types}, generate) do

@@ -516,29 +516,57 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @doc \"""
         The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
         \"""
-        @spec runtime(t()) :: Dagger.Container.t() | nil
+        @spec runtime(t()) :: {:ok, Dagger.Container.t() | nil} | {:error, term()}
         def runtime(%__MODULE__{} = module) do
           query_builder =
-            module.query_builder |> QB.select("runtime")
+            module.query_builder |> QB.select("runtime") |> QB.select("id")
 
-          %Dagger.Container{
-            query_builder: query_builder,
-            client: module.client
-          }
+          case Client.execute(module.client, query_builder) do
+            {:ok, nil} ->
+              {:ok, nil}
+
+            {:ok, id} ->
+              {:ok,
+               %Dagger.Container{
+                 query_builder:
+                   QB.query()
+                   |> QB.select("node")
+                   |> QB.put_arg("id", id)
+                   |> QB.inline_fragment("Container"),
+                 client: module.client
+               }}
+
+            error ->
+              error
+          end
         end
 
         @doc \"""
         The SDK config used by this module.
         \"""
-        @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
+        @spec sdk(t()) :: {:ok, Dagger.SDKConfig.t() | nil} | {:error, term()}
         def sdk(%__MODULE__{} = module) do
           query_builder =
-            module.query_builder |> QB.select("sdk")
+            module.query_builder |> QB.select("sdk") |> QB.select("id")
 
-          %Dagger.SDKConfig{
-            query_builder: query_builder,
-            client: module.client
-          }
+          case Client.execute(module.client, query_builder) do
+            {:ok, nil} ->
+              {:ok, nil}
+
+            {:ok, id} ->
+              {:ok,
+               %Dagger.SDKConfig{
+                 query_builder:
+                   QB.query()
+                   |> QB.select("node")
+                   |> QB.put_arg("id", id)
+                   |> QB.inline_fragment("SDKConfig"),
+                 client: module.client
+               }}
+
+            error ->
+              error
+          end
         end
 
         @doc \"""
@@ -564,15 +592,29 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @doc \"""
         The source for the module.
         \"""
-        @spec source(t()) :: Dagger.ModuleSource.t() | nil
+        @spec source(t()) :: {:ok, Dagger.ModuleSource.t() | nil} | {:error, term()}
         def source(%__MODULE__{} = module) do
           query_builder =
-            module.query_builder |> QB.select("source")
+            module.query_builder |> QB.select("source") |> QB.select("id")
 
-          %Dagger.ModuleSource{
-            query_builder: query_builder,
-            client: module.client
-          }
+          case Client.execute(module.client, query_builder) do
+            {:ok, nil} ->
+              {:ok, nil}
+
+            {:ok, id} ->
+              {:ok,
+               %Dagger.ModuleSource{
+                 query_builder:
+                   QB.query()
+                   |> QB.select("node")
+                   |> QB.put_arg("id", id)
+                   |> QB.inline_fragment("ModuleSource"),
+                 client: module.client
+               }}
+
+            error ->
+              error
+          end
         end
 
         @doc \"""

@@ -170,6 +170,11 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     "{:ok, #{format_type(type)}} | {:error, term()}"
   end
 
+  def format_typespec_output_type(%TypeRef{kind: kind} = type)
+      when kind in ["OBJECT", "INTERFACE"] do
+    "{:ok, #{format_type(type)}} | {:error, term()}"
+  end
+
   def format_typespec_output_type(type) do
     format_type(type)
   end
