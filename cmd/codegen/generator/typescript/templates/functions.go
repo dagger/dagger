@@ -133,6 +133,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"IsSelfChainable":           commonFunc.IsSelfChainable,
 		"IsListOfObject":            commonFunc.IsListOfObject,
 		"IsListOfInterface":         funcs.isListOfInterface,
+		"IsNullableObject":          funcs.isNullableObject,
 		"IsListOfEnum":              commonFunc.IsListOfEnum,
 		"GetArrayField":             commonFunc.GetArrayField,
 		"ToLowerCase":               commonFunc.ToLowerCase,
@@ -178,6 +179,10 @@ func (funcs typescriptTemplateFuncs) legacyTypeScriptSDKCompat() bool {
 		return false
 	}
 	return semver.Compare(funcs.schemaVersion, legacyTypeScriptSDKCompatCutoverVersion) < 0
+}
+
+func (funcs typescriptTemplateFuncs) supportsNullableObjects() bool {
+	return generator.SupportsNullableObjects(funcs.schemaVersion)
 }
 
 // isInterface checks if the type is a GraphQL interface.
@@ -336,7 +341,11 @@ func (funcs typescriptTemplateFuncs) solve(field introspection.Field) bool {
 	if field.TypeRef == nil {
 		return false
 	}
-	return field.TypeRef.IsScalar() || field.TypeRef.IsList()
+	return field.TypeRef.IsScalar() || field.TypeRef.IsList() || funcs.isNullableObject(field.TypeRef)
+}
+
+func (funcs typescriptTemplateFuncs) isNullableObject(ref *introspection.TypeRef) bool {
+	return funcs.supportsNullableObjects() && ref != nil && ref.IsOptional() && (ref.IsObject() || ref.IsInterface())
 }
 
 // subtract subtract integer a with integer b.
