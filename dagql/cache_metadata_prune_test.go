@@ -187,6 +187,45 @@ func TestCacheMetadataPruneCandidateSortCancellation(t *testing.T) {
 	assert.Equal(t, int32(2), cancelingCtx.checks.Load())
 }
 
+func TestCacheMetadataPruneDependencySortCancellation(t *testing.T) {
+	t.Parallel()
+
+	const dependencyCount = pruneCancellationCheckInterval + 44
+	deps := make(map[sharedResultID]struct{}, dependencyCount)
+	for i := 1; i <= dependencyCount; i++ {
+		deps[sharedResultID(i)] = struct{}{}
+	}
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{
+		dependencyCount + 1: {
+			id:   dependencyCount + 1,
+			deps: deps,
+		},
+	}}
+
+	base, cancel := context.WithCancel(t.Context())
+	cancelingCtx := &cancelOnErrCheckContext{
+		Context: base,
+		cancel:  cancel,
+		// The first three checks occur at snapshot start, on the result,
+		// and while copying its dependencies. The fourth occurs after a
+		// bounded number of comparisons inside dependency ordering.
+		cancelAt: 4,
+	}
+	defer cancel()
+
+	snapshot, err := c.snapshotPruneStateCancelable(
+		nil,
+		pruneSnapshotMetadata,
+		cacheMetadataResultEstimatedBytes,
+		newPruneCancellationChecker(cancelingCtx),
+	)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Assert(t, snapshot.results == nil)
+	assert.Assert(t, snapshot.usageIdentities == nil)
+	assert.Equal(t, int64(0), snapshot.usedBytes)
+	assert.Equal(t, int32(4), cancelingCtx.checks.Load())
+}
+
 func TestCachePruneMetadataEstimateSkipsPhysicalMeasurementAndUsesColdOrder(t *testing.T) {
 	t.Parallel()
 

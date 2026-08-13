@@ -428,8 +428,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 			deps = append(deps, depID)
 		}
 		if len(deps) > 1 {
-			slices.Sort(deps)
-			if err := checker.checkNow(); err != nil {
+			if err := sortPruneResultIDsCancelable(deps, checker); err != nil {
 				return pruneSnapshot{}, err
 			}
 		}
@@ -648,11 +647,32 @@ type pruneSortCancellation struct {
 	err error
 }
 
-func sortPruneCandidatesCancelable(candidates []pruneCandidate, now time.Time, checker *pruneCancellationChecker) (rerr error) {
+func sortPruneResultIDsCancelable(resultIDs []sharedResultID, checker *pruneCancellationChecker) error {
 	if checker == nil {
-		slices.SortFunc(candidates, func(a, b pruneCandidate) int {
-			return comparePruneCandidates(a, b, now)
-		})
+		slices.Sort(resultIDs)
+		return nil
+	}
+	return sortPruneSliceCancelable(resultIDs, checker, func(a, b sharedResultID) int {
+		switch {
+		case a < b:
+			return -1
+		case a > b:
+			return 1
+		default:
+			return 0
+		}
+	})
+}
+
+func sortPruneCandidatesCancelable(candidates []pruneCandidate, now time.Time, checker *pruneCancellationChecker) error {
+	return sortPruneSliceCancelable(candidates, checker, func(a, b pruneCandidate) int {
+		return comparePruneCandidates(a, b, now)
+	})
+}
+
+func sortPruneSliceCancelable[S ~[]E, E any](items S, checker *pruneCancellationChecker, compare func(E, E) int) (rerr error) {
+	if checker == nil {
+		slices.SortFunc(items, compare)
 		return nil
 	}
 
@@ -669,11 +689,11 @@ func sortPruneCandidatesCancelable(candidates []pruneCandidate, now time.Time, c
 		}
 	}()
 
-	slices.SortFunc(candidates, func(a, b pruneCandidate) int {
+	slices.SortFunc(items, func(a, b E) int {
 		if err := checker.check(); err != nil {
 			panic(pruneSortCancellation{err: err})
 		}
-		return comparePruneCandidates(a, b, now)
+		return compare(a, b)
 	})
 	return checker.checkNow()
 }
