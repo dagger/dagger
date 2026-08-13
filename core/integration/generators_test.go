@@ -701,6 +701,52 @@ func (GeneratorsSuite) TestAPIClientInitGeneratesForNewClientOnly(ctx context.Co
 	})
 }
 
+// TestAPIClientInitDottedModulePath covers a module ref whose dot segment is
+// not the first one ("common/.dagger/target"), the shape a root-relative ref
+// takes from a monorepo subdirectory. The ref classifier used to read any dot
+// as a hostname and route such a ref to git.
+func (GeneratorsSuite) TestAPIClientInitDottedModulePath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := initGeneratorFixture(t, c).
+		WithNewFile("common/.dagger/target/dagger.json", `{
+  "name": "target",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "source": "."
+}`)
+
+	for _, tc := range []struct {
+		name string
+		ref  string
+	}{
+		{name: "workspace-relative", ref: "common/.dagger/target"},
+		{name: "explicitly relative", ref: "./common/.dagger/target"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			initialized := base.
+				WithWorkdir("/work/common").
+				With(daggerExec(
+					"api", "client", "init", "fixture", "clients/dotted", tc.ref, "--auto-apply"))
+			out, err := initialized.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+
+			scaffold, err := initialized.File("/work/clients/dotted/scaffold.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "common/.dagger/target\n", scaffold)
+
+			// The generators ran for the new client too, which reads the
+			// recorded ref back through the SDK's client list.
+			generated, err := initialized.File("/work/clients/dotted/generated-client.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "common/.dagger/target\n", generated)
+
+			config, err := initialized.File("/work/dagger.toml").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, config, `module = "common/.dagger/target"`)
+		})
+	}
+}
+
 func (GeneratorsSuite) TestGeneratorGroupChangesSyncWithNestedSDKCodegen(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -122,18 +122,6 @@ func uniqueModuleName(modules map[string]ModuleEntry, base string) string {
 	}
 }
 
-// IsLocalRef performs a fast heuristic check to determine whether a module
-// reference string refers to a local path instead of a git source.
-func IsLocalRef(source, pin string) bool {
-	if pin != "" {
-		return false
-	}
-	if len(source) > 0 && (source[0] == '/' || source[0] == '.') {
-		return true
-	}
-	return !strings.Contains(source, ".")
-}
-
 // MigrationPlan is the pure filesystem plan for migrating a legacy
 // dagger.json project to workspace format.
 type MigrationPlan struct {
