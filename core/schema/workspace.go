@@ -1218,7 +1218,7 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, ownedPaths(resolvedPath), func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withNewFile",
@@ -1679,11 +1679,28 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	source, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	sourceID, err := args.Source.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	// Directory.withDirectory MERGES: the delta root ends up owning the source's
+	// files under resolvedPath, and nothing else there. Declaring the directory
+	// itself would put the whole host subtree in the sparse base, and every host
+	// file the source does not also carry would read as deleted — so the edit
+	// owns exactly the paths it writes.
+	sourceFiles, err := s.directoryFilePaths(ctx, source)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace withDirectory %q: %w", args.Path, err)
+	}
+	owned := make([]string, 0, len(sourceFiles))
+	for _, p := range sourceFiles {
+		owned = append(owned, path.Join(resolvedPath, p))
+	}
+	return s.workspaceEdit(ctx, parent, resolvedPath, ownedPaths(owned...), func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withDirectory",
@@ -1694,6 +1711,44 @@ func (s *workspaceSchema) withNewDirectory(
 		})
 		return updated, err
 	})
+}
+
+// directoryFilePaths returns every file the given directory holds, as paths
+// relative to it. Directories are deliberately left out: a directory path in a
+// sparse base include list drags in its whole host subtree (see overlayEdit).
+//
+// It diffs against an empty directory rather than globbing because
+// ChangesetPaths always marks a directory entry with a trailing slash, whereas
+// Directory.glob only does so for a new-enough client view — and this is a
+// distinction the overlay cannot afford to get wrong.
+func (s *workspaceSchema) directoryFilePaths(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+) ([]string, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var empty dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &empty, dagql.Selector{Field: "directory"}); err != nil {
+		return nil, err
+	}
+	emptyID, err := empty.ID()
+	if err != nil {
+		return nil, err
+	}
+	var changes dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, dir, &changes, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](emptyID)}},
+	}); err != nil {
+		return nil, err
+	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return filePathsOnly(paths.Added), nil
 }
 
 // removeAndPruneSelectors builds the selector chain for a workspace removal:
@@ -1717,6 +1772,17 @@ func removeAndPruneSelectors(targetPath, removeField, prune string) []dagql.Sele
 		})
 	}
 	return sels
+}
+
+// prunedRemoval is what a removal actually deletes: the path itself, plus the
+// emptied ancestor chain the prune takes with it. Both must be declared, or the
+// prune reads as a deletion nobody asked for and keepRemovalAncestors puts the
+// chain straight back.
+func prunedRemoval(targetPath, prune string) []string {
+	if prune == "" {
+		return []string{targetPath}
+	}
+	return []string{targetPath, prune}
 }
 
 // emptiedAncestorDir reports the topmost workspace-relative ancestor directory
@@ -1835,7 +1901,7 @@ func (s *workspaceSchema) withoutFile(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	prune := s.emptiedAncestorDir(ctx, parent.Self(), resolvedPath)
-	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, removedPaths(prunedRemoval(resolvedPath, prune)...), func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, removeAndPruneSelectors(targetPath, "withoutFile", prune)...)
 		return updated, err
@@ -1864,7 +1930,7 @@ func (s *workspaceSchema) withoutDirectory(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	prune := s.emptiedAncestorDir(ctx, parent.Self(), resolvedPath)
-	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, removedPaths(prunedRemoval(resolvedPath, prune)...), func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, removeAndPruneSelectors(targetPath, "withoutDirectory", prune)...)
 		return updated, err
@@ -1925,11 +1991,11 @@ func (s *workspaceSchema) applyChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	touched, err := changesetTouchedPaths(ctx, changesObj.Self())
+	touched, err := changesetOverlayPaths(ctx, changesObj.Self())
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	for _, p := range touched {
+	for _, p := range touched.all() {
 		if err := guardMountedPath(parent.Self(), p); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
@@ -2230,17 +2296,19 @@ func (s *workspaceSchema) mountEdit(
 }
 
 // workspaceEdit dispatches a single-path edit to either a cache mount (when the
-// path lands under one) or the base overlay.
+// path lands under one) or the base overlay. `touched` classifies what the edit
+// does to resolvedPath — see overlayTouched; getting it wrong is not a no-op.
 func (s *workspaceSchema) workspaceEdit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	resolvedPath string,
+	touched overlayTouched,
 	edit func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error),
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	if _, ok := parent.Self().CacheMountForPath(resolvedPath); ok {
 		return s.mountEdit(ctx, parent, resolvedPath, edit)
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		return edit(base, resolvedPath)
 	}, nil)
 }
@@ -2294,6 +2362,144 @@ func (s *workspaceSchema) workspaceOverlayChanges(
 		return overlay, true, fmt.Errorf("resolve uncommitted remainder: %w", err)
 	}
 	return remainder, true, nil
+}
+
+// keepRemovalAncestors re-creates, in the delta root, the ancestor directories
+// of every removed path that the removal did not itself delete.
+//
+// A removal is the one edit that puts host content in the sparse base without
+// putting it in the delta root — that is how the removal becomes visible. But
+// the base cannot hold `a/b/c` without also holding `a` and `a/b`, and those
+// ancestors are just as absent from the delta root, so the diff reports them
+// as removed too. Removed paths collapse to their topmost entry, so `a/` is
+// what export deletes: the whole directory, siblings and all, from a request to
+// delete one thing inside it.
+//
+// Recreating the surviving ancestors makes the delta root say what is actually
+// true — `a/` and `a/b/` still exist, `a/b/c` does not — and the removal
+// narrows back to what was asked for. Ancestors that ARE in the removed set
+// (the emptied chain a prune deliberately takes with it, see emptiedAncestorDir)
+// are left alone.
+func keepRemovalAncestors(
+	ctx context.Context,
+	srv *dagql.Server,
+	deltaRoot dagql.ObjectResult[*core.Directory],
+	removed []string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	seen := map[string]struct{}{}
+	var keep []string
+	for _, p := range removed {
+		p = normalizeCommitPath(p)
+		if p == "" {
+			continue
+		}
+		for dir := path.Dir(p); dir != "." && dir != "/" && dir != ""; dir = path.Dir(dir) {
+			// Covered, not equal: an ancestor beneath a pruned chain is gone
+			// with it, and recreating it would recreate the whole chain.
+			if pathCoveredBy(dir, removed) {
+				continue
+			}
+			if _, ok := seen[dir]; ok {
+				continue
+			}
+			seen[dir] = struct{}{}
+			keep = append(keep, dir)
+		}
+	}
+	if len(keep) == 0 {
+		return deltaRoot, nil
+	}
+	slices.Sort(keep)
+	for _, dir := range keep {
+		var updated dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, deltaRoot, &updated, dagql.Selector{
+			Field: "withNewDirectory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(dir)}},
+		}); err != nil {
+			return deltaRoot, fmt.Errorf("preserve ancestor %q of a removal: %w", dir, err)
+		}
+		deltaRoot = updated
+	}
+	return deltaRoot, nil
+}
+
+// assertOverlayRemovalsIntended refuses a host-backed overlay whose changeset
+// reports a removal no edit asked for.
+//
+// A host overlay's removals are *inferred*: they are whatever the sparse base
+// holds and the delta root does not. That makes them only as trustworthy as the
+// bookkeeping that decides what goes into the base — and a mistake there does
+// not fail, it silently deletes files, at whatever scale the mistaken path
+// covers. (A touched `internal/` once cost 660 files.)
+//
+// So the inference is checked against the ledger of what edits actually removed,
+// at the two boundaries where a wrong answer stops being recoverable: staging a
+// commit, and writing the user's checkout. Both already force the changeset, so
+// the check costs one memoized walk of paths already computed.
+//
+// What trips it: a touched directory whose contents the delta root only partly
+// owns, and a write that replaces an existing directory with a file. Both are
+// cases where inferring deletion from absence is wrong, and where the honest
+// answer is to stop.
+func (s *workspaceSchema) assertOverlayRemovalsIntended(
+	ctx context.Context,
+	ws *core.Workspace,
+) error {
+	// Value/git/rootless overlays diff full in-engine trees on both sides:
+	// their removals are observed, not inferred, and there is no ledger.
+	if ws.HostPath() == "" || !ws.ClientLocalBase() {
+		return nil
+	}
+	changes, ok := ws.OverlayChanges()
+	if !ok || changes.Self() == nil {
+		return nil
+	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("verify overlay removals: %w", err)
+	}
+	intended := ws.OverlayRemovedPaths()
+	var unintended []string
+	for _, p := range paths.AllRemoved {
+		if !pathCoveredBy(p, intended) {
+			unintended = append(unintended, p)
+		}
+	}
+	if len(unintended) == 0 {
+		return nil
+	}
+	slices.Sort(unintended)
+	return fmt.Errorf(
+		"workspace would delete %d path(s) that no edit removed: %s; "+
+			"refusing rather than destroying content nothing asked to change",
+		len(unintended), strings.Join(samplePaths(unintended, 5), ", "))
+}
+
+// pathCoveredBy reports whether p is one of, or nested under, the given paths.
+func pathCoveredBy(p string, paths []string) bool {
+	p = normalizeCommitPath(p)
+	if p == "" {
+		return false
+	}
+	for _, q := range paths {
+		q = normalizeCommitPath(q)
+		if q == "" {
+			continue
+		}
+		if p == q || strings.HasPrefix(p, q+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// samplePaths returns at most n paths, with a count of what it left out, for
+// error messages that must stay readable when the list is hundreds long.
+func samplePaths(paths []string, n int) []string {
+	if len(paths) <= n {
+		return paths
+	}
+	return append(slices.Clone(paths[:n]), fmt.Sprintf("and %d more", len(paths)-n))
 }
 
 func (s *workspaceSchema) changes(
@@ -2551,6 +2757,12 @@ func (s *workspaceSchema) export(
 ) (core.Void, error) {
 	ws := parent.Self()
 
+	// Verified before the fast-forward below, so a workspace carrying phantom
+	// deletions is refused with the checkout still untouched.
+	if err := s.assertOverlayRemovalsIntended(ctx, ws); err != nil {
+		return core.Void{}, fmt.Errorf("save: %w", err)
+	}
+
 	// Staged commits land first, as a fast-forward of the local checkout's
 	// current ref, so the remaining overlay changes below are written on top of
 	// the new HEAD (and `git status` on the host then shows exactly them).
@@ -2753,11 +2965,47 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 	ws.SetRootfs(dagql.ObjectResult[*core.Directory]{})
 	// Value/git/rootless workspaces diff full in-engine trees (no TouchedPaths);
 	// the sparse delta-native path is host-only (see overlayEdit).
-	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, changesResult))
+	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, nil, changesResult))
 	if mutate != nil {
 		mutate(ws)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+// overlayTouched is the paths one edit affects, classified by what the sparse
+// base is allowed to hold for them.
+//
+// The classification is the whole safety story of the sparse base, so it is a
+// type rather than a bare []string: an entry in the wrong bucket does not fail,
+// it silently deletes files. See overlayEdit.
+type overlayTouched struct {
+	// Owned are paths whose content the delta root now holds in full. The
+	// sparse base carries them so a modified file has a before-image to diff
+	// against; a path here that the delta root does NOT fully own turns every
+	// host file beneath it into a phantom deletion.
+	//
+	// Only ever leaf files, or directories the edit copied in wholesale. Never
+	// a directory the edit merely wrote *into*, and never a synthesized parent
+	// of an added path — a new file deep in an existing tree owns its own path,
+	// not `internal/`.
+	Owned []string
+	// Removed are paths the edit deliberately deleted. These are the only
+	// paths that may be in the sparse base and absent from the delta root, and
+	// therefore the only removals the resulting changeset may report.
+	Removed []string
+}
+
+func ownedPaths(paths ...string) overlayTouched {
+	return overlayTouched{Owned: paths}
+}
+
+func removedPaths(paths ...string) overlayTouched {
+	return overlayTouched{Removed: paths}
+}
+
+// all returns every path the edit affects, in either bucket.
+func (t overlayTouched) all() []string {
+	return slices.Concat(t.Owned, t.Removed)
 }
 
 // overlayEdit applies an edit to a workspace, producing a new overlay workspace.
@@ -2766,7 +3014,7 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 // host-backed workspaces the delta root — the accumulated edits applied to an
 // empty base, stored as the overlay changeset's After side, which never
 // references the host tree. `touched` are the workspace-relative paths this
-// edit affects.
+// edit affects, classified (see overlayTouched).
 //
 // Host-backed overlays store no full read root at all: Directory.withChanges
 // must materialize its base, so a host-tree root would force the whole
@@ -2776,13 +3024,26 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 // those files (new files sync nothing), and reads resolve sparsely against the
 // host with the changeset applied on top (resolveHostOverlayRootfs).
 //
-// The sparse base preserves changeset semantics: rename detection pairs a
-// removal with an addition, and any removal comes from an edit, which makes
-// both paths touched and therefore present in the base.
+// The sparse base preserves changeset semantics in BOTH directions, and only
+// the first direction is self-evident:
+//
+//   - Every removal must be visible. A removal comes from an edit, which makes
+//     the path touched and therefore present in the base to be diffed away.
+//
+//   - Nothing else may look like a removal. An include pattern that matches a
+//     directory matches everything under it, so a touched *directory* pulls its
+//     entire host subtree into the base. Whatever the delta root does not also
+//     hold there then reads as deleted — silently, and for content no edit ever
+//     mentioned. That is why `touched` is classified: Owned paths must be fully
+//     owned by the delta root, and anything else must be a declared Removed.
+//
+// The second direction is bookkeeping, so it is also checked rather than
+// trusted: assertOverlayRemovalsIntended re-derives the removals the changeset
+// actually reports and refuses any the ledger cannot account for.
 func (s *workspaceSchema) overlayEdit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	touched []string,
+	touched overlayTouched,
 	edit func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
 	mutate func(*core.Workspace),
 ) (dagql.ObjectResult[*core.Workspace], error) {
@@ -2820,7 +3081,13 @@ func (s *workspaceSchema) overlayEdit(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	touchedAll := unionPaths(ws.OverlayTouchedPaths(), touched)
+	touchedAll := unionPaths(ws.OverlayTouchedPaths(), touched.all())
+	removedAll := unionPaths(ws.OverlayRemovedPaths(), touched.Removed)
+
+	deltaRoot, err = keepRemovalAncestors(ctx, srv, deltaRoot, removedAll)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	sparseBase, err := s.sparseHostBase(ctx, ws, touchedAll)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -2839,7 +3106,7 @@ func (s *workspaceSchema) overlayEdit(
 
 	newWS := ws.Clone()
 	newWS.SetRootfs(dagql.ObjectResult[*core.Directory]{})
-	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, changesResult))
+	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, removedAll, changesResult))
 	if mutate != nil {
 		mutate(newWS)
 	}
@@ -2911,18 +3178,55 @@ func (s *workspaceSchema) sparseHostBase(
 	return out, nil
 }
 
-// changesetTouchedPaths returns the workspace-relative paths a changeset affects
-// (added, modified, and removed), used to size the sparse diff base.
-func changesetTouchedPaths(ctx context.Context, ch *core.Changeset) ([]string, error) {
+// filePathsOnly drops directory entries from a changeset path list. Every
+// producer of those lists marks a directory with a trailing slash
+// (listSubdirectories, changesetDelta.addedDirs, appendRemovedTree), so the
+// slash is the discriminator.
+func filePathsOnly(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/") {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// changesetOverlayPaths classifies a changeset's paths for the overlay: the
+// content the changed tree owns, and what it deliberately removed.
+//
+// Added is deliberately stripped of its directory entries. A changeset reports
+// one for every directory it creates, including the parents that merely had to
+// exist for a nested file to land — adding `a/b/c.txt` to an empty tree reports
+// `a/`, `a/b/` and `a/b/c.txt`. Those parents name real directories in the
+// workspace whose other contents the change knows nothing about, so carrying
+// them into the sparse base drags in whole host subtrees and turns every
+// sibling into a phantom deletion (see overlayEdit).
+//
+// AllRemoved keeps its directory entries: a removal is precisely the case where
+// the base must carry a subtree the changed tree does not.
+func changesetOverlayPaths(ctx context.Context, ch *core.Changeset) (overlayTouched, error) {
 	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return overlayTouched{}, err
+	}
+	return overlayTouched{
+		Owned:   slices.Concat(filePathsOnly(paths.Added), filePathsOnly(paths.Modified)),
+		Removed: paths.AllRemoved,
+	}, nil
+}
+
+// changesetTouchedPaths returns the workspace-relative paths a changeset affects
+// (added, modified, and removed), used to size the sparse diff base and to scope
+// commits and conflict checks. Synthesized parent directories are excluded — see
+// changesetOverlayPaths.
+func changesetTouchedPaths(ctx context.Context, ch *core.Changeset) ([]string, error) {
+	touched, err := changesetOverlayPaths(ctx, ch)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(paths.Added)+len(paths.Modified)+len(paths.AllRemoved))
-	out = append(out, paths.Added...)
-	out = append(out, paths.Modified...)
-	out = append(out, paths.AllRemoved...)
-	return out, nil
+	return touched.all(), nil
 }
 
 func (s *workspaceSchema) git(

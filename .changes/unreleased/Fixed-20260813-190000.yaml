@@ -1,0 +1,15 @@
+kind: Fixed
+body: |
+  A workspace edit no longer deletes files it never touched. Writing into a new
+  nested directory, merging a directory with `withNewDirectory`, or replaying a
+  commit that adds one, could widen the overlay's sparse diff base to a whole
+  parent tree and record every sibling under it as deleted — silently, and all
+  the way through to the user's checkout on save. Removals had the mirror
+  defect: deleting `a/b/c` reported `a/` as removed and took its neighbours
+  with it. Overlay paths now say whether the workspace owns them or removed
+  them, and any removal the edits cannot account for refuses the commit or the
+  save rather than destroying the content.
+time: 2026-08-13T19:00:00Z
+custom:
+  Author: vito
+  PR: 0
