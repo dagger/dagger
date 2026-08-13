@@ -145,6 +145,12 @@ func (s *workspaceSchema) stageCommit(
 	if _, ok := ws.SourceGitRef(); ok {
 		return inst, fmt.Errorf("withCommit: cannot stage a commit on a remote git workspace")
 	}
+	// Before anything is written into history — including the replay path, which
+	// reaches this through __withReplayedCommit and is how one workspace's
+	// mistake crosses into another's.
+	if err := s.assertOverlayRemovalsIntended(ctx, ws); err != nil {
+		return inst, fmt.Errorf("withCommit: %w", err)
+	}
 
 	scope, err := s.workspaceCommitScope(ctx, parent, args)
 	if err != nil {

@@ -335,7 +335,24 @@ type WorkspaceSourceOverlay struct {
 	// paths, so forcing the changeset syncs just the touched files instead of
 	// uploading the whole workspace. Value/git/rootless overlays leave this nil
 	// and diff full in-engine trees (nothing to upload).
+	//
+	// Every entry is either a path the delta root now owns in full, or a member
+	// of RemovedPaths. An entry that is neither — a directory the delta root
+	// holds only part of — silently turns every host file beneath it into a
+	// deletion, since the sparse base carries the whole subtree (an include
+	// pattern matching a directory matches everything under it) while the delta
+	// root does not. See RemovedPaths.
 	TouchedPaths []string
+	// RemovedPaths is the subset of TouchedPaths an edit deliberately deleted:
+	// the only paths that may legitimately be present in the sparse base and
+	// absent from the delta root, and therefore the only removals the overlay's
+	// changeset is allowed to report.
+	//
+	// It is the intent ledger the removal guard checks the computed changeset
+	// against (assertOverlayRemovalsIntended), so a bookkeeping mistake that
+	// widens the base surfaces as a loud refusal instead of a silent mass
+	// deletion of the user's tree.
+	RemovedPaths []string
 	// SeededPaths is the subset of TouchedPaths whose pre-existing workspace
 	// content the overlay folded into Changes.After, for edits that build on
 	// what a path already holds (see overlayEdit's readsExisting). Every later
@@ -376,18 +393,20 @@ func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef], explicitCommit bool) Wo
 func NewWorkspaceSourceOverlay(
 	base WorkspaceSource,
 	touchedPaths []string,
+	removedPaths []string,
 	seededPaths []string,
 	changes dagql.ObjectResult[*Changeset],
 ) WorkspaceSource {
 	if overlay, ok := base.(*WorkspaceSourceOverlay); ok {
 		base = overlay.Base
 	}
-	// The caller accumulates TouchedPaths and SeededPaths (union with the
+	// The caller accumulates TouchedPaths, RemovedPaths and SeededPaths (union with the
 	// parent overlay's) before constructing, so they are already cumulative
 	// here.
 	return &WorkspaceSourceOverlay{
 		Base:         base,
 		TouchedPaths: touchedPaths,
+		RemovedPaths: removedPaths,
 		SeededPaths:  seededPaths,
 		Changes:      changes,
 	}
@@ -519,6 +538,17 @@ func (ws *Workspace) OverlaySeededPaths() []string {
 		return nil
 	}
 	return overlay.SeededPaths
+}
+
+// OverlayRemovedPaths returns the cumulative set of workspace-relative paths
+// the overlay's edits deliberately removed — the only removals its changeset is
+// allowed to report.
+func (ws *Workspace) OverlayRemovedPaths() []string {
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return nil
+	}
+	return overlay.RemovedPaths
 }
 
 // OverlayPathTouched reports whether the overlay's edits affect the given
@@ -883,6 +913,7 @@ type persistedWorkspaceSource struct {
 	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
 	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
+	RemovedPaths   []string                  `json:"removedPaths,omitempty"`
 	SeededPaths    []string                  `json:"seededPaths,omitempty"`
 	HostPath       string                    `json:"hostPath,omitempty"`
 	Base           *persistedWorkspaceSource `json:"base,omitempty"`
@@ -935,6 +966,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 			payload.Base = base
 		}
 		payload.TouchedPaths = src.TouchedPaths
+		payload.RemovedPaths = src.RemovedPaths
 		payload.SeededPaths = src.SeededPaths
 		if src.Changes.Self() != nil {
 			changesID, err := encodePersistedObjectRef(cache, src.Changes, "workspace overlay changes")
@@ -999,7 +1031,7 @@ func decodePersistedWorkspaceSource(
 				return nil, err
 			}
 		}
-		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, persisted.SeededPaths, changes), nil
+		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, persisted.RemovedPaths, persisted.SeededPaths, changes), nil
 	default:
 		return nil, fmt.Errorf("decode persisted workspace source: unsupported source kind %q", persisted.Kind)
 	}

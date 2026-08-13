@@ -112,7 +112,7 @@ func (s *workspaceSchema) stageWorkspaceConfigAndLock(
 	if lockChanged {
 		touched = append(touched, filepath.ToSlash(lockPath))
 	}
-	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, ownedPaths(touched...), nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		updated, err := workspaceWithFile(ctx, dag, base, configPath, data)
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace config update: %w", err)
@@ -361,9 +361,9 @@ func (s *workspaceSchema) withoutModule(
 	}
 	configPath := filepath.ToSlash(staged.ConfigFile)
 	managedDirPath := path.Clean(filepath.ToSlash(managedModulePath))
-	touched := []string{configPath}
+	touched := ownedPaths(configPath)
 	if removeManagedModuleDir {
-		touched = append(touched, managedDirPath)
+		touched.Removed = append(touched.Removed, managedDirPath)
 	}
 	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		updatedRoot, err := workspaceWithFile(ctx, dag, base, configPath, updatedConfig)
@@ -453,7 +453,7 @@ func (s *workspaceSchema) workspaceWithChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	touched, err := changesetTouchedPaths(ctx, changes.Self())
+	touched, err := changesetOverlayPaths(ctx, changes.Self())
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
