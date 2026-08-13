@@ -13,7 +13,8 @@ public class Object(QueryBuilder queryBuilder, GraphQLClient gqlClient)
     /// </summary>
     public static QueryBuilder NodeQueryBuilder(string id, string graphQLTypeName)
     {
-        return QueryBuilder.Builder()
+        return QueryBuilder
+            .Builder()
             .Select("node", ImmutableList.Create<Argument>(new Argument("id", new StringValue(id))))
             .InlineFragment(graphQLTypeName);
     }

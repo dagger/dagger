@@ -12,6 +12,8 @@ namespace Dagger.SDK.SourceGenerator.Code;
 
 public class CodeRenderer : ICodeRenderer
 {
+    public bool SupportsNullableObjects { get; set; } = true;
+
     /// <summary>
     /// Set of all known OBJECT type names in the schema (for resolving @expectedType).
     /// Must be set before calling Render methods.
@@ -19,9 +21,9 @@ public class CodeRenderer : ICodeRenderer
     public HashSet<string> ObjectTypeNames { get; set; } = new();
 
     /// <summary>
-    /// Set of all known INTERFACE type names in the schema.
+    /// Interface definitions keyed by GraphQL type name.
     /// </summary>
-    public HashSet<string> InterfaceTypeNames { get; set; } = new();
+    public Dictionary<string, Type> InterfaceTypes { get; set; } = new();
 
     public string RenderPre()
     {
@@ -40,11 +42,12 @@ public class CodeRenderer : ICodeRenderer
 
     public string RenderEnum(Type type)
     {
+        var typeName = Formatter.FormatType(type.Name);
         var evs = type.EnumValues.Select(ev => ev.Name);
         return $$"""
             {{RenderDocComment(type)}}
-            [JsonConverter(typeof(JsonStringEnumConverter<{{type.Name}}>))]
-            public enum {{Formatter.FormatType(type.Name)}}
+            [JsonConverter(typeof(JsonStringEnumConverter<{{typeName}}>))]
+            public enum {{typeName}}
             {
                 {{string.Join(",", evs)}}
             }
@@ -108,39 +111,31 @@ public class CodeRenderer : ICodeRenderer
 
         // Generate the C# interface
         // Skip the "id" field since IId already declares IdAsync
-        var interfaceMethods = type.Fields
-            .Where(field => field.Name != "id")
+        var interfaceMethods = type
+            .Fields.Where(field => field.Name != "id")
             .Select(field =>
-        {
-            var isAsync = IsAsyncField(field, type.Name);
-            var methodName = Formatter.FormatMethod(field.Name);
-
-            if (type.Name.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
             {
-                methodName = $"{methodName}_";
-            }
+                var isAsync = IsAsyncField(field, type.Name);
+                var methodName = FormatMethodName(field, type.Name);
 
-            if (isAsync)
-            {
-                methodName = $"{methodName}Async";
-            }
+                var requiredArgs = field.RequiredArgs();
+                var optionalArgs = field.OptionalArgs();
+                var args = requiredArgs
+                    .Select(RenderArgument)
+                    .Concat(optionalArgs.Select(RenderOptionalArgument))
+                    .Concat(
+                        isAsync ? new[] { "CancellationToken cancellationToken = default" } : []
+                    );
 
-            var requiredArgs = field.RequiredArgs();
-            var optionalArgs = field.OptionalArgs();
-            var args = requiredArgs
-                .Select(RenderArgument)
-                .Concat(optionalArgs.Select(RenderOptionalArgument))
-                .Concat(isAsync ? new[] { "CancellationToken cancellationToken = default" } : []);
+                // Interface methods can't use 'async' — just declare the Task<T> return type
+                var returnType = RenderReturnType(field, type.Name).Replace("async ", "");
 
-            // Interface methods can't use 'async' — just declare the Task<T> return type
-            var returnType = RenderReturnType(field, type.Name).Replace("async ", "");
-
-            return $$"""
-            {{RenderDocComment(field)}}
-            {{RenderObsolete(field)}}
-            {{returnType}} {{methodName}}({{string.Join(",", args)}});
-            """;
-        });
+                return $$"""
+                {{RenderDocComment(field)}}
+                {{RenderObsolete(field)}}
+                {{returnType}} {{methodName}}({{string.Join(",", args)}});
+                """;
+            });
 
         var interfaceCode = $$"""
             {{RenderDocComment(type)}}
@@ -165,17 +160,7 @@ public class CodeRenderer : ICodeRenderer
         var methods = type.Fields.Select(field =>
         {
             var isAsync = IsAsyncField(field, type.Name);
-            var methodName = Formatter.FormatMethod(field.Name);
-
-            if (type.Name.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
-            {
-                methodName = $"{methodName}_";
-            }
-
-            if (isAsync)
-            {
-                methodName = $"{methodName}Async";
-            }
+            var methodName = FormatMethodName(field, type.Name);
 
             var requiredArgs = field.RequiredArgs();
             var optionalArgs = field.OptionalArgs();
@@ -224,15 +209,16 @@ public class CodeRenderer : ICodeRenderer
         }
 
         var baseClass = "Object(queryBuilder, gqlClient)";
-        var implementsClause = implementsList.Count > 0
-            ? $", {string.Join(", ", implementsList)}"
-            : "";
+        var implementsClause =
+            implementsList.Count > 0 ? $", {string.Join(", ", implementsList)}" : "";
+        var interfaceAdapters = isInterface ? [] : RenderInterfaceAdapters(type).ToArray();
 
         return $$"""
             {{RenderDocComment(type)}}
             public class {{className}}(QueryBuilder queryBuilder, GraphQLClient gqlClient) : {{baseClass}}{{implementsClause}}
             {
                 {{string.Join("\n\n", methods)}}
+                {{string.Join("\n\n", interfaceAdapters)}}
             }
             """;
     }
@@ -271,7 +257,12 @@ public class CodeRenderer : ICodeRenderer
             return true;
         }
 
-        return field.Type.IsLeaf() || field.Type.IsList();
+        return field.Type.IsLeaf() || field.Type.IsList() || IsNullableObject(field.Type);
+    }
+
+    private bool IsNullableObject(TypeRef type)
+    {
+        return SupportsNullableObjects && type.Kind != "NON_NULL" && type.IsObjectOrInterface();
     }
 
     /// <summary>
@@ -326,7 +317,7 @@ public class CodeRenderer : ICodeRenderer
     /// </summary>
     private bool IsIdableType(string typeName)
     {
-        return ObjectTypeNames.Contains(typeName) || InterfaceTypeNames.Contains(typeName);
+        return ObjectTypeNames.Contains(typeName) || InterfaceTypes.ContainsKey(typeName);
     }
 
     private static string RenderObsolete(Field field)
@@ -441,14 +432,17 @@ public class CodeRenderer : ICodeRenderer
         if (IsSyncLikeField(field, parentTypeName))
         {
             var formatted = Formatter.FormatType(parentTypeName);
-            var className = InterfaceTypeNames.Contains(parentTypeName)
-                ? $"{formatted}Client" : formatted;
-            return $"async Task<{className}>";
+            return $"async Task<{formatted}>";
         }
 
         if (type.IsLeaf() || type.IsList())
         {
             return $"async Task<{type.GetTypeName()}>";
+        }
+
+        if (IsNullableObject(type))
+        {
+            return $"async Task<{type.GetTypeName()}?>";
         }
 
         return type.GetTypeName();
@@ -462,8 +456,9 @@ public class CodeRenderer : ICodeRenderer
         if (IsSyncLikeField(field, parentTypeName))
         {
             var formatted = Formatter.FormatType(parentTypeName);
-            var className = InterfaceTypeNames.Contains(parentTypeName)
-                ? $"{formatted}Client" : formatted;
+            var className = InterfaceTypes.ContainsKey(parentTypeName)
+                ? $"{formatted}Client"
+                : formatted;
             return $"new {className}(Object.NodeQueryBuilder((await QueryExecutor.ExecuteAsync<Id>(GraphQLClient, queryBuilder, cancellationToken)).Value, \"{parentTypeName}\"), GraphQLClient)";
         }
 
@@ -477,7 +472,7 @@ public class CodeRenderer : ICodeRenderer
             var typeName = type.GetType_().OfType!.GetType_().Name;
             var formattedName = Formatter.FormatType(typeName);
             // Use the client class for interface types
-            var clientClassName = InterfaceTypeNames.Contains(typeName)
+            var clientClassName = InterfaceTypes.ContainsKey(typeName)
                 ? $"{formattedName}Client"
                 : formattedName;
             return $"""
@@ -498,6 +493,16 @@ public class CodeRenderer : ICodeRenderer
             return $"await QueryExecutor.ExecuteListAsync<{typeName}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
+        if (IsNullableObject(type))
+        {
+            var typeName = type.GetType_().Name;
+            var formattedName = Formatter.FormatType(typeName);
+            var clientClassName = InterfaceTypes.ContainsKey(typeName)
+                ? $"{formattedName}Client"
+                : formattedName;
+            return $"await QueryExecutor.ExecuteNullableObjectAsync(GraphQLClient, queryBuilder, id => new {clientClassName}(Object.NodeQueryBuilder(id.Value, \"{typeName}\"), GraphQLClient), cancellationToken)";
+        }
+
         // For interface return types, use the client class
         if (type.IsInterface())
         {
@@ -507,6 +512,76 @@ public class CodeRenderer : ICodeRenderer
         }
 
         return $"new {field.Type.GetTypeName()}(queryBuilder, GraphQLClient)";
+    }
+
+    private IEnumerable<string> RenderInterfaceAdapters(Type type)
+    {
+        foreach (var interfaceRef in type.Interfaces)
+        {
+            var interfaceName = interfaceRef.GetType_().Name;
+            if (
+                interfaceName == "Node"
+                || !InterfaceTypes.TryGetValue(interfaceName, out var iface)
+            )
+            {
+                continue;
+            }
+
+            foreach (var interfaceField in iface.Fields.Where(field => field.Name != "id"))
+            {
+                var objectField = type.Fields.FirstOrDefault(field =>
+                    field.Name == interfaceField.Name
+                );
+                if (objectField is null)
+                {
+                    continue;
+                }
+
+                var isAsync = IsAsyncField(interfaceField, interfaceName);
+                var methodName = FormatMethodName(interfaceField, interfaceName);
+                var objectMethodName = FormatMethodName(objectField, type.Name);
+
+                var args = interfaceField
+                    .RequiredArgs()
+                    .Select(RenderArgument)
+                    .Concat(
+                        interfaceField
+                            .OptionalArgs()
+                            .Select(arg => $"{GetArgTypeName(arg)}? {arg.GetVarName()}")
+                    )
+                    .Concat(isAsync ? new[] { "CancellationToken cancellationToken" } : []);
+                var forwardedArgs = interfaceField
+                    .Args.Select(arg => $"{arg.GetVarName()}: {arg.GetVarName()}")
+                    .Concat(isAsync ? new[] { "cancellationToken: cancellationToken" } : []);
+                var returnType = RenderReturnType(interfaceField, interfaceName)
+                    .Replace("async ", "");
+                var awaitKeyword = isAsync ? "await " : "";
+                var asyncKeyword = isAsync ? "async " : "";
+
+                yield return $$"""
+                    {{asyncKeyword}}{{returnType}} {{Formatter.FormatType(
+                        interfaceName
+                    )}}.{{methodName}}({{string.Join(",", args)}})
+                    {
+                        return {{awaitKeyword}}{{objectMethodName}}({{string.Join(
+                        ",",
+                        forwardedArgs
+                    )}});
+                    }
+                    """;
+            }
+        }
+    }
+
+    private string FormatMethodName(Field field, string parentTypeName)
+    {
+        var methodName = Formatter.FormatMethod(field.Name);
+        if (parentTypeName.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
+        {
+            methodName = $"{methodName}_";
+        }
+
+        return IsAsyncField(field, parentTypeName) ? $"{methodName}Async" : methodName;
     }
 
     private string RenderArgumentBuilder(Field field)
@@ -545,9 +620,7 @@ public class CodeRenderer : ICodeRenderer
                     (sb, arg) =>
                     {
                         var varName = arg.GetVarName();
-                        return sb.Append(
-                                $"""if ({varName} is {GetArgTypeName(arg)} {varName}_)"""
-                            )
+                        return sb.Append($"""if ({varName} is {GetArgTypeName(arg)} {varName}_)""")
                             .Append("{\n")
                             .Append(
                                 $$"""    arguments = arguments.Add(new Argument("{{arg.Name}}", {{RenderArgumentValue(arg, addVarSuffix: true)}}));"""

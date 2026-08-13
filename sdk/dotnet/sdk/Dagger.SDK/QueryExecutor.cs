@@ -48,6 +48,37 @@ public static class QueryExecutor
             .ToArray();
     }
 
+    /// <summary>
+    /// Execute a nullable object selection and load the returned object by ID.
+    /// </summary>
+    public static async Task<T?> ExecuteNullableObjectAsync<T>(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        Func<Id, T> objectFactory,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
+    {
+        var idQueryBuilder = queryBuilder.Select("id");
+        var jsonElement = await RequestAsync(client, idQueryBuilder, cancellationToken);
+
+        foreach (var field in idQueryBuilder.Path)
+        {
+            if (jsonElement.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+            jsonElement = jsonElement.GetProperty(field.Name);
+        }
+
+        if (jsonElement.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return objectFactory(jsonElement.Deserialize<Id>()!);
+    }
+
     private static async Task<JsonElement> RequestAsync(
         GraphQLClient client,
         QueryBuilder queryBuilder,
@@ -62,8 +93,7 @@ public static class QueryExecutor
         // Check for GraphQL errors
         if (jsonElement.TryGetProperty("errors", out var errors))
         {
-            throw new InvalidOperationException(
-                $"GraphQL errors: {errors}");
+            throw new InvalidOperationException($"GraphQL errors: {errors}");
         }
 
         return jsonElement.GetProperty("data");
@@ -81,8 +111,9 @@ public static class QueryExecutor
             if (json.ValueKind == JsonValueKind.Null)
             {
                 throw new InvalidOperationException(
-                    $"Cannot traverse property '{fieldName}': parent element is null. " +
-                    $"The node(id:) query may have returned null.");
+                    $"Cannot traverse property '{fieldName}': parent element is null. "
+                        + $"The node(id:) query may have returned null."
+                );
             }
             json = json.GetProperty(fieldName);
         }
