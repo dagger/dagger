@@ -62,3 +62,42 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 	}
 	return true
 }
+
+// callPayloadSeenKeyPrefix namespaces call-payload dedupe keys inside the
+// session's seen-key store. The two uses of that store must never touch each
+// other's keys: ShouldEmitTelemetry's keys are bare call digests and decide
+// whether a SPAN is emitted at all, while these decide whether a call PAYLOAD
+// still needs to cross the log channel. Claiming a payload digest is done for
+// every frame of a chain's transitive closure, so sharing the key space would
+// suppress the spans of every one of those frames; and conversely a span
+// suppressed by the dedupe must still be able to contribute its payload.
+// A prefix that cannot occur in a digest keeps the two disjoint by
+// construction.
+const callPayloadSeenKeyPrefix = "dag.call.payload:"
+
+// ShouldEmitCallPayload reports whether the payload for callDigest still has
+// to reach clients through the given claim store, CLAIMING it for the caller
+// when so: it returns true at most once per digest per store scope, to
+// whoever asks first. The store defines the scope — the engine hands this a
+// store scoped to the emitting client's delivery domain (the client and its
+// ancestors, i.e. the DBs the record actually fans out to), so a claim never
+// outlives the set of clients it was delivered to.
+//
+// Both channels claim through here. A span that carries the payload as
+// dagger.io/dag.call claims the digest too, so the log channel only ever
+// fills gaps instead of duplicating what spans already carry.
+//
+// Unlike ShouldEmitTelemetry this is deliberately NOT sensitive to
+// WithRepeatedTelemetry or to DoNotCache. Both exist so the same work can be
+// SHOWN again — a re-run tool call is a new span worth seeing — but a
+// payload is immutable data keyed by its own digest, so a second copy tells a
+// client nothing it does not already have.
+//
+// With no store there is no session to dedupe against, so nothing is emitted
+// rather than emitting unboundedly.
+func ShouldEmitCallPayload(store TelemetrySeenKeyStore, callDigest string) bool {
+	if store == nil || callDigest == "" {
+		return false
+	}
+	return !store.LoadOrStoreTelemetrySeenKey(callPayloadSeenKeyPrefix + callDigest)
+}
