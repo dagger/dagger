@@ -21,6 +21,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 )
 
@@ -163,6 +164,32 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 		})
 	})
+}
+
+// TestEngineVersionLatestPinsOnConfigWrite verifies that "latest" is accepted
+// as input but config writes resolve it to the current concrete version.
+func (ModuleConfigSuite) TestEngineVersionLatestPinsOnConfigWrite(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	moduleSource := func(engineVersion string) *dagger.ModuleSource {
+		return c.Directory().
+			WithNewFile("dagger.json", fmt.Sprintf(`{"name":"foo","engineVersion":%q,"sdk":{"source":"dang"}}`, engineVersion)).
+			WithNewFile("main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
+			AsModuleSource()
+	}
+
+	writtenEngineVersion := func(ctx context.Context, t *testctx.T, src *dagger.ModuleSource) string {
+		t.Helper()
+		contents, err := src.GeneratedContextChangeset().Layer().File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(contents), &modCfg))
+		return modCfg.EngineVersion
+	}
+
+	want := engine.NormalizeVersion(engine.Version)
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("latest").WithName("bar")))
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0").WithEngineVersion("latest")))
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
@@ -949,47 +976,4 @@ func (ModuleConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	out, err := ctr.With(daggerExec("call", "hello")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "VERSION 2")
-}
-
-// TestEngineVersionLatestStaysFloating covers the floating "latest"
-// engineVersion surviving config edits. A dagger.json can declare
-// "engineVersion": "latest" — module init writes exactly that — and the
-// engine resolves it to the newest version on every load. Config edits used
-// to serialize the resolved version back, silently pinning a config that
-// asked to float; now the declared form round-trips.
-func (ModuleConfigSuite) TestEngineVersionLatestStaysFloating(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	moduleSource := func(engineVersion string) *dagger.ModuleSource {
-		return c.Directory().
-			WithNewFile("dagger.json", fmt.Sprintf(`{"name":"foo","engineVersion":%q,"sdk":{"source":"dang"}}`, engineVersion)).
-			WithNewFile("main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
-			AsModuleSource()
-	}
-
-	// generatedEngineVersion reads the engineVersion that a config edit
-	// writes back, from the dagger.json in the generated context.
-	generatedEngineVersion := func(ctx context.Context, t *testctx.T, src *dagger.ModuleSource) string {
-		t.Helper()
-		contents, err := src.GeneratedContextChangeset().Layer().File("dagger.json").Contents(ctx)
-		require.NoError(t, err)
-		var modCfg modules.ModuleConfig
-		require.NoError(t, json.Unmarshal([]byte(contents), &modCfg))
-		return modCfg.EngineVersion
-	}
-
-	t.Run("an unrelated edit does not pin a floating config", func(ctx context.Context, t *testctx.T) {
-		src := moduleSource("latest").WithName("bar")
-		require.Equal(t, "latest", generatedEngineVersion(ctx, t, src))
-	})
-
-	t.Run("withEngineVersion latest floats a pinned config", func(ctx context.Context, t *testctx.T) {
-		src := moduleSource("v1.0.0").WithEngineVersion("latest")
-		require.Equal(t, "latest", generatedEngineVersion(ctx, t, src))
-	})
-
-	t.Run("withEngineVersion pins a floating config", func(ctx context.Context, t *testctx.T) {
-		src := moduleSource("latest").WithEngineVersion("v1.0.0")
-		require.Equal(t, "v1.0.0", generatedEngineVersion(ctx, t, src))
-	})
 }

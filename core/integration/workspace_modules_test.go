@@ -18,6 +18,7 @@ import (
 
 	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -49,8 +50,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, os.FileMode(0o755), info.Mode().Perm(),
 			"module directory mode: got %#o, want %#o", info.Mode().Perm(), os.FileMode(0o755))
 
-		_, err = os.Stat(filepath.Join(workdir, "editor", workspacecfg.ModuleConfigFileName))
+		config, err := os.ReadFile(filepath.Join(workdir, "editor", workspacecfg.ModuleConfigFileName))
 		require.NoError(t, err, "engine-authored module config should be preserved")
+		require.Contains(t, string(config), fmt.Sprintf("engineVersion = %q", engine.Version))
 		_, err = os.Stat(filepath.Join(workdir, "editor", "main.dang"))
 		require.NoError(t, err, "SDK-authored starter source should be preserved")
 	})

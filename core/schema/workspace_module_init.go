@@ -12,6 +12,7 @@ import (
 	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type workspaceInitModuleArgs struct {
@@ -346,7 +347,7 @@ func (s *workspaceSchema) workspaceModuleInitConfigDiff(
 	config, err := modules.MarshalModuleConfigForFilename(&modules.ModuleConfigWithUserFields{
 		ModuleConfig: modules.ModuleConfig{
 			Name:          args.Name,
-			EngineVersion: modules.EngineVersionLatest,
+			EngineVersion: engine.Version,
 			SDK:           &modules.SDK{Source: runtimeRef},
 			Source:        source,
 			Include:       append([]string(nil), args.Include...),
