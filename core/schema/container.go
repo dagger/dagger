@@ -838,8 +838,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
 			),
 
-		dagql.Func("withRegistryAuth", s.withRegistryAuth).
-			WithInput(dagql.PerSessionInput).
+		dagql.NodeFunc("withRegistryAuth", s.withRegistryAuth).
+			DoNotCache("Mutates the session's registry credentials.").
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
 			Args(
 				dagql.Arg("address").Doc(`The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"`),
@@ -847,8 +847,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("secret").Doc(`The API key, password or token to authenticate to this registry`),
 			),
 
-		dagql.Func("withoutRegistryAuth", s.withoutRegistryAuth).
-			WithInput(dagql.PerSessionInput).
+		dagql.NodeFunc("withoutRegistryAuth", s.withoutRegistryAuth).
+			DoNotCache("Mutates the session's registry credentials.").
 			Doc(`Retrieves this container without the registry authentication of a given address.`).
 			Args(
 				dagql.Arg("address").Doc(`Registry's address to remove the authentication from.`,
@@ -4234,34 +4234,35 @@ type containerWithRegistryAuthArgs struct {
 	Secret   core.SecretID
 }
 
-func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withRegistryAuth(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRegistryAuthArgs) (dagql.ObjectResult[*core.Container], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return parent, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	secret, err := args.Secret.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 
 	secretBytes, err := secret.Self().Plaintext(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 
 	auth, err := query.Auth(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	if err := auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
-		return nil, err
+		return parent, err
 	}
 
+	// Registry credentials belong to the session, not the container.
 	return parent, nil
 }
 
@@ -4269,19 +4270,20 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutRegistryAuthArgs) (dagql.ObjectResult[*core.Container], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	auth, err := query.Auth(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	if err := auth.RemoveCredential(args.Address); err != nil {
-		return nil, err
+		return parent, err
 	}
 
+	// Registry credentials belong to the session, not the container.
 	return parent, nil
 }
 
