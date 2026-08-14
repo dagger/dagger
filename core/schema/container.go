@@ -799,7 +799,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
 			),
 
-		dagql.Func("withRegistryAuth", s.withRegistryAuth).
+		dagql.NodeFunc("withRegistryAuth", s.withRegistryAuth).
 			WithInput(dagql.PerSessionInput).
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
 			Args(
@@ -808,7 +808,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("secret").Doc(`The API key, password or token to authenticate to this registry`),
 			),
 
-		dagql.Func("withoutRegistryAuth", s.withoutRegistryAuth).
+		dagql.NodeFunc("withoutRegistryAuth", s.withoutRegistryAuth).
 			WithInput(dagql.PerSessionInput).
 			Doc(`Retrieves this container without the registry authentication of a given address.`).
 			Args(
@@ -1091,13 +1091,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		// detach identity from the :tag, make the result purely content-addressed based on the digest, but
-		// only when we are starting from scratch (as opposed to the weird case of calling from later in a chain)
-		parentCall, err := parent.ResultCall()
-		if err != nil {
-			return inst, fmt.Errorf("failed to get parent call: %w", err)
-		}
-		if parentCall.Field == "container" {
+		// Detach identity from the :tag and make the result purely
+		// content-addressed when From is operating on an otherwise untouched
+		// scratch container. Derived containers may carry state that From
+		// preserves, so they must retain their call identity.
+		if parent.Self().CanUseFromContentDigest() {
 			var err error
 			inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(
 				"container.from",
@@ -3109,6 +3107,8 @@ func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult
 		return nil, false, err
 	}
 	ctr := &core.Container{
+		// CanUseFromContentDigest intentionally defaults to false for schema
+		// children: any container transformation may carry state through From.
 		FS:                 clonedFS,
 		MetaSnapshot:       clonedMeta,
 		Config:             core.CloneContainerImageConfig(parent.Self().Config),
@@ -3996,34 +3996,35 @@ type containerWithRegistryAuthArgs struct {
 	Secret   core.SecretID
 }
 
-func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withRegistryAuth(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRegistryAuthArgs) (dagql.ObjectResult[*core.Container], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return parent, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	secret, err := args.Secret.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 
 	secretBytes, err := secret.Self().Plaintext(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 
 	auth, err := query.Auth(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	if err := auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
-		return nil, err
+		return parent, err
 	}
 
+	// Registry credentials belong to the session, not the container.
 	return parent, nil
 }
 
@@ -4031,19 +4032,20 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutRegistryAuthArgs) (dagql.ObjectResult[*core.Container], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	auth, err := query.Auth(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	if err := auth.RemoveCredential(args.Address); err != nil {
-		return nil, err
+		return parent, err
 	}
 
+	// Registry credentials belong to the session, not the container.
 	return parent, nil
 }
 
