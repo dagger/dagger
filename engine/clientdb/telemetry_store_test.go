@@ -268,10 +268,14 @@ func TestScopedSpanSelectors(t *testing.T) {
 		{TraceID: "trace-a", SpanID: "leaf", ParentSpanID: validString("mid"), Attributes: []byte("live")},
 		{TraceID: "trace-a", SpanID: "leaf", ParentSpanID: validString("mid"), Attributes: []byte("ended")},
 		// Check/test markers are byte-scanned from the encoded attributes.
-		{TraceID: "trace-a", SpanID: "check", ParentSpanID: validString("root"),
-			Attributes: []byte(`[{"key":"` + telemetry.CheckNameAttr + `","value":{"stringValue":"lint"}}]`)},
-		{TraceID: "trace-a", SpanID: "test", ParentSpanID: validString("root"),
-			Attributes: []byte(`[{"key":"test.case.name","value":{"stringValue":"TestFoo"}}]`)},
+		{
+			TraceID: "trace-a", SpanID: "check", ParentSpanID: validString("root"),
+			Attributes: []byte(`[{"key":"` + telemetry.CheckNameAttr + `","value":{"stringValue":"lint"}}]`),
+		},
+		{
+			TraceID: "trace-a", SpanID: "test", ParentSpanID: validString("root"),
+			Attributes: []byte(`[{"key":"test.case.name","value":{"stringValue":"TestFoo"}}]`),
+		},
 	}
 	_, err = store.AppendSpans(spans)
 	require.NoError(t, err)
