@@ -1114,7 +1114,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
-		ReadHeaderTimeout: 10 * time.Second,
+		// NOTE: no ReadHeaderTimeout (gosec G112) — see cmd/engine/main.go. On
+		// Go >= 1.26.6 it becomes a hard lifetime cap on unencrypted HTTP/2
+		// connections, which would kill every module function call that runs
+		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
