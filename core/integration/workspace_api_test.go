@@ -1284,7 +1284,7 @@ source = "../modules/existing"
 	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
 	// withModule updates the discovered config above the nested cwd. Inspect
 	// that root-scoped operation from the workspace root.
-	modified, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: ws.WithWorkdir(".")}).ModifiedPaths(ctx)
+	modified, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: ws}).ModifiedPaths(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"app/dagger.lock", "app/dagger.toml"}, modified)
 
