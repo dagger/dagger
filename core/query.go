@@ -109,6 +109,12 @@ type Server interface {
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
+	// The claim store for call-payload telemetry, scoped to the current
+	// client's delivery domain — the client and its ancestors, the DBs its
+	// telemetry actually fans out to — rather than the whole session. See
+	// core/dag_call_telemetry.go for why the scopes must differ.
+	CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
+
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)
 

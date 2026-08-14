@@ -2778,6 +2778,66 @@ func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySe
 	return client.daggerSession, nil
 }
 
+// CallPayloadSeenKeyStore returns the claim store for call-payload telemetry
+// (core/dag_call_telemetry.go), scoped to the current client's DELIVERY
+// domain rather than the whole session.
+//
+// Telemetry emitted in a client's context is delivered to that client's DB
+// and every ancestor's (PubSub's fan-out in engine/server/telemetry.go), so a
+// session-wide claim would let one client's emission permanently satisfy the
+// claim for clients that never received it: a client attaching to the session
+// later — a nested `dagger agent`, a sibling joining via a shared session ID —
+// could then never obtain the payloads its ID rebuilds need, and every agent
+// referenced through an already-claimed frame would be unaddressable there.
+// Claiming per delivery target instead marks a digest "seen" exactly where it
+// actually landed, so a later client's first closure walk re-publishes into
+// its own domain.
+func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	targets := make([]string, 0, len(client.parents)+1)
+	for _, parent := range client.parents {
+		targets = append(targets, parent.clientID)
+	}
+	targets = append(targets, client.clientID)
+	return &callPayloadDeliveryStore{
+		session: client.daggerSession,
+		targets: targets,
+	}, nil
+}
+
+// callPayloadDeliveryStore marks seen-keys per delivery target — the emitting
+// client and its ancestors, exactly the DBs PubSub fans this telemetry out to —
+// backed by the session's seen-key map with a per-target suffix. A key counts
+// as seen only when EVERY target has it, so an emission is skipped only when
+// nobody in the delivery domain still needs it. The NUL separator cannot occur
+// in a digest or client ID, keeping the suffixed key space disjoint from the
+// session store's other keys by construction.
+type callPayloadDeliveryStore struct {
+	session *daggerSession
+	targets []string
+}
+
+var _ dagql.TelemetrySeenKeyStore = (*callPayloadDeliveryStore)(nil)
+
+func (s *callPayloadDeliveryStore) LoadOrStoreTelemetrySeenKey(key string) bool {
+	seenEverywhere := true
+	for _, target := range s.targets {
+		if !s.session.LoadOrStoreTelemetrySeenKey(key + "\x00" + target) {
+			seenEverywhere = false
+		}
+	}
+	return seenEverywhere
+}
+
+func (s *callPayloadDeliveryStore) StoreTelemetrySeenKey(key string) {
+	for _, target := range s.targets {
+		s.session.StoreTelemetrySeenKey(key + "\x00" + target)
+	}
+}
+
 // The DagQL server for the current client's session
 func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
 	client, err := srv.clientFromContext(ctx)

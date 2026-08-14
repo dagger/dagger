@@ -960,6 +960,47 @@ func TestWithRequestTelemetrySuppression(t *testing.T) {
 	require.True(t, dagql.IsSkipped(ctx), "the suppressed request's context must carry the dagql skip flag so core.AroundFunc emits nothing")
 }
 
+// TestCallPayloadDeliveryStore pins the claim scoping that keeps call-payload
+// telemetry per delivery target: a digest claimed by one client's emission
+// must NOT count as seen for a client outside that emission's delivery domain
+// (the AGENT_QA P0 — a nested `dagger agent` attaching to a long-running
+// session could never rebuild worker IDs, because the session-wide claim was
+// spent before its DB existed).
+func TestCallPayloadDeliveryStore(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+
+	// Client A (top-level, no parents) claims a digest: unseen the first
+	// time, seen for A afterwards.
+	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
+	require.False(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// Client B attaches later: A's claim must not satisfy B's delivery
+	// domain — B's DB never received the payload.
+	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
+	require.False(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
+		"a digest claimed by another client's emission must stay claimable for a late-attaching client")
+	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// A module client under B: its emissions deliver to itself AND B, so a
+	// claim from its context marks both — and it is only "seen" when every
+	// target already has it. B has the digest, the module client does not,
+	// so the first probe still publishes (marking both).
+	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB", "modClient"}}
+	require.False(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
+		"an emission must not be skipped while any target in its delivery domain still needs it")
+	require.True(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	// And now B's own store agrees the digest is spent for B.
+	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// StoreTelemetrySeenKey marks every target unconditionally.
+	storeC := &callPayloadDeliveryStore{session: sess, targets: []string{"clientC", "clientD"}}
+	storeC.StoreTelemetrySeenKey("dag.call.payload:xxh3:def")
+	require.True(t, storeC.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:def"))
+}
+
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
 	t.Parallel()
 
