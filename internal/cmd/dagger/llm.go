@@ -453,7 +453,7 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 // exports them to the local Git workspace (see ExportChanges). When there are no
 // pending edits the bubble is cleared (an empty body renders nothing).
 func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
-	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, llm.Workspace().Changes())
+	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: s.dag.CurrentWorkspace()}))
 	if err != nil {
 		return err
 	}
@@ -866,7 +866,7 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
 	// describes a workspace that is now partially fiction, so tell it what
 	// needs resolving rather than letting it stumble over the markers.
-	if cue := conflictMarkerCue(ctx, loadedLLM); cue != "" {
+	if cue := conflictMarkerCue(ctx, loadedLLM, s.dag.CurrentWorkspace()); cue != "" {
 		loadedLLM = loadedLLM.WithSystemPrompt(cue)
 	}
 
@@ -884,8 +884,8 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 // for sessions that flushed their changes before saving: the changeset is
 // empty and nothing is searched. Best-effort throughout; a failed check must
 // not block loading the session.
-func conflictMarkerCue(ctx context.Context, llm *dagger.LLM) string {
-	changes := llm.Workspace().Changes()
+func conflictMarkerCue(ctx context.Context, llm *dagger.LLM, before *dagger.Workspace) string {
+	changes := llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: before})
 	added, err := changes.AddedPaths(ctx)
 	if err != nil {
 		slog.Debug("skipping conflict-marker check", "error", err)

@@ -186,8 +186,9 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
-		updated := dag.CurrentWorkspace().WithInitModule(name, sdkName, opts)
-		_, err = handleWorkspaceResponse(ctx, dag, updated, autoApply)
+		current := dag.CurrentWorkspace()
+		updated := current.WithInitModule(name, sdkName, opts)
+		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})
 }

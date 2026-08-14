@@ -265,9 +265,9 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource
 	requireEntry(t, fileEntries, "keep.txt")
 	requireNoEntry(t, fileEntries, "drop.txt")
 
-	removed, err := withoutFile.Changes().RemovedPaths(ctx)
+	removed, err := withoutFile.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 	require.NoError(t, err)
-	require.Contains(t, removed, "app/drop.txt")
+	require.Contains(t, removed, "drop.txt")
 
 	withoutDir := ws.WithoutDirectory("sub")
 	dirEntries, err := withoutDir.Directory(".").Entries(ctx)
@@ -424,7 +424,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState
 	assertSyntheticWorkspaceListsAreEmpty(ctx, t, ws)
 
 	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
-	added, err := updated.Changes().AddedPaths(ctx)
+	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, added)
 

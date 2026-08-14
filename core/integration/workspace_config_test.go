@@ -542,11 +542,12 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated := c.CurrentWorkspace().WithConfigValue(
+		current := c.CurrentWorkspace()
+		updated := current.WithConfigValue(
 			"modules.example.source",
 			"github.com/dagger/example",
 		)
-		added, err := updated.Changes().AddedPaths(ctx)
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspace.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))

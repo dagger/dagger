@@ -430,7 +430,9 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	if err != nil {
 		return err
 	}
-	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	// Installing a module edits the workspace config, which may live above the
+	// caller's cwd. Measure from the workspace root for this root-scoped check.
+	isEmpty, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: target.WithWorkdir(".")}).IsEmpty(ctx)
 	if err != nil {
 		return err
 	}

@@ -154,7 +154,7 @@ type Workspace struct {
 	// StagedGeneration records the workspace-root-relative paths of modules
 	// whose generated local dependency closure has been applied to this
 	// workspace, via the internal Workspace.__withGeneratedLocalDependencies
-	// field. A nested ModuleSource.generateLocalDependencies call for a
+	// field. Nested local-dependency generation for a
 	// recorded module short-circuits to an empty changeset — without this, a
 	// dependency's SDK generator re-stages its own dependency closure and
 	// generation fans out exponentially over the dependency DAG. Kept sorted
@@ -756,7 +756,6 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		}
 		payload.Source = source
 	}
-
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted workspace payload: %w", err)
@@ -842,7 +841,6 @@ func (ws *Workspace) AttachDependencyResults(
 	}
 
 	var deps []dagql.AnyResult
-
 	if ws.rootfs.Self() != nil {
 		attached, err := attach(ws.rootfs)
 		if err != nil {
@@ -855,7 +853,6 @@ func (ws *Workspace) AttachDependencyResults(
 		ws.rootfs = typed
 		deps = append(deps, typed)
 	}
-
 	if ws.source != nil {
 		sourceDeps, err := attachWorkspaceSource(attach, ws.source)
 		if err != nil {

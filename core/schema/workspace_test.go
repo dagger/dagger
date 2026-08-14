@@ -367,6 +367,24 @@ func TestResolveWorkspacePath(t *testing.T) {
 	})
 }
 
+func TestWorkspacePathInOrLeadingToCwd(t *testing.T) {
+	cwd := ".dagger/modules/myapp"
+
+	for _, path := range []string{
+		".dagger/modules/myapp",
+		".dagger/modules/myapp/main.go",
+		".dagger/",
+		"./.dagger/",
+		".dagger/modules/",
+	} {
+		require.True(t, workspacePathInOrLeadingToCwd(path, cwd), path)
+	}
+
+	for _, path := range []string{"README.md", ".dagger/modules/other"} {
+		require.False(t, workspacePathInOrLeadingToCwd(path, cwd), path)
+	}
+}
+
 func TestWorkspaceAPIPath(t *testing.T) {
 	t.Run("boundary root is slash", func(t *testing.T) {
 		require.Equal(t, "/", workspaceAPIPath(""))

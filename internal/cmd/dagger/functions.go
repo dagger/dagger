@@ -969,12 +969,12 @@ func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response
 	})
 }
 
-func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace, autoApply bool) (bool, error) {
+func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, autoApply bool) (bool, error) {
 	workspace, err := materializeWorkspace(ctx, dag, workspace)
 	if err != nil {
 		return false, err
 	}
-	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(), changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, _ *dagger.Changeset) error {
+	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(dagger.WorkspaceChangesOpts{From: before}), changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, _ *dagger.Changeset) error {
 		return workspace.Export(ctx)
 	})
 }
