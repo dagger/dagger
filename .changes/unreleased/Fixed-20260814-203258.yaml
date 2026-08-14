@@ -3,4 +3,4 @@ body: Registry authentication no longer invalidates downstream container cache r
 time: 2026-08-14T20:32:58.591640281Z
 custom:
     Author: sipsma
-    PR: "0"
+    PR: "13901"
