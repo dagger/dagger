@@ -86,14 +86,15 @@ func TestCoreAndDefinitiveClientRoutesUsePublicRustFixtureOperations(t *testing.
 		"enum":                      "with_sharing(CacheSharingMode::Private)",
 		"input":                     "DirectoryDockerBuildOpts::default()",
 		"object":                    "query.container().from(\"alpine:3.22\")",
-		"interface":                 "interface_id(&lazy).await?",
-		"nullable":                  "lazy.docker_healthcheck().await?",
+		"interface":                 "interface_id(&container).await?",
+		"nullable":                  ".docker_healthcheck()",
 		"list-object":               ".env_variables()",
-		"expected-type":             "query.node(lazy_id).await?",
+		"expected-type":             "query.node(id).await?",
 		"void":                      "query.engine().local_cache().prune().await?",
-		"directory":                 "source.docker_build_opts(&build_opts)",
+		"directory":                 ".docker_build_opts(&opts)",
 		"git":                       "QueryGitOpts::default().with_keep_git_dir(false)",
-		"container-mutation":        ".with_env_variable(\"RUST_CONFORMANCE_FIRST\", \"one\")",
+		"container":                 "\"object\" | \"container\"",
+		"container-mutation":        ".with_env_variable(\"RUST_CONFORMANCE_MUTATION\", \"retained\")",
 		"list":                      ".env_variables()",
 		"typed-exec-error":          "QueryError::Exec { error, .. }",
 		"exec-error-output-fields":  "error.stdout(), Some(\"rust-stdout\")",
@@ -103,5 +104,25 @@ func TestCoreAndDefinitiveClientRoutesUsePublicRustFixtureOperations(t *testing.
 		if !strings.Contains(source, anchor) {
 			t.Fatalf("public Rust fixture route %q lacks anchor %q", program, anchor)
 		}
+	}
+}
+
+func TestConcreteExecutorRegistryIsClosedAndFullySpecified(t *testing.T) {
+	t.Parallel()
+	counts := map[ExecutorKind]int{}
+	concrete := 0
+	for _, spec := range FixedProgramRegistry() {
+		if spec.Executor == nil {
+			continue
+		}
+		concrete++
+		executor := spec.Executor
+		if executor.Selector != spec.Program.Value || executor.Expected.Category == "" || executor.Expected.Operation == "" {
+			t.Fatalf("program %q has an incomplete executor: %#v", spec.Program.Key(), executor)
+		}
+		counts[executor.Kind]++
+	}
+	if concrete != 28 || counts[ExecutorCoreConformance] != 18 || counts[ExecutorEngineIntegration] != 10 {
+		t.Fatalf("executor partition: total=%d kinds=%#v, want 28 as 18 core and 10 integration", concrete, counts)
 	}
 }

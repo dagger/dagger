@@ -54,6 +54,30 @@ local closure never fabricates an engine result.
 The governing workflow and deferred case semantics are documented in
 [`CLIENT_GENERATION.md`](../CLIENT_GENERATION.md).
 
+Feature 8 adds a distinct five-phase conformance path: reviewed applicability,
+engine-free implementation closure, native platform evidence, exact-artifact security,
+and one atomic exact-engine verdict. Only the final verdict can derive status changes,
+and a failed or absent verdict retains every blocker. Its reproducible operator
+procedure, including the exact-byte evidence-only handoff to Feature 9, is documented
+in [`CONFORMANCE_SIGNOFF.md`](../CONFORMANCE_SIGNOFF.md).
+
+For selected Dagger integration behaviour, the pinned Go test supplies immutable
+authority provenance and candidate-scaffolding input, not the executable Rust
+contract. The checked Rust-first manifest binds a deliberately small scenario spine to
+exactly one generated public-Core realization or reviewed idiomatic Rust fixture. It
+has no general SDK backend. Exact-target admission fails before artifact work if a
+selected scenario lacks one unambiguous executable Rust realization or would construct
+another SDK; the condition is reported as verification mapping drift, not inferred
+Rust API incompleteness.
+
+`conformance-scenario-candidates.json` is the deterministic realization queue for that
+manifest. It currently contains 612 authority-selected spines, partitioned across the
+shared CLI, production module dispatcher, and exact packaged runtime. A
+`realization-required` state means that its semantic candidate exists but no executable
+Rust implementation has been registered. It is deliberately invalid as sign-off
+evidence. The file therefore describes work precisely; it does not inflate the
+implemented count or claim that a Rust boundary label is an executable test.
+
 ## Reproducing the checked F1 baseline
 
 This runbook proves the checked baseline from two independent directions. Local verification

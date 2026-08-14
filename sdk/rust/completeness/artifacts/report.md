@@ -5,8 +5,8 @@
 - Dagger: v1.0.0-beta.10
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:e34c24a778016052d9b6fe1c1f702c97c46e94b172fe8a3708bc93404db8d0ed`
-- Ledger digest: `sha256:bd7cb3ce0a24a4775e99f8a2040288f4fe1a487773ed82f31bfcfaef9861d8cc`
+- Inventory digest: `sha256:61456617323ab3fc5ca1659f15f9459e732d21d17839cc9d4683764b7e1b7df8`
+- Ledger digest: `sha256:6b9a9c6770a418ff33d0005ed2cd5af5171f4ffba7f8f7df430da1e1e5299756`
 
 ## Verdicts
 
@@ -20,7 +20,7 @@
 - go-codegen: 83
 - go-engine-sdk: 13
 - go-integration-tests: 1072
-- rust-policy: 106
+- rust-policy: 107
 - sdk-contract-harness: 17
 
 ## Counts by capability kind
@@ -37,7 +37,7 @@
 - go-type: 321
 - go-var: 8
 - harness-check: 17
-- rust-policy: 105
+- rust-policy: 106
 - schema-argument: 611
 - schema-directive: 12
 - schema-directive-argument: 14
@@ -50,7 +50,7 @@
 
 ## Counts by status
 
-- Missing: 1145
+- Missing: 1146
 - Partial: 2753
 - Implemented: 733
 - Idiomatic_Equivalent: 10
@@ -64,7 +64,7 @@
 - feature-5: 53
 - feature-6: 96
 - feature-7: 1
-- feature-8: 1102
+- feature-8: 1103
 - feature-9: 20
 
 ## Blocking capabilities
@@ -3047,6 +3047,7 @@
 - `policy/rust-policy/signoff-host-preflight`
 - `policy/rust-policy/signoff-isolated-case-fanout`
 - `policy/rust-policy/signoff-phase-budget`
+- `policy/rust-policy/signoff-release-handoff`
 - `policy/rust-policy/signoff-single-engine`
 - `policy/rust-policy/signoff-single-rust-baseline`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny`

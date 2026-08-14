@@ -198,6 +198,10 @@ SDK sign-off is a later exact-target observation. It consumes that closure rathe
 replaying it, binds one artifact, runtime, generated-assets set, engine service, and
 installed Rust baseline to a closed isolated case inventory, and emits one atomic
 digest-bound verdict. A failed, skipped, stale, missing, duplicated, or overbroad case
-admits no partial sign-off evidence. The maintainer procedure is documented in
-[MODULE_AUTHORING.md](MODULE_AUTHORING.md); the standalone-client procedure and its
-distinct five-case inventory are in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
+admits no partial sign-off evidence. A passing imported-artifact verdict may emit only
+an evidence-only release handoff bound to the retained outer bundle and inner payload;
+it cannot authorize publication or widen the exact-engine platform. The complete
+operator procedure is in [CONFORMANCE_SIGNOFF.md](CONFORMANCE_SIGNOFF.md); the
+module-authoring and standalone-client inventories remain documented in
+[MODULE_AUTHORING.md](MODULE_AUTHORING.md) and
+[CLIENT_GENERATION.md](CLIENT_GENERATION.md).

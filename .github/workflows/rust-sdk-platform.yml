@@ -48,6 +48,13 @@ jobs:
         run: >-
           ./scripts/ci-platform-preflight.sh
           "platform-observation-$OBSERVATION_OS.json"
+      - name: Upload the canonical native observation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-sdk-native-${{ matrix.os-name }}
+          path: sdk/rust/platform-observation-${{ matrix.os-name }}.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish the bounded development observation
         env:
           OBSERVATION_OS: ${{ matrix.os-name }}
@@ -62,3 +69,39 @@ jobs:
             echo "- Dagger / engine / Docker / other SDK invocations: \`0 / 0 / 0 / 0\`"
             echo "- Portable platform matrix admitted: \`no\`"
           } >>"$GITHUB_STEP_SUMMARY"
+
+  aggregate-development:
+    name: rust-sdk-development-aggregate
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: sdk/rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Download Linux and macOS observations
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: rust-sdk-native-*
+          path: sdk/rust/native-observations
+          merge-multiple: true
+      - name: Admit the matching development observation set
+        run: |
+          cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
+          ./target/debug/dagger-rust-sdk-platform aggregate-development \
+            --scope completeness/conformance-scope.json \
+            --input native-observations/platform-observation-linux.json \
+            --input native-observations/platform-observation-macos.json \
+            --output platform-observation-development-set.json
+      - name: Upload the bounded development set
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-sdk-native-development-set
+          path: sdk/rust/platform-observation-development-set.json
+          if-no-files-found: error
+          retention-days: 7

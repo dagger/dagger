@@ -66,7 +66,9 @@ func DecodeObservablePrograms(data []byte) (ObservableProgramCatalog, error) {
 			return ObservableProgramCatalog{}, fmt.Errorf("observable program route is malformed or non-canonical")
 		}
 		program := Program{Kind: ProgramIntegration, Value: route.FixtureID}
-		spec := ProgramSpec{Program: program, Boundary: route.Boundary, Workspace: WorkspaceBaselineBranch}
+		spec := ProgramSpec{
+			Program: program, Boundary: route.Boundary, Workspace: WorkspaceBaselineBranch,
+		}
 		if _, duplicate := programs[program.Key()]; duplicate {
 			return ObservableProgramCatalog{}, fmt.Errorf("observable program route %q is duplicated", program.Key())
 		}
@@ -81,6 +83,22 @@ func DecodeObservablePrograms(data []byte) (ObservableProgramCatalog, error) {
 		ProgramRegistryDigest:  wire.ProgramRegistryDigest,
 		Programs:               programs,
 	}, nil
+}
+
+// RequireConcretePrograms rejects reviewed route metadata which still lacks executable semantics.
+// A boundary, predicate class, and fixture identity are insufficient without the operation and
+// expected result which make that predicate observable.
+func RequireConcretePrograms(registry map[string]ProgramSpec) error {
+	missing := 0
+	for _, spec := range registry {
+		if spec.Executor == nil {
+			missing++
+		}
+	}
+	if missing != 0 {
+		return fmt.Errorf("complete sign-off registry has %d routes without concrete executors", missing)
+	}
+	return nil
 }
 
 // CompleteProgramRegistry joins fixed programs with the checked integration routes.

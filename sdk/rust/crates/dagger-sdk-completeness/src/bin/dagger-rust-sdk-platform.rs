@@ -13,8 +13,8 @@ use dagger_sdk_completeness::{
     Architecture, CanonicalSet, ConformanceFormatVersion, Digest, NativeJobOutcome,
     NativeLinkMechanism, NativePlatformObservation, OperatingSystem, PlatformDescriptor,
     PortablePlatformMatrixInput, ReviewedConformanceScope, SemverVersion,
-    assemble_portable_platform_matrix, canonical_bytes, decode_canonical,
-    release_descriptor_matrix, required_native_platform_domains,
+    assemble_development_native_platform_set, assemble_portable_platform_matrix, canonical_bytes,
+    decode_canonical, release_descriptor_matrix, required_native_platform_domains,
 };
 
 const NATIVE_TEST_ARGUMENTS: &[&str] = &[
@@ -46,6 +46,19 @@ fn run() -> Result<(), &'static str> {
                 .arg(path_argument("output")),
         )
         .subcommand(
+            ClapCommand::new("aggregate-development")
+                .about("Admit matching Linux and macOS observations without claiming portability")
+                .arg(path_argument("scope"))
+                .arg(
+                    Arg::new("input")
+                        .long("input")
+                        .required(true)
+                        .action(ArgAction::Append)
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(path_argument("output")),
+        )
+        .subcommand(
             ClapCommand::new("aggregate")
                 .about("Admit three native observations and the pure descriptor matrix")
                 .arg(path_argument("scope"))
@@ -61,6 +74,15 @@ fn run() -> Result<(), &'static str> {
         .get_matches();
     match matches.subcommand().expect("subcommand is required") {
         ("native", values) => native(values.get_one::<PathBuf>("output").unwrap()),
+        ("aggregate-development", values) => aggregate_development(
+            values.get_one::<PathBuf>("scope").unwrap(),
+            values
+                .get_many::<PathBuf>("input")
+                .expect("input is required")
+                .cloned()
+                .collect(),
+            values.get_one::<PathBuf>("output").unwrap(),
+        ),
         ("aggregate", values) => aggregate(
             values.get_one::<PathBuf>("scope").unwrap(),
             values
@@ -72,6 +94,26 @@ fn run() -> Result<(), &'static str> {
         ),
         _ => unreachable!("the command vocabulary is closed"),
     }
+}
+
+fn aggregate_development(
+    scope: &Path,
+    inputs: Vec<PathBuf>,
+    output: &Path,
+) -> Result<(), &'static str> {
+    if inputs.len() != 2 {
+        return Err("development platform aggregation requires exactly two observations");
+    }
+    let scope: ReviewedConformanceScope =
+        decode_canonical(&fs::read(scope).map_err(|_| "could not read checked conformance scope")?)
+            .map_err(|_| "checked conformance scope is not canonical")?;
+    let observations = read_observations(inputs)?;
+    let set = assemble_development_native_platform_set(scope.target_digest, observations)
+        .map_err(|_| "development native observation admission failed")?;
+    write_new(
+        output,
+        &canonical_bytes(&set).map_err(|_| "could not encode development observation set")?,
+    )
 }
 
 fn path_argument(name: &'static str) -> Arg {
@@ -145,13 +187,7 @@ fn aggregate(scope: &Path, inputs: Vec<PathBuf>, output: &Path) -> Result<(), &'
     let scope: ReviewedConformanceScope =
         decode_canonical(&fs::read(scope).map_err(|_| "could not read checked conformance scope")?)
             .map_err(|_| "checked conformance scope is not canonical")?;
-    let native_observations = inputs
-        .into_iter()
-        .map(|path| {
-            decode_canonical(&fs::read(path).map_err(|_| "could not read native observation")?)
-                .map_err(|_| "native observation is not canonical")
-        })
-        .collect::<Result<Vec<NativePlatformObservation>, _>>()?;
+    let native_observations = read_observations(inputs)?;
     let input = PortablePlatformMatrixInput {
         format_version: ConformanceFormatVersion::V1,
         target_digest: scope.target_digest,
@@ -167,6 +203,16 @@ fn aggregate(scope: &Path, inputs: Vec<PathBuf>, output: &Path) -> Result<(), &'
         output,
         &canonical_bytes(&matrix).map_err(|_| "could not encode platform matrix")?,
     )
+}
+
+fn read_observations(inputs: Vec<PathBuf>) -> Result<Vec<NativePlatformObservation>, &'static str> {
+    inputs
+        .into_iter()
+        .map(|path| {
+            decode_canonical(&fs::read(path).map_err(|_| "could not read native observation")?)
+                .map_err(|_| "native observation is not canonical")
+        })
+        .collect()
 }
 
 fn rust_root() -> PathBuf {

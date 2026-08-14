@@ -22,6 +22,18 @@ func TestObservableRegistryMatchesEveryApplicableIntegrationFixture(t *testing.T
 	if len(observable.Programs) != 612 || len(registry) != 672 {
 		t.Fatalf("program counts: observable=%d complete=%d, want 612 and 672", len(observable.Programs), len(registry))
 	}
+	if err := RequireConcretePrograms(registry); err == nil {
+		t.Fatalf("route-only registry must not be admitted as executable conformance")
+	}
+	concrete := 0
+	for _, spec := range registry {
+		if spec.Executor != nil {
+			concrete++
+		}
+	}
+	if concrete != 28 {
+		t.Fatalf("concrete program count: got %d, want 28", concrete)
+	}
 	counts := map[ProgramBoundary]int{}
 	for _, spec := range observable.Programs {
 		if spec.Program.Kind != ProgramIntegration || spec.Workspace != WorkspaceBaselineBranch {

@@ -1,9 +1,9 @@
 {
-  "assertion_catalog_digest": "sha256:321bca31098a27b6748b1dd727adb4fac52cd018c687c092bdec89a3ffaf8aa4",
-  "case_catalog_digest": "sha256:e9574efc18dd1dbbbfeb6e98cef73c0a8d8d72462220cab8a58135b4bee714fd",
-  "fixture_registry_digest": "sha256:689a96fa142b214a8b5dac2155b3ef3f732678bb99d90bb54d4999b3fd3961b9",
+  "assertion_catalog_digest": "sha256:159950dfed1b1052e34ecc5f892925189fb7c5e71b588fb3568ac33281b20b39",
+  "case_catalog_digest": "sha256:089aaf80f3fcca38173cd1cdb2627cfd8e02920eeab3e304a50113fa92140caa",
+  "fixture_registry_digest": "sha256:eb24d4e97f96f3cb3bff801cbf9752e1a63909b32fa711590946dfb01bd7a211",
   "format_version": "1.0.0",
-  "program_registry_digest": "sha256:b18369f379f01462bd5f9825df20461078b7fe4468c1c4b5802dd71161a03732",
+  "program_registry_digest": "sha256:7169d4bf82da2d28e53bbecf8c8216289d6a25a75847160a8e81571ada73cf15",
   "programs": [
     {
       "boundary": "shared-baseline-cli",

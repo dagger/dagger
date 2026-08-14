@@ -22687,6 +22687,13 @@
     },
     {
       "blocking_status": "Missing",
+      "capability_id": "policy/rust-policy/signoff-release-handoff",
+      "fingerprint": "sha256:b98fa93ebfc667f38adba611e43b05b6f5c808d7f1377dc4931d78873b063d88",
+      "owner_feature": "feature-8",
+      "requirement_coordinate": "requirement-12.36-12.40"
+    },
+    {
+      "blocking_status": "Missing",
       "capability_id": "policy/rust-policy/signoff-single-engine",
       "fingerprint": "sha256:9807f3ca2f7ed817e376d4ddfaa400270c391ecc0785804cb006fc39dbf32a1b",
       "owner_feature": "feature-8",

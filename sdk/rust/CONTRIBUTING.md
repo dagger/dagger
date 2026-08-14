@@ -50,6 +50,9 @@ The module authoring contract, direct harness, and deferred exact-target case in
 are in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
 The standalone-client compiler, project, generated API, ownership, checkpoint, and
 deferred sign-off workflow is in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
+The phase-separated applicability, engine-free closure, native evidence, host
+preflight, exact-target sign-off, and release-handoff workflow is in
+[CONFORMANCE_SIGNOFF.md](CONFORMANCE_SIGNOFF.md).
 The complete checked-target refresh and release procedure is in
 [MAINTAINING.md](MAINTAINING.md).
 
@@ -128,7 +131,8 @@ from `./target/debug`.
 An engine is not a local checkpoint fallback. If a contract cannot be represented by
 the direct production harness, document the precise model gap and smallest proposed
 sign-off case for maintainer approval. Exact-engine cases run only through the bounded
-SDK sign-off workflow documented in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
+SDK sign-off workflow documented in
+[CONFORMANCE_SIGNOFF.md](CONFORMANCE_SIGNOFF.md).
 Standalone-client exact-engine cases follow the same separation and remain the
 deferred five-case inventory in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
 

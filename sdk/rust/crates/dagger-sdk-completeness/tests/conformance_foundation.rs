@@ -20,8 +20,8 @@ fn exact_existing_and_policy_inventories_are_checked_separately() {
     validate_existing_conformance_scope(&ledger, &reviewed).unwrap();
     assert_eq!(reviewed.existing_capability_ids.len(), 1_081);
     assert_eq!(reviewed.existing_records.len(), 1_081);
-    assert_eq!(reviewed.policy_capability_ids.len(), 21);
-    assert_eq!(reviewed_policy_capabilities().len(), 21);
+    assert_eq!(reviewed.policy_capability_ids.len(), 22);
+    assert_eq!(reviewed_policy_capabilities().len(), 22);
     assert!(
         reviewed
             .existing_capability_ids
@@ -72,7 +72,7 @@ fn canonical_applicability_and_closed_catalogs_are_admitted() {
         decode_canonical(&artifact("conformance-applicability.json")).unwrap();
     let scope = derive_conformance_scope(&ledger, &reviewed, input).unwrap();
     assert_eq!(scope.existing_records().len(), 1_081);
-    assert_eq!(scope.policy_capabilities().len(), 21);
+    assert_eq!(scope.policy_capabilities().len(), 22);
 
     let assertions: AssertionCatalogInput =
         decode_canonical(&artifact("conformance-assertions.json")).unwrap();
@@ -99,6 +99,28 @@ fn canonical_applicability_and_closed_catalogs_are_admitted() {
     );
     let placeholder_json = canonical_bytes(&placeholders).unwrap();
     assert!(serde_json::from_slice::<ConformanceScopeInput>(&placeholder_json).is_err());
+}
+
+#[test]
+fn checked_scenario_candidates_are_a_total_non_executable_realization_queue() {
+    let candidates: RustFirstConformanceManifestInput =
+        decode_canonical(&artifact("conformance-scenario-candidates.json")).unwrap();
+    assert_eq!(candidates.scenarios.len(), 612);
+    assert!(candidates.scenarios.iter().all(|scenario| {
+        matches!(
+            scenario.realization,
+            RustScenarioRealization::RealizationRequired
+        )
+    }));
+    assert_eq!(
+        candidates
+            .scenarios
+            .iter()
+            .map(|scenario| scenario.spine.id.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        612
+    );
 }
 
 #[test]

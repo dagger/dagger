@@ -92,7 +92,8 @@ fn run() -> Result<(), BinaryError> {
                 .about("Verify one exact-target bundle and extract its admitted OCI bytes")
                 .arg(path_argument("plan"))
                 .arg(path_argument("bundle"))
-                .arg(path_argument("payload-output")),
+                .arg(path_argument("payload-output"))
+                .arg(path_argument("manifest-output")),
         )
         .get_matches();
     match matches.subcommand().expect("subcommand is required") {
@@ -110,6 +111,7 @@ fn run() -> Result<(), BinaryError> {
             required_path(values, "plan"),
             required_path(values, "bundle"),
             required_path(values, "payload-output"),
+            required_path(values, "manifest-output"),
         ),
         _ => unreachable!("clap admits only the closed sign-off commands"),
     }
@@ -190,6 +192,7 @@ fn artifact_import(
     plan_path: &Path,
     bundle_path: &Path,
     payload_output: &Path,
+    manifest_output: &Path,
 ) -> Result<(), BinaryError> {
     let plan = read_artifact_plan(plan_path)?;
     if !matches!(plan.materialization, ArtifactMaterialization::Import { .. }) {
@@ -228,7 +231,10 @@ fn artifact_import(
             elapsed_millis: 1,
         },
     )?;
-    write_new(payload_output, admitted.bundle().payload())
+    write_new(payload_output, admitted.bundle().payload())?;
+    let manifest_bytes = canonical_bytes(&manifest)
+        .map_err(|_| BinaryError::Operational("could not encode imported artifact manifest"))?;
+    write_new(manifest_output, &manifest_bytes)
 }
 
 fn read_artifact_plan(path: &Path) -> Result<ArtifactPlan, BinaryError> {

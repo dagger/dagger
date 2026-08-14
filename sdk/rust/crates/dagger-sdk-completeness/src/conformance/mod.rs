@@ -4,6 +4,7 @@
 //! conformance identities, host admission, scope policy, and sign-off diagnostics without adding
 //! a dependency or public API to `dagger-sdk` or `dagger-sdk-macros`.
 
+mod admission;
 mod applicability;
 mod applicability_review;
 mod artifact;
@@ -18,9 +19,11 @@ mod planning;
 mod platform;
 pub mod preflight;
 mod program_registry;
+mod scenario;
 mod security;
 mod verdict;
 
+pub use admission::*;
 pub use applicability::*;
 pub use applicability_review::*;
 pub use artifact::*;
@@ -35,5 +38,6 @@ pub use planning::*;
 pub use platform::*;
 pub use preflight::*;
 pub use program_registry::*;
+pub use scenario::*;
 pub use security::*;
 pub use verdict::*;

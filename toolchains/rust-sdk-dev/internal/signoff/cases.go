@@ -22,11 +22,35 @@ const (
 	WorkspaceExternalPackage WorkspacePolicy = "external-packaged-workspace"
 )
 
+// ExecutorKind is one closed production operation family used by exact-target sign-off.
+type ExecutorKind string
+
+const (
+	// ExecutorCoreConformance runs the public generated Rust client and inspects one named result.
+	ExecutorCoreConformance ExecutorKind = "rust-core-conformance"
+	// ExecutorEngineIntegration runs one existing production engine-integration assertion.
+	ExecutorEngineIntegration ExecutorKind = "rust-engine-integration"
+)
+
+// ObservationExpectation names the exact successful observation owned by an executor.
+type ObservationExpectation struct {
+	Category  string
+	Operation string
+}
+
+// ExecutorDefinition fixes the production operation, selector, and expected result for one case.
+type ExecutorDefinition struct {
+	Kind     ExecutorKind
+	Selector string
+	Expected ObservationExpectation
+}
+
 // ProgramSpec is one complete fixed production route.
 type ProgramSpec struct {
 	Program   Program
 	Boundary  ProgramBoundary
 	Workspace WorkspacePolicy
+	Executor  *ExecutorDefinition
 }
 
 var commonHarnessChecks = []string{
@@ -79,7 +103,9 @@ func FixedProgramRegistry() map[string]ProgramSpec {
 	add := func(kind ProgramKind, values []string, boundary ProgramBoundary, workspace WorkspacePolicy) {
 		for _, value := range values {
 			program := Program{Kind: kind, Value: value}
-			registry[program.Key()] = ProgramSpec{Program: program, Boundary: boundary, Workspace: workspace}
+			registry[program.Key()] = ProgramSpec{
+				Program: program, Boundary: boundary, Workspace: workspace,
+			}
 		}
 	}
 	add(ProgramCommonHarness, commonHarnessChecks, BoundaryCommonHarness, WorkspaceBaselineBranch)
@@ -96,5 +122,56 @@ func FixedProgramRegistry() map[string]ProgramSpec {
 	}
 	add(ProgramStandaloneClient, standaloneClientPrograms, BoundaryGeneratedClient, WorkspaceExternalPackage)
 	add(ProgramDefinitiveGo, definitiveGoPrograms, BoundaryRustClient, WorkspaceBaselineBranch)
+	for key, definition := range concreteExecutorDefinitions() {
+		spec := registry[key]
+		spec.Executor = definition
+		registry[key] = spec
+	}
 	return registry
+}
+
+func concreteExecutorDefinitions() map[string]*ExecutorDefinition {
+	definitions := make(map[string]*ExecutorDefinition, 28)
+	core := map[string]ObservationExpectation{
+		"scalar":        {Category: "scalar", Operation: "Query.version"},
+		"enum":          {Category: "enum", Operation: "Query.cacheVolume(sharing:)"},
+		"input":         {Category: "input-object", Operation: "Directory.dockerBuild(buildArgs:)"},
+		"object":        {Category: "lazy-object", Operation: "Query.container"},
+		"interface":     {Category: "interface", Operation: "Container.id"},
+		"nullable":      {Category: "nullable-handle", Operation: "Container.dockerHealthcheck"},
+		"list-object":   {Category: "object-list", Operation: "Container.envVariables"},
+		"expected-type": {Category: "expected-type-raw-id", Operation: "Query.node(id:)"},
+		"void":          {Category: "void", Operation: "EngineCache.prune"},
+	}
+	goClient := map[string]ObservationExpectation{
+		"directory":                 {Category: "input-object", Operation: "Directory.dockerBuild(buildArgs:)"},
+		"git":                       {Category: "explicit-zero-like", Operation: "Query.git(keepGitDir:)"},
+		"container":                 {Category: "lazy-object", Operation: "Query.container"},
+		"container-mutation":        {Category: "object-mutation", Operation: "Container.withEnvVariable"},
+		"list":                      {Category: "object-list", Operation: "Container.envVariables"},
+		"typed-exec-error":          {Category: "engine-error", Operation: "Container.stdout"},
+		"exec-error-output-fields":  {Category: "engine-error-fields", Operation: "Container.stdout"},
+		"exec-error-empty-output":   {Category: "engine-error-empty-output", Operation: "Container.sync"},
+		"non-exec-error-separation": {Category: "graphql-error", Operation: "Directory.entries"},
+	}
+	for value, expected := range core {
+		program := Program{Kind: ProgramCoreShape, Value: value}
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorCoreConformance, Selector: value, Expected: expected,
+		}
+	}
+	for value, expected := range goClient {
+		program := Program{Kind: ProgramDefinitiveGo, Value: value}
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorCoreConformance, Selector: value, Expected: expected,
+		}
+	}
+	for _, value := range engineIntegrationPrograms {
+		program := Program{Kind: ProgramEngineIntegration, Value: value}
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorEngineIntegration, Selector: value,
+			Expected: ObservationExpectation{Category: "case-pass", Operation: value},
+		}
+	}
+	return definitions
 }

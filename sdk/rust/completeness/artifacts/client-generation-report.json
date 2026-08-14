@@ -14,7 +14,7 @@
   },
   "dependency_scope": "core-plus-one-bound-module",
   "implementation_closure": {
-    "evidence_digest": "sha256:991a8c49f80cf8001f7af26b19b4b4ab0513d892a4c525dc0c8410a06844e4f9",
+    "evidence_digest": "sha256:ddc7ac01edc538fb17186e5ea1aa5faf9d02e89192280a343d7dce0b41c42e9b",
     "status": "passed"
   },
   "mapping_digest": "sha256:9cf302052d932e7a7ec1bdfba7a74af7ba276223ff55c0f675da5a4affcb98c3",

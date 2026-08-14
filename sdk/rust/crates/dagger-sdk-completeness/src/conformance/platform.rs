@@ -154,6 +154,20 @@ pub struct PortablePlatformMatrix {
     pub matrix_digest: Digest,
 }
 
+/// Routine Linux/macOS observation set which explicitly is not a portable matrix.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DevelopmentNativePlatformSet {
+    /// Durable observation-set format.
+    pub format_version: ConformanceFormatVersion,
+    /// Exact Dagger target associated with the candidate implementation.
+    pub target_digest: TargetDigest,
+    /// Current Linux and macOS observations, indexed by real native OS.
+    pub native_observations: BTreeMap<OperatingSystem, NativePlatformObservation>,
+    /// Domain-separated identity of this deliberately non-portable set.
+    pub observation_set_digest: Digest,
+}
+
 /// Exact-engine platform claim evaluated separately from portable native closure.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -317,6 +331,78 @@ pub fn assemble_portable_platform_matrix(
         native_observations: native,
         descriptors,
         matrix_digest,
+    })
+}
+
+/// Admits current Linux and macOS observations without claiming the Windows-complete matrix.
+pub fn assemble_development_native_platform_set(
+    target_digest: TargetDigest,
+    observations: Vec<NativePlatformObservation>,
+) -> Result<DevelopmentNativePlatformSet, ConformanceDiagnosticSet> {
+    let mut diagnostics = Vec::new();
+    let mut native = BTreeMap::new();
+    let expected_domains = required_native_platform_domains();
+    let expected_version = SemverVersion::new("1.97.1").expect("checked Rust version is valid");
+    let mut shared_identities: Option<(Digest, Digest, Digest)> = None;
+    for observation in observations {
+        let identities = (
+            observation.source_digest.clone(),
+            observation.lockfiles_digest.clone(),
+            observation.test_digest.clone(),
+        );
+        let identity_matches = shared_identities
+            .as_ref()
+            .is_none_or(|expected| expected == &identities);
+        shared_identities.get_or_insert(identities);
+        if !matches!(
+            observation.platform.operating_system,
+            OperatingSystem::Linux | OperatingSystem::Macos
+        ) || observation.rust_version != expected_version
+            || observation.domains.iter().copied().collect::<BTreeSet<_>>() != expected_domains
+            || observation.outcome != NativeJobOutcome::Passed
+            || !observation.native_execution
+            || observation.link_mechanism != NativeLinkMechanism::PosixSymlink
+            || observation.dagger_invocations != 0
+            || observation.engine_starts != 0
+            || observation.docker_invocations != 0
+            || observation.other_sdk_invocations != 0
+            || !identity_matches
+        {
+            diagnostics.push(platform_diagnostic(
+                ConformanceDiagnosticCode::PlatformMatrixIncomplete,
+                "development native observation is stale failed mismatched or non-native",
+            ));
+        }
+        let os = observation.platform.operating_system.clone();
+        if native.insert(os, observation).is_some() {
+            diagnostics.push(platform_diagnostic(
+                ConformanceDiagnosticCode::PlatformMatrixIncomplete,
+                "development native operating-system observation is duplicated",
+            ));
+        }
+    }
+    let expected = [OperatingSystem::Linux, OperatingSystem::Macos]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if native.keys().cloned().collect::<BTreeSet<_>>() != expected {
+        diagnostics.push(platform_diagnostic(
+            ConformanceDiagnosticCode::PlatformMatrixIncomplete,
+            "development native observation set requires exact Linux and macOS evidence",
+        ));
+    }
+    if let Some(diagnostics) = ConformanceDiagnosticSet::new(diagnostics) {
+        return Err(diagnostics);
+    }
+    let observation_set_digest = canonical_digest(
+        DigestDomain::ConformancePlatformMatrix,
+        &("development-native-set", &target_digest, &native),
+    )
+    .expect("validated development observation set is canonically encodable");
+    Ok(DevelopmentNativePlatformSet {
+        format_version: ConformanceFormatVersion::V1,
+        target_digest,
+        native_observations: native,
+        observation_set_digest,
     })
 }
 

@@ -11,6 +11,7 @@ use dagger_sdk_completeness::{
     SubjectIdentity, assertion_catalog_drift, build_observable_fixture_program_artifact,
     build_reviewed_catalog_plan, canonical_bytes, decode_canonical, derive_conformance_scope,
     reviewed_implementation_closure_plan, rust_artifact_digest,
+    scaffold_rust_first_conformance_manifest,
 };
 use serde::Serialize;
 
@@ -29,6 +30,8 @@ struct CatalogAudit<'a> {
     case_count: usize,
     fixed_case_count: usize,
     authority_route_case_count: usize,
+    scenario_candidate_count: usize,
+    scenario_realization_required_count: usize,
     assertion_drift: dagger_sdk_completeness::AssertionCatalogDrift,
     executable_text_present: bool,
     engine_action_present: bool,
@@ -88,6 +91,12 @@ fn run() -> Result<(), &'static str> {
         &plan.case_catalog,
     )
     .map_err(|_| "observable fixture program registry was rejected")?;
+    let scenario_candidates = scaffold_rust_first_conformance_manifest(
+        &plan.assertion_catalog,
+        &plan.fixture_registry,
+        &plan.case_catalog,
+    )
+    .map_err(|_| "Rust-first scenario candidates could not be scaffolded")?;
     let rendered_cases = canonical_bytes(&plan.cases)
         .map_err(|_| "case catalog could not be inspected for executable text")?;
     let executable_text_present = [
@@ -147,6 +156,17 @@ fn run() -> Result<(), &'static str> {
             .iter()
             .filter(|case| case.family == CaseFamily::IntegrationAssertion)
             .count(),
+        scenario_candidate_count: scenario_candidates.scenarios.len(),
+        scenario_realization_required_count: scenario_candidates
+            .scenarios
+            .iter()
+            .filter(|scenario| {
+                matches!(
+                    scenario.realization,
+                    dagger_sdk_completeness::RustScenarioRealization::RealizationRequired
+                )
+            })
+            .count(),
         assertion_drift: assertion_catalog_drift(&scope, &plan.assertions),
         executable_text_present,
         engine_action_present,
@@ -170,6 +190,11 @@ fn run() -> Result<(), &'static str> {
     publish(
         &completeness.join("conformance-observable-programs.json"),
         &observable_programs,
+        matches.get_flag("update"),
+    )?;
+    publish(
+        &completeness.join("conformance-scenario-candidates.json"),
+        &scenario_candidates,
         matches.get_flag("update"),
     )?;
     publish(

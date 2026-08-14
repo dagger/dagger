@@ -120,9 +120,8 @@ func TestProgramBranchesIsolateEveryMutableCoordinateWithoutSharedWork(t *testin
 	source := parseGoFile(t, "../../signoff.go")
 	branch := findFunction(t, source, "programBranch")
 	for selector, expected := range map[string]int{
-		"FixedProgramRegistry": 1,
-		"WithWorkdir":          1,
-		"WithMountedCache":     1,
+		"WithWorkdir":      1,
+		"WithMountedCache": 1,
 	} {
 		if got := selectorCount(branch, selector); got != expected {
 			t.Fatalf("program branch %s count: got %d, want %d", selector, got, expected)
@@ -139,6 +138,105 @@ func TestProgramBranchesIsolateEveryMutableCoordinateWithoutSharedWork(t *testin
 	stop := findFunction(t, source, "stop")
 	if got := selectorCount(stop, "Stop"); got != 1 {
 		t.Fatalf("exact-target cleanup must have one stop site, got %d", got)
+	}
+}
+
+func TestTopLevelSignoffHasOneAdmissionArtifactScanBaselineFanoutAndCleanup(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../signoff.go")
+	facade := findFunction(t, source, "Signoff")
+	for selector, expected := range map[string]int{
+		"admitSignoffInputs":    1,
+		"SignoffArtifact":       1,
+		"importSignoffArtifact": 1,
+		"installedRustBaseline": 1,
+		"ExecuteBounded":        1,
+		"stop":                  1,
+	} {
+		if got := selectorCount(facade, selector); got != expected {
+			t.Fatalf("top-level signoff %s count: got %d, want %d", selector, got, expected)
+		}
+	}
+	if got := identifierCount(facade, "scanSignoffPayload"); got != 1 {
+		t.Fatalf("top-level signoff scanner edge count: got %d, want 1", got)
+	}
+	for _, forbidden := range []string{
+		"EngineIntegration", "CoreConformance", "Release", "ReleaseDryRun", "GeneratedClientCheck",
+	} {
+		if got := selectorCount(facade, forbidden); got != 0 {
+			t.Fatalf("top-level signoff must not enter feature-local or distribution path %s", forbidden)
+		}
+	}
+}
+
+func TestInputAdmissionClosesCompleteDynamicRegistryBeforeTargetWork(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../signoff.go")
+	admission := findFunction(t, source, "admitSignoffInputs")
+	for selector, expected := range map[string]int{
+		"DecodeObservablePrograms": 1,
+		"CompleteProgramRegistry":  1,
+		"RequireConcretePrograms":  1,
+		"DecodeCaseRoutes":         1,
+	} {
+		if got := selectorCount(admission, selector); got != expected {
+			t.Fatalf("input admission %s count: got %d, want %d", selector, got, expected)
+		}
+	}
+	for _, forbidden := range []string{"SignoffArtifact", "Import", "AsService", "installedRustBaseline"} {
+		if got := selectorCount(admission, forbidden); got != 0 {
+			t.Fatalf("input admission must precede target graph work through %s", forbidden)
+		}
+	}
+}
+
+func TestCaseDispatchDoesNotSubstituteBoundaryReachabilityForAssertions(t *testing.T) {
+	t.Parallel()
+
+	dispatch := findFunction(t, parseGoFile(t, "../../signoff.go"), "runSignoffCase")
+	if got := stringLiteralCount(dispatch, "dagger version"); got != 0 {
+		t.Fatalf("case dispatch must not use version reachability as conformance evidence")
+	}
+	for _, supported := range []string{"ExecutorCoreConformance", "ExecutorEngineIntegration"} {
+		if got := identifierCount(dispatch, supported); got != 1 {
+			t.Fatalf("concrete executor %s must have one dispatch route, got %d", supported, got)
+		}
+	}
+	for _, unsupported := range []string{
+		"ProgramCommonHarness", "ProgramStableConnector", "ProgramCoreShape", "ProgramEngineIntegration",
+		"ProgramModuleAuthoring", "ProgramStandaloneClient", "ProgramDefinitiveGo", "ProgramIntegration",
+	} {
+		if got := identifierCount(dispatch, unsupported); got != 0 {
+			t.Fatalf("program %s must fail closed until it has a concrete executor", unsupported)
+		}
+	}
+	if got := stringLiteralCount(dispatch, "sign-off program %q has no concrete production executor"); got != 1 {
+		t.Fatalf("missing concrete executors must have one stable fail-closed path, got %d", got)
+	}
+}
+
+func TestConcreteExecutorsReuseReviewedProductionAssertions(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../signoff.go")
+	core := findFunction(t, source, "runCoreConformanceCase")
+	if got := stringLiteralCount(core, "DAGGER_RUST_SIGNOFF_SELECTOR"); got != 1 {
+		t.Fatalf("core executor must bind exactly one reviewed selector, got %d", got)
+	}
+	if got := selectorCount(core, "Stdout"); got != 1 {
+		t.Fatalf("core executor must collect exactly one structured result, got %d", got)
+	}
+	integration := findFunction(t, source, "runEngineIntegrationSignoffCase")
+	for assertion, expected := range map[string]int{
+		"verifyInstalledRustResolution": 1,
+		"runEngineIntegrationCase":      1,
+		"stableCaseObservation":         1,
+	} {
+		if got := identifierCount(integration, assertion); got != expected {
+			t.Fatalf("engine-integration executor %s count: got %d, want %d", assertion, got, expected)
+		}
 	}
 }
 

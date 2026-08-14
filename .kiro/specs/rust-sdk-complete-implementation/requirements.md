@@ -63,6 +63,11 @@ The checkpoint contract proves the implementation without spending engine resour
 The sign-off contract later proves only the real-engine boundaries that the direct
 Rust models deliberately cannot claim.
 
+The durable operator sequence for those two contracts, the separate native and
+security phases, the replaceable host preflight, and the exact-byte release handoff is
+maintained in `sdk/rust/CONFORMANCE_SIGNOFF.md`. Provider names are examples only;
+checked evidence remains provider-neutral.
+
 **Release handoff — signed-off bytes, Git-pinned SDK, and immutable assets**
 
 - Feature 8 hands Feature 9 the exact artifact bytes, manifest, security report, and

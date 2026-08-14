@@ -113387,7 +113387,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/conformance-applicability-accounting/source%2Frust-policy%2Frust-policy%2Fconformance-applicability-accounting",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:364",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:396",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/conformance-applicability-accounting"
@@ -113438,7 +113438,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/conformance-capability-scope/source%2Frust-policy%2Frust-policy%2Fconformance-capability-scope",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:363",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:395",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/conformance-capability-scope"
@@ -113489,7 +113489,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/conformance-case-catalog/source%2Frust-policy%2Frust-policy%2Fconformance-case-catalog",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:365",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/conformance-case-catalog"
@@ -113540,7 +113540,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/conformance-engine-free-checkpoint/source%2Frust-policy%2Frust-policy%2Fconformance-engine-free-checkpoint",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:366",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:398",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/conformance-engine-free-checkpoint"
@@ -115605,7 +115605,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/platform-native-matrix/source%2Frust-policy%2Frust-policy%2Fplatform-native-matrix",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:379",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:411",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/platform-native-matrix"
@@ -115656,7 +115656,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/security-artifact-provenance/source%2Frust-policy%2Frust-policy%2Fsecurity-artifact-provenance",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:381",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:413",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/security-artifact-provenance"
@@ -115707,7 +115707,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/security-artifact-vulnerability-scan/source%2Frust-policy%2Frust-policy%2Fsecurity-artifact-vulnerability-scan",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:382",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:414",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/security-artifact-vulnerability-scan"
@@ -115758,7 +115758,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/security-expiring-exception/source%2Frust-policy%2Frust-policy%2Fsecurity-expiring-exception",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:384",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:416",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/security-expiring-exception"
@@ -115809,7 +115809,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/security-locked-supply-chain/source%2Frust-policy%2Frust-policy%2Fsecurity-locked-supply-chain",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:380",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:412",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/security-locked-supply-chain"
@@ -115860,7 +115860,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/security-secret-canary/source%2Frust-policy%2Frust-policy%2Fsecurity-secret-canary",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:383",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:415",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/security-secret-canary"
@@ -115911,7 +115911,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-artifact-import-reuse/source%2Frust-policy%2Frust-policy%2Fsignoff-artifact-import-reuse",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:369",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:401",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-artifact-import-reuse"
@@ -115950,7 +115950,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-atomic-verdict/source%2Frust-policy%2Frust-policy%2Fsignoff-atomic-verdict",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:375",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:407",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-atomic-verdict"
@@ -116001,7 +116001,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-case-retry-honesty/source%2Frust-policy%2Frust-policy%2Fsignoff-case-retry-honesty",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:374",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:406",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-case-retry-honesty"
@@ -116064,7 +116064,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-closure-evidence/source%2Frust-policy%2Frust-policy%2Fsignoff-closure-evidence",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:370",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:402",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-closure-evidence"
@@ -116115,7 +116115,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-duplicate-work-rejection/source%2Frust-policy%2Frust-policy%2Fsignoff-duplicate-work-rejection",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:377",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:409",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-duplicate-work-rejection"
@@ -116166,7 +116166,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-exact-target-artifact/source%2Frust-policy%2Frust-policy%2Fsignoff-exact-target-artifact",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:368",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:400",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-exact-target-artifact"
@@ -116205,7 +116205,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-host-preflight/source%2Frust-policy%2Frust-policy%2Fsignoff-host-preflight",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:367",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:399",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-host-preflight"
@@ -116268,7 +116268,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-isolated-case-fanout/source%2Frust-policy%2Frust-policy%2Fsignoff-isolated-case-fanout",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:373",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:405",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-isolated-case-fanout"
@@ -116307,7 +116307,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-phase-budget/source%2Frust-policy%2Frust-policy%2Fsignoff-phase-budget",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:378",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:410",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-phase-budget"
@@ -116335,6 +116335,57 @@
       "stability": "stable",
       "status": "Missing",
       "summary": "policy/rust-policy/signoff-phase-budget"
+    },
+    "policy/rust-policy/signoff-release-handoff": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:6bb972b5b4c1befb2e00bb0ba629c59cc2757da8ba13efd46318cd189b6bae64",
+      "capability_id": "policy/rust-policy/signoff-release-handoff",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 8 conformance and security sign-off lacks complete admitted evidence",
+      "owner_feature": "feature-8",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-release-handoff",
+          "text": "policy/rust-policy/signoff-release-handoff"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-release-handoff/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-release-handoff"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-release-handoff/source%2Frust-policy%2Frust-policy%2Fsignoff-release-handoff",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:408",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-release-handoff"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/signoff-release-handoff"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "policy/rust-policy/signoff-release-handoff"
     },
     "policy/rust-policy/signoff-single-engine": {
       "authority_id": "rust-policy",
@@ -116370,7 +116421,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-single-engine/source%2Frust-policy%2Frust-policy%2Fsignoff-single-engine",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:371",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:403",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-single-engine"
@@ -116421,7 +116472,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/signoff-single-rust-baseline/source%2Frust-policy%2Frust-policy%2Fsignoff-single-rust-baseline",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:372",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:404",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/signoff-single-rust-baseline"

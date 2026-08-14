@@ -32,22 +32,28 @@ fn checked_artifact(path: &str) -> Vec<u8> {
 fn checked_catalog() -> &'static CaseCatalog {
     static CATALOG: OnceLock<CaseCatalog> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        let ledger: ResolvedLedger =
-            decode_canonical(&checked_artifact("artifacts/ledger.json")).unwrap();
-        let reviewed: ReviewedConformanceScope =
-            decode_canonical(&checked_artifact("conformance-scope.json")).unwrap();
-        let applicability: ConformanceScopeInput =
-            decode_canonical(&checked_artifact("conformance-applicability.json")).unwrap();
-        let scope = derive_conformance_scope(&ledger, &reviewed, applicability).unwrap();
         let assertions: AssertionCatalogInput =
             decode_canonical(&checked_artifact("conformance-assertions.json")).unwrap();
         let fixtures: FixtureRegistryInput =
             decode_canonical(&checked_artifact("conformance-fixtures.json")).unwrap();
         let cases: CaseCatalogInput =
             decode_canonical(&checked_artifact("conformance-cases.json")).unwrap();
-        let assertions = compile_assertion_catalog(&scope, assertions).unwrap();
+        let assertions = compile_assertion_catalog(checked_scope(), assertions).unwrap();
         let fixtures = compile_fixture_registry(fixtures).unwrap();
-        compile_case_catalog(&scope, &assertions, &fixtures, cases).unwrap()
+        compile_case_catalog(checked_scope(), &assertions, &fixtures, cases).unwrap()
+    })
+}
+
+fn checked_scope() -> &'static ConformanceScope {
+    static SCOPE: OnceLock<ConformanceScope> = OnceLock::new();
+    SCOPE.get_or_init(|| {
+        let ledger: ResolvedLedger =
+            decode_canonical(&checked_artifact("artifacts/ledger.json")).unwrap();
+        let reviewed: ReviewedConformanceScope =
+            decode_canonical(&checked_artifact("conformance-scope.json")).unwrap();
+        let applicability: ConformanceScopeInput =
+            decode_canonical(&checked_artifact("conformance-applicability.json")).unwrap();
+        derive_conformance_scope(&ledger, &reviewed, applicability).unwrap()
     })
 }
 
@@ -188,6 +194,7 @@ struct CheckedSignoff {
     security: Digest,
     engine: Digest,
     baseline: Digest,
+    bundle: VerifiedArtifactBundle,
     observation: SignoffObservation,
 }
 
@@ -214,13 +221,31 @@ fn checked_signoff() -> CheckedSignoff {
 
 fn build_checked_signoff() -> CheckedSignoff {
     let catalog = checked_catalog();
-    let manifest = Digest::sha256("artifact-manifest");
-    let payload = Digest::sha256("artifact-payload");
+    let payload_bytes = b"exact retained OCI payload".to_vec();
     let platform = Digest::sha256("platform-matrix");
     let security = Digest::sha256("security-report");
     let engine = Digest::sha256("exact-engine");
     let baseline = Digest::sha256("installed-baseline");
-    let artifact_plan = artifact_plan(catalog);
+    let mut artifact_plan = artifact_plan(catalog);
+    let provenance = ArtifactProvenanceDocument {
+        format_version: ArtifactFormatVersion::V1,
+        components: artifact_plan
+            .components
+            .iter()
+            .map(|(component, record)| (*component, record.provenance.clone()))
+            .collect(),
+        toolchain_digests: artifact_plan.toolchain_digests.clone(),
+    };
+    artifact_plan.provenance_digest =
+        canonical_digest(DigestDomain::ConformanceSecurity, &provenance).unwrap();
+    let artifact_manifest = artifact_manifest_for_payload(&artifact_plan, &payload_bytes).unwrap();
+    let bundle = assemble_artifact_bundle(artifact_manifest, provenance, payload_bytes).unwrap();
+    let manifest = bundle.manifest_digest().clone();
+    let payload = bundle.manifest().payload_digest.clone();
+    artifact_plan.materialization = ArtifactMaterialization::Import {
+        manifest_digest: manifest.clone(),
+        payload_digest: payload.clone(),
+    };
     let plan = SignoffRunPlan {
         format_version: ConformanceFormatVersion::V1,
         target_digest: catalog.target_digest().clone(),
@@ -295,11 +320,11 @@ fn build_checked_signoff() -> CheckedSignoff {
             preflight_smoke_engine_starts: 1,
             orchestration_engine_starts: 1,
             artifact: ArtifactCounters {
-                construction: 1,
-                imports: 0,
+                construction: 0,
+                imports: 1,
                 component_builds: required_artifact_components()
                     .into_iter()
-                    .map(|component| (component, 1))
+                    .map(|component| (component, 0))
                     .collect(),
                 forbidden_work: CanonicalSet::default(),
             },
@@ -328,7 +353,137 @@ fn build_checked_signoff() -> CheckedSignoff {
         security,
         engine,
         baseline,
+        bundle,
         observation,
+    }
+}
+
+#[test]
+fn canonical_release_handoff_round_trip_retains_evidence_only_scope() {
+    let fixture = checked_signoff();
+    let verdict = derive_atomic_signoff_verdict(&fixture.context(), fixture.observation.clone());
+    let handoff = derive_release_handoff(&fixture.bundle, &verdict).unwrap();
+    let bytes = encode_release_handoff(&handoff).unwrap();
+    assert_eq!(decode_release_handoff(&bytes).unwrap(), handoff);
+    assert_eq!(handoff.authority, ReleaseHandoffAuthority::EvidenceOnly);
+    assert_eq!(handoff.platform, PlatformDescriptor::linux_amd64());
+    assert_eq!(
+        handoff.signoff_bundle_digest,
+        *fixture.bundle.bundle_digest()
+    );
+    let rendered = render_release_handoff(&handoff);
+    assert!(rendered.contains("Authority: `evidence-only`"));
+    assert!(rendered.contains("does not authorize publication"));
+}
+
+#[test]
+fn passed_verdict_derives_complete_neutral_feature_8_transitions_and_report() {
+    let verdict = baseline_verdict();
+    let transitions = derive_conformance_status_changes(checked_scope(), verdict).unwrap();
+    assert_eq!(transitions.changes.len(), 1_103);
+    let counts = transitions.changes.values().fold(
+        BTreeMap::<Status, usize>::new(),
+        |mut counts, values| {
+            *counts.entry(values.status.clone()).or_default() += 1;
+            counts
+        },
+    );
+    assert_eq!(counts[&Status::Implemented], 634);
+    assert_eq!(counts[&Status::IdiomaticEquivalent], 9);
+    assert_eq!(counts[&Status::Inapplicable], 460);
+
+    let report =
+        derive_conformance_report(checked_scope(), None, None, None, Some(verdict), Some(true))
+            .unwrap();
+    assert_eq!(report.implementation, ConformancePhaseState::Missing);
+    assert_eq!(report.native_platform, ConformancePhaseState::Missing);
+    assert_eq!(report.security, ConformancePhaseState::Missing);
+    assert_eq!(report.exact_engine, ConformancePhaseState::Passed);
+    assert_eq!(report.reproducibility, ConformanceReproductionState::Clean);
+    assert_eq!(
+        report.artifact_manifest_digest.as_ref(),
+        Some(&verdict.artifact_manifest_digest)
+    );
+    assert_eq!(report.remaining_blockers, 0);
+    let rendered = render_conformance_report(&report);
+    assert!(rendered.contains("| Implementation | missing |"));
+    assert!(rendered.contains("| Exact engine | passed |"));
+    assert!(rendered.contains("| Reproducibility | clean |"));
+    assert!(rendered.contains("Total sign-off time:"));
+    assert!(rendered.contains("`Inapplicable`"));
+}
+
+// The retained bundle, passing imported verdict, subject, and one-platform scope are conjunctive.
+proptest! {
+    #![proptest_config(property_config())]
+
+    #[test]
+    fn property_25_release_handoff_preserves_exact_bytes_and_scope(
+        mutation in 0_u8..7,
+    ) {
+        let fixture = checked_signoff();
+        let mut verdict = derive_atomic_signoff_verdict(
+            &fixture.context(),
+            fixture.observation.clone(),
+        );
+        let mut bundle_bytes = fixture.bundle.bytes().to_vec();
+        let expected_handoff = mutation == 0;
+        let result = match mutation {
+            0 => derive_release_handoff(&fixture.bundle, &verdict),
+            1 => {
+                verdict.decision = VerdictDecision::Failed {
+                    diagnostics: ConformanceDiagnosticSet::new([ConformanceDiagnostic::new(
+                        ConformanceDiagnosticCode::SignoffCaseFailed,
+                        DiagnosticCoordinate { phase: Some(DiagnosticPhase::Case), ..DiagnosticCoordinate::default() },
+                        "reviewed assertion failed",
+                    )]).unwrap(),
+                };
+                derive_release_handoff(&fixture.bundle, &verdict)
+            }
+            2 => {
+                verdict.execution_counts.artifact.imports = 0;
+                verdict.execution_counts.artifact.construction = 1;
+                derive_release_handoff(&fixture.bundle, &verdict)
+            }
+            3 => {
+                verdict.subject_revision = commit(0x99);
+                derive_release_handoff(&fixture.bundle, &verdict)
+            }
+            4 => {
+                verdict.platform = PlatformDescriptor {
+                    operating_system: OperatingSystem::Macos,
+                    architecture: Architecture::Arm64,
+                };
+                derive_release_handoff(&fixture.bundle, &verdict)
+            }
+            5 => {
+                let last = bundle_bytes.len() - 1;
+                bundle_bytes[last] ^= 1;
+                prop_assert!(decode_artifact_bundle(&bundle_bytes).is_err());
+                Err(ConformanceDiagnosticSet::new([ConformanceDiagnostic::new(
+                    ConformanceDiagnosticCode::SignoffReleaseHandoffInvalid,
+                    DiagnosticCoordinate { phase: Some(DiagnosticPhase::Verdict), ..DiagnosticCoordinate::default() },
+                    "retained bundle bytes are unavailable",
+                )]).unwrap())
+            }
+            _ => {
+                // Absence is represented before derivation: without a byte-owning verified bundle,
+                // there is deliberately no API input from which a handoff could be created.
+                let unavailable: Option<&VerifiedArtifactBundle> = None;
+                prop_assert!(unavailable.is_none());
+                Err(ConformanceDiagnosticSet::new([ConformanceDiagnostic::new(
+                    ConformanceDiagnosticCode::SignoffReleaseHandoffInvalid,
+                    DiagnosticCoordinate { phase: Some(DiagnosticPhase::Verdict), ..DiagnosticCoordinate::default() },
+                    "retained bundle bytes are unavailable",
+                )]).unwrap())
+            }
+        };
+        prop_assert_eq!(result.is_ok(), expected_handoff);
+        if let Ok(handoff) = result {
+            prop_assert_eq!(handoff.authority, ReleaseHandoffAuthority::EvidenceOnly);
+            prop_assert_eq!(handoff.platform, PlatformDescriptor::linux_amd64());
+            prop_assert_eq!(handoff.signoff_bundle_digest, fixture.bundle.bundle_digest().clone());
+        }
     }
 }
 

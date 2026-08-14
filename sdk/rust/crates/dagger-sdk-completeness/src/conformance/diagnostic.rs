@@ -94,6 +94,7 @@ diagnostic_codes! {
     ConformanceCheckpointEvidenceInvalid => "CONFORMANCE_CHECKPOINT_EVIDENCE_INVALID",
     SignoffUnrelatedWork => "SIGNOFF_UNRELATED_WORK",
     SignoffVerdictIncomplete => "SIGNOFF_VERDICT_INCOMPLETE",
+    SignoffReleaseHandoffInvalid => "SIGNOFF_RELEASE_HANDOFF_INVALID",
     EvidenceRedactionFailed => "EVIDENCE_REDACTION_FAILED",
 }
 

@@ -56,9 +56,14 @@ The fixed case families include the 17 pinned `sdk-sdk` subject checks, the live
 connector, representative generated Core shapes, the Feature 5 integration matrix,
 the Feature 6 authoring matrix and packaged self-consumer, the five deferred Feature 7
 client cases, the nine definitive Go-client behaviours, and every additional
-applicable integration assertion. Case definitions contain typed executor identities,
-not caller-provided shell commands. The catalog is complete and digest-bound before
-the artifact is built or imported.
+applicable integration assertion. Additional integration cases are compiled from one
+small Rust-first conformance manifest. Each entry retains immutable Go authority
+provenance, a source-language-neutral scenario spine, and exactly one generated Core or
+reviewed idiomatic Rust realization. The authority source may scaffold the spine but is
+never the executable Rust contract. Case definitions contain typed identities, not
+caller-provided shell commands, copied Go source, or a general operation language. The
+manifest and catalog are complete and digest-bound before the artifact is built or
+imported.
 
 Every case branches from one immutable `Installed_Rust_Baseline` and binds to the same
 Exact_Target_Engine. Workspaces, environment namespaces, cache namespaces, and
@@ -241,6 +246,8 @@ payload itself remains immutable.
 ### Non-goals
 
 - Porting the complete Go integration suite or any foreign SDK suite to Rust syntax.
+- Translating pinned Go test bodies into a second language-neutral or Rust executable
+  specification which can drift from the authority scenario.
 - Running another SDK's generator, builder, package manager, or test suite merely
   because its source established an authority observation.
 - Treating every one of the 1,081 authority rows as a distinct engine invocation.
@@ -364,11 +371,23 @@ semantically identical assertions only when their normalized predicate and fixtu
 context match. Similar prose is insufficient.
 
 The case catalog is built entirely without an engine. Fixed child-feature inventories
-are translated into the umbrella `CaseProgram` enum; additional applicable assertions
-select reviewed fixture programs. The compiler validates total forward and reverse
-traceability: every applicable capability reaches an assertion and a case, every case
-claims known assertions and capabilities, and no case widens its claim beyond those
-routes.
+are translated into the umbrella `CaseProgram` enum. Additional applicable assertions
+are compiled through a `RustFirstConformanceManifest` containing a deliberately small
+`ScenarioSpine` and exactly one `RustRealization`. `GeneratedCore` realizations name a
+checked public schema coordinate and generated Rust fixture; `ReviewedRustFixture`
+realizations name one checked idiomatic Rust function for lifecycle, module, CLI,
+concurrency, or complex setup. The source inventory retains the normalized authority
+body only for review, candidate scaffolding, and drift detection. The catalog builder
+validates total forward and reverse traceability: every applicable capability reaches
+an assertion, scenario, concrete Rust realization, and case; every case claims known
+assertions and capabilities; and no case widens its claim beyond those routes.
+
+The manifest is intentionally not an abstract test-system product. There is one Rust
+renderer/fixture registry, no backend interface, no Go or TypeScript realization, and
+no universal expression language. An optional `sdk-sdk-candidate` marker identifies a
+small portable client-contract idea for later review; it cannot affect execution or
+evidence. If Dagger later expands `sdk-sdk`, only those reviewed portable spines—not the
+complete integration inventory—are candidates for distillation.
 
 The `ImplementationClosureBundle` admits one current closure for Features 2–7 plus the
 portable platform matrix and ordinary Rust security/hygiene result. Each input binds
@@ -963,7 +982,14 @@ catch-all transient class. A passed case requires a passed final attempt and no 
 assertion failure. Infrastructure retries must retain identical artifact, target
 engine, baseline, fixture, and case digests.
 
-The exact executor registry maps every `CaseProgram` to one reviewed production path.
+The exact executor registry maps fixed `CaseProgram` values to reviewed production
+paths and maps integration cases to checked `RustScenarioBinding` values. Each binding
+names the pinned Go test selector, source fingerprint, Rust fixture or reviewed
+Rust-focused equivalent, and allowed Rust production boundary. Go remains orchestration:
+the selected Rust fixture's result is the only subject evidence. The runner rejects a
+binding that selects a Go, TypeScript, Python, Java, PHP, or other foreign SDK fixture,
+and it never runs an unselected test from the wider integration suite.
+
 Feature 5's `resolution` case is refactored to use the common exact CLI and baseline
 rather than constructing its own installation. The existing bounded concurrency
 pattern is retained, with each branch cloned from the same immutable baseline.
@@ -1411,9 +1437,12 @@ accept if and only if it binds the exact target, subject, and platform; contains
 applicable assertion, all fixed case families and cases, immutable fixture/assertion
 identities, and bounded timeout/network/retry/concurrency policy; has total
 capability/assertion/case traceability; and contains no unknown, duplicate, unrelated
-SDK, complete foreign suite, or repository-wide generation route.
+SDK, complete foreign suite, or repository-wide generation route. Every selected
+integration case SHALL also bind one current authority anchor and source fingerprint
+to one small Scenario_Spine and exactly one executable generated-Core or reviewed Rust
+realization. A boundary label or source selector alone SHALL fail admission.
 
-**Validates: Requirements 3.1–3.24**
+**Validates: Requirements 3.1–3.32**
 
 ### Property 6: Closure admission consumes exactly current engine-free evidence
 
@@ -1486,12 +1515,15 @@ failure.
 *For any* selected Go or integration authority assertion, conformance mapping SHALL
 preserve the applicable observable result through the public Rust client/module or a
 reviewed idiomatic equivalent, avoid copying foreign mechanisms, route engine-owned
-Rust-observable behaviour through Rust, and report exact added, removed, or
+Rust-observable behaviour through Rust, bind immutable authority provenance to one
+minimal Scenario_Spine and concrete Rust_Realization, treat Go source only as review
+and scaffolding input rather than executable subject evidence, and report exact added,
+removed, or
 reclassified assertion scope when authority inputs drift. A completeness claim SHALL
 fail for every applicable assertion without a passing outcome and sufficient
 capability evidence.
 
-**Validates: Requirements 7.1–7.4, 7.16–7.18**
+**Validates: Requirements 7.1–7.4, 7.16–7.23**
 
 ### Property 13: Common harness and standalone clients remain correctly bounded
 

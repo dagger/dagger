@@ -495,37 +495,8 @@ func (content *RustEngineContent) runResolution(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {
-	installedConfig, err := installed.File("/work/dagger.toml").Contents(ctx)
-	if err != nil {
-		return "", fmt.Errorf("install bare Rust SDK: %w", err)
-	}
-	if !strings.Contains(installedConfig, "dagger-rust-sdk") {
-		return "", fmt.Errorf("installed workspace configuration omitted the Rust SDK")
-	}
-	installedList, err := installed.WithExec([]string{"dagger", "sdk", "installed"}).Stdout(ctx)
-	if err != nil {
-		return "", fmt.Errorf("list installed Rust SDK: %w", err)
-	}
-	if !strings.Contains(installedList, "rust") {
-		return "", fmt.Errorf("installed SDK listing omitted canonical Rust entry")
-	}
-	rejected := installed.WithExec(
-		[]string{"dagger", "-y", "sdk", "install", "rust@v1.0.0-beta.10"},
-		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
-	)
-	exitCode, err := rejected.ExitCode(ctx)
-	if err != nil {
-		return "", fmt.Errorf("inspect Rust shorthand rejection: %w", err)
-	}
-	if exitCode == 0 {
-		return "", fmt.Errorf("versioned Rust built-in unexpectedly reached external resolution")
-	}
-	stderr, err := rejected.Stderr(ctx)
-	if err != nil {
-		return "", fmt.Errorf("read Rust shorthand rejection: %w", err)
-	}
-	if !strings.Contains(stderr, "does not currently support selecting a specific version") {
-		return "", fmt.Errorf("versioned Rust built-in failed without the stable pre-fallback diagnostic")
+	if err := verifyInstalledRustResolution(ctx, installed); err != nil {
+		return "", err
 	}
 	evidence, err := json.Marshal(struct {
 		DescriptorDigest  string `json:"descriptor_digest"`
@@ -544,6 +515,45 @@ func (content *RustEngineContent) runResolution(
 		return "", fmt.Errorf("encode Rust SDK resolution evidence: %w", err)
 	}
 	return string(evidence), nil
+}
+
+// verifyInstalledRustResolution owns the loader assertions shared by focused development and
+// exact-target sign-off. Keeping one assertion path prevents the sign-off adapter from silently
+// weakening the already-reviewed resolution boundary into a CLI reachability check.
+func verifyInstalledRustResolution(ctx context.Context, installed *dagger.Container) error {
+	installedConfig, err := installed.File("/work/dagger.toml").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("install bare Rust SDK: %w", err)
+	}
+	if !strings.Contains(installedConfig, "dagger-rust-sdk") {
+		return fmt.Errorf("installed workspace configuration omitted the Rust SDK")
+	}
+	installedList, err := installed.WithExec([]string{"dagger", "sdk", "installed"}).Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("list installed Rust SDK: %w", err)
+	}
+	if !strings.Contains(installedList, "rust") {
+		return fmt.Errorf("installed SDK listing omitted canonical Rust entry")
+	}
+	rejected := installed.WithExec(
+		[]string{"dagger", "-y", "sdk", "install", "rust@v1.0.0-beta.10"},
+		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
+	)
+	exitCode, err := rejected.ExitCode(ctx)
+	if err != nil {
+		return fmt.Errorf("inspect Rust shorthand rejection: %w", err)
+	}
+	if exitCode == 0 {
+		return fmt.Errorf("versioned Rust built-in unexpectedly reached external resolution")
+	}
+	stderr, err := rejected.Stderr(ctx)
+	if err != nil {
+		return fmt.Errorf("read Rust shorthand rejection: %w", err)
+	}
+	if !strings.Contains(stderr, "does not currently support selecting a specific version") {
+		return fmt.Errorf("versioned Rust built-in failed without the stable pre-fallback diagnostic")
+	}
+	return nil
 }
 
 // EngineIntegration exercises the initialization, operation, and runtime boundaries
@@ -597,7 +607,7 @@ func (content *RustEngineContent) EngineIntegration(
 				identity, err = content.runResolution(ctx, installed)
 			} else {
 				runner := installed.WithEnvVariable("RUST_SDK_ENGINE_INTEGRATION_CASE", name)
-				identity, err = content.runEngineIntegrationCase(ctx, runner, name)
+				identity, err = runEngineIntegrationCase(ctx, runner, name)
 			}
 			if err != nil {
 				results[index].err = fmt.Errorf("run Rust engine-integration case %s: %w", name, err)
@@ -726,7 +736,7 @@ func (content *RustEngineContent) installedBaseline(
 	}).WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
 }
 
-func (content *RustEngineContent) runEngineIntegrationCase(
+func runEngineIntegrationCase(
 	ctx context.Context,
 	runner *dagger.Container,
 	name string,
@@ -849,17 +859,17 @@ func (content *RustEngineContent) runEngineIntegrationCase(
 		}
 		return result.Directory("/work/modules/runtime-legacy").Digest(ctx)
 	case "negative-generated-lock-toolchain":
-		return content.runGeneratedLockToolchainFailures(ctx, installed)
+		return runGeneratedLockToolchainFailures(ctx, installed)
 	case "negative-path-ownership":
-		return content.runPathOwnershipFailures(ctx, installed)
+		return runPathOwnershipFailures(ctx, installed)
 	case "negative-redaction":
-		return content.runRedactionFailure(ctx, installed)
+		return runRedactionFailure(ctx, installed)
 	default:
 		return "", fmt.Errorf("unreachable Rust engine-integration case %q", name)
 	}
 }
 
-func (content *RustEngineContent) runGeneratedLockToolchainFailures(
+func runGeneratedLockToolchainFailures(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {
@@ -903,7 +913,7 @@ func (content *RustEngineContent) runGeneratedLockToolchainFailures(
 	return "missing-generation,stale-lockfile,incompatible-toolchain", nil
 }
 
-func (content *RustEngineContent) runPathOwnershipFailures(
+func runPathOwnershipFailures(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {
@@ -948,7 +958,7 @@ func (content *RustEngineContent) runPathOwnershipFailures(
 	return "lexical-escape,symlink-escape,ownership-collision", nil
 }
 
-func (content *RustEngineContent) runRedactionFailure(
+func runRedactionFailure(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {

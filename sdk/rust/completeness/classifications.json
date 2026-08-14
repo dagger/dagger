@@ -783,6 +783,7 @@
           "policy/rust-policy/signoff-host-preflight",
           "policy/rust-policy/signoff-isolated-case-fanout",
           "policy/rust-policy/signoff-phase-budget",
+          "policy/rust-policy/signoff-release-handoff",
           "policy/rust-policy/signoff-single-engine",
           "policy/rust-policy/signoff-single-rust-baseline"
         ]

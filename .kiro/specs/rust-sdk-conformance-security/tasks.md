@@ -695,17 +695,45 @@
     generation, or distribution build ran; Windows remains deferred to ultimate SDK
     sign-off.
 
-- [x] 25. Complete the additional integration assertion fixtures and observable parity
-  - [x] 25.1 Implement every remaining applicable reviewed assertion program
-    - Add Rust-owned fixtures for every applicable integration assertion not already
-      covered by fixed case families, reusing one program for exact equivalent
-      capability sets only when fixture context and observable predicate match.
-    - Execute through public Rust client, generated Core, module authoring, packaged
-      runtime, or CLI boundaries as assigned. Do not instantiate foreign SDKs or copy
-      their language mechanisms.
-    - Add catalog/registry totality tests proving every applicable assertion has one
-      executable reviewed fixture and every fixture claims only routed capabilities.
-    - _Requirements: 3.5, 3.14-3.24, 7.1-7.4, 7.16-7.18_
+- [ ] 25. Complete the additional integration assertion fixtures and observable parity
+  - [ ] 25.1 Implement every remaining applicable reviewed assertion program
+    - Compile a checked Rust-first conformance manifest for every applicable pinned Go
+      integration test or subtest. Preserve its exact authority anchor and source
+      fingerprint, then record a deliberately small source-language-neutral scenario
+      spine: stable identity, subject, observable contract, immutable inputs including
+      omission semantics, and expected observation.
+    - Bind every spine to exactly one executable Rust realization. Generate only
+      straightforward public-Core realizations; use reviewed idiomatic Rust fixtures for
+      lifecycle, module, CLI, concurrency, and complex setup. A boundary label, Go test
+      selector, or foreign fixture is not a concrete executor.
+    - Keep the implementation Rust-first and lightweight: one Rust renderer/fixture
+      registry, no generic backend, no Go or TypeScript executor, no universal operation
+      language, and no SDK plugin system. Allow an advisory `sdk-sdk-candidate` marker
+      which changes neither execution nor evidence.
+    - Reject ambiguous authority mappings, unreviewed scaffold candidates, missing,
+      duplicate, or stale Rust realizations, foreign SDK subjects, unselected scenarios,
+      and bindings which widen capability claims. Add totality tests proving every
+      applicable assertion has one current concrete Rust realization.
+    - Record both authority-scenario identities and actual runnable cases, plus the
+      equivalent TypeScript counts from the same pinned inventory, so comparisons never
+      mix source identities, test selectors, runtime expansions, or SDK-local tests.
+    - _Requirements: 3.5, 3.14-3.29, 7.1-7.4, 7.16-7.23_
+    - Reopened by the final facade audit and corrected after checking the established
+      TypeScript integration pattern. The checked 612-row artifact preserves authority
+      identities and Rust boundaries, while `artifacts/source-items.json` already retains
+      each normalized pinned Go scenario body. The defect is projection loss: the
+      portable route omitted the scenario contract and executable Rust realization. It
+      is a verification mapping defect, not evidence of 612 missing Rust behaviours.
+      A preliminary static audit identifies 612 Rust-applicable authority identities
+      across 161 enclosing Go test methods, compared with 132 TypeScript authority
+      identities across 38 methods in the same pinned inventory. These are selection
+      counts, not runtime-expanded case totals; the completed manifest must report both
+      without mixing them with TypeScript's separate Node and Bun SDK-local tests.
+    - Implementation note: the engine-free compiler now emits 612 deterministic
+      `realization-required` Scenario_Spines and rejects them as evidence until a
+      checked Rust realization registry is total. The queue spans 30 authority files: 154
+      shared-CLI, 383 production-module-dispatcher, and 75 exact-packaged-runtime
+      scenarios. This is a reviewed work surface, not completed Task 25.1 evidence.
   - [x] 25.2 Property test: Property 12 — authority mechanisms translate to observable Rust contracts
     - Implement `property_12_authority_translates_to_observable_rust` over at least 100
       authority mechanisms, Rust effects, predicates, equivalence decisions,
@@ -810,7 +838,7 @@
       zero admitted subset/status change, and a blocked release gate.
     - _Requirements: 12.20-12.35_
 
-- [x] 28. Checkpoint: complete Feature 8 policy and execution models are green
+- [ ] 28. Checkpoint: complete Feature 8 policy and execution models are green
   - Run formatting; locked additional assertion, checkpoint, run-plan, and verdict
     tests; Properties 12–15 and 21–24; complete fixed/error fixtures; engine-free Go
     signoff graph tests; Cargo Deny; source-policy tests; and warning-denied
@@ -835,9 +863,14 @@
     and `serde_graphql_input` metadata warnings. No Dagger command, engine, module,
     foreign SDK, target artifact/scan, unscoped generation, or distribution build ran;
     this evidence does not claim SDK sign-off.
+  - Reopened by the final facade audit. The recorded policy and topology models remain
+    passing, but their route registry is not a complete Rust-selection registry; the
+    checkpoint cannot be called a complete execution model until Task 25.1 binds every
+    selected authority scenario to exactly one registered generated-Core or reviewed
+    idiomatic Rust realization and proves that no foreign or unselected scenario can run.
 
-- [ ] 29. Wire completeness transitions, reports, and durable operator documentation
-  - [ ] 29.1 Add Feature 8 evidence admission and status derivation
+- [x] 29. Wire completeness transitions, reports, and durable operator documentation
+  - [x] 29.1 Add Feature 8 evidence admission and status derivation
     - Admit only one passed atomic verdict plus its exact scope, closure, platform,
       security, artifact, and catalog identities. Derive `Implemented`,
       `Idiomatic_Equivalent`, or justified `Inapplicable` through Feature 1 policy for
@@ -851,7 +884,7 @@
     - Add the `policy/rust-policy/signoff-release-handoff` capability and require its
       exact evidence route without rewriting the historical 21-row checkpoint record.
     - _Requirements: 1.13-1.18, 5.21-5.22, 7.17-7.18, 12.30-12.40_
-  - [ ] 29.2 Add honest Feature 8 completeness reporting
+  - [x] 29.2 Add honest Feature 8 completeness reporting
     - Render independent applicability, implementation, native-platform, security, and
       exact-engine sections; include neutral status counts, remaining blockers,
       artifact/verdict digests, timings, and reproducibility result.
@@ -860,7 +893,7 @@
     - Report the release handoff identity and exact one-platform scope separately from
       the sign-off verdict; never describe handoff eligibility as publication.
     - _Requirements: 1.17-1.18, 12.31-12.40_
-  - [ ] 29.3 Write the durable conformance and sign-off workflow
+  - [x] 29.3 Write the durable conformance and sign-off workflow
     - Add `sdk/rust/CONFORMANCE_SIGNOFF.md` covering applicability review, engine-free
       checkpoints, native evidence, host preflight, Namespace as a replaceable example,
       artifact build/export/import after restart, exact sign-off, counters/timings,
@@ -872,7 +905,7 @@
     - Document how the exact outer bundle and inner payload are retained for Feature 9
       and why the handoff permits no rebuild, platform widening, or publication.
     - _Requirements: 2.19-2.20, 5.10-5.22, 10.10-10.17, 11.1-11.20, 12.30-12.40_
-  - [ ] 29.4 Property test: Property 25 — release handoff preserves exact signed-off bytes and scope
+  - [x] 29.4 Property test: Property 25 — release handoff preserves exact signed-off bytes and scope
     - Implement `property_25_release_handoff_preserves_exact_bytes_and_scope` over at
       least 256 passed/failed verdicts, retained/unavailable bundles, payload byte
       mutations, subject mutations, and platform-widening attempts.

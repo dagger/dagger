@@ -778,6 +778,11 @@ const FEATURE8_POLICIES: &[ReviewedPolicyClause] = &[
         "typed-public-errors",
     ),
     clause(
+        "signoff-release-handoff",
+        "policy/rust-policy/signoff-release-handoff",
+        "explicit-ownership",
+    ),
+    clause(
         "signoff-duplicate-work-rejection",
         "policy/rust-policy/signoff-duplicate-work-rejection",
         "explicit-ownership",

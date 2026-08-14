@@ -24,7 +24,7 @@ use super::{
     CaseCatalog, CaseExecutionBinding, ConformanceDiagnostic, ConformanceDiagnosticCode,
     ConformanceDiagnosticSet, ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase,
     InstalledRustBaseline, NetworkPolicyId, NonZeroCount, NonZeroMillis, PlatformDescriptor,
-    SignoffCaseId, SignoffCaseObservation, SubjectIdentity, ToolchainRole,
+    SignoffCaseId, SignoffCaseObservation, SubjectIdentity, ToolchainRole, VerifiedArtifactBundle,
     required_artifact_components, required_artifact_toolchains, validate_case_observation,
 };
 
@@ -178,7 +178,7 @@ pub struct SignoffObservation {
     pub forbidden_events: Vec<ForbiddenSignoffEvent>,
 }
 
-/// Immutable inputs already admitted by their owning Feature 8 policy layers.
+/// Immutable inputs already admitted by their owning policy layers.
 pub struct SignoffAdmissionContext<'a> {
     /// Complete run declaration.
     pub run_plan: &'a SignoffRunPlan,
@@ -272,6 +272,73 @@ pub struct AtomicSignoffVerdict {
     pub decision: VerdictDecision,
 }
 
+/// Deliberately narrow authority carried by a retained release handoff.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReleaseHandoffAuthority {
+    /// The record proves retained sign-off evidence but cannot publish or widen support.
+    EvidenceOnly,
+}
+
+/// Exact retained bytes and one-platform verdict made available to release policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseHandoffRecord {
+    /// Durable handoff format.
+    pub format_version: ConformanceFormatVersion,
+    /// Domain-separated identity of every other field in this record.
+    pub handoff_digest: Digest,
+    /// Exact Dagger target whose bytes passed sign-off.
+    pub target_digest: TargetDigest,
+    /// Full reachable fork revision contained in the retained payload.
+    pub subject_revision: CommitSha,
+    /// Sole exact-engine platform proved by this record.
+    pub platform: PlatformDescriptor,
+    /// Direct identity of the complete retained outer bundle bytes.
+    pub signoff_bundle_digest: Digest,
+    /// Canonical exact-target manifest identity.
+    pub artifact_manifest_digest: Digest,
+    /// Direct identity of the retained inner OCI payload bytes.
+    pub artifact_payload_digest: Digest,
+    /// Security result for those exact manifest and payload bytes.
+    pub security_report_digest: Digest,
+    /// Passing imported-artifact verdict covering this record.
+    pub verdict_digest: Digest,
+    /// Evidence-only authority; downstream release policy owns every publication decision.
+    pub authority: ReleaseHandoffAuthority,
+}
+
+#[derive(Serialize)]
+struct ReleaseHandoffDigestProjection<'a> {
+    format_version: ConformanceFormatVersion,
+    target_digest: &'a TargetDigest,
+    subject_revision: &'a CommitSha,
+    platform: &'a PlatformDescriptor,
+    signoff_bundle_digest: &'a Digest,
+    artifact_manifest_digest: &'a Digest,
+    artifact_payload_digest: &'a Digest,
+    security_report_digest: &'a Digest,
+    verdict_digest: &'a Digest,
+    authority: ReleaseHandoffAuthority,
+}
+
+impl ReleaseHandoffRecord {
+    fn projection(&self) -> ReleaseHandoffDigestProjection<'_> {
+        ReleaseHandoffDigestProjection {
+            format_version: self.format_version,
+            target_digest: &self.target_digest,
+            subject_revision: &self.subject_revision,
+            platform: &self.platform,
+            signoff_bundle_digest: &self.signoff_bundle_digest,
+            artifact_manifest_digest: &self.artifact_manifest_digest,
+            artifact_payload_digest: &self.artifact_payload_digest,
+            security_report_digest: &self.security_report_digest,
+            verdict_digest: &self.verdict_digest,
+            authority: self.authority,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct VerdictDigestProjection<'a> {
     format_version: ConformanceFormatVersion,
@@ -343,6 +410,9 @@ pub enum SignoffDecodeError {
     /// A verdict's embedded digest did not cover its complete decoded contents.
     #[error("atomic sign-off verdict digest mismatch")]
     VerdictDigestMismatch,
+    /// A release handoff's embedded digest did not cover its complete decoded contents.
+    #[error("release handoff digest mismatch")]
+    ReleaseHandoffDigestMismatch,
 }
 
 /// Validates a run plan against the closed catalog and returns its canonical identity.
@@ -678,6 +748,96 @@ pub fn decode_atomic_signoff_verdict(
     Ok(verdict)
 }
 
+/// Derives a release handoff only from retained bytes and a passing imported-artifact verdict.
+///
+/// The bundle parameter is intentionally a verified byte-owning value rather than a digest. This
+/// prevents callers from manufacturing a release input after the signed-off payload has been
+/// discarded. The returned authority is evidence-only and never permits publication or another
+/// platform claim.
+pub fn derive_release_handoff(
+    bundle: &VerifiedArtifactBundle,
+    verdict: &AtomicSignoffVerdict,
+) -> Result<ReleaseHandoffRecord, ConformanceDiagnosticSet> {
+    let imported_without_build = verdict.execution_counts.artifact.imports == 1
+        && verdict.execution_counts.artifact.construction == 0
+        && verdict
+            .execution_counts
+            .artifact
+            .component_builds
+            .values()
+            .all(|count| *count == 0);
+    let manifest = bundle.manifest();
+    let exact_identity = !bundle.bytes().is_empty()
+        && !bundle.payload().is_empty()
+        && bundle.manifest_digest() == &verdict.artifact_manifest_digest
+        && manifest.payload_digest == verdict.artifact_payload_digest
+        && Digest::sha256(bundle.payload()) == verdict.artifact_payload_digest
+        && manifest.target_descriptor_digest == verdict.target_digest
+        && manifest.subject_revision == verdict.subject_revision
+        && manifest.platform == verdict.platform;
+    if verify_verdict_digest(verdict).is_err()
+        || !matches!(verdict.decision, VerdictDecision::Passed { .. })
+        || !imported_without_build
+        || !exact_identity
+    {
+        return Err(release_handoff_error());
+    }
+
+    let mut record = ReleaseHandoffRecord {
+        format_version: ConformanceFormatVersion::V1,
+        handoff_digest: Digest::sha256([]),
+        target_digest: verdict.target_digest.clone(),
+        subject_revision: verdict.subject_revision.clone(),
+        platform: verdict.platform.clone(),
+        signoff_bundle_digest: bundle.bundle_digest().clone(),
+        artifact_manifest_digest: verdict.artifact_manifest_digest.clone(),
+        artifact_payload_digest: verdict.artifact_payload_digest.clone(),
+        security_report_digest: verdict.security_report_digest.clone(),
+        verdict_digest: verdict.verdict_digest.clone(),
+        authority: ReleaseHandoffAuthority::EvidenceOnly,
+    };
+    record.handoff_digest = canonical_digest(
+        DigestDomain::ConformanceReleaseHandoff,
+        &record.projection(),
+    )
+    .map_err(|_| release_handoff_error())?;
+    Ok(record)
+}
+
+/// Encodes one already verified release handoff as canonical JSON.
+pub fn encode_release_handoff(
+    handoff: &ReleaseHandoffRecord,
+) -> Result<Vec<u8>, SignoffDecodeError> {
+    verify_release_handoff_digest(handoff)?;
+    Ok(canonical_bytes(handoff)?)
+}
+
+/// Decodes canonical release handoff JSON and independently rechecks its embedded identity.
+pub fn decode_release_handoff(bytes: &[u8]) -> Result<ReleaseHandoffRecord, SignoffDecodeError> {
+    if bytes.len() > MAX_SIGNOFF_OBSERVATION_BYTES {
+        return Err(SignoffDecodeError::ExcessInput);
+    }
+    let handoff: ReleaseHandoffRecord = decode_canonical(bytes)?;
+    verify_release_handoff_digest(&handoff)?;
+    Ok(handoff)
+}
+
+/// Renders the handoff without implying publication or portable exact-engine support.
+pub fn render_release_handoff(handoff: &ReleaseHandoffRecord) -> String {
+    format!(
+        "# Rust SDK release evidence handoff\n\nAuthority: `evidence-only`\n\nHandoff: `{}`\n\nVerdict: `{}`\n\nBundle: `{}`\n\nManifest: `{}`\n\nPayload: `{}`\n\nSecurity report: `{}`\n\nSubject: `{}`\n\nPlatform: `{:?}/{:?}`\n\nThis record does not authorize publication or support for another platform.\n",
+        handoff.handoff_digest,
+        handoff.verdict_digest,
+        handoff.signoff_bundle_digest,
+        handoff.artifact_manifest_digest,
+        handoff.artifact_payload_digest,
+        handoff.security_report_digest,
+        handoff.subject_revision,
+        handoff.platform.operating_system,
+        handoff.platform.architecture,
+    )
+}
+
 /// Renders the same atomic record as neutral Markdown without raw operational output.
 pub fn render_atomic_signoff_verdict(verdict: &AtomicSignoffVerdict) -> String {
     let decision = match verdict.decision {
@@ -847,6 +1007,26 @@ fn verify_verdict_digest(verdict: &AtomicSignoffVerdict) -> Result<(), SignoffDe
         return Err(SignoffDecodeError::VerdictDigestMismatch);
     }
     Ok(())
+}
+
+fn verify_release_handoff_digest(handoff: &ReleaseHandoffRecord) -> Result<(), SignoffDecodeError> {
+    let expected = canonical_digest(
+        DigestDomain::ConformanceReleaseHandoff,
+        &handoff.projection(),
+    )?;
+    if expected != handoff.handoff_digest {
+        return Err(SignoffDecodeError::ReleaseHandoffDigestMismatch);
+    }
+    Ok(())
+}
+
+fn release_handoff_error() -> ConformanceDiagnosticSet {
+    ConformanceDiagnosticSet::new([verdict_diagnostic(
+        ConformanceDiagnosticCode::SignoffReleaseHandoffInvalid,
+        DiagnosticPhase::Verdict,
+        "release handoff bytes scope or verdict are not identity exact",
+    )])
+    .expect("one diagnostic is present")
 }
 
 fn verdict_diagnostic(

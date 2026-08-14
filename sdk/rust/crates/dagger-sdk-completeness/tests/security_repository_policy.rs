@@ -42,7 +42,7 @@ fn rust_workflows_are_locked_engine_free_and_least_privileged() {
     for workflow in [&security, &platform] {
         assert!(workflow.contains("permissions:\n  contents: read"));
     }
-    assert!(windows_preflight.contains("permissions: {}"));
+    assert!(windows_preflight.contains("permissions:\n  actions: read\n  contents: read"));
     for workflow in [&security, &platform, &windows_preflight] {
         assert!(!workflow.contains("contents: write"));
         assert!(!workflow.contains("id-token: write"));
@@ -79,20 +79,23 @@ fn rust_workflows_are_locked_engine_free_and_least_privileged() {
             assert!(!script.to_ascii_lowercase().contains(forbidden));
         }
     }
-    assert!(!platform.contains("actions/upload-artifact@v"));
-    assert!(!platform.contains("actions/download-artifact@v"));
-    assert!(!platform.contains("actions/upload-artifact@"));
-    assert!(!platform.contains("actions/download-artifact@"));
+    for workflow in [&platform, &windows_preflight] {
+        assert!(!workflow.contains("actions/upload-artifact@v"));
+        assert!(!workflow.contains("actions/download-artifact@v"));
+    }
+    assert!(platform.contains("actions/upload-artifact@"));
+    assert!(platform.contains("actions/download-artifact@"));
     assert!(platform.contains("name: Rust SDK Development Platforms"));
     assert!(platform.contains("runner: ubuntu-24.04"));
     assert!(platform.contains("runner: macos-15"));
     assert!(!platform.contains("runner: windows-2025"));
-    assert!(!platform.contains("dagger-rust-sdk-platform\n          aggregate"));
+    assert!(platform.contains("dagger-rust-sdk-platform aggregate-development"));
     assert!(platform.contains("Portable platform matrix admitted: \\`no\\`"));
-    assert!(windows_preflight.contains("on:\n  workflow_dispatch: {}"));
+    assert!(windows_preflight.contains("native_run_id:"));
     assert!(!windows_preflight.contains("pull_request:"));
     assert!(!windows_preflight.contains("push:"));
-    assert!(!windows_preflight.contains("uses:"));
+    assert!(windows_preflight.contains("actions/upload-artifact@"));
+    assert!(windows_preflight.contains("actions/download-artifact@"));
     assert!(windows_preflight.contains("runs-on: windows-2025"));
     assert!(windows_preflight.contains("Fetch the exact public revision without credentials"));
     assert!(windows_preflight.contains("^[0-9a-f]{40}$"));

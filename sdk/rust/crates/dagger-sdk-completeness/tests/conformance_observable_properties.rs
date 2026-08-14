@@ -70,6 +70,58 @@ fn checked_integration_fixtures_have_one_rust_owned_program_each() {
 }
 
 #[test]
+fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
+    let plan = checked_plan();
+    let mut input = scaffold_rust_first_conformance_manifest(
+        &plan.assertion_catalog,
+        &plan.fixture_registry,
+        &plan.case_catalog,
+    )
+    .unwrap();
+    assert_eq!(input.scenarios.len(), 612);
+    assert!(
+        compile_rust_first_conformance_manifest(
+            input.clone(),
+            &plan.assertion_catalog,
+            &plan.fixture_registry,
+            &plan.case_catalog,
+            &RustScenarioRegistry::default(),
+        )
+        .is_err(),
+        "realization-required candidates must never become executable evidence"
+    );
+
+    let mut registrations = Vec::with_capacity(input.scenarios.len());
+    for (index, scenario) in input.scenarios.iter_mut().enumerate() {
+        let case = plan.case_catalog.cases().get(&scenario.spine.id).unwrap();
+        let CaseProgram::IntegrationAssertion { fixture } = &case.program else {
+            panic!("scaffold selected a non-integration case");
+        };
+        let realization_id =
+            ScenarioRealizationId::new(format!("realization/integration/{index:04}")).unwrap();
+        registrations.push(RustScenarioRegistration {
+            realization_id: realization_id.clone(),
+            boundary: scenario.spine.subject.boundary,
+            fixture_id: Some(fixture.clone()),
+        });
+        scenario.realization = RustScenarioRealization::ReviewedRustFixture {
+            realization_id,
+            fixture_id: fixture.clone(),
+        };
+    }
+    let registry = RustScenarioRegistry::new(registrations).unwrap();
+    let manifest = compile_rust_first_conformance_manifest(
+        input,
+        &plan.assertion_catalog,
+        &plan.fixture_registry,
+        &plan.case_catalog,
+        &registry,
+    )
+    .unwrap();
+    assert_eq!(manifest.scenarios().len(), 612);
+}
+
+#[test]
 fn property_12_authority_translates_to_observable_rust() {
     let mut runner = TestRunner::new(ProptestConfig {
         cases: 128,

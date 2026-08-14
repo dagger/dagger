@@ -273,7 +273,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -319,7 +319,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -365,7 +365,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -411,7 +411,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -457,7 +457,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -503,7 +503,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -549,7 +549,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -595,7 +595,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -641,7 +641,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -687,7 +687,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -733,7 +733,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -779,7 +779,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -825,7 +825,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -871,7 +871,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -917,7 +917,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -963,7 +963,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1009,7 +1009,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1055,7 +1055,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1101,7 +1101,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1147,7 +1147,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1193,7 +1193,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1239,7 +1239,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1285,7 +1285,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1331,7 +1331,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1377,7 +1377,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1423,7 +1423,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1469,7 +1469,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1542,7 +1542,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1649,7 +1649,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1722,7 +1722,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1863,7 +1863,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -1970,7 +1970,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -2064,7 +2064,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -2327,7 +2327,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -2398,7 +2398,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -2469,7 +2469,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -2610,7 +2610,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -2647,7 +2647,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -3008,7 +3008,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -3432,7 +3432,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -3469,7 +3469,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -3830,7 +3830,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -3867,7 +3867,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -4291,7 +4291,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -4715,7 +4715,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -5139,7 +5139,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -5235,7 +5235,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -5281,7 +5281,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -5327,7 +5327,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -5373,7 +5373,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -5419,7 +5419,7 @@
     {
       "authority_anchors": [
         {
-          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
           "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
           "repository": "github.com/dagger/dagger",
           "revision": "25300124ca110612edc09c43f89cb5fad6028170",
@@ -34087,6 +34087,6 @@
     }
   ],
   "format_version": "1.0.0",
-  "scope_digest": "sha256:ebb0cbab791730404bd0cb43f2fcf6c33823d0d4db998e4225891bb888539607",
+  "scope_digest": "sha256:0992d41f675d2824b73a1d6459437120d46615ef88973ccf6420585d25ce5cc5",
   "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
 }

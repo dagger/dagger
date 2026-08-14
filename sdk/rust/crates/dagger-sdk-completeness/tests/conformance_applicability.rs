@@ -37,7 +37,7 @@ fn exact_groups_expand_to_the_checked_complete_artifact_and_audit() {
     assert_eq!(compiled.input, input);
     assert_eq!(compiled.audit, checked_audit);
     assert_eq!(compiled.scope.existing_records().len(), 1_081);
-    assert_eq!(compiled.scope.policy_capabilities().len(), 21);
+    assert_eq!(compiled.scope.policy_capabilities().len(), 22);
     assert_eq!(compiled.audit.current_blocker_count, 1_081);
     assert_eq!(compiled.audit.projected_terminal_blocker_count, 621);
     assert_eq!(compiled.audit.justified_inapplicable_count, 460);

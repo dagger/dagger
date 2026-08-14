@@ -122,6 +122,10 @@ conformance_id!(
     "Closed production executor selected by a reviewed fixture."
 );
 conformance_id!(
+    ScenarioRealizationId,
+    "Stable checked identity of one executable Rust scenario realization."
+);
+conformance_id!(
     ProvenanceId,
     "Immutable reviewed provenance identity for an external input."
 );

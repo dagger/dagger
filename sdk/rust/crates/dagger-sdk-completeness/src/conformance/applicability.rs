@@ -30,8 +30,8 @@ pub const EXISTING_CONFORMANCE_PARTIAL_COUNT: usize = 9;
 pub const EXISTING_CONFORMANCE_SCOPE_DIGEST: &str =
     "sha256:2969bd8fde19fc17d327cef637b9d848eca01040e88caffc09a4e9a4ad9bc5f9";
 
-/// Exact 21-item Rust-policy scope, kept distinct from authority-derived capability accounting.
-pub const CONFORMANCE_POLICY_CAPABILITY_IDS: [&str; 21] = [
+/// Exact 22-item Rust-policy scope, kept distinct from authority-derived capability accounting.
+pub const CONFORMANCE_POLICY_CAPABILITY_IDS: [&str; 22] = [
     "policy/rust-policy/conformance-applicability-accounting",
     "policy/rust-policy/conformance-capability-scope",
     "policy/rust-policy/conformance-case-catalog",
@@ -51,6 +51,7 @@ pub const CONFORMANCE_POLICY_CAPABILITY_IDS: [&str; 21] = [
     "policy/rust-policy/signoff-host-preflight",
     "policy/rust-policy/signoff-isolated-case-fanout",
     "policy/rust-policy/signoff-phase-budget",
+    "policy/rust-policy/signoff-release-handoff",
     "policy/rust-policy/signoff-single-engine",
     "policy/rust-policy/signoff-single-rust-baseline",
 ];
@@ -694,6 +695,7 @@ fn policy_requirement_coordinate(suffix: &str) -> SourceLocator {
         "signoff-atomic-verdict" => "requirement-12.1-12.35",
         "signoff-duplicate-work-rejection" => "requirement-12.13-12.21",
         "signoff-phase-budget" => "requirement-12.22-12.26",
+        "signoff-release-handoff" => "requirement-12.36-12.40",
         "platform-native-matrix" => "requirement-8.1-8.21",
         "security-locked-supply-chain" => "requirement-9.1-9.7",
         "security-artifact-provenance" => "requirement-9.8-9.17",
@@ -750,14 +752,14 @@ mod tests {
     #[test]
     fn policy_inventory_is_exact_distinct_and_blocking() {
         let policies = reviewed_policy_capabilities();
-        assert_eq!(policies.len(), 21);
+        assert_eq!(policies.len(), 22);
         assert_eq!(
             policies
                 .iter()
                 .map(|item| &item.capability_id)
                 .collect::<BTreeSet<_>>()
                 .len(),
-            21
+            22
         );
         assert!(policies.iter().all(|item| {
             item.owner_feature == FeatureId::Feature8 && item.blocking_status == Status::Missing

@@ -66,8 +66,10 @@ Git-tagged distribution, release assets, attestations, and stable presentation.
   engine and a workspace branched from the Installed_Rust_Baseline.
 - **Case_Catalog:** The canonical, digest-bound, closed inventory of all exact-engine
   Case_Definitions required for one target and platform before an engine starts.
-- **Case_Definition:** One isolated Rust-owned exact-engine scenario with immutable
-  inputs, assertions, Capability_ID scope, resource bounds, and retry policy.
+- **Case_Definition:** One isolated Rust-subject exact-engine scenario with immutable
+  authority provenance, Scenario_Spine, Rust_Realization, Capability_ID scope, resource
+  bounds, and retry policy. Only its Rust realization and result can prove Rust
+  conformance.
 - **Common_Harness_Case:** One of the 17 subject-conformance checks defined by the
   pinned `sdk-sdk`; the harness's own `init-module-renders-root-type` self-check is not
   a Common_Harness_Case for the Rust subject.
@@ -108,6 +110,20 @@ Git-tagged distribution, release assets, attestations, and stable presentation.
   Atomic_Signoff_Verdict to the exact artifact manifest, payload bytes, security
   report, Subject_Revision, and platform which Feature 9 may consume without rebuild;
   it does not itself authorize publication.
+- **Rust_First_Conformance_Manifest:** The canonical checked inventory which joins each
+  selected authority scenario's provenance and Scenario_Spine to exactly one
+  Rust_Realization. It is implemented for Rust sign-off, not as a general cross-SDK
+  test framework.
+- **Rust_Realization:** Exactly one executable Rust implementation of a Scenario_Spine:
+  either a generated public-Core realization or a reviewed idiomatic Rust fixture. A
+  boundary label, source selector, or foreign-language test is not a Rust_Realization.
+- **Scenario_Spine:** The deliberately small source-language-neutral portion of a
+  conformance scenario: stable identity, immutable authority anchor and fingerprint,
+  subject, observable contract, inputs including omission semantics, and expected
+  observation. It contains no Go or Rust source code.
+- **SDK_SDK_Candidate:** An advisory marker identifying a small portable client-contract
+  scenario which may later inform `sdk-sdk`; it grants no evidence and creates no
+  foreign-SDK executor.
 - **Secret_Canary_Set:** High-entropy non-production values injected into every
   credential-bearing sign-off boundary and forbidden from all persisted or rendered
   outputs.
@@ -171,6 +187,15 @@ definitive Go client behaviours, and every additional Rust-observable assertion
 derived from the 1,072 selected integration items. The complete Go SDK suite and other
 language SDK suites never run inside Rust sign-off.
 
+For the selected Dagger integration inventory, the pinned Go scenario is immutable
+authority provenance and may scaffold a candidate Scenario_Spine, but it is not the
+executable Rust contract. The checked Rust_First_Conformance_Manifest records the small
+language-neutral spine and exactly one idiomatic Rust_Realization. Straightforward
+public Core calls may use generated realizations; lifecycle, module, CLI, concurrency,
+and complex setup use reviewed Rust fixtures. Sign-off runs only those Rust
+realizations. The manifest has no generic backend or foreign-SDK runner, and a Go
+fixture, Go module, or Go SDK result cannot prove a Rust claim.
+
 The Portable_Platform_Matrix proves production OS-specific behaviour on Linux, macOS,
 and Windows without an engine, while pure descriptor tests cover amd64 and arm64 for
 each OS. The first exact-engine verdict is Linux/amd64. Any later exact-engine platform
@@ -214,6 +239,13 @@ is stated. Current Rust citations describe `main` after Feature 7 merge commit
   the pinned module, workspace, SDK CLI, and future-test sources from the target
   Dagger repository and preserves explicit exclusions as audit history. The source
   digest is `sha256:bc5dfb40a9c0247523b2c3f34d5aeba3c413254552608d9ae81c381d5737118b`.
+- **Established TypeScript integration pattern:**
+  `core/integration/module_call_test.go` at the Target_Revision executes shared
+  parameterized scenarios with TypeScript fixtures, while
+  `core/integration/module_typescript_test.go` retains TypeScript-specific scenarios
+  under the same Go orchestration. `toolchains/typescript-sdk-dev/ts-sdk.dang` separately
+  owns Node and Bun SDK tests; it does not translate the Dagger integration suite into
+  a second TypeScript test language.
 - **Definitive client behaviours:** `sdk/go/client_test.go:33-302` at the Definitive
   Go SDK revision defines the selected directory, Git, container, list, and typed
   execution-error observations. Those nine rows have Rust implementation evidence but
@@ -632,6 +664,27 @@ grow into unrelated SDK work.
 23. THE Case_Catalog SHALL avoid repository-wide generation.
 24. WHEN a Case_Catalog input changes, THE workflow SHALL require a new catalog digest
     before sign-off.
+25. WHEN an applicable Dagger integration scenario is admitted, THE Case_Catalog SHALL
+    bind its exact pinned authority anchor and source fingerprint, one Scenario_Spine,
+    and exactly one Rust_Realization.
+26. THE Scenario_Spine SHALL contain only its stable identity, subject, observable
+    contract, immutable inputs including omitted-versus-explicit values, and expected
+    observation; it SHALL contain no source-language code or arbitrary command.
+27. THE Rust_Realization SHALL be either a generated public-Core realization or a
+    reviewed idiomatic Rust fixture which resolves to checked executable Rust code.
+28. WHEN selected integration scenarios execute, THE runner SHALL select only their
+    Rust_Realizations and SHALL reject any plan which constructs a foreign SDK fixture,
+    generator, runtime, package manager, or test subject.
+29. IF an applicable scenario has no Rust_Realization, more than one realization, only
+    a boundary label, an ambiguous authority mapping, or widened capability claims,
+    THEN THE case planner SHALL reject the catalog before artifact construction.
+30. THE Rust_First_Conformance_Manifest SHALL avoid a generic backend, Go executor,
+    TypeScript executor, universal operation language, or SDK plugin system.
+31. WHEN a scenario is marked SDK_SDK_Candidate, THE marker SHALL be advisory only and
+    SHALL NOT change Rust execution, evidence, or completeness status.
+32. WHEN an authority anchor, source fingerprint, Scenario_Spine, Rust_Realization, or
+    SDK_SDK_Candidate decision changes, THE workflow SHALL require renewed review and a
+    new manifest and catalog digest.
 
 ### Requirement 4: Matching Engine-Free Closure Evidence
 
@@ -806,6 +859,19 @@ than matching source structure.
     SHALL fail.
 18. WHEN the repository claims Go-level completeness, THE Completeness_Ledger SHALL
     contain sufficient evidence for every active applicable capability.
+19. WHEN a Scenario_Spine is realized, THE verdict SHALL treat only the observed result
+    of its generated or reviewed Rust_Realization as Rust evidence.
+20. WHEN an authority scenario scaffolds a manifest candidate, THE generated candidate
+    SHALL remain invalid until review confirms its subject, input semantics, predicate,
+    and Rust realization.
+21. WHEN a straightforward schema-coordinate scenario can be realized through the
+    public generated Core API, THE Rust_First_Conformance_Manifest SHALL select the
+    generated Core realization without exposing a general operation interpreter.
+22. WHEN lifecycle, module, CLI, concurrency, or complex setup is required, THE
+    Rust_First_Conformance_Manifest SHALL select a reviewed idiomatic Rust fixture.
+23. IF a selected Rust realization is missing, stale, ambiguous, non-executable, or
+    associated with another SDK, THEN THE sign-off verdict SHALL fail without
+    classifying the condition as a missing Rust public API by inference alone.
 
 ### Requirement 8: Native Platform Closure
 
