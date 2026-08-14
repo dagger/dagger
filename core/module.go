@@ -278,6 +278,28 @@ func functionRequiresArgsExceptAgentBase(fn *Function) bool {
 	return false
 }
 
+// FunctionRequiresArgsExceptWorkspace reports whether a function has required
+// arguments beyond Workspace-typed ones. A required Workspace! argument is
+// auto-injected at call time (see FunctionArg.IsWorkspace), so it does not stop
+// the function from being called with no caller-supplied arguments — the
+// contract a bare "module:function" address reference relies on
+// (Workspace.addresses, hack/designs/sandboxes.md §5). Any other required
+// argument disqualifies, including a non-agent LLM arg: only Workspace is
+// exempted here.
+func FunctionRequiresArgsExceptWorkspace(fn *Function) bool {
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if !argRequired(arg) {
+			continue
+		}
+		if arg.IsWorkspace() {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func sameAttachedResult(a, b dagql.IDable) bool {
 	if a == nil || b == nil {
 		return false
