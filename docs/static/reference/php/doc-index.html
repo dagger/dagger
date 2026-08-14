@@ -363,7 +363,7 @@
                     <dd><p>The combined buffered standard output and standard error stream of the last executed command</p></dd><dt><a href="Dagger/ContainerId.html"><abbr title="Dagger\ContainerId">ContainerId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Reflective module API provided to functions at runtime.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The SDK-role data for the currently executing module, as installed in the active workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_clients">
+                    <dd><p>The SDK-role data for the currently executing module, as installed in the supplied workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_clients">
 <abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr>::clients</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a></em></dt>
                     <dd><p>The generated clients this SDK produces in the workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A generated client the current SDK produces in the workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKModule.html"><abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -452,7 +452,7 @@
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::column</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The column number within the line.</p></dd><dt><a href="Dagger/Workspace.html#method_changes">
 <abbr title="Dagger\Workspace">Workspace</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace's pending overlay changes.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
+                    <dd><p>Return this workspace's changes, with paths relative to its working directory.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -784,7 +784,9 @@
 <abbr title="Dagger\Module">Module</abbr>::generators</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>Return all generators defined by the module</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_generator">
 <abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::generator</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
-                    <dd><p>The generator to use</p></dd><dt><a href="Dagger/ModuleSource.html#method_generateLocalDependencies">
+                    <dd><p>The generator to use</p></dd><dt><a href="Dagger/ModuleSource.html#method_generate">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generate</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Return the supplied workspace with this module's generated context applied.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generateLocalDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generateLocalDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextChangeset">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generatedContextChangeset</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>

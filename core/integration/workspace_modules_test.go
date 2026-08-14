@@ -64,8 +64,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
 
-		updated := c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		added, err := updated.Changes().AddedPaths(ctx)
+		current := c.CurrentWorkspace()
+		updated := current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{workspacecfg.ConfigFileName, workspacecfg.LockFileName}, added)
 		require.NoError(t, updated.Export(ctx))
@@ -87,8 +88,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Contains(t, string(lockBytes), `"git.tag"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated = c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		empty, err := updated.Changes().IsEmpty(ctx)
+		current = c.CurrentWorkspace()
+		updated = current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		empty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
 	})
@@ -103,8 +105,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated := c.CurrentWorkspace().WithModule("./dep")
-		added, err := updated.Changes().AddedPaths(ctx)
+		current := c.CurrentWorkspace()
+		updated := current.WithModule("./dep")
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspacecfg.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))

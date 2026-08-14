@@ -1,0 +1,70 @@
+type RooterNew {
+  """
+  Return the changed paths from generating the module the caller stands in.
+  """
+  pub generated(ws: Workspace!): [String!]! {
+    let changes = ws.moduleSource(".").generatedContextChangeset
+    changes.addedPaths + changes.modifiedPaths
+  }
+
+  """
+  Return the changed paths from a normal workspace edit.
+  """
+  pub edited(ws: Workspace!): [String!]! {
+    let changes = ws.withNewFile("/app/edited.txt", "edited").changes(ws)
+    changes.addedPaths + changes.modifiedPaths
+  }
+
+  """
+  Return only the changed paths staged after an explicit baseline.
+  """
+  pub compared(ws: Workspace!): [String!]! {
+    let changes = ws.withNewFile("/app/compared.txt", "compared").changes(ws)
+    changes.addedPaths + changes.modifiedPaths
+  }
+
+  """
+  Exclude an overlay already present in the explicit baseline.
+  """
+  pub comparedAfterEdit(ws: Workspace!): [String!]! {
+    let initialized = ws.withNewFile("/app/before.txt", "before")
+    let changes = initialized
+      .withNewFile("/app/after.txt", "after")
+      .changes(initialized)
+    changes.addedPaths + changes.modifiedPaths
+  }
+
+  """
+  Modify an existing file after an explicit baseline.
+  """
+  pub comparedModification(ws: Workspace!): [String!]! {
+    ws.withNewFile("/app/main.dang", "type Changed {}").changes(ws).modifiedPaths
+  }
+
+  """
+  Remove an existing file after an explicit baseline.
+  """
+  pub comparedRemoval(ws: Workspace!): [String!]! {
+    ws.withoutFile("/app/main.dang").changes(ws).removedPaths
+  }
+
+  """
+  A derived workspace can be retained and used as a later baseline.
+  """
+  pub nestedComparison(ws: Workspace!): [String!]! {
+    let outer = ws.withNewFile("/app/outer.txt", "outer")
+    outer
+      .withNewFile("/app/inner.txt", "inner")
+      .changes(outer)
+      .addedPaths
+  }
+
+  """
+  Explicitly measure changes from the workspace root.
+  """
+  pub rootEdited(ws: Workspace!): [String!]! {
+    let root = ws.withWorkdir(".")
+    let changes = root.withNewFile("/app/root-edited.txt", "edited").changes(root)
+    changes.addedPaths + changes.modifiedPaths
+  }
+}

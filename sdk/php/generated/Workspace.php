@@ -35,11 +35,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace's pending overlay changes.
+     * Return this workspace's changes, with paths relative to its working directory.
+     *
+     * Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
      */
-    public function changes(): Changeset
+    public function changes(?Workspace $from = null): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        if (null !== $from) {
+        $innerQueryBuilder->setArgument('from', $from);
+        }
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

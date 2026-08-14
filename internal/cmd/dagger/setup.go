@@ -276,7 +276,9 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 	// handleWorkspaceResponse owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
-	applied, err = handleWorkspaceResponse(ctx, dag, ws.WithChanges(changes), autoApply)
+	// Migration can move config above the current directory. Use the workspace
+	// root so changes() includes it.
+	applied, err = handleWorkspaceResponse(ctx, dag, ws, ws.WithChanges(changes).WithWorkdir("."), autoApply)
 	if err != nil {
 		return false, false, nil, err
 	}

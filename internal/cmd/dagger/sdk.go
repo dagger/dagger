@@ -269,7 +269,7 @@ func installWorkspaceSDK(ctx context.Context, dag *dagger.Client, out io.Writer,
 	if err != nil {
 		return "", err
 	}
-	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	isEmpty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	if err != nil {
 		return "", err
 	}

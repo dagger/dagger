@@ -565,9 +565,9 @@ func (s *workspaceSchema) sdkGenerators(
 	// Name the tree after the workspace entry, so generator paths read the same
 	// as they do under `dagger generate <sdk>`.
 	reparentWorkspaceTreeRoot(gg.Node, sdkName)
-	// Bind the receiver, exactly as Workspace.generators does, so the generators
-	// run against this workspace — overlay edits and cwd included — instead of
-	// the session's frozen current workspace.
+	// The SDK compares the workspace it returns with this exact input workspace,
+	// so it sees every staged init edit while returning only its own generated
+	// files.
 	gg.BoundWorkspace = parentResult
 	return gg, nil
 }
@@ -618,7 +618,7 @@ func moduleUnderWorkspaceName(
 // anchored at the workspace cwd (it generates the module it's in plus the ones
 // beneath, and only the clients under that path), so pointing it at what was
 // just created is what keeps the rest of the workspace untouched. This is the
-// same mechanism ModuleSource.generateLocalDependencies uses per dependency.
+// same mechanism the internal local-dependency generator uses per dependency.
 //
 // The generators come from __sdkGenerators, which reads them off the SDK's own
 // module, rather than from Workspace.generators, which resolves them out of the

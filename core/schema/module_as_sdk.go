@@ -12,7 +12,7 @@ import (
 )
 
 // currentModuleAsSDK treats the currently executing module as an SDK installed
-// in the active workspace and returns its persisted as-sdk role data (the
+// in the supplied workspace and returns its persisted as-sdk role data (the
 // modules and clients it authors/manages). This is the engine-owned source of
 // truth that SDK generators use to discover their workspace-managed modules,
 // rather than scanning the workspace filesystem themselves.
@@ -65,7 +65,7 @@ func (s *moduleSchema) currentModuleAsSDK(
 	for _, mod := range entry.AsSDK.Modules {
 		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: mod.Path})
 	}
-	result.Modules = currentModuleAsSDKModulesInScopeForCwd(result.Modules, ws.Cwd)
+	result.Modules = currentModuleAsSDKModulesForCwd(result.Modules, ws.Cwd)
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
 			Path:           client.Path,
@@ -100,12 +100,12 @@ func (s *moduleSchema) currentModuleAsSDKModules(
 	return parent.Modules, nil
 }
 
-// currentModuleAsSDKModulesInScopeForCwd applies the same cwd selection policy
+// currentModuleAsSDKModulesForCwd applies the same cwd selection policy
 // SDKs previously reconstructed with polyfill.findConfigDirs: all registered
 // modules at or below cwd, and, when cwd itself is not registered, the nearest
 // enclosing registered module. Results are the nearest ancestor first followed
 // by descendants in workspace-config order.
-func currentModuleAsSDKModulesInScopeForCwd(
+func currentModuleAsSDKModulesForCwd(
 	modules []*core.CurrentModuleAsSDKModule,
 	cwd string,
 ) []*core.CurrentModuleAsSDKModule {

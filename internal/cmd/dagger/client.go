@@ -83,8 +83,9 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
-		updated := dag.CurrentWorkspace().WithInitClient(clientPath, sdkName, moduleRef, opts)
-		_, err = handleWorkspaceResponse(ctx, dag, updated, autoApply)
+		current := dag.CurrentWorkspace()
+		updated := current.WithInitClient(clientPath, sdkName, moduleRef, opts)
+		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})
 }

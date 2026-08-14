@@ -404,7 +404,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		return nil, err
 	}
 
-	generated := dag.Directory()
+	generated := ws
 	for _, client := range clients {
 		path, err := client.Path(ctx)
 		if err != nil {
@@ -432,7 +432,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		generated = generated.WithNewFile(path+"/generated.txt", contents)
 	}
 
-	return generated.Changes(dag.Directory()), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 `)
 
@@ -533,7 +533,7 @@ func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace)
 		return nil, err
 	}
 
-	generated := dag.Directory()
+	generated := ws
 	for _, mod := range modules {
 		modPath, err := mod.Path(ctx)
 		if err != nil {
@@ -545,7 +545,7 @@ func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace)
 		}
 		generated = generated.WithNewFile(path.Join(rel, "generated-module.txt"), modPath+"\n")
 	}
-	return generated.Changes(dag.Directory()), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 
 // +generate
@@ -559,7 +559,7 @@ func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace)
 		return nil, err
 	}
 
-	generated := dag.Directory()
+	generated := ws
 	for _, client := range clients {
 		clientPath, err := client.Path(ctx)
 		if err != nil {
@@ -575,7 +575,7 @@ func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace)
 		}
 		generated = generated.WithNewFile(path.Join(rel, "generated-client.txt"), module+"\n")
 	}
-	return generated.Changes(dag.Directory()), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 
 func workspaceCwd(ctx context.Context, ws *dagger.Workspace) (string, error) {
@@ -765,7 +765,7 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 }
 
 // TestGenerateLocalDependenciesTerminatesOnRootDep locks in that
-// ModuleSource.generateLocalDependencies terminates when a module's local
+// Internal local-dependency generation terminates when a module's local
 // dependency closure leads back to a dependency that is currently being
 // generated one level up.
 //

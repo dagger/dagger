@@ -699,11 +699,12 @@ func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Conte
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	current := c.CurrentWorkspace()
 
 	// llm() starts unbound; bind the live workspace explicitly, as the CLI
 	// does at session start.
 	llm := c.LLM().
-		WithWorkspace(c.CurrentWorkspace()).
+		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("be helpful").
 		WithPrompt("hello").
@@ -721,7 +722,7 @@ func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Conte
 
 	// Simulate ctrl+s after the export: rebind the live workspace, whose
 	// on-disk content the export just made equal to the overlay result.
-	rebound := llmEdited.WithWorkspace(c.CurrentWorkspace())
+	rebound := llmEdited.WithWorkspace(current)
 
 	// The conversation is preserved exactly.
 	origHist, err := llmEdited.Transcript(ctx)
@@ -751,7 +752,7 @@ func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Conte
 	// The property that actually matters: reloading the persisted session does
 	// not resurrect the already-exported overlay as a pending change.
 	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
-	reloadedEmpty, err := reloaded.Workspace().Changes().IsEmpty(ctx)
+	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty,
 		"a reloaded session must not replay already-exported workspace edits")
@@ -778,9 +779,10 @@ func (LLMSuite) TestPortableIDDropsNonChangesOverlays(ctx context.Context, t *te
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	current := c.CurrentWorkspace()
 
 	llm := c.LLM().
-		WithWorkspace(c.CurrentWorkspace()).
+		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("be helpful").
 		WithPrompt("hello").
@@ -797,13 +799,13 @@ func (LLMSuite) TestPortableIDDropsNonChangesOverlays(ctx context.Context, t *te
 	)
 
 	// Sanity check: before the rebind the overlay reports the edits as pending.
-	editedEmpty, err := edited.Workspace().Changes().IsEmpty(ctx)
+	editedEmpty, err := edited.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, editedEmpty, "overlaid workspace should report pending changes")
 
 	// Rebind the live workspace, as the CLI does after ctrl+s exports.
-	rebound := edited.WithWorkspace(c.CurrentWorkspace())
-	reboundEmpty, err := rebound.Workspace().Changes().IsEmpty(ctx)
+	rebound := edited.WithWorkspace(current)
+	reboundEmpty, err := rebound.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reboundEmpty,
 		"rebinding the live workspace must drop the overlay edits")
@@ -823,7 +825,7 @@ func (LLMSuite) TestPortableIDDropsNonChangesOverlays(ctx context.Context, t *te
 
 	// Reloading must not resurrect the already-exported edits.
 	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
-	reloadedEmpty, err := reloaded.Workspace().Changes().IsEmpty(ctx)
+	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty,
 		"a reloaded session must not replay already-exported workspace edits")
@@ -845,9 +847,10 @@ func (LLMSuite) TestPortableIDPreservesPendingEdits(ctx context.Context, t *test
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	current := c.CurrentWorkspace()
 
 	llm := c.LLM().
-		WithWorkspace(c.CurrentWorkspace()).
+		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
 		WithPrompt("hello").
 		WithResponse([]dagger.LLMContentBlockInput{
@@ -868,7 +871,7 @@ func (LLMSuite) TestPortableIDPreservesPendingEdits(ctx context.Context, t *test
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", contents)
 
-	reloadedEmpty, err := reloaded.Workspace().Changes().IsEmpty(ctx)
+	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, reloadedEmpty,
 		"un-exported edits must survive a save/resume round trip")

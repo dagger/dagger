@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCurrentModuleAsSDKModulesInScopeForCwd(t *testing.T) {
+func TestCurrentModuleAsSDKModulesForCwd(t *testing.T) {
 	modules := func(paths ...string) []*core.CurrentModuleAsSDKModule {
 		result := make([]*core.CurrentModuleAsSDKModule, 0, len(paths))
 		for _, path := range paths {
@@ -46,13 +46,13 @@ func TestCurrentModuleAsSDKModulesInScopeForCwd(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got := currentModuleAsSDKModulesInScopeForCwd(managed, test.cwd)
+			got := currentModuleAsSDKModulesForCwd(managed, test.cwd)
 			require.Equal(t, test.want, paths(got))
 		})
 	}
 
 	t.Run("deduplicates normalized paths", func(t *testing.T) {
-		got := currentModuleAsSDKModulesInScopeForCwd(modules("services/api", "services/./api", "services/web"), "services")
+		got := currentModuleAsSDKModulesForCwd(modules("services/api", "services/./api", "services/web"), "services")
 		require.Equal(t, []string{"services/api", "services/web"}, paths(got))
 	})
 }

@@ -430,7 +430,9 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	if err != nil {
 		return err
 	}
-	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	// The workspace config may be above the current directory. Use the workspace
+	// root so changes() includes it.
+	isEmpty, err := updated.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: target}).IsEmpty(ctx)
 	if err != nil {
 		return err
 	}

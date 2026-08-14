@@ -154,7 +154,7 @@ type Workspace struct {
 	// StagedGeneration records the workspace-root-relative paths of modules
 	// whose generated local dependency closure has been applied to this
 	// workspace, via the internal Workspace.__withGeneratedLocalDependencies
-	// field. A nested ModuleSource.generateLocalDependencies call for a
+	// field. Nested local-dependency generation for a
 	// recorded module short-circuits to an empty changeset — without this, a
 	// dependency's SDK generator re-stages its own dependency closure and
 	// generation fans out exponentially over the dependency DAG. Kept sorted

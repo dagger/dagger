@@ -186,7 +186,7 @@ func saveAndResume(
 	workdir string,
 	build func(cA *dagger.Client) *dagger.LLM,
 	primeA func(llmA *dagger.LLM),
-) *dagger.LLM {
+) (*dagger.LLM, *dagger.Client) {
 	t.Helper()
 
 	cA := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -209,7 +209,7 @@ func saveAndResume(
 	}
 
 	cB := connect(ctx, t, dagger.WithWorkdir(workdir))
-	return dagger.Ref[*dagger.LLM](cB, savedID)
+	return dagger.Ref[*dagger.LLM](cB, savedID), cB
 }
 
 // overlayToolEdit mirrors what core.MCP.applyChangeset does when a
@@ -271,10 +271,10 @@ func editorEdit(ctx context.Context, t *testctx.T, llm *dagger.LLM, path, oldTex
 // to tell the model (internal/cmd/dagger/llm.go). This is the "visible to the
 // LLM" half: markers that no search surfaces are markers the agent never
 // learns about.
-func conflictedFiles(ctx context.Context, t *testctx.T, llm *dagger.LLM) []string {
+func conflictedFiles(ctx context.Context, t *testctx.T, llm *dagger.LLM, baseline *dagger.Workspace) []string {
 	t.Helper()
 
-	changes := llm.Workspace().Changes()
+	changes := llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: baseline})
 	added, err := changes.AddedPaths(ctx)
 	require.NoError(t, err)
 	modified, err := changes.ModifiedPaths(ctx)
@@ -319,7 +319,7 @@ func (LLMSuite) TestResumeKeepsPendingEdits(ctx context.Context, t *testctx.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(workdir, "a.txt"),
 				[]byte("keep-pending one\nORIGINAL\nkeep-pending three\n"), 0o644))
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
+			resumed, resumedClient := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					llmA := savedSessionConversation(cA, "keep-pending one\nORIGINAL\nkeep-pending three\n")
 					// edit(): replace a line in an existing file.
@@ -354,7 +354,8 @@ func (LLMSuite) TestResumeKeepsPendingEdits(ctx context.Context, t *testctx.T) {
 			// And they are still reported as pending, so the CLI keeps
 			// showing them as unsaved changes rather than as already
 			// exported.
-			changes := resumed.Workspace().Changes()
+			baseline := resumedClient.CurrentWorkspace()
+			changes := resumed.Workspace().Changes(dagger.WorkspaceChangesOpts{From: baseline})
 			modified, err := changes.ModifiedPaths(ctx)
 			require.NoError(t, err)
 			require.Contains(t, modified, "a.txt")
@@ -363,7 +364,7 @@ func (LLMSuite) TestResumeKeepsPendingEdits(ctx context.Context, t *testctx.T) {
 			require.Contains(t, added, "b.txt")
 
 			// Nothing conflicted: the host tree never moved.
-			require.Empty(t, conflictedFiles(ctx, t, resumed),
+			require.Empty(t, conflictedFiles(ctx, t, resumed, baseline),
 				"a clean replay must not leave conflict markers")
 		})
 	}
@@ -384,7 +385,7 @@ func (LLMSuite) TestResumeLeavesConflictMarkersForOutOfBandEdits(ctx context.Con
 			require.NoError(t, os.WriteFile(path,
 				[]byte("conflict one\nORIGINAL\nconflict three\n"), 0o644))
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
+			resumed, resumedClient := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					llmA := savedSessionConversation(cA, "conflict one\nORIGINAL\nconflict three\n")
 					return editorEdit(ctx, t, llmA, "a.txt", "ORIGINAL", "EDITED")
@@ -415,7 +416,7 @@ func (LLMSuite) TestResumeLeavesConflictMarkersForOutOfBandEdits(ctx context.Con
 
 			// The markers must be discoverable the way the CLI discovers them,
 			// or the model is never told to resolve them.
-			require.Equal(t, []string{"a.txt"}, conflictedFiles(ctx, t, resumed),
+			require.Equal(t, []string{"a.txt"}, conflictedFiles(ctx, t, resumed, resumedClient.CurrentWorkspace()),
 				"conflict markers must be findable by the search that builds the "+
 					"model's restore-time cue")
 		})
@@ -436,7 +437,7 @@ func (LLMSuite) TestResumeAppliesNonConflictingOutOfBandEdits(ctx context.Contex
 			require.NoError(t, os.WriteFile(path,
 				[]byte("first\nsecond\nthird\nfourth\nfifth\nsixth\nseventh\neighth\nninth\n"), 0o644))
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
+			resumed, resumedClient := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					llmA := savedSessionConversation(cA, "unused")
 					return editorEdit(ctx, t, llmA, "a.txt", "second", "SECOND EDITED")
@@ -456,7 +457,7 @@ func (LLMSuite) TestResumeAppliesNonConflictingOutOfBandEdits(ctx context.Contex
 			require.NotContains(t, contents, "<<<<<<< workspace",
 				"a hunk that still applies must not be reported as a conflict")
 
-			require.Empty(t, conflictedFiles(ctx, t, resumed))
+			require.Empty(t, conflictedFiles(ctx, t, resumed, resumedClient.CurrentWorkspace()))
 		})
 	}
 }
@@ -474,7 +475,7 @@ func (LLMSuite) TestResumeDerivesToolsInNewSession(ctx context.Context, t *testc
 			initGitRepo(ctx, t, workdir)
 			require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("ORIGINAL"), 0o644))
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAfterReset, workdir,
+			resumed, _ := saveAndResume(ctx, t, arrangement, saveAfterReset, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					return savedSessionConversation(cA, "ORIGINAL")
 				},
@@ -506,7 +507,7 @@ func (LLMSuite) TestResumeHostReadsInNewSession(ctx context.Context, t *testctx.
 			initGitRepo(ctx, t, workdir)
 			require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("ORIGINAL"), 0o644))
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAfterReset, workdir,
+			resumed, _ := saveAndResume(ctx, t, arrangement, saveAfterReset, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					return savedSessionConversation(cA, "ORIGINAL")
 				},
@@ -545,7 +546,7 @@ func (LLMSuite) TestResumeSeesEditedHostFiles(ctx context.Context, t *testctx.T)
 			initGitRepo(ctx, t, workdir)
 			require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("ORIGINAL"), 0o644))
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAfterReset, workdir,
+			resumed, _ := saveAndResume(ctx, t, arrangement, saveAfterReset, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					return savedSessionConversation(cA, "ORIGINAL")
 				},

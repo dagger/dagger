@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"golang.org/x/mod/semver"
 )
 
 type workspaceSchema struct{}
@@ -166,7 +167,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("__withGeneratedLocalDependencies", s.withGeneratedLocalDependencies).
 			Doc("(Internal-only) Return this workspace with a module's generated local dependency closure applied and recorded.",
-				"Applies the changeset produced by ModuleSource.generateLocalDependencies for the module at the given path, and marks the workspace so a nested generateLocalDependencies call for that module short-circuits instead of re-staging.").
+				"Applies internally generated local-dependency changes for the module at the given path, and marks the workspace so nested generation for that module does not repeat the staging.").
 			Args(
 				dagql.Arg("module").Doc("Workspace-root-relative path of the module whose generated local dependencies these are."),
 				dagql.Arg("changes").Doc("The staged dependency codegen to apply."),
@@ -317,7 +318,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("changes", s.changes).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace's pending overlay changes."),
+			Doc("Return this workspace's changes, with paths relative to its working directory.",
+				"Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.").
+			Args(
+				dagql.Arg("from").Doc("An earlier workspace state to compare against."),
+			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Writes pending workspace changes to the local Git workspace").
@@ -1610,9 +1615,9 @@ func (s *workspaceSchema) withChanges(
 }
 
 // __withGeneratedLocalDependencies (Dagger-internal) applies the changeset
-// produced by ModuleSource.generateLocalDependencies for the module at the
+// produced by internal local-dependency generation for the module at the
 // given workspace-root-relative path, and records that module in the
-// workspace's StagedGeneration set so a nested generateLocalDependencies call
+// workspace's StagedGeneration set so nested local-dependency generation
 // for it short-circuits instead of re-staging the closure this workspace
 // already carries. Combining the apply and the mark in one field keeps the
 // provenance structural: a workspace can only be marked for a module by
@@ -1785,21 +1790,248 @@ func guardMountedPath(ws *core.Workspace, resolvedPath string) error {
 func (s *workspaceSchema) changes(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
+	args struct {
+		From dagql.Optional[dagql.ID[*core.Workspace]]
+	},
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-	if changes, ok := parent.Self().OverlayChanges(); ok {
+	if !args.From.Valid {
+		var changes dagql.ObjectResult[*core.Changeset]
+		if overlay, ok := parent.Self().OverlayChanges(); ok {
+			changes = overlay
+		} else {
+			empty, err := core.NewEmptyChangeset(ctx)
+			if err != nil {
+				return inst, err
+			}
+			changes, err = dagql.NewObjectResultForCurrentCall(ctx, srv, empty)
+			if err != nil {
+				return inst, err
+			}
+		}
+		if callerPastChangesetCwdCutover(ctx) {
+			return reRootChangesetToCwd(ctx, changes, parent.Self().Cwd)
+		}
 		return changes, nil
 	}
-	changes, err := core.NewEmptyChangeset(ctx)
+
+	from, err := args.From.Value.Load(ctx, srv)
+	if err != nil {
+		return inst, fmt.Errorf("load comparison workspace: %w", err)
+	}
+	changes, err := s.workspaceChangesBetween(ctx, from, parent)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
+
+	if callerPastChangesetCwdCutover(ctx) {
+		return reRootChangesetToCwd(ctx, changes, parent.Self().Cwd)
+	}
+	return changes, nil
+}
+
+// workspaceChangesBetween compares two workspace values without materializing
+// an entire client-local workspace. Host-backed workspaces are reconstructed
+// over a sparse host view containing only paths touched by either side; all
+// other workspace kinds already have full in-engine roots.
+func (s *workspaceSchema) workspaceChangesBetween(
+	ctx context.Context,
+	from dagql.ObjectResult[*core.Workspace],
+	after dagql.ObjectResult[*core.Workspace],
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var beforeRoot, afterRoot dagql.ObjectResult[*core.Directory]
+	if from.Self().ClientLocalBase() || after.Self().ClientLocalBase() {
+		if !from.Self().ClientLocalBase() || !after.Self().ClientLocalBase() ||
+			from.Self().HostPath() != after.Self().HostPath() ||
+			from.Self().ClientID != after.Self().ClientID {
+			return inst, fmt.Errorf("cannot compare workspaces with different host roots")
+		}
+
+		touched := unionPaths(from.Self().OverlayTouchedPaths(), after.Self().OverlayTouchedPaths())
+		base, err := s.sparseHostBase(ctx, after.Self(), touched)
+		if err != nil {
+			return inst, err
+		}
+		apply := func(ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
+			changes, ok := ws.OverlayChanges()
+			if !ok {
+				return base, nil
+			}
+			changesID, err := changes.ID()
+			if err != nil {
+				return dagql.ObjectResult[*core.Directory]{}, err
+			}
+			var root dagql.ObjectResult[*core.Directory]
+			err = srv.Select(ctx, base, &root, dagql.Selector{
+				Field: "withChanges",
+				Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+			})
+			return root, err
+		}
+		beforeRoot, err = apply(from.Self())
+		if err != nil {
+			return inst, err
+		}
+		afterRoot, err = apply(after.Self())
+		if err != nil {
+			return inst, err
+		}
+	} else {
+		beforeRoot, err = s.workspaceOverlayRootfs(ctx, from.Self())
+		if err != nil {
+			return inst, err
+		}
+		afterRoot, err = s.workspaceOverlayRootfs(ctx, after.Self())
+		if err != nil {
+			return inst, err
+		}
+	}
+
+	beforeID, err := beforeRoot.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, afterRoot, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// changesetCwdCutover is the first module engine version whose changesets
+// come back from the engine measured from the workspace cwd instead of the
+// workspace root. Clients apply a returned changeset at their own cwd, so
+// cwd-measured is what lands files in the right place; modules built before
+// the cutover keep the root-measured form and do the translation themselves
+// (via the polyfill, #13769).
+//
+// NOTE: this must be the release that ships the polyfill-removal surface —
+// adjust here if that release ends up with a different number.
+const changesetCwdCutover = "v1.0.0-beta.10"
+
+// callerPastChangesetCwdCutover reports whether the calling module declares
+// an engine version at or past the cwd cutover. The schema view cannot carry
+// this decision — views are base-version granular, so v1.0.0-beta.7 and the
+// cutover both collapse to the v1.0.0 view — hence the exact declared
+// version decides. Callers that are not module code (the CLI, SDK clients,
+// tests) always get the new behavior.
+//
+// Call this at resolver entry: some resolvers swap in another client's
+// metadata mid-flight, which would change the answer.
+func callerPastChangesetCwdCutover(ctx context.Context) bool {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return true
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return errors.Is(err, core.ErrNoCurrentModule)
+	}
+	return semver.Compare(mod.Self().Source.Value.Self().EngineVersion, changesetCwdCutover) >= 0
+}
+
+// reRootChangesetToCwd re-measures a workspace-root-measured changeset from
+// the workspace cwd, so a client applying it at its own cwd writes the right
+// files. A change outside the cwd cannot be expressed cwd-relative, so it
+// fails loudly instead of silently losing an edit.
+func reRootChangesetToCwd(
+	ctx context.Context,
+	changeset dagql.ObjectResult[*core.Changeset],
+	cwd string,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	cwd = cleanWorkspaceRelPath(cwd)
+	if cwd == "" || cwd == "." {
+		return changeset, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	paths, err := changeset.Self().ComputePaths(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var outside []string
+	for _, group := range [][]string{paths.Added, paths.Modified, paths.Removed} {
+		for _, p := range group {
+			// Sparse snapshots carry structural changes for the directories
+			// leading to cwd. Selecting the cwd subtree drops those ancestors;
+			// only a sibling or other unrelated path is truly outside scope.
+			if !workspacePathInOrLeadingToCwd(p, cwd) {
+				outside = append(outside, p)
+			}
+		}
+	}
+	if len(outside) > 0 {
+		return inst, fmt.Errorf("changes fall outside the current directory %q: %s", cwd, strings.Join(outside, ", "))
+	}
+	if len(paths.Added)+len(paths.Modified)+len(paths.Removed) == 0 {
+		return changeset, nil
+	}
+
+	// Selecting a subdirectory is metadata only, so this costs nothing. A
+	// side that holds nothing under the cwd (e.g. the before side of a pure
+	// addition in a sparse comparison) becomes an empty directory.
+	subdirOrEmpty := func(dir dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var exists bool
+		if err := srv.Select(ctx, dir, &exists, dagql.Selector{
+			Field: "exists",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(cwd)}},
+		}); err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, err
+		}
+		var sub dagql.ObjectResult[*core.Directory]
+		if !exists {
+			err := srv.Select(ctx, srv.Root(), &sub, dagql.Selector{Field: "directory"})
+			return sub, err
+		}
+		err := srv.Select(ctx, dir, &sub, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(cwd)}},
+		})
+		return sub, err
+	}
+	before, err := subdirOrEmpty(changeset.Self().Before)
+	if err != nil {
+		return inst, err
+	}
+	after, err := subdirOrEmpty(changeset.Self().After)
+	if err != nil {
+		return inst, err
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, after, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// workspacePathInOrLeadingToCwd accepts a path inside cwd and the structural
+// parent directories a sparse changeset needs in order to contain that path.
+func workspacePathInOrLeadingToCwd(p, cwd string) bool {
+	p = cleanWorkspaceRelPath(strings.TrimSuffix(p, "/"))
+	cwd = cleanWorkspaceRelPath(cwd)
+	return p == cwd || strings.HasPrefix(p, cwd+"/") || strings.HasPrefix(cwd, p+"/")
 }
 
 func (s *workspaceSchema) export(
