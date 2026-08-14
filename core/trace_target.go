@@ -30,16 +30,46 @@ func (t traceTarget) empty() bool {
 }
 
 // resolveTraceTarget resolves a ReadTrace target to the span ID its report
-// should be scoped to, against the session's (cached, incrementally loaded)
-// trace DB.
+// should be scoped to.
+//
+// Only the spans the target kind can match are loaded, from the telemetry
+// store's indexes, into a throwaway DB: a span target loads (at most) that
+// one span; a check target loads the check-marked spans; a test target loads
+// the test-marked spans plus their ancestor chains, which the test view's
+// containment walks need. Nothing session-wide is retained -- name lookups
+// were the last consumer of the whole-session cached trace DB.
 func resolveTraceTarget(ctx context.Context, target traceTarget) (string, error) {
-	var spanID string
-	err := withTraceReportDB(ctx, func(db *dagui.DB) error {
-		var err error
-		spanID, err = resolveTraceTargetIn(db, target)
-		return err
-	})
-	return spanID, err
+	clientDB, err := traceReportClientDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer clientDB.Close()
+	read := clientDB.Read()
+
+	var scope map[string]struct{}
+	switch {
+	case target.empty():
+		// Nothing to load; resolveTraceTargetIn renders the usage error.
+	case target.Span != "":
+		// An invalid or unknown ID loads nothing, and resolveTraceTargetIn
+		// renders the matching error against the empty DB.
+		if read.HasSpan(target.Span) {
+			scope = map[string]struct{}{target.Span: {}}
+		}
+	case target.Check != "":
+		scope, _ = read.CheckTestSpanIDs()
+	default:
+		_, tests := read.CheckTestSpanIDs()
+		scope = read.AncestorClosure(tests)
+	}
+
+	db := dagui.NewDB()
+	if len(scope) > 0 {
+		if err := ingestSpanScope(ctx, read, db, scope); err != nil {
+			return "", err
+		}
+	}
+	return resolveTraceTargetIn(db, target)
 }
 
 // resolveTraceTargetIn is the pure half of resolveTraceTarget: everything it

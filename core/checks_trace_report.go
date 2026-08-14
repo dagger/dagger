@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -20,9 +18,19 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 )
 
-// traceReportBatchSize is how many telemetry rows we page in at a time when
-// rebuilding the trace for rendering.
+// traceReportBatchSize is how many spans we feed into the throwaway DB per
+// ExportSpans call when materializing a report's scope, bounding the
+// transient conversion slice.
 const traceReportBatchSize = 1000
+
+// traceReportMaxLogRowsPerSpan bounds how many log rows a scoped load fetches
+// per span — each span's NEWEST rows, since every consumer of a rendered
+// report reads bounded tails (NestedLogLines clamps nested rows, the byte
+// guard clamps the whole report, and the tool's own verbatim OUTPUT section
+// is captured separately from the store). Without it a single pathological
+// span in scope — a service that streamed millions of lines — would balloon
+// a render's transient memory; ReadLogs remains the path to the full stream.
+const traceReportMaxLogRowsPerSpan = 512
 
 // traceReportMaxLineLen is the per-line byte clamp for a rendered report.
 //
@@ -48,16 +56,6 @@ const traceReportMaxBytes = 16 * 1024
 // counts, RUN LOCALLY), so both ends carry signal -- but the tree is the
 // bulkier, more diagnostic half, so it gets two thirds.
 const traceReportHeadBytes = traceReportMaxBytes * 2 / 3
-
-// traceReportMaxCachedSessions bounds how many session DBs we retain.
-//
-// dagui.DB has no eviction API (GCThreshold is a display filter only, see
-// dagql/dagui/opts.go), so a cached entry retains every span and log line of
-// its session for as long as it's cached -- that's the price of incremental
-// loading. We cap the number of live sessions instead: evicting an entry is
-// always safe, it just means the next render for that session pays for a
-// full rebuild.
-const traceReportMaxCachedSessions = 8
 
 // traceReportOpts tunes a single scoped render. The zero value shows
 // completed spans expanded, prunes nothing, and leaves log lines unbounded.
@@ -85,10 +83,9 @@ type traceReportOpts struct {
 	//     enclosing run's verdict, not the subtree's, and it is rendered from
 	//     db.RootSpan regardless of zoom.
 	//  2. The live-tree promotions (promoteChecks/Conversation/Generators) are
-	//     skipped: they MUTATE the cached, session-wide DB -- marking the host
-	//     Passthrough and wiring RevealedSpans -- which would both replace the
-	//     subtree's own rows and leave that reshaping behind for every later
-	//     render of the same DB.
+	//     skipped: they reshape the report to be about the whole run -- marking
+	//     the host Passthrough and wiring RevealedSpans -- which would replace
+	//     the subtree's own rows with the run-wide view.
 	//
 	// Everything the surfacing sections themselves show (CHECKS, CONVERSATION,
 	// SERVICES, GENERATORS) is now rolled up relative to the zoomed span, so
@@ -152,191 +149,162 @@ func readTraceRerunSuggestion(checkNames []string) (string, []string) {
 	return "SEE FULL TRACE", body
 }
 
-// traceReportKey identifies the session whose telemetry a cached DB holds.
-type traceReportKey struct {
-	sessionID string
-	clientID  string
-}
-
-// traceReportSession is one session's incrementally-loaded trace.
+// renderTraceReport materializes root's telemetry scope from the client's
+// telemetry store and renders the pretty frontend's final report as plain
+// text -- the same span tree, CHECKS and TESTS sections a user sees at the
+// end of a CLI run.
 //
-// Only INGESTION state is cached: the DB and the log buffers (both owned by
-// the idtui.ReportSession). Every render builds a fresh frontend over them,
-// so no render state -- scope, expansion, claims, memoized rows -- is ever
-// shared between two reports. See idtui.ReportSession for the invariant that
-// buys: a scoped report renders exactly the root span's real subtree.
-type traceReportSession struct {
-	reports *idtui.ReportSession
-
-	// spanCursor/logCursor are the highest clientdb row IDs already exported.
-	// clientdb rows are append-only with monotonic IDs (the engine's SSE
-	// subscribe handlers rely on the same property), so everything new has a
-	// strictly greater ID.
-	spanCursor int64
-	logCursor  int64
-}
-
-func (s *traceReportSession) db() *dagui.DB { return s.reports.DB() }
-
-// traceReportCacheState is the process-wide cache of per-session trace DBs.
-//
-// dagui.DB has no internal locking, so *all* access -- exports and renders
-// alike -- happens under mu. Renders are short (measured in single-digit ms
-// for a scoped report) and per-session contention is nil in practice, since a
-// session's tool calls are serialized anyway.
-type traceReportCacheState struct {
-	mu      sync.Mutex
-	entries map[traceReportKey]*traceReportSession
-	// lru is least-recently-used first.
-	lru []traceReportKey
-}
-
-var traceReportCache = &traceReportCacheState{
-	entries: map[traceReportKey]*traceReportSession{},
-}
-
-// get returns the cached session, creating it if needed, and marks it as most
-// recently used (evicting the oldest entry when over capacity).
-func (c *traceReportCacheState) get(key traceReportKey) *traceReportSession {
-	entry, ok := c.entries[key]
-	if !ok {
-		entry = &traceReportSession{reports: idtui.NewReportSession(dagui.NewDB())}
-		c.entries[key] = entry
-	}
-	c.touch(key)
-	return entry
-}
-
-func (c *traceReportCacheState) touch(key traceReportKey) {
-	for i, k := range c.lru {
-		if k == key {
-			c.lru = append(c.lru[:i], c.lru[i+1:]...)
-			break
-		}
-	}
-	c.lru = append(c.lru, key)
-	for len(c.lru) > traceReportMaxCachedSessions {
-		evict := c.lru[0]
-		c.lru = c.lru[1:]
-		delete(c.entries, evict)
-	}
-}
-
-// renderTraceReport loads the session's telemetry from the client's telemetry
-// store, scopes it to root (an empty root means the whole trace), and renders
-// the pretty frontend's final report as plain text -- the same span tree,
-// CHECKS and TESTS sections a user sees at the end of a CLI run.
-//
-// Loading is incremental: the session's DB (and its log buffers) are cached,
-// and each call only pages in the clientdb rows appended since the last one. A
-// full rebuild is linear in session size (~20-25µs/span row, ~150µs/log row),
-// so re-loading everything on every call would be quadratic over a session
-// that keeps growing -- which is exactly what happens when a report is
-// rendered per LLM tool call.
-//
-// The DB is loaded and only then rendered, all under the cache lock:
-// dagui.DB has no internal locking, so it must not be written while the
-// frontend reads it.
-// The rendered report is NOT byte-guarded here: it is only ever half of what
-// reaches the reader (the other half being the target's own printed output),
-// and the budget has to bound the COMBINED text. guardTraceReport is applied
-// by the caller that assembles the final result.
+// Loading is scoped, not session-wide: the store's span index answers "which
+// spans belong to a report rooted here" (the containment closure over child
+// and cause-link edges, plus every member's ancestor chain), and only those
+// spans' newest snapshots -- and the scope's log tails -- are fetched, into a
+// throwaway DB that dies with the render. Nothing here caches or retains
+// telemetry between renders: the session-lifetime state is the store's own
+// indexes, which is what keeps an engine hosting long agent sessions at a
+// flat memory profile no matter how large a session's trace grows (the
+// previous design retained every span and log line of the session in a
+// cached DB, measured at ~7GB in a heap profile taken just before an OOM
+// kill). The cost moves to the render: a load linear in the SCOPE's size --
+// single-digit ms for a typical tool call's subtree -- instead of retained
+// memory linear in the session's.
 func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (string, error) {
-	clientDB, key, err := traceReportClientDB(ctx)
+	if root == "" {
+		return "", fmt.Errorf("render trace report: no root span")
+	}
+	clientDB, err := traceReportClientDB(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer clientDB.Close()
 
-	return traceReportCache.render(ctx, key, clientDB, root, opts)
+	session, err := loadTraceReportSession(ctx, clientDB, root)
+	if err != nil {
+		return "", err
+	}
+	return renderTraceReportSession(session, root, opts)
 }
 
-// traceReportClientDB opens the main client's telemetry store and returns it
-// along with the cache key identifying its session. The caller closes it.
-func traceReportClientDB(ctx context.Context) (*clientdb.DB, traceReportKey, error) {
+// traceReportClientDB opens the main client's telemetry store. The caller
+// closes it.
+func traceReportClientDB(ctx context.Context) (*clientdb.DB, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, traceReportKey{}, err
+		return nil, err
 	}
 	mainMeta, err := query.MainClientCallerMetadata(ctx)
 	if err != nil {
-		return nil, traceReportKey{}, fmt.Errorf("get main client caller metadata: %w", err)
+		return nil, fmt.Errorf("get main client caller metadata: %w", err)
 	}
 	// NB: this flushes all of the session's clients before returning, so
 	// everything that has ended is visible below.
 	clientDB, err := query.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
 	if err != nil {
-		return nil, traceReportKey{}, fmt.Errorf("get client telemetry: %w", err)
+		return nil, fmt.Errorf("get client telemetry: %w", err)
 	}
-	return clientDB, traceReportKey{sessionID: mainMeta.SessionID, clientID: mainMeta.ClientID}, nil
+	return clientDB, nil
 }
 
-// withTraceReportDB brings the session's cached DB up to date and hands it to
-// fn, under the cache lock (dagui.DB has no internal locking). fn must not
-// retain the DB.
+// loadTraceReportSession materializes the scope of a report rooted at root
+// into a fresh report session: the containment closure's spans (newest
+// snapshots) and their log tails.
 //
-// This is the *same* cached DB the reports are rendered from -- there is
-// deliberately only one trace-building code path -- so a lookup costs only the
-// rows appended since the last render.
-func withTraceReportDB(ctx context.Context, fn func(*dagui.DB) error) error {
-	clientDB, key, err := traceReportClientDB(ctx)
-	if err != nil {
-		return err
-	}
-	defer clientDB.Close()
+// The scope is the store's log-scope walk -- the same containment dagui
+// renders, child edges plus cause-purpose link edges, seeded from both ends
+// of root's cause links -- closed over every member's ancestor chain, so no
+// loaded span's parent pointer resolves to an unreceived placeholder. Logs
+// are fetched for the walk only: ancestors above root frame the tree but
+// render no output of their own in a scoped report.
+func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string) (*idtui.ReportSession, error) {
+	read := clientDB.Read()
+	walk := read.SpanLogScope(root)
+	scope := read.AncestorClosure(walk)
 
-	traceReportCache.mu.Lock()
-	defer traceReportCache.mu.Unlock()
-
-	entry, err := traceReportCache.load(ctx, key, clientDB)
-	if err != nil {
-		return err
-	}
-	return fn(entry.db())
-}
-
-// load brings the cached session up to date with clientDB. Callers must hold
-// c.mu.
-func (c *traceReportCacheState) load(ctx context.Context, key traceReportKey, clientDB *clientdb.DB) (*traceReportSession, error) {
-	entry := c.get(key)
-
-	if err := loadTraceSpans(ctx, clientDB, entry.db(), &entry.spanCursor); err != nil {
+	session := idtui.NewReportSession(dagui.NewDB())
+	if err := ingestSpanScope(ctx, read, session.DB(), scope); err != nil {
 		return nil, err
+	}
+
+	// Second pass: error origins. A failed span's origin reference (an
+	// error_origin link, or a [traceparent:...] marker in its status) may
+	// point at a span outside the containment scope, for which dagui
+	// allocated an unreceived placeholder; the report would render an empty
+	// reference for it. Resolve exactly those. One pass suffices: an
+	// origin's own origins render nowhere in this report.
+	if missing := unreceivedErrorOrigins(session.DB()); len(missing) > 0 {
+		if err := ingestSpanScope(ctx, read, session.DB(), read.AncestorClosure(missing)); err != nil {
+			return nil, err
+		}
+	}
+
+	logs, err := read.SelectLogsForSpans(ctx, walk, traceReportMaxLogRowsPerSpan)
+	if err != nil {
+		return nil, fmt.Errorf("select logs: %w", err)
 	}
 	// Feed logs through the report session's exporter, not the DB's: the DB
-	// only tracks which spans have logs, while the rendered ┃ output lines come
-	// from the session's own log buffers.
-	if err := loadTraceLogs(ctx, clientDB, entry.reports.LogExporter(), &entry.logCursor); err != nil {
-		return nil, err
+	// only tracks which spans have logs, while the rendered ┃ output lines
+	// come from the session's own log buffers.
+	for start := 0; start < len(logs); start += traceReportBatchSize {
+		batch := logs[start:min(start+traceReportBatchSize, len(logs))]
+		if err := telemetry.ReexportLogsFromPB(ctx, session.LogExporter(), &collogspb.ExportLogsServiceRequest{
+			ResourceLogs: clientdb.LogsToPB(batch),
+		}); err != nil {
+			return nil, fmt.Errorf("export logs: %w", err)
+		}
 	}
-
-	return entry, nil
+	return session, nil
 }
 
-// render brings the cached session up to date with clientDB and renders it
-// scoped to root.
-//
-// Scoping is a per-render option (idtui.ReportRenderOpts.Root), never a
-// mutation of the shared DB: the DB's own primary span is left exactly as
-// ingestion set it, so no render can observe another render's scope.
-func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, clientDB *clientdb.DB, root string, opt traceReportOpts) (string, error) {
-	var primary dagui.SpanID
-	if root != "" {
-		spanID, err := trace.SpanIDFromHex(root)
-		if err != nil {
-			return "", fmt.Errorf("parse root span ID %q: %w", root, err)
-		}
-		primary = dagui.SpanID{SpanID: spanID}
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	entry, err := c.load(ctx, key, clientDB)
+// ingestSpanScope feeds the newest snapshot of every span in scope into db,
+// in append order -- the order a sequential replay of the stream would have
+// delivered them in. A span's snapshots are cumulative, so its newest row
+// alone reproduces the state a full replay would end with; still-running
+// spans naturally ingest as running.
+func ingestSpanScope(ctx context.Context, read *clientdb.DB, db *dagui.DB, scope map[string]struct{}) error {
+	rows, err := read.SelectSpansLatest(ctx, scope)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("select spans: %w", err)
 	}
-	db := entry.db()
+	for start := 0; start < len(rows); start += traceReportBatchSize {
+		batch := rows[start:min(start+traceReportBatchSize, len(rows))]
+		spans := make([]sdktrace.ReadOnlySpan, len(batch))
+		for i := range batch {
+			spans[i] = batch[i].ReadOnly()
+		}
+		if err := db.ExportSpans(ctx, spans); err != nil {
+			return fmt.Errorf("export spans: %w", err)
+		}
+	}
+	return nil
+}
+
+// unreceivedErrorOrigins collects the span IDs referenced as error origins by
+// any loaded span but not themselves loaded -- the placeholders dagui
+// allocated for references pointing outside the loaded scope.
+func unreceivedErrorOrigins(db *dagui.DB) map[string]struct{} {
+	missing := map[string]struct{}{}
+	for span := range db.Spans.Iter() {
+		for _, origin := range span.ErrorOrigins.Order {
+			if !origin.Received {
+				missing[origin.ID.String()] = struct{}{}
+			}
+		}
+	}
+	return missing
+}
+
+// renderTraceReportSession renders session's DB scoped to root.
+//
+// Scoping is a per-render option (idtui.ReportRenderOpts.Root), and every
+// render owns its session outright -- the DB was loaded for this render and
+// is discarded with it -- so no render can observe another render's scope,
+// expansion, claims, or promotions.
+func renderTraceReportSession(session *idtui.ReportSession, root string, opt traceReportOpts) (string, error) {
+	spanID, err := trace.SpanIDFromHex(root)
+	if err != nil {
+		return "", fmt.Errorf("parse root span ID %q: %w", root, err)
+	}
+	primary := dagui.SpanID{SpanID: spanID}
+	db := session.DB()
 
 	renderOpts := idtui.ReportRenderOpts{
 		// Show completed spans; without this the final render bails out
@@ -379,7 +347,7 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 	}
 
 	var buf bytes.Buffer
-	if err := entry.reports.Render(&buf, renderOpts); err != nil {
+	if err := session.Render(&buf, renderOpts); err != nil {
 		// A failing trace surfaces as an ExitError; that's expected here -- the
 		// report itself is still what we want.
 		var exitErr idtui.ExitError
@@ -388,70 +356,6 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 		}
 	}
 	return buf.String(), nil
-}
-
-// loadTraceSpans pages every span appended since *cursor into db, advancing
-// *cursor as it goes.
-//
-// NB: paging stops only on an empty page, never on a short one -- the store
-// spills older rows to files and a read can return fewer rows than the limit
-// while more remain (which silently truncated the trace, hiding e.g. the
-// nested test spans that the TESTS section is built from).
-func loadTraceSpans(ctx context.Context, clientDB *clientdb.DB, db *dagui.DB, cursor *int64) error {
-	for {
-		rows, err := clientDB.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
-			ID:    *cursor,
-			Limit: traceReportBatchSize,
-		})
-		if err != nil {
-			return fmt.Errorf("select spans: %w", err)
-		}
-		if len(rows) == 0 {
-			return nil
-		}
-		spans := make([]sdktrace.ReadOnlySpan, 0, len(rows))
-		last := *cursor
-		for _, row := range rows {
-			last = row.ID
-			spans = append(spans, row.ReadOnly())
-		}
-		// db.ExportSpans is idempotent on re-seen rows (findOrAllocSpan), so a
-		// row exported twice -- e.g. a span updated after we first saw it --
-		// just updates in place.
-		if err := db.ExportSpans(ctx, spans); err != nil {
-			return fmt.Errorf("export spans: %w", err)
-		}
-		*cursor = last
-	}
-}
-
-// loadTraceLogs pages every log record appended since *cursor into exporter.
-// Logs matter for the report: surfaced failures and the TESTS section's
-// failing-case tails render from log content, not from span attributes. Same
-// short-page caveat as loadTraceSpans: only an empty page ends the loop.
-func loadTraceLogs(ctx context.Context, clientDB *clientdb.DB, logExporter sdklog.Exporter, cursor *int64) error {
-	for {
-		rows, err := clientDB.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
-			ID:    *cursor,
-			Limit: traceReportBatchSize,
-		})
-		if err != nil {
-			return fmt.Errorf("select logs: %w", err)
-		}
-		if len(rows) == 0 {
-			return nil
-		}
-		last := *cursor
-		for _, row := range rows {
-			last = row.ID
-		}
-		if err := telemetry.ReexportLogsFromPB(ctx, logExporter, &collogspb.ExportLogsServiceRequest{
-			ResourceLogs: clientdb.LogsToPB(rows),
-		}); err != nil {
-			return fmt.Errorf("export logs: %w", err)
-		}
-		*cursor = last
-	}
 }
 
 // guardTraceReport bounds a rendered report: every line is clamped to
