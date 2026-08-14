@@ -242,7 +242,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
 			WithInput(dagql.CurrentSchemaInput).
 			Args(
-				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`),
+				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`).
+					View(AfterVersion("v0.21.0")),
 				dagql.Arg("hideCore").Doc(
 					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,

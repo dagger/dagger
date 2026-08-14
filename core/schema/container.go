@@ -239,6 +239,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withVolatileVariable", s.withVolatileVariable).
+			View(AfterVersion("v0.21.4")).
 			WithInput(dagql.PerSessionInput).
 			Doc(`Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.`,
 				`This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.`).
@@ -260,6 +261,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutVolatileVariable", s.withoutVolatileVariable).
+			View(AfterVersion("v0.21.4")).
 			Doc(`Retrieves this container minus the given volatile environment variable.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the volatile environment variable (e.g., "CI_RUN_ID").`),
@@ -379,7 +381,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`).
 					View(AfterVersion("v0.21.0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -394,7 +396,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user or user:group to set for the mounted file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -430,7 +432,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					any effect if/when the cache has already been created.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -454,7 +456,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted secret.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("mode").Doc(`Permission given to the mounted secret (e.g., 0600).`,
 					`This option requires an owner to be set to be active.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -469,7 +471,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted socket.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -500,7 +502,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -533,7 +535,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the files.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -550,7 +552,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`A user:group to set for the file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
@@ -581,7 +583,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 				dagql.Arg("permissions").View(AfterVersion("v0.21.0")),
@@ -603,7 +605,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
-					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+					`environment variables defined in the container (e.g. "/$VAR/foo").`).
+					View(AfterVersion("v0.21.5")),
 			),
 
 		dagql.NodeFunc("stat", s.stat).
