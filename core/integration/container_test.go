@@ -2901,6 +2901,11 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// Ensure the bare second image is already cached. The later From must not
+	// merge with it because the mounted directory is preserved across From.
+	_, err := c.Container().From("golang:1.18.2-alpine").Sync(ctx)
+	require.NoError(t, err)
+
 	dirRes, err := testutil.QueryWithClient[struct {
 		Directory struct {
 			ID core.DirectoryID
@@ -3853,6 +3858,49 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotEqual(t, testRef, pushedRef)
 		require.Contains(t, pushedRef, "@sha256:")
+	}
+}
+
+func (ContainerSuite) TestWithRegistryAuthDoesNotInvalidateCache(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name           string
+		authBeforeFrom bool
+	}{
+		{name: "before from", authBeforeFrom: true},
+		{name: "after from"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			cacheKey := identity.NewID()
+			run := func() string {
+				c := connect(ctx, t)
+				ctr := c.Container()
+				withAuth := func() {
+					ctr = ctr.WithRegistryAuth(
+						"registry.example.com",
+						"anyuser",
+						c.SetSecret("registry-auth-cache-"+cacheKey, "dummy"),
+					)
+				}
+				if tc.authBeforeFrom {
+					withAuth()
+				}
+				ctr = ctr.From(alpineImage)
+				if !tc.authBeforeFrom {
+					withAuth()
+				}
+
+				out, err := ctr.
+					WithEnvVariable("REGISTRY_AUTH_CACHE_KEY", cacheKey).
+					WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).
+					Stdout(ctx)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+
+			out1 := run()
+			out2 := run()
+			require.Equal(t, out1, out2, "registry auth invalidated the execution cache")
+		})
 	}
 }
 
