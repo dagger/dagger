@@ -1,0 +1,6 @@
+kind: Fixed
+body: Registry authentication no longer invalidates downstream container cache reuse across sessions when applied before or after `Container.from`.
+time: 2026-08-14T20:32:58.591640281Z
+custom:
+    Author: sipsma
+    PR: "0"
