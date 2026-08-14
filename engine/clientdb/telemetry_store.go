@@ -14,8 +14,8 @@ import (
 	"sync"
 
 	telemetry "github.com/dagger/otel-go"
-	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 type spanLookupKey struct {
