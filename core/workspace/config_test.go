@@ -1161,3 +1161,45 @@ func TestUndefinedEnvErrorExtensions(t *testing.T) {
 	require.Equal(t, UndefinedEnvErrorType, ext.Extensions()["_type"])
 	require.Equal(t, "prdo", ext.Extensions()["env"])
 }
+
+func TestMaxParallelismConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("parse num", func(t *testing.T) {
+		cfg, err := ParseConfig([]byte("maxParallelism = { num = 8 }\n"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.MaxParallelism)
+		require.Equal(t, 8, cfg.MaxParallelism.Num)
+		require.Equal(t, 8, cfg.MaxParallelism.Resolve(16))
+	})
+
+	t.Run("parse cpu percentage", func(t *testing.T) {
+		cfg, err := ParseConfig([]byte("maxParallelism = { cpu = 50 }\n"))
+		require.NoError(t, err)
+		require.Equal(t, 50, cfg.MaxParallelism.CPU)
+		require.Equal(t, 8, cfg.MaxParallelism.Resolve(16))
+		require.Equal(t, 1, cfg.MaxParallelism.Resolve(1)) // rounds down, min 1
+	})
+
+	t.Run("rejects both strategies", func(t *testing.T) {
+		_, err := ParseConfig([]byte("maxParallelism = { num = 8, cpu = 50 }\n"))
+		require.Error(t, err)
+	})
+
+	t.Run("rejects out-of-range cpu", func(t *testing.T) {
+		_, err := ParseConfig([]byte("maxParallelism = { cpu = 150 }\n"))
+		require.Error(t, err)
+	})
+
+	t.Run("round-trips through serialize", func(t *testing.T) {
+		for _, in := range []string{"maxParallelism = { num = 8 }\n", "maxParallelism = { cpu = 50 }\n"} {
+			cfg, err := ParseConfig([]byte(in))
+			require.NoError(t, err)
+			out := SerializeConfig(cfg)
+			require.Contains(t, string(out), "maxParallelism = {")
+			reparsed, err := ParseConfig(out)
+			require.NoError(t, err)
+			require.Equal(t, cfg.MaxParallelism, reparsed.MaxParallelism)
+		}
+	})
+}

@@ -409,6 +409,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
+	// engine-global build-step bound, from engine.json (0 = unbounded)
+	maxParallelism := cfg.MaxParallelism.Resolve(runtime.NumCPU())
+
 	srv.engineUtilOpts, err = engineutil.NewOpts(engineutil.Opts{
 		ID:               rand.Text(),
 		Labels:           baseLabels,
@@ -430,6 +433,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ApparmorProfile:     srv.apparmorProfile,
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
+		MaxParallelism:      maxParallelism,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,

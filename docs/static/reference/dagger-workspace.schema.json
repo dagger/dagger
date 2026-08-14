@@ -35,6 +35,10 @@
             "$ref": "#/$defs/PortMapping"
           },
           "type": "object"
+        },
+        "maxParallelism": {
+          "$ref": "#/$defs/MaxParallelism",
+          "description": "MaxParallelism bounds concurrent build steps for this workspace's sessions. Composes with the engine-global engine.json bound (an exec must fit both)."
         }
       },
       "additionalProperties": false,
@@ -71,6 +75,21 @@
       "additionalProperties": false,
       "type": "object",
       "description": "EnvOverlay is a named workspace environment overlay."
+    },
+    "MaxParallelism": {
+      "properties": {
+        "num": {
+          "type": "integer",
+          "description": "Num is an absolute number of parallel build steps."
+        },
+        "cpu": {
+          "type": "integer",
+          "description": "CPU is a percentage (1-100) of the engine's CPU cores; resolves to at least 1."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "MaxParallelism bounds concurrent build steps via one strategy."
     },
     "ModuleAsSDK": {
       "properties": {

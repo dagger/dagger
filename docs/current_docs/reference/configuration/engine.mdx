@@ -372,6 +372,64 @@ than `maxEstimatedBytes`.
 Setting `gc.enabled` to `false` also stops automatic metadata pruning. Metadata
 can still be pruned [on demand](./cache.mdx#manual-pruning).
 
+## Parallelism
+
+By default, the Dagger Engine runs build steps (container execs) with unbounded
+parallelism. On busy or resource-constrained machines it can be useful to cap
+how many execs run concurrently, so that a large build graph does not saturate
+all available CPUs.
+
+There are two independent limits, and an exec must fit under **both**:
+
+- an **engine-global** limit, configured in `engine.json` — a machine-wide
+  ceiling shared by every session/client connected to the engine.
+- a **per-session** limit, configured in a workspace's `dagger.toml` — bounds
+  the execs of that one `dagger` invocation (including nested module calls).
+
+Both use the same `maxParallelism` shape, selecting one strategy:
+
+- `num`: an absolute number of concurrent execs
+- `cpu`: a percentage (1-100) of the CPU cores available to the engine
+
+The bound applies to user container execs. Services and the internal execs that
+run module code are not counted against it, so configuring a limit cannot
+deadlock a build.
+
+### Engine-global (`engine.json`)
+
+```json
+{
+  "maxParallelism": { "num": 8 }
+}
+```
+
+```json
+{
+  "maxParallelism": { "cpu": 50 }
+}
+```
+
+### Per-session (`dagger.toml`)
+
+Set it in a workspace's `dagger.toml` to bound just that project's build
+concurrency, independent of other sessions on the same engine:
+
+```toml
+maxParallelism = { num = 8 }
+```
+
+```toml
+maxParallelism = { cpu = 50 }
+```
+
+When unset, that scope is unbounded.
+
+:::note
+The `cpu` strategy resolves against the CPU cores the engine process sees.
+Inside a container that is not pinned to a CPU set, that is typically the number
+of host cores, not the container's `--cpus` quota.
+:::
+
 ## Custom registries
 
 Dagger can be configured to use container registry mirrors for any registry

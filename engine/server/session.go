@@ -701,6 +701,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 // teardown can't delete a freshly created same-id session. Call only after the
 // session's teardown is complete and lifecycleMu has been released.
 func (srv *Server) deleteSession(sess *daggerSession) {
+	srv.engineUtilOpts.ClearSessionParallelism(sess.sessionID)
 	srv.daggerSessionsMu.Lock()
 	if srv.daggerSessions[sess.sessionID] == sess {
 		delete(srv.daggerSessions, sess.sessionID)

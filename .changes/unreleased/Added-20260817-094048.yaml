@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Add configurable build-step parallelism. Set `maxParallelism` in
+  `engine.json` for an engine-global limit shared by every session, and/or in a
+  workspace's `dagger.toml` for a per-session limit. Each accepts one strategy:
+  `num` (an absolute number) or `cpu` (a percentage of the engine's CPU cores).
+time: 2026-08-17T09:40:48.000000000+00:00
+custom:
+    Author: DanielHabenicht
+    PR: "0"

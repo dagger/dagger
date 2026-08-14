@@ -2147,6 +2147,25 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 		}
 
+		// Bound concurrency: the engine-global cap (engine.json) then this
+		// session's cap (dagger.toml). Acquired last, after all deps are
+		// satisfied, and always global-before-session so they can't deadlock;
+		// skip nested execs, which must not hold a slot while waiting on nested
+		// work.
+		if nestedClientMetadata == nil && (execMD == nil || !execMD.Internal) {
+			releaseEngineSlot, err := engineClient.AcquireEngineSlot(execCtx)
+			if err != nil {
+				return err
+			}
+			defer releaseEngineSlot()
+
+			releaseSessionSlot, err := engineClient.AcquireSessionSlot(execCtx, clientMetadata.SessionID)
+			if err != nil {
+				return err
+			}
+			defer releaseSessionSlot()
+		}
+
 		execErrCh := make(chan error, 1)
 		go func() {
 			execErrCh <- engineClient.Run(

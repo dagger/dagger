@@ -119,9 +119,6 @@ type OCIConfig struct {
 
 	// SELinux enables applying SELinux labels.
 	SELinux bool `toml:"selinux"`
-
-	// MaxParallelism is the maximum number of parallel build steps that can be run at the same time.
-	MaxParallelism int `toml:"max-parallelism"`
 }
 
 type ContainerdConfig struct {
@@ -141,8 +138,6 @@ type ContainerdConfig struct {
 
 	// SELinux enables applying SELinux labels.
 	SELinux bool `toml:"selinux"`
-
-	MaxParallelism int `toml:"max-parallelism"`
 
 	DefaultCgroupParent string `toml:"defaultCgroupParent"`
 
