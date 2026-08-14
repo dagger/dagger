@@ -1707,6 +1707,18 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
+// withRequestTelemetrySuppression applies a request's telemetry opt-out (the
+// engine.SuppressTelemetryHeader header): when opted out, the returned context
+// is marked with dagql.WithSkip so core.AroundFunc emits no spans, no
+// seen-keys, and no call payloads for the request's selection, and the
+// returned bool tells serveQuery to skip the per-request wrapper span as well.
+func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (context.Context, bool) {
+	if r.Header.Get(engine.SuppressTelemetryHeader) != "true" {
+		return ctx, false
+	}
+	return dagql.WithSkip(ctx), true
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	sess := client.daggerSession
 
@@ -1737,6 +1749,12 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	ctx := sess.withClosingCancel(r.Context())
 
+	// A request may opt out of telemetry wholesale (e.g. the CLI's context
+	// visualizer polling ever-growing read-only conversation state, whose
+	// telemetry volume would otherwise grow quadratically): mark the context
+	// so core.AroundFunc emits nothing for the whole selection.
+	ctx, telemetrySuppressed := withRequestTelemetrySuppression(ctx, r)
+
 	// turn panics into graphql errors — must be set up before any code that
 	// could panic (including ensureExtraModulesLoaded and schema loading).
 	defer func() {
@@ -1755,7 +1773,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
-	if trace.SpanContextFromContext(ctx).IsValid() {
+	// A telemetry-suppressed request skips the wrapper span too: a suppressed
+	// poll must contribute zero spans to the client's telemetry DB.
+	if !telemetrySuppressed && trace.SpanContextFromContext(ctx).IsValid() {
 		// create a span to record telemetry into the client's DB
 		//
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()

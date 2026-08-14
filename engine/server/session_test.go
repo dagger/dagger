@@ -889,6 +889,25 @@ func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
 	}
 }
 
+func TestWithRequestTelemetrySuppression(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, nil)
+	ctx, suppressed := withRequestTelemetrySuppression(context.Background(), req)
+	require.False(t, suppressed)
+	require.False(t, dagql.IsSkipped(ctx))
+
+	req.Header.Set(engine.SuppressTelemetryHeader, "false")
+	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
+	require.False(t, suppressed)
+	require.False(t, dagql.IsSkipped(ctx))
+
+	req.Header.Set(engine.SuppressTelemetryHeader, "true")
+	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
+	require.True(t, suppressed)
+	require.True(t, dagql.IsSkipped(ctx), "the suppressed request's context must carry the dagql skip flag so core.AroundFunc emits nothing")
+}
+
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
 	t.Parallel()
 
