@@ -3997,7 +3997,7 @@ class CurrentModule(Type):
 @typecheck
 class CurrentModuleAsSDK(Type):
     """The SDK-role data for the currently executing module, as installed
-    in the active workspace."""
+    in the supplied workspace."""
 
     async def clients(self) -> list["CurrentModuleAsSDKClient"]:
         """The generated clients this SDK produces in the workspace."""
@@ -11573,6 +11573,25 @@ class ModuleSource(Type):
         _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
+    def generate(self, workspace: "Workspace") -> "Workspace":
+        """Return the supplied workspace with this module's generated context
+        applied.
+
+        The workspace change baseline is preserved, so a later
+        Workspace.changes call includes this generation together with any
+        other edits made by the caller.
+
+        Parameters
+        ----------
+        workspace:
+            The workspace to apply generated files to.
+        """
+        _args = [
+            Arg("workspace", workspace),
+        ]
+        _ctx = self._select("generate", _args)
+        return Workspace(_ctx)
+
     def generate_local_dependencies(self, workspace: "Workspace") -> Changeset:
         """Generate this module's transitive local dependency closure and return
         the staged changes as a single changeset against the unstaged
@@ -14998,9 +15017,22 @@ class Workspace(Type):
         _ctx = self._select("agents", _args)
         return AgentGroup(_ctx)
 
-    def changes(self) -> Changeset:
-        """Return this workspace's pending overlay changes."""
-        _args: list[Arg] = []
+    def changes(self, *, from_: "Workspace | None" = None) -> Changeset:
+        """Return this workspace's changes, with paths relative to its working
+        directory.
+
+        Pass from to compare against an earlier workspace state. Omitting it
+        preserves the cumulative behavior used by clients from before this
+        argument was added.
+
+        Parameters
+        ----------
+        from_:
+            An earlier workspace state to compare against.
+        """
+        _args = [
+            Arg("from", from_, None),
+        ]
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 

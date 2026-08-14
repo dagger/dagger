@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The SDK-role data for the currently executing module, as installed in the active workspace.
+ * The SDK-role data for the currently executing module, as installed in the supplied workspace.
  */
 class CurrentModuleAsSDK extends Client\AbstractObject implements Client\IdAble, Node
 {

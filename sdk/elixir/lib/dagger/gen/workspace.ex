@@ -43,12 +43,19 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace's pending overlay changes.
+  Return this workspace's changes, with paths relative to its working directory.
+
+  Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
   """
-  @spec changes(t()) :: Dagger.Changeset.t()
-  def changes(%__MODULE__{} = workspace) do
+  @spec changes(t(), [{:from, Dagger.Workspace.t() | nil}]) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("changes")
+      workspace.query_builder
+      |> QB.select("changes")
+      |> QB.maybe_put_arg(
+        "from",
+        if(optional_args[:from], do: Dagger.ID.id!(optional_args[:from]), else: nil)
+      )
 
     %Dagger.Changeset{
       query_builder: query_builder,

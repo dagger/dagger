@@ -410,7 +410,7 @@
 			"t": "C",
 			"n": "Dagger\\CurrentModuleAsSDK",
 			"p": "Dagger/CurrentModuleAsSDK.html",
-			"d": "<p>The SDK-role data for the currently executing module, as installed in the active workspace.</p>",
+			"d": "<p>The SDK-role data for the currently executing module, as installed in the supplied workspace.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -6370,6 +6370,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::generate",
+			"p": "Dagger/ModuleSource.html#method_generate",
+			"d": "<p>Return the supplied workspace with this module's generated context applied.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::generateLocalDependencies",
 			"p": "Dagger/ModuleSource.html#method_generateLocalDependencies",
 			"d": "<p>Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.</p>"
@@ -7278,7 +7284,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::changes",
 			"p": "Dagger/Workspace.html#method_changes",
-			"d": "<p>Return this workspace's pending overlay changes.</p>"
+			"d": "<p>Return this workspace's changes, with paths relative to its working directory.</p>"
 		},
 		{
 			"t": "M",

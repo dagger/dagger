@@ -1792,7 +1792,7 @@ type CurrentModule implements Node {
 }
 
 """
-The SDK-role data for the currently executing module, as installed in the active workspace.
+The SDK-role data for the currently executing module, as installed in the supplied workspace.
 """
 type CurrentModuleAsSDK implements Node {
   """The generated clients this SDK produces in the workspace."""
@@ -4268,6 +4268,17 @@ type ModuleSource implements Node & Syncer {
   engineVersion: String!
 
   """
+  Return the supplied workspace with this module's generated context applied.
+
+  The workspace change baseline is preserved, so a later Workspace.changes call
+  includes this generation together with any other edits made by the caller.
+  """
+  generate(
+    """The workspace to apply generated files to."""
+    workspace: ID! @expectedType(name: "Workspace")
+  ): Workspace!
+
+  """
   Generate this module's transitive local dependency closure and return the
   staged changes as a single changeset against the unstaged workspace root.
 
@@ -5581,8 +5592,16 @@ type Workspace implements Node {
     include: [String!]
   ): AgentGroup!
 
-  """Return this workspace's pending overlay changes."""
-  changes: Changeset!
+  """
+  Return this workspace's changes, with paths relative to its working directory.
+
+  Pass from to compare against an earlier workspace state. Omitting it preserves
+  the cumulative behavior used by clients from before this argument was added.
+  """
+  changes(
+    """An earlier workspace state to compare against."""
+    from: ID @expectedType(name: "Workspace")
+  ): Changeset!
 
   """Return all checks from modules loaded in the workspace."""
   checks(
