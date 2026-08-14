@@ -10,7 +10,7 @@ package core
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,18 +33,6 @@ func TestLockfile(t *testing.T) {
 const containerFromQuery = `{
   container {
     from(address: "alpine:latest") {
-      file(path: "/etc/alpine-release") {
-        contents
-      }
-    }
-  }
-}
-`
-
-const containerFromImageRefQuery = `{
-  container {
-    from(address: "alpine:latest") {
-      imageRef
       file(path: "/etc/alpine-release") {
         contents
       }
@@ -82,38 +70,7 @@ const gitBranchAndTagCommitQuery = `{
 }
 `
 
-func (LockfileSuite) TestFromLockfileDisabledIgnoresEntry(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeContainerFromQuery(t, workdir)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=disabled", "query", "--doc", queryPath)
-	require.NoError(t, err)
-
-	lockBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.Equal(t, originalLock, string(lockBytes))
-}
-
-func (LockfileSuite) TestFromLockfileLiveRefreshesEntry(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeContainerFromQuery(t, workdir)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
-	require.NoError(t, err)
-
-	lockBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.NotEqual(t, originalLock, string(lockBytes))
-	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyPin)
-}
-
-func (LockfileSuite) TestFromLockfilePinnedUsesPinEntry(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultUsesPinEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
@@ -121,7 +78,7 @@ func (LockfileSuite) TestFromLockfilePinnedUsesPinEntry(ctx context.Context, t *
 
 	_, _ = writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.Error(t, err)
 	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
 }
@@ -133,178 +90,60 @@ func hostGitInit(t *testctx.T, dir string) {
 	require.NoError(t, err, out)
 }
 
-func (LockfileSuite) TestFromLockfilePinnedRefreshesFloatEntry(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultMigratesV1FloatEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyFloat)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath) // TODO why is TestLockfile/TestFromLockfilePinnedRefreshesFloatEntry getting a nil lockfile?
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
-	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyFloat)
+	assertContainerFromLockEntry(t, lockBytes)
 }
 
-func (LockfileSuite) TestFromLockfileFrozenUsesFloatEntry(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeContainerFromQuery(t, workdir)
-
-	_, _ = writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyFloat)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
-}
-
-func (LockfileSuite) TestFromLockfileFrozenRemoteCommitUsesPinEntry(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
-	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
-
-	workdir := t.TempDir()
-	queryPath := writeContainerFromQuery(t, workdir)
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "query", "--doc", queryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
-}
-
-func (LockfileSuite) TestFromLockfileFrozenRemoteCommitUsesValidPin(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	imageRef, err := c.Container().From("alpine:3.20").ImageRef(ctx)
-	require.NoError(t, err)
-	_, digest, found := strings.Cut(imageRef, "@")
-	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
-	require.True(t, strings.HasPrefix(digest, "sha256:"), digest)
-
-	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), digest, workspace.PolicyPin)
-	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
-	workdir := t.TempDir()
-	queryPath := writeQueryDoc(t, workdir, "image-ref.graphql", containerFromImageRefQuery)
-
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "query", "--doc", queryPath)
-	require.NoError(t, err)
-	require.Contains(t, string(out), digest)
-	require.Contains(t, string(out), "3.20")
-}
-
-func (LockfileSuite) TestFromLockfileFrozenRemoteCommitModuleCallUsesValidPin(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	imageRef, err := c.Container().From("alpine:3.20").ImageRef(ctx)
-	require.NoError(t, err)
-	_, digest, found := strings.Cut(imageRef, "@")
-	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
-
-	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), digest, workspace.PolicyPin)
-	remote := newRemoteWorkspace(ctx, t, c, c.Directory().
-		WithNewFile("dagger.toml", `[modules.lockmod]
-source = ".dagger/modules/lockmod"
-entrypoint = true
-`).
-		WithNewFile(workspace.LockFileName, lockContents).
-		WithDirectory(".dagger/modules/lockmod", c.Host().Directory(testDataPath(t, "modules", "dang", "lockmod"))))
-
-	workdir := t.TempDir()
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "call", "release")
-	require.NoError(t, err)
-	require.Contains(t, string(out), "3.20")
-}
-
-func (LockfileSuite) TestFromLockfileFrozenRemoteCommitRequiresEntry(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	remote := newRemoteLockWorkspace(ctx, t, c, "")
-	workdir := t.TempDir()
-	queryPath := writeContainerFromQuery(t, workdir)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "query", "--doc", queryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "missing lock entry for container.from")
-}
-
-func (LockfileSuite) TestFromLockfileLiveRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
 	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
 	workdir := t.TempDir()
 	queryPath := writeContainerFromQuery(t, workdir)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "-W", remote.commitRef, "query", "--doc", queryPath)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", remote.commitRef, "query", "--doc", queryPath)
 	require.NoError(t, err)
 	committedLock, err := c.Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockContents, committedLock)
 }
 
-func (LockfileSuite) TestFromLockfileFrozenRemoteBranchRemainsUnavailable(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
-	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
-	workdir := t.TempDir()
-	queryPath := writeContainerFromQuery(t, workdir)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.branchRef, "query", "--doc", queryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "no writable workspace lockfile is available")
-	require.NotContains(t, err.Error(), `invalid lock digest "not-a-digest"`)
-}
-
-func (LockfileSuite) TestFromLockfileFrozenRequiresEntry(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeContainerFromQuery(t, workdir)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "missing lock entry for container.from")
-
-	_, err = os.Stat(filepath.Join(workdir, workspace.LockFileName))
-	require.Error(t, err)
-	require.True(t, errors.Is(err, os.ErrNotExist))
-}
-
-func (LockfileSuite) TestGitBranchPinnedRefreshesFloatEntry(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultMigratesV1FloatGitEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-branch.graphql", gitBranchCommitQuery)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.NotContains(t, string(out), lockTestGitBranchCommit)
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
-	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName}, workspace.PolicyFloat)
+	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName})
 }
 
-func (LockfileSuite) TestGitBranchFrozenUsesFloatEntry(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeQueryDoc(t, workdir, "git-branch.graphql", gitBranchCommitQuery)
-
-	_, _ = writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
-
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
-	require.NoError(t, err)
-	require.Contains(t, string(out), lockTestGitBranchCommit)
-}
-
-func (LockfileSuite) TestLockUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -312,104 +151,104 @@ func (LockfileSuite) TestLockUpdateCreatesNewFile(ctx context.Context, t *testct
 	require.Empty(t, lockBytes, "a lockfile with zero entries should not be serialized with a version")
 }
 
-func (LockfileSuite) TestLockUpdateRefreshesExistingEntry(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestUpdateRefreshesExistingEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("0", 64), workspace.PolicyPin)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
-	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyPin)
+	assertContainerFromLockEntry(t, lockBytes)
 }
 
-func (LockfileSuite) TestLockUpdateRefreshesExistingGitEntry(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
 	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
-	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName}, workspace.PolicyFloat)
+	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName})
 	require.NotContains(t, string(lockBytes), lockTestGitBranchCommit)
 }
 
-func (LockfileSuite) TestLiveDiscoversQueryEntries(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultDiscoversQueryEntries(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
-	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyPin)
+	assertContainerFromLockEntry(t, lockBytes)
 }
 
-func (LockfileSuite) TestLiveDiscoversGitEntries(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultDiscoversGitEntries(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git.graphql", gitBranchAndTagCommitQuery)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
-	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName}, workspace.PolicyFloat)
-	assertGitLockEntry(t, lockBytes, "git.tag", []any{lockTestGitRepoURL, lockTestGitTagName}, workspace.PolicyPin)
+	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName})
+	assertGitLockEntry(t, lockBytes, "git.tag", []any{lockTestGitRepoURL, lockTestGitTagName})
 }
 
-func (LockfileSuite) TestLiveNestedQuery(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultNestedQuery(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	updated := workspaceBase(t, c).
 		WithNewFile("query.graphql", containerFromQuery).
-		With(daggerExec("--silent", "--lock=live", "query", "--doc", "query.graphql"))
+		With(daggerExec("--silent", "query", "--doc", "query.graphql"))
 
 	_, err := updated.Stdout(ctx)
 	require.NoError(t, err)
 
 	lockContents, err := updated.File("/work/dagger.lock").Contents(ctx)
 	require.NoError(t, err)
-	assertContainerFromLockEntry(t, []byte(lockContents), workspace.PolicyPin)
+	assertContainerFromLockEntry(t, []byte(lockContents))
 }
 
-func (LockfileSuite) TestLiveModuleCall(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultModuleCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := moduleEntrypointFixture(t, c, "lockmod", "dang/lockmod")
 
-	updated := base.With(daggerExec("--silent", "--lock=live", "call", "release"))
+	updated := base.With(daggerExec("--silent", "call", "release"))
 	out, err := updated.Stdout(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, strings.TrimSpace(out))
 
 	lockContents, err := updated.File("/work/dagger.lock").Contents(ctx)
 	require.NoError(t, err)
-	assertContainerFromLockEntry(t, []byte(lockContents), workspace.PolicyPin)
+	assertContainerFromLockEntry(t, []byte(lockContents))
 
-	frozen := updated.With(daggerExec("--silent", "--lock=frozen", "call", "release"))
-	out, err = frozen.Stdout(ctx)
+	reused := updated.With(daggerExec("--silent", "call", "release"))
+	out, err = reused.Stdout(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, strings.TrimSpace(out))
 
-	lockContentsAfter, err := frozen.File("/work/dagger.lock").Contents(ctx)
+	lockContentsAfter, err := reused.File("/work/dagger.lock").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockContents, lockContentsAfter)
 }
@@ -511,6 +350,9 @@ func writeGitRefLock(t *testctx.T, workdir, operation, name, commit string, poli
 
 func mustMarshalContainerFromLock(t *testctx.T, platform, digest string, policy workspace.LockPolicy) string {
 	t.Helper()
+	if policy == workspace.PolicyFloat {
+		return mustMarshalLegacyV1Lock(t, "container.from", []any{"docker.io/library/alpine:latest", platform}, digest, policy)
+	}
 
 	lock := workspace.NewLock()
 	require.NoError(t, lock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest", platform}, workspace.LookupResult{
@@ -531,6 +373,10 @@ func mustMarshalGitRefLock(t *testctx.T, operation, name, commit string, policy 
 	if name != "" {
 		inputs = append(inputs, name)
 	}
+	if policy == workspace.PolicyFloat {
+		return mustMarshalLegacyV1Lock(t, operation, inputs, commit, policy)
+	}
+
 	require.NoError(t, lock.SetLookup("", operation, inputs, workspace.LookupResult{
 		Value:  commit,
 		Policy: policy,
@@ -539,6 +385,12 @@ func mustMarshalGitRefLock(t *testctx.T, operation, name, commit string, policy 
 	lockBytes, err := lock.Marshal()
 	require.NoError(t, err)
 	return string(lockBytes)
+}
+func mustMarshalLegacyV1Lock(t *testctx.T, operation string, inputs []any, value string, policy workspace.LockPolicy) string {
+	t.Helper()
+	entry, err := json.Marshal([]any{"", operation, inputs, value, string(policy)})
+	require.NoError(t, err)
+	return `[["version","1"]]` + "\n" + string(entry)
 }
 
 func lockTestPlatform(ctx context.Context, t *testctx.T) string {
@@ -550,8 +402,9 @@ func lockTestPlatform(ctx context.Context, t *testctx.T) string {
 	return string(platform)
 }
 
-func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte, expectedPolicy workspace.LockPolicy) {
+func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
 	t.Helper()
+	require.True(t, strings.HasPrefix(string(lockBytes), `[["version","2"]]`), "lockfile: %q", string(lockBytes))
 	parsed, err := lockfile.Parse(lockBytes)
 	require.NoError(t, err)
 
@@ -567,7 +420,7 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte, expectedPolicy
 		require.True(t, ok)
 		require.Contains(t, ref, "alpine:latest")
 
-		require.Equal(t, string(expectedPolicy), entry.Policy)
+		require.Empty(t, entry.Policy)
 
 		value, ok := entry.Value.(string)
 		require.True(t, ok)
@@ -577,8 +430,9 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte, expectedPolicy
 	require.True(t, found, "expected container.from entry in lockfile")
 }
 
-func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expectedInputs []any, expectedPolicy workspace.LockPolicy) {
+func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expectedInputs []any) {
 	t.Helper()
+	require.True(t, strings.HasPrefix(string(lockBytes), `[["version","2"]]`), "lockfile: %q", string(lockBytes))
 	parsed, err := lockfile.Parse(lockBytes)
 	require.NoError(t, err)
 
@@ -592,7 +446,7 @@ func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expect
 		}
 
 		found = true
-		require.Equal(t, string(expectedPolicy), entry.Policy)
+		require.Empty(t, entry.Policy)
 
 		value, ok := entry.Value.(string)
 		require.True(t, ok)

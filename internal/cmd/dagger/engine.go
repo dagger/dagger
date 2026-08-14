@@ -189,7 +189,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.Interactive = interactive
 	params.InteractiveCommand = interactiveCommandParsed
 
-	effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+	effectiveLockMode, err := resolveLockMode(params.LockMode)
 	if err != nil {
 		return params, err
 	}
@@ -294,16 +294,12 @@ func applyWorkspaceClientParams(params *client.Params) error {
 	return nil
 }
 
-func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
-	effective := paramLockMode
-	if effective == "" {
-		effective = globalLockMode
-	}
-	if effective == "" {
+func resolveLockMode(lockMode string) (string, error) {
+	if lockMode == "" {
 		return "", nil
 	}
 
-	mode, err := workspace.ParseLockMode(effective)
+	mode, err := workspace.ParseLockMode(lockMode)
 	if err != nil {
 		return "", err
 	}

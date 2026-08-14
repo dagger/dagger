@@ -30,7 +30,7 @@ func TestLookupSetGetDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "sha256:deadbeef", result.Value)
-	require.Equal(t, PolicyFloat, result.Policy)
+	require.Equal(t, PolicyPin, result.Policy)
 
 	require.True(t, lock.DeleteLookup("", "container.from", inputs))
 	_, ok, err = lock.GetLookup("", "container.from", inputs)
@@ -96,7 +96,7 @@ func TestEntries(t *testing.T) {
 
 	require.NoError(t, lock.SetLookup("", "container.from", inputs, LookupResult{
 		Value:  "sha256:deadbeef",
-		Policy: PolicyFloat,
+		Policy: PolicyPin,
 	}))
 
 	entries, err := lock.Entries()
@@ -108,7 +108,7 @@ func TestEntries(t *testing.T) {
 		Inputs:    inputs,
 		Result: LookupResult{
 			Value:  "sha256:deadbeef",
-			Policy: PolicyFloat,
+			Policy: PolicyPin,
 		},
 	}, entries[0])
 }
@@ -131,6 +131,27 @@ func TestClone(t *testing.T) {
 	_, ok, err := lock.GetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"})
 	require.NoError(t, err)
 	require.False(t, ok)
+}
+
+func TestClonePreservesLegacyV1PolicyInMemory(t *testing.T) {
+	input := strings.Join([]string{
+		`[["version","1"]]`,
+		`["","git.branch",["https://github.com/dagger/dagger.git","main"],"0123456789abcdef0123456789abcdef01234567","float"]`,
+	}, "\n")
+	lock, err := ParseLock([]byte(input))
+	require.NoError(t, err)
+
+	cloned, err := lock.Clone()
+	require.NoError(t, err)
+	result, ok, err := cloned.GetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, PolicyFloat, result.Policy)
+
+	data, err := cloned.Marshal()
+	require.NoError(t, err)
+	require.Contains(t, string(data), `[["version","2"]]`)
+	require.NotContains(t, string(data), `"float"`)
 }
 
 func TestMerge(t *testing.T) {
@@ -156,7 +177,7 @@ func TestMerge(t *testing.T) {
 	result, ok, err = base.GetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"})
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, LookupResult{Value: "0123456789abcdef0123456789abcdef01234567", Policy: PolicyFloat}, result)
+	require.Equal(t, LookupResult{Value: "0123456789abcdef0123456789abcdef01234567", Policy: PolicyPin}, result)
 }
 
 func TestParseLockMode(t *testing.T) {

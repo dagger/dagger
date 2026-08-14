@@ -3,8 +3,8 @@ package daggercmd
 import "testing"
 
 func TestResolveLockMode(t *testing.T) {
-	t.Run("both empty", func(t *testing.T) {
-		mode, err := resolveLockMode("", "")
+	t.Run("empty", func(t *testing.T) {
+		mode, err := resolveLockMode("")
 		if err != nil {
 			t.Fatalf("resolveLockMode returned unexpected error: %v", err)
 		}
@@ -13,8 +13,8 @@ func TestResolveLockMode(t *testing.T) {
 		}
 	})
 
-	t.Run("uses global when param empty", func(t *testing.T) {
-		mode, err := resolveLockMode("", "frozen")
+	t.Run("explicit frozen", func(t *testing.T) {
+		mode, err := resolveLockMode("frozen")
 		if err != nil {
 			t.Fatalf("resolveLockMode returned unexpected error: %v", err)
 		}
@@ -23,8 +23,8 @@ func TestResolveLockMode(t *testing.T) {
 		}
 	})
 
-	t.Run("param takes precedence over global", func(t *testing.T) {
-		mode, err := resolveLockMode("live", "frozen")
+	t.Run("explicit live", func(t *testing.T) {
+		mode, err := resolveLockMode("live")
 		if err != nil {
 			t.Fatalf("resolveLockMode returned unexpected error: %v", err)
 		}
@@ -34,7 +34,7 @@ func TestResolveLockMode(t *testing.T) {
 	})
 
 	t.Run("explicit disabled is preserved", func(t *testing.T) {
-		mode, err := resolveLockMode("", "disabled")
+		mode, err := resolveLockMode("disabled")
 		if err != nil {
 			t.Fatalf("resolveLockMode returned unexpected error: %v", err)
 		}
@@ -43,17 +43,10 @@ func TestResolveLockMode(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid global mode", func(t *testing.T) {
-		_, err := resolveLockMode("", "weird")
+	t.Run("invalid mode", func(t *testing.T) {
+		_, err := resolveLockMode("weird")
 		if err == nil {
-			t.Fatalf("expected error for invalid global lock mode")
-		}
-	})
-
-	t.Run("invalid param mode", func(t *testing.T) {
-		_, err := resolveLockMode("weird", "pinned")
-		if err == nil {
-			t.Fatalf("expected error for invalid param lock mode")
+			t.Fatalf("expected error for invalid lock mode")
 		}
 	})
 }

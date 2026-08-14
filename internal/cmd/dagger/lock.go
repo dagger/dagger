@@ -9,30 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
-	lockCmd.AddCommand(lockUpdateCmd)
-	setWorkspaceFlagPolicy(lockCmd, workspaceFlagPolicyLocalOnly)
-}
-
-var lockCmd = &cobra.Command{
-	Use:    "lock",
-	Short:  "Manage workspace lockfiles",
-	Hidden: true,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-}
-
-var lockUpdateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "Refresh workspace lock entries",
-	Long: `Refresh workspace lock entries.
-
-	Refreshes entries already recorded in dagger.lock.`,
-	Args: cobra.NoArgs,
-	RunE: runWorkspaceUpdate,
-}
-
 func runWorkspaceUpdate(cmd *cobra.Command, _ []string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,

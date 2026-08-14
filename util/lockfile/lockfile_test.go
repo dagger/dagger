@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseMarshalRoundTrip(t *testing.T) {
+func TestParseV1MarshalV2(t *testing.T) {
 	input := strings.Join([]string{
 		`[["version","1"]]`,
 		`["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8","float"]`,
@@ -17,8 +17,18 @@ func TestParseMarshalRoundTrip(t *testing.T) {
 	parsed, err := Parse([]byte(input))
 	require.NoError(t, err)
 
+	value, policy, ok := parsed.Get("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	require.True(t, ok)
+	require.Equal(t, "sha256:3d23f8", value)
+	require.Equal(t, "float", policy)
+
 	output, err := parsed.Marshal()
 	require.NoError(t, err)
+	require.Equal(t, strings.Join([]string{
+		`[["version","2"]]`,
+		`["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8"]`,
+		`["github.com/acme/release","lookupVersion",["stable"],"v1.2.3"]`,
+	}, "\n"), string(output))
 
 	reparsed, err := Parse(output)
 	require.NoError(t, err)
@@ -27,26 +37,26 @@ func TestParseMarshalRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, string(output), string(output2))
 
-	value, policy, ok := reparsed.Get("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	value, policy, ok = reparsed.Get("", "container.from", []any{"alpine:latest", "linux/amd64"})
 	require.True(t, ok)
 	require.Equal(t, "sha256:3d23f8", value)
-	require.Equal(t, "float", policy)
+	require.Empty(t, policy)
 }
 
 func TestMarshalDeterministicOrdering(t *testing.T) {
 	lock := New()
-	require.NoError(t, lock.Set("b", "lookup", []any{"x"}, "r3", "float"))
-	require.NoError(t, lock.Set("", "git.resolveRef", []any{"c", "d"}, "r1", "pin"))
-	require.NoError(t, lock.Set("", "git.resolveRef", []any{"a", "b"}, "r2", "pin"))
+	require.NoError(t, lock.Set("b", "lookup", []any{"x"}, "r3"))
+	require.NoError(t, lock.Set("", "git.resolveRef", []any{"c", "d"}, "r1"))
+	require.NoError(t, lock.Set("", "git.resolveRef", []any{"a", "b"}, "r2"))
 
 	output, err := lock.Marshal()
 	require.NoError(t, err)
 
 	require.Equal(t, strings.Join([]string{
-		`[["version","1"]]`,
-		`["","git.resolveRef",["a","b"],"r2","pin"]`,
-		`["","git.resolveRef",["c","d"],"r1","pin"]`,
-		`["b","lookup",["x"],"r3","float"]`,
+		`[["version","2"]]`,
+		`["","git.resolveRef",["a","b"],"r2"]`,
+		`["","git.resolveRef",["c","d"],"r1"]`,
+		`["b","lookup",["x"],"r3"]`,
 	}, "\n"), string(output))
 }
 
@@ -89,7 +99,7 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 	})
 
 	t.Run("unsupported version", func(t *testing.T) {
-		_, err := Parse([]byte(`[["version","2"]]`))
+		_, err := Parse([]byte(`[["version","3"]]`))
 		require.Error(t, err)
 		require.ErrorContains(t, err, "unsupported lockfile version")
 	})
@@ -133,7 +143,7 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 
 func TestSetRejectsUnorderedInputObjects(t *testing.T) {
 	lock := New()
-	err := lock.Set("", "git.resolveRef", []any{map[string]any{"ref": "main"}}, "abc", "pin")
+	err := lock.Set("", "git.resolveRef", []any{map[string]any{"ref": "main"}}, "abc")
 	require.Error(t, err)
 	require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
 }

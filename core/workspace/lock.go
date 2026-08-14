@@ -58,10 +58,11 @@ const (
 	LockModeStrict = LockModeFrozen
 
 	// DefaultLockMode is used when no mode is explicitly set.
-	DefaultLockMode = LockModeDisabled
+	DefaultLockMode = LockModePinned
 )
 
-// LockPolicy controls update intent for a lock entry.
+// LockPolicy controls update intent for a lock entry. It remains in the
+// in-memory model only to migrate policies read from version 1 lockfiles.
 type LockPolicy string
 
 const (
@@ -147,7 +148,7 @@ func (l *Lock) Merge(other *Lock) error {
 		return err
 	}
 	for _, entry := range entries {
-		if err := l.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+		if err := l.setLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result, true); err != nil {
 			return err
 		}
 	}
@@ -177,6 +178,10 @@ func (l *Lock) GetLookup(namespace, operation string, inputs []any) (LookupResul
 
 // SetLookup sets the lock result for a generic lookup tuple.
 func (l *Lock) SetLookup(namespace, operation string, inputs []any, result LookupResult) error {
+	return l.setLookup(namespace, operation, inputs, result, false)
+}
+
+func (l *Lock) setLookup(namespace, operation string, inputs []any, result LookupResult, preserveLegacyPolicy bool) error {
 	if l == nil {
 		return fmt.Errorf("nil lock")
 	}
@@ -191,7 +196,10 @@ func (l *Lock) SetLookup(namespace, operation string, inputs []any, result Looku
 	if l.file == nil {
 		return fmt.Errorf("nil lock")
 	}
-	return l.file.Set(namespace, operation, inputs, result.Value, string(result.Policy))
+	if preserveLegacyPolicy {
+		return l.file.SetWithLegacyPolicy(namespace, operation, inputs, result.Value, string(result.Policy))
+	}
+	return l.file.Set(namespace, operation, inputs, result.Value)
 }
 
 // DeleteLookup removes a generic lookup tuple entry.
@@ -239,6 +247,9 @@ func parseLookupResult(value any, policy string) (LookupResult, error) {
 	resultValue, ok := value.(string)
 	if !ok || resultValue == "" {
 		return LookupResult{}, fmt.Errorf("value is required")
+	}
+	if policy == "" {
+		policy = string(PolicyPin)
 	}
 	result := LookupResult{
 		Value:  resultValue,

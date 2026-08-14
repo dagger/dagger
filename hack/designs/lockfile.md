@@ -1,14 +1,14 @@
 # Lockfile: Lookup Resolution
 
-## Status: Partially Implemented
+## Status: Implemented; v1 mode and policy sections retained as history
 
 This is the general design reference for Dagger lockfiles.
 
 It describes:
 
-- the lock entry format
-- lock policy and lock mode semantics
-- lock update flows
+- the current v2 lock entry format
+- v1 policy migration and internal compatibility semantics
+- automatic discovery and explicit update flows
 - what is implemented now
 - what remains to be built
 
@@ -27,9 +27,9 @@ It describes:
 | Lookup function | A function that turns symbolic inputs into a concrete resolved result. |
 | Lookup inputs | The symbolic arguments to the lookup function. |
 | Lookup result | The concrete resolved value: digest, commit SHA, immutable ID, and so on. |
-| Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `(value, policy)`. |
-| Lock policy | Entry-level refresh intent: `pin` or `float`. |
-| Lock mode | Run-level read/write behavior: `disabled`, `live`, `pinned`, or `frozen`. |
+| Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `value`. |
+| Legacy lock policy | Version 1 entry-level refresh intent: `pin` or `float`. |
+| Internal lock mode | Compatibility behavior retained in engine metadata; it is no longer CLI UX. |
 | Lockfile snapshot | Parsed `dagger.lock` state loaded into session-owned live state. |
 | Lockfile delta | Tuple upserts buffered in session-owned live state before final export. |
 
@@ -38,20 +38,20 @@ It describes:
 Lockfiles are JSON lines. The first line is the version tuple:
 
 ```json
-[["version","1"]]
+[["version","2"]]
 ```
 
 Each entry is a flat ordered tuple:
 
 ```json
-[namespace, operation, inputs, value, policy]
+[namespace, operation, inputs, value]
 ```
 
 Examples:
 
 ```json
-["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8","pin"]
-["","git.branch",["https://github.com/dagger/dagger.git","main"],"495a8c8ce85670e58560a9561626297a436225c0","float"]
+["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8"]
+["","git.branch",["https://github.com/dagger/dagger.git","main"],"495a8c8ce85670e58560a9561626297a436225c0"]
 ```
 
 Rules:
@@ -60,12 +60,25 @@ Rules:
 - `operation` is a stable lookup key such as `container.from` or `git.branch`.
 - `inputs` is always an ordered positional array.
 - `value` is the resolved immutable result.
-- `policy` is `pin` or `float`.
 - dictionaries, maps, and named-argument encodings are forbidden anywhere in lock entries
 - ordering is deterministic by `(namespace, operation, inputs-json)`
 - legacy object-shaped result envelopes are invalid
 
-## Lock Policy
+Version 1 used five-element entries with a final `pin` or `float` policy.
+The v2 reader accepts those entries for migration:
+
+- `pin` is reused.
+- `float` is refreshed when encountered under the default pinned behavior.
+- Any write emits a four-element v2 entry.
+
+Unknown versions are rejected.
+
+## Legacy v1 Policy and Internal Lock Modes
+
+The following sections document the version 1 semantics retained internally for
+reading old files and serving mixed-version clients. They are not current CLI UX.
+
+### Lock Policy
 
 Lock policy is stored per entry.
 
@@ -79,7 +92,7 @@ What users should memorize:
 - `pin`: stay on this recorded result
 - `float`: refresh this result when live resolution is allowed
 
-## Lock Mode
+### Lock Mode
 
 Lock mode is chosen per run, typically with `--lock`.
 
@@ -97,7 +110,7 @@ What users should memorize:
 - `pinned`: prefer stable pins, refresh the rest
 - `frozen`: use the lockfile only
 
-## Behavior Matrix
+### Behavior Matrix
 
 | Mode | Existing `pin` entry | Existing `float` entry | Missing entry |
 | --- | --- | --- | --- |
@@ -142,7 +155,18 @@ Concretely, the design change is:
 - export it back once when the main client shuts down gracefully
 - keep lockfile synchronization and final export inside `engine/server`, not `core/schema`
 
-## Update Flows
+## Current Update Flows
+
+- Ordinary execution uses pinned behavior: it reuses existing entries and
+  resolves and records misses.
+- `dagger update` explicitly refreshes supported entries already present in
+  `dagger.lock`.
+- Both paths write version 2.
+
+The internal mode transport remains supported for mixed-version clients, but
+new CLI versions do not expose `--lock` or `dagger lock`.
+
+## Historical v1 Update Flows
 
 There are three real update paths:
 
