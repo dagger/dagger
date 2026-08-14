@@ -5619,6 +5619,18 @@ type Workspace implements Node {
   """
   address: String!
 
+  """
+  Addresses loadable from the workspace's installed modules: functions whose
+  return type matches `type` and whose required args (beyond an auto-injected
+  Workspace) are none, rendered as bare "module:function" references.
+  """
+  addresses(
+    """
+    Name of the type the function must return to be listed, e.g. "Container".
+    """
+    type: String!
+  ): [WorkspaceAddress!]!
+
   """Return all agent middlewares from modules loaded in the workspace."""
   agents(
     """Only include agents matching the specified patterns"""
@@ -6317,6 +6329,18 @@ type Workspace implements Node {
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
   ): Workspace!
+}
+
+"""A module function loadable as an address."""
+type WorkspaceAddress implements Node {
+  """The function's doc string."""
+  description: String!
+
+  """A unique identifier for this WorkspaceAddress."""
+  id: ID!
+
+  """The address value, e.g. "sandboxes:go"."""
+  value: String!
 }
 
 """
