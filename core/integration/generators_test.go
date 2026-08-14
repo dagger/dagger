@@ -432,7 +432,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		generated = generated.WithNewFile(path+"/generated.txt", contents)
 	}
 
-	return generated.Changes(ws), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 `)
 
@@ -545,7 +545,7 @@ func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace)
 		}
 		generated = generated.WithNewFile(path.Join(rel, "generated-module.txt"), modPath+"\n")
 	}
-	return generated.Changes(ws), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 
 // +generate
@@ -575,7 +575,7 @@ func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace)
 		}
 		generated = generated.WithNewFile(path.Join(rel, "generated-client.txt"), module+"\n")
 	}
-	return generated.Changes(ws), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 
 func workspaceCwd(ctx context.Context, ws *dagger.Workspace) (string, error) {
