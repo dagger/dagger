@@ -1,0 +1,10 @@
+# The sibling module for the sandbox module-ref experiment: exposes a
+# zero-arg Container-returning function so "sidecar:ctr" is a well-formed
+# module-ref address from this workspace.
+type Sidecar {
+  ctr: Container! {
+    container
+      .from("alpine:3.20")
+      .withEnvVariable("SIDECAR", "yes")
+  }
+}
