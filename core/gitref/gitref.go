@@ -60,6 +60,13 @@ func (s SchemeType) IsSSH() bool {
 	return s == SchemeSSH
 }
 
+// HasExplicitPort reports whether a ref of this scheme can carry a port that
+// must be preserved in the clone ref. A schemeless or SCP-like ref cannot: its
+// colon is the path separator, not a port.
+func (s SchemeType) HasExplicitPort() bool {
+	return s == SchemeSSH || s == SchemeHTTP || s == SchemeHTTPS
+}
+
 // RefString builds a module ref string from a clone ref, an optional source
 // root subpath and an optional version.
 func RefString(cloneRef, sourceRootSubpath, version string) string {
@@ -208,9 +215,13 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		cloneUser += "@"
 	}
 
-	// For SSH URLs, inject port after host if it is defined: ssh://user@host:port/path
+	// Inject the port back after the host when one was given:
+	// <scheme>://user@host:port/path. The port never reaches ModPath, because
+	// repo-root discovery matches on host and path alone, so it has to be
+	// restored here or the clone ref would address the scheme's default port —
+	// a different remote, with different credentials and cache keys.
 	repoRootWithPort := gitParsed.RepoRoot.Root
-	if gitParsed.Scheme == SchemeSSH && endpoint.Port > 0 {
+	if endpoint.Port > 0 && gitParsed.Scheme.HasExplicitPort() {
 		if host, rest, ok := strings.Cut(repoRootWithPort, "/"); ok {
 			repoRootWithPort = fmt.Sprintf("%s:%d/%s", host, endpoint.Port, rest)
 		}
