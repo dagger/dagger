@@ -1,0 +1,20 @@
+# Throwaway test workspace for the sandbox module: exercises exec's
+# Container!-typed sandbox arg, which resolves addresses at the CALLER's
+# boundary (workspace mode), so sibling module refs work.
+#
+# `sidecar` is the sibling: a zero-arg Container-returning function
+# (sidecar:ctr) installed in THIS workspace's config. Exercise it via
+# `dagger --workdir modules/sandbox/testdata/ws call sandbox exec
+# --sandbox sidecar:ctr ...` from the repo root; listSandboxes discovers it
+# through Workspace.addresses(type: "Container").
+
+[modules.sidecar]
+source = ".dagger/modules/sidecar"
+
+# A byte-identical COPY of modules/sandbox (module sources cannot point
+# outside the workspace root). Installed by name so `dagger call sandbox ...`
+# runs in workspace mode, where CLI object flags resolve module-ref
+# addresses. Keep in sync when the real module changes.
+[modules.sandbox]
+source = ".dagger/modules/sandbox"
+
