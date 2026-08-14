@@ -21,7 +21,11 @@
   "fixture_registry_digest": "sha256:eb24d4e97f96f3cb3bff801cbf9752e1a63909b32fa711590946dfb01bd7a211",
   "replay_action_present": false,
   "scenario_candidate_count": 612,
+  "scenario_candidate_digest": "sha256:693aae8a31ab4f2e93fc0548eaaf8044634ef7877224ea4fcf0856c2d7dd68fb",
   "scenario_realization_required_count": 612,
+  "scenario_registration_count": 0,
+  "scenario_registry_digest": "sha256:90482a31ddf87bdbb6ef4e052774c471134411cf75c5f95731bb747052dde62d",
+  "scenario_runner_source_digest": "sha256:2e95d86345a4079e2f3dad74e70f60eec47946005deb2d22be4fd2d6dd79f22a",
   "scope_digest": "sha256:0992d41f675d2824b73a1d6459437120d46615ef88973ccf6420585d25ce5cc5",
   "subject": {
     "identity": "sha256:a2e75bcf36dc3c8625fc24a837630c52bf1faeee2456f0892fb2711bad297270",

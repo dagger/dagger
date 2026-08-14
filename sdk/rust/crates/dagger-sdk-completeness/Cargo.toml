@@ -26,7 +26,7 @@ tar.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-dagger-sdk = { workspace = true, default-features = false }
+dagger-sdk = { workspace = true, default-features = false, features = ["gen"] }
 pretty_assertions.workspace = true
 proptest.workspace = true
 tempfile.workspace = true

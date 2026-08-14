@@ -30,6 +30,8 @@ const (
 	ExecutorCoreConformance ExecutorKind = "rust-core-conformance"
 	// ExecutorEngineIntegration runs one existing production engine-integration assertion.
 	ExecutorEngineIntegration ExecutorKind = "rust-engine-integration"
+	// ExecutorScenarioConformance runs one source-bound authority realization in idiomatic Rust.
+	ExecutorScenarioConformance ExecutorKind = "rust-scenario-conformance"
 )
 
 // ObservationExpectation names the exact successful observation owned by an executor.

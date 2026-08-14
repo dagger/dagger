@@ -105,7 +105,21 @@ fn canonical_applicability_and_closed_catalogs_are_admitted() {
 fn checked_scenario_candidates_are_a_total_non_executable_realization_queue() {
     let candidates: RustFirstConformanceManifestInput =
         decode_canonical(&artifact("conformance-scenario-candidates.json")).unwrap();
+    let registry: RustScenarioRegistryInput =
+        decode_canonical(&artifact("conformance-scenario-realizations.json")).unwrap();
     assert_eq!(candidates.scenarios.len(), 612);
+    assert!(registry.registrations.is_empty());
+    assert_eq!(
+        registry.scenario_candidate_digest,
+        rust_scenario_candidate_digest(&candidates).unwrap()
+    );
+    assert_eq!(
+        registry.runner_source_digest,
+        Digest::sha256(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../toolchains/rust-sdk-dev/testdata/scenario_conformance.rs"
+        )))
+    );
     assert!(candidates.scenarios.iter().all(|scenario| {
         matches!(
             scenario.realization,

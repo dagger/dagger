@@ -20,6 +20,7 @@ type ObservableProgramCatalog struct {
 	CaseCatalogDigest      string
 	ProgramRegistryDigest  string
 	Programs               map[string]ProgramSpec
+	CasePrograms           map[string]string
 }
 
 type observableProgramArtifactWire struct {
@@ -57,6 +58,7 @@ func DecodeObservablePrograms(data []byte) (ObservableProgramCatalog, error) {
 		return ObservableProgramCatalog{}, fmt.Errorf("observable program registry identity or count is invalid")
 	}
 	programs := make(map[string]ProgramSpec, len(wire.Programs))
+	casePrograms := make(map[string]string, len(wire.Programs))
 	previous := ""
 	for _, route := range wire.Programs {
 		fixtureTail, fixtureOK := strings.CutPrefix(route.FixtureID, "fixture/integration/")
@@ -73,6 +75,10 @@ func DecodeObservablePrograms(data []byte) (ObservableProgramCatalog, error) {
 			return ObservableProgramCatalog{}, fmt.Errorf("observable program route %q is duplicated", program.Key())
 		}
 		programs[program.Key()] = spec
+		if _, duplicate := casePrograms[route.CaseID]; duplicate {
+			return ObservableProgramCatalog{}, fmt.Errorf("observable case %q is duplicated", route.CaseID)
+		}
+		casePrograms[route.CaseID] = program.Key()
 		previous = route.FixtureID
 	}
 	return ObservableProgramCatalog{
@@ -82,6 +88,7 @@ func DecodeObservablePrograms(data []byte) (ObservableProgramCatalog, error) {
 		CaseCatalogDigest:      wire.CaseCatalogDigest,
 		ProgramRegistryDigest:  wire.ProgramRegistryDigest,
 		Programs:               programs,
+		CasePrograms:           casePrograms,
 	}, nil
 }
 

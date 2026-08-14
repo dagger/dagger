@@ -145,48 +145,55 @@ pub struct RustFirstConformanceManifestInput {
     pub scenarios: Vec<RustFirstScenario>,
 }
 
-/// One Rust-runner registration compiled into the checked implementation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// One reviewed binding from an authority scenario to checked executable Rust code.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RustScenarioRegistration {
-    /// Stable selector accepted by the Rust runner.
-    pub realization_id: ScenarioRealizationId,
-    /// Sole production boundary implemented by the registered function.
-    pub boundary: RustObservableBoundary,
-    /// Reviewed fixture identity for a fixture realization; absent for generated Core.
-    pub fixture_id: Option<ReviewedFixtureId>,
+    /// Exact scenario case realized by this registration.
+    pub scenario_id: SignoffCaseId,
+    /// Sole checked Rust realization selected for the scenario.
+    pub realization: RustScenarioRealization,
 }
 
-/// Validated Rust-runner registrations keyed by stable realization identity.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// Authored, source-bound realization registry which may remain partial during review.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RustScenarioRegistryInput {
+    /// Durable artifact format.
+    pub format_version: ConformanceFormatVersion,
+    /// Exact target shared by the scenario candidates.
+    pub target_digest: TargetDigest,
+    /// Domain-separated identity of the complete generated candidate queue.
+    pub scenario_candidate_digest: Digest,
+    /// Exact bytes of the checked Rust runner containing the registered entrypoints.
+    pub runner_source_digest: Digest,
+    /// Reviewed registrations in canonical scenario order.
+    pub registrations: Vec<RustScenarioRegistration>,
+}
+
+/// Validated Rust-runner registrations keyed by scenario and realization identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RustScenarioRegistry {
-    registrations: BTreeMap<ScenarioRealizationId, RustScenarioRegistration>,
+    registrations: BTreeMap<SignoffCaseId, RustScenarioRegistration>,
+    realization_ids: BTreeMap<ScenarioRealizationId, SignoffCaseId>,
+    runner_source_digest: Digest,
+    digest: Digest,
 }
 
 impl RustScenarioRegistry {
-    /// Constructs a registry while rejecting duplicate identities.
-    pub fn new(
-        registrations: impl IntoIterator<Item = RustScenarioRegistration>,
-    ) -> Result<Self, ConformanceDiagnosticSet> {
-        let mut values = BTreeMap::new();
-        for registration in registrations {
-            if values
-                .insert(registration.realization_id.clone(), registration)
-                .is_some()
-            {
-                return Err(scenario_set(
-                    None,
-                    "Rust scenario realization identity is duplicated",
-                ));
-            }
-        }
-        Ok(Self {
-            registrations: values,
-        })
+    /// Borrows checked registrations in canonical scenario order.
+    pub fn registrations(&self) -> &BTreeMap<SignoffCaseId, RustScenarioRegistration> {
+        &self.registrations
     }
 
-    /// Borrows checked registrations in canonical identity order.
-    pub fn registrations(&self) -> &BTreeMap<ScenarioRealizationId, RustScenarioRegistration> {
-        &self.registrations
+    /// Borrows the exact checked runner source identity.
+    pub fn runner_source_digest(&self) -> &Digest {
+        &self.runner_source_digest
+    }
+
+    /// Returns the domain-separated identity of the reviewed registry.
+    pub fn digest(&self) -> &Digest {
+        &self.digest
     }
 }
 
@@ -284,6 +291,166 @@ pub fn scaffold_rust_first_conformance_manifest(
     })
 }
 
+/// Returns the domain-separated identity of the complete generated candidate queue.
+pub fn rust_scenario_candidate_digest(
+    candidates: &RustFirstConformanceManifestInput,
+) -> Result<Digest, ConformanceDiagnosticSet> {
+    canonical_digest(DigestDomain::ConformanceScenarioCandidates, candidates)
+        .map_err(|_| scenario_set(None, "scenario candidates cannot be encoded canonically"))
+}
+
+/// Creates an empty reviewed registry bound to the current queue and runner source.
+///
+/// An empty registry is a valid review work surface, but it cannot admit a conformance manifest.
+pub fn scaffold_rust_scenario_registry(
+    candidates: &RustFirstConformanceManifestInput,
+    runner_source_digest: Digest,
+) -> Result<RustScenarioRegistryInput, ConformanceDiagnosticSet> {
+    Ok(RustScenarioRegistryInput {
+        format_version: ConformanceFormatVersion::V1,
+        target_digest: candidates.target_digest.clone(),
+        scenario_candidate_digest: rust_scenario_candidate_digest(candidates)?,
+        runner_source_digest,
+        registrations: Vec::new(),
+    })
+}
+
+/// Validates reviewed registrations against the current candidates, case catalog, and source.
+///
+/// Partial registries are admitted so review can advance in bounded slices. Only
+/// [`compile_rust_first_conformance_manifest`] requires total coverage.
+pub fn compile_rust_scenario_registry(
+    input: RustScenarioRegistryInput,
+    candidates: &RustFirstConformanceManifestInput,
+    catalog: &CaseCatalog,
+    observed_runner_source_digest: &Digest,
+) -> Result<RustScenarioRegistry, ConformanceDiagnosticSet> {
+    let mut diagnostics = Vec::new();
+    if input.format_version != ConformanceFormatVersion::V1
+        || candidates.format_version != ConformanceFormatVersion::V1
+        || candidates.target_digest != *catalog.target_digest()
+        || candidates.case_catalog_digest != *catalog.digest()
+        || input.target_digest != candidates.target_digest
+        || input.scenario_candidate_digest != rust_scenario_candidate_digest(candidates)?
+        || input.runner_source_digest != *observed_runner_source_digest
+    {
+        diagnostics.push(scenario_error(
+            None,
+            "Rust scenario registry identity or runner source is stale",
+        ));
+    }
+
+    let candidate_by_id = candidates
+        .scenarios
+        .iter()
+        .map(|scenario| (scenario.spine.id.clone(), scenario))
+        .collect::<BTreeMap<_, _>>();
+    if candidate_by_id.len() != candidates.scenarios.len()
+        || candidates
+            .scenarios
+            .windows(2)
+            .any(|pair| pair[0].spine.id >= pair[1].spine.id)
+        || candidates.scenarios.iter().any(|scenario| {
+            !matches!(
+                scenario.realization,
+                RustScenarioRealization::RealizationRequired
+            )
+        })
+    {
+        diagnostics.push(scenario_error(
+            None,
+            "Rust scenario candidates are ambiguous non-canonical or already realized",
+        ));
+    }
+    let mut registrations = BTreeMap::new();
+    let mut realization_ids = BTreeMap::new();
+    let mut previous_scenario_id = None;
+    for registration in input.registrations {
+        let scenario_id = registration.scenario_id.clone();
+        if previous_scenario_id
+            .as_ref()
+            .is_some_and(|previous| previous >= &scenario_id)
+        {
+            diagnostics.push(scenario_error(
+                Some(scenario_id.clone()),
+                "Rust scenario registrations are not in canonical unique order",
+            ));
+        }
+        previous_scenario_id = Some(scenario_id.clone());
+
+        let Some(candidate) = candidate_by_id.get(&scenario_id) else {
+            diagnostics.push(scenario_error(
+                Some(scenario_id.clone()),
+                "Rust scenario registration does not name a selected candidate",
+            ));
+            continue;
+        };
+        if !registration_matches_candidate(&registration, candidate, catalog) {
+            diagnostics.push(scenario_error(
+                Some(scenario_id.clone()),
+                "Rust scenario registration is stale ambiguous or not executable",
+            ));
+        }
+        let Some(realization_id) = realization_id(&registration.realization) else {
+            diagnostics.push(scenario_error(
+                Some(scenario_id.clone()),
+                "realization-required cannot enter the reviewed Rust registry",
+            ));
+            continue;
+        };
+        if realization_ids
+            .insert(realization_id.clone(), scenario_id.clone())
+            .is_some()
+        {
+            diagnostics.push(scenario_error(
+                Some(scenario_id.clone()),
+                "Rust scenario realization identity is duplicated",
+            ));
+        }
+        if registrations
+            .insert(scenario_id.clone(), registration)
+            .is_some()
+        {
+            diagnostics.push(scenario_error(
+                Some(scenario_id),
+                "Rust scenario identity is registered more than once",
+            ));
+        }
+    }
+    if let Some(set) = ConformanceDiagnosticSet::new(diagnostics) {
+        return Err(set);
+    }
+    let digest = canonical_digest(
+        DigestDomain::ConformanceScenarioRegistry,
+        &(
+            &input.target_digest,
+            &input.scenario_candidate_digest,
+            &input.runner_source_digest,
+            registrations.values().collect::<Vec<_>>(),
+        ),
+    )
+    .map_err(|_| scenario_set(None, "Rust scenario registry cannot be encoded canonically"))?;
+    Ok(RustScenarioRegistry {
+        registrations,
+        realization_ids,
+        runner_source_digest: input.runner_source_digest,
+        digest,
+    })
+}
+
+/// Applies reviewed registrations without changing any unreviewed candidate.
+pub fn apply_rust_scenario_registry(
+    mut candidates: RustFirstConformanceManifestInput,
+    registry: &RustScenarioRegistry,
+) -> RustFirstConformanceManifestInput {
+    for scenario in &mut candidates.scenarios {
+        if let Some(registration) = registry.registrations.get(&scenario.spine.id) {
+            scenario.realization = registration.realization.clone();
+        }
+    }
+    candidates
+}
+
 /// Compiles only a total, claim-exact manifest backed by checked Rust registrations.
 pub fn compile_rust_first_conformance_manifest(
     input: RustFirstConformanceManifestInput,
@@ -293,7 +460,8 @@ pub fn compile_rust_first_conformance_manifest(
     registry: &RustScenarioRegistry,
 ) -> Result<RustFirstConformanceManifest, ConformanceDiagnosticSet> {
     let mut diagnostics = Vec::new();
-    if input.target_digest != *catalog.target_digest()
+    if input.format_version != ConformanceFormatVersion::V1
+        || input.target_digest != *catalog.target_digest()
         || input.target_digest != *assertions.target_digest()
         || input.assertion_catalog_digest != *assertions.digest()
         || input.fixture_registry_digest != *fixtures.digest()
@@ -313,12 +481,11 @@ pub fn compile_rust_first_conformance_manifest(
         .map(|program| program.case_id.clone())
         .collect::<BTreeSet<_>>();
     let mut scenarios = BTreeMap::new();
-    let mut used_registrations = BTreeSet::new();
     for scenario in input.scenarios {
         let case_id = scenario.spine.id.clone();
         if !scenario_inputs_are_valid(&scenario.spine.inputs)
             || !scenario_matches_catalog(&scenario, assertions, fixtures, catalog, &expected_routes)
-            || !realization_is_registered(&scenario, registry, &mut used_registrations)
+            || !realization_is_registered(&scenario, registry)
         {
             diagnostics.push(scenario_error(
                 Some(case_id.clone()),
@@ -338,7 +505,14 @@ pub fn compile_rust_first_conformance_manifest(
             "scenario manifest does not equal the applicable integration case inventory",
         ));
     }
-    if used_registrations.len() != scenarios.len() {
+    if registry
+        .registrations
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        != expected_case_ids
+        || registry.realization_ids.len() != scenarios.len()
+    {
         diagnostics.push(scenario_error(
             None,
             "scenario realizations are not one-to-one with manifest rows",
@@ -418,14 +592,6 @@ fn scenario_matches_catalog(
                 value_digest: Some(digest.clone()),
             }),
     );
-    let actual_fixture_inputs = CanonicalSet::new(
-        scenario
-            .spine
-            .inputs
-            .iter()
-            .filter(|input| input.semantics == ScenarioInputSemantics::FixtureMaterial)
-            .cloned(),
-    );
     scenario.spine.authority_anchors == anchors
         && scenario.spine.source_fingerprints == fingerprints
         && scenario.spine.subject
@@ -433,7 +599,7 @@ fn scenario_matches_catalog(
                 boundary: program.boundary,
                 context: fixture.context_id.clone(),
             })
-        && actual_fixture_inputs == expected_fixture_inputs
+        && scenario.spine.inputs == expected_fixture_inputs
         && scenario.spine.expected == program.predicate
 }
 
@@ -447,34 +613,58 @@ fn scenario_inputs_are_valid(inputs: &CanonicalSet<ScenarioInput>) -> bool {
         })
 }
 
+fn registration_matches_candidate(
+    registration: &RustScenarioRegistration,
+    candidate: &RustFirstScenario,
+    catalog: &CaseCatalog,
+) -> bool {
+    if registration.scenario_id != candidate.spine.id
+        || !matches!(
+            candidate.realization,
+            RustScenarioRealization::RealizationRequired
+        )
+    {
+        return false;
+    }
+    let Some(case) = catalog.cases().get(&candidate.spine.id) else {
+        return false;
+    };
+    let CaseProgram::IntegrationAssertion { fixture } = &case.program else {
+        return false;
+    };
+    match &registration.realization {
+        RustScenarioRealization::RealizationRequired => false,
+        RustScenarioRealization::GeneratedCore {
+            schema_coordinate, ..
+        } => {
+            candidate.spine.subject.boundary == RustObservableBoundary::PublicGeneratedCore
+                && !schema_coordinate.as_str().is_empty()
+        }
+        RustScenarioRealization::ReviewedRustFixture { fixture_id, .. } => {
+            candidate.spine.subject.boundary != RustObservableBoundary::PublicGeneratedCore
+                && fixture_id == fixture
+        }
+    }
+}
+
+fn realization_id(realization: &RustScenarioRealization) -> Option<&ScenarioRealizationId> {
+    match realization {
+        RustScenarioRealization::RealizationRequired => None,
+        RustScenarioRealization::GeneratedCore { realization_id, .. }
+        | RustScenarioRealization::ReviewedRustFixture { realization_id, .. } => {
+            Some(realization_id)
+        }
+    }
+}
+
 fn realization_is_registered(
     scenario: &RustFirstScenario,
     registry: &RustScenarioRegistry,
-    used: &mut BTreeSet<ScenarioRealizationId>,
 ) -> bool {
-    let (realization_id, expected_fixture, generated_core) = match &scenario.realization {
-        RustScenarioRealization::RealizationRequired => return false,
-        RustScenarioRealization::GeneratedCore {
-            realization_id,
-            schema_coordinate,
-        } => (realization_id, None, !schema_coordinate.as_str().is_empty()),
-        RustScenarioRealization::ReviewedRustFixture {
-            realization_id,
-            fixture_id,
-        } => (realization_id, Some(fixture_id), false),
-    };
-    let Some(registration) = registry.registrations().get(realization_id) else {
-        return false;
-    };
-    let fixture_matches = match expected_fixture {
-        Some(fixture_id) => registration.fixture_id.as_ref() == Some(fixture_id),
-        None => registration.fixture_id.is_none(),
-    };
-    fixture_matches
-        && registration.boundary == scenario.spine.subject.boundary
-        && (generated_core
-            == (registration.boundary == RustObservableBoundary::PublicGeneratedCore))
-        && used.insert(realization_id.clone())
+    registry
+        .registrations()
+        .get(&scenario.spine.id)
+        .is_some_and(|registration| registration.realization == scenario.realization)
 }
 
 fn scenario_error(case_id: Option<SignoffCaseId>, detail: &'static str) -> ConformanceDiagnostic {

@@ -733,7 +733,12 @@
       `realization-required` Scenario_Spines and rejects them as evidence until a
       checked Rust realization registry is total. The queue spans 30 authority files: 154
       shared-CLI, 383 production-module-dispatcher, and 75 exact-packaged-runtime
-      scenarios. This is a reviewed work surface, not completed Task 25.1 evidence.
+      scenarios. The separately reviewed registry is bound to both the complete queue
+      digest and exact Rust runner source, rejects stale/duplicate/foreign/widened
+      bindings, and joins through the sign-off facade before any artifact or engine work.
+      Its empty checked state is intentional at this implementation boundary: this is a
+      durable reviewed work surface and closed executor mechanism, not completed Task
+      25.1 evidence.
   - [x] 25.2 Property test: Property 12 — authority mechanisms translate to observable Rust contracts
     - Implement `property_12_authority_translates_to_observable_rust` over at least 100
       authority mechanisms, Rust effects, predicates, equivalence decisions,

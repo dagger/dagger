@@ -78,6 +78,16 @@ Rust implementation has been registered. It is deliberately invalid as sign-off
 evidence. The file therefore describes work precisely; it does not inflate the
 implemented count or claim that a Rust boundary label is an executable test.
 
+`conformance-scenario-realizations.json` is the separately reviewed implementation
+registry. It binds every admitted selector to the domain-separated digest of the entire
+candidate queue and to the raw digest of
+`toolchains/rust-sdk-dev/testdata/scenario_conformance.rs`. The registry may remain
+partial while implementation is reviewed, but exact-target admission requires a total,
+one-to-one join before it constructs or imports an artifact or starts an engine. The
+catalog updater may initialize an empty registry; it never infers implementations or
+promotes candidates automatically. Ordinary Rust tests compile the runner and prove its
+selector inventory equals the checked registry without using an engine.
+
 ## Reproducing the checked F1 baseline
 
 This runbook proves the checked baseline from two independent directions. Local verification

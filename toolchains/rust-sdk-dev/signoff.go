@@ -157,10 +157,15 @@ func (t *RustSdkDev) Signoff(
 		return "", err
 	}
 
-	source := t.Source().WithFile(
-		"crates/dagger-sdk/examples/signoff_core_conformance.rs",
-		t.Ws.File("toolchains/rust-sdk-dev/testdata/core_conformance.rs"),
-	)
+	source := t.Source().
+		WithFile(
+			"crates/dagger-sdk/examples/signoff_core_conformance.rs",
+			t.Ws.File("toolchains/rust-sdk-dev/testdata/core_conformance.rs"),
+		).
+		WithFile(
+			"crates/dagger-sdk/examples/signoff_scenario_conformance.rs",
+			t.Ws.File("toolchains/rust-sdk-dev/testdata/scenario_conformance.rs"),
+		)
 	artifactStarted := time.Now()
 	var target *verifiedSignoffTarget
 	var constructions, imports uint32
@@ -326,7 +331,29 @@ func (t *RustSdkDev) admitSignoffInputs(
 	if observable.CaseCatalogDigest != plan.CaseCatalogDigest {
 		return nil, fmt.Errorf("observable registry and run plan name different case catalogs")
 	}
+	scenarioCandidates, err := t.Ws.File("sdk/rust/completeness/conformance-scenario-candidates.json").Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read Rust scenario candidate queue: %w", err)
+	}
+	scenarioRegistry, err := t.Ws.File("sdk/rust/completeness/conformance-scenario-realizations.json").Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read Rust scenario realization registry: %w", err)
+	}
+	scenarioRunner, err := t.Ws.File("toolchains/rust-sdk-dev/testdata/scenario_conformance.rs").Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read Rust scenario runner source: %w", err)
+	}
+	realizations, err := signoffmodel.DecodeScenarioRealizations(
+		[]byte(scenarioRegistry), []byte(scenarioCandidates), []byte(scenarioRunner),
+	)
+	if err != nil {
+		return nil, err
+	}
 	registry, err := signoffmodel.CompleteProgramRegistry(observable)
+	if err != nil {
+		return nil, err
+	}
+	registry, err = signoffmodel.ApplyScenarioRealizations(registry, observable, realizations)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +386,8 @@ func runSignoffCase(
 			// A catalog route without a concrete production assertion is deliberately a
 			// failed case. Boundary reachability cannot prove the route's semantic predicate.
 			err = fmt.Errorf("sign-off program %q has no concrete production executor", program.Key())
-		} else if executor.Selector != program.Value || executor.Expected.Category == "" || executor.Expected.Operation == "" {
+		} else if executor.Expected.Category == "" || executor.Expected.Operation == "" ||
+			(executor.Kind != signoffmodel.ExecutorScenarioConformance && executor.Selector != program.Value) {
 			err = fmt.Errorf("sign-off program %q has an incomplete concrete executor", program.Key())
 		} else {
 			switch executor.Kind {
@@ -367,6 +395,8 @@ func runSignoffCase(
 				result.ObservationDigest, err = runCoreConformanceCase(ctx, runner, *executor)
 			case signoffmodel.ExecutorEngineIntegration:
 				result.ObservationDigest, err = runEngineIntegrationSignoffCase(ctx, runner, *executor)
+			case signoffmodel.ExecutorScenarioConformance:
+				result.ObservationDigest, err = runScenarioConformanceCase(ctx, runner, *executor)
 			default:
 				err = fmt.Errorf("sign-off program %q names unknown executor %q", program.Key(), executor.Kind)
 			}
@@ -379,6 +409,54 @@ func runSignoffCase(
 	}
 	result.ElapsedMillis = positiveMillis(time.Since(started))
 	return result
+}
+
+type scenarioConformanceObservation struct {
+	RealizationID   string `json:"realization_id"`
+	ScenarioID      string `json:"scenario_id"`
+	RealizationKind string `json:"realization_kind"`
+	Observation     string `json:"observation"`
+}
+
+type scenarioConformanceObservationSet struct {
+	FormatVersion  uint32                           `json:"format_version"`
+	TargetRevision string                           `json:"target_revision"`
+	TargetVersion  string                           `json:"target_version"`
+	Observations   []scenarioConformanceObservation `json:"observations"`
+}
+
+func runScenarioConformanceCase(
+	ctx context.Context,
+	runner *dagger.Container,
+	executor signoffmodel.ExecutorDefinition,
+) (string, error) {
+	stdout, err := runner.
+		WithEnvVariable("DAGGER_RUST_SCENARIO_REALIZATION", executor.Selector).
+		WithExec([]string{
+			"dagger", "run", "cargo", "run", "--manifest-path", "/src/sdk/rust/Cargo.toml",
+			"-p", "dagger-sdk", "--example", "signoff_scenario_conformance", "--locked",
+		}).
+		Stdout(ctx)
+	if err != nil {
+		return "", err
+	}
+	var evidence scenarioConformanceObservationSet
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &evidence); err != nil {
+		return "", fmt.Errorf("decode selected Rust scenario observation: %w", err)
+	}
+	if evidence.FormatVersion != 1 || evidence.TargetRevision != coreTargetRevision || evidence.TargetVersion != coreTargetVersion {
+		return "", fmt.Errorf("selected Rust scenario observation names a different exact target")
+	}
+	if len(evidence.Observations) != 1 {
+		return "", fmt.Errorf("selected Rust scenario executor returned %d observations, want exactly one", len(evidence.Observations))
+	}
+	observation := evidence.Observations[0]
+	if observation.RealizationID != executor.Selector || observation.ScenarioID != executor.Expected.Operation ||
+		observation.RealizationKind != executor.Expected.Category || strings.TrimSpace(observation.Observation) == "" {
+		return "", fmt.Errorf("selected Rust scenario observation differs from executor %q", executor.Selector)
+	}
+	digest := sha256.Sum256([]byte(stdout))
+	return fmt.Sprintf("sha256:%x", digest), nil
 }
 
 type coreConformanceObservation struct {

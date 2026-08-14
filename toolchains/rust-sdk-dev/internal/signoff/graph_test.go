@@ -176,10 +176,12 @@ func TestInputAdmissionClosesCompleteDynamicRegistryBeforeTargetWork(t *testing.
 	source := parseGoFile(t, "../../signoff.go")
 	admission := findFunction(t, source, "admitSignoffInputs")
 	for selector, expected := range map[string]int{
-		"DecodeObservablePrograms": 1,
-		"CompleteProgramRegistry":  1,
-		"RequireConcretePrograms":  1,
-		"DecodeCaseRoutes":         1,
+		"DecodeObservablePrograms":   1,
+		"DecodeScenarioRealizations": 1,
+		"CompleteProgramRegistry":    1,
+		"ApplyScenarioRealizations":  1,
+		"RequireConcretePrograms":    1,
+		"DecodeCaseRoutes":           1,
 	} {
 		if got := selectorCount(admission, selector); got != expected {
 			t.Fatalf("input admission %s count: got %d, want %d", selector, got, expected)
@@ -199,9 +201,13 @@ func TestCaseDispatchDoesNotSubstituteBoundaryReachabilityForAssertions(t *testi
 	if got := stringLiteralCount(dispatch, "dagger version"); got != 0 {
 		t.Fatalf("case dispatch must not use version reachability as conformance evidence")
 	}
-	for _, supported := range []string{"ExecutorCoreConformance", "ExecutorEngineIntegration"} {
-		if got := identifierCount(dispatch, supported); got != 1 {
-			t.Fatalf("concrete executor %s must have one dispatch route, got %d", supported, got)
+	for supported, expected := range map[string]int{
+		"ExecutorCoreConformance":     1,
+		"ExecutorEngineIntegration":   1,
+		"ExecutorScenarioConformance": 2,
+	} {
+		if got := identifierCount(dispatch, supported); got != expected {
+			t.Fatalf("concrete executor %s count: got %d, want %d", supported, got, expected)
 		}
 	}
 	for _, unsupported := range []string{
@@ -237,6 +243,13 @@ func TestConcreteExecutorsReuseReviewedProductionAssertions(t *testing.T) {
 		if got := identifierCount(integration, assertion); got != expected {
 			t.Fatalf("engine-integration executor %s count: got %d, want %d", assertion, got, expected)
 		}
+	}
+	scenario := findFunction(t, source, "runScenarioConformanceCase")
+	if got := stringLiteralCount(scenario, "DAGGER_RUST_SCENARIO_REALIZATION"); got != 1 {
+		t.Fatalf("scenario executor must bind exactly one reviewed selector, got %d", got)
+	}
+	if got := selectorCount(scenario, "Stdout"); got != 1 {
+		t.Fatalf("scenario executor must collect exactly one structured result, got %d", got)
 	}
 }
 

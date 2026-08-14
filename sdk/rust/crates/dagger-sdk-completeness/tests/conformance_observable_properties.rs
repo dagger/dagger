@@ -72,27 +72,35 @@ fn checked_integration_fixtures_have_one_rust_owned_program_each() {
 #[test]
 fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
     let plan = checked_plan();
-    let mut input = scaffold_rust_first_conformance_manifest(
+    let candidates = scaffold_rust_first_conformance_manifest(
         &plan.assertion_catalog,
         &plan.fixture_registry,
         &plan.case_catalog,
     )
     .unwrap();
-    assert_eq!(input.scenarios.len(), 612);
+    let runner_source_digest = Digest::sha256("checked scenario runner source");
+    let empty_registry = compile_rust_scenario_registry(
+        scaffold_rust_scenario_registry(&candidates, runner_source_digest.clone()).unwrap(),
+        &candidates,
+        &plan.case_catalog,
+        &runner_source_digest,
+    )
+    .unwrap();
+    assert_eq!(candidates.scenarios.len(), 612);
     assert!(
         compile_rust_first_conformance_manifest(
-            input.clone(),
+            candidates.clone(),
             &plan.assertion_catalog,
             &plan.fixture_registry,
             &plan.case_catalog,
-            &RustScenarioRegistry::default(),
+            &empty_registry,
         )
         .is_err(),
         "realization-required candidates must never become executable evidence"
     );
 
-    let mut registrations = Vec::with_capacity(input.scenarios.len());
-    for (index, scenario) in input.scenarios.iter_mut().enumerate() {
+    let mut registrations = Vec::with_capacity(candidates.scenarios.len());
+    for (index, scenario) in candidates.scenarios.iter().enumerate() {
         let case = plan.case_catalog.cases().get(&scenario.spine.id).unwrap();
         let CaseProgram::IntegrationAssertion { fixture } = &case.program else {
             panic!("scaffold selected a non-integration case");
@@ -100,18 +108,26 @@ fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
         let realization_id =
             ScenarioRealizationId::new(format!("realization/integration/{index:04}")).unwrap();
         registrations.push(RustScenarioRegistration {
-            realization_id: realization_id.clone(),
-            boundary: scenario.spine.subject.boundary,
-            fixture_id: Some(fixture.clone()),
+            scenario_id: scenario.spine.id.clone(),
+            realization: RustScenarioRealization::ReviewedRustFixture {
+                realization_id,
+                fixture_id: fixture.clone(),
+            },
         });
-        scenario.realization = RustScenarioRealization::ReviewedRustFixture {
-            realization_id,
-            fixture_id: fixture.clone(),
-        };
     }
-    let registry = RustScenarioRegistry::new(registrations).unwrap();
+    let mut registry_input =
+        scaffold_rust_scenario_registry(&candidates, runner_source_digest.clone()).unwrap();
+    registry_input.registrations = registrations;
+    let registry = compile_rust_scenario_registry(
+        registry_input,
+        &candidates,
+        &plan.case_catalog,
+        &runner_source_digest,
+    )
+    .unwrap();
+    let realized = apply_rust_scenario_registry(candidates, &registry);
     let manifest = compile_rust_first_conformance_manifest(
-        input,
+        realized,
         &plan.assertion_catalog,
         &plan.fixture_registry,
         &plan.case_catalog,
@@ -119,6 +135,88 @@ fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
     )
     .unwrap();
     assert_eq!(manifest.scenarios().len(), 612);
+}
+
+#[test]
+fn rust_scenario_registry_rejects_stale_ambiguous_and_unselected_bindings() {
+    let plan = checked_plan();
+    let candidates = scaffold_rust_first_conformance_manifest(
+        &plan.assertion_catalog,
+        &plan.fixture_registry,
+        &plan.case_catalog,
+    )
+    .unwrap();
+    let runner_source_digest = Digest::sha256("checked scenario runner source");
+    let registrations = candidates
+        .scenarios
+        .iter()
+        .take(2)
+        .enumerate()
+        .map(|(index, scenario)| {
+            let case = plan.case_catalog.cases().get(&scenario.spine.id).unwrap();
+            let CaseProgram::IntegrationAssertion { fixture } = &case.program else {
+                panic!("scaffold selected a non-integration case");
+            };
+            RustScenarioRegistration {
+                scenario_id: scenario.spine.id.clone(),
+                realization: RustScenarioRealization::ReviewedRustFixture {
+                    realization_id: ScenarioRealizationId::new(format!(
+                        "realization/reviewed/{index:04}"
+                    ))
+                    .unwrap(),
+                    fixture_id: fixture.clone(),
+                },
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut input =
+        scaffold_rust_scenario_registry(&candidates, runner_source_digest.clone()).unwrap();
+    input.registrations = registrations;
+    compile_rust_scenario_registry(
+        input.clone(),
+        &candidates,
+        &plan.case_catalog,
+        &runner_source_digest,
+    )
+    .unwrap();
+
+    let mut stale = input.clone();
+    stale.runner_source_digest = Digest::sha256("different runner source");
+    assert!(
+        compile_rust_scenario_registry(
+            stale,
+            &candidates,
+            &plan.case_catalog,
+            &runner_source_digest,
+        )
+        .is_err()
+    );
+
+    let mut duplicated = input.clone();
+    let first_realization = duplicated.registrations[0].realization.clone();
+    duplicated.registrations[1].realization = first_realization;
+    assert!(
+        compile_rust_scenario_registry(
+            duplicated,
+            &candidates,
+            &plan.case_catalog,
+            &runner_source_digest,
+        )
+        .is_err()
+    );
+
+    let mut unselected = input;
+    unselected.registrations[0].scenario_id =
+        SignoffCaseId::new("case/integration/unselected").unwrap();
+    assert!(
+        compile_rust_scenario_registry(
+            unselected,
+            &candidates,
+            &plan.case_catalog,
+            &runner_source_digest,
+        )
+        .is_err()
+    );
 }
 
 #[test]
