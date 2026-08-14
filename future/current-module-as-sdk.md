@@ -32,7 +32,7 @@ Add `asSDK` to `CurrentModule`:
 
 ```graphql
 extend type CurrentModule {
-  asSDK: CurrentModuleAsSDK!
+  asSDK(workspace: Workspace!): CurrentModuleAsSDK!
 }
 
 type CurrentModuleAsSDK {
@@ -43,7 +43,6 @@ type CurrentModuleAsSDK {
 
 type CurrentModuleAsSDKModule {
   path: String!
-  source: ModuleSource!
 }
 
 type CurrentModuleAsSDKClient {
@@ -57,20 +56,22 @@ type CurrentModuleAsSDKClient {
 Expected SDK usage:
 
 ```go
-sdk := dag.CurrentModule().AsSDK()
+sdk := dag.CurrentModule().AsSDK(workspace)
 mods, err := sdk.Modules(ctx)
 clients, err := sdk.Clients(ctx)
 ```
 
 ## Behavior
 
-`dag.CurrentModule().AsSDK()` means: treat the currently executing module as an
-SDK installed in the active workspace.
+`dag.CurrentModule().AsSDK(workspace)` means: treat the currently executing
+module as an SDK installed in that workspace.
 
 It resolves to the matching `[modules.<name>]` entry with an `as-sdk` marker,
 then exposes that entry's persisted SDK role data:
 
-- `modules` from `[[modules.<name>.as-sdk.modules]]`
+- `modules` contains the selected module entries from
+  `[[modules.<name>.as-sdk.modules]]`: every module at or below the workspace
+  cwd, plus the nearest enclosing module when needed
 - `clients` from `[[modules.<name>.as-sdk.clients]]`
 
 If the current module is not installed as an SDK, error:
@@ -88,10 +89,9 @@ Expose fields that are part of the persisted `as-sdk` contract:
 - module: `path`
 - client: `path`, `module`, `pin`
 
-Also expose engine-resolved helpers:
+Also expose the engine-resolved client helper:
 
-- module: `source`
-- client: `moduleSource`
+- `CurrentModuleAsSDKClient.moduleSource`
 
 Do not expose client `options` for now. The current config code has internal
 round-trip support for arbitrary client fields, but this API should not make
@@ -120,7 +120,7 @@ No special CLI behavior is needed.
 needs its managed modules or clients calls:
 
 ```go
-dag.CurrentModule().AsSDK()
+dag.CurrentModule().AsSDK(workspace)
 ```
 
 ## Implementation Note
@@ -137,8 +137,8 @@ is only valid when exactly one installed SDK entry matches.
 - Add `CurrentModule.asSDK`.
 - Add `CurrentModuleAsSDK`, `CurrentModuleAsSDKModule`, and
   `CurrentModuleAsSDKClient`.
-- Resolve `modules` from `entry.AsSDK.Modules`.
+- Resolve and filter modules from `entry.AsSDK.Modules`.
 - Resolve `clients` from `entry.AsSDK.Clients`.
-- Add derived `source` and `moduleSource`.
+- Add the derived client `moduleSource` field.
 - Test installed SDK, non-SDK current module, empty lists, populated lists, and
   duplicate SDK source installs.

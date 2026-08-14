@@ -756,6 +756,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		}
 		payload.Source = source
 	}
+
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted workspace payload: %w", err)
@@ -841,6 +842,7 @@ func (ws *Workspace) AttachDependencyResults(
 	}
 
 	var deps []dagql.AnyResult
+
 	if ws.rootfs.Self() != nil {
 		attached, err := attach(ws.rootfs)
 		if err != nil {
@@ -853,6 +855,7 @@ func (ws *Workspace) AttachDependencyResults(
 		ws.rootfs = typed
 		deps = append(deps, typed)
 	}
+
 	if ws.source != nil {
 		sourceDeps, err := attachWorkspaceSource(attach, ws.source)
 		if err != nil {

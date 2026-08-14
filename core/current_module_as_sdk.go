@@ -38,7 +38,7 @@ func (*CurrentModuleAsSDK) Type() *ast.Type {
 }
 
 func (*CurrentModuleAsSDK) TypeDescription() string {
-	return "The SDK-role data for the currently executing module, as installed in the active workspace."
+	return "The SDK-role data for the currently executing module, as installed in the supplied workspace."
 }
 
 func (s *CurrentModuleAsSDK) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {

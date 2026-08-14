@@ -977,3 +977,52 @@ func (ModuleConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "VERSION 2")
 }
+
+// TestGeneratedContextChangesetPreservesUnrelatedContext verifies that a
+// filtered codegen result does not turn paths outside the module into
+// removals. Module sources loaded from a workspace carry a broader context
+// than the directory returned by an SDK's codegen implementation.
+func (ModuleConfigSuite) TestGeneratedContextChangesetPreservesUnrelatedContext(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	src := c.Directory().
+		WithNewFile("outside.txt", "keep me").
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
+		WithNewFile("mod/main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
+		AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: "mod"})
+
+	removed, err := src.GeneratedContextChangeset().RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, removed, "outside.txt")
+}
+
+// TestModuleSourceGenerateWorkspace verifies that generation composes as a
+// Workspace operation: generated files and later workspace edits share one
+// final changeset, while unrelated context remains present.
+func (ModuleConfigSuite) TestModuleSourceGenerateWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ws := c.Directory().
+		WithNewFile("outside.txt", "keep me").
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("mod/main.go", "package main\n\ntype Foo struct{}\n").
+		AsWorkspace()
+
+	src := ws.ModuleSource("mod")
+	generatedPaths, err := src.GeneratedContextChangeset().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, generatedPaths)
+
+	generated := src.Generate(ws).WithNewFile("extra.txt", "extra")
+	contents, err := generated.File("outside.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "keep me", contents)
+
+	added, err := generated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, added, "extra.txt")
+	require.NotContains(t, added, "outside.txt")
+	for _, path := range generatedPaths {
+		require.Contains(t, added, path)
+	}
+}
