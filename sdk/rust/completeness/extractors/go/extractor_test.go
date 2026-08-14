@@ -59,6 +59,13 @@ func TestExtractUsesLiteralAndPreservesStates(t *testing.T) {
 	if !strings.Contains(joined, "dynamic-subtest:<dynamic:") || !strings.Contains(joined, "test-table:<table:") {
 		t.Errorf("items do not contain stable dynamic subtest identities:\n%s", joined)
 	}
+	for _, item := range output.Items {
+		if item.Kind == "test" || strings.Contains(item.Kind, "subtest") || item.Kind == "test-table" {
+			if !strings.Contains(item.Context, "func TestModule") || !strings.Contains(item.Context, `[]string{"a"}`) {
+				t.Errorf("%s %q does not retain its complete enclosing test context", item.Kind, item.Name)
+			}
+		}
+	}
 }
 
 func TestExtractIsIndependentOfFileOrder(t *testing.T) {

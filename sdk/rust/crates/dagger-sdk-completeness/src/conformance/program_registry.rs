@@ -35,6 +35,8 @@ pub enum FixedProgramBoundary {
     ProductionModuleDispatcher,
     /// Public generated standalone-client API and packaged runtime.
     PublicGeneratedClient,
+    /// Committed standalone Rust example build with a local-only output.
+    StandaloneExampleBuild,
     /// Public idiomatic Rust client API corresponding to a definitive Go observation.
     PublicRustClient,
 }
@@ -186,6 +188,11 @@ fn fixed_program_spec(program: CaseProgram) -> FixedCaseProgramSpec {
                 | ClientSignoffCase::NamespacedModuleQuery,
         } => (
             FixedProgramBoundary::PublicGeneratedClient,
+            FixedProgramWorkspace::ExternalPackagedWorkspace,
+            FixedProgramAuthority::RustProduction,
+        ),
+        CaseProgram::StandaloneExample { .. } => (
+            FixedProgramBoundary::StandaloneExampleBuild,
             FixedProgramWorkspace::ExternalPackagedWorkspace,
             FixedProgramAuthority::RustProduction,
         ),

@@ -10,6 +10,7 @@ const (
 	BoundarySharedCLI       ProgramBoundary = "shared-baseline-cli"
 	BoundaryModuleRuntime   ProgramBoundary = "production-module-dispatcher"
 	BoundaryGeneratedClient ProgramBoundary = "public-generated-client"
+	BoundaryStandaloneBuild ProgramBoundary = "standalone-example-build"
 	BoundaryRustClient      ProgramBoundary = "public-rust-client"
 	BoundaryPackagedRuntime ProgramBoundary = "exact-packaged-runtime"
 )
@@ -32,6 +33,8 @@ const (
 	ExecutorEngineIntegration ExecutorKind = "rust-engine-integration"
 	// ExecutorScenarioConformance runs one source-bound authority realization in idiomatic Rust.
 	ExecutorScenarioConformance ExecutorKind = "rust-scenario-conformance"
+	// ExecutorStandaloneExample builds one committed example and retains its actual local output.
+	ExecutorStandaloneExample ExecutorKind = "rust-standalone-example-build"
 )
 
 // ObservationExpectation names the exact successful observation owned by an executor.
@@ -42,9 +45,11 @@ type ObservationExpectation struct {
 
 // ExecutorDefinition fixes the production operation, selector, and expected result for one case.
 type ExecutorDefinition struct {
-	Kind     ExecutorKind
-	Selector string
-	Expected ObservationExpectation
+	Kind           ExecutorKind
+	Selector       string
+	ContractDigest string
+	ProofID        string
+	Expected       ObservationExpectation
 }
 
 // ProgramSpec is one complete fixed production route.
@@ -94,14 +99,16 @@ var standaloneClientPrograms = []string{
 	"initialized-local-client", "pinned-remote-client", "schema-regeneration", "core-query", "namespaced-module-query",
 }
 
+var standaloneExamplePrograms = []string{"cli", "backend", "frontend"}
+
 var definitiveGoPrograms = []string{
 	"directory", "git", "container", "container-mutation", "list", "typed-exec-error",
 	"exec-error-output-fields", "exec-error-empty-output", "non-exec-error-separation",
 }
 
-// FixedProgramRegistry returns the complete immutable 60-program production registry.
+// FixedProgramRegistry returns the complete immutable 63-program production registry.
 func FixedProgramRegistry() map[string]ProgramSpec {
-	registry := make(map[string]ProgramSpec, 60)
+	registry := make(map[string]ProgramSpec, 63)
 	add := func(kind ProgramKind, values []string, boundary ProgramBoundary, workspace WorkspacePolicy) {
 		for _, value := range values {
 			program := Program{Kind: kind, Value: value}
@@ -123,6 +130,7 @@ func FixedProgramRegistry() map[string]ProgramSpec {
 		Program: packaged, Boundary: BoundaryModuleRuntime, Workspace: WorkspaceExternalPackage,
 	}
 	add(ProgramStandaloneClient, standaloneClientPrograms, BoundaryGeneratedClient, WorkspaceExternalPackage)
+	add(ProgramStandaloneExample, standaloneExamplePrograms, BoundaryStandaloneBuild, WorkspaceExternalPackage)
 	add(ProgramDefinitiveGo, definitiveGoPrograms, BoundaryRustClient, WorkspaceBaselineBranch)
 	for key, definition := range concreteExecutorDefinitions() {
 		spec := registry[key]
@@ -133,7 +141,7 @@ func FixedProgramRegistry() map[string]ProgramSpec {
 }
 
 func concreteExecutorDefinitions() map[string]*ExecutorDefinition {
-	definitions := make(map[string]*ExecutorDefinition, 28)
+	definitions := make(map[string]*ExecutorDefinition, 63)
 	core := map[string]ObservationExpectation{
 		"scalar":        {Category: "scalar", Operation: "Query.version"},
 		"enum":          {Category: "enum", Operation: "Query.cacheVolume(sharing:)"},
@@ -173,6 +181,51 @@ func concreteExecutorDefinitions() map[string]*ExecutorDefinition {
 		definitions[program.Key()] = &ExecutorDefinition{
 			Kind: ExecutorEngineIntegration, Selector: value,
 			Expected: ObservationExpectation{Category: "case-pass", Operation: value},
+		}
+	}
+	module := map[string]string{
+		"registration":             "realization/module-registration",
+		"constructor-state":        "realization/module-constructor-state",
+		"execution-shapes":         "realization/module-execution-shapes",
+		"types":                    "realization/module-types",
+		"handles-context":          "realization/module-handles-context",
+		"negative-dispatch":        "realization/module-negative-dispatch",
+		"concurrency-cancellation": "realization/module-concurrency-cancellation",
+		"packaged-self-consumer":   "realization/module-packaged-self-consumer",
+		"common-harness":           "realization/module-common-harness",
+	}
+	for value, selector := range module {
+		program := Program{Kind: ProgramModuleAuthoring, Value: value}
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorScenarioConformance, Selector: selector,
+			Expected: ObservationExpectation{Category: string(RealizationReviewedFixture), Operation: selector},
+		}
+	}
+	for _, value := range commonHarnessChecks {
+		program := Program{Kind: ProgramCommonHarness, Value: value}
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorScenarioConformance, Selector: "realization/common-harness",
+			Expected: ObservationExpectation{Category: string(RealizationReviewedFixture), Operation: "realization/common-harness"},
+		}
+	}
+	connector := Program{Kind: ProgramStableConnector}
+	definitions[connector.Key()] = &ExecutorDefinition{
+		Kind: ExecutorScenarioConformance, Selector: "realization/stable-connector",
+		Expected: ObservationExpectation{Category: string(RealizationReviewedFixture), Operation: "realization/stable-connector"},
+	}
+	for _, value := range standaloneClientPrograms {
+		program := Program{Kind: ProgramStandaloneClient, Value: value}
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorScenarioConformance, Selector: "realization/standalone-clients",
+			Expected: ObservationExpectation{Category: string(RealizationReviewedFixture), Operation: "realization/standalone-clients"},
+		}
+	}
+	for _, value := range standaloneExamplePrograms {
+		program := Program{Kind: ProgramStandaloneExample, Value: value}
+		selector := "standalone-example/" + value
+		definitions[program.Key()] = &ExecutorDefinition{
+			Kind: ExecutorStandaloneExample, Selector: selector,
+			Expected: ObservationExpectation{Category: "build-only-output", Operation: selector},
 		}
 	}
 	return definitions

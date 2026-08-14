@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"dagger/rust-sdk-dev/internal/enginefixture"
+	signoffmodel "dagger/rust-sdk-dev/internal/signoff"
 	"github.com/BurntSushi/toml"
 	"golang.org/x/mod/semver"
 
@@ -198,6 +199,36 @@ func (t *RustSdkDev) focusedEngineSource() *dagger.Directory {
 		"!sdk/rust/crates/**/src/**",
 		"!sdk/rust/crates/**/assets/**",
 		"!sdk/rust/runtime/**",
+	}})
+}
+
+// focusedImmutableEngineSource selects the same subject-owned closure directly from an
+// immutable Git tree. Sign-off must not reuse focusedEngineSource: that helper intentionally
+// follows the live development workspace and would reopen a checkout-to-build TOCTOU window.
+func focusedImmutableEngineSource(source *dagger.Directory) *dagger.Directory {
+	return source.Filter(dagger.DirectoryFilterOpts{Include: []string{
+		"LICENSE",
+		"go.mod",
+		"go.sum",
+		"analytics/**",
+		"auth/**",
+		"cmd/**",
+		"core/**",
+		"dagql/**",
+		"engine/**",
+		"internal/**",
+		"network/**",
+		"util/**",
+		"sdk/go/**",
+		"sdk/rust/Cargo.lock",
+		"sdk/rust/Cargo.toml",
+		"sdk/rust/rust-toolchain.toml",
+		"sdk/rust/completeness/target.json",
+		"sdk/rust/completeness/snapshots/schema.json",
+		"sdk/rust/crates/**/Cargo.toml",
+		"sdk/rust/crates/**/src/**",
+		"sdk/rust/crates/**/assets/**",
+		"sdk/rust/runtime/**",
 	}})
 }
 
@@ -397,14 +428,16 @@ func (t *RustSdkDev) EngineUnit(ctx context.Context) error {
 // RustEngineContent retains one engine-dev content object with both identities
 // needed to prove the acyclic packaged-content boundary.
 type RustEngineContent struct {
-	Content                  *dagger.Directory
-	ManifestDigest           string
-	DescriptorDigest         string
-	MappingDigest            string
-	CompletenessTargetDigest string
-	SDKDependency            sdkDependencyEvidence                 // +private
-	Engine                   *dagger.DaggerEngine                  // +private
-	Built                    *dagger.DaggerEngineRustEngineContent // +private
+	Content                    *dagger.Directory
+	ManifestDigest             string
+	DescriptorDigest           string
+	dependencyDescriptor       string
+	dependencyDescriptorDigest string
+	MappingDigest              string
+	CompletenessTargetDigest   string
+	SDKDependency              sdkDependencyEvidence                 // +private
+	Engine                     *dagger.DaggerEngine                  // +private
+	Built                      *dagger.DaggerEngineRustEngineContent // +private
 }
 
 // EngineContent builds the Rust SDK content once and returns its reusable graph object.
@@ -414,10 +447,46 @@ func (t *RustSdkDev) EngineContent(ctx context.Context) (*RustEngineContent, err
 		Ws:                 t.Ws,
 		VcsRepository:      t.EngineRepository,
 	}).WithSource(t.focusedEngineSource())
-	contentOptions := dagger.DaggerEngineRustSdkcontentOpts{Version: coreTargetVersion}
+	dependencyRepository := ""
+	dependencyRevision := ""
 	if t.SDKDependencyRevision != "" {
-		contentOptions.DependencyRepository = t.EngineRepository
-		contentOptions.DependencyRevision = t.SDKDependencyRevision
+		dependencyRepository = t.EngineRepository
+		dependencyRevision = t.SDKDependencyRevision
+	}
+	return t.engineContent(ctx, engine, t.Ws.Directory("/"), dependencyRepository, dependencyRevision)
+}
+
+// signoffEngineContent constructs every subject-owned component and evidence input from the same
+// full immutable Git coordinate admitted before graph construction. WithGitSource also gives
+// nested engine toolchains a workspace derived from that ref, so no ambient checkout can leak
+// through a module constructor after the focused source filter is applied.
+func (t *RustSdkDev) signoffEngineContent(
+	ctx context.Context,
+	subject signoffmodel.ArtifactSubject,
+) (*RustEngineContent, error) {
+	ref := dag.Git(subject.Repository).Commit(subject.Revision)
+	immutableWorkspace := ref.AsWorkspace()
+	immutableTree := ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	engine := dag.DaggerEngine(dagger.DaggerEngineOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+		VcsRepository:      subject.Repository,
+		Ws:                 immutableWorkspace,
+	}).WithGitSource(subject.Repository, subject.Revision).
+		WithSource(focusedImmutableEngineSource(immutableTree))
+	return t.engineContent(ctx, engine, immutableTree, subject.Repository, subject.Revision)
+}
+
+func (t *RustSdkDev) engineContent(
+	ctx context.Context,
+	engine *dagger.DaggerEngine,
+	evidenceRoot *dagger.Directory,
+	dependencyRepository string,
+	dependencyRevision string,
+) (*RustEngineContent, error) {
+	contentOptions := dagger.DaggerEngineRustSdkcontentOpts{Version: coreTargetVersion}
+	if dependencyRevision != "" {
+		contentOptions.DependencyRepository = dependencyRepository
+		contentOptions.DependencyRevision = dependencyRevision
 	}
 	built := engine.RustSdkcontent(contentOptions)
 	manifestDigest, err := built.ManifestDigest(ctx)
@@ -443,7 +512,23 @@ func (t *RustSdkDev) EngineContent(ctx context.Context) (*RustEngineContent, err
 		(sdkDependency.Source != "registry" && sdkDependency.Source != "git") {
 		return nil, fmt.Errorf("Rust SDK content returned an unsupported dependency descriptor")
 	}
-	mappingContents, err := t.Ws.File("sdk/rust/completeness/engine-integration-mappings.json").Contents(ctx)
+	canonicalDependencyDescriptor, err := json.Marshal(sdkDependency)
+	if err != nil || string(canonicalDependencyDescriptor) != dependencyDescriptor {
+		return nil, fmt.Errorf("Rust SDK content returned a non-canonical dependency descriptor")
+	}
+	if dependencyRevision != "" {
+		expectedRepository := strings.TrimSuffix(dependencyRepository, ".git")
+		if strings.HasPrefix(expectedRepository, "github.com/") {
+			expectedRepository = "https://" + expectedRepository
+		}
+		if sdkDependency.Source != "git" || sdkDependency.Registry != "" ||
+			sdkDependency.ExactVersion != "" || sdkDependency.URL != expectedRepository ||
+			sdkDependency.Revision != dependencyRevision {
+			return nil, fmt.Errorf("Rust SDK content did not retain the exact fork Git dependency")
+		}
+	}
+	dependencyDescriptorIdentity := sha256.Sum256(canonicalDependencyDescriptor)
+	mappingContents, err := evidenceRoot.File("sdk/rust/completeness/engine-integration-mappings.json").Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read Rust engine-integration mappings: %w", err)
 	}
@@ -458,14 +543,16 @@ func (t *RustSdkDev) EngineContent(ctx context.Context) (*RustEngineContent, err
 	}
 	mappingDigest := sha256.Sum256([]byte(mappingContents))
 	return &RustEngineContent{
-		Content:                  built.Content(),
-		ManifestDigest:           manifestDigest,
-		DescriptorDigest:         descriptorDigest,
-		MappingDigest:            fmt.Sprintf("sha256:%x", mappingDigest),
-		CompletenessTargetDigest: mappingSubject.TargetDigest,
-		SDKDependency:            sdkDependency,
-		Engine:                   engine,
-		Built:                    built,
+		Content:                    built.Content(),
+		ManifestDigest:             manifestDigest,
+		DescriptorDigest:           descriptorDigest,
+		dependencyDescriptor:       dependencyDescriptor,
+		dependencyDescriptorDigest: fmt.Sprintf("sha256:%x", dependencyDescriptorIdentity),
+		MappingDigest:              fmt.Sprintf("sha256:%x", mappingDigest),
+		CompletenessTargetDigest:   mappingSubject.TargetDigest,
+		SDKDependency:              sdkDependency,
+		Engine:                     engine,
+		Built:                      built,
 	}, nil
 }
 

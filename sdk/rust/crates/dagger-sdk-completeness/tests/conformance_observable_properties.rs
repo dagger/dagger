@@ -1,5 +1,6 @@
 //! Observable-authority translation and fixed-family boundary properties.
 
+use dagger_sdk_completeness::extract::go::{GoHelperOutput, go_scenario_context_index};
 use dagger_sdk_completeness::*;
 use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, TestRunner};
@@ -25,6 +26,7 @@ fn checked_plan() -> ReviewedCatalogPlan {
     let engine: EngineIntegrationMappings =
         decode_canonical(&artifact("engine-integration-mappings.json")).unwrap();
     build_reviewed_catalog_plan(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../.."),
         &ledger,
         &scope,
         &harness,
@@ -32,6 +34,13 @@ fn checked_plan() -> ReviewedCatalogPlan {
         SubjectIdentity::SourceDigest(Digest::sha256("checked Rust source fixture")),
     )
     .unwrap()
+}
+
+fn checked_scenario_contexts() -> std::collections::BTreeMap<(SourceLocator, SourceItemKind), Digest>
+{
+    let output: GoHelperOutput =
+        serde_json::from_slice(&artifact("sources/go/go-integration-tests.json")).unwrap();
+    go_scenario_context_index(&output).unwrap()
 }
 
 #[test]
@@ -76,6 +85,7 @@ fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
         &plan.assertion_catalog,
         &plan.fixture_registry,
         &plan.case_catalog,
+        &checked_scenario_contexts(),
     )
     .unwrap();
     let runner_source_digest = Digest::sha256("checked scenario runner source");
@@ -109,6 +119,8 @@ fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
             ScenarioRealizationId::new(format!("realization/integration/{index:04}")).unwrap();
         registrations.push(RustScenarioRegistration {
             scenario_id: scenario.spine.id.clone(),
+            contract_digest: rust_scenario_contract_digest(&scenario.spine).unwrap(),
+            proof_id: reviewed_scenario_proof_id(&scenario.spine.expected).unwrap(),
             realization: RustScenarioRealization::ReviewedRustFixture {
                 realization_id,
                 fixture_id: fixture.clone(),
@@ -138,12 +150,13 @@ fn rust_first_manifest_requires_one_registered_realization_per_scenario() {
 }
 
 #[test]
-fn rust_scenario_registry_rejects_stale_ambiguous_and_unselected_bindings() {
+fn rust_scenario_registry_shares_reviewed_executors_but_rejects_stale_and_unselected_bindings() {
     let plan = checked_plan();
     let candidates = scaffold_rust_first_conformance_manifest(
         &plan.assertion_catalog,
         &plan.fixture_registry,
         &plan.case_catalog,
+        &checked_scenario_contexts(),
     )
     .unwrap();
     let runner_source_digest = Digest::sha256("checked scenario runner source");
@@ -159,6 +172,8 @@ fn rust_scenario_registry_rejects_stale_ambiguous_and_unselected_bindings() {
             };
             RustScenarioRegistration {
                 scenario_id: scenario.spine.id.clone(),
+                contract_digest: rust_scenario_contract_digest(&scenario.spine).unwrap(),
+                proof_id: reviewed_scenario_proof_id(&scenario.spine.expected).unwrap(),
                 realization: RustScenarioRealization::ReviewedRustFixture {
                     realization_id: ScenarioRealizationId::new(format!(
                         "realization/reviewed/{index:04}"
@@ -192,18 +207,58 @@ fn rust_scenario_registry_rejects_stale_ambiguous_and_unselected_bindings() {
         .is_err()
     );
 
-    let mut duplicated = input.clone();
-    let first_realization = duplicated.registrations[0].realization.clone();
-    duplicated.registrations[1].realization = first_realization;
+    let mut wrong_contract = input.clone();
+    wrong_contract.registrations[0].contract_digest = Digest::sha256("different scenario spine");
     assert!(
         compile_rust_scenario_registry(
-            duplicated,
+            wrong_contract,
             &candidates,
             &plan.case_catalog,
             &runner_source_digest,
         )
         .is_err()
     );
+
+    let mut wrong_proof = input.clone();
+    wrong_proof.registrations[0].proof_id =
+        ScenarioProofId::new("probe/typed-error/category").unwrap();
+    if wrong_proof.registrations[0].proof_id
+        == reviewed_scenario_proof_id(&candidates.scenarios[0].spine.expected).unwrap()
+    {
+        wrong_proof.registrations[0].proof_id =
+            ScenarioProofId::new("probe/result/exact-value").unwrap();
+    }
+    assert!(
+        compile_rust_scenario_registry(
+            wrong_proof,
+            &candidates,
+            &plan.case_catalog,
+            &runner_source_digest,
+        )
+        .is_err()
+    );
+
+    let mut shared = input.clone();
+    let shared_id = match &shared.registrations[0].realization {
+        RustScenarioRealization::ReviewedRustFixture { realization_id, .. } => {
+            realization_id.clone()
+        }
+        _ => unreachable!("test registrations are reviewed fixtures"),
+    };
+    let RustScenarioRealization::ReviewedRustFixture { realization_id, .. } =
+        &mut shared.registrations[1].realization
+    else {
+        unreachable!("test registrations are reviewed fixtures")
+    };
+    *realization_id = shared_id;
+    let shared = compile_rust_scenario_registry(
+        shared,
+        &candidates,
+        &plan.case_catalog,
+        &runner_source_digest,
+    )
+    .unwrap();
+    assert_eq!(shared.realization_ids().len(), 1);
 
     let mut unselected = input;
     unselected.registrations[0].scenario_id =

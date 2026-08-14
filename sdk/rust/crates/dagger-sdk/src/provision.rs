@@ -181,6 +181,24 @@ impl<H> DefaultCliProvisioner<H, NoopProvisioningObserver> {
     }
 }
 
+#[cfg(feature = "signoff-observation")]
+impl<H, O> DefaultCliProvisioner<H, O>
+where
+    O: ProvisioningObserver,
+{
+    pub(crate) fn native_observed(http: H, observer: O) -> Result<Self, ProvisionError> {
+        let cache_root = dirs::cache_dir()
+            .map(|root| root.join(CACHE_DIRECTORY))
+            .ok_or_else(|| ProvisionError::new(ProvisionErrorKind::CacheDirectory))?;
+        Ok(Self {
+            http,
+            cache_root,
+            observer,
+            retention_remover: SystemRetentionRemover,
+        })
+    }
+}
+
 impl<H, O> DefaultCliProvisioner<H, O, SystemRetentionRemover> {
     pub(crate) fn with_cache_root(http: H, cache_root: PathBuf, observer: O) -> Self {
         Self {
@@ -300,6 +318,8 @@ where
         match response.status {
             200 => {}
             403 | 404 => {
+                #[cfg(feature = "signoff-observation")]
+                self.observer.manifest_unavailable(response.status);
                 return Err(ProvisionError::with_status(
                     ProvisionErrorKind::ReleaseUnavailable,
                     response.status,
@@ -321,7 +341,11 @@ where
             &self.observer,
         )
         .await?;
-        parse_manifest(&bytes, descriptor.archive_name())
+        let manifest = parse_manifest(&bytes, descriptor.archive_name())?;
+        #[cfg(feature = "signoff-observation")]
+        self.observer
+            .manifest_available(Sha256::digest(&bytes).into());
+        Ok(manifest)
     }
 
     async fn acquire_archive(

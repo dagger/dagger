@@ -173,6 +173,10 @@ mod scalar;
 mod session;
 mod transport;
 
+#[cfg(feature = "signoff-observation")]
+#[doc(hidden)]
+pub mod signoff_observation;
+
 #[allow(dead_code)]
 mod archive;
 #[allow(dead_code)]

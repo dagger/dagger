@@ -45,6 +45,7 @@ pub enum DigestDomain {
     ConformanceCaseExecution,
     ConformanceProgramRegistry,
     ConformanceObservableRegistry,
+    ConformanceScenarioContract,
     ConformanceScenarioCandidates,
     ConformanceScenarioRegistry,
     ConformanceScenarioManifest,
@@ -92,6 +93,9 @@ impl DigestDomain {
             Self::ConformanceProgramRegistry => b"dagger-rust-sdk-signoff-program-registry-v1\0",
             Self::ConformanceObservableRegistry => {
                 b"dagger-rust-sdk-signoff-observable-registry-v1\0"
+            }
+            Self::ConformanceScenarioContract => {
+                b"dagger-rust-sdk-conformance-scenario-contract-v1\0"
             }
             Self::ConformanceScenarioCandidates => {
                 b"dagger-rust-sdk-conformance-scenario-candidates-v1\0"

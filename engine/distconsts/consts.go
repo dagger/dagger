@@ -24,6 +24,8 @@ const (
 	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
 	RustSDKManifestDigestEnvName       = "DAGGER_RUST_SDK_MANIFEST_DIGEST"
 	RustSDKDescriptorDigestEnvName     = "DAGGER_RUST_SDK_DESCRIPTOR_DIGEST"
+	RustSDKDependencyDescriptorEnvName = "DAGGER_RUST_SDK_DEPENDENCY_DESCRIPTOR"
+	RustSDKDependencyDigestEnvName     = "DAGGER_RUST_SDK_DEPENDENCY_DESCRIPTOR_DIGEST"
 )
 
 const (

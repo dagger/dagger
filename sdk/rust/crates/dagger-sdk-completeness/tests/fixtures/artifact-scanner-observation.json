@@ -1,7 +1,9 @@
 {
   "artifact_input_count": 1,
+  "database_artifact_digest": "sha256:10a3832219beaf45a3eb86065e30b39e528ae9c1650aa5f733d4666afd0712c5",
+  "database_content_digest": "sha256:76213b27bda05820231b84c09ca2854ec548147e9b46c0974247116f4ced4f67",
   "database_metadata_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-  "database_provenance": "source/trivy-db/0e0340a01b57209346d88dd061342a857776e403",
+  "database_provenance": "image/trivy-db/sha256-10a3832219beaf45a3eb86065e30b39e528ae9c1650aa5f733d4666afd0712c5",
   "elapsed": 17,
   "findings": [
     {

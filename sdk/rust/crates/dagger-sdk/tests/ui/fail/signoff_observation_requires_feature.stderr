@@ -1,0 +1,14 @@
+error[E0432]: unresolved import `dagger_sdk::signoff_observation`
+ --> tests/ui/fail/signoff_observation_requires_feature.rs:1:17
+  |
+1 | use dagger_sdk::signoff_observation::SignoffConnectorRecorder;
+  |                 ^^^^^^^^^^^^^^^^^^^ could not find `signoff_observation` in `dagger_sdk`
+  |
+note: found an item that was configured out
+ --> src/lib.rs
+  |
+  | #[cfg(feature = "signoff-observation")]
+  |       ------------------------------- the item is gated behind the `signoff-observation` feature
+  | #[doc(hidden)]
+  | pub mod signoff_observation;
+  |         ^^^^^^^^^^^^^^^^^^^

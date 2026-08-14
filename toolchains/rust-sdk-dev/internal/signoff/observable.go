@@ -68,8 +68,12 @@ func DecodeObservablePrograms(data []byte) (ObservableProgramCatalog, error) {
 			return ObservableProgramCatalog{}, fmt.Errorf("observable program route is malformed or non-canonical")
 		}
 		program := Program{Kind: ProgramIntegration, Value: route.FixtureID}
+		workspace := WorkspaceBaselineBranch
+		if route.Boundary == BoundaryPackagedRuntime {
+			workspace = WorkspaceExternalPackage
+		}
 		spec := ProgramSpec{
-			Program: program, Boundary: route.Boundary, Workspace: WorkspaceBaselineBranch,
+			Program: program, Boundary: route.Boundary, Workspace: workspace,
 		}
 		if _, duplicate := programs[program.Key()]; duplicate {
 			return ObservableProgramCatalog{}, fmt.Errorf("observable program route %q is duplicated", program.Key())
@@ -120,7 +124,7 @@ func CompleteProgramRegistry(observable ObservableProgramCatalog) (map[string]Pr
 		}
 		registry[key] = spec
 	}
-	if len(registry) != observableProgramCount+60 {
+	if len(registry) != observableProgramCount+63 {
 		return nil, fmt.Errorf("complete program inventory has an unexpected cardinality")
 	}
 	return registry, nil

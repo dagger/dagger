@@ -154,17 +154,20 @@ pub struct PortablePlatformMatrix {
     pub matrix_digest: Digest,
 }
 
-/// Routine Linux/macOS observation set which explicitly is not a portable matrix.
+/// Current supported native-platform evidence for Linux and macOS.
+///
+/// Windows is deliberately absent. A Windows observation may be produced as a future-support
+/// preflight, but it cannot enter the current SDK sign-off verdict through this type.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DevelopmentNativePlatformSet {
+pub struct SupportedNativePlatformSet {
     /// Durable observation-set format.
     pub format_version: ConformanceFormatVersion,
     /// Exact Dagger target associated with the candidate implementation.
     pub target_digest: TargetDigest,
     /// Current Linux and macOS observations, indexed by real native OS.
     pub native_observations: BTreeMap<OperatingSystem, NativePlatformObservation>,
-    /// Domain-separated identity of this deliberately non-portable set.
+    /// Domain-separated identity of the supported native-platform set.
     pub observation_set_digest: Digest,
 }
 
@@ -334,11 +337,11 @@ pub fn assemble_portable_platform_matrix(
     })
 }
 
-/// Admits current Linux and macOS observations without claiming the Windows-complete matrix.
-pub fn assemble_development_native_platform_set(
+/// Admits exactly the current supported Linux and macOS native observations.
+pub fn assemble_supported_native_platform_set(
     target_digest: TargetDigest,
     observations: Vec<NativePlatformObservation>,
-) -> Result<DevelopmentNativePlatformSet, ConformanceDiagnosticSet> {
+) -> Result<SupportedNativePlatformSet, ConformanceDiagnosticSet> {
     let mut diagnostics = Vec::new();
     let mut native = BTreeMap::new();
     let expected_domains = required_native_platform_domains();
@@ -370,14 +373,14 @@ pub fn assemble_development_native_platform_set(
         {
             diagnostics.push(platform_diagnostic(
                 ConformanceDiagnosticCode::PlatformMatrixIncomplete,
-                "development native observation is stale failed mismatched or non-native",
+                "supported native observation is stale failed mismatched or non-native",
             ));
         }
         let os = observation.platform.operating_system.clone();
         if native.insert(os, observation).is_some() {
             diagnostics.push(platform_diagnostic(
                 ConformanceDiagnosticCode::PlatformMatrixIncomplete,
-                "development native operating-system observation is duplicated",
+                "supported native operating-system observation is duplicated",
             ));
         }
     }
@@ -387,7 +390,7 @@ pub fn assemble_development_native_platform_set(
     if native.keys().cloned().collect::<BTreeSet<_>>() != expected {
         diagnostics.push(platform_diagnostic(
             ConformanceDiagnosticCode::PlatformMatrixIncomplete,
-            "development native observation set requires exact Linux and macOS evidence",
+            "supported native observation set requires exact Linux and macOS evidence",
         ));
     }
     if let Some(diagnostics) = ConformanceDiagnosticSet::new(diagnostics) {
@@ -395,10 +398,10 @@ pub fn assemble_development_native_platform_set(
     }
     let observation_set_digest = canonical_digest(
         DigestDomain::ConformancePlatformMatrix,
-        &("development-native-set", &target_digest, &native),
+        &("supported-native-set", &target_digest, &native),
     )
     .expect("validated development observation set is canonically encodable");
-    Ok(DevelopmentNativePlatformSet {
+    Ok(SupportedNativePlatformSet {
         format_version: ConformanceFormatVersion::V1,
         target_digest,
         native_observations: native,

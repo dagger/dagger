@@ -41,6 +41,13 @@ pub struct GoHelperItem {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub parent: String,
     pub signature: String,
+    /// Complete normalized enclosing test declaration used only to review scenario semantics.
+    ///
+    /// This context does not replace `signature` and deliberately does not participate in the
+    /// durable source-item identity. It supplies table values and setup which a nested `t.Run`
+    /// call cannot carry by itself.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub context: String,
     pub state: GoItemState,
     pub locator: String,
     pub fingerprint: Digest,
@@ -69,6 +76,43 @@ pub enum GoItemState {
     Deprecated,
     Skipped,
     Removed,
+}
+
+/// Builds the exact enclosing-test context index used by the Rust-first scenario compiler.
+///
+/// The helper's `signature` remains the durable source-item identity. This separate digest binds
+/// a selected scenario to its complete normalized test declaration so table values, setup, and
+/// assertions cannot disappear when the Rust realization is reviewed.
+pub fn go_scenario_context_index(
+    output: &GoHelperOutput,
+) -> Validation<BTreeMap<(SourceLocator, SourceItemKind), Digest>> {
+    let mut contexts = BTreeMap::new();
+    for helper in &output.items {
+        if helper.context.is_empty() {
+            continue;
+        }
+        let kind_name = go_kind_name(helper.kind);
+        let (Ok(locator), Ok(kind)) = (
+            SourceLocator::new(&helper.locator),
+            SourceItemKind::new(format!("go-{kind_name}")),
+        ) else {
+            return Err(one_diagnostic(format!(
+                "Go scenario context for {:?} has a non-portable coordinate",
+                helper.name
+            )));
+        };
+        let key = (locator, kind);
+        if contexts
+            .insert(key, Digest::sha256(helper.context.as_bytes()))
+            .is_some()
+        {
+            return Err(one_diagnostic(format!(
+                "Go scenario context for {:?} is duplicated",
+                helper.name
+            )));
+        }
+    }
+    Ok(contexts)
 }
 
 /// Decodes and validates helper output, including the engine-selected Go commit literal.

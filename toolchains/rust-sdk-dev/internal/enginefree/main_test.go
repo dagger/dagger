@@ -3,6 +3,7 @@
 package enginefree
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -33,6 +34,40 @@ func TestEngineFreeFunctionsDoNotConstructDaggerEngine(t *testing.T) {
 		if got := stringLiteralCount(constructor, exclusion); got != 1 {
 			t.Fatalf("Rust SDK workspace must exclude local build output %q", exclusion)
 		}
+	}
+}
+
+func TestRustSDKDevelopmentModuleRequiresTheV1EngineSurface(t *testing.T) {
+	t.Parallel()
+
+	module, err := os.ReadFile("../../dagger-module.toml")
+	if err != nil {
+		t.Fatalf("read Rust SDK development module configuration: %v", err)
+	}
+	if !strings.Contains(string(module), `engineVersion = "v1.0.0-0"`) {
+		t.Fatal("Rust SDK development and sign-off require the v1 engine API surface")
+	}
+	if strings.Contains(string(module), `engineVersion = "v0.21.7"`) {
+		t.Fatal("Rust SDK development must not advertise legacy engine compatibility")
+	}
+
+	rustBinding, err := os.ReadFile("../../internal/dagger/dagger.gen.go")
+	if err != nil {
+		t.Fatalf("read Rust SDK development core binding: %v", err)
+	}
+	engineBinding, err := os.ReadFile("../../../engine-dev/internal/dagger/dagger.gen.go")
+	if err != nil {
+		t.Fatalf("read engine development core binding: %v", err)
+	}
+	cliBinding, err := os.ReadFile("../../../cli-dev/internal/dagger/dagger.gen.go")
+	if err != nil {
+		t.Fatalf("read CLI development core binding: %v", err)
+	}
+	if !bytes.Equal(engineBinding, cliBinding) {
+		t.Fatal("repository v1 development modules disagree on the generated core binding")
+	}
+	if !bytes.Equal(rustBinding, engineBinding) {
+		t.Fatal("Rust SDK development core binding is stale against the repository v1 surface")
 	}
 }
 
@@ -103,6 +138,85 @@ func TestFocusedContainerAndServiceShareOneConstructionBoundary(t *testing.T) {
 	service := findFunction(t, engineSource, "ServiceWithFocusedRustSDKContent")
 	if got := identifierCount(service, "focusedRustContainer"); got != 1 {
 		t.Fatalf("focused service must delegate to the shared constructor exactly once, got %d", got)
+	}
+}
+
+func TestFocusedRustContainerContractMatchesGeneratedSurfaces(t *testing.T) {
+	t.Parallel()
+
+	const (
+		exportedName = "ContainerWithFocusedRustSDKContent"
+		clientName   = "ContainerWithFocusedRustSdkcontent"
+		selector     = "containerWithFocusedRustSdkcontent"
+	)
+	required := map[string]int{
+		"rustSdkcontent":   2, // nil guard and query argument
+		"baseImage":        1,
+		"baseRevision":     1,
+		"targetRepository": 1,
+		"targetRevision":   1,
+	}
+	optional := []string{"Platform", "Version"}
+
+	source := findFunction(t, parseGoFile(t, "../../../engine-dev/main.go"), exportedName)
+	if got, want := strings.Join(functionParameterNames(source), ","), "ctx,rustSDKContent,baseImage,baseRevision,targetRepository,targetRevision,platform,version"; got != want {
+		t.Fatalf("focused source signature parameters: got %q, want %q", got, want)
+	}
+	engineSource := parseGoFile(t, "../../../engine-dev/main.go")
+	for _, function := range []string{"container", "focusedRustContainer"} {
+		if got := identifierCount(findFunction(t, engineSource, function), "DependencyDescriptor"); got != 1 {
+			t.Fatalf("%s must forward the dependency descriptor exactly once, got %d", function, got)
+		}
+	}
+	builder := findFunction(t, parseGoFile(t, "../../../engine-dev/build/builder.go"), "WithRustSDKContent")
+	for _, environment := range []string{
+		"RustSDKDependencyDescriptorEnvName",
+		"RustSDKDependencyDigestEnvName",
+	} {
+		if got := identifierCount(builder, environment); got != 1 {
+			t.Fatalf("reusable Rust content must retain %s exactly once, got %d", environment, got)
+		}
+	}
+
+	server := parseGoFile(t, "../../../engine-dev/dagger.gen.go")
+	invoke := findFunction(t, server, "invoke")
+	if got := stringLiteralCount(invoke, exportedName); got != 2 {
+		t.Fatalf("engine-dev server adapter must dispatch and register %s exactly once each, got %d", exportedName, got)
+	}
+	if got := selectorCount(invoke, exportedName); got != 1 {
+		t.Fatalf("engine-dev server adapter must invoke %s exactly once, got %d", exportedName, got)
+	}
+
+	for label, client := range map[string]struct {
+		path        string
+		optionsType string
+	}{
+		"engine-dev self-client": {
+			path:        "../../../engine-dev/internal/dagger/engine-dev.gen.go",
+			optionsType: "EngineDevContainerWithFocusedRustSdkcontentOpts",
+		},
+		"rust-sdk-dev dependency client": {
+			path:        "../dagger/dagger-engine.gen.go",
+			optionsType: "DaggerEngineContainerWithFocusedRustSdkcontentOpts",
+		},
+	} {
+		clientFile := parseGoFile(t, client.path)
+		method := findFunction(t, clientFile, clientName)
+		if got, want := strings.Join(functionParameterNames(method), ","), "rustSdkcontent,baseImage,baseRevision,targetRepository,targetRevision,opts"; got != want {
+			t.Fatalf("%s signature parameters: got %q, want %q", label, got, want)
+		}
+		if got := stringLiteralCount(method, selector); got != 1 {
+			t.Fatalf("%s must select %q exactly once, got %d", label, selector, got)
+		}
+		for argument, want := range required {
+			if got := stringLiteralCount(method, argument); got != want {
+				t.Fatalf("%s argument %q count: got %d, want %d", label, argument, got, want)
+			}
+		}
+		options := findStruct(t, clientFile, client.optionsType)
+		if got, want := strings.Join(structFieldNames(options), ","), strings.Join(optional, ","); got != want {
+			t.Fatalf("%s optional parameters: got %q, want %q", label, got, want)
+		}
 	}
 }
 
@@ -270,6 +384,47 @@ func TestForkSDKDependencyRevisionIsExplicitAndContentChecked(t *testing.T) {
 	}
 }
 
+func TestSignoffContentUsesOnlyTheImmutableSubjectCoordinate(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../main.go")
+	signoffContent := findFunction(t, source, "signoffEngineContent")
+	for selector, expected := range map[string]int{
+		"Git":           1,
+		"Commit":        1,
+		"AsWorkspace":   1,
+		"Tree":          1,
+		"WithGitSource": 1,
+		"WithSource":    1,
+		"engineContent": 1,
+	} {
+		if got := selectorCount(signoffContent, selector); got != expected {
+			t.Fatalf("immutable sign-off content %s count: got %d, want %d", selector, got, expected)
+		}
+	}
+	if got := identifierCount(signoffContent, "focusedImmutableEngineSource"); got != 1 {
+		t.Fatalf("immutable sign-off content must apply the focused closure once, got %d", got)
+	}
+	if got := compositeFieldIdentifierCount(signoffContent, "DaggerEngineOpts", "Ws", "immutableWorkspace"); got != 1 {
+		t.Fatalf("nested engine constructor must receive the immutable subject workspace once, got %d", got)
+	}
+	if got := selectorCount(signoffContent, "focusedEngineSource"); got != 0 {
+		t.Fatalf("sign-off content must not read the live workspace, got %d ambient source selectors", got)
+	}
+	if got := identifierCount(signoffContent, "SDKDependencyRevision"); got != 0 {
+		t.Fatalf("sign-off dependency revision must come only from the admitted subject, got %d ambient fields", got)
+	}
+	focused := findFunction(t, source, "focusedImmutableEngineSource")
+	if got := selectorCount(focused, "Filter"); got != 1 {
+		t.Fatalf("immutable subject must be focused exactly once, got %d filters", got)
+	}
+	for _, required := range []string{"sdk/go/**", "sdk/rust/crates/**/src/**", "sdk/rust/runtime/**"} {
+		if got := stringLiteralCount(focused, required); got != 1 {
+			t.Fatalf("immutable source closure must retain %q once, got %d", required, got)
+		}
+	}
+}
+
 func TestFocusedEngineStateFollowsRustContentIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -400,6 +555,50 @@ func findFunction(t *testing.T, file *ast.File, name string) *ast.FuncDecl {
 	return nil
 }
 
+func findStruct(t *testing.T, file *ast.File, name string) *ast.StructType {
+	t.Helper()
+
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+		for _, specification := range general.Specs {
+			typeSpec, ok := specification.(*ast.TypeSpec)
+			if !ok || typeSpec.Name.Name != name {
+				continue
+			}
+			structure, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				t.Fatalf("type %s is not a struct", name)
+			}
+			return structure
+		}
+	}
+	t.Fatalf("struct %s not found", name)
+	return nil
+}
+
+func functionParameterNames(function *ast.FuncDecl) []string {
+	var names []string
+	for _, field := range function.Type.Params.List {
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+	}
+	return names
+}
+
+func structFieldNames(structure *ast.StructType) []string {
+	var names []string
+	for _, field := range structure.Fields.List {
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+	}
+	return names
+}
+
 func selectorCount(node ast.Node, name string) int {
 	count := 0
 	ast.Inspect(node, func(node ast.Node) bool {
@@ -434,6 +633,33 @@ func identifierCount(node ast.Node, name string) int {
 		identifier, ok := node.(*ast.Ident)
 		if ok && identifier.Name == name {
 			count++
+		}
+		return true
+	})
+	return count
+}
+
+func compositeFieldIdentifierCount(node ast.Node, typeName, fieldName, valueName string) int {
+	count := 0
+	ast.Inspect(node, func(node ast.Node) bool {
+		literal, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		selector, ok := literal.Type.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != typeName {
+			return true
+		}
+		for _, element := range literal.Elts {
+			pair, ok := element.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			field, fieldOK := pair.Key.(*ast.Ident)
+			value, valueOK := pair.Value.(*ast.Ident)
+			if fieldOK && valueOK && field.Name == fieldName && value.Name == valueName {
+				count++
+			}
 		}
 		return true
 	})

@@ -375,6 +375,62 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).ContainerWithRustSDKContent(&parent, ctx, rustSdkcontent, platform, gpuSupport, version)
+		case "ContainerWithFocusedRustSDKContent":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var rustSdkcontent *RustEngineContent
+			if inputArgs["rustSDKContent"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["rustSDKContent"]), &rustSdkcontent)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg rustSDKContent", err))
+				}
+			}
+			var baseImage string
+			if inputArgs["baseImage"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["baseImage"]), &baseImage)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg baseImage", err))
+				}
+			}
+			var baseRevision string
+			if inputArgs["baseRevision"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["baseRevision"]), &baseRevision)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg baseRevision", err))
+				}
+			}
+			var targetRepository string
+			if inputArgs["targetRepository"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["targetRepository"]), &targetRepository)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg targetRepository", err))
+				}
+			}
+			var targetRevision string
+			if inputArgs["targetRevision"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["targetRevision"]), &targetRevision)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg targetRevision", err))
+				}
+			}
+			var platform dagger.Platform
+			if inputArgs["platform"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
+				}
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*EngineDev).ContainerWithFocusedRustSDKContent(&parent, ctx, rustSdkcontent, baseImage, baseRevision, targetRepository, targetRevision, platform, version)
 		case "Generate":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -1160,6 +1216,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 236, 2)}).
 							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 238, 2)}).
 							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 240, 2)})).
+					WithFunction(
+						dag.Function("ContainerWithFocusedRustSDKContent",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("ContainerWithFocusedRustSDKContent returns the exact focused Rust target without starting it.\nKeeping export on the same constructor as the service path prevents sign-off from acquiring a\nsecond, subtly different engine/CLI/Go-runtime composition.").
+							WithSourceMap(dag.SourceMap("main.go", 251, 1)).
+							WithArg("rustSDKContent", dag.TypeDef().WithObject("RustEngineContent"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 253, 2)}).
+							WithArg("baseImage", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 254, 2)}).
+							WithArg("baseRevision", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 255, 2)}).
+							WithArg("targetRepository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 256, 2)}).
+							WithArg("targetRevision", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 257, 2)}).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 259, 2)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 261, 2)})).
 					WithFunction(
 						dag.Function("Generate",
 							dag.TypeDef().WithObject("Changeset")).

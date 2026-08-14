@@ -118,7 +118,7 @@ pub enum ClosurePlanAction {
     ConsumeChild(ChildClosure),
     /// Consume one checked generated-asset identity.
     ConsumeGeneratedAsset(GeneratedAssetDomain),
-    /// Consume the complete native-platform matrix identity.
+    /// Consume the supported Linux/macOS native-platform evidence identity.
     ConsumePlatformMatrix,
     /// Consume the ordinary Rust security and hygiene identity.
     ConsumeRustSecurity,
@@ -212,7 +212,7 @@ pub struct ImplementationClosureBundleInput {
     pub compatible_assets: Vec<AssetCompatibility>,
     /// Complete cross-child generated-asset identity map.
     pub generated_assets: BTreeMap<GeneratedAssetDomain, Digest>,
-    /// Complete native-platform matrix identity.
+    /// Supported Linux/macOS native-platform evidence identity.
     pub platform_matrix_digest: Digest,
     /// Ordinary Rust security and hygiene closure identity.
     pub rust_security_digest: Digest,
@@ -236,7 +236,7 @@ pub struct ImplementationClosureBundle {
     pub compatible_assets: BTreeMap<Digest, AssetCompatibility>,
     /// Complete generated-asset identity map.
     pub generated_assets: BTreeMap<GeneratedAssetDomain, Digest>,
-    /// Complete native-platform matrix identity.
+    /// Supported Linux/macOS native-platform evidence identity.
     pub platform_matrix_digest: Digest,
     /// Ordinary Rust security and hygiene closure identity.
     pub rust_security_digest: Digest,
@@ -256,7 +256,7 @@ pub struct ImplementationClosurePlanFixture {
     pub child_formats: BTreeMap<ChildClosure, ChildEvidenceFormat>,
     /// Complete generated-asset domains required before sign-off.
     pub generated_asset_domains: CanonicalSet<GeneratedAssetDomain>,
-    /// Whether a complete native-platform matrix identity is mandatory.
+    /// Whether the supported native-platform evidence identity is mandatory.
     pub requires_platform_matrix: bool,
     /// Whether ordinary Rust security and hygiene identity is mandatory.
     pub requires_rust_security: bool,
@@ -431,6 +431,31 @@ pub fn assemble_implementation_closure_bundle(
         plan: observed_plan,
         bundle_digest,
     })
+}
+
+/// Renders a neutral operator summary without implying exact-engine sign-off.
+pub fn render_implementation_closure_bundle(bundle: &ImplementationClosureBundle) -> String {
+    let mut output = String::from("# Rust SDK implementation closure\n\n");
+    output.push_str("- Engine-free implementation closure: `passed`\n");
+    output.push_str(&format!(
+        "- Child implementation domains: `{}`\n",
+        bundle.child_closures.len()
+    ));
+    output.push_str(&format!(
+        "- Generated asset domains: `{}`\n",
+        bundle.generated_assets.len()
+    ));
+    output.push_str(&format!(
+        "- Supported native platforms: `{}`\n",
+        bundle.platform_matrix_digest
+    ));
+    output.push_str(&format!(
+        "- Ordinary Rust security: `{}`\n",
+        bundle.rust_security_digest
+    ));
+    output.push_str(&format!("- Closure bundle: `{}`\n", bundle.bundle_digest));
+    output.push_str("- Exact-engine SDK sign-off: `not executed`\n");
+    output
 }
 
 /// Returns the complete closed child set.

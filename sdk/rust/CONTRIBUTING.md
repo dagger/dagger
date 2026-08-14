@@ -104,8 +104,8 @@ dedicated development host, and run workflow/security source policy locally. Kee
 pull request in draft until those results agree. If a hosted-only boundary cannot be
 reproduced, record that fact and the smallest intentional hosted check rather than
 discovering ordinary build, lint, packaging, or policy failures through repeated
-whole-matrix reruns. Windows remains outside the ordinary development gate until the
-explicit ultimate sign-off matrix described below.
+whole-matrix reruns. Windows remains outside both the ordinary development gate and
+the current SDK sign-off claim.
 
 The checked-in entry points are the CI contract and the preflight interface. Run
 `./scripts/ci-platform-preflight.sh platform-observation-linux.json` on the dedicated
@@ -136,10 +136,9 @@ SDK sign-off workflow documented in
 Standalone-client exact-engine cases follow the same separation and remain the
 deferred five-case inventory in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
 
-The `Rust SDK Development Platforms` workflow exercises Linux and macOS during
-ordinary fork development. It deliberately does not admit a `PortablePlatformMatrix`:
-that durable claim requires exact current Linux, macOS, and Windows observations and
-remains an ultimate SDK sign-off obligation.
+The `Rust SDK Supported Platforms` workflow exercises Linux and macOS during ordinary
+fork development and admits their exact matching observations as the supported
+native-platform set consumed by current SDK sign-off. It makes no Windows claim.
 
 For focused native Windows iteration, maintainers can manually dispatch the
 `Rust SDK Windows Preflight` GitHub workflow for the branch under test. It runs the
@@ -147,8 +146,8 @@ same fixed, engine-free native producer on a clean GitHub-hosted Windows 2025 ru
 fetches the exact public revision without credentials, and publishes only a bounded
 job summary. It does not use a cross-run cache, run another SDK, generate
 repository-wide content, or start Dagger. The preflight can expose Windows-specific
-failures before a feature pull request, but it does not by itself admit the three-OS
-matrix or close the ultimate sign-off obligation.
+failures for future work, but its artifact is non-gating and cannot enter the current
+SDK sign-off verdict.
 
 For non-module work whose owning contract genuinely requires a running Dagger engine,
 the relevant repository checks may be run through Dagger:

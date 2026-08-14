@@ -18,6 +18,7 @@ const (
 	ProgramEngineIntegration ProgramKind = "engine-integration"
 	ProgramModuleAuthoring   ProgramKind = "module-authoring"
 	ProgramStandaloneClient  ProgramKind = "standalone-client"
+	ProgramStandaloneExample ProgramKind = "standalone-example"
 	ProgramDefinitiveGo      ProgramKind = "definitive-go-client"
 	ProgramIntegration       ProgramKind = "integration-assertion"
 )
@@ -35,16 +36,74 @@ func (program Program) Key() string {
 
 type catalogWire struct {
 	Cases []struct {
-		ID      string          `json:"id"`
-		Family  string          `json:"family"`
-		Program json.RawMessage `json:"program"`
+		ID            string          `json:"id"`
+		Family        string          `json:"family"`
+		FixtureDigest string          `json:"fixture_digest"`
+		Program       json.RawMessage `json:"program"`
+		executionPolicyWire
 	} `json:"cases"`
 }
 
 // CaseRoute binds one canonical case identity to its closed production program.
 type CaseRoute struct {
-	CaseID  string
-	Program Program
+	CaseID        string
+	FixtureDigest string
+	Program       Program
+	Policy        ExecutionPolicy
+}
+
+// CaseExecutionGroup is one concrete Rust invocation and every catalog route proved by it.
+// Authority aliases may share an invocation only when the reviewed registry selected the same
+// concrete Rust executor and production policy for all of them.
+type CaseExecutionGroup struct {
+	Representative CaseRoute
+	Members        []CaseRoute
+}
+
+type facadeAdmissionRouteWire struct {
+	CaseID            string          `json:"case_id"`
+	Program           json.RawMessage `json:"program"`
+	FixtureDigest     string          `json:"fixture_digest"`
+	Boundary          ProgramBoundary `json:"boundary"`
+	ExecutionSelector string          `json:"execution_selector"`
+	Executed          bool            `json:"executed"`
+	executionPolicyWire
+}
+
+// GroupCaseExecutions collapses source-identity aliases without collapsing their verdict rows.
+func GroupCaseExecutions(routes []CaseRoute, registry map[string]ProgramSpec) ([]CaseExecutionGroup, error) {
+	groups := make([]CaseExecutionGroup, 0, len(routes))
+	indices := make(map[string]int, len(routes))
+	for _, route := range routes {
+		spec, ok := registry[route.Program.Key()]
+		if !ok || spec.Program != route.Program || spec.Executor == nil {
+			return nil, fmt.Errorf("case route %q has no concrete registered executor", route.CaseID)
+		}
+		key := route.Program.Key()
+		if spec.Executor.Kind == ExecutorScenarioConformance {
+			// A shared selector is one physical execution only when all runtime policy is
+			// identical. In particular, the immutable-remote standalone client must not
+			// borrow the engine-only policy of its source-identity peers.
+			key = string(spec.Executor.Kind) + "/" + spec.Executor.Selector + "\x00" + route.Policy.key()
+		}
+		if index, exists := indices[key]; exists {
+			representativeSpec := registry[groups[index].Representative.Program.Key()]
+			if representativeSpec.Boundary != spec.Boundary || representativeSpec.Workspace != spec.Workspace ||
+				!sameExecution(*representativeSpec.Executor, *spec.Executor) ||
+				!sameExecutionPolicy(groups[index].Representative.Policy, route.Policy) {
+				return nil, fmt.Errorf("shared Rust executor %q crosses a reviewed production policy", spec.Executor.Selector)
+			}
+			groups[index].Members = append(groups[index].Members, route)
+			continue
+		}
+		indices[key] = len(groups)
+		groups = append(groups, CaseExecutionGroup{Representative: route, Members: []CaseRoute{route}})
+	}
+	return groups, nil
+}
+
+func sameExecution(left, right ExecutorDefinition) bool {
+	return left.Kind == right.Kind && left.Selector == right.Selector && left.Expected == right.Expected
 }
 
 // DecodeFixedPrograms accepts only the exact fixed inventory already admitted by Rust policy.
@@ -119,8 +178,86 @@ func DecodeCaseRoutes(data []byte, registry map[string]ProgramSpec) ([]CaseRoute
 		}
 		seenCases[item.ID] = struct{}{}
 		seenPrograms[program.Key()] = struct{}{}
-		routes = append(routes, CaseRoute{CaseID: item.ID, Program: program})
+		policy, err := decodeExecutionPolicy(item.executionPolicyWire)
+		if err != nil {
+			return nil, fmt.Errorf("case route %q has invalid production policy: %w", item.ID, err)
+		}
+		if err := policy.ValidateFor(program); err != nil {
+			return nil, fmt.Errorf("case route %q: %w", item.ID, err)
+		}
+		if !validSHA256(item.FixtureDigest) {
+			return nil, fmt.Errorf("case route %q has a malformed fixture identity", item.ID)
+		}
+		routes = append(routes, CaseRoute{CaseID: item.ID, FixtureDigest: item.FixtureDigest, Program: program, Policy: policy})
 		previous = item.ID
+	}
+	return routes, nil
+}
+
+// DecodeFacadeAdmissionRoutes consumes only the Rust-produced pre-target projection. The Go
+// adapter rechecks that every projected route still selects its closed local executor, but it
+// does not reinterpret the caller's authored catalog or invent execution policy.
+func DecodeFacadeAdmissionRoutes(data []byte, registry map[string]ProgramSpec) ([]CaseRoute, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var projected []facadeAdmissionRouteWire
+	if err := decoder.Decode(&projected); err != nil {
+		return nil, fmt.Errorf("decode Rust facade admission routes: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return nil, err
+	}
+	if len(projected) != len(registry) {
+		return nil, fmt.Errorf("Rust facade route projection cardinality differs from the executor registry")
+	}
+	routes := make([]CaseRoute, 0, len(projected))
+	executed := make(map[string]bool, len(projected))
+	seenPrograms := make(map[string]struct{}, len(projected))
+	previous := ""
+	for _, item := range projected {
+		if item.CaseID == "" || item.CaseID <= previous {
+			return nil, fmt.Errorf("Rust facade route identities are empty or non-canonical")
+		}
+		program, err := decodeCompleteProgram(item.Program)
+		if err != nil {
+			return nil, err
+		}
+		spec, ok := registry[program.Key()]
+		if !ok || spec.Program != program || spec.Executor == nil ||
+			item.Boundary != spec.Boundary || item.ExecutionSelector != spec.Executor.Selector {
+			return nil, fmt.Errorf("Rust facade route %q differs from its closed executor", item.CaseID)
+		}
+		if _, duplicate := seenPrograms[program.Key()]; duplicate {
+			return nil, fmt.Errorf("Rust facade program %q is duplicated", program.Key())
+		}
+		policy, err := decodeExecutionPolicy(item.executionPolicyWire)
+		if err != nil {
+			return nil, fmt.Errorf("Rust facade route %q has invalid production policy: %w", item.CaseID, err)
+		}
+		if err := policy.ValidateFor(program); err != nil {
+			return nil, fmt.Errorf("Rust facade route %q: %w", item.CaseID, err)
+		}
+		if !validSHA256(item.FixtureDigest) {
+			return nil, fmt.Errorf("Rust facade route %q has a malformed fixture identity", item.CaseID)
+		}
+		routes = append(routes, CaseRoute{CaseID: item.CaseID, FixtureDigest: item.FixtureDigest, Program: program, Policy: policy})
+		executed[item.CaseID] = item.Executed
+		seenPrograms[program.Key()] = struct{}{}
+		previous = item.CaseID
+	}
+	groups, err := GroupCaseExecutions(routes, registry)
+	if err != nil {
+		return nil, err
+	}
+	expectedExecutions := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		expectedExecutions[group.Representative.CaseID] = struct{}{}
+	}
+	for caseID, selected := range executed {
+		_, expected := expectedExecutions[caseID]
+		if selected != expected {
+			return nil, fmt.Errorf("Rust facade route %q has a stale physical-execution marker", caseID)
+		}
 	}
 	return routes, nil
 }
@@ -158,6 +295,7 @@ func decodeProgram(data []byte) (Program, error) {
 		Check     *string     `json:"check,omitempty"`
 		Shape     *string     `json:"shape,omitempty"`
 		Case      *string     `json:"case,omitempty"`
+		Example   *string     `json:"example,omitempty"`
 		Behaviour *string     `json:"behaviour,omitempty"`
 	}
 	if err := decoder.Decode(&wire); err != nil {
@@ -171,7 +309,7 @@ func decodeProgram(data []byte) (Program, error) {
 	case ProgramCommonHarness:
 		selected = wire.Check
 	case ProgramStableConnector:
-		if wire.Check != nil || wire.Shape != nil || wire.Case != nil || wire.Behaviour != nil {
+		if wire.Check != nil || wire.Shape != nil || wire.Case != nil || wire.Example != nil || wire.Behaviour != nil {
 			return Program{}, fmt.Errorf("stable connector carries an unexpected selector")
 		}
 		return Program{Kind: wire.Program}, nil
@@ -179,6 +317,8 @@ func decodeProgram(data []byte) (Program, error) {
 		selected = wire.Shape
 	case ProgramEngineIntegration, ProgramModuleAuthoring, ProgramStandaloneClient:
 		selected = wire.Case
+	case ProgramStandaloneExample:
+		selected = wire.Example
 	case ProgramDefinitiveGo:
 		selected = wire.Behaviour
 	default:
@@ -188,7 +328,7 @@ func decodeProgram(data []byte) (Program, error) {
 		return Program{}, fmt.Errorf("fixed sign-off program %q has no selector", wire.Program)
 	}
 	set := 0
-	for _, value := range []*string{wire.Check, wire.Shape, wire.Case, wire.Behaviour} {
+	for _, value := range []*string{wire.Check, wire.Shape, wire.Case, wire.Example, wire.Behaviour} {
 		if value != nil {
 			set++
 		}

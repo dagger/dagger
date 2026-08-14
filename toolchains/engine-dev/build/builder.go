@@ -2,7 +2,10 @@ package build
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -93,22 +96,66 @@ func (build *Builder) WithRustSDKContent(
 	directory *dagger.Directory,
 	manifestDigest string,
 	descriptorDigest string,
+	dependencyDescriptor string,
 ) (*Builder, error) {
 	if directory == nil || !isCanonicalDigest(manifestDigest) || !isCanonicalDigest(descriptorDigest) {
 		return nil, fmt.Errorf("reusable Rust SDK content requires canonical manifest and descriptor identities")
 	}
+	var dependency sdkDependencyCoordinates
+	if err := json.Unmarshal([]byte(dependencyDescriptor), &dependency); err != nil {
+		return nil, fmt.Errorf("decode reusable Rust SDK dependency descriptor: %w", err)
+	}
+	canonicalDependency, err := json.Marshal(dependency)
+	if err != nil || string(canonicalDependency) != dependencyDescriptor {
+		return nil, fmt.Errorf("reusable Rust SDK dependency descriptor is not canonical")
+	}
+	if err := validateReusableRustSDKDependency(dependency); err != nil {
+		return nil, err
+	}
+	dependencyDigest := sha256.Sum256(canonicalDependency)
 	b := *build
 	b.rustSDKContent = &sdkContent{
 		index: ocispecs.Index{Manifests: []ocispecs.Descriptor{{
 			Digest: digest.Digest(manifestDigest),
 		}}},
-		sdkDir:  directory,
-		envName: distconsts.RustSDKManifestDigestEnvName,
+		sdkDir:        directory,
+		envName:       distconsts.RustSDKManifestDigestEnvName,
+		sdkDependency: dependency,
 		extraEnv: map[string]string{
-			distconsts.RustSDKDescriptorDigestEnvName: descriptorDigest,
+			distconsts.RustSDKDescriptorDigestEnvName:     descriptorDigest,
+			distconsts.RustSDKDependencyDescriptorEnvName: dependencyDescriptor,
+			distconsts.RustSDKDependencyDigestEnvName:     fmt.Sprintf("sha256:%x", dependencyDigest),
 		},
 	}
 	return &b, nil
+}
+
+func validateReusableRustSDKDependency(dependency sdkDependencyCoordinates) error {
+	if dependency.PackageName != "dagger-sdk" {
+		return fmt.Errorf("reusable Rust SDK dependency descriptor names an unsupported package")
+	}
+	switch dependency.Source {
+	case "registry":
+		if dependency.Registry != "crates-io" || dependency.ExactVersion == "" ||
+			dependency.URL != "" || dependency.Revision != "" {
+			return fmt.Errorf("reusable Rust SDK registry dependency descriptor is incomplete")
+		}
+	case "git":
+		parsed, err := url.Parse(dependency.URL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+			parsed.RawQuery != "" || parsed.Fragment != "" || dependency.Registry != "" ||
+			dependency.ExactVersion != "" || len(dependency.Revision) != 40 {
+			return fmt.Errorf("reusable Rust SDK Git dependency descriptor is incomplete")
+		}
+		for _, character := range dependency.Revision {
+			if !strings.ContainsRune("0123456789abcdef", character) {
+				return fmt.Errorf("reusable Rust SDK Git dependency revision is not lowercase hexadecimal")
+			}
+		}
+	default:
+		return fmt.Errorf("reusable Rust SDK dependency descriptor uses an unsupported source")
+	}
+	return nil
 }
 
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {

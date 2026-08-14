@@ -31,6 +31,8 @@ use crate::preflight::CliLaunchRequest;
 use crate::provisioning_control::ProvisioningCancellation;
 use crate::runtime_errors::{ShutdownError, ShutdownFailureKind};
 use crate::session::SecretString;
+#[cfg(feature = "signoff-observation")]
+use crate::signoff_observation::{SignoffConnectorEvent, SignoffObservationDispatcher};
 
 const CONTROL_LINE_LIMIT: usize = 64 * 1024;
 const STREAM_BUFFER_SIZE: usize = 16 * 1024;
@@ -481,6 +483,8 @@ where
         .map_err(|error| {
             SessionStartError::Spawn(SessionSpawnError::new(error, release_unavailable))
         })?;
+        #[cfg(feature = "signoff-observation")]
+        options.signoff().emit(SignoffConnectorEvent::ChildStarted);
         let mut pending = PendingResources::new(spawned, options, initial_secrets);
         match pending.establish().await {
             Ok(parameters) => Ok(StartedSession {
@@ -511,6 +515,8 @@ pub(crate) struct PendingResources {
     stderr_task: Option<JoinHandle<StreamOutcome>>,
     executable: Option<LaunchExecutable>,
     router: Arc<DiagnosticRouter>,
+    #[cfg(feature = "signoff-observation")]
+    signoff: SignoffObservationDispatcher,
     armed: bool,
 }
 
@@ -533,6 +539,8 @@ impl PendingResources {
         if let Some(observer) = live_session_observer() {
             observer.child_started.store(true, Ordering::Release);
         }
+        #[cfg(feature = "signoff-observation")]
+        let signoff = options.signoff().clone();
         let router = Arc::new(DiagnosticRouter::sealed(
             Arc::clone(&options.diagnostics),
             initial_secrets,
@@ -546,6 +554,8 @@ impl PendingResources {
             stderr_task: None,
             executable: Some(executable),
             router,
+            #[cfg(feature = "signoff-observation")]
+            signoff,
             armed: true,
         };
         // Construct the complete owner before allowing the stderr task to run. A task
@@ -573,6 +583,9 @@ impl PendingResources {
             .take()
             .ok_or_else(|| ControlError::new(ControlErrorKind::Eof))?;
         let parsed = read_control_line(&mut stdout).await?;
+        #[cfg(feature = "signoff-observation")]
+        self.signoff
+            .emit(SignoffConnectorEvent::SessionControlAccepted);
         let _ = self
             .router
             .activate(parsed.parameters.token.expose_for_redaction());
@@ -607,6 +620,8 @@ impl PendingResources {
             stderr_task: self.stderr_task.take(),
             executable: self.executable.take(),
             router: Arc::clone(&self.router),
+            #[cfg(feature = "signoff-observation")]
+            signoff: self.signoff.clone(),
         }
     }
 
@@ -681,6 +696,8 @@ pub(crate) struct SessionResources {
     stderr_task: Option<JoinHandle<StreamOutcome>>,
     executable: Option<LaunchExecutable>,
     router: Arc<DiagnosticRouter>,
+    #[cfg(feature = "signoff-observation")]
+    signoff: SignoffObservationDispatcher,
 }
 
 /// Deterministic terminal observation of child and background worker state.
@@ -736,6 +753,8 @@ impl SessionResources {
                     if let Some(observer) = live_session_observer() {
                         observer.child_reaped.store(true, Ordering::Release);
                     }
+                    #[cfg(feature = "signoff-observation")]
+                    self.signoff.emit(SignoffConnectorEvent::ChildReaped);
                     if status.success() {
                         None
                     } else {
@@ -745,12 +764,18 @@ impl SessionResources {
                 }
                 Ok(Err(_)) => {
                     failures.push(ShutdownFailureKind::Reap);
-                    force_kill_and_reap(&mut child, &mut failures).await;
+                    if force_kill_and_reap(&mut child, &mut failures).await {
+                        #[cfg(feature = "signoff-observation")]
+                        self.signoff.emit(SignoffConnectorEvent::ChildReaped);
+                    }
                     None
                 }
                 Err(_) => {
                     failures.push(ShutdownFailureKind::Timeout);
-                    force_kill_and_reap(&mut child, &mut failures).await;
+                    if force_kill_and_reap(&mut child, &mut failures).await {
+                        #[cfg(feature = "signoff-observation")]
+                        self.signoff.emit(SignoffConnectorEvent::ChildReaped);
+                    }
                     None
                 }
             }
@@ -809,12 +834,16 @@ impl SessionResources {
     }
 }
 
-async fn force_kill_and_reap(child: &mut Child, failures: &mut Vec<ShutdownFailureKind>) {
+async fn force_kill_and_reap(child: &mut Child, failures: &mut Vec<ShutdownFailureKind>) -> bool {
     if child.start_kill().is_err() {
         failures.push(ShutdownFailureKind::Kill);
     }
-    if child.wait().await.is_err() {
-        failures.push(ShutdownFailureKind::Reap);
+    match child.wait().await {
+        Ok(_) => true,
+        Err(_) => {
+            failures.push(ShutdownFailureKind::Reap);
+            false
+        }
     }
 }
 

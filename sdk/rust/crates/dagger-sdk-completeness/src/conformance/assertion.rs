@@ -35,6 +35,8 @@ pub enum AssertionFamily {
     ModuleAuthoring,
     /// Standalone generated-client lifecycle and queries.
     StandaloneClient,
+    /// Committed standalone example builds with publication forbidden.
+    StandaloneExample,
     /// Selected Go-client observations expressed through public Rust APIs.
     DefinitiveGoClient,
     /// Remaining authority-selected integration assertions.

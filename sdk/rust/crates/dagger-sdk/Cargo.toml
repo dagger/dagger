@@ -60,6 +60,7 @@ trybuild.workspace = true
 [features]
 default = ["gen"]
 gen = []
+signoff-observation = []
 
 [[example]]
 name = "build-the-application"

@@ -126,6 +126,10 @@ conformance_id!(
     "Stable checked identity of one executable Rust scenario realization."
 );
 conformance_id!(
+    ScenarioProofId,
+    "Closed observable probe which a Rust scenario realization must produce."
+);
+conformance_id!(
     ProvenanceId,
     "Immutable reviewed provenance identity for an external input."
 );

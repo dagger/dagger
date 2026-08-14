@@ -22,15 +22,15 @@ func checkedScenarioInputs(t *testing.T) ([]byte, []byte, []byte) {
 	return registry, candidates, runner
 }
 
-func TestCheckedScenarioRegistryIsSourceBoundAndStillPartial(t *testing.T) {
+func TestCheckedScenarioRegistryIsSourceBoundAndTotal(t *testing.T) {
 	t.Parallel()
 	registry, candidates, runner := checkedScenarioInputs(t)
 	decoded, err := DecodeScenarioRealizations(registry, candidates, runner)
 	if err != nil {
 		t.Fatalf("decode checked realization registry: %v", err)
 	}
-	if len(decoded.Registrations) != 0 {
-		t.Fatalf("checked registry has %d reviewed realizations, want 0 before realization review", len(decoded.Registrations))
+	if len(decoded.Registrations) != 612 {
+		t.Fatalf("checked registry has %d reviewed authority bindings, want 612", len(decoded.Registrations))
 	}
 
 	if _, err := DecodeScenarioRealizations(registry, append(candidates, '\n'), runner); err == nil {
@@ -65,7 +65,9 @@ func TestScenarioRealizationsAttachOneClosedRustExecutor(t *testing.T) {
 	}
 	spec := registry[programKey]
 	realization := ScenarioRealization{
-		ScenarioID: scenarioID, Kind: RealizationReviewedFixture,
+		ScenarioID: scenarioID, ContractDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ProofID:       "probe/result/exact-value",
+		Kind:          RealizationReviewedFixture,
 		RealizationID: "realization/reviewed/0001", FixtureID: spec.Program.Value,
 	}
 	joined, err := ApplyScenarioRealizations(registry, observable, ScenarioRealizationCatalog{
@@ -77,7 +79,9 @@ func TestScenarioRealizationsAttachOneClosedRustExecutor(t *testing.T) {
 	}
 	executor := joined[programKey].Executor
 	if executor == nil || executor.Kind != ExecutorScenarioConformance ||
-		executor.Selector != realization.RealizationID || executor.Expected.Operation != scenarioID {
+		executor.Selector != realization.RealizationID || executor.ContractDigest != realization.ContractDigest ||
+		executor.ProofID != realization.ProofID ||
+		executor.Expected.Operation != realization.RealizationID {
 		t.Fatalf("joined executor differs from reviewed realization: %#v", executor)
 	}
 

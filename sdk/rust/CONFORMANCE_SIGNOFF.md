@@ -11,7 +11,7 @@ release, publication decision, or claim for another exact-engine platform.
 | --- | --- | --- |
 | Applicability review | No | Every selected Go and integration capability has one reviewed Rust disposition and evidence route. |
 | Implementation closure | No | The Rust implementation, fixtures, generated assets, hygiene, documentation, and ordinary security gates are current. |
-| Native platform evidence | No | Native Rust behaviour on Linux, macOS, and Windows plus the pure release-descriptor matrix. |
+| Native platform evidence | No | Current supported native Rust behaviour on Linux and macOS. Windows is not claimed. |
 | Host preflight | One isolated smoke engine | The replaceable sign-off host can persist, export/import, cache, start, reach, stop, and reap the required infrastructure. It proves no SDK capability. |
 | Exact-target sign-off | One orchestration invocation and one exact-target engine | The complete closed Rust case catalog passes against one imported artifact and one installed Rust baseline. |
 | Release handoff | No additional work | The exact retained bundle and payload bytes, security report, subject, platform, and passing verdict are available to Feature 9. |
@@ -55,18 +55,25 @@ and explicit approval; a convenient engine fallback is not closure evidence.
 
 ## 3. Collect native evidence
 
-Linux and macOS use the routine `Rust SDK Development Platforms` workflow or the same
+Linux and macOS use the routine `Rust SDK Supported Platforms` workflow or the same
 native producer locally:
 
 ```console
 ./scripts/ci-platform-preflight.sh <observation-output.json>
 ```
 
-Windows is refreshed only for ultimate SDK sign-off through the separately dispatched
-`Rust SDK Windows Preflight` workflow. Each job uploads one bounded canonical
-observation. The Rust aggregator requires exactly one current observation per OS with
-the same source, toolchain, target, and test identities; missing, stale, duplicate,
-skipped, or failed evidence rejects the portable matrix.
+The Rust aggregator requires exactly one current Linux observation and one current
+macOS observation with the same source, toolchain, target, and test identities;
+missing, stale, duplicate, skipped, failed, or injected Windows evidence rejects the
+supported set. The separately dispatched `Rust SDK Windows Preflight` workflow is an
+optional future-support probe only. It does not gate this sign-off and cannot widen the
+verdict to claim Windows support.
+
+When a macOS candidate is snapshotted or transferred for another native observation,
+create the archive input with `COPYFILE_DISABLE=1`. AppleDouble `._*` files are
+forbidden snapshot inputs: remove them before hashing, then reject the candidate if any
+remain. Never hash a tree containing those sidecars and discard them afterward, because
+that would make the transferred observation describe different source bytes.
 
 ## 4. Admit the replaceable host
 
@@ -100,16 +107,26 @@ rust-sdk-signoff-<payload-digest>.tar
 └── checksums.sha256
 ```
 
-Record construction/component counts, manifest and payload digests, outer bundle
-digest, toolchain/provenance identities, and phase timing. A digest without the actual
-outer and inner bytes is not a reusable artifact.
+Retain one canonical Build receipt containing independently observed construction,
+component, import, and forbidden-work events/counters; exact manifest, payload, and
+outer-bundle identities; toolchain/provenance identities; and measured phase timing.
+Re-admit that receipt against the exact retained bundle before ending the producing
+session. A digest without the actual outer and inner bytes is not a reusable artifact.
+The current memory-backed bundle format rejects input above 8 GiB; do not raise that
+cap without first replacing assembly and decode with a streamed or file-backed verified
+representation.
 
 ## 6. Restart, import, scan, and sign off
 
 Use a fresh orchestration invocation. Supply the retained outer bundle to the Import
-plan; permit zero component builds and exactly one verified container import. Scan the
-same retained payload and record the immutable scanner image, vulnerability database,
-publisher/provenance, findings, exceptions, policy result, and scan timing.
+plan; permit zero component builds and exactly one verified container import. Retain
+one canonical Import receipt containing independently observed import and
+forbidden-work events/counters, verified target component identities, and measured
+duration; re-admit that same receipt in the security and verdict phases. Scan the same
+retained payload and record the immutable scanner image, vulnerability database,
+publisher/provenance, findings, exceptions, policy result, and scan timing. Secret
+inspection consumes actual bounded files and validated OCI metadata/config/layer
+entries; object IDs, digests, fixed strings, and presence checks are not byte evidence.
 
 Only after Rust admission succeeds may the graph start one Exact_Target_Engine and
 materialize one installed Rust baseline. Fan out the complete closed catalog with the
@@ -117,6 +134,19 @@ reviewed concurrency, timeout, network, workspace, cache, environment, and retry
 policies. Assertion failure is terminal; only named infrastructure failures may retry,
 and every attempt remains in evidence. Stop and reap the engine once on success or
 failure.
+
+The final closed catalog contains 1,050 assertions, 1,050 fixtures, 675 verdict rows,
+and 74 physical executions: the base 672/71 plus the committed `cli`, `backend`, and
+`frontend` standalone Rust examples. Each runs from the exact subject source and
+committed lockfile in its own branch of the common baseline. The CLI case proves its
+executable inside that branch; the backend and frontend force OCI media types and Gzip
+layer compression, then export and inspect bounded local content through their
+build-only paths. Their explicit read-only-public-dependency policy binds declared
+source and lock identities, pinned tool versions, every runtime-resolved image
+identity, and the fixed output digest and size. Sign-off supplies no registry
+credentials or publication destination, and any registry push, external upload, or
+host export outside the isolated branch fails the run. Example execution never
+authorizes publication.
 
 Admission also requires one current Rust-first manifest entry for every selected pinned
 Go integration scenario. The Go source supplies immutable provenance and may scaffold

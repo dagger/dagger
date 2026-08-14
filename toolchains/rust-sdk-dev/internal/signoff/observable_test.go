@@ -19,8 +19,8 @@ func TestObservableRegistryMatchesEveryApplicableIntegrationFixture(t *testing.T
 	if err != nil {
 		t.Fatalf("join complete program registry: %v", err)
 	}
-	if len(observable.Programs) != 612 || len(registry) != 672 {
-		t.Fatalf("program counts: observable=%d complete=%d, want 612 and 672", len(observable.Programs), len(registry))
+	if len(observable.Programs) != 612 || len(registry) != 675 {
+		t.Fatalf("program counts: observable=%d complete=%d, want 612 and 675", len(observable.Programs), len(registry))
 	}
 	if err := RequireConcretePrograms(registry); err == nil {
 		t.Fatalf("route-only registry must not be admitted as executable conformance")
@@ -31,12 +31,16 @@ func TestObservableRegistryMatchesEveryApplicableIntegrationFixture(t *testing.T
 			concrete++
 		}
 	}
-	if concrete != 28 {
-		t.Fatalf("concrete program count: got %d, want 28", concrete)
+	if concrete != 63 {
+		t.Fatalf("concrete program count: got %d, want 63", concrete)
 	}
 	counts := map[ProgramBoundary]int{}
 	for _, spec := range observable.Programs {
-		if spec.Program.Kind != ProgramIntegration || spec.Workspace != WorkspaceBaselineBranch {
+		wantWorkspace := WorkspaceBaselineBranch
+		if spec.Boundary == BoundaryPackagedRuntime {
+			wantWorkspace = WorkspaceExternalPackage
+		}
+		if spec.Program.Kind != ProgramIntegration || spec.Workspace != wantWorkspace {
 			t.Fatalf("observable program %q escaped its Rust-owned isolated boundary", spec.Program.Key())
 		}
 		counts[spec.Boundary]++
@@ -45,7 +49,7 @@ func TestObservableRegistryMatchesEveryApplicableIntegrationFixture(t *testing.T
 		t.Fatalf("unexpected observable boundary partition: %#v", counts)
 	}
 	ordered := OrderedPrograms(registry)
-	if len(ordered) != 672 {
+	if len(ordered) != 675 {
 		t.Fatalf("ordered complete registry has %d programs", len(ordered))
 	}
 	for index := 1; index < len(ordered); index++ {

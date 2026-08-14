@@ -17,6 +17,7 @@ workspace = true
 dagger-codegen.workspace = true
 dagger-sdk-engine.workspace = true
 clap.workspace = true
+flate2.workspace = true
 rand.workspace = true
 semver.workspace = true
 serde.workspace = true
@@ -24,9 +25,11 @@ serde_json.workspace = true
 sha2.workspace = true
 tar.workspace = true
 thiserror.workspace = true
+url.workspace = true
 
 [dev-dependencies]
-dagger-sdk = { workspace = true, default-features = false, features = ["gen"] }
+dagger-sdk = { workspace = true, default-features = false, features = ["gen", "signoff-observation"] }
 pretty_assertions.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
+tokio.workspace = true

@@ -83,10 +83,10 @@ fn canonical_applicability_and_closed_catalogs_are_admitted() {
     let fixture_registry = compile_fixture_registry(fixtures.clone()).unwrap();
     let case_catalog =
         compile_case_catalog(&scope, &assertion_catalog, &fixture_registry, cases.clone()).unwrap();
-    assert_eq!(assertions.assertions.len(), 1_047);
-    assert_eq!(fixtures.fixtures.len(), 1_047);
-    assert_eq!(cases.cases.len(), 672);
-    assert_eq!(case_catalog.cases().len(), 672);
+    assert_eq!(assertions.assertions.len(), 1_050);
+    assert_eq!(fixtures.fixtures.len(), 1_050);
+    assert_eq!(cases.cases.len(), 675);
+    assert_eq!(case_catalog.cases().len(), 675);
     assert_eq!(assertions.target_digest, reviewed.target_digest);
     assert_eq!(cases.target_digest, reviewed.target_digest);
 
@@ -102,13 +102,45 @@ fn canonical_applicability_and_closed_catalogs_are_admitted() {
 }
 
 #[test]
-fn checked_scenario_candidates_are_a_total_non_executable_realization_queue() {
+fn checked_scenario_candidates_are_totally_bound_to_the_reviewed_rust_runner() {
     let candidates: RustFirstConformanceManifestInput =
         decode_canonical(&artifact("conformance-scenario-candidates.json")).unwrap();
     let registry: RustScenarioRegistryInput =
         decode_canonical(&artifact("conformance-scenario-realizations.json")).unwrap();
     assert_eq!(candidates.scenarios.len(), 612);
-    assert!(registry.registrations.is_empty());
+    assert_eq!(registry.registrations.len(), 612);
+    assert_eq!(
+        candidates
+            .scenarios
+            .iter()
+            .flat_map(|scenario| scenario.spine.authority_context_digests.iter())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        161
+    );
+    assert_eq!(
+        registry
+            .registrations
+            .iter()
+            .map(|registration| &registration.proof_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        13
+    );
+    assert_eq!(
+        registry
+            .registrations
+            .iter()
+            .filter_map(|registration| match &registration.realization {
+                RustScenarioRealization::ReviewedRustFixture { realization_id, .. } => {
+                    Some(realization_id)
+                }
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        30
+    );
     assert_eq!(
         registry.scenario_candidate_digest,
         rust_scenario_candidate_digest(&candidates).unwrap()

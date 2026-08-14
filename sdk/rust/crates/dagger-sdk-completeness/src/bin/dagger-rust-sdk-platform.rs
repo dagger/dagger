@@ -1,4 +1,4 @@
-//! Engine-free native-platform observation and three-OS matrix assembly.
+//! Engine-free native-platform observation and supported-platform evidence assembly.
 //!
 //! The producer owns one fixed Cargo invocation. Callers choose only output locations; they cannot
 //! inject commands, packages, filters, engines, containers, or foreign SDK work.
@@ -13,7 +13,7 @@ use dagger_sdk_completeness::{
     Architecture, CanonicalSet, ConformanceFormatVersion, Digest, NativeJobOutcome,
     NativeLinkMechanism, NativePlatformObservation, OperatingSystem, PlatformDescriptor,
     PortablePlatformMatrixInput, ReviewedConformanceScope, SemverVersion,
-    assemble_development_native_platform_set, assemble_portable_platform_matrix, canonical_bytes,
+    assemble_portable_platform_matrix, assemble_supported_native_platform_set, canonical_bytes,
     decode_canonical, release_descriptor_matrix, required_native_platform_domains,
 };
 
@@ -46,8 +46,8 @@ fn run() -> Result<(), &'static str> {
                 .arg(path_argument("output")),
         )
         .subcommand(
-            ClapCommand::new("aggregate-development")
-                .about("Admit matching Linux and macOS observations without claiming portability")
+            ClapCommand::new("aggregate-supported")
+                .about("Admit the current supported Linux and macOS observations")
                 .arg(path_argument("scope"))
                 .arg(
                     Arg::new("input")
@@ -74,7 +74,7 @@ fn run() -> Result<(), &'static str> {
         .get_matches();
     match matches.subcommand().expect("subcommand is required") {
         ("native", values) => native(values.get_one::<PathBuf>("output").unwrap()),
-        ("aggregate-development", values) => aggregate_development(
+        ("aggregate-supported", values) => aggregate_supported(
             values.get_one::<PathBuf>("scope").unwrap(),
             values
                 .get_many::<PathBuf>("input")
@@ -96,23 +96,23 @@ fn run() -> Result<(), &'static str> {
     }
 }
 
-fn aggregate_development(
+fn aggregate_supported(
     scope: &Path,
     inputs: Vec<PathBuf>,
     output: &Path,
 ) -> Result<(), &'static str> {
     if inputs.len() != 2 {
-        return Err("development platform aggregation requires exactly two observations");
+        return Err("supported platform aggregation requires exactly two observations");
     }
     let scope: ReviewedConformanceScope =
         decode_canonical(&fs::read(scope).map_err(|_| "could not read checked conformance scope")?)
             .map_err(|_| "checked conformance scope is not canonical")?;
     let observations = read_observations(inputs)?;
-    let set = assemble_development_native_platform_set(scope.target_digest, observations)
-        .map_err(|_| "development native observation admission failed")?;
+    let set = assemble_supported_native_platform_set(scope.target_digest, observations)
+        .map_err(|_| "supported native observation admission failed")?;
     write_new(
         output,
-        &canonical_bytes(&set).map_err(|_| "could not encode development observation set")?,
+        &canonical_bytes(&set).map_err(|_| "could not encode supported observation set")?,
     )
 }
 

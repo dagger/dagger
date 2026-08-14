@@ -363,6 +363,7 @@ dependencies = [
  "dagger-codegen",
  "dagger-sdk",
  "dagger-sdk-engine",
+ "flate2",
  "pretty_assertions",
  "proptest",
  "rand 0.8.7",
@@ -373,6 +374,8 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "url",
 ]
 
 [[package]]

@@ -44,6 +44,7 @@ type Item struct {
 	Receiver    string `json:"receiver,omitempty"`
 	Parent      string `json:"parent,omitempty"`
 	Signature   string `json:"signature"`
+	Context     string `json:"context,omitempty"`
 	State       string `json:"state"`
 	Locator     string `json:"locator"`
 	Fingerprint string `json:"fingerprint"`
@@ -149,13 +150,19 @@ func extractFile(fset *token.FileSet, path string, file *ast.File, versionName s
 				if err != nil {
 					return nil, "", err
 				}
+				context, err := nodeString(fset, declaration)
+				if err != nil {
+					return nil, "", err
+				}
 				receiver := receiverName(declaration.Recv)
-				items = append(items, newItem(fset, path, file.Name.Name, "test", declaration.Name.Name, receiver, "", signature, declaration.Doc, declaration.Pos(), containsSkip(declaration.Body)))
+				test := newItem(fset, path, file.Name.Name, "test", declaration.Name.Name, receiver, "", signature, declaration.Doc, declaration.Pos(), containsSkip(declaration.Body))
+				test.Context = context
+				items = append(items, test)
 				parent := declaration.Name.Name
 				if receiver != "" {
 					parent = receiver + "." + parent
 				}
-				subtests, err := extractSubtests(fset, path, file.Name.Name, parent, declaration)
+				subtests, err := extractSubtests(fset, path, file.Name.Name, parent, context, declaration)
 				if err != nil {
 					return nil, "", err
 				}
@@ -172,14 +179,22 @@ func extractFile(fset *token.FileSet, path string, file *ast.File, versionName s
 				if receiver != "" {
 					kind = "method"
 				}
-				items = append(items, newItem(fset, path, file.Name.Name, kind, declaration.Name.Name, receiver, "", signature, declaration.Doc, declaration.Pos(), false))
+				item := newItem(fset, path, file.Name.Name, kind, declaration.Name.Name, receiver, "", signature, declaration.Doc, declaration.Pos(), false)
+				if strings.HasSuffix(path, "_test.go") {
+					context, err := nodeString(fset, declaration)
+					if err != nil {
+						return nil, "", err
+					}
+					item.Context = context
+				}
+				items = append(items, item)
 			}
 		}
 	}
 	return items, version, nil
 }
 
-func extractSubtests(fset *token.FileSet, path, packageName, parent string, function *ast.FuncDecl) ([]Item, error) {
+func extractSubtests(fset *token.FileSet, path, packageName, parent, context string, function *ast.FuncDecl) ([]Item, error) {
 	var items []Item
 	var extractionErr error
 	dynamicOccurrences := map[string]int{}
@@ -233,9 +248,13 @@ func extractSubtests(fset *token.FileSet, path, packageName, parent string, func
 		if functionLiteral, ok := call.Args[1].(*ast.FuncLit); ok {
 			skipped = containsSkip(functionLiteral.Body)
 		}
-		items = append(items, newItem(fset, path, packageName, kind, name, "", parent, signature, nil, call.Pos(), skipped))
+		item := newItem(fset, path, packageName, kind, name, "", parent, signature, nil, call.Pos(), skipped)
+		item.Context = context
+		items = append(items, item)
 		if dynamic {
-			items = append(items, newItem(fset, path, packageName, "test-table", tableName, "", parent, tableSignature, nil, call.Args[0].Pos(), false))
+			table := newItem(fset, path, packageName, "test-table", tableName, "", parent, tableSignature, nil, call.Args[0].Pos(), false)
+			table.Context = context
+			items = append(items, table)
 		}
 		return true
 	})

@@ -289,6 +289,7 @@ func (dev *EngineDev) container(
 			rustSDKContent.Content,
 			rustSDKContent.ManifestDigest,
 			rustSDKContent.DescriptorDigest,
+			rustSDKContent.DependencyDescriptor,
 		)
 		if err != nil {
 			return nil, err
@@ -476,6 +477,7 @@ func (dev *EngineDev) focusedRustContainer(
 		rustSDKContent.Content,
 		rustSDKContent.ManifestDigest,
 		rustSDKContent.DescriptorDigest,
+		rustSDKContent.DependencyDescriptor,
 	)
 	if err != nil {
 		return nil, err

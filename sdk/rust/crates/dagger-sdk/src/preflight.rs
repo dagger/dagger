@@ -18,6 +18,8 @@ use crate::diagnostic::{DiagnosticDispatcher, DiagnosticSink};
 use crate::discovery::NativeDiscoveryInputs;
 use crate::errors::{ConfigError, ConfigOption, ConnectError};
 use crate::session::ExistingSessionInput;
+#[cfg(feature = "signoff-observation")]
+use crate::signoff_observation::{SignoffConnectorEvent, SignoffObservationDispatcher};
 use crate::target::{ArchiveDescriptor, exact_target};
 
 const SESSION_PORT_KEY: &str = "DAGGER_SESSION_PORT";
@@ -255,6 +257,8 @@ struct ValidatedConfig {
     workdir: Option<std::path::PathBuf>,
     workspace: Option<String>,
     diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
+    #[cfg(feature = "signoff-observation")]
+    signoff: SignoffObservationDispatcher,
     load_workspace_modules: bool,
     version: Option<String>,
     verbosity: u8,
@@ -273,6 +277,8 @@ impl ValidatedConfig {
             workdir: parts.workdir,
             workspace: parts.workspace,
             diagnostic_sink: parts.diagnostic_sink,
+            #[cfg(feature = "signoff-observation")]
+            signoff: SignoffObservationDispatcher::new(parts.signoff_recorder),
             load_workspace_modules: parts.load_workspace_modules,
             version: parts.version,
             verbosity: parts.verbosity,
@@ -316,6 +322,11 @@ impl ValidatedConfig {
                 discovery,
             },
         };
+        #[cfg(feature = "signoff-observation")]
+        if matches!(source, CliSourcePlan::CompiledRelease { .. }) {
+            self.signoff
+                .emit(SignoffConnectorEvent::CompiledReleaseSelected);
+        }
         Ok(ConnectionPlan::NewCli {
             source: Box::new(source),
             request: self.into_cli_launch_request(CliAmbientInputs {
@@ -410,6 +421,8 @@ impl ValidatedConfig {
             environment,
             ambient,
             diagnostics: Arc::new(DiagnosticDispatcher::new(self.diagnostic_sink)),
+            #[cfg(feature = "signoff-observation")]
+            signoff: self.signoff,
             allow_unverified_compatibility: self.allow_unverified_compatibility,
             session_startup_timeout: self.session_startup_timeout,
             http_connect_timeout: self.http_connect_timeout,
@@ -461,6 +474,8 @@ pub(crate) struct CliLaunchRequest {
     environment: Vec<(OsString, OsString)>,
     ambient: CliAmbientInputs,
     pub(crate) diagnostics: Arc<DiagnosticDispatcher>,
+    #[cfg(feature = "signoff-observation")]
+    pub(crate) signoff: SignoffObservationDispatcher,
     pub(crate) allow_unverified_compatibility: bool,
     pub(crate) session_startup_timeout: Duration,
     pub(crate) http_connect_timeout: Duration,
@@ -478,6 +493,11 @@ impl CliLaunchRequest {
 
     pub(crate) fn ambient(&self) -> &CliAmbientInputs {
         &self.ambient
+    }
+
+    #[cfg(feature = "signoff-observation")]
+    pub(crate) fn signoff(&self) -> &SignoffObservationDispatcher {
+        &self.signoff
     }
 
     pub(crate) fn encoded_projection(&self) -> Vec<u8> {

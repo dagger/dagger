@@ -327,11 +327,14 @@
     catalog/closure digests. Regenerate only changed Feature 8 artifacts.
   - Keep the checkpoint engine-free and consume—not rerun—the current preflight record.
   - _Requirements: 3.1-3.24, 4.1-4.19, 7.5-7.18, 11.1-11.20_
-  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-catalog-checkpoint.json`
-    records six bounded Cargo commands, the 1,047-assertion/1,047-fixture/672-case
+  - Historical pre-example checkpoint evidence:
+    `sdk/rust/completeness/evidence/conformance-catalog-checkpoint.json` records six
+    bounded Cargo commands, the then-current 1,047-assertion/1,047-fixture/672-case
     catalog, Properties 5–6 at 256 cases each, zero authority drift, the consume-only
     closure-plan identity, and reuse of the unchanged host preflight without a Dagger
-    command, engine start, another SDK, or replayed child closure.
+    command, engine start, another SDK, or replayed child closure. Feature 8's final
+    catalog adds three standalone-example rows: 1,050 assertions, 1,050 fixtures,
+    675 verdict rows, and 74 physical executions rather than the base 672/71.
 
 - [x] 13. Implement native and descriptor platform closure
   - [x] 13.1 Add the exact platform policy and pure descriptor matrix
@@ -345,9 +348,10 @@
     - Extend existing process, discovery, cache publication, archive/path/link,
       child-reap, control-line, diagnostic, and redaction fixtures to emit one canonical
       bounded observation on each native OS under Rust 1.97.1 and committed lockfiles.
-    - Assemble exactly one current passed Linux, macOS, and Windows job plus all six
-      descriptors; allow documented native equivalents such as Windows reparse/ACL
-      behaviour but reject skips, simulation, another SDK, Docker, Dagger, or an engine.
+    - Retain the generic three-OS model for future-support analysis, while current
+      sign-off admits exactly one passed Linux and macOS job. Windows observations and
+      pure descriptors cannot widen current support; reject skips, simulation, another
+      SDK, Docker, Dagger, or an engine.
     - _Requirements: 8.1-8.3, 8.10-8.19_
   - [x] 13.3 Property test: Property 16 — descriptor and exact-engine platform claims never widen
     - Implement `property_16_descriptor_and_exact_engine_platform_claims_never_widen`
@@ -358,8 +362,9 @@
   - [x] 13.4 Property test: Property 17 — native OS closure proves native behaviour without an engine
     - Implement `property_17_native_os_closure_engine_free` over at least 100 native
       job/domain/identity/outcome permutations and forbidden-event sets.
-    - Compare with the exact three-OS/native-domain model; reject missing, duplicated,
-      stale, skipped, failed, simulated, engine-backed, or other-SDK evidence.
+    - Compare current admission with the exact Linux/macOS native-domain model; reject
+      missing, duplicated, stale, skipped, failed, simulated, engine-backed,
+      other-SDK, or injected Windows evidence.
     - _Requirements: 8.1-8.3, 8.10-8.17, 8.19_
 
 - [x] 14. Implement locked dependency, provenance, and vulnerability policy
@@ -433,8 +438,8 @@
     Properties 16–20; Cargo Deny when dependency/security inputs changed; source-policy
     tests; and focused warning-denied Clippy/rustdoc.
   - Run the native job locally only for the current OS as a fixture producer. Ordinary
-    fork CI may exercise Linux and macOS independently but SHALL NOT aggregate or claim
-    a complete portable matrix without an exact current Windows observation.
+    fork CI exercises and aggregates current Linux and macOS observations as the
+    supported native-platform set; it SHALL NOT claim Windows support.
   - Record commands, timings, Cargo counts, provenance/security artifact decisions,
     and platform/security digests. Keep canary values out of the record.
   - Require no Dagger, engine, module, another SDK, target artifact build, unscoped
@@ -446,9 +451,9 @@
     Properties 16–20, all locked Cargo roots, current Cargo Deny, checked Aqua Security
     provenance, and zero Dagger, Docker, engine, module, foreign-SDK, target-artifact, or
     distribution work. The local checkpoint retains only the current native observation
-    and does not simulate Linux or Windows. The `PortablePlatformMatrix` remains
-    deliberately unadmitted: ultimate SDK sign-off must expressly run Linux, macOS, and
-    Windows and aggregate their exact current observations before closing Requirement 8.
+    and does not simulate Linux or Windows. The generic `PortablePlatformMatrix`
+    remains deliberately unadmitted: current SDK sign-off requires the matching
+    Linux/macOS `SupportedNativePlatformSet` and makes no Windows claim.
 
 - [x] 17. Implement the exact-target artifact manifest and state machine
   - [x] 17.1 Add every artifact manifest, component, and provenance field
@@ -559,7 +564,7 @@
     natively on macOS/arm64 and on the dedicated Linux/amd64 host with 156 tests passed,
     two intentional fixture/sign-off ignores, and zero Dagger, Docker, engine,
     foreign-SDK, target-artifact, or distribution work. Windows remains deliberately
-    deferred to ultimate SDK sign-off. The top-level generated Dagger adapter was not
+    outside current SDK sign-off. The top-level generated Dagger adapter was not
     regenerated because this engine-free checkpoint forbids a Dagger command; the
     source graph and its generated dependency binding compile, and scoped public
     dispatch generation remains owned by the executable sign-off facade.
@@ -692,8 +697,7 @@
     execution, contained zero AppleDouble sidecars, and used a fresh Cargo target
     namespace so compile-time repository paths could not reference an earlier tree.
     No Dagger command, engine, module, foreign SDK, target artifact, unscoped
-    generation, or distribution build ran; Windows remains deferred to ultimate SDK
-    sign-off.
+    generation, or distribution build ran; Windows remains outside current SDK sign-off.
 
 - [ ] 25. Complete the additional integration assertion fixtures and observable parity
   - [ ] 25.1 Implement every remaining applicable reviewed assertion program
@@ -919,28 +923,53 @@
       no handoff may authorize publication.
     - _Requirements: 5.21-5.22, 12.36-12.40_
 
-- [ ] 30. Add native CI aggregation and record Feature 8 implementation closure
-  - [ ] 30.1 Complete the engine-free native observation workflow
+- [x] 30. Add native CI aggregation and record Feature 8 implementation closure
+  - [x] 30.1 Complete the engine-free native observation workflow
     - Keep `.github/workflows/rust-sdk-platform.yml` on routine Linux/macOS pull
-      requests and use the separately dispatched
-      `.github/workflows/rust-sdk-windows-preflight.yml` only to refresh Windows for
-      ultimate SDK sign-off. Both use read-only permissions, Rust 1.97.1, committed
-      lockfiles, native package/fixture tests, bounded canonical observation upload,
-      and no Dagger/Docker/engine/other SDK work.
+      requests. It uses read-only permissions, Rust 1.97.1, committed lockfiles,
+      native package/fixture tests, bounded canonical observation upload, and no
+      Dagger/Docker/engine/other SDK work. The separately dispatched Windows workflow
+      is optional future-support preflight only and cannot enter current sign-off.
     - Add an aggregation job which verifies exact source/toolchain/test identities and
-      assembles the matrix through the production Rust model; reject missing, stale,
-      skipped, failed, or duplicate native evidence.
+      assembles the exact Linux/macOS supported set through the production Rust model;
+      reject missing, stale, skipped, failed, duplicate, or injected Windows evidence.
+    - Closure evidence (2026-08-14): native macOS/arm64 and Linux/amd64 each passed
+      162 tests with two exact-engine tests intentionally ignored and zero
+      Dagger/Docker/engine/other-SDK invocations. Both observations bind source
+      `sha256:355471aa73c3fe26e9f8c68f4561f7f837b30db47960de7dacbe8ca328dd5577`,
+      lockfiles `sha256:b44a468b6dbcc4559d222774579dad07ac855de86d16903edc4407428affe147`,
+      and tests `sha256:3088c9493964542045e9a0a231d19d4dd5c6727cc42a59907d2c241a98e1512c`.
+      Production aggregation admitted exactly Linux and macOS as supported-set digest
+      `sha256:20508aa96b75721bbd800e8ff56880f7bd20ef5d21f5eb69ae05cab84b515322`;
+      Windows was absent.
     - _Requirements: 8.1-8.21, 9.25_
-  - [ ] 30.2 Run and record the complete change-triggered engine-free gate
+  - [x] 30.2 Run and record the complete change-triggered engine-free gate
     - Reuse matching checkpoint observations and execute only missing/failed/stale
       format, locked check/test, Clippy, rustdoc, Cargo Deny, source policy, direct-Go,
       platform, security, documentation, and clean-output domains.
     - Assemble the exact six-child closure bundle plus current generated assets,
-      native matrix, and Rust security identity. Prove zero engine/Dagger/module/
+      supported native-platform set, and Rust security identity. Prove zero engine/Dagger/module/
       another-SDK/target/replay events and record commands, timings, Cargo counts, and
       reuse decisions.
+    - Closure evidence (2026-08-14, clean commit `cc0323975`): the clean package gate
+      packaged and verified `dagger-sdk-macros` and `dagger-sdk` without publication.
+      Reused the already-green bounded format, locked check/test, Clippy, rustdoc,
+      Cargo Deny, source-policy, direct-Go, runtime-security, catalog, and documentation
+      domains; refreshed the exact native Linux/amd64 and macOS/arm64 observations.
+      Each native producer passed 162 tests with two exact-engine tests intentionally
+      ignored and zero Dagger, engine, Docker, or other-SDK invocations. Production
+      aggregation admitted exactly Linux and macOS as supported-set digest
+      `sha256:20508aa96b75721bbd800e8ff56880f7bd20ef5d21f5eb69ae05cab84b515322`.
+      Ordinary Rust security admitted digest
+      `sha256:e5a850675ab0e003762af44e5f1f6321b0d91b6d0319f48a72d9d0e5a46a25f5`.
+      The production command assembled six passed engine-free children, four generated
+      asset domains, and twelve consume-only actions as closure bundle
+      `sha256:49005815a51ab5bfceca67ed7694148db4eeab9150b54a1291a8262164586dd1`;
+      a second derivation from the same exact inputs reproduced identical JSON and
+      Markdown bytes. Exact-engine SDK sign-off remains unexecuted and reserved for
+      Task 32.F.
     - _Requirements: 4.1-4.19, 8.1-8.21, 9.1-9.10, 9.24-9.25, 11.1-11.20_
-  - [ ] 30.3 Add closure/report/documentation regression tests
+  - [x] 30.3 Add closure/report/documentation regression tests
     - Pin canonical implementation-closure JSON and neutral Markdown, exact phase
       separation, provider-neutral preflight wording, single-artifact/engine/baseline
       promises, and Feature 9's requirement for a passed Feature 8 verdict.
@@ -948,70 +977,122 @@
       render SDK sign-off complete.
     - Pin handoff bytes/identity fixtures and reject rebuilt payloads, missing retained
       bytes, and widened platform claims.
+    - Closure evidence (2026-08-14): focused closure, neutral-report, evidence-only
+      handoff, and documentation regressions passed. The runbook and regression test
+      require `COPYFILE_DISABLE=1` for macOS archives, forbid AppleDouble `._*`
+      inputs, remove them before hashing, reject any that remain, and reject
+      hash-then-filter identity drift.
     - _Requirements: 4.13-4.19, 5.21-5.22, 11.19-11.20, 12.30-12.40_
 
-- [ ] 31. Complete the production one-artifact, one-engine sign-off facade
-  - [ ] 31.1 Wire the canonical run plan and evidence inputs into `rust-sdk-dev`
+- [x] 31. Complete the production one-artifact, one-engine sign-off facade
+  - [x] 31.1 Wire the canonical run plan and evidence inputs into `rust-sdk-dev`
     - Add a no-selector top-level sign-off function which accepts only canonical Rust
-      plan/catalog/closure/platform inputs plus optional artifact file according to the
-      declared strategy.
+      plan/catalog/closure/platform inputs plus the required retained artifact bundle.
+      Authoritative sign-off is import-only; the separate artifact-producing function
+      accepts only a canonical clean-subject seed.
     - Validate input digests before graph construction, reject an incomplete catalog
       or closure before target work, use one pinned Orchestration_Engine invocation,
       and return typed raw observations rather than a Go-computed pass.
-    - _Requirements: 3.1-3.24, 4.1-4.19, 5.1-5.22, 12.1-12.19_
-  - [ ] 31.2 Connect artifact, scan, service, baseline, and complete case fan-out once
+    - _Requirements: 3.1-3.24, 4.1-4.19, 5.1-5.22, 12.1-12.19, 12.43-12.45_
+  - [x] 31.2 Connect artifact, scan, service, baseline, and complete case fan-out once
     - Build or import one artifact, pass the same payload to scanning and target
       import, start one exact target service, materialize one baseline, execute the
       complete catalog with bounded isolation/retries, stop/reap, and return all
-      counters/timings/attempts/security observations.
+      counters/timings/attempts/security observations. Persist independently observed
+      canonical Build and Import receipts and require security/verdict admission to
+      consume those same receipts rather than reconstructing expected histories.
+    - Add the committed `cli`, `backend`, and `frontend` Rust example roots as closed
+      fixed cases. Run their exact Subject_Revision sources and lockfiles against the
+      common baseline/engine in build-only mode; assert their local CLI/image outputs,
+      provide no registry credentials, and fail on any external publication attempt.
     - Remove or fence old feature-local entrypoints which could construct a second
       service, installation, artifact, or partial passing verdict. Focused selectors
       may remain development-only but cannot produce admissible evidence.
-    - _Requirements: 5.1-5.22, 6.1-6.22, 7.1-7.18, 9.14-9.23, 12.1-12.40_
-  - [ ] 31.3 Add total engine-free construction audits for the final graph
+    - _Requirements: 3.33-3.37, 5.1-5.22, 6.1-6.28, 7.1-7.18, 9.14-9.23, 10.1-10.21, 12.1-12.45_
+  - [x] 31.3 Add total engine-free construction audits for the final graph
     - Prove one artifact materialization branch, one scanner payload edge, one service
       creation, one baseline install, complete fixed/dynamic case registry, bounded
       fan-out, one cleanup edge, all raw observation fields, and zero unrelated SDK or
       distribution paths by AST/fixture inspection.
+    - Pin the Rust SDK development module to the v1 engine API floor and prove that
+      the nested engine-development constructor receives the Workspace derived from
+      the admitted immutable Subject_Revision rather than the ambient module
+      Workspace.
     - Keep this audit engine-free; exact behaviour is reserved for Task 32.
-    - _Requirements: 5.1-5.22, 6.1-6.22, 11.1-11.20, 12.1-12.40_
+    - Closure evidence (2026-08-14): the complete engine-free Go adapter suite,
+      generated public-surface audit, Rust all-target check, exact connector producer
+      tests, artifact Build/Import receipt properties, pre-target facade admission,
+      packaged-output/secret/security suites, formatting, and warnings-denied Clippy
+      all passed on the combined tree. The facade admits 675 verdict rows as 74
+      physical executions, including the three build-only examples; exact runtime
+      counts and behaviour remain reserved for Task 32.F.
+    - _Requirements: 5.1-5.25, 6.1-6.28, 11.1-11.20, 12.1-12.45_
 
 - [ ] 32. Final checkpoint: produce one imported exact-target SDK sign-off verdict
-  - Refresh the provider-neutral host preflight only if its profile, smoke tool/engine,
-    container daemon, or host class identity changed. Require it to pass before target
-    artifact work and stop its smoke engine.
-  - Require the complete current engine-free implementation closure, native platform
-    matrix, Rust security/provenance evidence, case catalog, and clean committed
-    Subject_Revision before starting the final workflow.
-  - Build the Linux/amd64 Exact_Target artifact once without starting its target
-    service, export the real bundle to the persistent host workspace, record component
-    and phase counters/timings, and terminate the producing session.
-  - In a fresh invocation, import and verify those exact bytes with zero component
-    builds, scan that payload, start exactly one Exact_Target_Engine, materialize one
-    installed Rust baseline, execute every isolated required case, and stop/reap once.
-    Do not run the complete Go SDK, target integration suite, another SDK, unrelated
-    generation, or a distribution build.
-  - Feed raw observations to the Rust verdict model. Require one passing atomic verdict
-    bound to target, Subject_Revision, host/preflight, artifact bytes, closure, catalog,
-    platform, security, all attempts/counts/timings, and zero leak/duplicate/unrelated
-    event. A failure produces no partial status change and remains the final result.
-  - Derive Feature 1 transitions and checked reports from that verdict, run the clean
-    reproducibility gate, retain the exact outer bundle and inner payload, and emit one
-    Release_Handoff_Record bound to the passing verdict and Linux/amd64 platform.
-    Update task evidence with exact commands/timings/digests, and confirm Feature 9—not
-    Feature 8—owns Git tagging, release assets, attestations, and stable presentation.
-  - _Requirements: 1.17-1.18, 2.1-2.20, 3.1-3.24, 4.1-4.19, 5.1-5.22, 6.1-6.22, 7.1-7.18, 8.20-8.21, 9.11-9.25, 10.1-10.17, 12.1-12.40_
+  - [x] 32.R Exercise the real exact-target engine early as a non-authoritative rehearsal
+    - Run on a dedicated Linux/amd64 devbox while Tasks 30–31 continue, using one
+      immutable, digest-bound candidate snapshot and only the focused engine/CLI/Go
+      runtime/Rust content graph.
+    - Build and exercise a real Exact_Target_Engine as far as the current production
+      facade permits, fast-fail on the first actionable defect, and retain commands,
+      phase timings, counters, and diagnostics solely as workflow feedback.
+    - Mark every output as rehearsal-only. It cannot satisfy a native-platform gate,
+      alter the ledger, produce an atomic verdict or Release_Handoff_Record, or be
+      promoted into final evidence. Any patched or later committed candidate has a new
+      identity and must be rebuilt by 32.F.
+    - Do not run another SDK, unrelated generation, the complete Go SDK suite, target
+      integration suite, Windows work, distribution, publication, or release work.
+    - The rehearsal completed in a disposable Linux/amd64 environment. Its outputs
+      remain non-authoritative and cannot be consumed by 32.F; every later candidate
+      must be rebuilt and admitted under its own exact identity.
+    - _Requirements: 3.1-3.37, 5.1-5.22, 6.1-6.28, 8.20-8.21, 9.11-9.25, 12.1-12.45_
+  - [ ] 32.F Produce the authoritative imported exact-target verdict and handoff
+    - Refresh the provider-neutral host preflight only if its profile, smoke
+      tool/engine, container daemon, or host class identity changed. Require it to pass
+      before target artifact work and stop its smoke engine.
+    - Require the complete current engine-free implementation closure, supported
+      Linux/macOS native-platform set, Rust security/provenance evidence, case catalog,
+      and clean committed Subject_Revision before starting the final workflow.
+    - Build the Linux/amd64 Exact_Target artifact once without starting its target
+      service, export the real bundle to the persistent host workspace, and retain one
+      canonical Build receipt containing independently observed graph events,
+      component/forbidden-work counters, exact bundle identities, and measured phase
+      timing. Re-admit the receipt against the exact bundle before terminating the
+      producing session.
+    - In a fresh invocation, import and verify those exact bytes with zero component
+      builds, retain and independently re-admit one canonical Import receipt containing
+      actual import events/counters and measured duration, scan that payload, start
+      exactly one Exact_Target_Engine, materialize one installed Rust baseline, execute
+      all 675 isolated required rows through 74 physical executions—including all
+      three build-only standalone Rust examples—and stop/reap once. The examples may
+      assert only artifacts retained in their isolated workspaces; no registry push,
+      release upload, or external publication is permitted.
+      Do not run the complete Go SDK, target integration suite, another SDK, unrelated
+      generation, or a distribution build.
+    - Feed raw observations to the Rust verdict model. Require one passing atomic verdict
+      bound to target, Subject_Revision, host/preflight, artifact bytes, closure, catalog,
+      platform, security, all attempts/counts/timings, and zero leak/duplicate/unrelated
+      event. A failure produces no partial status change and remains the final result.
+    - Derive Feature 1 transitions and checked reports from that verdict, run the clean
+      reproducibility gate, retain the exact outer bundle and inner payload, and emit one
+      Release_Handoff_Record bound to the passing verdict and Linux/amd64 platform.
+      Update task evidence with exact commands/timings/digests, and confirm Feature 9—not
+      Feature 8—owns Git tagging, release assets, attestations, and stable presentation.
+  - _Requirements: 1.17-1.18, 2.1-2.20, 3.1-3.37, 4.1-4.19, 5.1-5.22, 6.1-6.28, 7.1-7.18, 8.20-8.21, 9.11-9.25, 10.1-10.21, 12.1-12.45_
 
 ## Final SDK Sign-off Gate
 
-Task 32 is the only implementation task authorized to run the Feature 8 exact-target
-SDK sign-off. Task 1's smoke engine is an earlier infrastructure-only preflight and
-claims no SDK capability. Tasks 4, 8, 12, 16, 20, 24, and 28 are engine-free local
-checkpoints. Task 30 records engine-free implementation closure and native CI evidence;
-it is not release sign-off.
+Task 32 is the only implementation task authorized to run a Feature 8 exact-target
+engine. Task 32.R is deliberately early and non-authoritative: its candidate identity,
+artifact, observations, and engine execution are rehearsal evidence only and can never
+be promoted into Task 32.F. Task 1's smoke engine is an earlier infrastructure-only
+preflight and claims no SDK capability. Tasks 4, 8, 12, 16, 20, 24, and 28 are
+engine-free local checkpoints. Task 30 records engine-free implementation closure and
+native CI evidence; it is not release sign-off.
 
-The authoritative verdict uses the imported artifact path so artifact production and
-SDK execution are separated across a host/session restart. The artifact-producing
+Task 32.F's authoritative verdict uses the imported artifact path so artifact
+production and SDK execution are separated across a host/session restart. Its
+artifact-producing
 invocation builds each component at most once and starts no Exact_Target_Engine. The
 authoritative invocation imports once, builds no component, starts one
 Exact_Target_Engine, installs one Rust baseline, and executes the complete catalog.

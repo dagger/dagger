@@ -34,11 +34,11 @@
       "role": "go-toolchain"
     },
     "preflight-cli": {
-      "id": "binary/preflight/a8789093",
-      "immutable_digest": "sha256:a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+      "id": "binary/preflight/d40f9c27",
+      "immutable_digest": "sha256:d40f9c27e780321fcd0aaa59dde74ad0a7b851caf7378d9026df3ea7ed6f5ed6",
       "publisher": "dagger-rust-sdk-maintainers",
       "repository": "github.com/dagger/dagger",
-      "review_evidence_digest": "sha256:9782caf579780b1db1d6f65e07f4829b6203b6ef4250dc3a2f76fb98a85bb681",
+      "review_evidence_digest": "sha256:f0277176eaa73b1c46cddc6f0908bda19f876fa1a85fa1d34cb858b730ea0d3f",
       "role": "preflight-cli"
     },
     "preflight-engine": {
@@ -66,13 +66,13 @@
       "role": "scanner-image"
     },
     "vulnerability-database-source": {
-      "id": "source/trivy-db/0e0340a01b57209346d88dd061342a857776e403",
-      "immutable_digest": "sha256:c2f4a18d6a217f0f65c6d71b0b9a1f80ec4070af700e152df810d15ac46c4c68",
+      "id": "image/trivy-db/sha256-10a3832219beaf45a3eb86065e30b39e528ae9c1650aa5f733d4666afd0712c5",
+      "immutable_digest": "sha256:76213b27bda05820231b84c09ca2854ec548147e9b46c0974247116f4ced4f67",
       "publisher": "aqua-security",
       "repository": "github.com/aquasecurity/trivy-db",
-      "review_evidence_digest": "sha256:463084208d2fcf4cb6c0dab75f07dfaacdbcf19948022fe381102e2d11b9803b",
+      "review_evidence_digest": "sha256:e593a341cf51c2d60d58daff6fc2202763fa18bc3dd21e7996f4bbc563b9faaa",
       "role": "vulnerability-database-source"
     }
   },
-  "registry_digest": "sha256:7d9f1aab97666c7960be420d2b5e0ba8c6af49b8f80fecb61f13178a21eaeafc"
+  "registry_digest": "sha256:2dbe2fb312409a175a5062a2a7fb250a82a0cb130a78ed74bed8d71485d9d654"
 }

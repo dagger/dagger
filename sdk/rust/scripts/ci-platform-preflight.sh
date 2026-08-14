@@ -7,4 +7,4 @@ cd "$rust_root"
 
 output="${1:?an observation output path is required}"
 cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
-./target/debug/dagger-rust-sdk-platform native --output "$output"
+"${CARGO_TARGET_DIR:-target}/debug/dagger-rust-sdk-platform" native --output "$output"

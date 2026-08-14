@@ -1,12 +1,7 @@
 name: Rust SDK Windows Preflight
 
 on:
-  workflow_dispatch:
-    inputs:
-      native_run_id:
-        description: Successful Rust SDK Development Platforms run for this exact revision
-        required: true
-        type: string
+  workflow_dispatch: {}
 
 permissions:
   actions: read
@@ -84,74 +79,16 @@ jobs:
 
           $digest = (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLowerInvariant()
           $summary = @(
-            "## Windows preflight observation",
+            "## Optional future-support Windows preflight",
             "",
             "- Revision: ``$env:GITHUB_SHA``",
             "- Platform: ``$($observation.platform.operating_system)/$($observation.platform.architecture)``",
             "- Rust: ``$($observation.rust_version)``",
             "- Outcome: ``$($observation.outcome)``",
             "- Observation: ``sha256:$digest``",
-            "- Dagger / engine / Docker / other SDK invocations: ``0 / 0 / 0 / 0``"
+            "- Dagger / engine / Docker / other SDK invocations: ``0 / 0 / 0 / 0``",
+            "- Current SDK sign-off input: ``no``",
+            "- Windows support claimed: ``no``"
           )
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           $summary | Write-Output
-
-  aggregate-signoff-matrix:
-    name: rust-sdk-signoff-platform-matrix
-    needs: native-windows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    defaults:
-      run:
-        shell: bash
-        working-directory: sdk/rust
-    steps:
-      - name: Checkout the exact sign-off candidate
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Download the Linux observation for this revision
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: rust-sdk-native-linux
-          path: sdk/rust/native-observations
-          run-id: ${{ inputs.native_run_id }}
-          github-token: ${{ github.token }}
-      - name: Download the macOS observation for this revision
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: rust-sdk-native-macos
-          path: sdk/rust/native-observations
-          run-id: ${{ inputs.native_run_id }}
-          github-token: ${{ github.token }}
-      - name: Download this run's Windows observation
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: rust-sdk-native-windows
-          path: sdk/rust/native-observations
-      - name: Assemble the production portable platform matrix
-        run: |
-          cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
-          ./target/debug/dagger-rust-sdk-platform aggregate \
-            --scope completeness/conformance-scope.json \
-            --input native-observations/platform-observation-linux.json \
-            --input native-observations/platform-observation-macos.json \
-            --input native-observations/platform-observation-windows-preflight.json \
-            --output portable-platform-matrix.json
-      - name: Upload the admitted portable matrix
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rust-sdk-portable-platform-matrix
-          path: sdk/rust/portable-platform-matrix.json
-          if-no-files-found: error
-          retention-days: 14
-      - name: Publish the bounded matrix summary
-        run: |
-          {
-            echo "## Rust SDK portable platform matrix"
-            echo
-            echo "- Revision: \`$GITHUB_SHA\`"
-            echo "- Native observations: \`linux / macos / windows\`"
-            echo "- Production Rust admission: \`passed\`"
-            echo "- Exact-engine sign-off: \`not run\`"
-          } >>"$GITHUB_STEP_SUMMARY"

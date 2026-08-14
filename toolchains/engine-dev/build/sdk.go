@@ -2,6 +2,7 @@ package build
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -246,13 +247,20 @@ func (build *Builder) RustSDKContent(
 	if len(index.Manifests) != 1 {
 		return nil, fmt.Errorf("Rust SDK OCI content must contain exactly one manifest")
 	}
+	dependencyDescriptor, err := json.Marshal(sdkDependency)
+	if err != nil {
+		return nil, fmt.Errorf("encode Rust SDK dependency descriptor: %w", err)
+	}
+	dependencyDescriptorDigest := sha256.Sum256(dependencyDescriptor)
 	return &sdkContent{
 		index:         index,
 		sdkDir:        sdkDir,
 		envName:       distconsts.RustSDKManifestDigestEnvName,
 		sdkDependency: sdkDependency,
 		extraEnv: map[string]string{
-			distconsts.RustSDKDescriptorDigestEnvName: descriptorDigest,
+			distconsts.RustSDKDescriptorDigestEnvName:     descriptorDigest,
+			distconsts.RustSDKDependencyDescriptorEnvName: string(dependencyDescriptor),
+			distconsts.RustSDKDependencyDigestEnvName:     fmt.Sprintf("sha256:%x", dependencyDescriptorDigest),
 		},
 	}, nil
 }

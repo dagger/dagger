@@ -15,7 +15,7 @@ dependencies() {
     jq -e '
       ([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk", "dagger-sdk-macros"] and
       (.packages[] | select(.name == "dagger-sdk") |
-        (.features == {"default": ["gen"], "gen": []}) and
+        (.features == {"default": ["gen"], "gen": [], "signoff-observation": []}) and
         ([.dependencies[] | select(.name == "dagger-sdk-macros" and .req == "=1.0.0-beta.10" and .kind == null)] | length) == 1 and
         ([.dependencies[] | select(.req == "*")] | length == 0) and
         ([.dependencies[] | select(.source != null and (.source | startswith("registry+https://github.com/rust-lang/crates.io-index") | not))] | length == 0)

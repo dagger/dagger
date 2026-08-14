@@ -4,7 +4,7 @@
 
 Feature 8 turns the engine-free implementation closures from Features 2–7 into an
 admissible Go-level Rust SDK claim. It accounts for every integration capability in
-the completeness ledger, closes the native platform matrix, verifies the security and
+the completeness ledger, closes the supported Linux/macOS native-platform set, verifies the security and
 supply-chain boundary, and performs one bounded exact-target SDK sign-off. It does not
 reimplement completed features merely to test them, run the complete Go SDK suite, or
 build unrelated SDKs.
@@ -98,10 +98,10 @@ Git-tagged distribution, release assets, attestations, and stable presentation.
   canonical exact-artifact CLI/Rust SDK installation, from which all isolated case
   workspaces branch.
 - **Native_OS_Job:** An engine-free test job running process, filesystem, archive,
-  cache, permissions, redaction, and cleanup behaviour on Linux, macOS, or Windows.
-- **Portable_Platform_Matrix:** Native_OS_Jobs for all three operating-system families
-  plus exhaustive descriptor coverage for Linux, macOS, and Windows crossed with
-  amd64 and arm64.
+  cache, permissions, redaction, and cleanup behaviour on a real native host.
+- **Supported_Native_Platform_Set:** Exactly one current matching Native_OS_Job for
+  Linux and one for macOS. It is the only native-platform evidence admitted by the
+  current SDK sign-off and makes no Windows support claim.
 - **Production_Distribution_Observation:** The live result of the stable default
   connector's production CLI selection. For the current unavailable beta.10 checksum
   manifest, the definitive 403/404 compatibility path may select the exact built CLI
@@ -183,9 +183,10 @@ The Case_Catalog includes the applicable pinned `sdk-sdk` subject checks, Featur
 stable-default-connector observation, Feature 4's representative Core shape paths,
 Feature 5's exact integration matrix, Feature 6's complete module and packaged
 self-consumer matrix, Feature 7's five deferred standalone-client cases, the nine
-definitive Go client behaviours, and every additional Rust-observable assertion
-derived from the 1,072 selected integration items. The complete Go SDK suite and other
-language SDK suites never run inside Rust sign-off.
+definitive Go client behaviours, the three committed build-only standalone Rust
+examples, and every additional Rust-observable assertion derived from the 1,072
+selected integration items. The complete Go SDK suite and other language SDK suites
+never run inside Rust sign-off.
 
 For the selected Dagger integration inventory, the pinned Go scenario is immutable
 authority provenance and may scaffold a candidate Scenario_Spine, but it is not the
@@ -196,11 +197,12 @@ and complex setup use reviewed Rust fixtures. Sign-off runs only those Rust
 realizations. The manifest has no generic backend or foreign-SDK runner, and a Go
 fixture, Go module, or Go SDK result cannot prove a Rust claim.
 
-The Portable_Platform_Matrix proves production OS-specific behaviour on Linux, macOS,
-and Windows without an engine, while pure descriptor tests cover amd64 and arm64 for
-each OS. The first exact-engine verdict is Linux/amd64. Any later exact-engine platform
-claim requires a separate artifact and verdict; evidence from one platform is never
-silently widened to another.
+The Supported_Native_Platform_Set proves production OS-specific behaviour on Linux and
+macOS without an engine. Pure descriptor tests may continue to exercise archive naming
+for additional targets, but they do not widen the supported-platform claim. The first
+exact-engine verdict is Linux/amd64. Any later exact-engine platform claim requires a
+separate artifact and verdict; evidence from one platform is never silently widened to
+another. Windows remains outside current sign-off until separately enabled by policy.
 
 Security remains fail-closed. All Rust roots resolve committed lockfiles and pass
 Cargo Deny. Unsafe code remains denied. Every external image, tool, archive, and
@@ -298,8 +300,8 @@ is stated. Current Rust citations describe `main` after Feature 7 merge commit
   query.
 - **Current Rust security CI:** `.github/workflows/rust-sdk-security.yml:1-102` uses a
   read-only token, a 15-minute Ubuntu job, Cargo Deny, focused source/security tests,
-  direct Go runtime metadata tests, and public package checks. It is not a native
-  Linux/macOS/Windows matrix and does not scan the final exact-target engine artifact.
+  direct Go runtime metadata tests, and public package checks. It is not the supported
+  Linux/macOS native-platform set and does not scan the final exact-target engine artifact.
 - **Dependency and unsafe policy:** `sdk/rust/deny.toml:1-45` rejects active
   advisories, unapproved licenses, wildcards, unknown registries, and unknown Git
   sources. `sdk/rust/Cargo.toml:79-84` denies unsafe code and undocumented unsafe
@@ -509,12 +511,12 @@ and must terminate before the sign-off run begins.
 
 | Layer | Linux | macOS | Windows | Architecture policy |
 |---|---|---|---|---|
-| Archive descriptor | Required | Required | Required | Exhaustive amd64 and arm64 pure cases |
-| Native process and PATH | Required Native_OS_Job | Required Native_OS_Job | Required Native_OS_Job | One native architecture per OS plus descriptor coverage for the other |
-| Cache, atomic publication, and permissions | Unix-native | Unix-native | Windows ACL/path-native | Must use native filesystem semantics |
-| Control line, diagnostics, redaction, and reap | Native | Native | Native | No engine required |
-| Public API compile and docs | Rust 1.97.1 | Rust 1.97.1 | Rust 1.97.1 | Declared features and committed lockfiles |
-| Exact-engine SDK_Signoff | Required for initial Linux/amd64 verdict | Separate future artifact/verdict | Separate future artifact/verdict | Evidence never widened across platform identity |
+| Archive descriptor | Required | Required | Pure unit coverage only | amd64 and arm64 pure cases do not widen support |
+| Native process and PATH | Required Native_OS_Job | Required Native_OS_Job | Outside current sign-off | One real native architecture for each supported OS |
+| Cache, atomic publication, and permissions | Unix-native | Unix-native | Outside current sign-off | Must use native filesystem semantics |
+| Control line, diagnostics, redaction, and reap | Native | Native | Outside current sign-off | No engine required |
+| Public API compile and docs | Rust 1.97.1 | Rust 1.97.1 | Optional future preflight only | Declared features and committed lockfiles |
+| Exact-engine SDK_Signoff | Required for initial Linux/amd64 verdict | Separate future artifact/verdict | Outside current sign-off | Evidence never widened across platform identity |
 
 ## Security Gate Policy
 
@@ -685,6 +687,19 @@ grow into unrelated SDK work.
 32. WHEN an authority anchor, source fingerprint, Scenario_Spine, Rust_Realization, or
     SDK_SDK_Candidate decision changes, THE workflow SHALL require renewed review and a
     new manifest and catalog digest.
+33. THE Case_Catalog SHALL contain one fixed exact-engine case for each supported
+    standalone Rust example root: `cli`, `backend`, and `frontend`.
+34. WHEN a standalone Rust example case is admitted, THE case SHALL bind its exact
+    Subject_Revision source tree and committed lockfile identity.
+35. WHEN a standalone Rust example case executes, THE runner SHALL invoke the
+    committed example entry point with locked dependency resolution inside its isolated
+    case workspace.
+36. THE standalone Rust example cases SHALL evaluate and assert their CLI, service
+    image, or web image outputs without publishing any artifact outside the isolated
+    case workspace.
+37. IF a standalone Rust example attempts a registry push, release upload, external
+    publication, or host export outside its isolated case workspace, THEN THE sign-off
+    runner SHALL fail the case.
 
 ### Requirement 4: Matching Engine-Free Closure Evidence
 
@@ -710,8 +725,8 @@ direct models cannot prove.
 9. THE Implementation_Closure_Bundle SHALL contain the applicable Feature 6 closure
    identity.
 10. THE Implementation_Closure_Bundle SHALL contain the Feature 7 closure identity.
-11. THE Implementation_Closure_Bundle SHALL contain the complete Portable_Platform_Matrix
-    result.
+11. THE Implementation_Closure_Bundle SHALL contain the complete
+    Supported_Native_Platform_Set result.
 12. THE Implementation_Closure_Bundle SHALL contain the current Rust security and
     hygiene result.
 13. IF any closure record is missing, failed, stale, or target-incompatible, THEN THE
@@ -765,6 +780,15 @@ every case and retry observes identical bytes without rebuilding Dagger.
     retain the exact outer bundle bytes used to verify its payload.
 22. WHEN an imported artifact produces a passing verdict, THE artifact pipeline SHALL
     retain the exact inner payload bytes identified by the artifact manifest.
+23. THE Rust SDK development and sign-off module SHALL declare the repository's
+    `v1.0.0-0` engine API floor and SHALL NOT advertise legacy `v0.21.7`
+    compatibility.
+24. WHEN the artifact pipeline constructs the nested engine-development module, THE
+    constructor SHALL receive a Workspace derived from the admitted immutable
+    Subject_Revision Git ref before any component is evaluated.
+25. IF the checked Rust SDK development bindings cannot express that immutable
+    Workspace conversion, THEN THE engine-free construction gate SHALL fail before
+    SDK_Signoff.
 
 ### Requirement 6: One Engine, One Rust Baseline, and Isolated Fan-out
 
@@ -813,6 +837,19 @@ one installed baseline, so that sign-off is both efficient and internally consis
     reject the run.
 22. IF the runner observes zero or multiple baseline materializations, THEN THE
     evidence gate SHALL reject the run.
+23. THE standalone Rust example cases SHALL branch from the same
+    Installed_Rust_Baseline and bind to the same exact-target engine as every other
+    case.
+24. THE standalone Rust example cases SHALL consume only their immutable
+    Subject_Revision sources and committed lockfiles and SHALL avoid SDK regeneration.
+25. WHEN the `cli` example runs, THE case SHALL prove the expected executable exists
+    inside its isolated workspace.
+26. WHEN the `backend` or `frontend` example runs, THE case SHALL force evaluation of
+    the expected image content without invoking its opt-in publication path.
+27. THE example-case network policy SHALL permit only declared read dependencies and
+    SHALL prohibit registry credentials and external write operations.
+28. THE sign-off observation SHALL retain the three example outcomes and any attempted
+    external publication as explicit evidence.
 
 ### Requirement 7: Executable Go-Level Rust Conformance
 
@@ -881,15 +918,18 @@ or cleanup failures.
 
 #### Acceptance Criteria
 
-1. THE Portable_Platform_Matrix SHALL include one Native_OS_Job on Linux.
-2. THE Portable_Platform_Matrix SHALL include one Native_OS_Job on macOS.
-3. THE Portable_Platform_Matrix SHALL include one Native_OS_Job on Windows.
+1. THE Supported_Native_Platform_Set SHALL include one Native_OS_Job on Linux.
+2. THE Supported_Native_Platform_Set SHALL include one Native_OS_Job on macOS.
+3. THE Supported_Native_Platform_Set SHALL exclude Windows observations from current
+   SDK sign-off admission.
 4. THE descriptor suite SHALL cover Linux amd64.
 5. THE descriptor suite SHALL cover Linux arm64.
 6. THE descriptor suite SHALL cover macOS amd64.
 7. THE descriptor suite SHALL cover macOS arm64.
-8. THE descriptor suite SHALL cover Windows amd64.
-9. THE descriptor suite SHALL cover Windows arm64.
+8. WHEN the descriptor suite covers Windows amd64, THE result SHALL remain pure unit
+   coverage and SHALL NOT widen the supported-platform claim.
+9. WHEN the descriptor suite covers Windows arm64, THE result SHALL remain pure unit
+   coverage and SHALL NOT widen the supported-platform claim.
 10. WHEN a Native_OS_Job runs, THE job SHALL exercise native PATH and executable
     discovery.
 11. WHEN a Native_OS_Job runs, THE job SHALL exercise native cache publication and
@@ -905,8 +945,8 @@ or cleanup failures.
 17. THE Native_OS_Job SHALL avoid downloading or starting another SDK.
 18. WHEN a platform result is admitted, THE evidence SHALL bind the exact OS,
     architecture, toolchain, source, and test identities.
-19. IF a Native_OS_Job is skipped, stale, or failed, THEN THE Portable_Platform_Matrix
-    SHALL fail.
+19. IF a required Linux or macOS Native_OS_Job is skipped, stale, or failed, THEN THE
+    Supported_Native_Platform_Set SHALL fail.
 20. WHEN the initial exact-engine sign-off runs, THE platform identity SHALL be
     Linux/amd64.
 21. IF a later release claims another exact-engine platform, THEN THE release gate
@@ -998,6 +1038,18 @@ host identity cannot leak, so that the evidence itself is safe to retain and pub
     values.
 17. IF redaction cannot be proven, THEN THE security gate SHALL prevent evidence
     admission.
+18. WHEN generated, packaged, case, cache, diagnostic, trace, report, scanner, or
+    artifact content is inspected, THE scanner SHALL consume the actual bounded bytes
+    or validated archive entries and SHALL reject a digest, object identifier, fixed
+    string, or presence check used as a byte substitute.
+19. WHEN a packaged OCI image is inspected, THE scanner SHALL validate and inspect its
+    index, manifests, configuration, referenced layers, and retained blob inventory
+    under explicit compressed and expanded byte, entry-count, path, depth, and link
+    bounds.
+20. IF an inspection input exceeds its declared bound or uses an unsupported archive
+    or compression shape, THEN THE security gate SHALL fail before retaining a report.
+21. THE security report SHALL retain only bounded identities, sizes, scanner evidence,
+    policy results, and findings; it SHALL NOT retain complete image or artifact bytes.
 
 ### Requirement 11: Engine-Free Feature 8 Checkpoints and Bounded Work
 
@@ -1038,7 +1090,7 @@ test/build cycle it is intended to eliminate.
     infrastructure exception in this specification.
 19. THE Feature 8 Implementation_Closure SHALL require format, locked check/test,
     warning-denied clippy, warning-denied rustdoc, Cargo Deny, source policy, evidence,
-    and Portable_Platform_Matrix gates.
+    and Supported_Native_Platform_Set gates.
 20. THE Feature 8 Implementation_Closure SHALL avoid claiming SDK_Signoff.
 
 ### Requirement 12: Atomic Digest-Bound Sign-off Verdict
@@ -1058,7 +1110,7 @@ no partial pass, stale retry, or hidden rebuild can authorize the Rust SDK relea
    payload digests.
 7. THE Atomic_Signoff_Verdict SHALL bind the Implementation_Closure_Bundle digest.
 8. THE Atomic_Signoff_Verdict SHALL bind the Case_Catalog digest.
-9. THE Atomic_Signoff_Verdict SHALL bind the Portable_Platform_Matrix digest.
+9. THE Atomic_Signoff_Verdict SHALL bind the Supported_Native_Platform_Set digest.
 10. THE Atomic_Signoff_Verdict SHALL bind the Artifact_Security_Report digest.
 11. THE Atomic_Signoff_Verdict SHALL contain every build and import counter.
 12. THE Atomic_Signoff_Verdict SHALL contain the engine-start counter.
@@ -1106,6 +1158,20 @@ no partial pass, stale retry, or hidden rebuild can authorize the Rust SDK relea
     gate SHALL reject the candidate.
 40. IF a Feature 9 candidate claims another platform, THEN THE release gate SHALL
     require that platform's separate Release_Handoff_Record.
+41. THE Atomic_Signoff_Verdict SHALL contain passing outcomes for the `cli`, `backend`,
+    and `frontend` standalone Rust example cases.
+42. IF any sign-off case observes an external publication attempt or result, THEN THE
+    Atomic_Signoff_Verdict SHALL fail.
+43. THE Atomic_Signoff_Verdict SHALL bind one canonical Build receipt whose events,
+    counters, forbidden-work observations, identities, and measured duration were
+    supplied by the producing graph and independently admitted against the exact
+    retained bundle.
+44. THE Atomic_Signoff_Verdict SHALL bind one canonical Import receipt whose events,
+    counters, forbidden-work observations, verified target identities, and measured
+    duration were supplied by the importing graph and independently admitted against
+    the same retained bundle.
+45. IF a Build or Import receipt is synthesized from expected policy rather than an
+    independently observed graph history, THEN THE Atomic_Signoff_Verdict SHALL fail.
 
 ## Out of Scope
 
@@ -1116,7 +1182,8 @@ no partial pass, stale retry, or hidden rebuild can authorize the Rust SDK relea
   language SDK test suite inside Rust sign-off.
 - Treating Namespace as a required SDK dependency, permanent CI provider, behavioural
   authority, or evidence source.
-- Claiming macOS or Windows exact-engine sign-off from the initial Linux/amd64 verdict.
+- Claiming Windows support or admitting Windows evidence in the current SDK sign-off.
+- Claiming macOS exact-engine sign-off from the initial Linux/amd64 verdict.
 - Replacing child-feature implementation closure with engine-backed tests.
 - Reopening generated Core, transport, engine adapter, module authoring, or standalone
   client design unless conformance exposes a concrete defect.

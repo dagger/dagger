@@ -11,14 +11,15 @@ use std::io::{Cursor, Read};
 
 use serde::{Deserialize, Serialize};
 use tar::{Archive, Builder, EntryType, Header};
+use url::Url;
 
 use crate::canonical::{DigestDomain, canonical_bytes, canonical_digest, decode_canonical};
 use crate::model::{CanonicalSet, CommitSha, Digest, TargetDigest};
 
 use super::{
     ConformanceDiagnostic, ConformanceDiagnosticCode, ConformanceDiagnosticSet,
-    ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase, PlatformDescriptor,
-    ProvenanceId, ToolchainRole,
+    ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase, NonZeroMillis,
+    PlatformDescriptor, ProvenanceId, ToolchainRole,
 };
 
 const MANIFEST_NAME: &str = "manifest.json";
@@ -26,7 +27,77 @@ const PROVENANCE_NAME: &str = "provenance.json";
 const PAYLOAD_NAME: &str = "engine.oci.tar.zst";
 const CHECKSUMS_NAME: &str = "checksums.sha256";
 const BUNDLE_MEMBERS: [&str; 4] = [MANIFEST_NAME, PROVENANCE_NAME, PAYLOAD_NAME, CHECKSUMS_NAME];
-const MAX_BUNDLE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+// Assembly and decode retain the caller bytes, parsed payload, and canonical reassembly at the
+// same time. Eight GiB keeps the documented 3-5x peak below a 64-GiB sign-off host with room for
+// the policy process and engine; larger artifacts need a future streaming representation.
+const MAX_BUNDLE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+const RUST_SDK_PACKAGE: &str = "dagger-sdk";
+
+/// Canonical immutable Git coordinate embedded in the packaged Rust SDK.
+///
+/// The field order deliberately matches the engine builder's compact JSON descriptor. Its
+/// direct digest therefore proves the bytes observed in the target image rather than a
+/// semantically equivalent descriptor reconstructed by the sign-off adapter.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RustSdkDependencyDescriptor {
+    /// Closed dependency source; exact-target sign-off admits only Git.
+    pub source: RustSdkDependencySource,
+    /// Public Cargo package selected by the generated workspace configuration.
+    pub package: String,
+    /// Credential-free HTTPS repository containing the package.
+    pub url: String,
+    /// Full immutable package revision.
+    pub revision: CommitSha,
+}
+
+impl RustSdkDependencyDescriptor {
+    /// Returns the direct identity of the compact descriptor bytes embedded by the engine.
+    pub fn direct_digest(&self) -> Result<Digest, serde_json::Error> {
+        serde_json::to_vec(self).map(Digest::sha256)
+    }
+
+    fn is_exact_subject(&self, subject: &SubjectRevisionObservation) -> bool {
+        self.source == RustSdkDependencySource::Git
+            && self.package == RUST_SDK_PACKAGE
+            && self.revision == subject.revision
+            && self.url == subject.repository
+            && is_canonical_subject_repository(&self.url)
+    }
+}
+
+/// Returns whether a subject repository uses the single canonical credential-free HTTPS form.
+pub fn is_canonical_subject_repository(value: &str) -> bool {
+    let Ok(repository) = Url::parse(value) else {
+        return false;
+    };
+    let Some(host) = repository.host_str() else {
+        return false;
+    };
+    let path = repository.path();
+    repository.scheme() == "https"
+        && repository.username().is_empty()
+        && repository.password().is_none()
+        && repository.port().is_none()
+        && repository.query().is_none()
+        && repository.fragment().is_none()
+        && path.starts_with('/')
+        && path.len() > 1
+        && !path.ends_with('/')
+        && !path.ends_with(".git")
+        && !path
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
+        && value == format!("https://{host}{path}")
+}
+
+/// Closed packaged dependency source accepted by an exact-target artifact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RustSdkDependencySource {
+    /// Immutable Git repository and full commit.
+    Git,
+}
 
 /// Components whose immutable content must be accounted for by an exact-target artifact.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -63,6 +134,8 @@ pub struct ArtifactComponentRecord {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SubjectRevisionObservation {
+    /// Canonical reviewed repository whose object graph supplied the subject commit.
+    pub repository: String,
     /// Full immutable Git commit.
     pub revision: CommitSha,
     /// Focused source identity computed from the committed revision.
@@ -75,6 +148,38 @@ pub struct SubjectRevisionObservation {
     pub clean: bool,
     /// Whether resolution used the full commit rather than a mutable ref.
     pub immutable: bool,
+}
+
+/// Immutable inputs admitted before the focused artifact graph is evaluated.
+///
+/// Actual component content identities are deliberately absent. The focused builder observes
+/// those bytes once, then [`seal_artifact_build_plan`] combines them with this seed without
+/// allowing a caller to substitute component provenance or construction inputs.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactPlanSeed {
+    /// Durable seed format.
+    pub format_version: ArtifactFormatVersion,
+    /// Exact target descriptor selected for sign-off.
+    pub target_descriptor_digest: TargetDigest,
+    /// Engine/CLI target revision.
+    pub target_revision: CommitSha,
+    /// Clean reachable fork revision supplied to the focused builder.
+    pub subject: SubjectRevisionObservation,
+    /// Fixed initial exact-engine platform.
+    pub platform: PlatformDescriptor,
+    /// Exact engine construction input identity.
+    pub engine_input_digest: Digest,
+    /// Exact CLI construction input identity.
+    pub cli_input_digest: Digest,
+    /// Mandatory Go runtime construction input identity.
+    pub go_runtime_digest: Digest,
+    /// Rust workspace manifest and lockfile identity.
+    pub rust_manifest_digest: Digest,
+    /// Closed toolchain/base/scanner identities.
+    pub toolchain_digests: BTreeMap<ToolchainRole, Digest>,
+    /// Reviewed immutable provenance assigned to each component.
+    pub component_provenance: BTreeMap<ArtifactComponent, CanonicalSet<ProvenanceId>>,
 }
 
 /// Complete byte-independent identity expected before construction or import begins.
@@ -101,6 +206,10 @@ pub struct ArtifactPlan {
     pub rust_manifest_digest: Digest,
     /// Rust target descriptor identity.
     pub rust_descriptor_digest: Digest,
+    /// Exact packaged `dagger-sdk` Git coordinate observed in the target.
+    pub rust_dependency: RustSdkDependencyDescriptor,
+    /// Direct identity of the compact packaged dependency descriptor bytes.
+    pub rust_dependency_descriptor_digest: Digest,
     /// Closed toolchain/base/scanner identities.
     pub toolchain_digests: BTreeMap<ToolchainRole, Digest>,
     /// Exact component records expected in the payload.
@@ -109,6 +218,118 @@ pub struct ArtifactPlan {
     pub provenance_digest: Digest,
     /// Exclusive materialization strategy.
     pub materialization: ArtifactMaterialization,
+}
+
+/// Seals one Build plan from admitted inputs and independently observed component bytes.
+pub fn seal_artifact_build_plan(
+    seed: ArtifactPlanSeed,
+    rust_descriptor_digest: Digest,
+    rust_dependency: RustSdkDependencyDescriptor,
+    rust_dependency_descriptor_digest: Digest,
+    content_digests: BTreeMap<ArtifactComponent, Digest>,
+) -> Result<ArtifactPlan, ConformanceDiagnosticSet> {
+    let required_components = required_artifact_components();
+    if seed.format_version != ConformanceFormatVersion::V1
+        || seed.platform != PlatformDescriptor::linux_amd64()
+        || seed
+            .component_provenance
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != required_components
+        || content_digests.keys().copied().collect::<BTreeSet<_>>() != required_components
+        || seed
+            .component_provenance
+            .values()
+            .any(CanonicalSet::is_empty)
+        || seed
+            .toolchain_digests
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != required_artifact_toolchains()
+    {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactProvenanceInvalid,
+            "artifact plan seed omits a required component toolchain or provenance identity",
+        ));
+    }
+    let rust_input_digest = canonical_digest(
+        DigestDomain::Artifact,
+        &(
+            &seed.rust_manifest_digest,
+            &rust_descriptor_digest,
+            &rust_dependency_descriptor_digest,
+        ),
+    )
+    .map_err(|_| bundle_error())?;
+    let component_input_digests = BTreeMap::from([
+        (ArtifactComponent::Engine, seed.engine_input_digest.clone()),
+        (ArtifactComponent::Cli, seed.cli_input_digest.clone()),
+        (ArtifactComponent::GoRuntime, seed.go_runtime_digest.clone()),
+        (ArtifactComponent::RustSdk, rust_input_digest),
+    ]);
+    let components = required_components
+        .into_iter()
+        .map(|component| {
+            (
+                component,
+                ArtifactComponentRecord {
+                    component,
+                    input_digest: component_input_digests[&component].clone(),
+                    content_digest: content_digests[&component].clone(),
+                    provenance: seed.component_provenance[&component].clone(),
+                },
+            )
+        })
+        .collect();
+    let mut plan = ArtifactPlan {
+        format_version: seed.format_version,
+        target_descriptor_digest: seed.target_descriptor_digest,
+        target_revision: seed.target_revision,
+        subject: seed.subject,
+        platform: seed.platform,
+        engine_input_digest: seed.engine_input_digest,
+        cli_input_digest: seed.cli_input_digest,
+        go_runtime_digest: seed.go_runtime_digest,
+        rust_manifest_digest: seed.rust_manifest_digest,
+        rust_descriptor_digest,
+        rust_dependency,
+        rust_dependency_descriptor_digest,
+        toolchain_digests: seed.toolchain_digests,
+        components,
+        provenance_digest: Digest::sha256([]),
+        materialization: ArtifactMaterialization::Build,
+    };
+    plan.provenance_digest = canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &provenance_from_plan(&plan),
+    )
+    .map_err(|_| bundle_error())?;
+    validate_plan(&plan)?;
+    Ok(plan)
+}
+
+/// Derives the sole authoritative Import plan from a verified bundle built by `build_plan`.
+pub fn artifact_import_plan(
+    build_plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+) -> Result<ArtifactPlan, ConformanceDiagnosticSet> {
+    if build_plan.materialization != ArtifactMaterialization::Build
+        || !manifest_matches_plan(bundle.manifest(), build_plan)
+    {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactImportFailed,
+            "retained artifact was not produced by the supplied Build plan",
+        ));
+    }
+    let mut plan = build_plan.clone();
+    plan.materialization = ArtifactMaterialization::Import {
+        manifest_digest: bundle.manifest_digest().clone(),
+        payload_digest: bundle.manifest().payload_digest.clone(),
+    };
+    validate_plan(&plan)?;
+    Ok(plan)
 }
 
 /// Exclusive artifact branch selected before graph construction.
@@ -152,6 +373,10 @@ pub struct ExactTargetArtifactManifest {
     pub rust_manifest_digest: Digest,
     /// Rust target descriptor identity.
     pub rust_descriptor_digest: Digest,
+    /// Exact packaged `dagger-sdk` Git coordinate contained in the target.
+    pub rust_dependency: RustSdkDependencyDescriptor,
+    /// Direct identity of the compact packaged dependency descriptor bytes.
+    pub rust_dependency_descriptor_digest: Digest,
     /// Closed toolchain/base/scanner identities.
     pub toolchain_digests: BTreeMap<ToolchainRole, Digest>,
     /// Exact byte-accounted component records.
@@ -235,6 +460,132 @@ pub struct ArtifactCounters {
     pub forbidden_work: CanonicalSet<ForbiddenArtifactWork>,
 }
 
+/// Raw graph work observed by the artifact-producing adapter.
+///
+/// The adapter, rather than Rust policy, records what the producing session actually evaluated.
+/// Receipt construction validates this complete history against the exact plan and bundle; it
+/// never substitutes the ideal history that a successful Build would have produced.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactBuildObservation {
+    /// Durable observation format.
+    pub format_version: ArtifactFormatVersion,
+    /// Ordered graph events observed by the producing session.
+    pub events: Vec<ArtifactEvent>,
+    /// Number of focused construction sessions entered.
+    pub construction_count: u32,
+    /// Number of container imports entered while producing this Build artifact.
+    pub import_count: u32,
+    /// Complete per-component graph evaluation counts.
+    pub component_build_counts: BTreeMap<ArtifactComponent, u32>,
+    /// Complete forbidden-work vocabulary with an observed count for every class.
+    pub forbidden_work_counts: BTreeMap<ForbiddenArtifactWork, u32>,
+    /// Adapter-measured materialization duration.
+    pub materialization_elapsed_millis: NonZeroMillis,
+}
+
+/// Canonical evidence emitted by the sole exact-target Build materialization session.
+///
+/// The receipt retains identities and closed observations rather than payload bytes. Independent
+/// admission therefore requires both the original plan and the exact verified bundle, preventing
+/// a receipt from substituting either side of the build relation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactBuildReceipt {
+    /// Durable receipt format.
+    pub format_version: ArtifactFormatVersion,
+    /// Canonical identity of the exact Build plan.
+    pub plan_digest: Digest,
+    /// Direct identity of every retained portable bundle byte.
+    pub bundle_digest: Digest,
+    /// Domain-separated identity of the canonical manifest.
+    pub manifest_digest: Digest,
+    /// Direct identity of the retained OCI payload.
+    pub payload_digest: Digest,
+    /// Exact non-zero payload size.
+    pub payload_size_bytes: u64,
+    /// Independently checkable content identity for every required component.
+    pub component_digests: BTreeMap<ArtifactComponent, Digest>,
+    /// Complete closed Build event history.
+    pub events: Vec<ArtifactEvent>,
+    /// Number of focused construction sessions.
+    pub construction_count: u32,
+    /// Number of container imports during artifact production.
+    pub import_count: u32,
+    /// Complete per-component build counts.
+    pub component_build_counts: BTreeMap<ArtifactComponent, u32>,
+    /// Complete forbidden-work vocabulary with an explicit observation count for every class.
+    pub forbidden_work_counts: BTreeMap<ForbiddenArtifactWork, u32>,
+    /// Caller-measured positive materialization duration.
+    pub materialization_elapsed_millis: NonZeroMillis,
+    /// Domain-separated identity over every preceding receipt field.
+    pub receipt_digest: Digest,
+}
+
+/// Raw Import graph work observed after the retained OCI payload entered the target runtime.
+///
+/// The Go adapter records this only after evaluating the imported target and its independently
+/// observable component identities. Rust admission rejects an incomplete history, a substituted
+/// component identity, or any construction or unrelated work in the authoritative Import branch.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactImportObservation {
+    /// Durable observation format.
+    pub format_version: ArtifactFormatVersion,
+    /// Ordered graph events observed by the importing session.
+    pub events: Vec<ArtifactEvent>,
+    /// Number of focused construction sessions entered while importing.
+    pub construction_count: u32,
+    /// Number of retained payload imports evaluated.
+    pub import_count: u32,
+    /// Complete per-component build counts; Import requires every value to remain zero.
+    pub component_build_counts: BTreeMap<ArtifactComponent, u32>,
+    /// Complete forbidden-work vocabulary with an observed count for every class.
+    pub forbidden_work_counts: BTreeMap<ForbiddenArtifactWork, u32>,
+    /// Component byte identities observed from the actual imported target.
+    pub verified_component_digests: BTreeMap<ArtifactComponent, Digest>,
+    /// Adapter-measured import and component-verification duration.
+    pub materialization_elapsed_millis: NonZeroMillis,
+}
+
+/// Canonical evidence emitted by the sole authoritative Import session.
+///
+/// The receipt binds the actual Import observation to one exact plan and portable bundle. Later
+/// security and verdict phases re-admit these same bytes rather than reconstructing an ideal
+/// event history from the expected strategy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactImportReceipt {
+    /// Durable receipt format.
+    pub format_version: ArtifactFormatVersion,
+    /// Canonical identity of the exact Import plan.
+    pub plan_digest: Digest,
+    /// Direct identity of every retained portable bundle byte.
+    pub bundle_digest: Digest,
+    /// Domain-separated identity of the canonical manifest.
+    pub manifest_digest: Digest,
+    /// Direct identity of the retained OCI payload.
+    pub payload_digest: Digest,
+    /// Exact non-zero payload size.
+    pub payload_size_bytes: u64,
+    /// Component byte identities observed from the actual imported target.
+    pub verified_component_digests: BTreeMap<ArtifactComponent, Digest>,
+    /// Complete closed Import event history.
+    pub events: Vec<ArtifactEvent>,
+    /// Number of focused construction sessions.
+    pub construction_count: u32,
+    /// Number of retained payload imports.
+    pub import_count: u32,
+    /// Complete per-component build counts.
+    pub component_build_counts: BTreeMap<ArtifactComponent, u32>,
+    /// Complete forbidden-work vocabulary with an explicit observation count for every class.
+    pub forbidden_work_counts: BTreeMap<ForbiddenArtifactWork, u32>,
+    /// Adapter-measured positive Import duration.
+    pub materialization_elapsed_millis: NonZeroMillis,
+    /// Domain-separated identity over every preceding receipt field.
+    pub receipt_digest: Digest,
+}
+
 /// Complete typed observation supplied to artifact admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactObservation {
@@ -252,6 +603,243 @@ pub struct ArtifactObservation {
     pub verified_component_digests: BTreeMap<ArtifactComponent, Digest>,
     /// Positive bounded adapter duration.
     pub elapsed_millis: u64,
+}
+
+/// Emits one canonical receipt for an exact verified Build plan and bundle.
+pub fn artifact_build_receipt(
+    plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+    observation: ArtifactBuildObservation,
+) -> Result<ArtifactBuildReceipt, ConformanceDiagnosticSet> {
+    validate_plan(plan)?;
+    if plan.materialization != ArtifactMaterialization::Build
+        || !manifest_matches_plan(bundle.manifest(), plan)
+    {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactManifestInvalid,
+            "artifact build receipt does not match its exact Build plan and bundle",
+        ));
+    }
+    validate_build_observation(plan, bundle, &observation)?;
+    let component_digests = bundle
+        .manifest()
+        .components
+        .iter()
+        .map(|(component, record)| (*component, record.content_digest.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut receipt = ArtifactBuildReceipt {
+        format_version: plan.format_version,
+        plan_digest: artifact_plan_digest(plan)?,
+        bundle_digest: bundle.bundle_digest().clone(),
+        manifest_digest: bundle.manifest_digest().clone(),
+        payload_digest: bundle.manifest().payload_digest.clone(),
+        payload_size_bytes: bundle.manifest().payload_size_bytes,
+        component_digests,
+        events: observation.events,
+        construction_count: observation.construction_count,
+        import_count: observation.import_count,
+        component_build_counts: observation.component_build_counts,
+        forbidden_work_counts: observation.forbidden_work_counts,
+        materialization_elapsed_millis: observation.materialization_elapsed_millis,
+        receipt_digest: Digest::sha256([]),
+    };
+    receipt.receipt_digest = artifact_build_receipt_digest(&receipt)?;
+    Ok(receipt)
+}
+
+/// Independently admits a persisted Build receipt against its exact plan and bundle bytes.
+pub fn admit_artifact_build_receipt(
+    plan: &ArtifactPlan,
+    bundle: VerifiedArtifactBundle,
+    receipt: &ArtifactBuildReceipt,
+) -> Result<AdmittedArtifact, ConformanceDiagnosticSet> {
+    let identities_match = receipt.format_version == plan.format_version
+        && receipt.plan_digest == artifact_plan_digest(plan)?
+        && receipt.bundle_digest == *bundle.bundle_digest()
+        && receipt.manifest_digest == *bundle.manifest_digest()
+        && receipt.payload_digest == bundle.manifest().payload_digest
+        && receipt.payload_size_bytes == bundle.manifest().payload_size_bytes
+        && receipt.component_digests
+            == bundle
+                .manifest()
+                .components
+                .iter()
+                .map(|(component, record)| (*component, record.content_digest.clone()))
+                .collect::<BTreeMap<_, _>>()
+        && artifact_build_receipt_digest(receipt)? == receipt.receipt_digest;
+    if !identities_match {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactStateInvalid,
+            "artifact build receipt is incomplete or identity-inconsistent",
+        ));
+    }
+    let observation = ArtifactBuildObservation {
+        format_version: receipt.format_version,
+        events: receipt.events.clone(),
+        construction_count: receipt.construction_count,
+        import_count: receipt.import_count,
+        component_build_counts: receipt.component_build_counts.clone(),
+        forbidden_work_counts: receipt.forbidden_work_counts.clone(),
+        materialization_elapsed_millis: receipt.materialization_elapsed_millis,
+    };
+    validate_build_observation(plan, &bundle, &observation)?;
+    admit_artifact(
+        plan,
+        ArtifactObservation {
+            strategy: ArtifactMaterialization::Build,
+            manifest: bundle.manifest().clone(),
+            verified_component_digests: receipt.component_digests.clone(),
+            bundle,
+            events: receipt.events.clone(),
+            counters: ArtifactCounters {
+                construction: receipt.construction_count,
+                imports: receipt.import_count,
+                component_builds: receipt.component_build_counts.clone(),
+                forbidden_work: CanonicalSet::new(
+                    receipt
+                        .forbidden_work_counts
+                        .iter()
+                        .filter_map(|(work, count)| (*count > 0).then_some(*work)),
+                ),
+            },
+            elapsed_millis: receipt.materialization_elapsed_millis.get(),
+        },
+    )
+}
+
+/// Verifies exact Import-plan and bundle identities before exposing the retained OCI payload.
+///
+/// This byte-only gate deliberately does not claim that a container import occurred. The actual
+/// importing graph must later produce an [`ArtifactImportReceipt`] before security or verdict
+/// admission can treat the artifact as imported.
+pub fn verify_artifact_import_source(
+    plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+) -> Result<(), ConformanceDiagnosticSet> {
+    validate_plan(plan)?;
+    let ArtifactMaterialization::Import {
+        manifest_digest,
+        payload_digest,
+    } = &plan.materialization
+    else {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactImportFailed,
+            "artifact extraction requires the authoritative Import plan",
+        ));
+    };
+    if !manifest_matches_plan(bundle.manifest(), plan)
+        || manifest_digest != bundle.manifest_digest()
+        || payload_digest != &bundle.manifest().payload_digest
+    {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactImportFailed,
+            "artifact extraction source differs from the planned immutable bytes",
+        ));
+    }
+    Ok(())
+}
+
+/// Emits one canonical receipt for an actual evaluated Import observation.
+pub fn artifact_import_receipt(
+    plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+    observation: ArtifactImportObservation,
+) -> Result<ArtifactImportReceipt, ConformanceDiagnosticSet> {
+    verify_artifact_import_source(plan, bundle)?;
+    validate_import_observation(plan, bundle, &observation)?;
+    let mut receipt = ArtifactImportReceipt {
+        format_version: plan.format_version,
+        plan_digest: artifact_plan_digest(plan)?,
+        bundle_digest: bundle.bundle_digest().clone(),
+        manifest_digest: bundle.manifest_digest().clone(),
+        payload_digest: bundle.manifest().payload_digest.clone(),
+        payload_size_bytes: bundle.manifest().payload_size_bytes,
+        verified_component_digests: observation.verified_component_digests,
+        events: observation.events,
+        construction_count: observation.construction_count,
+        import_count: observation.import_count,
+        component_build_counts: observation.component_build_counts,
+        forbidden_work_counts: observation.forbidden_work_counts,
+        materialization_elapsed_millis: observation.materialization_elapsed_millis,
+        receipt_digest: Digest::sha256([]),
+    };
+    receipt.receipt_digest = artifact_import_receipt_digest(&receipt)?;
+    Ok(receipt)
+}
+
+/// Independently admits one persisted Import receipt against its exact plan and bundle bytes.
+pub fn admit_artifact_import_receipt(
+    plan: &ArtifactPlan,
+    bundle: VerifiedArtifactBundle,
+    receipt: &ArtifactImportReceipt,
+) -> Result<AdmittedArtifact, ConformanceDiagnosticSet> {
+    verify_artifact_import_source(plan, &bundle)?;
+    let identities_match = receipt.format_version == plan.format_version
+        && receipt.plan_digest == artifact_plan_digest(plan)?
+        && receipt.bundle_digest == *bundle.bundle_digest()
+        && receipt.manifest_digest == *bundle.manifest_digest()
+        && receipt.payload_digest == bundle.manifest().payload_digest
+        && receipt.payload_size_bytes == bundle.manifest().payload_size_bytes
+        && artifact_import_receipt_digest(receipt)? == receipt.receipt_digest;
+    if !identities_match {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactStateInvalid,
+            "artifact import receipt is incomplete or identity-inconsistent",
+        ));
+    }
+    let observation = ArtifactImportObservation {
+        format_version: receipt.format_version,
+        events: receipt.events.clone(),
+        construction_count: receipt.construction_count,
+        import_count: receipt.import_count,
+        component_build_counts: receipt.component_build_counts.clone(),
+        forbidden_work_counts: receipt.forbidden_work_counts.clone(),
+        verified_component_digests: receipt.verified_component_digests.clone(),
+        materialization_elapsed_millis: receipt.materialization_elapsed_millis,
+    };
+    validate_import_observation(plan, &bundle, &observation)?;
+    let mut admitted = admit_artifact(
+        plan,
+        ArtifactObservation {
+            strategy: plan.materialization.clone(),
+            manifest: bundle.manifest().clone(),
+            verified_component_digests: receipt.verified_component_digests.clone(),
+            bundle,
+            events: receipt.events.clone(),
+            counters: ArtifactCounters {
+                construction: receipt.construction_count,
+                imports: receipt.import_count,
+                component_builds: receipt.component_build_counts.clone(),
+                forbidden_work: CanonicalSet::new(
+                    receipt
+                        .forbidden_work_counts
+                        .iter()
+                        .filter_map(|(work, count)| (*count > 0).then_some(*work)),
+                ),
+            },
+            elapsed_millis: receipt.materialization_elapsed_millis.get(),
+        },
+    )?;
+    admitted.import_receipt_digest = Some(receipt.receipt_digest.clone());
+    Ok(admitted)
+}
+
+/// Returns the canonical identity of one exact artifact plan.
+pub fn artifact_plan_digest(plan: &ArtifactPlan) -> Result<Digest, ConformanceDiagnosticSet> {
+    canonical_digest(DigestDomain::Artifact, &("artifact-build-plan", plan))
+        .map_err(|_| bundle_error())
+}
+
+/// Returns the complete forbidden-work counter vocabulary retained by Build receipts.
+pub fn forbidden_artifact_work_classes() -> BTreeSet<ForbiddenArtifactWork> {
+    BTreeSet::from([
+        ForbiddenArtifactWork::UnrelatedSdkBuild,
+        ForbiddenArtifactWork::UnrelatedSdkTest,
+        ForbiddenArtifactWork::CompleteGoTestSuite,
+        ForbiddenArtifactWork::UnscopedGeneration,
+        ForbiddenArtifactWork::DistributionBuild,
+        ForbiddenArtifactWork::StrategyFallback,
+    ])
 }
 
 /// Canonical bundle that retains the complete portable archive and verified inner payload.
@@ -306,6 +894,8 @@ pub struct AdmittedArtifact {
     payload_digest: Digest,
     /// Exact OCI payload size.
     payload_size_bytes: u64,
+    /// Present only after a canonical Import receipt was independently admitted.
+    import_receipt_digest: Option<Digest>,
     /// Complete canonical bundle retained for export, import, or scanning.
     bundle: VerifiedArtifactBundle,
 }
@@ -324,6 +914,11 @@ impl AdmittedArtifact {
     /// Returns the exact existing OCI payload size.
     pub const fn payload_size_bytes(&self) -> u64 {
         self.payload_size_bytes
+    }
+
+    /// Borrows the sole admitted Import receipt identity, when this is an Import artifact.
+    pub fn import_receipt_digest(&self) -> Option<&Digest> {
+        self.import_receipt_digest.as_ref()
     }
 
     /// Borrows the complete canonical bundle and its actual payload bytes.
@@ -348,7 +943,7 @@ pub fn assemble_artifact_bundle(
         (PAYLOAD_NAME, payload.as_slice()),
         (CHECKSUMS_NAME, checksums.as_slice()),
     ])?;
-    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
+    if !bundle_size_within_memory_bound(bytes.len() as u64) {
         return Err(artifact_error(
             ConformanceDiagnosticCode::SignoffArtifactPayloadInvalid,
             "artifact bundle exceeds the portable size bound",
@@ -369,7 +964,7 @@ pub fn assemble_artifact_bundle(
 pub fn decode_artifact_bundle(
     bytes: &[u8],
 ) -> Result<VerifiedArtifactBundle, ConformanceDiagnosticSet> {
-    if bytes.is_empty() || bytes.len() as u64 > MAX_BUNDLE_BYTES {
+    if bytes.is_empty() || !bundle_size_within_memory_bound(bytes.len() as u64) {
         return Err(artifact_error(
             ConformanceDiagnosticCode::SignoffArtifactPayloadInvalid,
             "artifact bundle is empty or exceeds the portable size bound",
@@ -432,6 +1027,10 @@ pub fn decode_artifact_bundle(
     Ok(canonical)
 }
 
+const fn bundle_size_within_memory_bound(byte_count: u64) -> bool {
+    byte_count <= MAX_BUNDLE_BYTES
+}
+
 /// Admits a complete artifact only when plan, bytes, history, and counters agree exactly.
 pub fn admit_artifact(
     plan: &ArtifactPlan,
@@ -471,6 +1070,7 @@ pub fn admit_artifact(
         manifest_digest,
         payload_digest: observation.manifest.payload_digest.clone(),
         payload_size_bytes: observation.manifest.payload_size_bytes,
+        import_receipt_digest: None,
         bundle: observation.bundle,
     })
 }
@@ -528,6 +1128,8 @@ pub fn artifact_manifest_for_payload(
         go_runtime_digest: plan.go_runtime_digest.clone(),
         rust_manifest_digest: plan.rust_manifest_digest.clone(),
         rust_descriptor_digest: plan.rust_descriptor_digest.clone(),
+        rust_dependency: plan.rust_dependency.clone(),
+        rust_dependency_descriptor_digest: plan.rust_dependency_descriptor_digest.clone(),
         toolchain_digests: plan.toolchain_digests.clone(),
         components: plan.components.clone(),
         payload_digest: Digest::sha256(payload),
@@ -537,7 +1139,8 @@ pub fn artifact_manifest_for_payload(
 }
 
 fn validate_plan(plan: &ArtifactPlan) -> Result<(), ConformanceDiagnosticSet> {
-    let subject_valid = plan.subject.reachable
+    let subject_valid = is_canonical_subject_repository(&plan.subject.repository)
+        && plan.subject.reachable
         && plan.subject.clean
         && plan.subject.immutable
         && plan.subject.focused_source_digest == plan.subject.workspace_focused_source_digest;
@@ -555,7 +1158,12 @@ fn validate_plan(plan: &ArtifactPlan) -> Result<(), ConformanceDiagnosticSet> {
     let provenance = provenance_from_plan(plan);
     let provenance_valid = canonical_digest(DigestDomain::ConformanceSecurity, &provenance)
         .is_ok_and(|digest| digest == plan.provenance_digest);
-    if subject_valid && components_valid && tools_valid && provenance_valid {
+    let dependency_valid = plan.rust_dependency.is_exact_subject(&plan.subject)
+        && plan
+            .rust_dependency
+            .direct_digest()
+            .is_ok_and(|digest| digest == plan.rust_dependency_descriptor_digest);
+    if subject_valid && components_valid && tools_valid && provenance_valid && dependency_valid {
         Ok(())
     } else {
         Err(artifact_error(
@@ -577,6 +1185,8 @@ fn manifest_matches_plan(manifest: &ExactTargetArtifactManifest, plan: &Artifact
         && manifest.go_runtime_digest == plan.go_runtime_digest
         && manifest.rust_manifest_digest == plan.rust_manifest_digest
         && manifest.rust_descriptor_digest == plan.rust_descriptor_digest
+        && manifest.rust_dependency == plan.rust_dependency
+        && manifest.rust_dependency_descriptor_digest == plan.rust_dependency_descriptor_digest
         && manifest.toolchain_digests == plan.toolchain_digests
         && manifest.components == plan.components
         && manifest.provenance_digest == plan.provenance_digest
@@ -613,6 +1223,165 @@ fn validate_bundle_inputs(
             "artifact provenance sidecar does not match the manifest",
         ));
     }
+    Ok(())
+}
+
+fn artifact_build_receipt_digest(
+    receipt: &ArtifactBuildReceipt,
+) -> Result<Digest, ConformanceDiagnosticSet> {
+    canonical_digest(
+        DigestDomain::Artifact,
+        &(
+            "artifact-build-receipt",
+            receipt.format_version,
+            &receipt.plan_digest,
+            &receipt.bundle_digest,
+            &receipt.manifest_digest,
+            &receipt.payload_digest,
+            receipt.payload_size_bytes,
+            &receipt.component_digests,
+            &receipt.events,
+            receipt.construction_count,
+            receipt.import_count,
+            &receipt.component_build_counts,
+            &receipt.forbidden_work_counts,
+            receipt.materialization_elapsed_millis,
+        ),
+    )
+    .map_err(|_| bundle_error())
+}
+
+fn artifact_import_receipt_digest(
+    receipt: &ArtifactImportReceipt,
+) -> Result<Digest, ConformanceDiagnosticSet> {
+    canonical_digest(
+        DigestDomain::Artifact,
+        &(
+            "artifact-import-receipt",
+            receipt.format_version,
+            &receipt.plan_digest,
+            &receipt.bundle_digest,
+            &receipt.manifest_digest,
+            &receipt.payload_digest,
+            receipt.payload_size_bytes,
+            &receipt.verified_component_digests,
+            &receipt.events,
+            receipt.construction_count,
+            receipt.import_count,
+            &receipt.component_build_counts,
+            &receipt.forbidden_work_counts,
+            receipt.materialization_elapsed_millis,
+        ),
+    )
+    .map_err(|_| bundle_error())
+}
+
+fn validate_build_observation(
+    plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+    observation: &ArtifactBuildObservation,
+) -> Result<(), ConformanceDiagnosticSet> {
+    let component_keys = observation
+        .component_build_counts
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let forbidden_keys = observation
+        .forbidden_work_counts
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if observation.format_version != plan.format_version
+        || component_keys != required_artifact_components()
+        || forbidden_keys != forbidden_artifact_work_classes()
+    {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactStateInvalid,
+            "artifact build observation is incomplete or uses unknown policy vocabulary",
+        ));
+    }
+    admit_artifact(
+        plan,
+        ArtifactObservation {
+            strategy: ArtifactMaterialization::Build,
+            manifest: bundle.manifest().clone(),
+            bundle: bundle.clone(),
+            events: observation.events.clone(),
+            counters: ArtifactCounters {
+                construction: observation.construction_count,
+                imports: observation.import_count,
+                component_builds: observation.component_build_counts.clone(),
+                forbidden_work: CanonicalSet::new(
+                    observation
+                        .forbidden_work_counts
+                        .iter()
+                        .filter_map(|(work, count)| (*count > 0).then_some(*work)),
+                ),
+            },
+            verified_component_digests: bundle
+                .manifest()
+                .components
+                .iter()
+                .map(|(component, record)| (*component, record.content_digest.clone()))
+                .collect(),
+            elapsed_millis: observation.materialization_elapsed_millis.get(),
+        },
+    )?;
+    Ok(())
+}
+
+fn validate_import_observation(
+    plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+    observation: &ArtifactImportObservation,
+) -> Result<(), ConformanceDiagnosticSet> {
+    let component_keys = observation
+        .component_build_counts
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let verified_component_keys = observation
+        .verified_component_digests
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let forbidden_keys = observation
+        .forbidden_work_counts
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if observation.format_version != plan.format_version
+        || component_keys != required_artifact_components()
+        || verified_component_keys != required_artifact_components()
+        || forbidden_keys != forbidden_artifact_work_classes()
+    {
+        return Err(artifact_error(
+            ConformanceDiagnosticCode::SignoffArtifactStateInvalid,
+            "artifact import observation is incomplete or uses unknown policy vocabulary",
+        ));
+    }
+    admit_artifact(
+        plan,
+        ArtifactObservation {
+            strategy: plan.materialization.clone(),
+            manifest: bundle.manifest().clone(),
+            bundle: bundle.clone(),
+            events: observation.events.clone(),
+            counters: ArtifactCounters {
+                construction: observation.construction_count,
+                imports: observation.import_count,
+                component_builds: observation.component_build_counts.clone(),
+                forbidden_work: CanonicalSet::new(
+                    observation
+                        .forbidden_work_counts
+                        .iter()
+                        .filter_map(|(work, count)| (*count > 0).then_some(*work)),
+                ),
+            },
+            verified_component_digests: observation.verified_component_digests.clone(),
+            elapsed_millis: observation.materialization_elapsed_millis.get(),
+        },
+    )?;
     Ok(())
 }
 
@@ -786,4 +1555,15 @@ fn bundle_error() -> ConformanceDiagnosticSet {
         ConformanceDiagnosticCode::SignoffArtifactManifestInvalid,
         "artifact bundle is malformed or not in canonical byte form",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_BUNDLE_BYTES, bundle_size_within_memory_bound};
+
+    #[test]
+    fn in_memory_bundle_bound_accepts_exactly_the_documented_maximum() {
+        assert!(bundle_size_within_memory_bound(MAX_BUNDLE_BYTES));
+        assert!(!bundle_size_within_memory_bound(MAX_BUNDLE_BYTES + 1));
+    }
 }

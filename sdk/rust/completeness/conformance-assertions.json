@@ -5465,6 +5465,117 @@
     {
       "authority_anchors": [
         {
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+          "source_item_kind": "rust-policy"
+        },
+        {
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+          "source_item_kind": "rust-policy"
+        }
+      ],
+      "capability_ids": [
+        "policy/rust-policy/conformance-case-catalog"
+      ],
+      "fixture_context": "context/fixed/standalone-example/backend",
+      "id": "assertion/fixed/standalone-example/backend",
+      "origin": {
+        "family": "standalone-example",
+        "kind": "fixed-case"
+      },
+      "permitted_families": [
+        "standalone-example"
+      ],
+      "predicate": {
+        "kind": "result",
+        "observation": "generated-surface"
+      },
+      "source_fingerprints": [
+        "sha256:0a46187ac43211917fdd53f7c2ea9c2f6947e44979e91a95b98dd52765329253"
+      ]
+    },
+    {
+      "authority_anchors": [
+        {
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+          "source_item_kind": "rust-policy"
+        },
+        {
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+          "source_item_kind": "rust-policy"
+        }
+      ],
+      "capability_ids": [
+        "policy/rust-policy/conformance-case-catalog"
+      ],
+      "fixture_context": "context/fixed/standalone-example/cli",
+      "id": "assertion/fixed/standalone-example/cli",
+      "origin": {
+        "family": "standalone-example",
+        "kind": "fixed-case"
+      },
+      "permitted_families": [
+        "standalone-example"
+      ],
+      "predicate": {
+        "kind": "filesystem",
+        "observation": "content"
+      },
+      "source_fingerprints": [
+        "sha256:0a46187ac43211917fdd53f7c2ea9c2f6947e44979e91a95b98dd52765329253"
+      ]
+    },
+    {
+      "authority_anchors": [
+        {
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:397",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+          "source_item_kind": "rust-policy"
+        },
+        {
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+          "source_item_kind": "rust-policy"
+        }
+      ],
+      "capability_ids": [
+        "policy/rust-policy/conformance-case-catalog"
+      ],
+      "fixture_context": "context/fixed/standalone-example/frontend",
+      "id": "assertion/fixed/standalone-example/frontend",
+      "origin": {
+        "family": "standalone-example",
+        "kind": "fixed-case"
+      },
+      "permitted_families": [
+        "standalone-example"
+      ],
+      "predicate": {
+        "kind": "result",
+        "observation": "generated-surface"
+      },
+      "source_fingerprints": [
+        "sha256:0a46187ac43211917fdd53f7c2ea9c2f6947e44979e91a95b98dd52765329253"
+      ]
+    },
+    {
+      "authority_anchors": [
+        {
           "locator": "core/integration/module_builtin_dang_test.go:34:3",
           "path": "core/integration/module_builtin_dang_test.go",
           "repository": "github.com/dagger/dagger",

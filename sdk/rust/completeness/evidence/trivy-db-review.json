@@ -1,0 +1,36 @@
+{
+  "artifact": {
+    "artifact_type": "application/vnd.aquasec.trivy.config.v1+json",
+    "config": {
+      "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "media_type": "application/vnd.oci.empty.v1+json",
+      "size_bytes": 2
+    },
+    "layer": {
+      "digest": "sha256:e977429cb00f83a76642c097fa0dddc796aacc38cd07f06bb03fb627736ed41b",
+      "media_type": "application/vnd.aquasec.trivy.db.layer.v1.tar+gzip",
+      "size_bytes": 112064271
+    },
+    "manifest_digest": "sha256:10a3832219beaf45a3eb86065e30b39e528ae9c1650aa5f733d4666afd0712c5",
+    "manifest_media_type": "application/vnd.oci.image.manifest.v1+json"
+  },
+  "database": {
+    "content_digest": "sha256:76213b27bda05820231b84c09ca2854ec548147e9b46c0974247116f4ced4f67",
+    "size_bytes": 1283756032
+  },
+  "format_version": "1.0.0",
+  "materializations": [
+    {
+      "database_content_digest": "sha256:76213b27bda05820231b84c09ca2854ec548147e9b46c0974247116f4ced4f67",
+      "metadata_digest": "sha256:059f3934aac5cb444be7ba2eb31523933f15da0a0f64f266ff5dec37103e41e2"
+    },
+    {
+      "database_content_digest": "sha256:76213b27bda05820231b84c09ca2854ec548147e9b46c0974247116f4ced4f67",
+      "metadata_digest": "sha256:8f27b0f07a2c70782d30d7290b28ceb4416dcce7c4036cc2a6356c14fe6a58e8"
+    }
+  ],
+  "review_kind": "trivy-db-exact-artifact-provenance",
+  "source": {
+    "repository": "ghcr.io/aquasecurity/trivy-db"
+  }
+}

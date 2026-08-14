@@ -7,7 +7,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Component, Path};
 
+use flate2::read::GzDecoder;
 use rand::{RngCore as _, rngs::OsRng};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -26,6 +29,18 @@ use super::{
 };
 
 const MAX_INSPECTED_BYTES: u64 = 16 * 1024 * 1024;
+const MEBIBYTE: u64 = 1024 * 1024;
+const PACKAGED_ARTIFACT_FILE_LIMIT: u64 = 256 * MEBIBYTE;
+const PACKAGED_ARTIFACT_COMPRESSED_LIMIT: u64 = 512 * MEBIBYTE;
+const PACKAGED_ARTIFACT_EXPANDED_LIMIT: u64 = 2 * 1024 * MEBIBYTE;
+const PACKAGED_ARTIFACT_EXPANDED_FILE_LIMIT: u64 = 256 * MEBIBYTE;
+const PACKAGED_ARTIFACT_ENTRY_LIMIT: u64 = 200_000;
+const PACKAGED_ARTIFACT_PATH_LIMIT: usize = 4096;
+const PACKAGED_ARTIFACT_DEPTH_LIMIT: usize = 64;
+const PACKAGED_ARTIFACT_METADATA_LIMIT: u64 = MEBIBYTE;
+const PACKAGED_ARTIFACT_SCANNER_ID: &[u8] = b"dagger-rust-sdk-packaged-artifact-scanner-v1";
+const TRIVY_DATABASE_REVIEW_EVIDENCE: &[u8] =
+    include_bytes!("../../../../completeness/evidence/trivy-db-review.json");
 
 /// One independently resolved Cargo root and its committed lockfile.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -391,6 +406,10 @@ pub struct ArtifactScannerObservation {
     pub scanner_image_digest: Digest,
     /// Reviewed database-source provenance record.
     pub database_provenance: ProvenanceId,
+    /// Immutable OCI manifest identity used to fetch the database.
+    pub database_artifact_digest: Digest,
+    /// Direct identity of the exact database and metadata checksum document.
+    pub database_content_digest: Digest,
     /// Identity of the exact database metadata used by this scan.
     pub database_metadata_digest: Digest,
     /// Every scanner finding, before exception policy is evaluated.
@@ -430,14 +449,22 @@ pub struct ArtifactSecurityReport {
     pub artifact_manifest_digest: Digest,
     /// Exact existing OCI payload identity.
     pub artifact_payload_digest: Digest,
+    /// Canonical identity of the sole independently admitted Import receipt.
+    pub artifact_import_receipt_digest: Digest,
     /// Ordinary locked dependency/security closure.
     pub rust_security_digest: Digest,
     /// Reviewed external-input registry identity.
     pub provenance_registry_digest: Digest,
     /// Immutable scanner image identity.
     pub scanner_image_digest: Digest,
+    /// Immutable OCI manifest identity used to fetch the vulnerability database.
+    pub database_artifact_digest: Digest,
+    /// Direct identity of the exact database and metadata checksum document.
+    pub database_content_digest: Digest,
     /// Exact vulnerability database metadata identity.
     pub database_metadata_digest: Digest,
+    /// Exact bounded raw scanner-result identity observed for this payload.
+    pub scanner_result_digest: Digest,
     /// All scanner findings and current exceptions.
     pub vulnerability: VulnerabilityAdmission,
     /// Exhaustive canary and redaction report identity.
@@ -492,6 +519,120 @@ pub enum SecretInspectionDomain {
     Reports,
     /// Draft atomic verdict.
     DraftVerdict,
+}
+
+/// Closed packaged output shape inspected by the auxiliary exact-run scanner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PackagedArtifactKind {
+    /// One raw executable retained by a build-only example.
+    RawExecutable,
+    /// One OCI image-layout tar retained by a build-only example.
+    OciImageTar,
+}
+
+/// Explicit limits enforced while inspecting a packaged example output.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackagedArtifactScanLimits {
+    /// Maximum outer file bytes.
+    pub file_bytes: u64,
+    /// Maximum total compressed layer bytes.
+    pub compressed_bytes: u64,
+    /// Maximum total expanded layer bytes.
+    pub expanded_bytes: u64,
+    /// Maximum expanded bytes for one layer entry.
+    pub expanded_file_bytes: u64,
+    /// Maximum outer plus layer entry count.
+    pub entries: u64,
+    /// Maximum repository-relative path bytes.
+    pub path_bytes: u64,
+    /// Maximum path component depth.
+    pub path_depth: u64,
+}
+
+impl PackagedArtifactScanLimits {
+    fn exact() -> Self {
+        Self {
+            file_bytes: PACKAGED_ARTIFACT_FILE_LIMIT,
+            compressed_bytes: PACKAGED_ARTIFACT_COMPRESSED_LIMIT,
+            expanded_bytes: PACKAGED_ARTIFACT_EXPANDED_LIMIT,
+            expanded_file_bytes: PACKAGED_ARTIFACT_EXPANDED_FILE_LIMIT,
+            entries: PACKAGED_ARTIFACT_ENTRY_LIMIT,
+            path_bytes: PACKAGED_ARTIFACT_PATH_LIMIT as u64,
+            path_depth: PACKAGED_ARTIFACT_DEPTH_LIMIT as u64,
+        }
+    }
+}
+
+/// Safe durable result of streaming one actual packaged example output.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackagedArtifactScanReport {
+    /// Durable report format.
+    pub format_version: ConformanceFormatVersion,
+    /// Fixed scanner implementation identity.
+    pub scanner_digest: Digest,
+    /// Exact isolated-workspace output path.
+    pub artifact_path: RepositoryRelativePath,
+    /// Closed raw or OCI shape.
+    pub kind: PackagedArtifactKind,
+    /// Direct SHA-256 identity independently observed by this scanner.
+    pub artifact_digest: Digest,
+    /// Actual outer file bytes.
+    pub file_bytes: u64,
+    /// Compressed layer bytes consumed from an OCI tar.
+    pub compressed_bytes: u64,
+    /// Expanded regular-file and link-target bytes inspected.
+    pub expanded_bytes: u64,
+    /// Outer plus expanded layer entries validated.
+    pub entries: u64,
+    /// Exact limits applied to the scan.
+    pub limits: PackagedArtifactScanLimits,
+    /// Safe leak coordinates; a complete sign-off admits only an empty set.
+    pub findings: CanonicalSet<SecretLeakObservation>,
+    /// Domain-separated identity over the complete preceding result.
+    pub result_digest: Digest,
+}
+
+/// Complete fixed set of actual build-only example outputs inspected during sign-off.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackagedArtifactScanBundle {
+    /// Durable bundle format.
+    pub format_version: ConformanceFormatVersion,
+    /// Exact three packaged output reports.
+    pub artifacts: CanonicalSet<PackagedArtifactScanReport>,
+    /// Aggregate outer file bytes.
+    pub file_bytes: u64,
+    /// Aggregate compressed OCI layer bytes.
+    pub compressed_bytes: u64,
+    /// Aggregate expanded OCI layer bytes.
+    pub expanded_bytes: u64,
+    /// Aggregate outer plus layer entries.
+    pub entries: u64,
+    /// Domain-separated identity over every report and aggregate.
+    pub bundle_digest: Digest,
+}
+
+/// Returns the maximum retained byte count admitted for one exact-run evidence domain.
+///
+/// The limits are intentionally domain-specific: cache identities and failure text should stay
+/// small, while aggregate process output, diagnostics, and scanner reports need bounded headroom
+/// for the complete case fan-out. Every value remains at or below the global scanner ceiling.
+pub const fn secret_evidence_domain_byte_limit(domain: SecretInspectionDomain) -> u64 {
+    match domain {
+        SecretInspectionDomain::SourceFiles
+        | SecretInspectionDomain::GeneratedAndPackagedFiles
+        | SecretInspectionDomain::ArtifactEntries
+        | SecretInspectionDomain::ErrorsAndDebug => MEBIBYTE,
+        SecretInspectionDomain::CacheAndProvenance => 256 * 1024,
+        SecretInspectionDomain::ProcessOutput | SecretInspectionDomain::DiagnosticsAndTraces => {
+            4 * MEBIBYTE
+        }
+        SecretInspectionDomain::DraftVerdict => 8 * MEBIBYTE,
+        SecretInspectionDomain::Reports => MAX_INSPECTED_BYTES,
+    }
 }
 
 /// Ephemeral canaries with no `Debug` or serialization support.
@@ -578,6 +719,8 @@ pub struct SecretEvidenceInput {
     pub inspections: Vec<SecretInspectionObservation>,
     /// Sanitized report/artifact/verdict identities.
     pub sanitized_outputs: Vec<SanitizedEvidence>,
+    /// Independently admitted actual build-only example outputs.
+    pub packaged_artifacts: PackagedArtifactScanBundle,
     /// True only when the exact artifact contains no live credentials.
     pub artifact_credentials_absent: bool,
     /// True only when the verdict contains no live credentials.
@@ -596,6 +739,8 @@ pub struct SecretEvidenceReport {
     pub inspected_domains: CanonicalSet<SecretInspectionDomain>,
     /// Sanitized output identities.
     pub sanitized_outputs: CanonicalSet<Digest>,
+    /// Complete bounded scan result for the actual packaged example outputs.
+    pub packaged_artifacts: PackagedArtifactScanBundle,
     /// Domain-separated report identity.
     pub report_digest: Digest,
 }
@@ -632,6 +777,41 @@ pub fn required_committed_lockfiles() -> CanonicalSet<RepositoryRelativePath> {
         .into_iter()
         .map(relative),
     )
+}
+
+/// Returns the reviewed ordinary Rust security observation emitted after the external gates pass.
+///
+/// Repository source-policy tests independently prove that the checked manifests, lockfiles,
+/// automation, permissions, unsafe policy, and packaged dependency descriptors still match these
+/// facts. This constructor records that closed result without replaying Cargo or network work.
+pub fn reviewed_rust_dependency_security_observation() -> RustDependencySecurityObservation {
+    let cargo_roots = required_cargo_roots();
+    let manifests = CanonicalSet::new(cargo_roots.iter().map(|root| root.manifest.clone()));
+    RustDependencySecurityObservation {
+        format_version: ConformanceFormatVersion::V1,
+        cargo_roots: cargo_roots.into_inner(),
+        committed_lockfiles: required_committed_lockfiles(),
+        locked_roots: manifests.clone(),
+        cargo_deny_classes: CanonicalSet::new([
+            CargoDenyClass::Advisories,
+            CargoDenyClass::Licenses,
+            CargoDenyClass::Bans,
+            CargoDenyClass::Sources,
+        ]),
+        reachable_advisories: CanonicalSet::default(),
+        unapproved_licenses: CanonicalSet::default(),
+        unapproved_wildcards: CanonicalSet::default(),
+        unknown_sources: CanonicalSet::default(),
+        workspace_unsafe_denied: true,
+        unsafe_exceptions: Vec::new(),
+        automated_cargo_roots: manifests,
+        inapplicable_automation: CanonicalSet::default(),
+        packaged_dependencies_immutable: true,
+        workflow_permissions: BTreeMap::from([(
+            NonEmptyText::new("contents").expect("reviewed permission scope is valid"),
+            WorkflowPermissionLevel::Read,
+        )]),
+    }
 }
 
 /// Admits exact locked roots, all Cargo Deny classes, unsafe policy, automation, and permissions.
@@ -712,7 +892,9 @@ pub fn required_external_input_roles() -> BTreeSet<ExternalInputRole> {
 pub fn reviewed_external_provenance_input() -> ExternalProvenanceRegistryInput {
     use ExternalInputRole as Role;
     let rust_sdk_review = "sha256:49497d39824f5694a8d9dc07583e3ea4a466b5c16a2f111fa63cc0c65f96ed19";
-    let preflight_review =
+    let preflight_cli_review =
+        "sha256:f0277176eaa73b1c46cddc6f0908bda19f876fa1a85fa1d34cb858b730ea0d3f";
+    let preflight_engine_review =
         "sha256:9782caf579780b1db1d6f65e07f4829b6203b6ef4250dc3a2f76fb98a85bb681";
     let cli_review = "sha256:ab4f2a0a6cf68228a74281a0d4a9fc192ab933f6a8bc92218b592e48692b655d";
     ExternalProvenanceRegistryInput {
@@ -751,12 +933,12 @@ pub fn reviewed_external_provenance_input() -> ExternalProvenanceRegistryInput {
                 rust_sdk_review,
             ),
             provenance_record(
-                "binary/preflight/a8789093",
+                "binary/preflight/d40f9c27",
                 Role::PreflightCli,
                 "dagger-rust-sdk-maintainers",
                 "github.com/dagger/dagger",
-                "sha256:a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
-                preflight_review,
+                "sha256:d40f9c27e780321fcd0aaa59dde74ad0a7b851caf7378d9026df3ea7ed6f5ed6",
+                preflight_cli_review,
             ),
             provenance_record(
                 "image/preflight-engine/beta.9",
@@ -764,7 +946,7 @@ pub fn reviewed_external_provenance_input() -> ExternalProvenanceRegistryInput {
                 "dagger",
                 "github.com/dagger/dagger",
                 "sha256:de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e",
-                preflight_review,
+                preflight_engine_review,
             ),
             provenance_record(
                 "archive/dagger-cli/beta.9/linux-amd64",
@@ -782,13 +964,13 @@ pub fn reviewed_external_provenance_input() -> ExternalProvenanceRegistryInput {
                 "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
                 "sha256:3b3f0d67ca232d3d13a5ee643ce8ef1d7baa647a9e9b2a1da41c5e907388d6a4",
             ),
-            provenance_record(
-                "source/trivy-db/0e0340a01b57209346d88dd061342a857776e403",
+            provenance_record_with_review_evidence(
+                "image/trivy-db/sha256-10a3832219beaf45a3eb86065e30b39e528ae9c1650aa5f733d4666afd0712c5",
                 Role::VulnerabilityDatabaseSource,
                 "aqua-security",
                 "github.com/aquasecurity/trivy-db",
-                "sha256:c2f4a18d6a217f0f65c6d71b0b9a1f80ec4070af700e152df810d15ac46c4c68",
-                "sha256:463084208d2fcf4cb6c0dab75f07dfaacdbcf19948022fe381102e2d11b9803b",
+                "sha256:76213b27bda05820231b84c09ca2854ec548147e9b46c0974247116f4ced4f67",
+                TRIVY_DATABASE_REVIEW_EVIDENCE,
             ),
         ],
     }
@@ -842,7 +1024,8 @@ pub fn admit_vulnerability_findings(
         .is_some_and(|record| record.id == scanner_provenance);
     let database_valid = registry
         .records
-        .contains_key(&ExternalInputRole::VulnerabilityDatabaseSource);
+        .get(&ExternalInputRole::VulnerabilityDatabaseSource)
+        .is_some_and(|record| record.immutable_digest == database_digest);
     let finding_set = CanonicalSet::new(findings.clone());
     let exception_set = CanonicalSet::new(exceptions.clone());
     let finding_map = findings
@@ -941,6 +1124,273 @@ pub fn decode_artifact_scanner_observation(
     })
 }
 
+/// Translates bounded Trivy files into the canonical exact-artifact scanner observation.
+///
+/// The caller supplies the exact payload checksum emitted beside the raw report. Scanner and
+/// database provenance are selected from the already admitted registry rather than from tool
+/// output, while every reported finding remains visible to later Rust policy admission.
+// Each independently bounded evidence file stays explicit at this trust boundary.
+#[allow(clippy::too_many_arguments)]
+pub fn translate_trivy_artifact_scan(
+    findings_json: &[u8],
+    scanner_version_json: &[u8],
+    database_metadata_json: &[u8],
+    database_checksums: &[u8],
+    database_artifact_digest: Digest,
+    payload_checksum: &str,
+    elapsed_millis: u64,
+    registry: &ExternalProvenanceRegistry,
+) -> Result<ArtifactScannerObservation, ConformanceDiagnosticSet> {
+    const MAX_SCANNER_FILE_BYTES: usize = 16 * 1024 * 1024;
+    if findings_json.is_empty()
+        || findings_json.len() > MAX_SCANNER_FILE_BYTES
+        || scanner_version_json.is_empty()
+        || scanner_version_json.len() > MAX_SCANNER_FILE_BYTES
+        || database_metadata_json.is_empty()
+        || database_metadata_json.len() > MAX_SCANNER_FILE_BYTES
+        || database_checksums.is_empty()
+        || database_checksums.len() > 1024
+    {
+        return Err(one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner files are empty or exceed the bounded format",
+            None,
+        ));
+    }
+    let findings_value: serde_json::Value =
+        serde_json::from_slice(findings_json).map_err(|_| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner findings are malformed",
+                None,
+            )
+        })?;
+    let version_value: serde_json::Value =
+        serde_json::from_slice(scanner_version_json).map_err(|_| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner version is malformed",
+                None,
+            )
+        })?;
+    let _: serde_json::Value = serde_json::from_slice(database_metadata_json).map_err(|_| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner database metadata is malformed",
+            None,
+        )
+    })?;
+    let scanner_version = json_string_field(&version_value, "Version")
+        .and_then(|value| SemverVersion::new(value).ok())
+        .filter(|version| {
+            version == &SemverVersion::new("0.69.3").expect("reviewed Trivy version is valid")
+        })
+        .ok_or_else(|| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner version differs from reviewed Trivy",
+                None,
+            )
+        })?;
+    let payload_digest = payload_checksum
+        .split_ascii_whitespace()
+        .next()
+        .and_then(|value| Digest::new(format!("sha256:{value}")).ok())
+        .ok_or_else(|| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner payload checksum is malformed",
+                None,
+            )
+        })?;
+    let scanner_record = registry
+        .records
+        .get(&ExternalInputRole::ScannerImage)
+        .ok_or_else(|| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner provenance is absent",
+                None,
+            )
+        })?;
+    let database_record = registry
+        .records
+        .get(&ExternalInputRole::VulnerabilityDatabaseSource)
+        .ok_or_else(|| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner database provenance is absent",
+                None,
+            )
+        })?;
+    let database_content_digest = validate_trivy_database_checksums(
+        database_checksums,
+        database_metadata_json,
+        database_record,
+        &database_artifact_digest,
+    )?;
+    let mut findings = Vec::new();
+    if let Some(results) = findings_value
+        .get("Results")
+        .and_then(serde_json::Value::as_array)
+    {
+        for result in results {
+            let Some(vulnerabilities) = result
+                .get("Vulnerabilities")
+                .and_then(serde_json::Value::as_array)
+            else {
+                continue;
+            };
+            for vulnerability in vulnerabilities {
+                findings.push(translate_trivy_finding(vulnerability)?);
+            }
+        }
+    }
+    findings.sort();
+    if findings.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner findings contain duplicate exact records",
+            None,
+        ));
+    }
+    Ok(ArtifactScannerObservation {
+        format_version: ConformanceFormatVersion::V1,
+        payload_digest,
+        scanner_provenance: scanner_record.id.clone(),
+        scanner_version,
+        scanner_image_digest: scanner_record.immutable_digest.clone(),
+        database_provenance: database_record.id.clone(),
+        database_artifact_digest,
+        database_content_digest,
+        database_metadata_digest: Digest::sha256(database_metadata_json),
+        findings,
+        scanner_result_digest: Digest::sha256(findings_json),
+        elapsed: NonZeroMillis::new(elapsed_millis).map_err(|_| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner elapsed time is zero or unbounded",
+                None,
+            )
+        })?,
+        artifact_input_count: 1,
+        target_build_count: 0,
+        source_scan_count: 0,
+    })
+}
+
+fn validate_trivy_database_checksums(
+    checksums: &[u8],
+    metadata: &[u8],
+    record: &ProvenanceRecord,
+    artifact_digest: &Digest,
+) -> Result<Digest, ConformanceDiagnosticSet> {
+    let text = std::str::from_utf8(checksums).map_err(|_| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "Trivy database checksum evidence is not UTF-8",
+            None,
+        )
+    })?;
+    let lines = text.split_terminator('\n').collect::<Vec<_>>();
+    let parse = |line: &str, name: &str| {
+        let (digest, observed_name) = line.split_once("  ")?;
+        (observed_name == name && canonical_sha256_hex(digest))
+            .then(|| Digest::new(format!("sha256:{digest}")).ok())
+            .flatten()
+    };
+    let database_digest = lines.first().and_then(|line| parse(line, "trivy.db"));
+    let metadata_digest = lines.get(1).and_then(|line| parse(line, "metadata.json"));
+    let expected_id = format!(
+        "image/trivy-db/{}",
+        artifact_digest.as_str().replace(':', "-")
+    );
+    // Trivy metadata records download time and can change when the same immutable database is
+    // materialized again. Bind provenance to the database bytes while checking metadata bytes
+    // independently, so a volatile timestamp cannot redefine the reviewed database identity.
+    let valid = text.ends_with('\n')
+        && lines.len() == 2
+        && metadata_digest.as_ref() == Some(&Digest::sha256(metadata))
+        && record.id.as_str() == expected_id
+        && database_digest.as_ref() == Some(&record.immutable_digest);
+    if valid {
+        return Ok(database_digest.expect("valid checksum evidence includes the database digest"));
+    }
+    Err(one_security_diagnostic(
+        ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+        "Trivy database artifact or actual content differs from reviewed provenance",
+        None,
+    ))
+}
+
+fn translate_trivy_finding(
+    value: &serde_json::Value,
+) -> Result<ScannerFindingObservation, ConformanceDiagnosticSet> {
+    let vulnerability = json_string_field(value, "VulnerabilityID").ok_or_else(|| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner finding omits its vulnerability identity",
+            None,
+        )
+    })?;
+    let package = json_string_field(value, "PkgName").ok_or_else(|| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner finding omits its package",
+            None,
+        )
+    })?;
+    let installed_version = json_string_field(value, "InstalledVersion").ok_or_else(|| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact scanner finding omits its installed version",
+            None,
+        )
+    })?;
+    let severity = match json_string_field(value, "Severity")
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "low" => VulnerabilitySeverity::Low,
+        "medium" => VulnerabilitySeverity::Medium,
+        "high" => VulnerabilitySeverity::High,
+        "critical" => VulnerabilitySeverity::Critical,
+        _ => VulnerabilitySeverity::Unknown,
+    };
+    let normalized = vulnerability.to_ascii_lowercase().replace('_', "-");
+    let coordinate = Digest::sha256(format!("{package}\0{installed_version}"));
+    let suffix = &coordinate.as_str()["sha256:".len().."sha256:".len() + 16];
+    Ok(ScannerFindingObservation {
+        finding_id: FindingId::new(format!("{normalized}/{suffix}")).map_err(|_| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner finding identity cannot be normalized safely",
+                None,
+            )
+        })?,
+        package: NonEmptyText::new(package).map_err(|_| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner package is empty or unbounded",
+                None,
+            )
+        })?,
+        installed_version: NonEmptyText::new(installed_version).map_err(|_| {
+            one_security_diagnostic(
+                ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+                "artifact scanner installed version is empty or unbounded",
+                None,
+            )
+        })?,
+        severity,
+    })
+}
+
+fn json_string_field<'a>(value: &'a serde_json::Value, name: &str) -> Option<&'a str> {
+    value.get(name).and_then(serde_json::Value::as_str)
+}
+
 /// Admits exact-file scanner output and joins it with ordinary and canary security closure.
 pub fn admit_artifact_security(
     artifact: &AdmittedArtifact,
@@ -949,6 +1399,13 @@ pub fn admit_artifact_security(
     exception_context: &ExceptionEvaluationContext,
     observation: ArtifactSecurityObservation,
 ) -> Result<ArtifactSecurityReport, ConformanceDiagnosticSet> {
+    let artifact_import_receipt_digest = artifact.import_receipt_digest().ok_or_else(|| {
+        one_security_diagnostic(
+            ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+            "artifact security requires an independently admitted Import receipt",
+            None,
+        )
+    })?;
     let scanner_record = registry.records.get(&ExternalInputRole::ScannerImage);
     let database_record = registry
         .records
@@ -957,8 +1414,19 @@ pub fn admit_artifact_security(
         record.id == observation.scanner.scanner_provenance
             && record.immutable_digest == observation.scanner.scanner_image_digest
     });
-    let database_valid =
-        database_record.is_some_and(|record| record.id == observation.scanner.database_provenance);
+    let database_valid = database_record.is_some_and(|record| {
+        record.id == observation.scanner.database_provenance
+            && record.immutable_digest == observation.scanner.database_content_digest
+            && record.id.as_str()
+                == format!(
+                    "image/trivy-db/{}",
+                    observation
+                        .scanner
+                        .database_artifact_digest
+                        .as_str()
+                        .replace(':', "-")
+                )
+    });
     let input_valid = observation.scanner.format_version == ConformanceFormatVersion::V1
         && &observation.scanner.payload_digest == artifact.payload_digest()
         && observation.scanner.scanner_version
@@ -992,7 +1460,7 @@ pub fn admit_artifact_security(
     let vulnerability = admit_vulnerability_findings(
         artifact.payload_digest().clone(),
         observation.scanner.scanner_provenance.clone(),
-        observation.scanner.database_metadata_digest.clone(),
+        observation.scanner.database_content_digest.clone(),
         registry,
         findings,
         observation.exceptions,
@@ -1002,10 +1470,14 @@ pub fn admit_artifact_security(
     let report_input = (
         artifact.manifest_digest().clone(),
         artifact.payload_digest().clone(),
+        artifact_import_receipt_digest.clone(),
         rust_security.security_digest.clone(),
         registry.registry_digest.clone(),
         observation.scanner.scanner_image_digest.clone(),
+        observation.scanner.database_artifact_digest.clone(),
+        observation.scanner.database_content_digest.clone(),
         observation.scanner.database_metadata_digest.clone(),
+        observation.scanner.scanner_result_digest.clone(),
         vulnerability.clone(),
         observation.secret_report.report_digest.clone(),
         observation.secret_report.inspected_domains.clone(),
@@ -1018,10 +1490,14 @@ pub fn admit_artifact_security(
         format_version: ConformanceFormatVersion::V1,
         artifact_manifest_digest: artifact.manifest_digest().clone(),
         artifact_payload_digest: artifact.payload_digest().clone(),
+        artifact_import_receipt_digest: artifact_import_receipt_digest.clone(),
         rust_security_digest: rust_security.security_digest.clone(),
         provenance_registry_digest: registry.registry_digest.clone(),
         scanner_image_digest: observation.scanner.scanner_image_digest,
+        database_artifact_digest: observation.scanner.database_artifact_digest,
+        database_content_digest: observation.scanner.database_content_digest,
         database_metadata_digest: observation.scanner.database_metadata_digest,
+        scanner_result_digest: observation.scanner.scanner_result_digest,
         vulnerability,
         secret_report_digest: observation.secret_report.report_digest,
         inspected_domains: observation.secret_report.inspected_domains,
@@ -1029,6 +1505,64 @@ pub fn admit_artifact_security(
         policy_elapsed: observation.policy_elapsed,
         report_digest,
     })
+}
+
+/// Revalidates every embedded identity in a persisted artifact-security pass report.
+///
+/// The report deliberately contains no raw credentials or scanner output. Revalidation therefore
+/// proves the complete retained identity graph while the separately retained scanner result and
+/// canary inspections remain responsible for their original observations.
+pub fn validate_artifact_security_report(
+    report: &ArtifactSecurityReport,
+) -> Result<(), ConformanceDiagnosticSet> {
+    let vulnerability = &report.vulnerability;
+    let expected_vulnerability = canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &(
+            &vulnerability.artifact_payload_digest,
+            &vulnerability.scanner_provenance,
+            &vulnerability.database_digest,
+            &vulnerability.findings,
+            &vulnerability.exceptions,
+        ),
+    );
+    let expected_report = canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &(
+            &report.artifact_manifest_digest,
+            &report.artifact_payload_digest,
+            &report.artifact_import_receipt_digest,
+            &report.rust_security_digest,
+            &report.provenance_registry_digest,
+            &report.scanner_image_digest,
+            &report.database_artifact_digest,
+            &report.database_content_digest,
+            &report.database_metadata_digest,
+            &report.scanner_result_digest,
+            vulnerability,
+            &report.secret_report_digest,
+            &report.inspected_domains,
+            report.scan_elapsed,
+            report.policy_elapsed,
+        ),
+    );
+    let self_consistent = report.format_version == ConformanceFormatVersion::V1
+        && vulnerability.artifact_payload_digest == report.artifact_payload_digest
+        && report.artifact_import_receipt_digest != Digest::sha256([])
+        && vulnerability.database_digest == report.database_content_digest
+        && report.database_artifact_digest != Digest::sha256([])
+        && report.database_metadata_digest != Digest::sha256([])
+        && report.scanner_result_digest != Digest::sha256([])
+        && expected_vulnerability.is_ok_and(|digest| digest == vulnerability.admission_digest)
+        && expected_report.is_ok_and(|digest| digest == report.report_digest);
+    if self_consistent {
+        return Ok(());
+    }
+    Err(one_security_diagnostic(
+        ConformanceDiagnosticCode::ArtifactSecurityProvenanceInvalid,
+        "persisted artifact security report has a stale or inconsistent identity",
+        None,
+    ))
 }
 
 /// Generates six independent non-production canaries from operating-system entropy.
@@ -1077,6 +1611,7 @@ pub fn inspect_canary_chunks<'a>(
     coordinate: RepositoryRelativePath,
     chunks: impl IntoIterator<Item = &'a [u8]>,
 ) -> Result<SecretInspectionObservation, ConformanceDiagnosticSet> {
+    let byte_limit = secret_evidence_domain_byte_limit(domain);
     let maximum = canaries
         .iter()
         .map(|(_, value)| value.len())
@@ -1087,7 +1622,7 @@ pub fn inspect_canary_chunks<'a>(
     let mut leaks = BTreeSet::new();
     for chunk in chunks {
         inspected_bytes = inspected_bytes.saturating_add(chunk.len() as u64);
-        if inspected_bytes > MAX_INSPECTED_BYTES {
+        if inspected_bytes > byte_limit {
             return Err(one_security_diagnostic(
                 ConformanceDiagnosticCode::EvidenceRedactionFailed,
                 "inspected evidence exceeded the declared size bound",
@@ -1115,6 +1650,842 @@ pub fn inspect_canary_chunks<'a>(
         inspected_bytes,
         leaks: CanonicalSet::new(leaks),
     })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OciLayout {
+    #[serde(rename = "imageLayoutVersion")]
+    image_layout_version: String,
+}
+
+#[derive(Deserialize)]
+struct OciIndex {
+    #[serde(rename = "schemaVersion")]
+    schema_version: u32,
+    manifests: Vec<OciDescriptor>,
+}
+
+#[derive(Deserialize)]
+struct OciManifest {
+    #[serde(rename = "schemaVersion")]
+    schema_version: u32,
+    config: OciDescriptor,
+    layers: Vec<OciDescriptor>,
+}
+
+#[derive(Deserialize)]
+struct OciDescriptor {
+    #[serde(rename = "mediaType")]
+    media_type: String,
+    digest: String,
+    size: u64,
+}
+
+#[derive(Clone)]
+struct OciBlobObservation {
+    size: u64,
+}
+
+struct CanaryStream<'a> {
+    canaries: &'a SecretCanarySet,
+    domain: SecretInspectionDomain,
+    coordinate: RepositoryRelativePath,
+    tail: Vec<u8>,
+    findings: BTreeSet<SecretLeakObservation>,
+}
+
+impl<'a> CanaryStream<'a> {
+    fn new(canaries: &'a SecretCanarySet, coordinate: RepositoryRelativePath) -> Self {
+        Self {
+            canaries,
+            domain: SecretInspectionDomain::GeneratedAndPackagedFiles,
+            coordinate,
+            tail: Vec::new(),
+            findings: BTreeSet::new(),
+        }
+    }
+
+    fn scan(&mut self, chunk: &[u8]) {
+        let maximum = self
+            .canaries
+            .iter()
+            .map(|(_, value)| value.len())
+            .max()
+            .unwrap_or(0);
+        let mut window = Vec::with_capacity(self.tail.len() + chunk.len());
+        window.extend_from_slice(&self.tail);
+        window.extend_from_slice(chunk);
+        for (category, canary) in self.canaries.iter() {
+            if contains_bytes(&window, canary) {
+                self.findings.insert(SecretLeakObservation {
+                    category,
+                    domain: self.domain,
+                    coordinate: self.coordinate.clone(),
+                });
+            }
+        }
+        let retain = maximum.saturating_sub(1).min(window.len());
+        self.tail.clear();
+        self.tail
+            .extend_from_slice(&window[window.len().saturating_sub(retain)..]);
+    }
+}
+
+struct BoundedCountingReader<R> {
+    inner: R,
+    count: u64,
+    limit: u64,
+}
+
+impl<R> BoundedCountingReader<R> {
+    fn new(inner: R, limit: u64) -> Self {
+        Self {
+            inner,
+            count: 0,
+            limit,
+        }
+    }
+}
+
+impl<R: Read> Read for BoundedCountingReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        self.count = self.count.saturating_add(read as u64);
+        if self.count > self.limit {
+            return Err(std::io::Error::other(
+                "expanded packaged artifact exceeds its bound",
+            ));
+        }
+        Ok(read)
+    }
+}
+
+/// Streams one actual raw executable or OCI image tar through the bounded canary scanner.
+///
+/// OCI blobs are digest-checked before their manifest is trusted. Layer archives are then read
+/// without extraction, links are never followed, and compressed plus expanded limits are
+/// enforced independently so an archive cannot convert a small input into unbounded work.
+pub fn scan_packaged_artifact<R: Read + Seek>(
+    reader: &mut R,
+    artifact_path: RepositoryRelativePath,
+    kind: PackagedArtifactKind,
+    expected_digest: &Digest,
+    canaries: &SecretCanarySet,
+) -> Result<PackagedArtifactScanReport, ConformanceDiagnosticSet> {
+    let limits = PackagedArtifactScanLimits::exact();
+    let (artifact_digest, file_bytes) = stream_artifact_identity(reader, limits.file_bytes)?;
+    if &artifact_digest != expected_digest {
+        return Err(packaged_artifact_error(
+            "packaged artifact bytes differ from the independently observed identity",
+        ));
+    }
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| packaged_artifact_error("packaged artifact cannot be rewound"))?;
+
+    let (compressed_bytes, expanded_bytes, entries, findings) = match kind {
+        PackagedArtifactKind::RawExecutable => {
+            let mut scanner = CanaryStream::new(canaries, artifact_path.clone());
+            scan_bounded_reader(reader, file_bytes, &mut scanner)?;
+            (0, file_bytes, 1, scanner.findings)
+        }
+        PackagedArtifactKind::OciImageTar => {
+            scan_oci_image(reader, &artifact_path, canaries, &limits)?
+        }
+    };
+    let scanner_digest = Digest::sha256(PACKAGED_ARTIFACT_SCANNER_ID);
+    let findings = CanonicalSet::new(findings);
+    let result_digest = canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &(
+            &scanner_digest,
+            &artifact_path,
+            kind,
+            &artifact_digest,
+            file_bytes,
+            compressed_bytes,
+            expanded_bytes,
+            entries,
+            &limits,
+            &findings,
+        ),
+    )
+    .map_err(|_| packaged_artifact_error("packaged artifact result cannot be encoded"))?;
+    Ok(PackagedArtifactScanReport {
+        format_version: ConformanceFormatVersion::V1,
+        scanner_digest,
+        artifact_path,
+        kind,
+        artifact_digest,
+        file_bytes,
+        compressed_bytes,
+        expanded_bytes,
+        entries,
+        limits,
+        findings,
+        result_digest,
+    })
+}
+
+/// Assembles the exact CLI, backend-image, and frontend-image auxiliary scan results.
+pub fn assemble_packaged_artifact_scan_bundle(
+    reports: impl IntoIterator<Item = PackagedArtifactScanReport>,
+) -> Result<PackagedArtifactScanBundle, ConformanceDiagnosticSet> {
+    let artifacts = CanonicalSet::new(reports);
+    let expected = BTreeMap::from([
+        ("build/cli", PackagedArtifactKind::RawExecutable),
+        ("build/backend-image.tar", PackagedArtifactKind::OciImageTar),
+        (
+            "build/frontend-image.tar",
+            PackagedArtifactKind::OciImageTar,
+        ),
+    ]);
+    if artifacts.len() != expected.len()
+        || artifacts.iter().any(|report| {
+            expected.get(report.artifact_path.as_str()) != Some(&report.kind)
+                || report.format_version != ConformanceFormatVersion::V1
+                || report.scanner_digest != Digest::sha256(PACKAGED_ARTIFACT_SCANNER_ID)
+                || report.limits != PackagedArtifactScanLimits::exact()
+                || !report.findings.is_empty()
+                || packaged_artifact_result_digest(report).as_ref() != Ok(&report.result_digest)
+        })
+    {
+        return Err(packaged_artifact_error(
+            "packaged artifact scan set is incomplete stale or contains findings",
+        ));
+    }
+    let mut file_bytes = 0_u64;
+    let mut compressed_bytes = 0_u64;
+    let mut expanded_bytes = 0_u64;
+    let mut entries = 0_u64;
+    for report in artifacts.iter() {
+        file_bytes = file_bytes.saturating_add(report.file_bytes);
+        compressed_bytes = compressed_bytes.saturating_add(report.compressed_bytes);
+        expanded_bytes = expanded_bytes.saturating_add(report.expanded_bytes);
+        entries = entries.saturating_add(report.entries);
+    }
+    if file_bytes > 3 * PACKAGED_ARTIFACT_FILE_LIMIT
+        || compressed_bytes > PACKAGED_ARTIFACT_COMPRESSED_LIMIT
+        || expanded_bytes > 2 * PACKAGED_ARTIFACT_EXPANDED_LIMIT + PACKAGED_ARTIFACT_FILE_LIMIT
+        || entries > 2 * PACKAGED_ARTIFACT_ENTRY_LIMIT + 1
+    {
+        return Err(packaged_artifact_error(
+            "packaged artifact scan set exceeds its aggregate bound",
+        ));
+    }
+    let bundle_digest = canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &(
+            &artifacts,
+            file_bytes,
+            compressed_bytes,
+            expanded_bytes,
+            entries,
+        ),
+    )
+    .map_err(|_| packaged_artifact_error("packaged artifact scan set cannot be encoded"))?;
+    Ok(PackagedArtifactScanBundle {
+        format_version: ConformanceFormatVersion::V1,
+        artifacts,
+        file_bytes,
+        compressed_bytes,
+        expanded_bytes,
+        entries,
+        bundle_digest,
+    })
+}
+
+fn packaged_artifact_result_digest(
+    report: &PackagedArtifactScanReport,
+) -> Result<Digest, ConformanceDiagnosticSet> {
+    canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &(
+            &report.scanner_digest,
+            &report.artifact_path,
+            report.kind,
+            &report.artifact_digest,
+            report.file_bytes,
+            report.compressed_bytes,
+            report.expanded_bytes,
+            report.entries,
+            &report.limits,
+            &report.findings,
+        ),
+    )
+    .map_err(|_| packaged_artifact_error("packaged artifact result cannot be encoded"))
+}
+
+fn stream_artifact_identity<R: Read + Seek>(
+    reader: &mut R,
+    limit: u64,
+) -> Result<(Digest, u64), ConformanceDiagnosticSet> {
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| packaged_artifact_error("packaged artifact cannot be read"))?;
+    let mut hasher = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|_| packaged_artifact_error("packaged artifact cannot be read"))?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        if total > limit {
+            return Err(packaged_artifact_error(
+                "packaged artifact exceeds its outer byte bound",
+            ));
+        }
+        hasher.update(&buffer[..read]);
+    }
+    if total == 0 {
+        return Err(packaged_artifact_error("packaged artifact is empty"));
+    }
+    Ok((Digest::from_sha256_output(hasher.finalize().into()), total))
+}
+
+fn scan_oci_image<R: Read + Seek>(
+    reader: &mut R,
+    artifact_path: &RepositoryRelativePath,
+    canaries: &SecretCanarySet,
+    limits: &PackagedArtifactScanLimits,
+) -> Result<(u64, u64, u64, BTreeSet<SecretLeakObservation>), ConformanceDiagnosticSet> {
+    let mut blobs = BTreeMap::<String, OciBlobObservation>::new();
+    let mut index = None;
+    let mut layout = None;
+    let mut outer_entries = 0_u64;
+    {
+        let mut archive = tar::Archive::new(&mut *reader);
+        let entries = archive
+            .entries()
+            .map_err(|_| packaged_artifact_error("OCI outer archive is malformed"))?;
+        for entry in entries {
+            let mut entry = entry
+                .map_err(|_| packaged_artifact_error("OCI outer archive entry is malformed"))?;
+            outer_entries = outer_entries.saturating_add(1);
+            if outer_entries > limits.entries {
+                return Err(packaged_artifact_error(
+                    "OCI outer archive exceeds its entry bound",
+                ));
+            }
+            let path =
+                safe_archive_path(&entry.path().map_err(|_| {
+                    packaged_artifact_error("OCI outer archive path is malformed")
+                })?)?;
+            let entry_type = entry.header().entry_type();
+            if entry_type.is_dir() {
+                continue;
+            }
+            if !entry_type.is_file() {
+                return Err(packaged_artifact_error(
+                    "OCI outer archive contains a link or unsupported entry",
+                ));
+            }
+            let size = entry
+                .header()
+                .size()
+                .map_err(|_| packaged_artifact_error("OCI outer entry size is malformed"))?;
+            if size > limits.file_bytes {
+                return Err(packaged_artifact_error(
+                    "OCI outer entry exceeds its file bound",
+                ));
+            }
+            let capture = path == "index.json" || path == "oci-layout";
+            let (digest, bytes) = read_entry_identity(&mut entry, size, capture)?;
+            if path == "index.json" {
+                index = bytes;
+            } else if path == "oci-layout" {
+                layout = bytes;
+            } else if let Some(encoded) = path.strip_prefix("blobs/sha256/") {
+                if !canonical_sha256_hex(encoded) || digest.as_str() != format!("sha256:{encoded}")
+                {
+                    return Err(packaged_artifact_error(
+                        "OCI blob path differs from its actual bytes",
+                    ));
+                }
+                if blobs
+                    .insert(format!("sha256:{encoded}"), OciBlobObservation { size })
+                    .is_some()
+                {
+                    return Err(packaged_artifact_error("OCI blob is duplicated"));
+                }
+            } else {
+                return Err(packaged_artifact_error(
+                    "OCI outer archive contains an unsupported path",
+                ));
+            }
+        }
+    }
+    let layout_bytes =
+        layout.ok_or_else(|| packaged_artifact_error("OCI layout is absent or malformed"))?;
+    let layout: OciLayout = serde_json::from_slice(&layout_bytes)
+        .map_err(|_| packaged_artifact_error("OCI layout is absent or malformed"))?;
+    if layout.image_layout_version != "1.0.0" {
+        return Err(packaged_artifact_error("OCI layout version is unsupported"));
+    }
+    let index_bytes =
+        index.ok_or_else(|| packaged_artifact_error("OCI index is absent or malformed"))?;
+    let index: OciIndex = serde_json::from_slice(&index_bytes)
+        .map_err(|_| packaged_artifact_error("OCI index is absent or malformed"))?;
+    if index.schema_version != 2 || index.manifests.len() != 1 {
+        return Err(packaged_artifact_error(
+            "OCI index must select exactly one image manifest",
+        ));
+    }
+    let manifest_descriptor = &index.manifests[0];
+    validate_oci_descriptor(manifest_descriptor, &blobs)?;
+    if manifest_descriptor.media_type != "application/vnd.oci.image.manifest.v1+json" {
+        return Err(packaged_artifact_error(
+            "OCI manifest media type is unsupported",
+        ));
+    }
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| packaged_artifact_error("OCI archive cannot be rewound"))?;
+    let manifest_bytes = read_outer_blob(reader, &manifest_descriptor.digest)?;
+    let manifest: OciManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|_| packaged_artifact_error("OCI manifest is malformed"))?;
+    if manifest.schema_version != 2 || manifest.layers.is_empty() {
+        return Err(packaged_artifact_error("OCI manifest has no layers"));
+    }
+    validate_oci_descriptor(&manifest.config, &blobs)?;
+    if manifest.config.media_type != "application/vnd.oci.image.config.v1+json" {
+        return Err(packaged_artifact_error(
+            "OCI config media type is unsupported",
+        ));
+    }
+    let config_bytes = read_outer_blob(reader, &manifest.config.digest)?;
+    serde_json::from_slice::<serde_json::Value>(&config_bytes)
+        .map_err(|_| packaged_artifact_error("OCI config is malformed"))?;
+    let expected_blobs = std::iter::once(manifest_descriptor.digest.as_str())
+        .chain(std::iter::once(manifest.config.digest.as_str()))
+        .chain(manifest.layers.iter().map(|layer| layer.digest.as_str()))
+        .collect::<BTreeSet<_>>();
+    if blobs.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected_blobs {
+        return Err(packaged_artifact_error(
+            "OCI archive contains an unreferenced or missing blob",
+        ));
+    }
+    let mut compressed_bytes = 0_u64;
+    for layer in &manifest.layers {
+        validate_oci_descriptor(layer, &blobs)?;
+        compressed_bytes = compressed_bytes.saturating_add(layer.size);
+        if compressed_bytes > limits.compressed_bytes {
+            return Err(packaged_artifact_error(
+                "OCI layers exceed their compressed aggregate bound",
+            ));
+        }
+    }
+
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| packaged_artifact_error("OCI archive cannot be rewound"))?;
+    let mut expanded_bytes = 0_u64;
+    let mut layer_entries = 0_u64;
+    let mut findings = BTreeSet::new();
+    for (coordinate, bytes) in [
+        ("oci-layout".to_owned(), layout_bytes.as_slice()),
+        ("index.json".to_owned(), index_bytes.as_slice()),
+        (
+            format!(
+                "blobs/sha256/{}",
+                manifest_descriptor.digest.trim_start_matches("sha256:")
+            ),
+            manifest_bytes.as_slice(),
+        ),
+        (
+            format!(
+                "blobs/sha256/{}",
+                manifest.config.digest.trim_start_matches("sha256:")
+            ),
+            config_bytes.as_slice(),
+        ),
+    ] {
+        expanded_bytes = expanded_bytes.saturating_add(bytes.len() as u64);
+        if expanded_bytes > limits.expanded_bytes {
+            return Err(packaged_artifact_error(
+                "OCI metadata exceeds its expanded aggregate bound",
+            ));
+        }
+        let coordinate =
+            RepositoryRelativePath::new(format!("{}/{}", artifact_path.as_str(), coordinate))
+                .map_err(|_| packaged_artifact_error("OCI metadata coordinate is unsafe"))?;
+        let mut scanner = CanaryStream::new(canaries, coordinate);
+        scanner.scan(bytes);
+        findings.extend(scanner.findings);
+    }
+    let layers = manifest
+        .layers
+        .iter()
+        .map(|layer| (layer.digest.as_str(), layer))
+        .collect::<BTreeMap<_, _>>();
+    let mut seen = BTreeSet::new();
+    let mut archive = tar::Archive::new(&mut *reader);
+    for entry in archive
+        .entries()
+        .map_err(|_| packaged_artifact_error("OCI outer archive is malformed"))?
+    {
+        let entry =
+            entry.map_err(|_| packaged_artifact_error("OCI outer archive entry is malformed"))?;
+        let path = safe_archive_path(
+            &entry
+                .path()
+                .map_err(|_| packaged_artifact_error("OCI outer archive path is malformed"))?,
+        )?;
+        let Some(encoded) = path.strip_prefix("blobs/sha256/") else {
+            continue;
+        };
+        let digest = format!("sha256:{encoded}");
+        let Some(layer) = layers.get(digest.as_str()) else {
+            continue;
+        };
+        if !seen.insert(digest.clone()) {
+            return Err(packaged_artifact_error("OCI layer blob is duplicated"));
+        }
+        let coordinate_prefix = format!("{}/{}", artifact_path.as_str(), encoded);
+        let (expanded, entries, layer_findings) = match layer.media_type.as_str() {
+            "application/vnd.oci.image.layer.v1.tar" => scan_layer_tar(
+                entry,
+                &coordinate_prefix,
+                canaries,
+                limits,
+                expanded_bytes,
+                outer_entries + layer_entries,
+            )?,
+            "application/vnd.oci.image.layer.v1.tar+gzip" => scan_layer_tar(
+                GzDecoder::new(entry),
+                &coordinate_prefix,
+                canaries,
+                limits,
+                expanded_bytes,
+                outer_entries + layer_entries,
+            )?,
+            _ => {
+                return Err(packaged_artifact_error(
+                    "OCI layer compression or media type is unsupported",
+                ));
+            }
+        };
+        expanded_bytes = expanded_bytes.saturating_add(expanded);
+        layer_entries = layer_entries.saturating_add(entries);
+        findings.extend(layer_findings);
+    }
+    if seen.len() != manifest.layers.len() {
+        return Err(packaged_artifact_error("OCI manifest layer blob is absent"));
+    }
+    Ok((
+        compressed_bytes,
+        expanded_bytes,
+        outer_entries + layer_entries,
+        findings,
+    ))
+}
+
+fn scan_layer_tar<R: Read>(
+    reader: R,
+    coordinate_prefix: &str,
+    canaries: &SecretCanarySet,
+    limits: &PackagedArtifactScanLimits,
+    prior_expanded: u64,
+    prior_entries: u64,
+) -> Result<(u64, u64, BTreeSet<SecretLeakObservation>), ConformanceDiagnosticSet> {
+    let remaining = limits.expanded_bytes.saturating_sub(prior_expanded);
+    let mut counted = BoundedCountingReader::new(reader, remaining);
+    let mut entries_seen = 0_u64;
+    let mut findings = BTreeSet::new();
+    {
+        let mut archive = tar::Archive::new(&mut counted);
+        for entry in archive
+            .entries()
+            .map_err(|_| packaged_artifact_error("OCI layer archive is malformed"))?
+        {
+            let mut entry =
+                entry.map_err(|_| packaged_artifact_error("OCI layer entry is malformed"))?;
+            entries_seen = entries_seen.saturating_add(1);
+            if prior_entries.saturating_add(entries_seen) > limits.entries {
+                return Err(packaged_artifact_error(
+                    "OCI layer archives exceed their entry bound",
+                ));
+            }
+            let path = safe_archive_path(
+                &entry
+                    .path()
+                    .map_err(|_| packaged_artifact_error("OCI layer path is malformed"))?,
+            )?;
+            let coordinate = RepositoryRelativePath::new(format!(
+                "{coordinate_prefix}/{}",
+                path.trim_start_matches("./")
+            ))
+            .map_err(|_| packaged_artifact_error("OCI layer coordinate is unsafe"))?;
+            let entry_type = entry.header().entry_type();
+            if entry_type.is_dir() {
+                continue;
+            }
+            if entry_type.is_file() {
+                let size = entry
+                    .header()
+                    .size()
+                    .map_err(|_| packaged_artifact_error("OCI expanded entry size is malformed"))?;
+                if size > limits.expanded_file_bytes {
+                    return Err(packaged_artifact_error(
+                        "OCI expanded entry exceeds its per-file bound",
+                    ));
+                }
+                let mut scanner = CanaryStream::new(canaries, coordinate);
+                scan_bounded_reader(&mut entry, size, &mut scanner)?;
+                findings.extend(scanner.findings);
+                continue;
+            }
+            if entry_type.is_symlink() {
+                let target = entry
+                    .link_name()
+                    .map_err(|_| packaged_artifact_error("OCI symlink target is malformed"))?
+                    .ok_or_else(|| packaged_artifact_error("OCI symlink target is absent"))?;
+                let target = target.as_os_str().as_encoded_bytes();
+                if target.is_empty() || target.len() > PACKAGED_ARTIFACT_PATH_LIMIT {
+                    return Err(packaged_artifact_error(
+                        "OCI symlink target exceeds its bound",
+                    ));
+                }
+                let mut scanner = CanaryStream::new(canaries, coordinate);
+                scanner.scan(target);
+                findings.extend(scanner.findings);
+                continue;
+            }
+            return Err(packaged_artifact_error(
+                "OCI layer contains a hard link or unsupported entry",
+            ));
+        }
+    }
+    Ok((counted.count, entries_seen, findings))
+}
+
+fn scan_bounded_reader<R: Read>(
+    reader: &mut R,
+    exact_size: u64,
+    scanner: &mut CanaryStream<'_>,
+) -> Result<(), ConformanceDiagnosticSet> {
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    while total < exact_size {
+        let remaining =
+            usize::try_from((exact_size - total).min(buffer.len() as u64)).unwrap_or(buffer.len());
+        let read = reader
+            .read(&mut buffer[..remaining])
+            .map_err(|_| packaged_artifact_error("packaged artifact content cannot be read"))?;
+        if read == 0 {
+            return Err(packaged_artifact_error(
+                "packaged artifact content ended before its declared size",
+            ));
+        }
+        total += read as u64;
+        scanner.scan(&buffer[..read]);
+    }
+    Ok(())
+}
+
+fn read_entry_identity<R: Read>(
+    reader: &mut R,
+    exact_size: u64,
+    capture: bool,
+) -> Result<(Digest, Option<Vec<u8>>), ConformanceDiagnosticSet> {
+    if capture && exact_size > PACKAGED_ARTIFACT_METADATA_LIMIT {
+        return Err(packaged_artifact_error(
+            "OCI metadata exceeds its byte bound",
+        ));
+    }
+    let mut hasher = Sha256::new();
+    let mut captured = capture.then(|| Vec::with_capacity(exact_size as usize));
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    while total < exact_size {
+        let remaining =
+            usize::try_from((exact_size - total).min(buffer.len() as u64)).unwrap_or(buffer.len());
+        let read = reader
+            .read(&mut buffer[..remaining])
+            .map_err(|_| packaged_artifact_error("OCI entry cannot be read"))?;
+        if read == 0 {
+            return Err(packaged_artifact_error(
+                "OCI entry ended before its declared size",
+            ));
+        }
+        total += read as u64;
+        hasher.update(&buffer[..read]);
+        if let Some(captured) = captured.as_mut() {
+            captured.extend_from_slice(&buffer[..read]);
+        }
+    }
+    Ok((
+        Digest::from_sha256_output(hasher.finalize().into()),
+        captured,
+    ))
+}
+
+fn read_outer_blob<R: Read + Seek>(
+    reader: &mut R,
+    digest: &str,
+) -> Result<Vec<u8>, ConformanceDiagnosticSet> {
+    let expected_path = digest
+        .strip_prefix("sha256:")
+        .filter(|value| canonical_sha256_hex(value))
+        .map(|value| format!("blobs/sha256/{value}"))
+        .ok_or_else(|| packaged_artifact_error("OCI descriptor digest is malformed"))?;
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| packaged_artifact_error("OCI archive cannot be rewound"))?;
+    let mut archive = tar::Archive::new(&mut *reader);
+    for entry in archive
+        .entries()
+        .map_err(|_| packaged_artifact_error("OCI outer archive is malformed"))?
+    {
+        let mut entry =
+            entry.map_err(|_| packaged_artifact_error("OCI outer archive entry is malformed"))?;
+        let path = safe_archive_path(
+            &entry
+                .path()
+                .map_err(|_| packaged_artifact_error("OCI outer archive path is malformed"))?,
+        )?;
+        if path == expected_path {
+            let size = entry
+                .header()
+                .size()
+                .map_err(|_| packaged_artifact_error("OCI metadata size is malformed"))?;
+            return read_entry_identity(&mut entry, size, true)?
+                .1
+                .ok_or_else(|| packaged_artifact_error("OCI manifest metadata is unavailable"));
+        }
+    }
+    Err(packaged_artifact_error("OCI manifest blob is absent"))
+}
+
+fn validate_oci_descriptor(
+    descriptor: &OciDescriptor,
+    blobs: &BTreeMap<String, OciBlobObservation>,
+) -> Result<(), ConformanceDiagnosticSet> {
+    if !descriptor
+        .digest
+        .strip_prefix("sha256:")
+        .is_some_and(canonical_sha256_hex)
+        || descriptor.size == 0
+        || blobs.get(&descriptor.digest).map(|blob| blob.size) != Some(descriptor.size)
+    {
+        return Err(packaged_artifact_error(
+            "OCI descriptor differs from its validated blob",
+        ));
+    }
+    Ok(())
+}
+
+fn safe_archive_path(path: &Path) -> Result<String, ConformanceDiagnosticSet> {
+    let text = path
+        .to_str()
+        .filter(|text| !text.is_empty() && text.len() <= PACKAGED_ARTIFACT_PATH_LIMIT)
+        .ok_or_else(|| packaged_artifact_error("archive path is empty non-UTF-8 or oversized"))?;
+    let mut depth = 0_usize;
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(_) => depth += 1,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(packaged_artifact_error(
+                    "archive path is absolute or traverses its root",
+                ));
+            }
+        }
+    }
+    if depth == 0 || depth > PACKAGED_ARTIFACT_DEPTH_LIMIT {
+        return Err(packaged_artifact_error("archive path depth is invalid"));
+    }
+    Ok(text.trim_start_matches("./").to_owned())
+}
+
+fn canonical_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn packaged_artifact_error(detail: &'static str) -> ConformanceDiagnosticSet {
+    one_security_diagnostic(
+        ConformanceDiagnosticCode::EvidenceRedactionFailed,
+        detail,
+        None,
+    )
+}
+
+#[cfg(test)]
+mod packaged_artifact_tests {
+    use std::io::{Cursor, Read as _};
+
+    use super::*;
+
+    fn canaries() -> SecretCanarySet {
+        secret_canary_set_from_entropy(&std::array::from_fn::<_, 32, _>(|index| index as u8))
+            .unwrap()
+    }
+
+    #[test]
+    fn packaged_artifact_outer_bound_accepts_exact_and_rejects_plus_one() {
+        let mut exact = Cursor::new(vec![0_u8; 8]);
+        assert_eq!(stream_artifact_identity(&mut exact, 8).unwrap().1, 8);
+
+        let mut oversized = Cursor::new(vec![0_u8; 9]);
+        assert!(stream_artifact_identity(&mut oversized, 8).is_err());
+    }
+
+    #[test]
+    fn packaged_artifact_rejects_traversal_and_unsafe_depth() {
+        assert!(safe_archive_path(Path::new("../credential")).is_err());
+        assert!(safe_archive_path(Path::new("/absolute/credential")).is_err());
+        let deep = std::iter::repeat_n("entry", PACKAGED_ARTIFACT_DEPTH_LIMIT + 1)
+            .collect::<Vec<_>>()
+            .join("/");
+        assert!(safe_archive_path(Path::new(&deep)).is_err());
+    }
+
+    #[test]
+    fn packaged_artifact_expansion_reader_rejects_a_bomb() {
+        let mut reader = BoundedCountingReader::new(Cursor::new(vec![0_u8; 9]), 8);
+        let mut output = Vec::new();
+        assert!(reader.read_to_end(&mut output).is_err());
+    }
+
+    #[test]
+    fn packaged_artifact_canary_match_crosses_stream_chunks() {
+        let canaries = canaries();
+        let mut value = Vec::new();
+        canaries.visit(|category, bytes| {
+            if category == SecretCanaryCategory::Session {
+                value = bytes.to_vec();
+            }
+        });
+        let coordinate = RepositoryRelativePath::new("build/cli").unwrap();
+        let mut scanner = CanaryStream::new(&canaries, coordinate);
+        let split = value.len() / 2;
+        scanner.scan(&value[..split]);
+        assert!(scanner.findings.is_empty());
+        scanner.scan(&value[split..]);
+        assert_eq!(scanner.findings.len(), 1);
+    }
+
+    #[test]
+    fn packaged_artifact_rejects_a_substituted_identity() {
+        let bytes = b"actual packaged executable".to_vec();
+        let mut reader = Cursor::new(bytes);
+        let result = scan_packaged_artifact(
+            &mut reader,
+            RepositoryRelativePath::new("build/cli").unwrap(),
+            PackagedArtifactKind::RawExecutable,
+            &Digest::sha256("substituted packaged executable"),
+            &canaries(),
+        );
+        assert!(result.is_err());
+    }
 }
 
 /// Rejects canaries, credentials, host/provider identity, controls, and unbounded bytes.
@@ -1163,12 +2534,14 @@ pub fn sanitize_durable_evidence(
 pub fn admit_secret_evidence(
     input: SecretEvidenceInput,
 ) -> Result<SecretEvidenceReport, ConformanceDiagnosticSet> {
+    let rebuilt_packaged_artifacts =
+        assemble_packaged_artifact_scan_bundle(input.packaged_artifacts.artifacts.iter().cloned());
     let domains = CanonicalSet::new(input.inspections.iter().map(|item| item.domain));
     let valid = input.inspections.len() == domains.len()
         && domains == required_secret_inspection_domains()
         && input.inspections.iter().all(|item| {
             item.inspected_bytes > 0
-                && item.inspected_bytes <= MAX_INSPECTED_BYTES
+                && item.inspected_bytes <= secret_evidence_domain_byte_limit(item.domain)
                 && item.leaks.is_empty()
         })
         && !input.sanitized_outputs.is_empty()
@@ -1176,6 +2549,9 @@ pub fn admit_secret_evidence(
             .sanitized_outputs
             .iter()
             .all(|item| item.byte_count > 0 && item.byte_count <= MAX_INSPECTED_BYTES)
+        && rebuilt_packaged_artifacts
+            .as_ref()
+            .is_ok_and(|rebuilt| rebuilt == &input.packaged_artifacts)
         && input.artifact_credentials_absent
         && input.verdict_credentials_absent
         && input.redaction_proven;
@@ -1199,15 +2575,52 @@ pub fn admit_secret_evidence(
     );
     let report_digest = canonical_digest(
         DigestDomain::ConformanceSecurity,
-        &(&input.canary_set_digest, &domains, &sanitized_outputs),
+        &(
+            &input.canary_set_digest,
+            &domains,
+            &sanitized_outputs,
+            &input.packaged_artifacts,
+        ),
     )
     .expect("validated secret evidence is canonically encodable");
     Ok(SecretEvidenceReport {
         canary_set_digest: input.canary_set_digest,
         inspected_domains: domains,
         sanitized_outputs,
+        packaged_artifacts: input.packaged_artifacts,
         report_digest,
     })
+}
+
+/// Revalidates a persisted secret report from its retained safe identities.
+pub fn validate_secret_evidence_report(
+    report: &SecretEvidenceReport,
+) -> Result<(), ConformanceDiagnosticSet> {
+    let expected = canonical_digest(
+        DigestDomain::ConformanceSecurity,
+        &(
+            &report.canary_set_digest,
+            &report.inspected_domains,
+            &report.sanitized_outputs,
+            &report.packaged_artifacts,
+        ),
+    );
+    if report.inspected_domains == required_secret_inspection_domains()
+        && !report.sanitized_outputs.is_empty()
+        && assemble_packaged_artifact_scan_bundle(
+            report.packaged_artifacts.artifacts.iter().cloned(),
+        )
+        .as_ref()
+        .is_ok_and(|rebuilt| rebuilt == &report.packaged_artifacts)
+        && expected.is_ok_and(|digest| digest == report.report_digest)
+    {
+        return Ok(());
+    }
+    Err(one_security_diagnostic(
+        ConformanceDiagnosticCode::EvidenceRedactionFailed,
+        "persisted secret evidence is incomplete or identity-inconsistent",
+        None,
+    ))
 }
 
 /// Returns every output domain required by the secret gate.
@@ -1249,6 +2662,24 @@ fn provenance_record(
         immutable_digest: Digest::new(immutable_digest).expect("checked digest is valid"),
         review_evidence_digest: Digest::new(review_evidence_digest)
             .expect("checked review digest is valid"),
+    }
+}
+
+fn provenance_record_with_review_evidence(
+    id: &str,
+    role: ExternalInputRole,
+    publisher: &str,
+    repository: &str,
+    immutable_digest: &str,
+    review_evidence: &[u8],
+) -> ProvenanceRecord {
+    ProvenanceRecord {
+        id: ProvenanceId::new(id).expect("checked provenance ID is valid"),
+        role,
+        publisher: NonEmptyText::new(publisher).expect("checked publisher is valid"),
+        repository: RepositoryId::new(repository).expect("checked repository is valid"),
+        immutable_digest: Digest::new(immutable_digest).expect("checked digest is valid"),
+        review_evidence_digest: Digest::sha256(review_evidence),
     }
 }
 

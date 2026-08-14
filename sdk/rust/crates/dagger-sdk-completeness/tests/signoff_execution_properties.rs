@@ -86,11 +86,19 @@ fn admitted_artifact(catalog: &CaseCatalog, seed: u8) -> AdmittedArtifact {
         SubjectIdentity::Revision(revision) => revision.clone(),
         SubjectIdentity::SourceDigest(_) => commit(seed.wrapping_add(1).max(1)),
     };
+    let rust_dependency = RustSdkDependencyDescriptor {
+        source: RustSdkDependencySource::Git,
+        package: "dagger-sdk".to_owned(),
+        url: "https://github.com/iw/dagger".to_owned(),
+        revision: subject_revision.clone(),
+    };
+    let rust_dependency_descriptor_digest = rust_dependency.direct_digest().unwrap();
     let mut plan = ArtifactPlan {
         format_version: ArtifactFormatVersion::V1,
         target_descriptor_digest: catalog.target_digest().clone(),
         target_revision: commit(seed.max(1)),
         subject: SubjectRevisionObservation {
+            repository: "https://github.com/iw/dagger".to_owned(),
             revision: subject_revision,
             focused_source_digest: source_digest.clone(),
             workspace_focused_source_digest: source_digest,
@@ -104,6 +112,8 @@ fn admitted_artifact(catalog: &CaseCatalog, seed: u8) -> AdmittedArtifact {
         go_runtime_digest: Digest::sha256([seed, 6]),
         rust_manifest_digest: Digest::sha256([seed, 7]),
         rust_descriptor_digest: Digest::sha256([seed, 8]),
+        rust_dependency,
+        rust_dependency_descriptor_digest,
         toolchain_digests,
         components,
         provenance_digest: Digest::sha256([]),
@@ -217,8 +227,12 @@ fn baseline_observation(
         runner_image_digest: Digest::sha256([seed, 20]),
         installed_config_digest: Digest::sha256([seed, 21]),
         dependency: DependencyDescriptorObservation::Git {
-            descriptor_digest: Digest::sha256([seed, 22]),
-            revision: commit(seed.wrapping_add(2).max(1)),
+            descriptor: artifact.bundle().manifest().rust_dependency.clone(),
+            descriptor_digest: artifact
+                .bundle()
+                .manifest()
+                .rust_dependency_descriptor_digest
+                .clone(),
         },
         install_count: 1,
         clean_git_workspace: true,
@@ -283,6 +297,8 @@ fn connector_observation(
         selected_cli_digest,
         claim,
         observed_engine_version: baseline.engine.engine_version.clone(),
+        session_control_succeeded: true,
+        authenticated_loopback_constructed: true,
         authenticated_query_succeeded: true,
         close_count: 1,
         child_reap_count: 1,
@@ -297,7 +313,7 @@ proptest! {
     #[test]
     fn property_09_exact_cli_install_distribution_honest(
         seed in any::<u8>(),
-        mutation in 0_u8..19,
+        mutation in 0_u8..24,
     ) {
         let catalog = checked_catalog();
         let artifact = admitted_artifact(catalog, seed.max(1));
@@ -316,10 +332,28 @@ proptest! {
             9 => baseline_input.clean_git_workspace = false,
             10 => baseline_input.artifact_cli_only_on_path = false,
             11 => baseline_input.engine.identity_digest = Digest::sha256("other engine"),
+            12 => baseline_input.dependency = DependencyDescriptorObservation::Registry {
+                descriptor_digest: Digest::sha256("registry substitution"),
+            },
+            13 => {
+                if let DependencyDescriptorObservation::Git { descriptor, .. } =
+                    &mut baseline_input.dependency
+                {
+                    descriptor.revision = commit(0xee);
+                }
+            }
+            14 => {
+                if let DependencyDescriptorObservation::Git {
+                    descriptor_digest, ..
+                } = &mut baseline_input.dependency
+                {
+                    *descriptor_digest = Digest::sha256("mutated descriptor bytes");
+                }
+            }
             _ => {}
         }
         let baseline = admit_installed_rust_baseline(&artifact, &version, baseline_input);
-        if (2..=11).contains(&mutation) {
+        if (2..=14).contains(&mutation) {
             prop_assert!(baseline.is_err());
             return Ok(());
         }
@@ -331,19 +365,21 @@ proptest! {
             seed % 2 == 0,
         );
         match mutation {
-            12 => connector.explicit_local_cli_selected = true,
-            13 => {
+            15 => connector.explicit_local_cli_selected = true,
+            16 => {
                 connector.manifest = DistributionManifestObservation::Available {
                     manifest_digest: Digest::sha256("future manifest"),
                     cli_digest: connector.selected_cli_digest.clone(),
                     checksum_verified: false,
                 };
             }
-            14 => connector.claim = DistributionClaim::VerifiedDownload,
-            15 => connector.close_count = 0,
-            16 => connector.authenticated_query_succeeded = false,
-            17 => connector.selected_source = ConnectorCliSource::Host,
-            18 => connector.selected_cli_digest = Digest::sha256("substituted cli"),
+            17 => connector.claim = DistributionClaim::VerifiedDownload,
+            18 => connector.close_count = 0,
+            19 => connector.authenticated_query_succeeded = false,
+            20 => connector.selected_source = ConnectorCliSource::Host,
+            21 => connector.selected_cli_digest = Digest::sha256("substituted cli"),
+            22 => connector.session_control_succeeded = false,
+            23 => connector.authenticated_loopback_constructed = false,
             _ => {}
         }
         let accepted = admit_stable_connector(&baseline, connector).is_ok();
@@ -668,7 +704,7 @@ fn case_observation_wire_boundary_requires_canonical_known_fields() {
 #[test]
 fn fixed_program_registry_is_complete_typed_and_packaged() {
     let registry = compile_fixed_case_program_registry().unwrap();
-    assert_eq!(registry.programs().len(), 60);
+    assert_eq!(registry.programs().len(), 63);
     assert_eq!(
         registry.programs().keys().cloned().collect::<BTreeSet<_>>(),
         required_fixed_programs()

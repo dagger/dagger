@@ -29,6 +29,11 @@ use crate::provisioning_control::{
     NoopProvisioningObserver, ProvisionCheckpoint, ProvisioningCancellation, ProvisioningObserver,
 };
 use crate::provisioning_error::{ProvisionError, ProvisionErrorKind};
+#[cfg(feature = "signoff-observation")]
+use crate::signoff_observation::{
+    SignoffConnectorEvent, SignoffConnectorRecorder, SignoffObservationDispatcher, SignoffSha256,
+    SignoffUnavailableStatus,
+};
 use crate::target::{
     Architecture, ArchiveDescriptor, ArchiveFormat, OperatingSystem, exact_target,
 };
@@ -271,6 +276,67 @@ fn runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .expect("the property runtime is available")
+}
+
+#[cfg(feature = "signoff-observation")]
+#[test]
+fn production_provisioner_reports_exclusive_manifest_and_checksum_facts() {
+    let descriptor = descriptor(ArchiveFormat::TarGz);
+    let archive = archive_for(
+        ArchiveFormat::TarGz,
+        &[(
+            descriptor.member_name().to_owned(),
+            b"observed-cli".to_vec(),
+            FixtureEntryKind::File,
+        )],
+    );
+    let manifest = manifest_for(&descriptor, &archive);
+    let (recorder, recording) = SignoffConnectorRecorder::bounded();
+    let dispatcher = SignoffObservationDispatcher::new(Some(recorder));
+    let cache = tempfile::tempdir().expect("observed cache fixture");
+    runtime()
+        .block_on(
+            DefaultCliProvisioner::with_cache_root(
+                fixture_http(&descriptor, archive, 7),
+                cache.path().to_path_buf(),
+                dispatcher,
+            )
+            .acquire(&descriptor, &ProvisioningCancellation::new()),
+        )
+        .expect("observed verified acquisition succeeds");
+    assert_eq!(
+        recording.finish().expect("recording remains complete"),
+        [
+            SignoffConnectorEvent::ManifestAvailable {
+                manifest_sha256: SignoffSha256::from_bytes(digest(&manifest)),
+            },
+            SignoffConnectorEvent::ArchiveChecksumVerified,
+        ]
+    );
+
+    let (recorder, unavailable) = SignoffConnectorRecorder::bounded();
+    let dispatcher = SignoffObservationDispatcher::new(Some(recorder));
+    let cache = tempfile::tempdir().expect("unavailable cache fixture");
+    let error = runtime()
+        .block_on(
+            DefaultCliProvisioner::with_cache_root(
+                FixtureHttp::new(
+                    ResponseFixture::bytes(404, Vec::new(), 1),
+                    ResponseFixture::bytes(200, Vec::new(), 1),
+                ),
+                cache.path().to_path_buf(),
+                dispatcher,
+            )
+            .acquire(&descriptor, &ProvisioningCancellation::new()),
+        )
+        .expect_err("unavailable manifest rejects before archive");
+    assert_eq!(error.kind(), ProvisionErrorKind::ReleaseUnavailable);
+    assert_eq!(
+        unavailable.finish().expect("recording remains complete"),
+        [SignoffConnectorEvent::ManifestUnavailable {
+            status: SignoffUnavailableStatus::NotFound,
+        }]
+    );
 }
 
 fn checkpoint_case(value: u8) -> ProvisionCheckpoint {

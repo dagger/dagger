@@ -1,5 +1,5 @@
 name = "rust-sdk-dev"
-engineVersion = "v0.21.7"
+engineVersion = "v1.0.0-0"
 
 [runtime]
   source = "go"

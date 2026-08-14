@@ -230,7 +230,7 @@
         "decision": "reuse-checked",
         "manifest_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41"
       },
-      "implementation_digest": "sha256:1373c7afb20d3449e5e37236382bbf600331f0a1fc123ab830dc800b3eea9607"
+      "implementation_digest": "sha256:4a171783abf5adea244fc1e74c27552b8be96406d6b3e732370123d54a016e8a"
     },
     "disposition": "checked-generated-reused"
   },
@@ -338,9 +338,9 @@
         "disposition": "executed",
         "elapsed_millis": 32150
       },
-      "expected_input_digest": "sha256:652ceb16223f5e7c40eeade3e143364660b2738faae18d7463222cdec67b1946",
+      "expected_input_digest": "sha256:93b913c8de7677254c1b16a93ef435e09ef593de0f7387ddfaf6701306392b28",
       "gate": "project-reconciliation",
-      "observed_input_digest": "sha256:652ceb16223f5e7c40eeade3e143364660b2738faae18d7463222cdec67b1946",
+      "observed_input_digest": "sha256:93b913c8de7677254c1b16a93ef435e09ef593de0f7387ddfaf6701306392b28",
       "result": {
         "evidence_digest": "sha256:4c9bc9f4cdabdeaa58c9785b34e61cfaf10226c8d904c491dc4f690009341b55",
         "outcome": "passed"
@@ -352,9 +352,9 @@
         "disposition": "executed",
         "elapsed_millis": 32150
       },
-      "expected_input_digest": "sha256:721c03a291507511f72a3a6a1e71fe20f9e82e2cf2a1274acea80c954c9c3b82",
+      "expected_input_digest": "sha256:f165a6a7e9e07fc24d477514e4a6d72e1b4f829390a37911f0d6e2d454e9c5f4",
       "gate": "publication",
-      "observed_input_digest": "sha256:721c03a291507511f72a3a6a1e71fe20f9e82e2cf2a1274acea80c954c9c3b82",
+      "observed_input_digest": "sha256:f165a6a7e9e07fc24d477514e4a6d72e1b4f829390a37911f0d6e2d454e9c5f4",
       "result": {
         "evidence_digest": "sha256:093e6996587a3ed8bda1aefab63029adc1881f8a4e3f2106a8c72267b4ac8f52",
         "outcome": "passed"
@@ -379,9 +379,9 @@
         "disposition": "executed",
         "elapsed_millis": 310
       },
-      "expected_input_digest": "sha256:db1b647d89b66e50b6aa67051dc40cc73dacc388ee04e5899f777cb032431154",
+      "expected_input_digest": "sha256:78f3ab05a8704946048095595b70e256b01026bcdc0eb14859335a655af31f26",
       "gate": "diagnostic-security",
-      "observed_input_digest": "sha256:db1b647d89b66e50b6aa67051dc40cc73dacc388ee04e5899f777cb032431154",
+      "observed_input_digest": "sha256:78f3ab05a8704946048095595b70e256b01026bcdc0eb14859335a655af31f26",
       "result": {
         "evidence_digest": "sha256:73fc55d71a0d03c20aa97381d53a1f4663fb42a0ddcf5a83d3b61d86bbe7bdf4",
         "outcome": "passed"
@@ -393,9 +393,9 @@
         "disposition": "executed",
         "elapsed_millis": 28535
       },
-      "expected_input_digest": "sha256:5d605f6d77899c963f28bc65ef826d4f71eee1ea5857991f13baf383767b81d8",
+      "expected_input_digest": "sha256:6528c5e0d7a6f84a3f400c495558e78d5d9029498a9728d0e8c4fa0cfe980181",
       "gate": "cargo-hygiene",
-      "observed_input_digest": "sha256:5d605f6d77899c963f28bc65ef826d4f71eee1ea5857991f13baf383767b81d8",
+      "observed_input_digest": "sha256:6528c5e0d7a6f84a3f400c495558e78d5d9029498a9728d0e8c4fa0cfe980181",
       "result": {
         "evidence_digest": "sha256:ef2ae78e81b418c24a27c1cb2bcffd4d5861539e2a0e12d42b631bfe80382c3f",
         "outcome": "passed"
@@ -433,9 +433,9 @@
         "disposition": "executed",
         "elapsed_millis": 1320
       },
-      "expected_input_digest": "sha256:63f75f13884847d1e7e8518226e0e9be365708fe541486068c3269d831e5994f",
+      "expected_input_digest": "sha256:d34974d6762e6c96b8f8f9e5f1e724f8e6d3167be6779249e4e5e6d5625b8246",
       "gate": "derived-reporting",
-      "observed_input_digest": "sha256:63f75f13884847d1e7e8518226e0e9be365708fe541486068c3269d831e5994f",
+      "observed_input_digest": "sha256:d34974d6762e6c96b8f8f9e5f1e724f8e6d3167be6779249e4e5e6d5625b8246",
       "result": {
         "evidence_digest": "sha256:a16ee5df8d1b628a3028e517c31249100a82db77f8c9f194f9c760507686dcd8",
         "outcome": "passed"
@@ -447,16 +447,16 @@
         "disposition": "executed",
         "elapsed_millis": 1
       },
-      "expected_input_digest": "sha256:ec9a531ae42ad565d0d66e930676d1fdf0b4f01576df8ce1f8d2f57b34450118",
+      "expected_input_digest": "sha256:da0e45743e3e61c246fa04415205c05625fc7678566c358770662b85a0575172",
       "gate": "clean-output",
-      "observed_input_digest": "sha256:ec9a531ae42ad565d0d66e930676d1fdf0b4f01576df8ce1f8d2f57b34450118",
+      "observed_input_digest": "sha256:da0e45743e3e61c246fa04415205c05625fc7678566c358770662b85a0575172",
       "result": {
         "evidence_digest": "sha256:42680aff07edb28095178c53a133273bdc12c0f8a040f9dc6da687dcc9dff8d0",
         "outcome": "passed"
       }
     }
   ],
-  "implementation_digest": "sha256:1373c7afb20d3449e5e37236382bbf600331f0a1fc123ab830dc800b3eea9607",
+  "implementation_digest": "sha256:4a171783abf5adea244fc1e74c27552b8be96406d6b3e732370123d54a016e8a",
   "manifest_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41",
   "mapping_digest": "sha256:9cf302052d932e7a7ec1bdfba7a74af7ba276223ff55c0f675da5a4affcb98c3",
   "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"

@@ -23,6 +23,8 @@ const (
 // ScenarioRealization binds one authority scenario to one checked Rust selector.
 type ScenarioRealization struct {
 	ScenarioID       string
+	ContractDigest   string
+	ProofID          string
 	Kind             ScenarioRealizationKind
 	RealizationID    string
 	SchemaCoordinate string
@@ -43,8 +45,10 @@ type scenarioRealizationRegistryWire struct {
 	ScenarioCandidateDigest string `json:"scenario_candidate_digest"`
 	RunnerSourceDigest      string `json:"runner_source_digest"`
 	Registrations           []struct {
-		ScenarioID  string `json:"scenario_id"`
-		Realization struct {
+		ScenarioID     string `json:"scenario_id"`
+		ContractDigest string `json:"contract_digest"`
+		ProofID        string `json:"proof_id"`
+		Realization    struct {
 			Kind             ScenarioRealizationKind `json:"kind"`
 			RealizationID    string                  `json:"realization_id"`
 			SchemaCoordinate *string                 `json:"schema_coordinate,omitempty"`
@@ -76,16 +80,18 @@ func DecodeScenarioRealizations(data, scenarioCandidates, runnerSource []byte) (
 	}
 
 	registrations := make(map[string]ScenarioRealization, len(wire.Registrations))
-	realizationIDs := make(map[string]struct{}, len(wire.Registrations))
 	previousScenarioID := ""
 	for _, registration := range wire.Registrations {
 		realization := registration.Realization
 		if !validScenarioIdentifier(registration.ScenarioID) || registration.ScenarioID <= previousScenarioID ||
+			!validSHA256(registration.ContractDigest) ||
+			!validScenarioIdentifier(registration.ProofID) || !strings.HasPrefix(registration.ProofID, "probe/") ||
 			!validScenarioIdentifier(realization.RealizationID) {
 			return ScenarioRealizationCatalog{}, fmt.Errorf("rust scenario realization identities are malformed or non-canonical")
 		}
 		decoded := ScenarioRealization{
-			ScenarioID: registration.ScenarioID, Kind: realization.Kind, RealizationID: realization.RealizationID,
+			ScenarioID: registration.ScenarioID, ContractDigest: registration.ContractDigest,
+			ProofID: registration.ProofID, Kind: realization.Kind, RealizationID: realization.RealizationID,
 		}
 		switch realization.Kind {
 		case RealizationGeneratedCore:
@@ -101,13 +107,9 @@ func DecodeScenarioRealizations(data, scenarioCandidates, runnerSource []byte) (
 		default:
 			return ScenarioRealizationCatalog{}, fmt.Errorf("rust scenario %q has no executable realization", registration.ScenarioID)
 		}
-		if _, duplicate := realizationIDs[realization.RealizationID]; duplicate {
-			return ScenarioRealizationCatalog{}, fmt.Errorf("rust scenario realization %q is duplicated", realization.RealizationID)
-		}
 		if _, duplicate := registrations[registration.ScenarioID]; duplicate {
 			return ScenarioRealizationCatalog{}, fmt.Errorf("rust scenario %q is registered twice", registration.ScenarioID)
 		}
-		realizationIDs[realization.RealizationID] = struct{}{}
 		registrations[registration.ScenarioID] = decoded
 		previousScenarioID = registration.ScenarioID
 	}
@@ -164,7 +166,8 @@ func ApplyScenarioRealizations(
 		}
 		spec.Executor = &ExecutorDefinition{
 			Kind: ExecutorScenarioConformance, Selector: realization.RealizationID,
-			Expected: ObservationExpectation{Category: string(realization.Kind), Operation: scenarioID},
+			ContractDigest: realization.ContractDigest, ProofID: realization.ProofID,
+			Expected: ObservationExpectation{Category: string(realization.Kind), Operation: realization.RealizationID},
 		}
 		result[programKey] = spec
 	}

@@ -75,6 +75,24 @@ fn complete_action_inventory_accounts_for_every_property_and_no_engine_boundary(
     assert!(actions.contains(&Feature8CheckpointAction::EvidenceAggregation));
     assert!(actions.contains(&Feature8CheckpointAction::CheckedAssetDrift));
     assert!(actions.contains(&Feature8CheckpointAction::CleanOutput));
+    let completeness_targets = actions
+        .iter()
+        .find_map(|action| match action {
+            Feature8CheckpointAction::NamedTests {
+                package: CheckpointPackage::DaggerSdkCompleteness,
+                targets,
+                ..
+            } => Some(targets),
+            _ => None,
+        })
+        .expect("Feature 8 completeness tests are selected");
+    for target in [
+        "conformance_foundation",
+        "conformance_observable_properties",
+        "conformance_scenario_runner_compile",
+    ] {
+        assert!(completeness_targets.contains(&CheckpointTestTarget::new(target).unwrap()));
+    }
     assert!(actions.iter().all(|action| match action {
         Feature8CheckpointAction::Format { packages }
         | Feature8CheckpointAction::SourcePolicy { packages }

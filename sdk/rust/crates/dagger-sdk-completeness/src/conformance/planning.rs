@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use crate::client_generation::{ClientImplementationSubject, client_generation_scope_input};
 use crate::engine_integration::{EngineIntegrationMappings, ImplementationSubject};
@@ -26,11 +27,12 @@ use super::{
     GoClientBehaviour, InfrastructureFailureClass, IsolationObservation, LifecycleObservation,
     MetadataObservation, NetworkPolicyId, NonZeroCount, NonZeroMillis, ObservablePredicate,
     OmissionObservation, PlatformDescriptor, QueryObservation, ResultObservation, RetryPolicy,
-    ReviewedFixture, ReviewedFixtureId, SignoffCaseId, SubjectIdentity, TypedErrorObservation,
-    compile_assertion_catalog, compile_case_catalog, compile_fixture_registry,
-    fixture_executor_for, required_common_harness_checks, required_core_shapes,
-    required_engine_integration_cases, required_module_authoring_cases,
-    required_standalone_client_cases, reviewed_fixture_digest,
+    ReviewedFixture, ReviewedFixtureId, SignoffCaseId, StandaloneExample, SubjectIdentity,
+    TypedErrorObservation, build_standalone_example_fixture, compile_assertion_catalog,
+    compile_case_catalog, compile_fixture_registry, fixture_executor_for,
+    required_common_harness_checks, required_core_shapes, required_engine_integration_cases,
+    required_module_authoring_cases, required_standalone_client_cases,
+    required_standalone_examples, reviewed_fixture_digest,
 };
 
 /// Complete checked planning documents and their independently admitted identities.
@@ -57,6 +59,7 @@ struct PlannedAssertion {
 
 /// Builds all catalog inputs from the pinned ledger, applicability scope, and child inventories.
 pub fn build_reviewed_catalog_plan(
+    repository_root: &Path,
     ledger: &ResolvedLedger,
     scope: &ConformanceScope,
     harness: &HarnessMappings,
@@ -77,7 +80,7 @@ pub fn build_reviewed_catalog_plan(
             .collect(),
     };
     let assertion_catalog = compile_assertion_catalog(scope, assertion_input.clone())?;
-    let fixture_input = build_fixtures(scope, &planned)?;
+    let fixture_input = build_fixtures(repository_root, scope, &planned)?;
     let fixture_registry = compile_fixture_registry(fixture_input.clone())?;
     let case_input = build_cases(
         scope,
@@ -281,6 +284,22 @@ fn fixed_assertions(
         ));
     }
 
+    for example in required_standalone_examples() {
+        let predicate = match example {
+            StandaloneExample::Cli => {
+                ObservablePredicate::Filesystem(FilesystemObservation::Content)
+            }
+            StandaloneExample::Backend | StandaloneExample::Frontend => {
+                ObservablePredicate::Result(ResultObservation::GeneratedSurface)
+            }
+        };
+        specs.push((
+            CaseProgram::StandaloneExample { example },
+            Vec::new(),
+            predicate,
+        ));
+    }
+
     specs
         .into_iter()
         .map(|(program, capabilities, predicate)| {
@@ -369,6 +388,7 @@ fn fixed_assertion(
 }
 
 fn build_fixtures(
+    repository_root: &Path,
     scope: &ConformanceScope,
     assertions: &[PlannedAssertion],
 ) -> Result<FixtureRegistryInput, ConformanceDiagnosticSet> {
@@ -382,6 +402,22 @@ fn build_fixtures(
             program => program.clone(),
         };
         let network = network_policy(&program);
+        let standalone_example = match &program {
+            CaseProgram::StandaloneExample { example } => {
+                Some(build_standalone_example_fixture(repository_root, *example)?)
+            }
+            _ => None,
+        };
+        let example_inputs = standalone_example
+            .iter()
+            .flat_map(|material| {
+                [
+                    material.source_tree_digest.clone(),
+                    material.lockfile_digest.clone(),
+                    material.dependency_policy.policy_digest.clone(),
+                ]
+            })
+            .collect::<Vec<_>>();
         let mut fixture = ReviewedFixture {
             id,
             context_id: planned.assertion.fixture_context.clone(),
@@ -396,8 +432,10 @@ fn build_fixtures(
                     .chain([
                         scope.target_digest().digest().clone(),
                         scope.digest().clone(),
-                    ]),
+                    ])
+                    .chain(example_inputs),
             ),
+            standalone_example,
             network,
             permitted_family: planned.program.family(),
             fixture_digest: Digest::sha256("uncomputed fixture digest"),
@@ -789,6 +827,9 @@ fn fixed_program_label(program: &CaseProgram) -> String {
         CaseProgram::StandaloneClient { case } => {
             format!("standalone-client/{}", serde_name(case))
         }
+        CaseProgram::StandaloneExample { example } => {
+            format!("standalone-example/{}", serde_name(example))
+        }
         CaseProgram::DefinitiveGoClient { behaviour } => {
             format!("definitive-go-client/{}", go_behaviour_name(*behaviour))
         }
@@ -895,6 +936,7 @@ fn network_policy(program: &CaseProgram) -> NetworkPolicyId {
         CaseProgram::StandaloneClient {
             case: crate::ClientSignoffCase::PinnedRemoteClient,
         } => "network/immutable-remote",
+        CaseProgram::StandaloneExample { .. } => "network/read-only-public-dependencies",
         _ => "network/engine-only",
     };
     NetworkPolicyId::new(value).expect("closed network policy identity is valid")
@@ -925,6 +967,7 @@ fn case_timeout(family: CaseFamily) -> NonZeroMillis {
         | CaseFamily::EngineIntegration
         | CaseFamily::ModuleAuthoring
         | CaseFamily::StandaloneClient
+        | CaseFamily::StandaloneExample
         | CaseFamily::IntegrationAssertion => 600_000,
     };
     NonZeroMillis::new(millis).expect("closed case timeout is non-zero and bounded")

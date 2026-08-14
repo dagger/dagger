@@ -1,11 +1,11 @@
 {
-  "cache_output_digest": "sha256:f638fb798085644772beee5056aac68632e5af979e3a6d4137cca01349525d64",
+  "cache_output_digest": "sha256:ca6bec6dc070cc7dcbef772cf27de30f13f4b71e08e4d8bc9bfea01cd6efa80f",
   "container_daemon": {
     "api_version": "1.54",
     "available": true,
     "daemon_identity": "sha256:f0f1560e22d233f2ed01711c53ff70fdddd945f80e4d3ebc1c2aaa0a9a097583",
     "privileged_containers": true,
-    "storage_bytes": 198190538752,
+    "storage_bytes": 191935397888,
     "storage_driver": "overlayfs"
   },
   "cpu_count": 32,
@@ -14,29 +14,29 @@
   "memory_bytes": 67488972800,
   "persistent_canary_digest": "sha256:80060f2acb1f603d9d70a9ee8eea908db0ef6d67576d6e800a9b289f06f9fa74",
   "phase_timings": {
-    "observe-cache-reuse": 226,
-    "observe-container-daemon": 141,
+    "observe-cache-reuse": 251,
+    "observe-container-daemon": 1046,
     "observe-host": 76,
     "probe-smoke-service": 25,
     "round-trip-exported-payload": 50,
     "round-trip-persistent-canary": 25,
     "scan-retained-output": 1,
-    "start-smoke-engine": 200,
-    "stop-smoke-engine": 376
+    "start-smoke-engine": 201,
+    "stop-smoke-engine": 251
   },
-  "plan_digest": "sha256:1fa89b59838e3fc5a6d853b7c3f111d2449f0baf65d8ecb73047b98a281c4436",
+  "plan_digest": "sha256:fe01af8cecef575ece62bad2ccb30008154f5f46593e5162ee54ed1b345b418c",
   "platform": {
     "architecture": "amd64",
     "operating_system": "linux"
   },
-  "preflight_tool": "binary/dagger-rust-sdk-signoff/sha256/a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
-  "profile_digest": "sha256:312a717dc26a1c17991545183df2478e547ce27e09f2ef60799650946a8d3367",
-  "record_digest": "sha256:7d729351dabe12f7c3b1c84bc3fe64295cda8c8876db5893f0ea2f34a0e27de6",
-  "retained_output_bytes": 17659,
+  "preflight_tool": "binary/dagger-rust-sdk-signoff/sha256/d40f9c27e780321fcd0aaa59dde74ad0a7b851caf7378d9026df3ea7ed6f5ed6",
+  "profile_digest": "sha256:2e50bd2584969182d486c1bc08845af4fea8080109ece18b4c45514e77a90047",
+  "record_digest": "sha256:d42e1338d9c6f87fc9ac58659619d73799fe394c9b5e2dd83ff3739ee8d42f2d",
+  "retained_output_bytes": 17662,
   "smoke_engine": "oci/registry.dagger.io/engine/v1.0.0-beta.9/sha256/de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e",
   "smoke_probe_count": 1,
   "smoke_start_count": 1,
   "smoke_stop_count": 1,
   "smoke_tool": "tool/docker/29.3.0/sha256/b803740c076b46942159eab6ab7a5678ec6e4e3beec330487f5984fa02c06e10",
-  "workspace_bytes": 198190538752
+  "workspace_bytes": 191935397888
 }

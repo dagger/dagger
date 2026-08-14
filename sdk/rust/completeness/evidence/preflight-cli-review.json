@@ -1,0 +1,32 @@
+{
+  "binary": {
+    "mode": "0555",
+    "retained_copy_matches": true,
+    "sha256": "sha256:d40f9c27e780321fcd0aaa59dde74ad0a7b851caf7378d9026df3ea7ed6f5ed6",
+    "size_bytes": 270422472
+  },
+  "build": {
+    "cargo": "1.97.1 (c980f4866 2026-06-30)",
+    "command": "cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-signoff --locked",
+    "exit_code": 0,
+    "platform": {
+      "architecture": "amd64",
+      "operating_system": "linux"
+    },
+    "rustc": "1.97.1 (8bab26f4f 2026-07-14)"
+  },
+  "format_version": "1.0.0",
+  "review_kind": "dagger-rust-sdk-preflight-cli-provenance",
+  "source": {
+    "clean": true,
+    "revision": "cc03239753b3cf56136e9a3622c2b5a01e887f7f"
+  },
+  "verification": {
+    "exit_code": 0,
+    "forbidden_counters_zero": true,
+    "ignored_tests": 2,
+    "observation_sha256": "sha256:14d48bb81282443523db4c668b77fb95481a6ea29a110e6cece68399ad6705e6",
+    "passed_tests": 162,
+    "producer": "scripts/ci-platform-preflight.sh"
+  }
+}

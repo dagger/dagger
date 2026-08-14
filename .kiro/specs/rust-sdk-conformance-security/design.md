@@ -65,16 +65,25 @@ caller-provided shell commands, copied Go source, or a general operation languag
 manifest and catalog are complete and digest-bound before the artifact is built or
 imported.
 
+The fixed inventory also runs the committed `cli`, `backend`, and `frontend`
+standalone Rust example roots from the exact Subject_Revision with their committed
+lockfiles. These are build-only sign-off cases: the CLI output remains inside its
+isolated workspace, while the backend and frontend force their image graphs and assert
+the expected content without entering their explicit publication paths. Registry
+credentials are absent, external writes are forbidden, and any attempted publish or
+host export outside the case workspace is a terminal assertion failure.
+
 Every case branches from one immutable `Installed_Rust_Baseline` and binds to the same
 Exact_Target_Engine. Workspaces, environment namespaces, cache namespaces, and
 credentials remain isolated. Assertion failures are terminal for the complete run;
 only classified infrastructure interruptions can consume a bounded retry, and every
 attempt remains visible.
 
-The native Linux, macOS, and Windows jobs exercise process, path, filesystem, cache,
-redaction, and cleanup behaviour without an engine. Pure descriptor cases exhaust all
-six OS/architecture pairs. The initial exact-engine verdict is Linux/amd64 only. A
-different platform requires its own artifact and verdict.
+The native Linux and macOS jobs exercise process, path, filesystem, cache, redaction,
+and cleanup behaviour without an engine. Pure descriptor cases may exercise additional
+OS/architecture names, but cannot widen support. The initial exact-engine verdict is
+Linux/amd64 only. Windows is outside current sign-off; a different supported platform
+requires its own artifact and verdict.
 
 Security is part of the verdict rather than an adjacent green check. All Cargo roots
 use committed lockfiles and Cargo Deny; unsafe remains denied; external images, tools,
@@ -146,10 +155,10 @@ payload itself remains immutable.
 - `toolchains/security` owns the Trivy invocation over an exact supplied payload.
   Feature 8 adds immutable scanner/database observation and canonical result
   translation; it does not rebuild the engine for scanning.
-- GitHub Actions owns routine native hosted execution for Linux and macOS plus the
-  separately dispatched engine-free Windows preflight. The Rust policy model owns
-  whether those observations form a complete portable matrix; Namespace Personal is
-  not assumed to provide a Windows runner.
+- GitHub Actions owns routine native hosted execution for Linux and macOS and assembles
+  the current supported native-platform set. The separately dispatched engine-free
+  Windows preflight is optional future-support evidence and cannot enter the current
+  verdict. Namespace Personal is not assumed to provide a Windows runner.
 - The host provider or remote-execution wrapper owns transport to a machine. The
   `devbox exec` command is used to reach the first Namespace host, but no Namespace
   command, account, box ID, or API enters a repository contract or retained verdict.
@@ -213,6 +222,10 @@ payload itself remains immutable.
 19. Source documentation follows the repository WHY-not-WHAT rule. Public internal
     contract types document guarantees and rejection semantics. Implementation source
     comments and test names do not cite feature or task numbers.
+20. The Rust SDK development/sign-off module declares the repository's `v1.0.0-0`
+    engine API floor. Its checked core binding must expose `GitRef.asWorkspace`, and
+    the nested engine-development constructor receives that immutable Workspace rather
+    than the ambient module Workspace before `WithGitSource` narrows the build source.
 
 ### Dependency decisions
 
@@ -323,7 +336,8 @@ toolchains/rust-sdk-dev/
 
 .github/workflows/
 ├── rust-sdk-security.yml                 # locked/Cargo Deny/public-package gates
-└── rust-sdk-platform.yml                 # engine-free Linux/macOS/Windows jobs
+├── rust-sdk-platform.yml                 # supported engine-free Linux/macOS jobs
+└── rust-sdk-windows-preflight.yml        # optional non-gating future-support evidence
 ```
 
 Feature 6 and Feature 7 provisional sign-off models remain readable during migration
@@ -345,7 +359,7 @@ flowchart LR
     SCOPE --> ASSERT["Assertion compiler"]
     ASSERT --> CASES["Closed CaseCatalog"]
     CHILD["Feature 2-7 closure records"] --> CLOSURE["Closure bundle gate"]
-    NATIVE["Linux + macOS + Windows evidence"] --> CLOSURE
+    NATIVE["Supported Linux + macOS evidence"] --> CLOSURE
     HYGIENE["Rust security and hygiene"] --> CLOSURE
     CASES --> PLAN["SignoffRunPlan"]
     CLOSURE --> PLAN
@@ -390,7 +404,7 @@ evidence. If Dagger later expands `sdk-sdk`, only those reviewed portable spines
 complete integration inventory—are candidates for distillation.
 
 The `ImplementationClosureBundle` admits one current closure for Features 2–7 plus the
-portable platform matrix and ordinary Rust security/hygiene result. Each input binds
+supported Linux/macOS native-platform set and ordinary Rust security/hygiene result. Each input binds
 the same target and Subject_Revision or an explicitly compatible checked-asset
 identity. The bundle gate runs before artifact materialization. It never replays the
 underlying Cargo, Go adapter, or native-platform work.
@@ -465,6 +479,13 @@ digest, extracts or queries exact component identities, and constructs canonical
 manifest/provenance sidecars. The actual archive and sidecars are assembled into one
 exportable bundle.
 
+The engine builder's constructor is itself part of the immutable-source boundary. The
+adapter converts the admitted credential-free Git ref to a Workspace and supplies it
+at construction time; passing the ambient injected Workspace and replacing it later
+would still taint constructor evaluation and cache identity. Engine-free source and
+compile audits reject a missing conversion, a legacy module API floor, or an ambient
+Workspace argument before the artifact-producing graph can run.
+
 For an import, the host supplies that bundle from persistent storage. The graph
 validates the outer bundle, canonical manifest, archive digest, every declared
 component, platform, target, subject revision, toolchain, and provenance before
@@ -519,6 +540,18 @@ credentials, and trace collection. The runner uses bounded concurrency from the
 catalog. Case results are returned by index and canonically reordered; completion
 order cannot affect evidence.
 
+The three standalone-example branches additionally overlay only the exact committed
+example root, its committed lockfile, and the minimal exact-subject Rust workspace
+source needed by its path dependency. Their executor selects a closed build-only mode:
+`cli` proves its executable export inside the branch, and `backend`/`frontend` force,
+export, and inspect bounded local OCI content. No example receives registry
+credentials or an external publication destination. The dedicated
+`network/read-only-public-dependencies` policy binds the committed source and lockfile,
+pinned tool versions, resolved image identities, and exported output identities. It
+permits only those declared public dependency reads; it does not pretend the examples
+are engine-only or network-free. Mutable outputs and cache keys remain case-namespaced,
+and any credential use or external write fails admission.
+
 `CaseProgram` dispatch is a closed Go switch which calls production Dagger operations
 or runs a Rust fixture binary built against the installed packaged SDK. The catalog
 contains no executable text. The executor rejects an unknown enum, fixture digest,
@@ -542,10 +575,10 @@ baseline, or convert an assertion failure into infrastructure.
 
 ```mermaid
 flowchart LR
-    LINUX["Native Linux job"] --> PM["PortablePlatformMatrix"]
+    LINUX["Native Linux job"] --> PM["SupportedNativePlatformSet"]
     MAC["Native macOS job"] --> PM
-    WIN["Native Windows job"] --> PM
-    DESC["Six pure OS/arch descriptors"] --> PM
+    WIN["Optional Windows preflight (not admitted)"] -.-> PM
+    DESC["Pure OS/arch descriptors (unit coverage only)"] -.-> PM
     LOCK["Locked Cargo + Cargo Deny"] --> SEC["ArtifactSecurityReport"]
     PROV["External provenance registry"] --> SEC
     SCAN["Exact OCI payload scan"] --> SEC
@@ -555,8 +588,8 @@ flowchart LR
     SEC --> VERDICT
 ```
 
-The native workflow runs one engine-free job on each operating-system family. The same
-private Rust test binary selects the native job plan and records observed OS,
+The supported native workflow runs one engine-free job on Linux and one on macOS. The
+same private Rust test binary selects the native job plan and records observed OS,
 architecture, Rust version, lockfile identity, source identity, test inventory, and
 outcomes. It exercises native executable discovery, cache publication, path and link
 boundaries, child lifecycle, control-line parsing, redaction, and cleanup. Pure tests
@@ -868,27 +901,62 @@ pub struct ExactTargetArtifactManifest {
     pub provenance_digest: Digest,
 }
 
-pub struct ArtifactObservation {
-    pub strategy: ArtifactMaterialization,
-    pub manifest: ExactTargetArtifactManifest,
+pub struct ArtifactBuildReceipt {
+    pub plan_digest: Digest,
+    pub bundle_digest: Digest,
+    pub manifest_digest: Digest,
     pub payload_digest: Digest,
-    pub payload_size_bytes: u64,
-    pub counters: ArtifactCounters,
-    pub elapsed_millis: u64,
+    pub events: Vec<ArtifactEvent>,
+    pub construction_count: u32,
+    pub import_count: u32,
+    pub component_build_counts: BTreeMap<ArtifactComponent, u32>,
+    pub forbidden_work_counts: BTreeMap<ForbiddenArtifactWork, u32>,
+    pub materialization_elapsed_millis: NonZeroMillis,
+    pub receipt_digest: Digest,
 }
 
-pub fn admit_artifact(
+pub struct ArtifactImportReceipt {
+    pub plan_digest: Digest,
+    pub bundle_digest: Digest,
+    pub verified_component_digests: BTreeMap<ArtifactComponent, Digest>,
+    pub events: Vec<ArtifactEvent>,
+    pub construction_count: u32,
+    pub import_count: u32,
+    pub component_build_counts: BTreeMap<ArtifactComponent, u32>,
+    pub forbidden_work_counts: BTreeMap<ForbiddenArtifactWork, u32>,
+    pub materialization_elapsed_millis: NonZeroMillis,
+    pub receipt_digest: Digest,
+}
+
+pub fn admit_artifact_build_receipt(
     plan: &ArtifactPlan,
-    observation: ArtifactObservation,
-) -> Result<AdmittedArtifact, ConformanceDiagnosticSet>;
+    bundle: &VerifiedArtifactBundle,
+    receipt: &ArtifactBuildReceipt,
+) -> Result<AdmittedArtifactBuildReceipt, ConformanceDiagnosticSet>;
+
+pub fn admit_artifact_import_receipt(
+    plan: &ArtifactPlan,
+    bundle: &VerifiedArtifactBundle,
+    receipt: &ArtifactImportReceipt,
+) -> Result<AdmittedArtifactImportReceipt, ConformanceDiagnosticSet>;
 ```
 
-`ArtifactCounters` separately records construction, import, engine binary, CLI,
-mandatory Go runtime, and Rust content work. A build requires one construction, zero
-imports, and at most one component build each. An import requires zero construction or
-component builds and exactly one import. The admitted value contains the verified
-payload digest and safe logical locator; it never claims that a digest can recover
-missing bytes.
+The producing and importing adapters supply typed raw observations; Rust never creates
+an ideal history from the expected strategy. Each receipt is canonical, digest-bound,
+and independently re-admitted against the original plan and exact bundle. A build
+requires one construction, zero imports, exactly one required component evaluation,
+and zero forbidden work. An import requires zero construction or component builds,
+exactly one import, independently observed target component identities, and zero
+forbidden work. The admitted values retain verified identities and safe logical
+locators; they never claim that a digest can recover missing bytes.
+
+The current verified bundle representation is memory-backed and may retain roughly
+three to five simultaneous payload-sized allocations during assembly and decode. Its
+hard limit is therefore 8 GiB: the modeled worst case remains about 40 GiB on the
+64-GiB sign-off host, leaving operating headroom for the policy process and engine.
+Exact-bound input is admitted and `+1` fails before allocation. Raising this limit
+requires a streamed or file-backed verified-bundle representation rather than a larger
+constant.
 
 ### Dagger artifact and execution adapter (`toolchains/rust-sdk-dev/signoff.go`)
 
@@ -896,29 +964,35 @@ The Dagger-facing object is intentionally small:
 
 ```go
 type RustSignoffArtifact struct {
-    Bundle        *dagger.File
-    ManifestJSON  string
-    PayloadDigest string
-    // private retained graph objects exist only during a built run
+    Bundle           *dagger.File
+    PlanJSON         string
+    ManifestJSON     string
+    BuildReceiptJSON string
+    PayloadDigest    string
+    // private retained graph objects and files cannot cross the public schema
 }
 
 func (t *RustSdkDev) SignoffArtifact(
     ctx context.Context,
-    planJSON string,
+    seedJSON string,
 ) (*RustSignoffArtifact, error)
 
 func (t *RustSdkDev) Signoff(
     ctx context.Context,
     planJSON string,
+    catalogJSON string,
     closureJSON string,
     platformJSON string,
     artifact *dagger.File,
 ) (string, error)
 ```
 
-`SignoffArtifact` exposes bytes for explicit host export. `Signoff` accepts either an
-import file declared by the plan or no file for the build strategy. A private helper
-returns one verified container plus the exact CLI file without calling a second build.
+`SignoffArtifact` re-derives a clean immutable subject seed, builds once, exposes the
+portable bytes and canonical Build receipt, and keeps graph objects private.
+Authoritative `Signoff` is bundle-required and import-only: it records one independently
+observed Import receipt and reuses that same receipt through security and verdict
+admission. It cannot silently fall back to a build strategy or reconstruct ideal
+counters after the producing session ended.
 
 The adapter decodes canonical Rust-authored plan/catalog JSON and validates its digest
 before entering the graph. Go mirrors only the closed enum spellings needed for
@@ -994,7 +1068,7 @@ Feature 5's `resolution` case is refactored to use the common exact CLI and base
 rather than constructing its own installation. The existing bounded concurrency
 pattern is retained, with each branch cloned from the same immutable baseline.
 
-### Portable platform matrix
+### Supported native-platform set
 (`dagger-sdk-completeness/src/conformance/platform.rs`)
 
 ```rust
@@ -1012,24 +1086,23 @@ pub struct NativePlatformObservation {
     pub domains: BTreeMap<NativePlatformDomain, PlatformDomainOutcome>,
 }
 
-pub struct DescriptorObservation {
-    pub platform: PlatformDescriptor,
-    pub descriptor_digest: Digest,
-    pub outcome: PlatformDomainOutcome,
+pub struct SupportedNativePlatformSet {
+    pub target_digest: TargetDigest,
+    pub native_observations: BTreeMap<OperatingSystem, NativePlatformObservation>,
+    pub observation_set_digest: Digest,
 }
 
-pub fn assemble_portable_platform_matrix(
-    policy: &PlatformPolicy,
+pub fn assemble_supported_native_platform_set(
+    target_digest: TargetDigest,
     native: Vec<NativePlatformObservation>,
-    descriptors: Vec<DescriptorObservation>,
-) -> Result<PortablePlatformMatrix, ConformanceDiagnosticSet>;
+) -> Result<SupportedNativePlatformSet, ConformanceDiagnosticSet>;
 ```
 
 The required native domain set covers PATH/executable discovery, cache publication and
 retention, path/link boundaries, child start/termination/reaping, control-line
-isolation, diagnostics, redaction, cleanup, public API compilation, and docs. An OS may
-record an inapplicable link primitive only where the policy names the native
-equivalent—for example Windows reparse/ACL behaviour instead of Unix mode bits.
+isolation, diagnostics, redaction, cleanup, public API compilation, and docs. Admission
+requires exactly current matching Linux and macOS observations. The optional Windows
+producer uses native Windows semantics but its output is not an input to current sign-off.
 
 ### Supply-chain and secret security
 (`dagger-sdk-completeness/src/conformance/security.rs`)
@@ -1221,7 +1294,7 @@ pub fn derive_conformance_status_changes(
 pub fn derive_conformance_report(
     scope: &ConformanceScope,
     closure: Option<&ImplementationClosureBundle>,
-    platform: Option<&PortablePlatformMatrix>,
+    platform: Option<&SupportedNativePlatformSet>,
     security: Option<&ArtifactSecurityReport>,
     verdict: Option<&AtomicSignoffVerdict>,
 ) -> Result<ConformanceReport, ConformanceDiagnosticSet>;
@@ -1234,7 +1307,7 @@ engine execution. Feature 1 validates every requested transition against prior s
 and allowed policy.
 
 The report keeps the five phases independent. It never turns implementation closure,
-a native matrix, or a clean artifact scan into SDK sign-off. The Markdown report uses
+a native-platform set, or a clean artifact scan into SDK sign-off. The Markdown report uses
 measured counts and neutral wording; it does not present `Inapplicable` as implemented
 Rust behaviour.
 
@@ -1343,17 +1416,18 @@ passing verdict, and `ReleaseHandoffRecord`.
 ### Closure bundle
 
 The bundle contains exactly six child-closure references, the current generated-asset
-map, native platform matrix identity, ordinary Rust security identity, target, subject,
+map, supported native-platform identity, ordinary Rust security identity, target, subject,
 and canonical digest. It does not embed complete test logs. Each reference points to a
 bounded evidence artifact which can be independently inspected.
 
-### Platform matrix
+### Supported platform evidence
 
-The matrix has exactly three native observations and six descriptor observations.
-Native results carry their real architecture; no requirement assumes that GitHub hosts
-both architectures for every OS. Descriptor coverage supplies the other architecture
-where execution is pure. Exact-engine platform identity is deliberately absent from
-this matrix and belongs to the verdict.
+The current matrix has exactly two native observations—Linux and macOS—and four pure
+Linux/macOS descriptor observations. Native results carry their real architecture; no
+requirement assumes that GitHub hosts both architectures for every OS. Descriptor
+coverage supplies the other architecture where execution is pure. Windows evidence is
+not a member of this supported set. Exact-engine platform identity is deliberately
+absent from this matrix and belongs to the verdict.
 
 ### Security report
 
@@ -1442,7 +1516,7 @@ integration case SHALL also bind one current authority anchor and source fingerp
 to one small Scenario_Spine and exactly one executable generated-Core or reviewed Rust
 realization. A boundary label or source selector alone SHALL fail admission.
 
-**Validates: Requirements 3.1–3.32**
+**Validates: Requirements 3.1–3.37**
 
 ### Property 6: Closure admission consumes exactly current engine-free evidence
 
@@ -1495,9 +1569,12 @@ session values, and case failures, execution admission SHALL require exactly one
 Exact_Target_Engine start and baseline materialization, bind every case to them, derive
 distinct mutable namespaces from the baseline, prevent cross-case observation or
 mutation, preserve sibling workspaces after failure, stop and reap the service, and
-reject zero, duplicate, or cross-case use.
+reject zero, duplicate, or cross-case use. The three standalone examples SHALL use
+their exact committed sources and lockfiles in build-only branches, prove their local
+CLI/image outputs, receive no registry credentials, and reject every external
+publication attempt.
 
-**Validates: Requirements 6.1, 6.3–6.5, 6.11–6.15, 6.19–6.22**
+**Validates: Requirements 6.1, 6.3–6.5, 6.11–6.15, 6.19–6.28**
 
 ### Property 11: Retry history cannot erase an assertion failure or duplicate work
 
@@ -1559,20 +1636,21 @@ content.
 ### Property 16: Descriptor and exact-engine platform claims never widen
 
 *For any* descriptor input and platform-result permutation, the platform compiler SHALL
-cover exactly Linux, macOS, and Windows crossed with amd64 and arm64, bind every
-admitted result to exact platform/toolchain/source/test identities, require
-Linux/amd64 for the initial exact-engine verdict, and reject reuse of that artifact or
+bind every admitted Linux/macOS result to exact platform/toolchain/source/test
+identities, require Linux/amd64 for the initial exact-engine verdict, treat additional
+descriptor targets as non-widening unit coverage, and reject reuse of that artifact or
 verdict for another platform.
 
 **Validates: Requirements 8.4–8.9, 8.18, 8.20–8.21**
 
 ### Property 17: Native OS closure proves native behaviour without an engine
 
-*For any* native Linux, macOS, and Windows observation set and domain-outcome mutation,
-matrix assembly SHALL accept exactly one current passing job per OS whose native PATH,
-cache, link/path, child lifecycle, control-line, diagnostic, and redaction domains ran
-under Rust 1.97.1 with committed lockfiles and no engine or other SDK. Missing, stale,
-skipped, failed, duplicated, or simulated-native evidence SHALL fail the matrix.
+*For any* native Linux and macOS observation set and domain-outcome mutation, supported
+set assembly SHALL accept exactly one current passing job per supported OS whose native
+PATH, cache, link/path, child lifecycle, control-line, diagnostic, and redaction domains
+ran under Rust 1.97.1 with committed lockfiles and no engine or other SDK. Missing,
+stale, skipped, failed, duplicated, simulated-native, or injected Windows evidence SHALL
+fail current sign-off admission.
 
 **Validates: Requirements 8.1–8.3, 8.10–8.17, 8.19**
 
@@ -1638,8 +1716,8 @@ evidence/platform closure, and avoid claiming SDK sign-off.
 produce one deterministic value binding the exact target, subject, platform, host
 profile/preflight, artifact manifest/payload, closure, case catalog, platform matrix,
 security report, all build/import/engine/baseline counters, every attempt, and every
-required shared/case timing. Any mutation to a bound value SHALL change the verdict
-digest.
+required shared/case timing, including the three standalone-example outcomes. Any
+mutation to a bound value SHALL change the verdict digest.
 
 **Validates: Requirements 12.1–12.19**
 
@@ -1652,9 +1730,10 @@ canary leaked, and all capability claims equal the proved assertion/decision set
 missing, skipped, unknown, failed, stale, mismatched, duplicated, leaking, or overbroad
 condition SHALL yield one failed verdict, admit no successful subset or status change,
 retain implementation/platform/security/sign-off phase distinctions, require a clean
-derived diff, and prevent Feature 9 release admission.
+derived diff, reject any external publication observation, and prevent Feature 9
+release admission.
 
-**Validates: Requirements 12.20–12.35**
+**Validates: Requirements 12.20–12.42**
 
 ### Property 25: Release handoff preserves exact signed-off bytes and scope
 
@@ -1796,10 +1875,12 @@ The production Rust compilers and validators run against checked fixtures for:
 
 1. the complete current ledger and applicability artifact;
 2. a compact mixed same/idiomatic/engine-owned/foreign-only applicability corpus;
-3. all fixed case-family inventories plus grouped integration assertions;
+3. all fixed case-family inventories, the three build-only standalone Rust examples,
+   plus grouped integration assertions;
 4. complete and stale Feature 2–7 closure bundles;
 5. built/imported artifact event logs with actual small canary payload bytes;
-6. Linux/macOS/Windows native observation documents and all descriptor pairs;
+6. Linux/macOS supported native observations, optional rejected Windows evidence, and
+   non-widening descriptor pairs;
 7. Cargo Deny/provenance/finding/exception/canary security documents; and
 8. passed and every-class-failed sign-off observations; and
 9. exact-byte, mutated-byte, and widened-platform release handoff candidates.
@@ -1827,12 +1908,12 @@ These source/fixture tests verify graph construction, not engine behaviour.
 ### Native platform jobs
 
 `.github/workflows/rust-sdk-platform.yml` runs the same engine-free platform test
-binary on Linux and macOS with Rust 1.97.1 and committed lockfiles for routine pull
-requests. `.github/workflows/rust-sdk-windows-preflight.yml` runs the Windows
-observation only when explicitly dispatched for ultimate SDK sign-off. Each job
-uploads one canonical bounded observation. The pure matrix compiler accepts sign-off
-only when all three current observations are present and rejects any missing or
-mismatched job.
+binary on Linux and macOS with Rust 1.97.1 and committed lockfiles, then admits their
+matching observations as the current supported native-platform set.
+`.github/workflows/rust-sdk-windows-preflight.yml` may produce an explicitly dispatched
+future-support observation, but that artifact is non-gating and cannot enter current
+sign-off. The production compiler rejects any missing or mismatched supported job and
+rejects Windows evidence at the current verdict boundary.
 
 The jobs do not install Dagger, start Docker, build an engine, execute a module, or run
 another SDK. They may compile the public Rust packages and private platform test
@@ -1887,7 +1968,7 @@ exact artifact work.
 ### Final exact-target sign-off
 
 No ordinary implementation checkpoint runs this sequence. After applicability,
-catalog, child closures, native platform matrix, Rust security, artifact, runner, and
+catalog, child closures, supported Linux/macOS platform evidence, Rust security, artifact, runner, and
 verdict model are complete, one bounded Linux/amd64 sign-off does the following:
 
 1. validate the current host preflight record and immutable Signoff_Run_Plan;

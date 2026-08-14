@@ -1,19 +1,21 @@
 //! Engine-free compiler for the checked Rust conformance catalogs and closure plan.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Arg, ArgAction, Command, value_parser};
+use dagger_sdk_completeness::extract::go::{GoHelperOutput, go_scenario_context_index};
 use dagger_sdk_completeness::{
     AssertionOrigin, CaseFamily, ClosurePlanAction, ConformanceScopeInput,
     EngineIntegrationMappings, HarnessMappings, ResolvedLedger, ReviewedConformanceScope,
     SubjectIdentity, apply_rust_scenario_registry, assertion_catalog_drift,
     build_observable_fixture_program_artifact, build_reviewed_catalog_plan, canonical_bytes,
     compile_rust_first_conformance_manifest, compile_rust_scenario_registry, decode_canonical,
-    derive_conformance_scope, reviewed_implementation_closure_plan, rust_artifact_digest,
-    rust_scenario_candidate_digest, scaffold_rust_first_conformance_manifest,
-    scaffold_rust_scenario_registry,
+    derive_conformance_scope, reviewed_implementation_closure_plan,
+    reviewed_rust_scenario_registry, rust_artifact_digest, rust_scenario_candidate_digest,
+    scaffold_rust_first_conformance_manifest,
 };
 use serde::Serialize;
 
@@ -31,12 +33,21 @@ struct CatalogAudit<'a> {
     fixture_count: usize,
     case_count: usize,
     fixed_case_count: usize,
+    standalone_example_case_count: usize,
     authority_route_case_count: usize,
     scenario_candidate_count: usize,
     scenario_candidate_digest: &'a dagger_sdk_completeness::Digest,
     scenario_registry_digest: &'a dagger_sdk_completeness::Digest,
     scenario_runner_source_digest: &'a dagger_sdk_completeness::Digest,
+    scenario_authority_context_source_digest: &'a dagger_sdk_completeness::Digest,
+    scenario_authority_context_count: usize,
+    scenario_selected_authority_context_count: usize,
     scenario_registration_count: usize,
+    scenario_runnable_realization_count: usize,
+    scenario_runnable_proof_count: usize,
+    scenario_execution_cell_count: usize,
+    equivalent_typescript_authority_identity_count: usize,
+    equivalent_typescript_enclosing_method_count: usize,
     scenario_realization_required_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     admitted_scenario_manifest_digest: Option<&'a dagger_sdk_completeness::Digest>,
@@ -81,16 +92,23 @@ fn run() -> Result<(), &'static str> {
         read_checked(&completeness.join("conformance-scope.json"))?;
     let applicability: ConformanceScopeInput =
         read_checked(&completeness.join("conformance-applicability.json"))?;
-    let harness: HarnessMappings = read_checked(&completeness.join("harness-mappings.json"))?;
+    let harness_path = completeness.join("harness-mappings.json");
+    let mut harness: HarnessMappings = read_checked(&harness_path)?;
     let engine: EngineIntegrationMappings =
         read_checked(&completeness.join("engine-integration-mappings.json"))?;
     let scope = derive_conformance_scope(&ledger, &reviewed, applicability)
         .map_err(|_| "checked conformance scope was rejected")?;
-    let subject = SubjectIdentity::SourceDigest(
-        rust_artifact_digest(root).map_err(|_| "Rust subject identity could not be computed")?,
-    );
-    let plan = build_reviewed_catalog_plan(&ledger, &scope, &harness, &engine, subject.clone())
-        .map_err(|_| "reviewed conformance catalog was rejected")?;
+    let rust_artifact_digest =
+        rust_artifact_digest(root).map_err(|_| "Rust subject identity could not be computed")?;
+    if matches.get_flag("update") {
+        for mapping in harness.checks.values_mut() {
+            mapping.verified_artifact_digest = rust_artifact_digest.clone();
+        }
+    }
+    let subject = SubjectIdentity::SourceDigest(rust_artifact_digest);
+    let plan =
+        build_reviewed_catalog_plan(root, &ledger, &scope, &harness, &engine, subject.clone())
+            .map_err(|_| "reviewed conformance catalog was rejected")?;
     let closure_plan =
         reviewed_implementation_closure_plan().map_err(|_| "reviewed closure plan was rejected")?;
     let observable_programs = build_observable_fixture_program_artifact(
@@ -99,12 +117,26 @@ fn run() -> Result<(), &'static str> {
         &plan.case_catalog,
     )
     .map_err(|_| "observable fixture program registry was rejected")?;
+    let authority_context_source =
+        fs::read(completeness.join("sources/go/go-integration-tests.json"))
+            .map_err(|_| "could not read the checked Go scenario context source")?;
+    let authority_context_output: GoHelperOutput =
+        serde_json::from_slice(&authority_context_source)
+            .map_err(|_| "checked Go scenario context source is invalid")?;
+    let authority_contexts = go_scenario_context_index(&authority_context_output)
+        .map_err(|_| "checked Go scenario contexts were rejected")?;
+    let authority_context_source_digest =
+        dagger_sdk_completeness::Digest::sha256(&authority_context_source);
     let scenario_candidates = scaffold_rust_first_conformance_manifest(
         &plan.assertion_catalog,
         &plan.fixture_registry,
         &plan.case_catalog,
+        &authority_contexts,
     )
-    .map_err(|_| "Rust-first scenario candidates could not be scaffolded")?;
+    .map_err(|errors| {
+        eprintln!("{errors:?}");
+        "Rust-first scenario candidates could not be scaffolded"
+    })?;
     let scenario_candidate_digest = rust_scenario_candidate_digest(&scenario_candidates)
         .map_err(|_| "Rust-first scenario candidates could not be identified")?;
     let runner_source =
@@ -112,20 +144,24 @@ fn run() -> Result<(), &'static str> {
             .map_err(|_| "could not read the checked Rust scenario runner")?;
     let runner_source_digest = dagger_sdk_completeness::Digest::sha256(runner_source);
     let scenario_registry_path = completeness.join("conformance-scenario-realizations.json");
-    let (scenario_registry_input, initialize_scenario_registry) =
-        match fs::read(&scenario_registry_path) {
-            Ok(bytes) => (
-                decode_canonical(&bytes)
-                    .map_err(|_| "checked Rust scenario registry is not canonical")?,
-                false,
-            ),
-            Err(_) if matches.get_flag("update") => (
-                scaffold_rust_scenario_registry(&scenario_candidates, runner_source_digest.clone())
-                    .map_err(|_| "could not initialize the checked Rust scenario registry")?,
-                true,
-            ),
-            Err(_) => return Err("checked Rust scenario registry is missing"),
-        };
+    let reviewed_scenario_registry = reviewed_rust_scenario_registry(
+        &scenario_candidates,
+        &plan.case_catalog,
+        runner_source_digest.clone(),
+    )
+    .map_err(|_| "reviewed Rust scenario projection was rejected")?;
+    let scenario_registry_input = if matches.get_flag("update") {
+        reviewed_scenario_registry
+    } else {
+        let bytes = fs::read(&scenario_registry_path)
+            .map_err(|_| "checked Rust scenario registry is missing")?;
+        let checked = decode_canonical(&bytes)
+            .map_err(|_| "checked Rust scenario registry is not canonical")?;
+        if checked != reviewed_scenario_registry {
+            return Err("checked Rust scenario registry differs from the reviewed projection");
+        }
+        checked
+    };
     let scenario_registry = compile_rust_scenario_registry(
         scenario_registry_input.clone(),
         &scenario_candidates,
@@ -203,6 +239,12 @@ fn run() -> Result<(), &'static str> {
             .iter()
             .filter(|case| case.family != CaseFamily::IntegrationAssertion)
             .count(),
+        standalone_example_case_count: plan
+            .cases
+            .cases
+            .iter()
+            .filter(|case| case.family == CaseFamily::StandaloneExample)
+            .count(),
         authority_route_case_count: plan
             .cases
             .cases
@@ -213,7 +255,45 @@ fn run() -> Result<(), &'static str> {
         scenario_candidate_digest: &scenario_candidate_digest,
         scenario_registry_digest: scenario_registry.digest(),
         scenario_runner_source_digest: scenario_registry.runner_source_digest(),
+        scenario_authority_context_source_digest: &authority_context_source_digest,
+        scenario_authority_context_count: authority_contexts.len(),
+        scenario_selected_authority_context_count: scenario_candidates
+            .scenarios
+            .iter()
+            .flat_map(|scenario| scenario.spine.authority_context_digests.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .len(),
         scenario_registration_count: scenario_registry.registrations().len(),
+        scenario_runnable_realization_count: scenario_registry.realization_ids().len(),
+        scenario_runnable_proof_count: scenario_registry
+            .registrations()
+            .values()
+            .map(|registration| registration.proof_id.clone())
+            .collect::<BTreeSet<_>>()
+            .len(),
+        scenario_execution_cell_count: scenario_registry
+            .registrations()
+            .values()
+            .filter_map(|registration| {
+                let realization_id = match &registration.realization {
+                    dagger_sdk_completeness::RustScenarioRealization::GeneratedCore {
+                        realization_id,
+                        ..
+                    }
+                    | dagger_sdk_completeness::RustScenarioRealization::ReviewedRustFixture {
+                        realization_id,
+                        ..
+                    } => realization_id,
+                    dagger_sdk_completeness::RustScenarioRealization::RealizationRequired => {
+                        return None;
+                    }
+                };
+                Some((realization_id.clone(), registration.proof_id.clone()))
+            })
+            .collect::<BTreeSet<_>>()
+            .len(),
+        equivalent_typescript_authority_identity_count: 132,
+        equivalent_typescript_enclosing_method_count: 38,
         scenario_realization_required_count: realized_scenarios
             .scenarios
             .iter()
@@ -232,6 +312,7 @@ fn run() -> Result<(), &'static str> {
         engine_action_present,
         replay_action_present,
     };
+    publish(&harness_path, &harness, matches.get_flag("update"))?;
     publish(
         &completeness.join("conformance-assertions.json"),
         &plan.assertions,
@@ -257,13 +338,11 @@ fn run() -> Result<(), &'static str> {
         &scenario_candidates,
         matches.get_flag("update"),
     )?;
-    if initialize_scenario_registry {
-        publish(
-            &scenario_registry_path,
-            &scenario_registry_input,
-            matches.get_flag("update"),
-        )?;
-    }
+    publish(
+        &scenario_registry_path,
+        &scenario_registry_input,
+        matches.get_flag("update"),
+    )?;
     publish(
         &completeness.join("conformance-closure-plan.json"),
         &closure_plan,

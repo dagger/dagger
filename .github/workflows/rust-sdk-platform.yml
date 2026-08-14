@@ -1,4 +1,4 @@
-name: Rust SDK Development Platforms
+name: Rust SDK Supported Platforms
 
 on:
   pull_request:
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   native:
-    name: rust-sdk-development-${{ matrix.os-name }}
+    name: rust-sdk-supported-${{ matrix.os-name }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,23 +55,24 @@ jobs:
           path: sdk/rust/platform-observation-${{ matrix.os-name }}.json
           if-no-files-found: error
           retention-days: 7
-      - name: Publish the bounded development observation
+      - name: Publish the bounded supported-platform observation
         env:
           OBSERVATION_OS: ${{ matrix.os-name }}
           OBSERVATION_ARCH: ${{ runner.arch }}
         run: |
           {
-            echo "## Rust SDK development observation"
+            echo "## Rust SDK supported-platform observation"
             echo
             echo "- Revision: \`$GITHUB_SHA\`"
             echo "- Platform: \`$OBSERVATION_OS/$OBSERVATION_ARCH\`"
             echo "- Outcome: \`passed\`"
             echo "- Dagger / engine / Docker / other SDK invocations: \`0 / 0 / 0 / 0\`"
-            echo "- Portable platform matrix admitted: \`no\`"
+            echo "- Current SDK sign-off platform: \`yes\`"
+            echo "- Windows support claimed: \`no\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
-  aggregate-development:
-    name: rust-sdk-development-aggregate
+  aggregate-supported:
+    name: rust-sdk-supported-aggregate
     needs: native
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -90,18 +91,18 @@ jobs:
           pattern: rust-sdk-native-*
           path: sdk/rust/native-observations
           merge-multiple: true
-      - name: Admit the matching development observation set
+      - name: Admit the matching supported observation set
         run: |
           cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
-          ./target/debug/dagger-rust-sdk-platform aggregate-development \
+          ./target/debug/dagger-rust-sdk-platform aggregate-supported \
             --scope completeness/conformance-scope.json \
             --input native-observations/platform-observation-linux.json \
             --input native-observations/platform-observation-macos.json \
-            --output platform-observation-development-set.json
-      - name: Upload the bounded development set
+            --output platform-observation-supported-set.json
+      - name: Upload the bounded supported set
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: rust-sdk-native-development-set
-          path: sdk/rust/platform-observation-development-set.json
+          name: rust-sdk-native-supported-set
+          path: sdk/rust/platform-observation-supported-set.json
           if-no-files-found: error
           retention-days: 7

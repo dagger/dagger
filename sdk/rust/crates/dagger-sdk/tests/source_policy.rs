@@ -241,3 +241,38 @@ fn client_foundations_have_no_unchecked_or_process_global_escape_hatches() {
         }
     }
 }
+
+#[test]
+fn signoff_observation_is_non_default_and_doc_hidden() {
+    let workspace = rust_workspace();
+    let manifest = fs::read_to_string(workspace.join("crates/dagger-sdk/Cargo.toml"))
+        .expect("SDK manifest must be readable");
+    assert!(manifest.contains("default = [\"gen\"]"));
+    assert!(manifest.contains("signoff-observation = []"));
+
+    let facade = fs::read_to_string(workspace.join("crates/dagger-sdk/src/lib.rs"))
+        .expect("SDK facade must be readable");
+    let boundary =
+        "#[cfg(feature = \"signoff-observation\")]\n#[doc(hidden)]\npub mod signoff_observation;";
+    assert!(
+        facade.contains(boundary),
+        "sign-off observation escaped its non-default doc-hidden boundary"
+    );
+
+    let recorder =
+        fs::read_to_string(workspace.join("crates/dagger-sdk/src/signoff_observation.rs"))
+            .expect("sign-off recorder source must be readable");
+    assert!(recorder.contains("sync_channel(SIGNOFF_EVENT_CAPACITY)"));
+    assert!(recorder.contains("self.sender.try_send(event)"));
+    for forbidden in [
+        "trait SignoffConnectorObserver",
+        "catch_unwind",
+        "AssertUnwindSafe",
+        "dyn SignoffConnectorObserver",
+    ] {
+        assert!(
+            !recorder.contains(forbidden),
+            "sign-off recorder regained arbitrary callback surface {forbidden}"
+        );
+    }
+}

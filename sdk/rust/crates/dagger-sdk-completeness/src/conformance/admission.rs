@@ -17,7 +17,7 @@ use super::{
     ApplicabilityDisposition, ArtifactSecurityReport, AtomicSignoffVerdict, ConformanceDiagnostic,
     ConformanceDiagnosticCode, ConformanceDiagnosticSet, ConformanceFormatVersion,
     ConformanceScope, DiagnosticCoordinate, DiagnosticPhase, ImplementationClosureBundle,
-    PortablePlatformMatrix, SignoffPhaseTimings, VerdictDecision,
+    SignoffPhaseTimings, SupportedNativePlatformSet, VerdictDecision,
 };
 
 const IMPLEMENTATION_EVIDENCE_ID: &str = "implementation/conformance-signoff";
@@ -62,7 +62,7 @@ pub struct ConformanceReport {
     pub applicability_capabilities: u32,
     /// Engine-free implementation closure state.
     pub implementation: ConformancePhaseState,
-    /// Portable native-platform closure state.
+    /// Supported Linux/macOS native-platform closure state.
     pub native_platform: ConformancePhaseState,
     /// Exact-artifact security closure state.
     pub security: ConformancePhaseState,
@@ -75,7 +75,7 @@ pub struct ConformanceReport {
     /// Current implementation closure identity when supplied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub closure_bundle_digest: Option<crate::model::Digest>,
-    /// Current portable platform identity when supplied.
+    /// Current supported native-platform identity when supplied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform_matrix_digest: Option<crate::model::Digest>,
     /// Current security identity when supplied.
@@ -199,7 +199,7 @@ pub fn derive_conformance_status_changes(
 pub fn derive_conformance_report(
     scope: &ConformanceScope,
     closure: Option<&ImplementationClosureBundle>,
-    platform: Option<&PortablePlatformMatrix>,
+    platform: Option<&SupportedNativePlatformSet>,
     security: Option<&ArtifactSecurityReport>,
     verdict: Option<&AtomicSignoffVerdict>,
     reproduction_clean: Option<bool>,
@@ -213,7 +213,7 @@ pub fn derive_conformance_report(
         ));
     }
     if let (Some(closure), Some(platform)) = (closure, platform)
-        && closure.platform_matrix_digest != platform.matrix_digest
+        && closure.platform_matrix_digest != platform.observation_set_digest
     {
         return Err(admission_error(
             "implementation and native-platform closure identities differ",
@@ -236,7 +236,7 @@ pub fn derive_conformance_report(
         ));
     }
     if let (Some(platform), Some(verdict)) = (platform, verdict)
-        && platform.matrix_digest != verdict.platform_matrix_digest
+        && platform.observation_set_digest != verdict.platform_matrix_digest
     {
         return Err(admission_error(
             "native-platform closure does not match the exact-engine verdict",
@@ -280,7 +280,7 @@ pub fn derive_conformance_report(
         remaining_blockers: u32::try_from(scoped_count - admitted_count)
             .expect("conformance scope count is bounded"),
         closure_bundle_digest: closure.map(|value| value.bundle_digest.clone()),
-        platform_matrix_digest: platform.map(|value| value.matrix_digest.clone()),
+        platform_matrix_digest: platform.map(|value| value.observation_set_digest.clone()),
         security_report_digest: security.map(|value| value.report_digest.clone()),
         verdict_digest: verdict.map(|value| value.verdict_digest.clone()),
         artifact_manifest_digest: verdict.map(|value| value.artifact_manifest_digest.clone()),

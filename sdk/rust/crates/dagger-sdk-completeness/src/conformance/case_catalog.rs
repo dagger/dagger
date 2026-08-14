@@ -7,6 +7,8 @@
 #![warn(missing_docs)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -147,7 +149,7 @@ pub enum GoClientBehaviour {
     NonExecErrorSeparation,
 }
 
-/// Eight closed program families; there is no arbitrary-command escape hatch.
+/// Nine closed program families; there is no arbitrary-command escape hatch.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CaseFamily {
@@ -163,6 +165,8 @@ pub enum CaseFamily {
     ModuleAuthoring,
     /// Standalone generated-client lifecycle.
     StandaloneClient,
+    /// Committed standalone Rust example build.
+    StandaloneExample,
     /// Selected definitive client observations.
     DefinitiveGoClient,
     /// Remaining authority-selected integration assertions.
@@ -178,10 +182,123 @@ impl From<CaseFamily> for AssertionFamily {
             CaseFamily::EngineIntegration => Self::EngineIntegration,
             CaseFamily::ModuleAuthoring => Self::ModuleAuthoring,
             CaseFamily::StandaloneClient => Self::StandaloneClient,
+            CaseFamily::StandaloneExample => Self::StandaloneExample,
             CaseFamily::DefinitiveGoClient => Self::DefinitiveGoClient,
             CaseFamily::IntegrationAssertion => Self::IntegrationAssertion,
         }
     }
+}
+
+/// Committed standalone Rust example roots required by exact-engine sign-off.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StandaloneExample {
+    /// Containerized Rust command-line application build.
+    Cli,
+    /// Containerized Axum service-image build.
+    Backend,
+    /// Containerized Leptos web-image build.
+    Frontend,
+}
+
+/// Local output which a standalone example must materialize without publishing it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StandaloneExampleOutput {
+    /// Executable file exported below the isolated case workspace.
+    CliFile,
+    /// Service image exported as a bounded OCI tar with Gzip-compressed layers.
+    ServiceImage,
+    /// Static-web image exported as a bounded OCI tar with Gzip-compressed layers.
+    WebImage,
+}
+
+/// One public container image reference declared by a committed example.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandaloneExampleImageDependency {
+    /// Exact authored image reference whose resolved runtime identity must be observed.
+    pub reference: String,
+}
+
+/// One explicitly versioned tool downloaded or selected by a committed example.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandaloneExampleToolDependency {
+    /// Closed tool name used by the build.
+    pub name: String,
+    /// Exact authored version selected by the build.
+    pub version: String,
+}
+
+/// Honest public-dependency boundary for one standalone build.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandaloneExampleDependencyPolicy {
+    /// Complete closed image-reference set permitted to resolve read-only.
+    pub image_dependencies: CanonicalSet<StandaloneExampleImageDependency>,
+    /// Complete closed set of explicitly pinned tool versions.
+    pub tool_dependencies: CanonicalSet<StandaloneExampleToolDependency>,
+    /// Whether execution must retain the resolved identity of every declared image.
+    pub resolved_image_identities_required: bool,
+    /// Whether execution must retain the digest and size of the fixed local output.
+    pub output_identity_required: bool,
+    /// Whether credentials may enter public dependency resolution.
+    pub credentials_permitted: bool,
+    /// Canonical identity over the complete dependency boundary.
+    pub policy_digest: Digest,
+}
+
+/// External side-effect policy for an authoritative standalone example case.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StandaloneExamplePublicationPolicy {
+    /// Registry pushes, release uploads, and all other external publication are forbidden.
+    Forbidden,
+}
+
+/// One exact source file retained in the standalone example source-tree identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandaloneExampleSourceFile {
+    /// Repository-relative path at the admitted subject revision.
+    pub path: crate::model::RepositoryRelativePath,
+    /// SHA-256 identity of the complete file bytes.
+    pub digest: Digest,
+}
+
+/// Exact build-only material attached to one standalone example fixture.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandaloneExampleFixture {
+    /// Closed example root selected by the case program.
+    pub example: StandaloneExample,
+    /// Repository-relative example root.
+    pub source_root: crate::model::RepositoryRelativePath,
+    /// Committed outer Cargo manifest invoked by sign-off.
+    pub manifest: crate::model::RepositoryRelativePath,
+    /// Committed Rust entry point whose public behavior is exercised.
+    pub entrypoint: crate::model::RepositoryRelativePath,
+    /// Complete closed source-file inventory, excluding the separately identified lockfile.
+    pub source_files: CanonicalSet<StandaloneExampleSourceFile>,
+    /// Canonical identity over every source-file path and digest.
+    pub source_tree_digest: Digest,
+    /// Committed workspace lockfile consumed by `cargo --locked`.
+    pub lockfile: crate::model::RepositoryRelativePath,
+    /// SHA-256 identity of the exact lockfile bytes.
+    pub lockfile_digest: Digest,
+    /// Sole local output shape the case may assert.
+    pub output: StandaloneExampleOutput,
+    /// Fixed workspace-relative output retained for post-build inspection.
+    pub output_path: crate::model::RepositoryRelativePath,
+    /// Maximum accepted output size before evidence admission fails closed.
+    pub maximum_output_bytes: u64,
+    /// Whether every Cargo invocation must reject lockfile drift.
+    pub dependency_resolution_locked: bool,
+    /// Closed read-only public-dependency boundary for this exact source tree.
+    pub dependency_policy: StandaloneExampleDependencyPolicy,
+    /// Closed external side-effect policy.
+    pub publication_policy: StandaloneExamplePublicationPolicy,
 }
 
 /// One typed production executor route.
@@ -215,6 +332,11 @@ pub enum CaseProgram {
         /// Exact closed client scenario imported from the child inventory.
         case: ClientSignoffCase,
     },
+    /// Build one committed standalone Rust example without external publication.
+    StandaloneExample {
+        /// Exact example root and output shape selected by the case.
+        example: StandaloneExample,
+    },
     /// Exercise one definitive client observation through public Rust APIs.
     DefinitiveGoClient {
         /// Exact observable behaviour, independent of Go implementation structure.
@@ -237,6 +359,7 @@ impl CaseProgram {
             Self::EngineIntegration { .. } => CaseFamily::EngineIntegration,
             Self::ModuleAuthoring { .. } => CaseFamily::ModuleAuthoring,
             Self::StandaloneClient { .. } => CaseFamily::StandaloneClient,
+            Self::StandaloneExample { .. } => CaseFamily::StandaloneExample,
             Self::DefinitiveGoClient { .. } => CaseFamily::DefinitiveGoClient,
             Self::IntegrationAssertion { .. } => CaseFamily::IntegrationAssertion,
         }
@@ -291,6 +414,9 @@ pub struct ReviewedFixture {
     pub program: CaseProgram,
     /// Complete immutable inputs which invalidate cached fixture materialization.
     pub immutable_inputs: CanonicalSet<Digest>,
+    /// Exact source, lockfile, output, and side-effect policy for an example fixture.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub standalone_example: Option<StandaloneExampleFixture>,
     /// Reviewed network boundary for this fixture.
     pub network: NetworkPolicyId,
     /// Sole family permitted to invoke the fixture.
@@ -442,6 +568,7 @@ pub fn reviewed_fixture_digest(
             &fixture.executor,
             &fixture.program,
             &fixture.immutable_inputs,
+            &fixture.standalone_example,
             &fixture.network,
             fixture.permitted_family,
         ),
@@ -462,11 +589,13 @@ pub fn compile_fixture_registry(
             CaseProgram::IntegrationAssertion { fixture: selected } => selected == &fixture.id,
             _ => true,
         };
+        let example_is_exact = standalone_example_fixture_is_valid(&fixture);
         if fixture.program.family() != fixture.permitted_family
             || fixture.executor != expected_executor
             || fixture.fixture_digest != expected_digest
             || fixture.immutable_inputs.is_empty()
             || !integration_self_bound
+            || !example_is_exact
             || !known_network_policy(&fixture.network)
         {
             diagnostics.push(case_diagnostic(
@@ -611,6 +740,11 @@ pub fn required_fixed_programs() -> BTreeSet<CaseProgram> {
             .map(|case| CaseProgram::StandaloneClient { case }),
     );
     programs.extend(
+        required_standalone_examples()
+            .into_iter()
+            .map(|example| CaseProgram::StandaloneExample { example }),
+    );
+    programs.extend(
         required_go_client_behaviours()
             .into_iter()
             .map(|behaviour| CaseProgram::DefinitiveGoClient { behaviour }),
@@ -683,6 +817,114 @@ pub fn required_module_authoring_cases() -> BTreeSet<ModuleSignoffCase> {
 /// Returns the exact standalone-client deferred inventory.
 pub fn required_standalone_client_cases() -> BTreeSet<ClientSignoffCase> {
     crate::required_client_signoff_cases()
+}
+
+/// Returns the exact three committed standalone Rust examples.
+pub fn required_standalone_examples() -> BTreeSet<StandaloneExample> {
+    BTreeSet::from([
+        StandaloneExample::Cli,
+        StandaloneExample::Backend,
+        StandaloneExample::Frontend,
+    ])
+}
+
+/// Reads and identifies one closed standalone example source tree and committed lockfile.
+pub fn build_standalone_example_fixture(
+    repository_root: &Path,
+    example: StandaloneExample,
+) -> Result<StandaloneExampleFixture, ConformanceDiagnosticSet> {
+    let contract = standalone_example_contract(example);
+    let root = repository_root.join(contract.source_root);
+    let observed = collect_standalone_example_paths(repository_root, &root)?;
+    let expected = contract
+        .source_files
+        .iter()
+        .map(|path| (*path).to_owned())
+        .collect::<BTreeSet<_>>();
+    if observed != expected {
+        return Err(one_case_diagnostic(
+            None,
+            "standalone example source inventory differs from its closed fixture",
+        ));
+    }
+    let source_files = contract
+        .source_files
+        .iter()
+        .map(|path| {
+            let bytes = fs::read(repository_root.join(path)).map_err(|_| {
+                one_case_diagnostic(None, "standalone example source file is unreadable")
+            })?;
+            Ok(StandaloneExampleSourceFile {
+                path: crate::model::RepositoryRelativePath::new(*path).map_err(|_| {
+                    one_case_diagnostic(None, "standalone example source path is invalid")
+                })?,
+                digest: Digest::sha256(bytes),
+            })
+        })
+        .collect::<Result<Vec<_>, ConformanceDiagnosticSet>>()?;
+    let source_files = CanonicalSet::new(source_files);
+    let source_tree_digest = canonical_digest(DigestDomain::Source, &source_files)
+        .map_err(|_| one_case_diagnostic(None, "standalone example source cannot be identified"))?;
+    let lockfile = crate::model::RepositoryRelativePath::new(contract.lockfile)
+        .map_err(|_| one_case_diagnostic(None, "standalone example lockfile path is invalid"))?;
+    let lockfile_digest = Digest::sha256(
+        fs::read(repository_root.join(contract.lockfile)).map_err(|_| {
+            one_case_diagnostic(None, "standalone example committed lockfile is unreadable")
+        })?,
+    );
+    let mut dependency_policy = StandaloneExampleDependencyPolicy {
+        image_dependencies: CanonicalSet::new(contract.image_dependencies.iter().map(
+            |reference| StandaloneExampleImageDependency {
+                reference: (*reference).to_owned(),
+            },
+        )),
+        tool_dependencies: CanonicalSet::new(contract.tool_dependencies.iter().map(
+            |(name, version)| StandaloneExampleToolDependency {
+                name: (*name).to_owned(),
+                version: (*version).to_owned(),
+            },
+        )),
+        resolved_image_identities_required: true,
+        output_identity_required: true,
+        credentials_permitted: false,
+        policy_digest: Digest::sha256([]),
+    };
+    dependency_policy.policy_digest = canonical_digest(
+        DigestDomain::ConformanceCaseCatalog,
+        &(
+            "standalone-example-public-dependency-policy",
+            &source_tree_digest,
+            &lockfile_digest,
+            &dependency_policy.image_dependencies,
+            &dependency_policy.tool_dependencies,
+            dependency_policy.resolved_image_identities_required,
+            dependency_policy.output_identity_required,
+            dependency_policy.credentials_permitted,
+        ),
+    )
+    .map_err(|_| one_case_diagnostic(None, "standalone dependency policy is not canonical"))?;
+    Ok(StandaloneExampleFixture {
+        example,
+        source_root: crate::model::RepositoryRelativePath::new(contract.source_root)
+            .map_err(|_| one_case_diagnostic(None, "standalone example root path is invalid"))?,
+        manifest: crate::model::RepositoryRelativePath::new(contract.manifest).map_err(|_| {
+            one_case_diagnostic(None, "standalone example manifest path is invalid")
+        })?,
+        entrypoint: crate::model::RepositoryRelativePath::new(contract.entrypoint).map_err(
+            |_| one_case_diagnostic(None, "standalone example entrypoint path is invalid"),
+        )?,
+        source_files,
+        source_tree_digest,
+        lockfile,
+        lockfile_digest,
+        output: contract.output,
+        output_path: crate::model::RepositoryRelativePath::new(contract.output_path)
+            .map_err(|_| one_case_diagnostic(None, "standalone example output path is invalid"))?,
+        maximum_output_bytes: STANDALONE_EXAMPLE_MAXIMUM_OUTPUT_BYTES,
+        dependency_resolution_locked: true,
+        dependency_policy,
+        publication_policy: StandaloneExamplePublicationPolicy::Forbidden,
+    })
 }
 
 /// Returns all nine definitive client behaviours.
@@ -852,16 +1094,224 @@ pub fn fixture_executor_for(program: &CaseProgram) -> FixtureExecutorId {
         CaseFamily::EngineIntegration => "executor/engine-integration",
         CaseFamily::ModuleAuthoring => "executor/module-authoring",
         CaseFamily::StandaloneClient => "executor/standalone-client",
+        CaseFamily::StandaloneExample => "executor/standalone-example",
         CaseFamily::DefinitiveGoClient => "executor/definitive-go-client",
         CaseFamily::IntegrationAssertion => "executor/integration-assertion",
     };
     FixtureExecutorId::new(value).expect("closed executor identity is valid")
 }
 
+struct StandaloneExampleContract {
+    source_root: &'static str,
+    manifest: &'static str,
+    entrypoint: &'static str,
+    lockfile: &'static str,
+    source_files: &'static [&'static str],
+    output: StandaloneExampleOutput,
+    output_path: &'static str,
+    image_dependencies: &'static [&'static str],
+    tool_dependencies: &'static [(&'static str, &'static str)],
+}
+
+const STANDALONE_EXAMPLE_MAXIMUM_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
+
+fn standalone_example_contract(example: StandaloneExample) -> StandaloneExampleContract {
+    match example {
+        StandaloneExample::Cli => StandaloneExampleContract {
+            source_root: "sdk/rust/examples/cli",
+            manifest: "sdk/rust/examples/cli/Cargo.toml",
+            entrypoint: "sdk/rust/examples/cli/src/main.rs",
+            lockfile: "sdk/rust/examples/cli/Cargo.lock",
+            source_files: &[
+                "sdk/rust/examples/cli/Cargo.toml",
+                "sdk/rust/examples/cli/app/Cargo.toml",
+                "sdk/rust/examples/cli/app/src/main.rs",
+                "sdk/rust/examples/cli/src/main.rs",
+            ],
+            output: StandaloneExampleOutput::CliFile,
+            output_path: "build/cli",
+            image_dependencies: &["rust:1.97.1-slim-bookworm"],
+            tool_dependencies: &[],
+        },
+        StandaloneExample::Backend => StandaloneExampleContract {
+            source_root: "sdk/rust/examples/backend",
+            manifest: "sdk/rust/examples/backend/Cargo.toml",
+            entrypoint: "sdk/rust/examples/backend/src/main.rs",
+            lockfile: "sdk/rust/examples/backend/Cargo.lock",
+            source_files: &[
+                "sdk/rust/examples/backend/Cargo.toml",
+                "sdk/rust/examples/backend/axum-backend/Cargo.toml",
+                "sdk/rust/examples/backend/axum-backend/src/main.rs",
+                "sdk/rust/examples/backend/src/configuration.rs",
+                "sdk/rust/examples/backend/src/main.rs",
+            ],
+            output: StandaloneExampleOutput::ServiceImage,
+            output_path: "build/backend-image.tar",
+            image_dependencies: &[
+                "gcr.io/distroless/static-debian12",
+                "rust:1.97.1-alpine3.22",
+            ],
+            tool_dependencies: &[],
+        },
+        StandaloneExample::Frontend => StandaloneExampleContract {
+            source_root: "sdk/rust/examples/frontend",
+            manifest: "sdk/rust/examples/frontend/Cargo.toml",
+            entrypoint: "sdk/rust/examples/frontend/src/main.rs",
+            lockfile: "sdk/rust/examples/frontend/Cargo.lock",
+            source_files: &[
+                "sdk/rust/examples/frontend/Cargo.toml",
+                "sdk/rust/examples/frontend/leptos-frontend/Cargo.toml",
+                "sdk/rust/examples/frontend/leptos-frontend/Trunk.toml",
+                "sdk/rust/examples/frontend/leptos-frontend/index.html",
+                "sdk/rust/examples/frontend/leptos-frontend/input.css",
+                "sdk/rust/examples/frontend/leptos-frontend/src/main.rs",
+                "sdk/rust/examples/frontend/leptos-frontend/tailwind.config.js",
+                "sdk/rust/examples/frontend/src/main.rs",
+            ],
+            output: StandaloneExampleOutput::WebImage,
+            output_path: "build/frontend-image.tar",
+            image_dependencies: &["nginx:1.24.0-alpine3.17", "rust:1.97.1"],
+            tool_dependencies: &[("tailwindcss", "3.4.17"), ("trunk", "0.21.14")],
+        },
+    }
+}
+
+fn standalone_example_fixture_is_valid(fixture: &ReviewedFixture) -> bool {
+    match (&fixture.program, &fixture.standalone_example) {
+        (CaseProgram::StandaloneExample { example }, Some(material)) => {
+            let contract = standalone_example_contract(*example);
+            let expected_paths = contract
+                .source_files
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            let observed_paths = material
+                .source_files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<BTreeSet<_>>();
+            let expected_images =
+                CanonicalSet::new(contract.image_dependencies.iter().map(|reference| {
+                    StandaloneExampleImageDependency {
+                        reference: (*reference).to_owned(),
+                    }
+                }));
+            let expected_tools =
+                CanonicalSet::new(contract.tool_dependencies.iter().map(|(name, version)| {
+                    StandaloneExampleToolDependency {
+                        name: (*name).to_owned(),
+                        version: (*version).to_owned(),
+                    }
+                }));
+            let expected_policy_digest = canonical_digest(
+                DigestDomain::ConformanceCaseCatalog,
+                &(
+                    "standalone-example-public-dependency-policy",
+                    &material.source_tree_digest,
+                    &material.lockfile_digest,
+                    &material.dependency_policy.image_dependencies,
+                    &material.dependency_policy.tool_dependencies,
+                    material
+                        .dependency_policy
+                        .resolved_image_identities_required,
+                    material.dependency_policy.output_identity_required,
+                    material.dependency_policy.credentials_permitted,
+                ),
+            );
+            material.example == *example
+                && material.source_root.as_str() == contract.source_root
+                && material.manifest.as_str() == contract.manifest
+                && material.entrypoint.as_str() == contract.entrypoint
+                && material.lockfile.as_str() == contract.lockfile
+                && observed_paths == expected_paths
+                && canonical_digest(DigestDomain::Source, &material.source_files)
+                    .is_ok_and(|digest| digest == material.source_tree_digest)
+                && material.output == contract.output
+                && material.output_path.as_str() == contract.output_path
+                && material.maximum_output_bytes == STANDALONE_EXAMPLE_MAXIMUM_OUTPUT_BYTES
+                && material.dependency_resolution_locked
+                && material.dependency_policy.image_dependencies == expected_images
+                && material.dependency_policy.tool_dependencies == expected_tools
+                && material
+                    .dependency_policy
+                    .resolved_image_identities_required
+                && material.dependency_policy.output_identity_required
+                && !material.dependency_policy.credentials_permitted
+                && expected_policy_digest
+                    .is_ok_and(|digest| digest == material.dependency_policy.policy_digest)
+                && material.publication_policy == StandaloneExamplePublicationPolicy::Forbidden
+                && fixture
+                    .immutable_inputs
+                    .contains(&material.source_tree_digest)
+                && fixture.immutable_inputs.contains(&material.lockfile_digest)
+                && fixture
+                    .immutable_inputs
+                    .contains(&material.dependency_policy.policy_digest)
+        }
+        (CaseProgram::StandaloneExample { .. }, None) => false,
+        (_, None) => true,
+        (_, Some(_)) => false,
+    }
+}
+
+fn collect_standalone_example_paths(
+    repository_root: &Path,
+    root: &Path,
+) -> Result<BTreeSet<String>, ConformanceDiagnosticSet> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut paths = BTreeSet::new();
+    while let Some(directory) = pending.pop() {
+        let entries = fs::read_dir(&directory).map_err(|_| {
+            one_case_diagnostic(None, "standalone example source root is unreadable")
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|_| {
+                one_case_diagnostic(None, "standalone example source entry is unreadable")
+            })?;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path).map_err(|_| {
+                one_case_diagnostic(None, "standalone example source entry is unreadable")
+            })?;
+            if metadata.file_type().is_symlink() {
+                return Err(one_case_diagnostic(
+                    None,
+                    "standalone example source tree contains a symlink",
+                ));
+            }
+            if metadata.is_dir() {
+                if !standalone_example_generated_directory(&path) {
+                    pending.push(path);
+                }
+                continue;
+            }
+            if !metadata.is_file() || path.file_name().is_some_and(|name| name == "Cargo.lock") {
+                continue;
+            }
+            let relative = path.strip_prefix(repository_root).map_err(|_| {
+                one_case_diagnostic(None, "standalone example escaped the repository root")
+            })?;
+            paths.insert(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(paths)
+}
+
+fn standalone_example_generated_directory(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| {
+        matches!(
+            name.to_str(),
+            Some("target" | "build" | "dist" | "node_modules" | ".git")
+        )
+    })
+}
+
 fn known_network_policy(policy: &NetworkPolicyId) -> bool {
     matches!(
         policy.as_str(),
-        "network/engine-only" | "network/immutable-remote" | "network/manifest-and-engine"
+        "network/engine-only"
+            | "network/immutable-remote"
+            | "network/manifest-and-engine"
+            | "network/read-only-public-dependencies"
     )
 }
 

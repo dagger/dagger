@@ -78,6 +78,12 @@ impl ProvisioningCancellation {
 /// An instance-local observation seam used to make I/O schedules deterministic.
 pub(crate) trait ProvisioningObserver: Send + Sync {
     fn checkpoint(&self, _checkpoint: ProvisionCheckpoint) {}
+
+    #[cfg(feature = "signoff-observation")]
+    fn manifest_available(&self, _sha256: [u8; 32]) {}
+
+    #[cfg(feature = "signoff-observation")]
+    fn manifest_unavailable(&self, _status: u16) {}
 }
 
 /// Production observer which adds no work to the provisioning path.

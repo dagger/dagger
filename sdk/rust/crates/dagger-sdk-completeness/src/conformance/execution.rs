@@ -18,8 +18,8 @@ use crate::model::{CommitSha, DaggerVersion, Digest, TargetDigest};
 use super::{
     AdmittedArtifact, ArtifactComponent, CaseCatalog, CaseDefinition, ConformanceDiagnostic,
     ConformanceDiagnosticCode, ConformanceDiagnosticSet, DiagnosticCoordinate, DiagnosticPhase,
-    InfrastructureFailureClass, NonZeroCount, NonZeroMillis, PlatformDescriptor, SignoffCaseId,
-    SubjectIdentity,
+    InfrastructureFailureClass, NonZeroCount, NonZeroMillis, PlatformDescriptor,
+    RustSdkDependencyDescriptor, SignoffCaseId, SubjectIdentity,
 };
 
 /// Exact engine identity proved before an engine service may be started.
@@ -53,10 +53,10 @@ pub enum DependencyDescriptorObservation {
     },
     /// An immutable Git package selected by a full revision.
     Git {
-        /// Canonical descriptor bytes.
+        /// Descriptor decoded from the installed workspace configuration.
+        descriptor: RustSdkDependencyDescriptor,
+        /// Direct identity of the compact descriptor bytes.
         descriptor_digest: Digest,
-        /// Full immutable package revision.
-        revision: CommitSha,
     },
     /// A checkout-relative dependency, retained only so admission can reject it.
     Path {
@@ -209,6 +209,10 @@ pub struct StableConnectorObservation {
     pub claim: DistributionClaim,
     /// Engine version returned through the connected session.
     pub observed_engine_version: DaggerVersion,
+    /// Whether the production child control line yielded a valid session coordinate.
+    pub session_control_succeeded: bool,
+    /// Whether production constructed its proxy-free authenticated IPv4 loopback transport.
+    pub authenticated_loopback_constructed: bool,
     /// Whether an authenticated Core query completed.
     pub authenticated_query_succeeded: bool,
     /// Explicit connector close operations.
@@ -244,7 +248,7 @@ pub fn admit_installed_rust_baseline(
         .components
         .get(&ArtifactComponent::Cli)
         .map(|component| &component.content_digest);
-    let engine_digest = exact_engine_digest(&observation.engine)?;
+    let engine_digest = exact_engine_identity_digest(&observation.engine)?;
     let engine_matches = observation.engine.identity_digest == engine_digest
         && observation.engine.target_descriptor_digest == manifest.target_descriptor_digest
         && observation.engine.target_revision == manifest.target_revision
@@ -255,16 +259,24 @@ pub fn admit_installed_rust_baseline(
     let artifact_matches = observation.artifact_manifest_digest == *artifact.manifest_digest()
         && observation.artifact_payload_digest == *artifact.payload_digest()
         && cli_digest == Some(&observation.cli_digest);
+    let dependency_is_exact = matches!(
+        &observation.dependency,
+        DependencyDescriptorObservation::Git {
+            descriptor,
+            descriptor_digest,
+        } if descriptor == &manifest.rust_dependency
+            && descriptor_digest == &manifest.rust_dependency_descriptor_digest
+            && descriptor
+                .direct_digest()
+                .is_ok_and(|digest| &digest == descriptor_digest)
+    );
     let install_is_exact = observation.install_count == 1
         && observation.clean_git_workspace
         && observation.artifact_cli_only_on_path
         && !observation.host_cli_visible
         && !observation.stale_installed_config
         && observation.service_starts_before_validation == 0
-        && !matches!(
-            observation.dependency,
-            DependencyDescriptorObservation::Path { .. }
-        );
+        && dependency_is_exact;
     if !engine_matches || !artifact_matches || !install_is_exact {
         return Err(execution_error(
             ConformanceDiagnosticCode::SignoffRustBaselineInvalid,
@@ -298,6 +310,8 @@ pub fn admit_stable_connector(
         || observation.host_cli_visible
         || observation.path_cli_digest != baseline.cli_digest
         || observation.observed_engine_version != baseline.engine.engine_version
+        || !observation.session_control_succeeded
+        || !observation.authenticated_loopback_constructed
         || !observation.authenticated_query_succeeded
         || observation.close_count != 1
         || observation.child_reap_count != 1
@@ -894,7 +908,13 @@ pub fn admit_fanout_topology(
         .map_err(|_| encoding_error(None))
 }
 
-fn exact_engine_digest(engine: &ExactEngineIdentity) -> Result<Digest, ConformanceDiagnosticSet> {
+/// Derives the canonical identity of an exact engine observation.
+///
+/// Adapters report the independently observed fields, while Rust owns the identity that binds
+/// those fields into later baseline and case evidence.
+pub fn exact_engine_identity_digest(
+    engine: &ExactEngineIdentity,
+) -> Result<Digest, ConformanceDiagnosticSet> {
     canonical_digest(
         DigestDomain::ConformanceInstalledBaseline,
         &(
@@ -927,7 +947,7 @@ fn baseline_digest(baseline: &InstalledRustBaseline) -> Result<Digest, Conforman
 }
 
 fn baseline_is_self_consistent(baseline: &InstalledRustBaseline) -> bool {
-    exact_engine_digest(&baseline.engine)
+    exact_engine_identity_digest(&baseline.engine)
         .is_ok_and(|digest| digest == baseline.engine.identity_digest)
         && baseline_digest(baseline).is_ok_and(|digest| digest == baseline.baseline_digest)
 }

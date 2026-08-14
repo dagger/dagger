@@ -20,9 +20,10 @@ use crate::model::{
 };
 
 use super::{
-    ArtifactComponent, ArtifactCounters, ArtifactMaterialization, ArtifactPlan, CaseAttemptOutcome,
-    CaseCatalog, CaseExecutionBinding, ConformanceDiagnostic, ConformanceDiagnosticCode,
-    ConformanceDiagnosticSet, ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase,
+    AdmittedStableConnector, ArtifactComponent, ArtifactCounters, ArtifactImportReceipt,
+    ArtifactMaterialization, ArtifactPlan, CaseAttemptOutcome, CaseCatalog, CaseExecutionBinding,
+    ConformanceDiagnostic, ConformanceDiagnosticCode, ConformanceDiagnosticSet,
+    ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase, FacadeRouteRegistry,
     InstalledRustBaseline, NetworkPolicyId, NonZeroCount, NonZeroMillis, PlatformDescriptor,
     SignoffCaseId, SignoffCaseObservation, SubjectIdentity, ToolchainRole, VerifiedArtifactBundle,
     required_artifact_components, required_artifact_toolchains, validate_case_observation,
@@ -40,6 +41,8 @@ pub enum SignoffNetworkPolicy {
     ImmutableRemote,
     /// Immutable distribution metadata and the exact-target engine are reachable.
     ManifestAndEngine,
+    /// The exact engine plus the closed public dependencies of one committed Rust example.
+    ReadOnlyPublicDependencies,
 }
 
 /// Complete immutable declaration admitted before exact-target orchestration begins.
@@ -68,8 +71,67 @@ pub struct SignoffRunPlan {
     pub network_policies: BTreeMap<NetworkPolicyId, SignoffNetworkPolicy>,
     /// Positive upper bound for isolated case fan-out.
     pub maximum_concurrency: NonZeroCount,
+    /// Exact number of reviewed Rust invocations after authority aliases are grouped.
+    pub expected_case_executions: NonZeroCount,
     /// Positive aggregate wall-clock budget for the whole sign-off invocation.
     pub total_budget: NonZeroMillis,
+}
+
+/// Constructs the fixed authoritative Import plan from independently admitted identities.
+pub fn assemble_signoff_run_plan(
+    artifact_plan: ArtifactPlan,
+    closure_bundle_digest: Digest,
+    catalog: &CaseCatalog,
+    routes: &FacadeRouteRegistry,
+    host_profile_digest: Digest,
+    preflight_digest: Digest,
+) -> Result<SignoffRunPlan, ConformanceDiagnosticSet> {
+    if !matches!(
+        artifact_plan.materialization,
+        ArtifactMaterialization::Import { .. }
+    ) {
+        return Err(ConformanceDiagnosticSet::new([verdict_diagnostic(
+            ConformanceDiagnosticCode::SignoffArtifactStateInvalid,
+            DiagnosticPhase::Artifact,
+            "authoritative sign-off requires the retained Import artifact strategy",
+        )])
+        .expect("one diagnostic is present"));
+    }
+    let network_policies = catalog
+        .cases()
+        .values()
+        .map(|case| {
+            policy_for_id(&case.network)
+                .map(|policy| (case.network.clone(), policy))
+                .ok_or_else(|| {
+                    ConformanceDiagnosticSet::new([verdict_diagnostic(
+                        ConformanceDiagnosticCode::SignoffUnrelatedWork,
+                        DiagnosticPhase::Case,
+                        "case catalog names an unknown sign-off network policy",
+                    )])
+                    .expect("one diagnostic is present")
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let plan = SignoffRunPlan {
+        format_version: ConformanceFormatVersion::V1,
+        target_digest: catalog.target_digest().clone(),
+        subject_revision: artifact_plan.subject.revision.clone(),
+        platform: PlatformDescriptor::linux_amd64(),
+        host_profile_digest,
+        preflight_digest,
+        artifact_plan,
+        closure_bundle_digest,
+        case_catalog_digest: catalog.digest().clone(),
+        network_policies,
+        maximum_concurrency: NonZeroCount::new(8).expect("fixed concurrency is bounded"),
+        expected_case_executions: NonZeroCount::new(routes.physical_executions())
+            .expect("admitted route registry is non-empty and bounded"),
+        total_budget: NonZeroMillis::new(6 * 60 * 60 * 1_000)
+            .expect("fixed six-hour sign-off budget is bounded"),
+    };
+    signoff_run_plan_digest(&plan, catalog)?;
+    Ok(plan)
 }
 
 /// Complete counted work for one sign-off invocation.
@@ -90,6 +152,8 @@ pub struct SignoffExecutionCounts {
     pub exact_target_child_reaps: u32,
     /// Installed Rust baseline materializations.
     pub rust_baseline_materializations: u32,
+    /// Reviewed Rust case invocations actually executed before verdict-row expansion.
+    pub case_executions: u32,
     /// Child implementation evidence replays; this must remain zero.
     pub closure_replays: u32,
     /// Unrelated SDK, generation, distribution, or target actions.
@@ -150,9 +214,11 @@ pub struct SignoffObservation {
     pub artifact_manifest_digest: Digest,
     /// Direct identity of the retained OCI payload bytes.
     pub artifact_payload_digest: Digest,
+    /// Canonical receipt emitted by the sole authoritative artifact Import graph.
+    pub artifact_import_receipt: ArtifactImportReceipt,
     /// Consume-only implementation closure identity.
     pub closure_bundle_digest: Digest,
-    /// Complete portable native-platform evidence identity.
+    /// Supported Linux/macOS native-platform evidence identity.
     pub platform_matrix_digest: Digest,
     /// Complete exact-artifact security result identity.
     pub security_report_digest: Digest,
@@ -160,6 +226,8 @@ pub struct SignoffObservation {
     pub engine_identity_digest: Digest,
     /// One installed packaged Rust baseline.
     pub baseline: InstalledRustBaseline,
+    /// Stable connector identity and claim admitted against that exact baseline.
+    pub stable_connector: AdmittedStableConnector,
     /// Every shared build, import, engine, baseline, and unrelated-work counter.
     pub execution_counts: SignoffExecutionCounts,
     /// Every shared phase duration, including exact total accounting.
@@ -190,7 +258,9 @@ pub struct SignoffAdmissionContext<'a> {
     pub artifact_manifest_digest: &'a Digest,
     /// Exact existing OCI payload admitted by the artifact state machine.
     pub artifact_payload_digest: &'a Digest,
-    /// Portable platform matrix admitted independently of exact-engine sign-off.
+    /// Canonical Import receipt independently re-admitted against the exact artifact.
+    pub artifact_import_receipt: &'a ArtifactImportReceipt,
+    /// Supported Linux/macOS evidence admitted independently of exact-engine sign-off.
     pub platform_matrix_digest: &'a Digest,
     /// Exact-artifact security report admitted by security policy.
     pub security_report_digest: &'a Digest,
@@ -198,6 +268,8 @@ pub struct SignoffAdmissionContext<'a> {
     pub engine_identity_digest: &'a Digest,
     /// Sole installed packaged Rust baseline identity.
     pub baseline_digest: &'a Digest,
+    /// Stable connector evidence independently admitted against the same baseline.
+    pub stable_connector: &'a AdmittedStableConnector,
 }
 
 /// Atomic decision: failure never retains a promotable capability subset.
@@ -240,6 +312,8 @@ pub struct AtomicSignoffVerdict {
     pub artifact_manifest_digest: Digest,
     /// Exact retained OCI payload.
     pub artifact_payload_digest: Digest,
+    /// Canonical receipt proving the sole authoritative artifact Import graph.
+    pub artifact_import_receipt: ArtifactImportReceipt,
     /// Consume-only implementation closure.
     pub closure_bundle_digest: Digest,
     /// Complete closed case catalog.
@@ -252,6 +326,8 @@ pub struct AtomicSignoffVerdict {
     pub engine_identity_digest: Digest,
     /// Sole installed packaged Rust baseline identity.
     pub baseline_digest: Digest,
+    /// Exact stable-connector evidence retained from the production SDK instance.
+    pub stable_connector: AdmittedStableConnector,
     /// Every shared work counter.
     pub execution_counts: SignoffExecutionCounts,
     /// Every required shared timing.
@@ -300,8 +376,12 @@ pub struct ReleaseHandoffRecord {
     pub artifact_manifest_digest: Digest,
     /// Direct identity of the retained inner OCI payload bytes.
     pub artifact_payload_digest: Digest,
+    /// Canonical Import-receipt identity bound by the passing verdict.
+    pub artifact_import_receipt_digest: Digest,
     /// Security result for those exact manifest and payload bytes.
     pub security_report_digest: Digest,
+    /// Exact stable-connector evidence retained by the passing verdict.
+    pub stable_connector: AdmittedStableConnector,
     /// Passing imported-artifact verdict covering this record.
     pub verdict_digest: Digest,
     /// Evidence-only authority; downstream release policy owns every publication decision.
@@ -317,7 +397,9 @@ struct ReleaseHandoffDigestProjection<'a> {
     signoff_bundle_digest: &'a Digest,
     artifact_manifest_digest: &'a Digest,
     artifact_payload_digest: &'a Digest,
+    artifact_import_receipt_digest: &'a Digest,
     security_report_digest: &'a Digest,
+    stable_connector: &'a AdmittedStableConnector,
     verdict_digest: &'a Digest,
     authority: ReleaseHandoffAuthority,
 }
@@ -332,7 +414,9 @@ impl ReleaseHandoffRecord {
             signoff_bundle_digest: &self.signoff_bundle_digest,
             artifact_manifest_digest: &self.artifact_manifest_digest,
             artifact_payload_digest: &self.artifact_payload_digest,
+            artifact_import_receipt_digest: &self.artifact_import_receipt_digest,
             security_report_digest: &self.security_report_digest,
+            stable_connector: &self.stable_connector,
             verdict_digest: &self.verdict_digest,
             authority: self.authority,
         }
@@ -350,12 +434,14 @@ struct VerdictDigestProjection<'a> {
     host_preflight_digest: &'a Digest,
     artifact_manifest_digest: &'a Digest,
     artifact_payload_digest: &'a Digest,
+    artifact_import_receipt: &'a ArtifactImportReceipt,
     closure_bundle_digest: &'a Digest,
     case_catalog_digest: &'a Digest,
     platform_matrix_digest: &'a Digest,
     security_report_digest: &'a Digest,
     engine_identity_digest: &'a Digest,
     baseline_digest: &'a Digest,
+    stable_connector: &'a AdmittedStableConnector,
     execution_counts: &'a SignoffExecutionCounts,
     phase_timings: &'a SignoffPhaseTimings,
     cases: &'a BTreeMap<SignoffCaseId, SignoffCaseObservation>,
@@ -379,12 +465,14 @@ impl AtomicSignoffVerdict {
             host_preflight_digest: &self.host_preflight_digest,
             artifact_manifest_digest: &self.artifact_manifest_digest,
             artifact_payload_digest: &self.artifact_payload_digest,
+            artifact_import_receipt: &self.artifact_import_receipt,
             closure_bundle_digest: &self.closure_bundle_digest,
             case_catalog_digest: &self.case_catalog_digest,
             platform_matrix_digest: &self.platform_matrix_digest,
             security_report_digest: &self.security_report_digest,
             engine_identity_digest: &self.engine_identity_digest,
             baseline_digest: &self.baseline_digest,
+            stable_connector: &self.stable_connector,
             execution_counts: &self.execution_counts,
             phase_timings: &self.phase_timings,
             cases: &self.cases,
@@ -539,6 +627,7 @@ pub fn derive_atomic_signoff_verdict(
         || observation.closure_bundle_digest != context.run_plan.closure_bundle_digest
         || observation.artifact_manifest_digest != *context.artifact_manifest_digest
         || observation.artifact_payload_digest != *context.artifact_payload_digest
+        || observation.artifact_import_receipt != *context.artifact_import_receipt
         || observation.platform_matrix_digest != *context.platform_matrix_digest
         || observation.security_report_digest != *context.security_report_digest
         || observation.engine_identity_digest != *context.engine_identity_digest
@@ -546,6 +635,8 @@ pub fn derive_atomic_signoff_verdict(
         || observation.baseline.artifact_manifest_digest != *context.artifact_manifest_digest
         || observation.baseline.artifact_payload_digest != *context.artifact_payload_digest
         || observation.baseline.engine.identity_digest != *context.engine_identity_digest
+        || observation.stable_connector != *context.stable_connector
+        || observation.stable_connector.baseline_digest != *context.baseline_digest
     {
         diagnostics.push(verdict_diagnostic(
             ConformanceDiagnosticCode::SignoffVerdictIncomplete,
@@ -706,12 +797,14 @@ pub fn derive_atomic_signoff_verdict(
         host_preflight_digest: observation.host_preflight_digest,
         artifact_manifest_digest: observation.artifact_manifest_digest,
         artifact_payload_digest: observation.artifact_payload_digest,
+        artifact_import_receipt: observation.artifact_import_receipt,
         closure_bundle_digest: observation.closure_bundle_digest,
         case_catalog_digest: context.run_plan.case_catalog_digest.clone(),
         platform_matrix_digest: observation.platform_matrix_digest,
         security_report_digest: observation.security_report_digest,
         engine_identity_digest: observation.engine_identity_digest,
         baseline_digest: observation.baseline.baseline_digest,
+        stable_connector: observation.stable_connector,
         execution_counts: observation.execution_counts,
         phase_timings: observation.phase_timings,
         cases,
@@ -792,7 +885,9 @@ pub fn derive_release_handoff(
         signoff_bundle_digest: bundle.bundle_digest().clone(),
         artifact_manifest_digest: verdict.artifact_manifest_digest.clone(),
         artifact_payload_digest: verdict.artifact_payload_digest.clone(),
+        artifact_import_receipt_digest: verdict.artifact_import_receipt.receipt_digest.clone(),
         security_report_digest: verdict.security_report_digest.clone(),
+        stable_connector: verdict.stable_connector.clone(),
         verdict_digest: verdict.verdict_digest.clone(),
         authority: ReleaseHandoffAuthority::EvidenceOnly,
     };
@@ -825,13 +920,15 @@ pub fn decode_release_handoff(bytes: &[u8]) -> Result<ReleaseHandoffRecord, Sign
 /// Renders the handoff without implying publication or portable exact-engine support.
 pub fn render_release_handoff(handoff: &ReleaseHandoffRecord) -> String {
     format!(
-        "# Rust SDK release evidence handoff\n\nAuthority: `evidence-only`\n\nHandoff: `{}`\n\nVerdict: `{}`\n\nBundle: `{}`\n\nManifest: `{}`\n\nPayload: `{}`\n\nSecurity report: `{}`\n\nSubject: `{}`\n\nPlatform: `{:?}/{:?}`\n\nThis record does not authorize publication or support for another platform.\n",
+        "# Rust SDK release evidence handoff\n\nAuthority: `evidence-only`\n\nHandoff: `{}`\n\nVerdict: `{}`\n\nBundle: `{}`\n\nManifest: `{}`\n\nPayload: `{}`\n\nImport receipt: `{}`\n\nSecurity report: `{}`\n\nStable connector: `{}`\n\nSubject: `{}`\n\nPlatform: `{:?}/{:?}`\n\nThis record does not authorize publication or support for another platform.\n",
         handoff.handoff_digest,
         handoff.verdict_digest,
         handoff.signoff_bundle_digest,
         handoff.artifact_manifest_digest,
         handoff.artifact_payload_digest,
+        handoff.artifact_import_receipt_digest,
         handoff.security_report_digest,
+        handoff.stable_connector.observation_digest,
         handoff.subject_revision,
         handoff.platform.operating_system,
         handoff.platform.architecture,
@@ -845,7 +942,7 @@ pub fn render_atomic_signoff_verdict(verdict: &AtomicSignoffVerdict) -> String {
         VerdictDecision::Failed { .. } => "failed",
     };
     let mut rendered = format!(
-        "# Rust SDK exact-target sign-off verdict\n\nDecision: `{decision}`\n\nVerdict: `{}`\n\nTarget: `{}`\n\nSubject: `{}`\n\nPlatform: `{:?}/{:?}`\n\n## Counted work\n\n| Work | Count |\n| --- | ---: |\n| Preflight smoke engine starts | {} |\n| Orchestration engine starts | {} |\n| Artifact constructions | {} |\n| Artifact imports | {} |\n| Exact-target engine starts | {} |\n| Rust baseline materializations | {} |\n| Closure replays | {} |\n| Unrelated actions | {} |\n\n## Phase timings\n\n| Phase | Milliseconds |\n| --- | ---: |\n| Artifact | {} |\n| Engine startup | {} |\n| Rust installation | {} |\n| Security scan | {} |\n| Case execution | {} |\n| Cleanup | {} |\n| Total | {} |\n\nCases: {}\n",
+        "# Rust SDK exact-target sign-off verdict\n\nDecision: `{decision}`\n\nVerdict: `{}`\n\nTarget: `{}`\n\nSubject: `{}`\n\nPlatform: `{:?}/{:?}`\n\n## Counted work\n\n| Work | Count |\n| --- | ---: |\n| Preflight smoke engine starts | {} |\n| Orchestration engine starts | {} |\n| Artifact constructions | {} |\n| Artifact imports | {} |\n| Exact-target engine starts | {} |\n| Rust baseline materializations | {} |\n| Reviewed Rust case executions | {} |\n| Closure replays | {} |\n| Unrelated actions | {} |\n\n## Phase timings\n\n| Phase | Milliseconds |\n| --- | ---: |\n| Artifact | {} |\n| Engine startup | {} |\n| Rust installation | {} |\n| Security scan | {} |\n| Case execution | {} |\n| Cleanup | {} |\n| Total | {} |\n\nCases: {}\n",
         verdict.verdict_digest,
         verdict.target_digest,
         verdict.subject_revision,
@@ -857,6 +954,7 @@ pub fn render_atomic_signoff_verdict(verdict: &AtomicSignoffVerdict) -> String {
         verdict.execution_counts.artifact.imports,
         verdict.execution_counts.exact_target_engine_starts,
         verdict.execution_counts.rust_baseline_materializations,
+        verdict.execution_counts.case_executions,
         verdict.execution_counts.closure_replays,
         verdict.execution_counts.unrelated_actions,
         verdict.phase_timings.artifact.get(),
@@ -869,7 +967,7 @@ pub fn render_atomic_signoff_verdict(verdict: &AtomicSignoffVerdict) -> String {
         verdict.cases.len(),
     );
     rendered.push_str(&format!(
-        "\n## Closure domains\n\n| Domain | Identity or result |\n| --- | --- |\n| Applicability and case catalog | `{}` |\n| Implementation closure | `{}` |\n| Portable platform closure | `{}` (`{}`) |\n| Security closure | `{}` (`{}`) |\n| Exact artifact manifest | `{}` |\n| Exact artifact payload | `{}` |\n| Exact engine | `{}` |\n| Installed Rust baseline | `{}` |\n",
+        "\n## Closure domains\n\n| Domain | Identity or result |\n| --- | --- |\n| Applicability and case catalog | `{}` |\n| Implementation closure | `{}` |\n| Portable platform closure | `{}` (`{}`) |\n| Security closure | `{}` (`{}`) |\n| Exact artifact manifest | `{}` |\n| Exact artifact payload | `{}` |\n| Artifact Import receipt | `{}` |\n| Exact engine | `{}` |\n| Installed Rust baseline | `{}` |\n| Stable connector | `{}` |\n",
         verdict.case_catalog_digest,
         verdict.closure_bundle_digest,
         verdict.platform_matrix_digest,
@@ -878,8 +976,10 @@ pub fn render_atomic_signoff_verdict(verdict: &AtomicSignoffVerdict) -> String {
         gate_label(verdict.security_gate_passed),
         verdict.artifact_manifest_digest,
         verdict.artifact_payload_digest,
+        verdict.artifact_import_receipt.receipt_digest,
         verdict.engine_identity_digest,
         verdict.baseline_digest,
+        verdict.stable_connector.observation_digest,
     ));
     rendered.push_str("\n## Artifact component builds\n\n| Component | Count |\n| --- | ---: |\n");
     for (component, count) in &verdict.execution_counts.artifact.component_builds {
@@ -926,6 +1026,9 @@ fn policy_for_id(id: &NetworkPolicyId) -> Option<SignoffNetworkPolicy> {
         "network/engine-only" => Some(SignoffNetworkPolicy::EngineOnly),
         "network/immutable-remote" => Some(SignoffNetworkPolicy::ImmutableRemote),
         "network/manifest-and-engine" => Some(SignoffNetworkPolicy::ManifestAndEngine),
+        "network/read-only-public-dependencies" => {
+            Some(SignoffNetworkPolicy::ReadOnlyPublicDependencies)
+        }
         _ => None,
     }
 }
@@ -941,6 +1044,7 @@ fn validate_execution_counts(
         || counts.exact_target_engine_stops != 1
         || counts.exact_target_child_reaps != 1
         || counts.rust_baseline_materializations != 1
+        || counts.case_executions != plan.expected_case_executions.get()
         || counts.closure_replays != 0
     {
         diagnostics.push(verdict_diagnostic(

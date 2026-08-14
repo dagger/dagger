@@ -25,6 +25,7 @@ fn checked_plan() -> ReviewedCatalogPlan {
     let engine: EngineIntegrationMappings =
         decode_canonical(&artifact("engine-integration-mappings.json")).unwrap();
     build_reviewed_catalog_plan(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../.."),
         &ledger,
         &scope,
         &harness,
@@ -37,19 +38,209 @@ fn checked_plan() -> ReviewedCatalogPlan {
 #[test]
 fn checked_plan_contains_every_applicability_and_fixed_route() {
     let plan = checked_plan();
-    assert_eq!(plan.assertions.assertions.len(), 1_047);
-    assert_eq!(plan.fixtures.fixtures.len(), 1_047);
-    assert_eq!(plan.cases.cases.len(), 672);
-    assert_eq!(plan.assertion_catalog.assertions().len(), 1_047);
-    assert_eq!(plan.fixture_registry.fixtures().len(), 1_047);
-    assert_eq!(plan.case_catalog.cases().len(), 672);
+    assert_eq!(plan.assertions.assertions.len(), 1_050);
+    assert_eq!(plan.fixtures.fixtures.len(), 1_050);
+    assert_eq!(plan.cases.cases.len(), 675);
+    assert_eq!(plan.assertion_catalog.assertions().len(), 1_050);
+    assert_eq!(plan.fixture_registry.fixtures().len(), 1_050);
+    assert_eq!(plan.case_catalog.cases().len(), 675);
     assert_eq!(required_common_harness_checks().len(), 17);
     assert_eq!(required_core_shapes().len(), 9);
     assert_eq!(required_engine_integration_cases().len(), 10);
     assert_eq!(required_module_authoring_cases().len(), 9);
     assert_eq!(required_standalone_client_cases().len(), 5);
+    assert_eq!(required_standalone_examples().len(), 3);
     assert_eq!(required_go_client_behaviours().len(), 9);
-    assert_eq!(required_fixed_programs().len(), 60);
+    assert_eq!(required_fixed_programs().len(), 63);
+}
+
+#[test]
+fn standalone_examples_are_exact_locked_build_only_fixtures() {
+    let plan = checked_plan();
+    let fixtures = plan
+        .fixture_registry
+        .fixtures()
+        .values()
+        .filter_map(|fixture| {
+            fixture
+                .standalone_example
+                .as_ref()
+                .map(|material| (fixture, material))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(fixtures.len(), 3);
+    assert_eq!(
+        fixtures
+            .iter()
+            .map(|(_, material)| material.example)
+            .collect::<std::collections::BTreeSet<_>>(),
+        required_standalone_examples()
+    );
+    for (fixture, material) in fixtures {
+        assert!(material.dependency_resolution_locked);
+        assert!(
+            material
+                .dependency_policy
+                .resolved_image_identities_required
+        );
+        assert!(material.dependency_policy.output_identity_required);
+        assert!(!material.dependency_policy.credentials_permitted);
+        assert!(!material.dependency_policy.image_dependencies.is_empty());
+        assert!(
+            fixture
+                .immutable_inputs
+                .contains(&material.dependency_policy.policy_digest)
+        );
+        assert_eq!(
+            fixture.network.as_str(),
+            "network/read-only-public-dependencies"
+        );
+        assert_eq!(
+            material.publication_policy,
+            StandaloneExamplePublicationPolicy::Forbidden
+        );
+        assert!(
+            fixture
+                .immutable_inputs
+                .contains(&material.source_tree_digest)
+        );
+        assert!(fixture.immutable_inputs.contains(&material.lockfile_digest));
+        assert!(!material.source_files.is_empty());
+        assert_eq!(material.maximum_output_bytes, 256 * 1024 * 1024);
+        assert!(matches!(
+            (material.example, material.output_path.as_str()),
+            (StandaloneExample::Cli, "build/cli")
+                | (StandaloneExample::Backend, "build/backend-image.tar")
+                | (StandaloneExample::Frontend, "build/frontend-image.tar")
+        ));
+        assert!(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../..")
+                .join(material.lockfile.as_str())
+                .is_file()
+        );
+    }
+}
+
+#[test]
+fn standalone_example_fixture_mutations_fail_closed() {
+    for mutation in 0..7 {
+        let mut input = checked_plan().fixtures;
+        let fixture = input
+            .fixtures
+            .iter_mut()
+            .find(|fixture| fixture.standalone_example.is_some())
+            .unwrap();
+        match mutation {
+            0 => {
+                fixture
+                    .standalone_example
+                    .as_mut()
+                    .unwrap()
+                    .dependency_resolution_locked = false
+            }
+            1 => {
+                fixture.standalone_example.as_mut().unwrap().source_files = CanonicalSet::default()
+            }
+            2 => {
+                fixture.standalone_example.as_mut().unwrap().lockfile_digest =
+                    Digest::sha256("substituted lockfile")
+            }
+            3 => {
+                fixture
+                    .standalone_example
+                    .as_mut()
+                    .unwrap()
+                    .maximum_output_bytes = u64::MAX
+            }
+            4 => {
+                fixture
+                    .standalone_example
+                    .as_mut()
+                    .unwrap()
+                    .dependency_policy
+                    .credentials_permitted = true
+            }
+            5 => {
+                fixture
+                    .standalone_example
+                    .as_mut()
+                    .unwrap()
+                    .dependency_policy
+                    .image_dependencies = CanonicalSet::default()
+            }
+            6 => {
+                fixture
+                    .standalone_example
+                    .as_mut()
+                    .unwrap()
+                    .dependency_policy
+                    .policy_digest = Digest::sha256("substituted dependency policy")
+            }
+            _ => unreachable!(),
+        }
+        fixture.fixture_digest = reviewed_fixture_digest(fixture).unwrap();
+        assert!(
+            compile_fixture_registry(input).is_err(),
+            "mutation {mutation} must fail closed"
+        );
+    }
+}
+
+#[test]
+fn standalone_example_sources_keep_build_as_the_safe_default() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+    let backend =
+        std::fs::read_to_string(root.join("sdk/rust/examples/backend/src/main.rs")).unwrap();
+    let backend_configuration =
+        std::fs::read_to_string(root.join("sdk/rust/examples/backend/src/configuration.rs"))
+            .unwrap();
+    let frontend =
+        std::fs::read_to_string(root.join("sdk/rust/examples/frontend/src/main.rs")).unwrap();
+    let frontend_tokens = frontend.split_whitespace().collect::<String>();
+    let backend_source = format!("{backend}\n{backend_configuration}");
+    assert!(backend_configuration.contains("None => Ok(Output::BuildOnly"));
+    assert!(backend_configuration.contains("allow_publish: true"));
+    assert!(backend.contains("Output::BuildOnly"));
+    assert!(frontend_tokens.contains("None|Some(Action::Build{signoff_export:false,"));
+    for source in [&backend, &frontend] {
+        assert!(source.contains(".sync().await?"));
+        assert_eq!(source.matches(".publish(").count(), 1);
+    }
+    assert!(frontend.contains("allow_publish: true"));
+
+    let trunk =
+        std::fs::read_to_string(root.join("sdk/rust/examples/frontend/leptos-frontend/Trunk.toml"))
+            .unwrap();
+    assert!(trunk.contains("command = \"npx\""));
+    assert!(trunk.contains("\"--yes\", \"tailwindcss@3.4.17\""));
+    assert!(frontend.contains("\"apt-get\", \"install\", \"-y\", \"nodejs\", \"npm\""));
+    for (source, program, output) in [
+        (
+            &backend_source,
+            "standalone-example/backend",
+            "build/backend-image.tar",
+        ),
+        (
+            &frontend,
+            "standalone-example/frontend",
+            "build/frontend-image.tar",
+        ),
+    ] {
+        assert!(source.contains("#[arg(long, hide = true)]"));
+        assert!(source.contains(program));
+        assert!(source.contains(output));
+        assert!(source.contains("SIGNOFF_OUTPUT_MAX_BYTES: u64 = 256 * 1024 * 1024"));
+        assert!(source.contains("size > SIGNOFF_OUTPUT_MAX_BYTES"));
+        assert!(source.contains("ImageMediaTypes::OciMediaTypes"));
+        assert!(source.contains("ImageLayerCompression::Gzip"));
+        assert!(source.contains(".export_opts(SIGNOFF_OUTPUT, &options)"));
+    }
+    assert!(frontend.contains("\"cargo\""));
+    assert!(frontend.contains("\"install\""));
+    assert!(frontend.contains("\"trunk\""));
+    assert!(frontend.contains("\"0.21.14\""));
+    assert!(frontend.contains("\"trunk\", \"build\", \"--release\", \"--locked\""));
 }
 
 #[test]
@@ -100,6 +291,7 @@ fn checked_audit_closure_plan_and_checkpoint_are_canonical_and_engine_free() {
 
     let audit: serde_json::Value =
         decode_canonical(&artifact("conformance-catalog-audit.json")).unwrap();
+    assert_eq!(audit["standalone_example_case_count"], 3);
     for key in [
         "engine_action_present",
         "executable_text_present",

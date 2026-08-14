@@ -10,4 +10,5 @@ rust-version = "1.97.1"
 [dependencies]
 dagger-sdk = { path = "../../crates/dagger-sdk" }
 eyre = "0.6.12"
+sha2 = "0.10.8"
 tokio = "1.37.0"

@@ -1,8 +1,13 @@
 //! Security admission properties over dependency, provenance, finding, and secret mutations.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 use dagger_sdk_completeness::*;
+
+#[path = "support/packaged_artifact.rs"]
+mod packaged_artifact;
 use proptest::prelude::*;
 
 fn text(value: &str) -> NonEmptyText {
@@ -66,10 +71,10 @@ fn record(role: ExternalInputRole) -> ProvenanceRecord {
             "sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd",
         ),
         ExternalInputRole::PreflightCli => (
-            "binary/preflight/a8789093",
+            "binary/preflight/d40f9c27",
             "dagger-rust-sdk-maintainers",
             "github.com/dagger/dagger",
-            "sha256:a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+            "sha256:d40f9c27e780321fcd0aaa59dde74ad0a7b851caf7378d9026df3ea7ed6f5ed6",
         ),
         ExternalInputRole::PreflightEngine => (
             "image/preflight-engine/beta.9",
@@ -90,7 +95,7 @@ fn record(role: ExternalInputRole) -> ProvenanceRecord {
             "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
         ),
         ExternalInputRole::VulnerabilityDatabaseSource => (
-            "source/trivy-db/reviewed",
+            "image/trivy-db/sha256-10a3832219beaf45a3eb86065e30b39e528ae9c1650aa5f733d4666afd0712c5",
             "aqua-security",
             "github.com/aquasecurity/trivy-db",
             "sha256:f9083665f64bbcc8111ef4d185a712c6524e129f9213e39a91069f262bb01e1d",
@@ -114,6 +119,22 @@ fn provenance_input() -> ExternalProvenanceRegistryInput {
             .map(record)
             .collect(),
     }
+}
+
+#[test]
+fn checked_preflight_cli_review_binds_the_reviewed_provenance_record() {
+    let review = fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../completeness/evidence/preflight-cli-review.json"),
+    )
+    .unwrap();
+    let registry =
+        compile_external_provenance_registry(reviewed_external_provenance_input()).unwrap();
+    let preflight = registry
+        .records
+        .get(&ExternalInputRole::PreflightCli)
+        .unwrap();
+    assert_eq!(preflight.review_evidence_digest, Digest::sha256(review));
 }
 
 fn finding(payload: &Digest) -> VulnerabilityFinding {
@@ -203,7 +224,7 @@ proptest! {
         let mut findings = vec![finding(&payload)];
         let mut exceptions = vec![exception()];
         let mut scanner = record(ExternalInputRole::ScannerImage).id;
-        let mut database = Digest::sha256("database metadata");
+        let mut database = record(ExternalInputRole::VulnerabilityDatabaseSource).immutable_digest;
         let mut rebuilt = false;
         let mut context = exception_context();
         let finding_expected = finding_mutation < 3;
@@ -283,6 +304,7 @@ proptest! {
                 canary_set_digest: canaries.digest().clone(),
                 inspections,
                 sanitized_outputs: vec![sanitized],
+                packaged_artifacts: packaged_artifact::packaged_artifact_scan_bundle(),
                 artifact_credentials_absent: true,
                 verdict_credentials_absent: true,
                 redaction_proven: true,

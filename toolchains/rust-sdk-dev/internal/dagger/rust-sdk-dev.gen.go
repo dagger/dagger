@@ -70,6 +70,7 @@ type RustSDKDev struct { // rust-sdk-dev (../../../../:0:0)
 	id                    *ID
 	release               *Void
 	releaseDryRun         *Void
+	signoff               *string
 	test                  *Void
 }
 type WithRustSDKDevFunc func(r *RustSDKDev) *RustSDKDev
@@ -374,6 +375,42 @@ func (r *RustSDKDev) ReleaseDryRun(ctx context.Context, opts ...RustSDKDevReleas
 	return q.Execute(ctx)
 }
 
+// Signoff runs the complete closed Rust case catalog against one reusable exact-target artifact.
+//
+// The returned JSON is a raw adapter observation. Rust policy remains solely responsible for
+// deriving the atomic verdict and any later status transition.
+func (r *RustSDKDev) Signoff(ctx context.Context, planJson string, catalogJson string, closureJson string, platformJson string, artifact *File) (string, error) {
+	assertNotNil("artifact", artifact)
+	if r.signoff != nil {
+		return *r.signoff, nil
+	}
+	q := r.query.Select("signoff")
+	q = q.Arg("planJson", planJson)
+	q = q.Arg("catalogJson", catalogJson)
+	q = q.Arg("closureJson", closureJson)
+	q = q.Arg("platformJson", platformJson)
+	q = q.Arg("artifact", artifact)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// SignoffArtifact constructs and exports one focused target without starting an engine service.
+//
+// The seed contains only independently derived, byte-free construction inputs. This method
+// observes the four component identities from the retained graph and lets the Rust policy tool
+// seal them into the Build plan before any artifact bytes are assembled.
+func (r *RustSDKDev) SignoffArtifact(seedJson string) *RustSDKDevRustSignoffArtifact {
+	q := r.query.Select("signoffArtifact")
+	q = q.Arg("seedJson", seedJson)
+
+	return &RustSDKDevRustSignoffArtifact{
+		query: q,
+	}
+}
+
 // Source returns the source directory for the Rust SDK.
 func (r *RustSDKDev) Source() *Directory {
 	q := r.query.Select("source")
@@ -565,6 +602,130 @@ func (r *RustSDKDevRustEngineContent) Resolution(ctx context.Context) (string, e
 		return *r.resolution, nil
 	}
 	q := r.query.Select("resolution")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// RustSignoffArtifact is one exportable exact-target bundle and its retained build graph.
+// The target and CLI stay private because callers must not bypass Rust admission by supplying
+// graph objects detached from the verified portable bytes.
+type RustSDKDevRustSignoffArtifact struct { // rust-sdk-dev (../../../../:0:0)
+	query *querybuilder.Selection
+
+	buildReceiptJson *string
+	id               *ID
+	manifestJson     *string
+	payloadDigest    *string
+	planJson         *string
+}
+
+func (r *RustSDKDevRustSignoffArtifact) WithGraphQLQuery(q *querybuilder.Selection) *RustSDKDevRustSignoffArtifact {
+	return &RustSDKDevRustSignoffArtifact{
+		query: q,
+	}
+}
+
+func (r *RustSDKDevRustSignoffArtifact) BuildReceiptJSON(ctx context.Context) (string, error) {
+	if r.buildReceiptJson != nil {
+		return *r.buildReceiptJson, nil
+	}
+	q := r.query.Select("buildReceiptJson")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *RustSDKDevRustSignoffArtifact) Bundle() *File {
+	q := r.query.Select("bundle")
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this RustSdkDevRustSignoffArtifact.
+func (r *RustSDKDevRustSignoffArtifact) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLType() string {
+	return "RustSdkDevRustSignoffArtifact"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *RustSDKDevRustSignoffArtifact) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *RustSDKDevRustSignoffArtifact) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = RustSDKDevRustSignoffArtifact{query: selectNode(dag.query, id, "RustSdkDevRustSignoffArtifact")}
+	return nil
+}
+
+func (r *RustSDKDevRustSignoffArtifact) ManifestJSON(ctx context.Context) (string, error) {
+	if r.manifestJson != nil {
+		return *r.manifestJson, nil
+	}
+	q := r.query.Select("manifestJson")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *RustSDKDevRustSignoffArtifact) PayloadDigest(ctx context.Context) (string, error) {
+	if r.payloadDigest != nil {
+		return *r.payloadDigest, nil
+	}
+	q := r.query.Select("payloadDigest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *RustSDKDevRustSignoffArtifact) PlanJSON(ctx context.Context) (string, error) {
+	if r.planJson != nil {
+		return *r.planJson, nil
+	}
+	q := r.query.Select("planJson")
 
 	var response string
 
