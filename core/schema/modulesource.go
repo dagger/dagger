@@ -221,6 +221,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("generatedContextChangeset", s.moduleSourceGeneratedContextChangeset).
 			Doc(`The generated files and directories made on top of the module source's context directory, returned as a Changeset.`),
 
+		// TODO: remove this field after the official SDK migrations have shipped.
+		// Older SDK releases still call it while loading, so hiding it would make
+		// those SDKs unusable with the engine before they can migrate.
 		dagql.NodeFunc("generateLocalDependencies", s.moduleSourceGenerateLocalDependencies).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.`,

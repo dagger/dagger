@@ -736,7 +736,9 @@
 <abbr title="Dagger\Stat">Stat</abbr>::fileType</a>() &mdash; <em>Method in class <a href="Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a></em></dt>
                     <dd><p>file type</p></dd><dt><a href="Dagger/Workspace.html#method_file">
 <abbr title="Dagger\Workspace">Workspace</abbr>::file</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Returns a File from the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_findUp">
+                    <dd><p>Returns a File from the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_findRoots">
+<abbr title="Dagger\Workspace">Workspace</abbr>::findRoots</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.</p></dd><dt><a href="Dagger/Workspace.html#method_findUp">
 <abbr title="Dagger\Workspace">Workspace</abbr>::findUp</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Search for a file or directory by walking up from the start path within the workspace.</p></dd>        </dl><h2 id="letterG">G</h2>
         <dl id="indexG"><dt><a href="Dagger/Address.html#method_gitRef">
@@ -1129,7 +1131,7 @@
 <abbr title="Dagger\Container">Container</abbr>::mounts</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves the list of paths where a directory is mounted.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_modules">
 <abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr>::modules</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a></em></dt>
-                    <dd><p>The workspace-local modules this SDK authors and manages.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_module">
+                    <dd><p>The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_module">
 <abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
                     <dd><p>The module the client is bound to (workspace-relative path or canonical ref).</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_moduleSource">
 <abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>

@@ -456,7 +456,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.CurrentModuleAsSDK]{
 		dagql.Func("modules", s.currentModuleAsSDKModules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`The workspace-local modules this SDK authors and manages.`),
+			Doc(`The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.`),
 		dagql.Func("clients", s.currentModuleAsSDKClients).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The generated clients this SDK produces in the workspace.`),

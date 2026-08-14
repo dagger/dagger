@@ -3151,6 +3151,23 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
+export type WorkspaceFindRootsOpts = {
+  /**
+   * Directory to start from. Relative paths resolve from the workspace cwd.
+   */
+  start?: string
+
+  /**
+   * File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+   */
+  markers: string[]
+
+  /**
+   * Glob patterns pruning the walk below start (e.g. ["**\/node_modules/**"]).
+   */
+  exclude?: string[]
+}
+
 export type WorkspaceFindUpOpts = {
   /**
    * Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
@@ -5849,7 +5866,7 @@ export class CurrentModuleAsSDK extends BaseClient {
   }
 
   /**
-   * The workspace-local modules this SDK authors and manages.
+   * The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
    */
   modules = async (): Promise<CurrentModuleAsSDKModule[]> => {
     type modules = {
@@ -14998,6 +15015,24 @@ export class Workspace extends BaseClient {
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
     return new File(ctx)
+  }
+
+  /**
+   * Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+   *
+   * Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+   *
+   * Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+   * @param opts.start Directory to start from. Relative paths resolve from the workspace cwd.
+   * @param opts.markers File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+   * @param opts.exclude Glob patterns pruning the walk below start (e.g. ["**\/node_modules/**"]).
+   */
+  findRoots = async (opts?: WorkspaceFindRootsOpts): Promise<string[]> => {
+    const ctx = this._ctx.select("findRoots", { ...opts })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
   }
 
   /**

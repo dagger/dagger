@@ -4589,7 +4589,7 @@ impl CurrentModuleAsSdk {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The workspace-local modules this SDK authors and manages.
+    /// The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
     pub async fn modules(&self) -> Result<Vec<CurrentModuleAsSdkModule>, DaggerError> {
         let query = self.selection.select("modules");
         let query = query.select("id");
@@ -14892,6 +14892,15 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceFindRootsOpts<'a> {
+    /// Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// Directory to start from. Relative paths resolve from the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub start: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
     /// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
     #[builder(setter(into, strip_option), default)]
@@ -15257,6 +15266,57 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+    /// Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+    /// Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+    ///
+    /// # Arguments
+    ///
+    /// * `markers` - File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn find_roots(
+        &self,
+        markers: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("findRoots");
+        query = query.arg(
+            "markers",
+            markers
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+    /// Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+    /// Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+    ///
+    /// # Arguments
+    ///
+    /// * `markers` - File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn find_roots_opts<'a>(
+        &self,
+        markers: Vec<impl Into<String>>,
+        opts: WorkspaceFindRootsOpts<'a>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("findRoots");
+        query = query.arg(
+            "markers",
+            markers
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(start) = opts.start {
+            query = query.arg("start", start);
+        }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
     /// Returns the absolute workspace path if found, or null if not found.

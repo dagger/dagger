@@ -21,6 +21,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 )
 
@@ -163,6 +164,32 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 		})
 	})
+}
+
+// TestEngineVersionLatestPinsOnConfigWrite verifies that "latest" is accepted
+// as input but config writes resolve it to the current concrete version.
+func (ModuleConfigSuite) TestEngineVersionLatestPinsOnConfigWrite(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	moduleSource := func(engineVersion string) *dagger.ModuleSource {
+		return c.Directory().
+			WithNewFile("dagger.json", fmt.Sprintf(`{"name":"foo","engineVersion":%q,"sdk":{"source":"dang"}}`, engineVersion)).
+			WithNewFile("main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
+			AsModuleSource()
+	}
+
+	writtenEngineVersion := func(ctx context.Context, t *testctx.T, src *dagger.ModuleSource) string {
+		t.Helper()
+		contents, err := src.GeneratedContextChangeset().Layer().File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(contents), &modCfg))
+		return modCfg.EngineVersion
+	}
+
+	want := engine.NormalizeVersion(engine.Version)
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("latest").WithName("bar")))
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0").WithEngineVersion("latest")))
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {

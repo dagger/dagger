@@ -192,6 +192,26 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+
+  Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+
+  Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+  """
+  @spec find_roots(t(), [String.t()], [{:start, String.t() | nil}, {:exclude, [String.t()]}]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def find_roots(%__MODULE__{} = workspace, markers, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("findRoots")
+      |> QB.put_arg("markers", markers)
+      |> QB.maybe_put_arg("start", optional_args[:start])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Search for a file or directory by walking up from the start path within the workspace.
 
   Returns the absolute workspace path if found, or null if not found.

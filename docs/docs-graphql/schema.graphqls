@@ -1801,7 +1801,11 @@ type CurrentModuleAsSDK implements Node {
   """A unique identifier for this CurrentModuleAsSDK."""
   id: ID!
 
-  """The workspace-local modules this SDK authors and manages."""
+  """
+  The managed modules relevant to the bound workspace cwd: every module at or
+  below it, plus the nearest enclosing module when the cwd itself is not
+  managed.
+  """
   modules: [CurrentModuleAsSDKModule!]!
 
   """The user-facing name of this SDK in the workspace."""
@@ -5673,6 +5677,31 @@ type Workspace implements Node {
     """
     path: String!
   ): File!
+
+  """
+  Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+
+  Returns cwd-relative directory paths for every marked directory at or below
+  start, plus the nearest marked ancestor when start itself is not marked.
+
+  Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+  """
+  findRoots(
+    """
+    Directory to start from. Relative paths resolve from the workspace cwd.
+    """
+    start: String = "."
+
+    """
+    File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+    """
+    markers: [String!]!
+
+    """
+    Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
+    """
+    exclude: [String!] = []
+  ): [String!]!
 
   """
   Search for a file or directory by walking up from the start path within the workspace.

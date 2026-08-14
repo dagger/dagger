@@ -4034,7 +4034,10 @@ class CurrentModuleAsSDK(Type):
         return await _ctx.execute(str)
 
     async def modules(self) -> list["CurrentModuleAsSDKModule"]:
-        """The workspace-local modules this SDK authors and manages."""
+        """The managed modules relevant to the bound workspace cwd: every module
+        at or below it, plus the nearest enclosing module when the cwd itself
+        is not managed.
+        """
         _args: list[Arg] = []
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(CurrentModuleAsSDKModule)
@@ -15211,6 +15214,57 @@ class Workspace(Type):
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
+
+    async def find_roots(
+        self,
+        markers: list[str],
+        *,
+        start: str | None = ".",
+        exclude: list[str] | None = None,
+    ) -> list[str]:
+        """Find project roots marked by any of the given filenames, starting from
+        a path relative to the workspace cwd.
+
+        Returns cwd-relative directory paths for every marked directory at or
+        below start, plus the nearest marked ancestor when start itself is not
+        marked.
+
+        Each returned path is usable as-is with other workspace APIs, e.g.
+        directory(path).
+
+        Parameters
+        ----------
+        markers:
+            File basenames that mark a project root (e.g. ["go.mod"] or
+            ["deno.json", "deno.jsonc"]).
+        start:
+            Directory to start from. Relative paths resolve from the workspace
+            cwd.
+        exclude:
+            Glob patterns pruning the walk below start (e.g.
+            ["**/node_modules/**"]).
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("markers", markers),
+            Arg("start", start, "."),
+            Arg("exclude", [] if exclude is None else exclude, []),
+        ]
+        _ctx = self._select("findRoots", _args)
+        return await _ctx.execute(list[str])
 
     async def find_up(
         self,
