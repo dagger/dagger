@@ -327,9 +327,8 @@ type SpanTreeView struct {
 
 	// durationViews are inline, self-updating duration components owned by this
 	// rendered occurrence of a span tree, keyed by span ID (a row can summarize
-	// running effect spans in its title). Like statusSpinners they are only
-	// mounted while a span is running, so their ticker keeps the elapsed
-	// duration fresh even on rows without a status spinner (e.g. LLM messages).
+	// running effect spans in its title). They are only mounted for running rows
+	// in viewport-clipped views; flowing output must remain inert in scrollback.
 	durationViews map[dagui.SpanID]*DurationView
 
 	// childrenGapPrefix is the prefix for gap lines between this node's
@@ -604,15 +603,10 @@ const durationTickInterval = 100 * time.Millisecond
 
 // DurationView is a self-updating component that renders a span's elapsed
 // activity duration. It mirrors the status spinner's lifecycle: it is only
-// mounted while the span is running, so its OnMount ticker re-renders on an
-// interval and marks itself dirty. Because Compo.Update propagates upward, each
-// tick re-runs the owning SpanTreeView's Render -- rebuilding the title line
-// with a fresh clock -- so the duration stays live.
-//
-// This is what keeps durations fresh on rows that have no status spinner to
-// drive re-renders, notably LLM message spans (renderStepTitle skips the status
-// icon for LLMRole spans), whose duration would otherwise freeze at whatever
-// time the title was last rendered.
+// mounted while a span is running in a viewport-clipped view, so its OnMount
+// ticker re-renders on an interval and marks itself dirty. Because Compo.Update
+// propagates upward, each tick re-runs the owning SpanTreeView's Render --
+// rebuilding the title line with a fresh clock -- so the duration stays live.
 type DurationView struct {
 	tuist.Compo
 
@@ -6211,7 +6205,7 @@ func progressTrack(out TermOutput, width, eighths int, fill, track termenv.Color
 // indicating whether it's interesting enough to reveal at a summary level.
 func (fe *frontendPretty) statusIcon(ctx tuist.Context, host statusIconHost, span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
-		if host == nil {
+		if host == nil || fe.flowingMode() {
 			return DotHalf, true
 		}
 		return host.RenderChildInline(ctx, host.spinnerForStatus(span.ID)), true
@@ -6255,13 +6249,16 @@ func (fe *frontendPretty) renderStatusIcon(ctx tuist.Context, out TermOutput, ro
 	fmt.Fprint(out, statusIcon.String())
 }
 
-// renderDurationDynamic renders a span's duration. While the span is running
-// (and outside the final, non-interactive render) it goes through a
-// self-updating DurationView child, so the duration keeps ticking even on rows
-// with no status spinner to drive re-renders -- notably LLM message spans. Once
-// the span stops running the child is no longer rendered (and so dismounts,
-// stopping its ticker) and the final duration is written as static text.
+// renderDurationDynamic renders a span's duration. Running rows in flowing mode
+// are deliberately inert: the whole over-tall frame flows into native terminal
+// scrollback, where a ticking duration would force Tuist to redraw even when the
+// row is off-screen. Viewport-clipped views keep using a self-updating
+// DurationView; once a span stops, every view falls back to its static final
+// duration.
 func (fe *frontendPretty) renderDurationDynamic(ctx tuist.Context, out TermOutput, r *renderer, span *dagui.Span, host statusIconHost, space bool) {
+	if fe.flowingMode() && span.IsRunningOrEffectsRunning() {
+		return
+	}
 	if !fe.finalRender && host != nil && span.IsRunningOrEffectsRunning() {
 		if space {
 			fmt.Fprint(out, out.String(" "))
@@ -6275,7 +6272,10 @@ func (fe *frontendPretty) renderDurationDynamic(ctx tuist.Context, out TermOutpu
 }
 
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
-	if span.CheckPassed {
+	if fe.flowingMode() && span.IsRunningOrEffectsRunning() {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("RUNNING").Foreground(termenv.ANSIYellow))
+	} else if span.CheckPassed {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("OK").Foreground(termenv.ANSIGreen))
 	} else if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
