@@ -913,6 +913,24 @@ func (srv *Server) initializeDaggerClient(
 
 	// configure OTel providers that export to the per-client telemetry store
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
+	logs := srv.telemetryPubSub.Logs(client)
+	client.logExporter = logs
+
+	// All span/log destinations for this client: its own store plus every
+	// ancestor's (nested-client telemetry reaches Cloud via the parent DB, so
+	// each hop must receive every record, and must not drop on a burst).
+	// Fanned out below through ONE batch processor per signal rather than one
+	// processor per destination: every batch processor eagerly allocates its
+	// full bounded queue, so per-destination processors paid that fixed cost
+	// per (client, ancestor) pair — the engine's telemetry memory ceiling in a
+	// real OOM heap profile. See enginetel.NewSpanFanOutExporter.
+	spanDests := []sdktrace.SpanExporter{client.spanExporter}
+	logDests := []sdklog.Exporter{logs}
+	for _, parent := range client.parents {
+		spanDests = append(spanDests, srv.telemetryPubSub.Spans(parent))
+		logDests = append(logDests, srv.telemetryPubSub.Logs(parent))
+	}
+
 	// Raise the per-span link cap well above the SDK default of 128. The wcprof
 	// OTel profiling source emits runtime wait edges as span links attached to
 	// the *waiter*; a span that hosts many concurrent telemetry-suppressed
@@ -927,14 +945,13 @@ func (srv *Server) initializeDaggerClient(
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		// Stamp the wcprof.parent causal-parent override on lazy re-pointed work
-		// spans. Listed FIRST — before the LiveSpanProcessor
-		// below and the parent-export LiveSpanProcessors appended in the loop —
+		// spans. Listed FIRST — before the fanned-out LiveSpanProcessor below —
 		// so OnStart sets the attribute on the shared span object before any
 		// live-start snapshot is taken. There is one tracer provider per client,
 		// so this single registration covers every per-client export (this
-		// client's own DB plus every parent below): a lazy-work span never misses
-		// the override on any export path (behavioral guard: dagql
-		// TestWcprofLazyParentProcessorStampsAllExports).
+		// client's own DB plus every ancestor's via the fan-out exporter): a
+		// lazy-work span never misses the override on any export path
+		// (behavioral guard: dagql TestWcprofLazyParentProcessorStampsAllExports).
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
 		// Count + mark every engine span for the wcprof completeness checksum
 		// (leaf-drop detection). Shared across all per-client tracer
@@ -944,25 +961,31 @@ func (srv *Server) initializeDaggerClient(
 		// before the LiveSpanProcessor so the engine-span mark is set on the shared span
 		// object before any live-start snapshot is taken.
 		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
-		// save to our own client's DB. Large-queue BSP so a big burst (a cold engine
-		// build is ~15k spans, live-double-emitted ≈ 30k records) does not overflow the
-		// default 2048-slot queue and silently drop spans before they reach the DB the
-		// CLI drains toward Cloud. Emit live start snapshots uniformly: internal spans
-		// can be load-bearing parents of visible progress spans.
+		// save to our own client's DB and every ancestor's, via a single
+		// large-queue BSP over a fan-out exporter. Large-queue so a big burst
+		// (a cold engine build is ~15k spans, live-double-emitted ≈ 30k records)
+		// does not overflow the default 2048-slot queue and silently drop spans
+		// before they reach the DBs the CLI drains toward Cloud. Emit live start
+		// snapshots uniformly: internal spans can be load-bearing parents of
+		// visible progress spans. One queue serves every destination; each
+		// record is still exported once per destination, just without a
+		// per-destination queue.
 		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(
-			client.spanExporter,
+			enginetel.NewSpanFanOutExporter(spanDests...),
 		)),
 	}
 
-	logs := srv.telemetryPubSub.Logs(client)
-	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
 		// NOTE: a synchronous processor here would append every record on its
 		// emitting goroutine and propagate hard-cap backpressure directly into
 		// application work. Keep emitters decoupled with bounded batching — see
-		// enginetel.NewLogBatchProcessor.
-		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logs)),
+		// enginetel.NewLogBatchProcessor. Like the span processor above, a
+		// single processor fans out to every destination store so only one
+		// eagerly allocated record ring exists per client.
+		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(
+			enginetel.NewLogFanOutExporter(logDests...),
+		)),
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -976,18 +999,11 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	// export to parent client DBs too (same large-queue live BSP — nested-client
-	// spans reach Cloud via the parent DB, so this hop must not drop on a burst
-	// either and must emit every live start snapshot uniformly).
+	// export metrics to parent client DBs too. Metrics keep one PeriodicReader
+	// per destination: readers pull aggregated state on an interval and hold no
+	// per-record queue, so they are not part of the memory ceiling the span/log
+	// fan-out above addresses.
 	for _, parent := range client.parents {
-		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
-			enginetel.NewLargeQueueLiveSpanProcessor(
-				srv.telemetryPubSub.Spans(parent),
-			),
-		))
-		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			enginetel.NewLogBatchProcessor(srv.telemetryPubSub.Logs(parent)),
-		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
 				srv.telemetryPubSub.Metrics(parent),
