@@ -11,7 +11,7 @@ use proptest::prelude::*;
 use serde::{Deserialize, Serialize};
 use support::fixed_model_corpus;
 
-const REPLAY: &[u8] = include_bytes!("../../../completeness/engine-foundation-replay.json");
+const REPLAY: &[u8] = include_bytes!("fixtures/engine-foundation-replay.json");
 const REQUIRED_PAYLOADS: [&str; 15] = [
     "LICENSE",
     "dist/client-generation.json",

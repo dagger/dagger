@@ -24,9 +24,8 @@ use serde_json::{Value, json};
 
 pub(crate) const PURE_CASES: u32 = 256;
 pub(crate) const FILESYSTEM_CASES: u32 = 128;
-pub(crate) const TARGET_BYTES: &[u8] = include_bytes!("../../../../completeness/target.json");
-pub(crate) const CORE_SCHEMA_BYTES: &[u8] =
-    include_bytes!("../../../../completeness/snapshots/schema.json");
+pub(crate) const TARGET_BYTES: &[u8] = include_bytes!("../../../../codegen/target.json");
+pub(crate) const CORE_SCHEMA_BYTES: &[u8] = include_bytes!("../../../../codegen/schema.json");
 
 pub(crate) fn module_authoring_input() -> ModuleAuthoringInput {
     let path = ModuleSourcePath::new("src/lib.rs").expect("fixture source path must validate");
@@ -783,7 +782,7 @@ pub(crate) fn default_literal_strategy() -> impl Strategy<Value = String> {
 
 pub(crate) fn target_strategy() -> impl Strategy<Value = CodegenTarget> {
     Just(
-        CodegenTarget::decode_exact(include_bytes!("../../../../completeness/target.json"))
+        CodegenTarget::decode_exact(include_bytes!("../../../../codegen/target.json"))
             .expect("checked target must decode"),
     )
 }

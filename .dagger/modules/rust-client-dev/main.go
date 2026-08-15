@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
@@ -50,19 +49,13 @@ var engineIntegrationCases = []string{
 
 const maxEngineIntegrationConcurrency = 4
 
-type sdkDependencyEvidence struct {
+type sdkDependencyDescriptor struct {
 	Source       string `json:"source"`
 	Registry     string `json:"registry,omitempty"`
 	Package      string `json:"package"`
 	ExactVersion string `json:"exact_version,omitempty"`
 	URL          string `json:"url,omitempty"`
 	Revision     string `json:"revision,omitempty"`
-}
-
-type operationCaseEvidence struct {
-	Observation              string   `json:"observation"`
-	OperationInputDigests    []string `json:"operation_input_digests"`
-	OperationManifestDigests []string `json:"operation_manifest_digests"`
 }
 
 // Develop and verify the Dagger Rust SDK.
@@ -101,7 +94,7 @@ func New(
 			"*",
 			"!LICENSE",
 			"!sdk/rust/crates",
-			"!sdk/rust/completeness",
+			"!sdk/rust/codegen",
 			"!sdk/rust/examples",
 			"!sdk/rust/runtime",
 			// Example workspaces have independent Cargo targets which the repository
@@ -188,8 +181,8 @@ func (t *RustClientDev) focusedEngineSource() *dagger.Directory {
 		"!sdk/rust/Cargo.lock",
 		"!sdk/rust/Cargo.toml",
 		"!sdk/rust/rust-toolchain.toml",
-		"!sdk/rust/completeness/target.json",
-		"!sdk/rust/completeness/snapshots/schema.json",
+		"!sdk/rust/codegen/target.json",
+		"!sdk/rust/codegen/schema.json",
 		"!sdk/rust/crates/**/Cargo.toml",
 		"!sdk/rust/crates/**/src/**",
 		"!sdk/rust/crates/**/assets/**",
@@ -358,9 +351,6 @@ func (t *RustClientDev) EngineUnit(ctx context.Context) error {
 		WithExec([]string{
 			"cargo", "test", "-p", "dagger-sdk-engine", "--all-targets", "--locked",
 		}).
-		WithExec([]string{
-			"cargo", "test", "-p", "dagger-sdk-completeness", "--test", "engine_integration", "--locked",
-		}).
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("run focused Rust engine unit tests: %w", err)
@@ -390,17 +380,13 @@ func (t *RustClientDev) EngineUnit(ctx context.Context) error {
 	return nil
 }
 
-// RustEngineContent retains one engine-dev content object with both identities
-// needed to prove the acyclic packaged-content boundary.
+// RustEngineContent retains one reusable engine-content graph and its package identities.
 type RustEngineContent struct {
-	Content                  *dagger.Directory
-	ManifestDigest           string
-	DescriptorDigest         string
-	MappingDigest            string
-	CompletenessTargetDigest string
-	SDKDependency            sdkDependencyEvidence                 // +private
-	Engine                   *dagger.DaggerEngine                  // +private
-	Built                    *dagger.DaggerEngineRustEngineContent // +private
+	Content          *dagger.Directory
+	ManifestDigest   string
+	DescriptorDigest string
+	Engine           *dagger.DaggerEngine                  // +private
+	Built            *dagger.DaggerEngineRustEngineContent // +private
 }
 
 // EngineContent builds the Rust SDK content once and returns its reusable graph object.
@@ -431,7 +417,7 @@ func (t *RustClientDev) EngineContent(ctx context.Context) (*RustEngineContent, 
 	if err != nil {
 		return nil, fmt.Errorf("resolve Rust SDK dependency descriptor: %w", err)
 	}
-	var sdkDependency sdkDependencyEvidence
+	var sdkDependency sdkDependencyDescriptor
 	if err := json.Unmarshal([]byte(dependencyDescriptor), &sdkDependency); err != nil {
 		return nil, fmt.Errorf("decode Rust SDK dependency descriptor: %w", err)
 	}
@@ -439,29 +425,12 @@ func (t *RustClientDev) EngineContent(ctx context.Context) (*RustEngineContent, 
 		(sdkDependency.Source != "registry" && sdkDependency.Source != "git") {
 		return nil, fmt.Errorf("Rust SDK content returned an unsupported dependency descriptor")
 	}
-	mappingContents, err := t.Ws.File("sdk/rust/completeness/engine-integration-mappings.json").Contents(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("read Rust engine-integration mappings: %w", err)
-	}
-	var mappingSubject struct {
-		TargetDigest string `json:"target_digest"`
-	}
-	if err := json.Unmarshal([]byte(mappingContents), &mappingSubject); err != nil {
-		return nil, fmt.Errorf("decode Rust engine-integration mapping subject: %w", err)
-	}
-	if !isCanonicalSHA256(mappingSubject.TargetDigest) {
-		return nil, fmt.Errorf("Rust engine-integration mappings returned a malformed target identity")
-	}
-	mappingDigest := sha256.Sum256([]byte(mappingContents))
 	return &RustEngineContent{
-		Content:                  built.Content(),
-		ManifestDigest:           manifestDigest,
-		DescriptorDigest:         descriptorDigest,
-		MappingDigest:            fmt.Sprintf("sha256:%x", mappingDigest),
-		CompletenessTargetDigest: mappingSubject.TargetDigest,
-		SDKDependency:            sdkDependency,
-		Engine:                   engine,
-		Built:                    built,
+		Content:          built.Content(),
+		ManifestDigest:   manifestDigest,
+		DescriptorDigest: descriptorDigest,
+		Engine:           engine,
+		Built:            built,
 	}, nil
 }
 
@@ -542,7 +511,7 @@ func (content *RustEngineContent) runResolution(
 	if !strings.Contains(stderr, "does not currently support selecting a specific version") {
 		return "", fmt.Errorf("versioned Rust built-in failed without the stable pre-fallback diagnostic")
 	}
-	evidence, err := json.Marshal(struct {
+	result, err := json.Marshal(struct {
 		DescriptorDigest  string `json:"descriptor_digest"`
 		Installed         bool   `json:"installed"`
 		ManifestDigest    string `json:"manifest_digest"`
@@ -556,9 +525,9 @@ func (content *RustEngineContent) runResolution(
 		ShorthandRejected: true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("encode Rust SDK resolution evidence: %w", err)
+		return "", fmt.Errorf("encode Rust SDK resolution result: %w", err)
 	}
-	return string(evidence), nil
+	return string(result), nil
 }
 
 // EngineIntegration exercises the initialization, operation, and runtime boundaries
@@ -593,10 +562,8 @@ func (content *RustEngineContent) EngineIntegration(
 	installed := content.integrationRunner(service).
 		WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
 	type caseResult struct {
-		identity                 string
-		operationInputDigests    []string
-		operationManifestDigests []string
-		err                      error
+		identity string
+		err      error
 	}
 	results := make([]caseResult, len(cases))
 	slots := make(chan struct{}, maxEngineIntegrationConcurrency)
@@ -619,111 +586,30 @@ func (content *RustEngineContent) EngineIntegration(
 				results[index].err = fmt.Errorf("run Rust engine-integration case %s: %w", name, err)
 				return
 			}
-			if name == "operations" {
-				var operationEvidence operationCaseEvidence
-				if err := json.Unmarshal([]byte(identity), &operationEvidence); err != nil {
-					results[index].err = fmt.Errorf("decode operation evidence: %w", err)
-					return
-				}
-				identity = operationEvidence.Observation
-				results[index].operationInputDigests = operationEvidence.OperationInputDigests
-				results[index].operationManifestDigests = operationEvidence.OperationManifestDigests
-			}
 			results[index].identity = stableCaseObservation(name, identity)
 		}()
 	}
 	group.Wait()
 
 	observations := make(map[string]string, len(cases))
-	operationInputDigests := map[string]struct{}{}
-	operationManifestDigests := map[string]struct{}{}
 	for index, name := range cases {
 		if results[index].err != nil {
 			return "", results[index].err
 		}
 		observations[name] = results[index].identity
-		for _, digest := range results[index].operationInputDigests {
-			operationInputDigests[digest] = struct{}{}
-		}
-		for _, digest := range results[index].operationManifestDigests {
-			operationManifestDigests[digest] = struct{}{}
-		}
 	}
-	inputDigests := sortedDigestSet(operationInputDigests)
-	manifestDigests := sortedDigestSet(operationManifestDigests)
-	evidence, err := json.Marshal(struct {
-		Cases                    map[string]string `json:"cases"`
-		DescriptorDigest         string            `json:"descriptor_digest"`
-		ManifestDigest           string            `json:"manifest_digest"`
-		OperationInputDigests    []string          `json:"operation_input_digests"`
-		OperationManifestDigests []string          `json:"operation_manifest_digests"`
+	result, err := json.Marshal(struct {
+		Cases            map[string]string `json:"cases"`
+		DescriptorDigest string            `json:"descriptor_digest"`
+		ManifestDigest   string            `json:"manifest_digest"`
 	}{
 		Cases: observations, DescriptorDigest: content.DescriptorDigest,
-		ManifestDigest: content.ManifestDigest, OperationInputDigests: inputDigests,
-		OperationManifestDigests: manifestDigests,
+		ManifestDigest: content.ManifestDigest,
 	})
 	if err != nil {
-		return "", fmt.Errorf("encode Rust engine-integration evidence: %w", err)
+		return "", fmt.Errorf("encode Rust engine-integration result: %w", err)
 	}
-	return string(evidence), nil
-}
-
-// EngineEvidence runs the complete closed case set before publishing target-bound evidence.
-//
-// A caller cannot supply selectors here: focused case subsets are useful during development but
-// are never equivalent to the complete matrix admitted by the completeness contract.
-func (content *RustEngineContent) EngineEvidence(ctx context.Context) (string, error) {
-	integration, err := content.EngineIntegration(ctx, append([]string(nil), engineIntegrationCases...))
-	if err != nil {
-		return "", err
-	}
-	var result struct {
-		Cases                    map[string]string `json:"cases"`
-		DescriptorDigest         string            `json:"descriptor_digest"`
-		ManifestDigest           string            `json:"manifest_digest"`
-		OperationInputDigests    []string          `json:"operation_input_digests"`
-		OperationManifestDigests []string          `json:"operation_manifest_digests"`
-	}
-	if err := json.Unmarshal([]byte(integration), &result); err != nil {
-		return "", fmt.Errorf("decode complete Rust engine-integration result: %w", err)
-	}
-	if err := requireCompleteEngineCaseSet(result.Cases); err != nil {
-		return "", err
-	}
-	if len(result.OperationInputDigests) == 0 || len(result.OperationManifestDigests) == 0 {
-		return "", fmt.Errorf("engine evidence requires canonical operation provenance")
-	}
-	evidence, err := json.Marshal(struct {
-		FormatVersion            int                   `json:"format_version"`
-		Cases                    map[string]string     `json:"cases"`
-		CompletenessTargetDigest string                `json:"completeness_target_digest"`
-		DescriptorDigest         string                `json:"descriptor_digest"`
-		EngineRevision           string                `json:"engine_revision"`
-		EngineVersion            string                `json:"engine_version"`
-		ManifestDigest           string                `json:"manifest_digest"`
-		MappingDigest            string                `json:"mapping_digest"`
-		OperationInputDigests    []string              `json:"operation_input_digests"`
-		OperationManifestDigests []string              `json:"operation_manifest_digests"`
-		RustToolchain            string                `json:"rust_toolchain"`
-		SDKDependency            sdkDependencyEvidence `json:"sdk_dependency"`
-	}{
-		FormatVersion:            1,
-		Cases:                    result.Cases,
-		CompletenessTargetDigest: content.CompletenessTargetDigest,
-		DescriptorDigest:         content.DescriptorDigest,
-		EngineRevision:           coreTargetRevision,
-		EngineVersion:            coreTargetVersion,
-		ManifestDigest:           content.ManifestDigest,
-		MappingDigest:            content.MappingDigest,
-		OperationInputDigests:    result.OperationInputDigests,
-		OperationManifestDigests: result.OperationManifestDigests,
-		RustToolchain:            rustToolchainVersion,
-		SDKDependency:            content.SDKDependency,
-	})
-	if err != nil {
-		return "", fmt.Errorf("encode complete Rust engine evidence: %w", err)
-	}
-	return string(evidence), nil
+	return string(result), nil
 }
 
 func (content *RustEngineContent) integrationRunner(
@@ -820,7 +706,7 @@ func (content *RustEngineContent) runEngineIntegrationCase(
 		if err := requirePaths(ctx, result.Directory("/work"), fixture.RequiredPaths); err != nil {
 			return "", err
 		}
-		return collectOperationCaseEvidence(ctx, result)
+		return collectOperationCaseResult(ctx, result)
 	case "runtime-checked":
 		result := installed.
 			WithExec([]string{"dagger", "-y", "module", "init", "rust", "runtime-checked"})
@@ -1054,7 +940,7 @@ func stableCaseObservation(name, identity string) string {
 	return fmt.Sprintf("sha256:%x", digest)
 }
 
-func collectOperationCaseEvidence(
+func collectOperationCaseResult(
 	ctx context.Context,
 	result *dagger.Container,
 ) (string, error) {
@@ -1070,8 +956,6 @@ func collectOperationCaseEvidence(
 	if len(paths) == 0 {
 		return "", fmt.Errorf("operation selectors produced no ownership manifest")
 	}
-	inputDigests := map[string]struct{}{}
-	manifestDigests := map[string]struct{}{}
 	for _, path := range paths {
 		contents, err := root.File(path).Contents(ctx)
 		if err != nil {
@@ -1086,43 +970,8 @@ func collectOperationCaseEvidence(
 		if !isCanonicalSHA256(manifest.InputDigest) {
 			return "", fmt.Errorf("operation manifest %s omitted its canonical input identity", path)
 		}
-		inputDigests[manifest.InputDigest] = struct{}{}
-		digest := sha256.New()
-		_, _ = digest.Write([]byte("dagger-rust-engine-operation-manifest-v1\x00"))
-		_, _ = digest.Write([]byte(contents))
-		manifestDigests[fmt.Sprintf("sha256:%x", digest.Sum(nil))] = struct{}{}
 	}
-	evidence, err := json.Marshal(operationCaseEvidence{
-		Observation:              observation,
-		OperationInputDigests:    sortedDigestSet(inputDigests),
-		OperationManifestDigests: sortedDigestSet(manifestDigests),
-	})
-	if err != nil {
-		return "", fmt.Errorf("encode operation identities: %w", err)
-	}
-	return string(evidence), nil
-}
-
-func sortedDigestSet(values map[string]struct{}) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func requireCompleteEngineCaseSet(observations map[string]string) error {
-	if len(observations) != len(engineIntegrationCases) {
-		return fmt.Errorf("engine evidence requires all %d named cases", len(engineIntegrationCases))
-	}
-	for _, name := range engineIntegrationCases {
-		identity, found := observations[name]
-		if !found || !isCanonicalSHA256(identity) {
-			return fmt.Errorf("engine evidence is missing a canonical result for case %q", name)
-		}
-	}
-	return nil
+	return observation, nil
 }
 
 func requirePaths(ctx context.Context, root *dagger.Directory, paths []string) error {
@@ -1212,9 +1061,6 @@ func (t *RustClientDev) GeneratedClientCheck(ctx context.Context) error {
 		WithExec([]string{
 			"cargo", "test", "-p", "dagger-codegen", "--locked", "--test", "compile_projection",
 		}).
-		WithExec([]string{
-			"cargo", "test", "-p", "dagger-sdk-completeness", "--locked", "--test", "core_codegen_binding",
-		}).
 		WithEnvVariable("RUSTDOCFLAGS", "-D warnings").
 		WithExec([]string{
 			"cargo", "doc", "-p", "dagger-sdk", "--all-features", "--no-deps", "--locked",
@@ -1224,30 +1070,12 @@ func (t *RustClientDev) GeneratedClientCheck(ctx context.Context) error {
 	return err
 }
 
-// Run focused generated-client observations against the immutable checked engine source.
+// Exercise representative generated Core operations against the exact target engine.
 //
 // +check
-func (t *RustClientDev) CoreConformance(ctx context.Context) (string, error) {
+func (t *RustClientDev) GeneratedCoreIntegration(ctx context.Context) error {
 	generated := *t
 	generated.WithGeneratedClient()
-	// Evidence artifacts are derived from this identity, so including them would make
-	// the subject self-referential. Bind live evidence to the complete compilable Rust
-	// source instead; the manifest separately binds every generated artifact byte.
-	subjectSource := generated.Source().Filter(dagger.DirectoryFilterOpts{
-		Include: []string{
-			"Cargo.lock",
-			"Cargo.toml",
-			"rust-toolchain.toml",
-			"crates/**",
-		},
-	})
-	sourceIdentity, err := subjectSource.Digest(ctx)
-	if err != nil {
-		return "", fmt.Errorf("resolve generated source identity: %w", err)
-	}
-	// A Dagger digest algorithm change expires evidence conservatively; domain
-	// separation gives the evidence contract one stable external digest syntax.
-	subjectDigest := sha256.Sum256([]byte("dagger-rust-sdk-subject-v1\x00" + sourceIdentity))
 	generated.Workspace = generated.Workspace.WithFile(
 		generated.SourcePath+"/crates/dagger-sdk/examples/core_conformance.rs",
 		t.Ws.File(".dagger/modules/rust-client-dev/testdata/core_conformance.rs"),
@@ -1262,24 +1090,15 @@ func (t *RustClientDev) CoreConformance(ctx context.Context) (string, error) {
 		Service: service,
 		Version: coreTargetVersion,
 	})
-	evidence := runner.
-		WithEnvVariable("DAGGER_RUST_CONFORMANCE_OUTPUT", "/tmp/core-conformance-observations.json").
+	_, err := runner.
 		WithExec([]string{
 			"dagger", "run", "cargo", "run", "-p", "dagger-sdk", "--example", "core_conformance", "--locked",
 		}).
-		WithExec([]string{
-			"cargo", "run", "-p", "dagger-sdk-completeness", "--bin", "dagger-core-conformance-evidence", "--locked", "--",
-			"--root", "/src/sdk/rust",
-			"--observations", "/tmp/core-conformance-observations.json",
-			"--subject-digest", fmt.Sprintf("sha256:%x", subjectDigest),
-			"--output", "/tmp/core-conformance-evidence.json",
-		}).
-		File("/tmp/core-conformance-evidence.json")
-	contents, err := evidence.Contents(ctx)
+		Sync(ctx)
 	if err != nil {
-		return "", fmt.Errorf("run exact-target core conformance: %w", err)
+		return fmt.Errorf("run exact-target generated Core integration: %w", err)
 	}
-	return contents, nil
+	return nil
 }
 
 // RustSdkBuild is the ordinary, non-publishing Rust SDK build result.
@@ -1315,7 +1134,7 @@ func (t *RustClientDev) Build(
 
 	packageContainer := t.DevContainer(true).
 		WithExec([]string{
-			"cargo", "build", "-p", "dagger-sdk-completeness", "--bin", "dagger-rust-sdk-check", "--locked",
+			"cargo", "build", "-p", "dagger-bootstrap", "--bin", "dagger-rust-sdk-check", "--locked",
 		}).
 		WithExec([]string{
 			"cargo", "package", "-p", rustSdkMacrosCrate, "--locked",

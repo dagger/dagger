@@ -79,7 +79,7 @@ proptest! {
             4 => (ClientBoundaryArtifactKind::GeneratedRust, "pub unsafe fn cross_boundary() {}".to_owned()),
             5 => (ClientBoundaryArtifactKind::GeneratedRust, "static CLIENT: OnceLock<Client> = OnceLock::new();".to_owned()),
             6 => (ClientBoundaryArtifactKind::GeneratedManifest, "dagger-codegen = \"1\"".to_owned()),
-            _ => (ClientBoundaryArtifactKind::Evidence, format!("/Users/{prefix}/dagger")),
+            _ => (ClientBoundaryArtifactKind::Control, format!("/Users/{prefix}/dagger")),
         };
         prop_assert!(validate_client_boundary(kind, hostile.as_bytes()).is_err());
 

@@ -153,21 +153,15 @@ func (r *RustSdkBuild) UnmarshalJSON(bs []byte) error {
 
 func (r RustEngineContent) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Content                  *dagger.Directory
-		ManifestDigest           string
-		DescriptorDigest         string
-		MappingDigest            string
-		CompletenessTargetDigest string
-		SDKDependency            sdkDependencyEvidence
-		Engine                   *dagger.DaggerEngine
-		Built                    *dagger.DaggerEngineRustEngineContent
+		Content          *dagger.Directory
+		ManifestDigest   string
+		DescriptorDigest string
+		Engine           *dagger.DaggerEngine
+		Built            *dagger.DaggerEngineRustEngineContent
 	}
 	concrete.Content = r.Content
 	concrete.ManifestDigest = r.ManifestDigest
 	concrete.DescriptorDigest = r.DescriptorDigest
-	concrete.MappingDigest = r.MappingDigest
-	concrete.CompletenessTargetDigest = r.CompletenessTargetDigest
-	concrete.SDKDependency = r.SDKDependency
 	concrete.Engine = r.Engine
 	concrete.Built = r.Built
 	return json.Marshal(&concrete)
@@ -175,14 +169,11 @@ func (r RustEngineContent) MarshalJSON() ([]byte, error) {
 
 func (r *RustEngineContent) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Content                  *dagger.Directory
-		ManifestDigest           string
-		DescriptorDigest         string
-		MappingDigest            string
-		CompletenessTargetDigest string
-		SDKDependency            sdkDependencyEvidence
-		Engine                   *dagger.DaggerEngine
-		Built                    *dagger.DaggerEngineRustEngineContent
+		Content          *dagger.Directory
+		ManifestDigest   string
+		DescriptorDigest string
+		Engine           *dagger.DaggerEngine
+		Built            *dagger.DaggerEngineRustEngineContent
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -191,9 +182,6 @@ func (r *RustEngineContent) UnmarshalJSON(bs []byte) error {
 	r.Content = concrete.Content
 	r.ManifestDigest = concrete.ManifestDigest
 	r.DescriptorDigest = concrete.DescriptorDigest
-	r.MappingDigest = concrete.MappingDigest
-	r.CompletenessTargetDigest = concrete.CompletenessTargetDigest
-	r.SDKDependency = concrete.SDKDependency
 	r.Engine = concrete.Engine
 	r.Built = concrete.Built
 	return nil
@@ -381,34 +369,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*RustClientDev).Changes(&parent), nil
-		case "CompletenessArtifacts":
-			var parent RustClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustClientDev).CompletenessArtifacts(&parent), nil
-		case "CompletenessHarness":
-			var parent RustClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustClientDev).CompletenessHarness(&parent), nil
-		case "CompletenessIntegrity":
-			var parent RustClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustClientDev).CompletenessIntegrity(&parent, ctx)
-		case "CoreConformance":
-			var parent RustClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustClientDev).CoreConformance(&parent, ctx)
 		case "DevContainer":
 			var parent RustClientDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -451,6 +411,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*RustClientDev).GeneratedClientCheck(&parent, ctx)
+		case "GeneratedCoreIntegration":
+			var parent RustClientDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustClientDev).GeneratedCoreIntegration(&parent, ctx)
 		case "Source":
 			var parent RustClientDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -519,13 +486,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		}
 	case "RustEngineContent":
 		switch fnName {
-		case "EngineEvidence":
-			var parent RustEngineContent
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustEngineContent).EngineEvidence(&parent, ctx)
 		case "EngineIntegration":
 			var parent RustEngineContent
 			err = json.Unmarshal(parentJSON, &parent)
@@ -614,29 +574,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("Changeset")).
 							WithSourceMap(dag.SourceMap("main.go", 1173, 1))).
 					WithFunction(
-						dag.Function("CompletenessArtifacts",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("CompletenessArtifacts captures the current engine schema and stages canonical derived files.\n\nThe active workspace is immutable: callers receive only the Changeset between the original\ninput and a graph-local candidate tree.").
-							WithSourceMap(dag.SourceMap("completeness.go", 52, 1)).
-							WithGenerator()).
-					WithFunction(
-						dag.Function("CompletenessHarness",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("CompletenessHarness runs the exact pinned sdk-sdk baseline profile.\n\nSubject failures are captured as normalized outcomes and remain completeness blockers. Only\nacquisition, checksum, invocation, or normalization failures fail this callable operation.").
-							WithSourceMap(dag.SourceMap("completeness.go", 76, 1))).
-					WithFunction(
-						dag.Function("CompletenessIntegrity",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("CompletenessIntegrity reconstructs the F1 contract from its pinned local inputs.").
-							WithSourceMap(dag.SourceMap("completeness.go", 23, 1)).
-							WithCheck()).
-					WithFunction(
-						dag.Function("CoreConformance",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Run focused generated-client observations against the immutable checked engine source.").
-							WithSourceMap(dag.SourceMap("main.go", 1230, 1)).
-							WithCheck()).
-					WithFunction(
 						dag.Function("DevContainer",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Return the Rust SDK workspace mounted in a dev container,\nand working directory set to the SDK source.").
@@ -664,6 +601,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify the complete checked-input generated client in graph-local state.").
 							WithSourceMap(dag.SourceMap("main.go", 1200, 1)).
+							WithCheck()).
+					WithFunction(
+						dag.Function("GeneratedCoreIntegration",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Exercise representative generated Core operations against the exact target engine.").
 							WithCheck()).
 					WithFunction(
 						dag.Function("Source",
@@ -702,12 +644,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithField("CompleteEngine", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{Description: "CompleteEngine contains the standard engine binaries and all standard SDK content,\nwith the Rust content produced from the current workspace.", SourceMap: dag.SourceMap("main.go", 1294, 2)}).
 					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 1296, 2)})).
 			WithObject(
-				dag.TypeDef().WithObject("RustEngineContent", dagger.TypeDefWithObjectOpts{Description: "RustEngineContent retains one engine-dev content object with both identities\nneeded to prove the acyclic packaged-content boundary.", SourceMap: dag.SourceMap("main.go", 395, 6)}).
-					WithFunction(
-						dag.Function("EngineEvidence",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("EngineEvidence runs the complete closed case set before publishing target-bound evidence.\n\nA caller cannot supply selectors here: focused case subsets are useful during development but\nare never equivalent to the complete matrix admitted by the completeness contract.").
-							WithSourceMap(dag.SourceMap("main.go", 675, 1))).
+				dag.TypeDef().WithObject("RustEngineContent", dagger.TypeDefWithObjectOpts{Description: "RustEngineContent retains one reusable engine-content graph and its package identities.", SourceMap: dag.SourceMap("main.go", 395, 6)}).
 					WithFunction(
 						dag.Function("EngineIntegration",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
@@ -721,9 +658,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithSourceMap(dag.SourceMap("main.go", 470, 1))).
 					WithField("Content", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 396, 2)}).
 					WithField("ManifestDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 397, 2)}).
-					WithField("DescriptorDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 398, 2)}).
-					WithField("MappingDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 399, 2)}).
-					WithField("CompletenessTargetDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 400, 2)})), nil
+					WithField("DescriptorDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 398, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

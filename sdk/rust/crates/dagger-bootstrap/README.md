@@ -4,17 +4,15 @@
 publish the [Dagger Rust SDK](https://github.com/dagger/dagger/tree/main/sdk/rust)
 generated client from checked repository inputs.
 
-It connects three workspace components:
+It connects two workspace components:
 
 - `dagger-codegen` validates the exact target and schema, then renders the complete
   generated Rust candidate.
-- `dagger-sdk-completeness` supplies the checked capability authorities consumed by
-  generation.
 - `dagger-sdk` owns the generated client destinations.
 
 This crate is development and release tooling for the Rust SDK. Application authors
-should depend on
-[`dagger-sdk`](https://crates.io/crates/dagger-sdk) instead.
+should use the two checked repository artifacts described by the
+[`dagger-sdk` installation guide](../dagger-sdk/README.md) instead.
 
 ## Repository generation
 
@@ -22,8 +20,8 @@ Run the command from `sdk/rust`, passing that directory as the explicit publicat
 boundary:
 
 ```console
-cargo run -p dagger-bootstrap --bin dagger-rust -- generate --workspace . --check
-cargo run -p dagger-bootstrap --bin dagger-rust -- generate --workspace . --update
+cargo run -p dagger-bootstrap --bin dagger-rust --locked -- generate --workspace . --check
+cargo run -p dagger-bootstrap --bin dagger-rust --locked -- generate --workspace . --update
 ```
 
 Exactly one of `--check` or `--update` is required. Check mode generates and formats
@@ -36,11 +34,11 @@ then revalidates every input and atomically publishes only paths declared by the
 previous and candidate manifests, plus the explicit legacy `dagger-sdk/src/gen.rs`
 predecessor. Successful updates print changed paths, never generated contents.
 
-Generation reads the exact target, schema snapshot, capability ledger, reviewed
-codegen mappings, and previous generated binding manifest below the workspace. Every
+Generation reads the exact target, schema snapshot, and previous compact ownership
+manifest below the workspace. Every
 input must be a bounded regular non-symlink file. Rust source is formatted only with
 the toolchain pinned by `rust-toolchain.toml`; no compiler fix-up stage is used.
-The command fails closed while any checked authority or prior manifest is absent.
+The command fails closed while any checked input or prior manifest is absent.
 
 Generated client code must not be edited directly. Change `dagger-codegen` or its
 templates, regenerate, and review the resulting diff.

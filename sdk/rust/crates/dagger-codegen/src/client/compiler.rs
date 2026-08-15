@@ -23,7 +23,7 @@ use super::model::{
 };
 use super::naming::plan_client_names;
 
-const CHECKED_CORE_SCHEMA: &[u8] = include_bytes!("../../../../completeness/snapshots/schema.json");
+const CHECKED_CORE_SCHEMA: &[u8] = include_bytes!("../../../../codegen/schema.json");
 static CHECKED_CORE_PLAN: OnceLock<Result<VisibleSchemaPlan, DiagnosticSet>> = OnceLock::new();
 
 /// Borrowed inputs to one total standalone-client compilation.
@@ -400,7 +400,7 @@ fn owns_module_type(root: &SchemaName, candidate: &SchemaName) -> bool {
 
 fn checked_core_plan(target: &CodegenTarget) -> Result<VisibleSchemaPlan, DiagnosticSet> {
     if target.dagger_revision().as_str()
-        != CodegenTarget::decode_exact(include_bytes!("../../../../completeness/target.json"))?
+        != CodegenTarget::decode_exact(include_bytes!("../../../../codegen/target.json"))?
             .dagger_revision()
             .as_str()
     {

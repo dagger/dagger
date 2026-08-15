@@ -77,32 +77,30 @@ cancellation or publication failure never triggers a second result path. Diagnos
 retain authored and wire coordinates plus typed safe causes without rendering tokens,
 credential-bearing URLs, arbitrary panic payloads, host paths, or unbounded values.
 
-## Checkpoint build and test: engine-free and Rust-first
+## Development build and test: engine-free and Rust-first
 
 During implementation, run the narrowest owning package or fixture. The local
-checkpoint uses Cargo directly from `sdk/rust` and the direct Go ABI package under
+development loop uses Cargo directly from `sdk/rust` and the direct Go ABI package under
 `sdk/rust/runtime`. It exercises the production source compiler, descriptor,
-projections, generated registry, codecs, context, dispatcher, entrypoint adapter, and
+projections, registration, codecs, context, dispatcher, entrypoint adapter, and
 result sink with Rust values and a recording transport.
 
-The checkpoint contract is strict:
+The development contract is strict:
 
 - no Dagger engine process, CLI/module invocation, or network-backed engine graph;
 - no unrelated SDK builder, test, generation, or distribution-wide build;
 - checked Core and module assets unless an owning digest changed;
 - one scoped regeneration decision when change genuinely requires it;
 - locked package checks, all module properties, bounded compile fixtures, direct
-  adapter tests, formatting, Clippy, rustdoc, Cargo Deny, repository Rust security,
-  public package contents, derived reporting, and byte-clean output; and
-- a deterministic result for every action and generated-asset decision.
+  adapter tests, formatting, Clippy, rustdoc, Cargo Deny, public package contents, and
+  byte-clean output.
 
 The focused test slices are:
 
 ```console
-cargo test -p dagger-sdk-engine --test checkpoint_properties --locked
-cargo test -p dagger-sdk-completeness \
-  --test module_authoring_properties \
-  --test module_authoring_evidence --locked
+cargo test -p dagger-sdk-engine \
+  --test initialization_properties \
+  --test runner_properties --locked
 cargo test -p dagger-codegen \
   --test module_authoring_assets \
   --test module_diagnostics --locked
@@ -111,7 +109,7 @@ cargo test -p dagger-sdk --test module_authoring_compile --locked
 
 The complete local gate additionally runs the canonical workspace format, check, test,
 warning-denied Clippy/rustdoc, Cargo Deny, package, direct Go ABI, generated
-drift/ownership, derived-report, and clean-output checks once. It does not continuously
+drift/ownership, and clean-output checks once. It does not continuously
 regenerate checked assets.
 
 If a proposed local check genuinely requires an engine, keep the direct model gap

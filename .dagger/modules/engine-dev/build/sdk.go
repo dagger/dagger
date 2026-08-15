@@ -106,7 +106,7 @@ func (build *Builder) RustSDKContent(
 	}
 
 	var target rustTargetDescriptor
-	targetContents, err := build.source.File("sdk/rust/completeness/target.json").Contents(ctx)
+	targetContents, err := build.source.File("sdk/rust/codegen/target.json").Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read Rust SDK checked target: %w", err)
 	}
@@ -169,7 +169,7 @@ func (build *Builder) RustSDKContent(
 	rustWorkspace := build.source.Directory("sdk/rust").Filter(dagger.DirectoryFilterOpts{
 		Include: []string{
 			"Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
-			"completeness/target.json", "completeness/snapshots/schema.json",
+			"codegen/target.json", "codegen/schema.json", "codegen/generated.json",
 			"crates/**/Cargo.toml", "crates/**/src/**/*.rs", "crates/**/assets/**",
 		},
 	})

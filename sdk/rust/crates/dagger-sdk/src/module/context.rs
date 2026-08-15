@@ -242,6 +242,7 @@ mod tests {
     proptest! {
         #![proptest_config(proptest_config())]
 
+        #[cfg(feature = "gen")]
         #[test]
         fn property_19_module_context_scoped_active_call(
             call_id in "[a-zA-Z0-9-]{1,32}",

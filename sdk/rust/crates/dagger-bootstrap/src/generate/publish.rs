@@ -37,11 +37,7 @@ pub struct ArtifactRecord {
     provenance: Provenance,
 }
 
-/// Artifact-owned portion of the generated binding manifest.
-///
-/// The completeness layer extends this document with the exhaustive binding join.
-/// Keeping unknown fields accepted here lets publication validate its owned artifact
-/// projection without becoming a second completeness decoder.
+/// Complete generated ownership manifest.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ArtifactManifest {
     format_version: u32,

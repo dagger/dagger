@@ -399,7 +399,7 @@ impl CandidateFormatter for InputMutatingFormatter {
     ) -> Result<FormattedArtifactSet, DiagnosticSet> {
         let formatted = PinnedRustfmt.finalize(workspace, target, candidate)?;
         write(
-            &workspace.join("completeness/artifacts/ledger.json"),
+            &workspace.join("codegen/target.json"),
             b"{\"changed_after_planning\":true}\n",
         );
         Ok(formatted)

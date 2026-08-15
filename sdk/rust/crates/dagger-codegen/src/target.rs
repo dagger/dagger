@@ -24,17 +24,12 @@ const APPROVED_CONTRACT_FORMAT_VERSION: &str = "1.0.0";
 const APPROVED_DAGGER_REPOSITORY: &str = "github.com/dagger/dagger";
 const APPROVED_DAGGER_REVISION: &str = "501b57e0476dee5881b99a064c3c04173134ecc7";
 const APPROVED_ENGINE_VERSION: &str = "v1.0.0-beta.11.rust.1";
-const APPROVED_GO_SDK_REPOSITORY: &str = "github.com/dagger/dagger-go-sdk";
-const APPROVED_GO_SDK_REVISION: &str = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5";
 const APPROVED_RUST_EDITION: &str = "2024";
 const APPROVED_RUST_SDK_VERSION: &str = "1.0.0-beta.11.rust.1";
 const APPROVED_RUST_VERSION: &str = "1.97.1";
 const APPROVED_SCHEMA_DIGEST: &str =
     "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306";
 const APPROVED_SCHEMA_VERSION: &str = "v1.0.0";
-const APPROVED_SDK_CONTRACT_CLI_VERSION: &str = "v1.0.0-beta.9";
-const APPROVED_SDK_CONTRACT_REPOSITORY: &str = "github.com/dagger/sdk-sdk";
-const APPROVED_SDK_CONTRACT_REVISION: &str = "8c164424b7a8a37b33a77367ef7547490d5b87b5";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,16 +38,11 @@ struct TargetDescriptor {
     dagger_repository: String,
     dagger_revision: String,
     engine_version: String,
-    go_sdk_repository: String,
-    go_sdk_revision: String,
     rust_edition: String,
     rust_sdk_version: String,
     rust_version: String,
     schema_digest: String,
     schema_version: String,
-    sdk_contract_cli_version: String,
-    sdk_contract_repository: String,
-    sdk_contract_revision: String,
 }
 
 /// A validated lowercase Git object identifier.
@@ -113,21 +103,16 @@ pub struct CodegenTarget {
     dagger_repository: String,
     dagger_revision: Revision,
     engine_version: Version,
-    go_sdk_repository: String,
-    go_sdk_revision: Revision,
     rust_edition: RustEdition,
     rust_sdk_version: Version,
     rust_version: Version,
     schema_digest: Sha256Digest,
     schema_version: Version,
-    sdk_contract_cli_version: Version,
-    sdk_contract_repository: String,
-    sdk_contract_revision: Revision,
 }
 
 impl Serialize for CodegenTarget {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("CodegenTarget", 14)?;
+        let mut state = serializer.serialize_struct("CodegenTarget", 9)?;
         state.serialize_field(
             "contract_format_version",
             &self.contract_format_version.to_string(),
@@ -135,19 +120,11 @@ impl Serialize for CodegenTarget {
         state.serialize_field("dagger_repository", &self.dagger_repository)?;
         state.serialize_field("dagger_revision", self.dagger_revision.as_str())?;
         state.serialize_field("engine_version", &format!("v{}", self.engine_version))?;
-        state.serialize_field("go_sdk_repository", &self.go_sdk_repository)?;
-        state.serialize_field("go_sdk_revision", self.go_sdk_revision.as_str())?;
         state.serialize_field("rust_edition", self.rust_edition.as_str())?;
         state.serialize_field("rust_sdk_version", &self.rust_sdk_version.to_string())?;
         state.serialize_field("rust_version", &self.rust_version.to_string())?;
         state.serialize_field("schema_digest", &self.schema_digest.to_string())?;
         state.serialize_field("schema_version", &format!("v{}", self.schema_version))?;
-        state.serialize_field(
-            "sdk_contract_cli_version",
-            &format!("v{}", self.sdk_contract_cli_version),
-        )?;
-        state.serialize_field("sdk_contract_repository", &self.sdk_contract_repository)?;
-        state.serialize_field("sdk_contract_revision", self.sdk_contract_revision.as_str())?;
         state.end()
     }
 }
@@ -183,16 +160,6 @@ impl CodegenTarget {
                 APPROVED_ENGINE_VERSION,
             ),
             (
-                "go_sdk_repository",
-                descriptor.go_sdk_repository.as_str(),
-                APPROVED_GO_SDK_REPOSITORY,
-            ),
-            (
-                "go_sdk_revision",
-                descriptor.go_sdk_revision.as_str(),
-                APPROVED_GO_SDK_REVISION,
-            ),
-            (
                 "rust_edition",
                 descriptor.rust_edition.as_str(),
                 APPROVED_RUST_EDITION,
@@ -217,21 +184,6 @@ impl CodegenTarget {
                 descriptor.schema_version.as_str(),
                 APPROVED_SCHEMA_VERSION,
             ),
-            (
-                "sdk_contract_cli_version",
-                descriptor.sdk_contract_cli_version.as_str(),
-                APPROVED_SDK_CONTRACT_CLI_VERSION,
-            ),
-            (
-                "sdk_contract_repository",
-                descriptor.sdk_contract_repository.as_str(),
-                APPROVED_SDK_CONTRACT_REPOSITORY,
-            ),
-            (
-                "sdk_contract_revision",
-                descriptor.sdk_contract_revision.as_str(),
-                APPROVED_SDK_CONTRACT_REVISION,
-            ),
         ];
         let diagnostics: Vec<_> = expected
             .into_iter()
@@ -249,9 +201,6 @@ impl CodegenTarget {
         }
 
         let dagger_revision = parse_revision("dagger_revision", &descriptor.dagger_revision)?;
-        let go_sdk_revision = parse_revision("go_sdk_revision", &descriptor.go_sdk_revision)?;
-        let sdk_contract_revision =
-            parse_revision("sdk_contract_revision", &descriptor.sdk_contract_revision)?;
         let schema_digest = parse_digest(&descriptor.schema_digest)?;
 
         Ok(Self {
@@ -262,19 +211,11 @@ impl CodegenTarget {
             dagger_repository: descriptor.dagger_repository,
             dagger_revision,
             engine_version: parse_version("engine_version", &descriptor.engine_version)?,
-            go_sdk_repository: descriptor.go_sdk_repository,
-            go_sdk_revision,
             rust_edition: RustEdition::Edition2024,
             rust_sdk_version: parse_version("rust_sdk_version", &descriptor.rust_sdk_version)?,
             rust_version: parse_version("rust_version", &descriptor.rust_version)?,
             schema_digest,
             schema_version: parse_version("schema_version", &descriptor.schema_version)?,
-            sdk_contract_cli_version: parse_version(
-                "sdk_contract_cli_version",
-                &descriptor.sdk_contract_cli_version,
-            )?,
-            sdk_contract_repository: descriptor.sdk_contract_repository,
-            sdk_contract_revision,
         })
     }
 
@@ -322,18 +263,6 @@ impl CodegenTarget {
         self.schema_digest
     }
 
-    /// Returns the definitive Go SDK source revision.
-    #[must_use]
-    pub const fn go_sdk_revision(&self) -> &Revision {
-        &self.go_sdk_revision
-    }
-
-    /// Returns the sdk-sdk contract source revision.
-    #[must_use]
-    pub const fn sdk_contract_revision(&self) -> &Revision {
-        &self.sdk_contract_revision
-    }
-
     /// Returns the Rust SDK package version.
     #[must_use]
     pub const fn rust_sdk_version(&self) -> &Version {
@@ -362,24 +291,6 @@ impl CodegenTarget {
     #[must_use]
     pub fn dagger_repository(&self) -> &str {
         &self.dagger_repository
-    }
-
-    /// Returns the Go SDK repository identity.
-    #[must_use]
-    pub fn go_sdk_repository(&self) -> &str {
-        &self.go_sdk_repository
-    }
-
-    /// Returns the sdk-sdk repository identity.
-    #[must_use]
-    pub fn sdk_contract_repository(&self) -> &str {
-        &self.sdk_contract_repository
-    }
-
-    /// Returns the sdk-sdk CLI contract version.
-    #[must_use]
-    pub const fn sdk_contract_cli_version(&self) -> &Version {
-        &self.sdk_contract_cli_version
     }
 }
 

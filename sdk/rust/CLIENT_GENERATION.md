@@ -103,9 +103,12 @@ the affected typed slices and reuse current checked assets and the materialized 
 baseline:
 
 ```console
-cargo test -p dagger-sdk-completeness --test client_generation_evidence --locked
-cargo test -p dagger-sdk-completeness --test client_generation_documentation --locked
-cargo test -p dagger-sdk-engine --test client_checkpoint_properties --locked
+cargo test -p dagger-codegen \
+  --test client_compiler_properties \
+  --test client_renderer --locked
+cargo test -p dagger-sdk-engine \
+  --test client_project_properties \
+  --test client_usability_properties --locked
 ```
 
 Investigate fixture sequencing and the owning input before broadening a failed slice.

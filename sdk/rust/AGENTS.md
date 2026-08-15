@@ -13,7 +13,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for the human-facing workflow and
 
 ## Sources of truth
 
-Use the executable completeness contract's peer-authority model:
+Use the implementation's peer-authority model:
 
 - The Dagger engine schema and protocol define the public wire surface.
 - Target-compatible `sdk-sdk` checks define common lifecycle behaviour only within
@@ -23,11 +23,12 @@ Use the executable completeness contract's peer-authority model:
 - Rust policy defines ownership, lifetimes, naming, error handling, safety, and
   ergonomics. Cross-SDK consistency does not justify an unidiomatic Rust API.
 - Existing Rust code and historical proposals, including pull request #12229, are
-  evidence. Let them inform the design, not direct it.
+  references. Let them inform the design, not direct it.
 
 No authority has blanket precedence. Preserve compatible overlap and fail or document a
-genuine incompatibility instead of silently selecting one source. The reviewed selections,
-classifications, and evidence rules live in [completeness/README.md](completeness/README.md).
+genuine incompatibility instead of silently selecting one source. Exact codegen target
+identity and schema bytes live under `codegen/`; ordinary tests enforce the maintained
+behavior.
 
 ## Architecture boundaries
 
@@ -35,7 +36,7 @@ classifications, and evidence rules live in [completeness/README.md](completenes
   user-facing errors.
 - `dagger-codegen` owns schema-to-Rust translation and generated API shape.
 - `dagger-bootstrap` is orchestration for code generation, not a second SDK surface.
-- `crates/dagger-sdk/src/gen.rs` is generated. Never edit it directly; modify the
+- `crates/dagger-sdk/src/gen/` is generated. Never edit it directly; modify the
   generator or templates and regenerate it.
 - Keep generated types thin. Handwritten behaviour belongs outside `gen.rs` unless it
   must be emitted consistently for every generated type.
@@ -64,18 +65,18 @@ classifications, and evidence rules live in [completeness/README.md](completenes
 
 ## Code documentation
 
-The Rust SDK mirrors contracts owned by the engine schema, the scoped official SDK
-conformance harness, and the definitive Go implementation. The reasoning behind a
+The Rust SDK mirrors contracts owned by the engine schema, scoped official SDK checks,
+and the definitive Go implementation. The reasoning behind a
 non-obvious mapping or invariant must survive in the source; requiring the next human
 or agent to reconstruct it from those authorities is an avoidable correctness risk.
 
 - Give every module a `//!` introduction that explains what it owns, its architectural
   boundary, and the invariants a future editor must preserve.
 - Document public items with `///` when callers need guarantees, validation rules,
-  failure behaviour, evidence scope, or lifecycle assumptions that the type signature
+  failure behaviour, verification scope, or lifecycle assumptions that the type signature
   cannot express.
 - Add inline comments for correctness-critical decisions: canonical ordering and
-  hashing domains, target/evidence containment, precedence, ownership, retry or
+  hashing domains, target containment, precedence, ownership, retry or
   idempotency assumptions, concurrency boundaries, and deliberate trade-offs. Explain
   why the decision is necessary, not what the following line does.
 - Cite the pinned schema, harness check, or Go symbol/test when behaviour is

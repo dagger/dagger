@@ -21,7 +21,7 @@ type workspaceReplayState struct {
 }
 
 func TestProperty04WorkspaceInstallationCollisionSafeReversibleReplay(t *testing.T) {
-	contents, err := os.ReadFile("../../sdk/rust/completeness/engine-foundation-replay.json")
+	contents, err := os.ReadFile("../../sdk/rust/crates/dagger-sdk-engine/tests/fixtures/engine-foundation-replay.json")
 	require.NoError(t, err)
 	var replay workspaceReplay
 	require.NoError(t, json.Unmarshal(contents, &replay))

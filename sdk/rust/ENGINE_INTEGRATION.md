@@ -44,7 +44,6 @@ include:
 ```console
 cargo test -p dagger-codegen --test engine_operations --test visible_schema_properties --locked
 cargo test -p dagger-sdk-engine --locked
-cargo test -p dagger-sdk-completeness --locked
 ```
 
 The direct Go boundaries are also engine-free:
@@ -93,6 +92,11 @@ Run the build from the repository root with the active Dagger CLI syntax confirm
 - composes that content into the standard complete `linux/amd64` engine;
 - requires the normal engine and CLI binaries plus the selected Rust manifest; and
 - retains the complete engine and package directory for explicit export.
+
+Run this from a fresh Linux Git checkout after confirming `find . -name '._*' -print`
+has no output. Do not substitute a bare `cargo package -p dagger-sdk`: the ordinary
+build supplies the intentionally unpublished macro companion as a local packaging
+patch, then validates both archives together.
 
 `Verify` unpacks those packages into an isolated Cargo project, patches the macro
 companion locally, starts this build's completed engine, executes one SDK query, and

@@ -3,14 +3,9 @@
   "dagger_repository": "github.com/dagger/dagger",
   "dagger_revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
   "engine_version": "v1.0.0-beta.11.rust.1",
-  "go_sdk_repository": "github.com/dagger/dagger-go-sdk",
-  "go_sdk_revision": "1309520660f6a5b35ef97b4fbe151e32a06a8dc5",
   "rust_edition": "2024",
   "rust_sdk_version": "1.0.0-beta.11.rust.1",
   "rust_version": "1.97.1",
   "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
-  "schema_version": "v1.0.0",
-  "sdk_contract_cli_version": "v1.0.0-beta.9",
-  "sdk_contract_repository": "github.com/dagger/sdk-sdk",
-  "sdk_contract_revision": "8c164424b7a8a37b33a77367ef7547490d5b87b5"
+  "schema_version": "v1.0.0"
 }

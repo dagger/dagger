@@ -258,7 +258,7 @@ func TestProperty02DeterministicRustSDKResolutionReplay(t *testing.T) {
 
 func loadResolutionReplay(t *testing.T) resolutionReplay {
 	t.Helper()
-	contents, err := os.ReadFile("../../sdk/rust/completeness/engine-foundation-replay.json")
+	contents, err := os.ReadFile("../../sdk/rust/crates/dagger-sdk-engine/tests/fixtures/engine-foundation-replay.json")
 	require.NoError(t, err)
 	var replay resolutionReplay
 	require.NoError(t, json.Unmarshal(contents, &replay))

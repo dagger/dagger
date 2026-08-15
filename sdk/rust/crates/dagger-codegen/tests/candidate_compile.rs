@@ -7,8 +7,8 @@ use std::process::Command;
 use dagger_codegen::target::CodegenTarget;
 use dagger_codegen::{CoreProjectionRequest, project_core, render_core};
 
-const TARGET: &[u8] = include_bytes!("../../../completeness/target.json");
-const SCHEMA: &[u8] = include_bytes!("../../../completeness/snapshots/schema.json");
+const TARGET: &[u8] = include_bytes!("../../../codegen/target.json");
+const SCHEMA: &[u8] = include_bytes!("../../../codegen/schema.json");
 
 #[test]
 fn exact_candidate_compiles_with_supported_features_and_warning_free_docs() {
@@ -27,7 +27,6 @@ fn exact_candidate_compiles_with_supported_features_and_warning_free_docs() {
     for package in [
         "dagger-bootstrap",
         "dagger-codegen",
-        "dagger-sdk-completeness",
         "dagger-sdk-engine",
         "dagger-sdk-macros",
     ] {

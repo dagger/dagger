@@ -15,7 +15,6 @@ dagger-codegen = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-code
 dagger-bootstrap = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-bootstrap" }
 dagger-sdk = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk", default-features = false }
 dagger-sdk-macros = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk-macros" }
-dagger-sdk-completeness = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk-completeness" }
 dagger-sdk-engine = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk-engine" }
 
 eyre = "0.6.9"

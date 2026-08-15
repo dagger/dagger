@@ -4,7 +4,7 @@
 //! audit protects the serialization and rendering boundaries where otherwise-valid
 //! fields are combined, and therefore catches credential material, host identity,
 //! ambient SDK paths, private implementation dependencies, and unsafe/global client
-//! state before those bytes can be published or retained as evidence.
+//! state before those bytes can be published.
 
 use crate::{EngineDiagnostic, EngineDiagnosticCode};
 
@@ -23,8 +23,8 @@ pub enum ClientBoundaryArtifactKind {
     GeneratedRust,
     /// Generated Cargo or project policy.
     GeneratedManifest,
-    /// Checkpoint, provenance, or completeness evidence.
-    Evidence,
+    /// Generated control or policy data.
+    Control,
 }
 
 /// Rejects bytes which would expose private identity or weaken generated Rust policy.
@@ -99,14 +99,9 @@ fn contains_host_path(value: &str) -> bool {
 fn contains_ambient_or_private_dependency(value: &str) -> bool {
     value.contains("path =")
         || value.contains("path=")
-        || [
-            "dagger-codegen",
-            "dagger-sdk-engine",
-            "dagger-sdk-completeness",
-            "dagger-bootstrap",
-        ]
-        .iter()
-        .any(|package| value.contains(package))
+        || ["dagger-codegen", "dagger-sdk-engine", "dagger-bootstrap"]
+            .iter()
+            .any(|package| value.contains(package))
 }
 
 fn contains_unsafe_or_global_client(value: &str) -> bool {

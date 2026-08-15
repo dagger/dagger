@@ -19,8 +19,8 @@ use dagger_codegen::{CoreProjectionRequest, ProjectionPlan, project_core};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence};
 
-const TARGET: &[u8] = include_bytes!("../../../completeness/target.json");
-const SCHEMA: &[u8] = include_bytes!("../../../completeness/snapshots/schema.json");
+const TARGET: &[u8] = include_bytes!("../../../codegen/target.json");
+const SCHEMA: &[u8] = include_bytes!("../../../codegen/schema.json");
 
 fn exact_plan() -> &'static ProjectionPlan {
     static PLAN: OnceLock<ProjectionPlan> = OnceLock::new();

@@ -66,7 +66,7 @@ fn generated_modules_match_the_owned_manifest() {
     generated.sort();
 
     let manifest: serde_json::Value = serde_json::from_slice(
-        &fs::read(workspace.join("completeness/artifacts/core-codegen-bindings.json"))
+        &fs::read(workspace.join("codegen/generated.json"))
             .expect("binding manifest must be readable"),
     )
     .expect("binding manifest must be valid JSON");
@@ -141,7 +141,6 @@ fn handwritten_production_comments_do_not_embed_planning_metadata() {
         "dagger-codegen",
         "dagger-sdk",
         "dagger-sdk-macros",
-        "dagger-sdk-completeness",
     ] {
         let source_root = crates.join(crate_name).join("src");
         for path in rust_sources(&source_root) {
@@ -178,12 +177,10 @@ fn module_authoring_foundations_have_no_unchecked_execution_escape_hatches() {
         crates.join("dagger-sdk/src/module"),
         crates.join("dagger-sdk-macros/src"),
     ];
-    let mut sources = roots
+    let sources = roots
         .iter()
         .flat_map(|root| rust_sources(root))
         .collect::<Vec<_>>();
-    sources.push(crates.join("dagger-sdk-completeness/src/module_authoring.rs"));
-    sources.sort();
 
     for path in sources {
         let source = fs::read_to_string(&path).expect("authoring source must be UTF-8");
@@ -213,7 +210,6 @@ fn client_foundations_have_no_unchecked_or_process_global_escape_hatches() {
         crates.join("dagger-sdk/src/id_input.rs"),
         crates.join("dagger-sdk/src/query.rs"),
     ]);
-    sources.push(crates.join("dagger-sdk-completeness/src/client_generation.rs"));
     sources.sort();
 
     for path in sources {

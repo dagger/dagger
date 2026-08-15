@@ -15,7 +15,7 @@ use crate::target::CodegenTarget;
 
 use super::OperationKind;
 
-const CHECKED_CORE_SCHEMA: &[u8] = include_bytes!("../../../../completeness/snapshots/schema.json");
+const CHECKED_CORE_SCHEMA: &[u8] = include_bytes!("../../../../codegen/schema.json");
 
 static CHECKED_CORE_MANIFEST: OnceLock<Result<CoreCoordinateManifest, DiagnosticSet>> =
     OnceLock::new();

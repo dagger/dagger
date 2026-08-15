@@ -370,7 +370,7 @@ proptest! {
 #[test]
 fn generated_target_matches_checked_repository_metadata() {
     let target: serde_json::Value =
-        serde_json::from_str(include_str!("../../../completeness/target.json"))
+        serde_json::from_str(include_str!("../../../codegen/target.json"))
             .expect("the checked target metadata is valid JSON");
     assert_eq!(target["engine_version"], TARGET_ENGINE_VERSION);
     assert_eq!(target["rust_sdk_version"], TARGET_CLI_VERSION);

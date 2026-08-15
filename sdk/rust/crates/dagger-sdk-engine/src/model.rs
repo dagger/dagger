@@ -803,23 +803,3 @@ pub struct PackagedAssetManifest {
     /// Assets keyed by the same path carried inside each record.
     pub assets: BTreeMap<RelativeOperationPath, PackagedAsset>,
 }
-
-/// Exact engine/runtime coordinates carried by integration evidence.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EngineEvidenceSubject {
-    /// Exact target identity.
-    pub target: TargetIdentity,
-    /// Immutable engine descriptor digest.
-    pub engine_source_digest: Sha256Digest,
-    /// Packaged private asset digest.
-    pub packaged_assets_digest: Sha256Digest,
-    /// Public SDK dependency observed by generated projects.
-    pub sdk_dependency: PublishedSdkDependency,
-    /// Exact Rust compiler toolchain.
-    pub rust_toolchain: ExactRustToolchain,
-    /// Exact operation request identities proved by this subject.
-    pub operation_input_digests: BTreeSet<Sha256Digest>,
-    /// Exact operation manifest identities proved by this subject.
-    pub operation_manifest_digests: BTreeSet<Sha256Digest>,
-}

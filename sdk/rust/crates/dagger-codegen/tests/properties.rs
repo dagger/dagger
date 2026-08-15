@@ -5,8 +5,8 @@ use dagger_codegen::{CoreProjectionRequest, project_core, render_core};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence};
 
-const TARGET: &[u8] = include_bytes!("../../../completeness/target.json");
-const SCHEMA: &[u8] = include_bytes!("../../../completeness/snapshots/schema.json");
+const TARGET: &[u8] = include_bytes!("../../../codegen/target.json");
+const SCHEMA: &[u8] = include_bytes!("../../../codegen/schema.json");
 
 fn property_config() -> Config {
     Config {
@@ -25,7 +25,7 @@ proptest! {
     // Feature: rust-sdk-core-codegen, Property 3: Target identity gates all publication
     #[test]
     fn property_03_target_identity_gates_publication(
-        mutation in 0_u8..8,
+        mutation in 0_u8..6,
         byte_index in any::<usize>(),
         replacement in 1_u8..=u8::MAX,
     ) {
@@ -34,12 +34,10 @@ proptest! {
         let mut schema = SCHEMA.to_vec();
         match mutation {
             0 => mutate_string(&mut target_value, "dagger_revision"),
-            1 => mutate_string(&mut target_value, "go_sdk_revision"),
-            2 => mutate_string(&mut target_value, "sdk_contract_revision"),
-            3 => mutate_string(&mut target_value, "engine_version"),
-            4 => mutate_string(&mut target_value, "rust_version"),
-            5 => mutate_string(&mut target_value, "schema_digest"),
-            6 => {
+            1 => mutate_string(&mut target_value, "engine_version"),
+            2 => mutate_string(&mut target_value, "rust_version"),
+            3 => mutate_string(&mut target_value, "schema_digest"),
+            4 => {
                 target_value
                     .as_object_mut()
                     .expect("checked target must be an object")

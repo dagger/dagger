@@ -10,14 +10,14 @@ The core-schema generator owns only:
 - `crates/dagger-sdk/src/gen/`;
 - `crates/dagger-sdk/tests/core_projection.rs`;
 - `crates/dagger-sdk/tests/core_reachability.rs`; and
-- `completeness/artifacts/core-codegen-bindings.json`.
+- `codegen/generated.json`.
 
 Generated Rust files carry a machine-readable source header. The binding manifest binds
 the exact path set, byte and semantic digests, checked Dagger revision, and schema
 digest. Never edit an owned output or derived manifest by hand. Fix schema validation,
 projection, naming, documentation, rendering, or atomic update policy instead.
 
-Before maintenance, confirm `completeness/target.json`, the workspace version, lockfile,
+Before maintenance, confirm `codegen/target.json`, the workspace version, lockfile,
 and pinned Rust toolchain agree with the intended target.
 
 ## 2. Check and update generated output
@@ -29,7 +29,7 @@ cargo run -p dagger-bootstrap --bin dagger-rust --locked -- \
   generate --workspace . --check
 ```
 
-After an intentional generator, mapping, schema, or target change, update the complete
+After an intentional generator, schema, or target change, update the complete
 owned candidate once:
 
 ```console
@@ -55,14 +55,12 @@ workspace generation.
 A target refresh changes an immutable compatibility claim and is separate from ordinary
 renderer work:
 
-1. Update `completeness/target.json` with the exact Dagger version, full revision,
-   schema digest, CLI identities, Rust toolchain, and authority revisions.
-2. Capture schema through the completeness workflow; do not use a nearby engine or
-   hand-reserialize it.
-3. Re-extract the selected authorities and review inventory drift before changing a
-   classification.
-4. Review every changed mapping as a closed-set contract decision.
-5. Run the direct update, inspect the owned diff, and repeat local acceptance.
+1. Update `codegen/target.json` with the exact Dagger version, full revision, schema
+   digest, Rust SDK version, and Rust toolchain.
+2. Capture the exact target engine schema as `codegen/schema.json`; do not substitute a
+   nearby engine or hand-reserialize it.
+3. Run the direct update, inspect the generated source and compact ownership-manifest
+   diff, and repeat local acceptance.
 
 Changed or removed schema coordinates fail closed until their generated and
 compatibility policies are explicit. Never refresh a digest merely to make a check pass.
@@ -75,8 +73,8 @@ reviewed pre-update commit or repeat in a clean worktree. Restoring selected gen
 files can combine different source and manifest identities.
 
 After recovery, direct `--check` must pass. If it does not, compare target, schema,
-mappings, toolchain, and generator revision in that order. Compiler fix-ups and hand
-edits are not recovery tools.
+toolchain, and generator revision in that order. Compiler fix-ups and hand edits are
+not recovery tools.
 
 ## 5. Run engine-free acceptance
 
@@ -119,6 +117,17 @@ module to:
 Keep the package and engine build in one Dagger result so verification cannot select a
 different engine or workspace. A failure invalidates the candidate; stale output cannot
 validate it.
+
+Use a fresh Git checkout on the Linux builder; do not transfer a macOS worktree as a
+tar archive. Before any build, require this command to print nothing:
+
+```console
+find . -name '._*' -print
+```
+
+Do not run a bare `cargo package -p dagger-sdk`: its exact macro companion is
+intentionally absent from crates.io. `Build` first packages `dagger-sdk-macros`, then
+packages `dagger-sdk` with the local companion patch and validates the resulting pair.
 
 This path creates local artifacts only. It does not publish to crates.io, create a tag,
 or create a GitHub Release. Attaching the checked artifacts to a GitHub Release is a

@@ -32,7 +32,7 @@ use crate::{
     PostWorkRecord, PublishedSdkDependency, RelativeOperationPath, Sha256Digest, StableCoordinate,
 };
 
-const TARGET_DESCRIPTOR: &[u8] = include_bytes!("../../../completeness/target.json");
+const TARGET_DESCRIPTOR: &[u8] = include_bytes!("../../../codegen/target.json");
 
 /// Executes the closed post-work plans selected by the production operation runner.
 ///
@@ -275,7 +275,7 @@ pub async fn execute_operation_with_post_work<P: OperationPostWork>(
                 ArtifactKind::RustSource => crate::ClientBoundaryArtifactKind::GeneratedRust,
                 ArtifactKind::CargoManifest => crate::ClientBoundaryArtifactKind::GeneratedManifest,
                 ArtifactKind::ControlManifest | ArtifactKind::VcsPolicy => {
-                    crate::ClientBoundaryArtifactKind::Evidence
+                    crate::ClientBoundaryArtifactKind::Control
                 }
             };
             crate::validate_client_boundary(boundary, &artifact.content)?;
@@ -664,7 +664,7 @@ fn client_project_boundary(path: &RelativeOperationPath) -> crate::ClientBoundar
     } else if path.as_str().ends_with("Cargo.toml") {
         crate::ClientBoundaryArtifactKind::GeneratedManifest
     } else {
-        crate::ClientBoundaryArtifactKind::Evidence
+        crate::ClientBoundaryArtifactKind::Control
     }
 }
 

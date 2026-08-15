@@ -278,7 +278,7 @@ version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "clap",
  "dagger-codegen",
- "dagger-sdk-completeness",
+ "flate2",
  "fs4",
  "proc-macro2",
  "proptest",
@@ -288,7 +288,10 @@ dependencies = [
  "serde_json",
  "sha2",
  "syn 2.0.119",
+ "tar",
  "tempfile",
+ "thiserror 1.0.69",
+ "toml_edit",
 ]
 
 [[package]]
@@ -353,27 +356,6 @@ dependencies = [
  "url",
  "which",
  "zip",
-]
-
-[[package]]
-name = "dagger-sdk-completeness"
-version = "1.0.0-beta.11.rust.1"
-dependencies = [
- "clap",
- "dagger-codegen",
- "dagger-sdk",
- "dagger-sdk-engine",
- "flate2",
- "pretty_assertions",
- "proptest",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 1.0.69",
- "toml_edit",
 ]
 
 [[package]]

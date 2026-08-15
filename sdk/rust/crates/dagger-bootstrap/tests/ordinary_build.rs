@@ -39,7 +39,7 @@ fn valid_package_contract(seed: u16) -> (MetadataView, Vec<PackageArchive>) {
         source: None,
     });
     let macros = package("dagger-sdk-macros", &version, true);
-    let internal = package("dagger-sdk-completeness", &version, false);
+    let internal = package("dagger-bootstrap", &version, false);
 
     let sdk_archive = PackageArchive {
         file_name: format!("dagger-sdk-{version}.crate"),

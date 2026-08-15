@@ -82,7 +82,7 @@ func TestReusableEngineContentBoundaryIsGenerated(t *testing.T) {
 	}
 
 	generated := parseGoFile(t, "../../dagger.gen.go")
-	for _, function := range []string{"EngineContent", "EngineIntegration", "EngineEvidence", "Resolution"} {
+	for _, function := range []string{"EngineContent", "EngineIntegration", "Resolution"} {
 		if got := selectorCount(generated, function); got != 1 {
 			t.Fatalf("generated adapter must dispatch %s exactly once, got %d", function, got)
 		}
@@ -92,20 +92,13 @@ func TestReusableEngineContentBoundaryIsGenerated(t *testing.T) {
 	}
 }
 
-func TestEngineEvidenceOwnsTheCompleteClosedCaseSet(t *testing.T) {
+func TestEngineIntegrationOwnsTheClosedCaseSet(t *testing.T) {
 	t.Parallel()
 
 	source := parseGoFile(t, "../../main.go")
 	integration := findFunction(t, source, "EngineIntegration")
 	if got := identifierCount(integration, "engineIntegrationCases"); got < 2 {
 		t.Fatalf("EngineIntegration must validate and default from the one closed case inventory, got %d references", got)
-	}
-	evidence := findFunction(t, source, "EngineEvidence")
-	if got := identifierCount(evidence, "engineIntegrationCases"); got != 1 {
-		t.Fatalf("EngineEvidence must consume the complete case inventory exactly once, got %d", got)
-	}
-	if got := identifierCount(evidence, "requireCompleteEngineCaseSet"); got != 1 {
-		t.Fatalf("EngineEvidence must reject incomplete observations before publication")
 	}
 	want := []string{
 		"resolution",

@@ -1,2 +1,0 @@
-# Seeds for minimized Feature 2 scope and evidence-closure failures.
-cc 56a1509bf3667c3d3a99bce86e523649d93a22d3bbf67dc9ebec00022dea1061 # shrinks to scope_mutation = 0, routing_mutation = 1, outsider_status = 0, fingerprint_seed = 0

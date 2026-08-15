@@ -19,9 +19,8 @@ while remaining a behavioral reference for overlap. Established Rust conventions
 ownership, error handling, naming, safety, and ergonomics.
 
 These are peer authorities, not a global precedence list. Genuine incompatibility must
-remain visible and reviewed. See the executable
-[completeness contract](completeness/README.md) for the pinned source selections,
-classification model, staged refresh flow, and verification scope.
+remain visible and reviewed. The checked target and schema live under `codegen/`; the
+implementation and its ordinary tests remain the maintained authority.
 
 Historical Rust implementations and proposals, including pull request #12229, are
 useful reference material. They do not override the current engine contract, Go SDK behaviour,
@@ -40,8 +39,7 @@ or a better idiomatic Rust design.
 - `examples` contains executable examples and example applications.
 - `../../.dagger/modules/rust-client-dev` contains the Dagger-based development,
   generation, test, packaging, and complete-engine assembly tooling for this SDK.
-- `completeness` contains authored target and ledger inputs plus reproducible derived
-  artifacts for the Go-level completeness programme.
+- `codegen` contains the exact target, schema, and compact generated ownership manifest.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
 The focused built-in SDK build, case, and verification procedure is in
@@ -86,9 +84,9 @@ cargo deny check
 ```
 
 Use focused tests while iterating, but run the complete relevant set before submitting
-a pull request. Module-authoring and standalone-client checkpoints are explicitly
+a pull request. Module-authoring and standalone-client development is explicitly
 engine-free: use the production compilers, generated fixtures, recording transport,
-and typed checkpoint suites directly through Cargo. Reuse checked generated
+and typed test suites directly through Cargo. Reuse checked generated
 assets unless an owning source, schema, target, or generator digest changed. The
 standalone-client fixture materializes one SDK baseline and fans out isolated Cargo
 projects from it; investigate fixture sequencing and its owning input before a broader

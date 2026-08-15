@@ -9,8 +9,8 @@ use dagger_codegen::target::CodegenTarget;
 use dagger_codegen::{CoreProjectionRequest, project_core, render_core};
 use quote::ToTokens;
 
-const TARGET: &[u8] = include_bytes!("../../../completeness/target.json");
-const SCHEMA: &[u8] = include_bytes!("../../../completeness/snapshots/schema.json");
+const TARGET: &[u8] = include_bytes!("../../../codegen/target.json");
+const SCHEMA: &[u8] = include_bytes!("../../../codegen/schema.json");
 
 fn render() -> dagger_codegen::RenderedCandidate {
     let target = CodegenTarget::decode_exact(TARGET).expect("checked target must decode");

@@ -18,17 +18,15 @@ handle can outlive or bypass the client's lifecycle state.
   engine schema into Rust source. Generated output is reviewed through fixtures and is
   never edited by hand.
 - `crates/dagger-bootstrap` supports code-generation bootstrapping and is not a
-  public application dependency.
+  public application dependency. It also owns the small ordinary package/engine
+  checker used by release assembly.
 - `crates/dagger-sdk-engine` owns the private, data-only operation compiler, Cargo
   adoption, generated ownership, descriptor, runtime, and protocol contracts used by
   the engine adapter. It is deliberately absent from the public SDK dependency graph.
-- `crates/dagger-sdk-completeness` is workspace-private and derives the source
-  inventory, ledger, observations, and reports used to measure the Rust SDK against the
-  pinned Go SDK, engine schema, common SDK harness, and Rust policy.
 
 The public package graph is deliberately closed and acyclic: an application depends on
 `dagger-sdk`, which pins `dagger-sdk-macros` to the same exact version. Code generation,
-engine integration, bootstrap, and completeness crates cannot enter that graph.
+engine integration, and bootstrap crates cannot enter that graph.
 
 ## Standalone-client generation
 
@@ -78,7 +76,7 @@ and selects exactly one source in this order:
 2. an existing session identified by `DAGGER_SESSION_PORT` and
    `DAGGER_SESSION_TOKEN`;
 3. the configured `_EXPERIMENTAL_DAGGER_CLI_BIN`; or
-4. the exact CLI release compiled from the completeness target.
+4. the exact CLI release compiled from the checked codegen target.
 
 A present source is authoritative. Invalid existing-session values do not fall through
 to a CLI, and an invalid explicit CLI does not trigger a download. The sole compatibility
@@ -161,8 +159,7 @@ tokens, response bodies, command output, or opaque callback text.
 The stable surface is fenced by a normalized API manifest, compile-pass and
 compile-fail fixtures, denied rustdoc warnings, source-policy tests, deterministic
 properties, portable process/HTTP/archive/cache fixtures, and an isolated exact-target
-default-connector run. The completeness crate admits status changes only from
-machine-readable observations with exact target and capability scope.
+default-connector run.
 
 ## Built-in engine boundary
 
@@ -187,12 +184,9 @@ focused case workflow, and exact-target verification rules.
 
 ## Implementation closure and completed-engine verification
 
-Local Feature closure is Rust-first and engine-free. A closed typed planner admits only
-scoped Cargo actions, direct Rust-owned Go ABI tests, generated drift/ownership checks,
-package policy, security, and clean-output inspection. It records elapsed time and the
-checked-asset decision, rejects Dagger, engines, network graphs, unrelated SDKs, and
-distribution builds, and admits closure only when every required gate passed against
-one implementation identity.
+Local development is Rust-first and engine-free. Normal Cargo checks, direct Rust-owned
+Go ABI tests, generated drift/ownership checks, package policy, security, and
+clean-output inspection run without an engine.
 
 Release readiness then packages exactly the two public crates, assembles the complete
 Dagger engine with the Rust SDK content, and runs one isolated external Rust consumer

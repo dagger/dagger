@@ -20,14 +20,17 @@ path = "src/main.rs"
 
 [dependencies]
 dagger-codegen = { workspace = true }
-dagger-sdk-completeness = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile.workspace = true
 clap.workspace = true
+flate2.workspace = true
 fs4.workspace = true
 sha2.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+toml_edit.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true

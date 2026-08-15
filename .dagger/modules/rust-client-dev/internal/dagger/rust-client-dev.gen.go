@@ -57,18 +57,17 @@ func (r *Query) RustClientDev(ws *Workspace, opts ...RustClientDevOpts) *RustCli
 type RustClientDev struct { // rust-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
-	cargoCheck            *Void
-	cargoClippy           *Void
-	cargoDeny             *Void
-	cargoDoc              *Void
-	cargoFmt              *Void
-	completenessIntegrity *Void
-	coreConformance       *string
-	engineUnit            *Void
-	examples              *Void
-	generatedClientCheck  *Void
-	id                    *ID
-	test                  *Void
+	cargoCheck               *Void
+	cargoClippy              *Void
+	cargoDeny                *Void
+	cargoDoc                 *Void
+	cargoFmt                 *Void
+	engineUnit               *Void
+	examples                 *Void
+	generatedClientCheck     *Void
+	generatedCoreIntegration *Void
+	id                       *ID
+	test                     *Void
 }
 type WithRustClientDevFunc func(r *RustClientDev) *RustClientDev
 
@@ -181,53 +180,6 @@ func (r *RustClientDev) Changes() *Changeset {
 	}
 }
 
-// CompletenessArtifacts captures the current engine schema and stages canonical derived files.
-//
-// The active workspace is immutable: callers receive only the Changeset between the original
-// input and a graph-local candidate tree.
-func (r *RustClientDev) CompletenessArtifacts() *Changeset {
-	q := r.query.Select("completenessArtifacts")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// CompletenessHarness runs the exact pinned sdk-sdk baseline profile.
-//
-// Subject failures are captured as normalized outcomes and remain completeness blockers. Only
-// acquisition, checksum, invocation, or normalization failures fail this callable operation.
-func (r *RustClientDev) CompletenessHarness() *File {
-	q := r.query.Select("completenessHarness")
-
-	return &File{
-		query: q,
-	}
-}
-
-// CompletenessIntegrity reconstructs the F1 contract from its pinned local inputs.
-func (r *RustClientDev) CompletenessIntegrity(ctx context.Context) error {
-	if r.completenessIntegrity != nil {
-		return nil
-	}
-	q := r.query.Select("completenessIntegrity")
-
-	return q.Execute(ctx)
-}
-
-// Run focused generated-client observations against the immutable checked engine source.
-func (r *RustClientDev) CoreConformance(ctx context.Context) (string, error) {
-	if r.coreConformance != nil {
-		return *r.coreConformance, nil
-	}
-	q := r.query.Select("coreConformance")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // RustClientDevDevContainerOpts contains options for RustClientDev.DevContainer
 type RustClientDevDevContainerOpts struct {
 	// Install workspace dependencies and any tools required
@@ -291,6 +243,16 @@ func (r *RustClientDev) GeneratedClientCheck(ctx context.Context) error {
 		return nil
 	}
 	q := r.query.Select("generatedClientCheck")
+
+	return q.Execute(ctx)
+}
+
+// Exercise representative generated Core operations against the exact target engine.
+func (r *RustClientDev) GeneratedCoreIntegration(ctx context.Context) error {
+	if r.generatedCoreIntegration != nil {
+		return nil
+	}
+	q := r.query.Select("generatedCoreIntegration")
 
 	return q.Execute(ctx)
 }
@@ -376,32 +338,17 @@ func (r *RustClientDev) WithGeneratedClient() *RustClientDev {
 type RustClientDevRustEngineContent struct { // rust-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
-	completenessTargetDigest *string
-	descriptorDigest         *string
-	engineEvidence           *string
-	engineIntegration        *string
-	id                       *ID
-	manifestDigest           *string
-	mappingDigest            *string
-	resolution               *string
+	descriptorDigest  *string
+	engineIntegration *string
+	id                *ID
+	manifestDigest    *string
+	resolution        *string
 }
 
 func (r *RustClientDevRustEngineContent) WithGraphQLQuery(q *querybuilder.Selection) *RustClientDevRustEngineContent {
 	return &RustClientDevRustEngineContent{
 		query: q,
 	}
-}
-
-func (r *RustClientDevRustEngineContent) CompletenessTargetDigest(ctx context.Context) (string, error) {
-	if r.completenessTargetDigest != nil {
-		return *r.completenessTargetDigest, nil
-	}
-	q := r.query.Select("completenessTargetDigest")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 func (r *RustClientDevRustEngineContent) Content() *Directory {
@@ -417,22 +364,6 @@ func (r *RustClientDevRustEngineContent) DescriptorDigest(ctx context.Context) (
 		return *r.descriptorDigest, nil
 	}
 	q := r.query.Select("descriptorDigest")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// EngineEvidence runs the complete closed case set before publishing target-bound evidence.
-//
-// A caller cannot supply selectors here: focused case subsets are useful during development but
-// are never equivalent to the complete matrix admitted by the completeness contract.
-func (r *RustClientDevRustEngineContent) EngineEvidence(ctx context.Context) (string, error) {
-	if r.engineEvidence != nil {
-		return *r.engineEvidence, nil
-	}
-	q := r.query.Select("engineEvidence")
 
 	var response string
 
@@ -509,18 +440,6 @@ func (r *RustClientDevRustEngineContent) ManifestDigest(ctx context.Context) (st
 		return *r.manifestDigest, nil
 	}
 	q := r.query.Select("manifestDigest")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *RustClientDevRustEngineContent) MappingDigest(ctx context.Context) (string, error) {
-	if r.mappingDigest != nil {
-		return *r.mappingDigest, nil
-	}
-	q := r.query.Select("mappingDigest")
 
 	var response string
 

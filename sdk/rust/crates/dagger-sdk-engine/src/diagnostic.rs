@@ -72,8 +72,6 @@ pub enum EngineDiagnosticCode {
     ClientRootOverlap,
     /// A generated standalone-client fixture failed its scoped Rust phase.
     ClientFixtureFailed,
-    /// Standalone-client checkpoint evidence is missing, stale, or incomplete.
-    ClientCheckpointEvidenceInvalid,
     /// A child process was cancelled and reaped.
     OperationCancelled,
     /// Checked runtime generation is missing a required committed artifact.
@@ -131,7 +129,6 @@ impl EngineDiagnosticCode {
         Self::ClientProjectConflict,
         Self::ClientRootOverlap,
         Self::ClientFixtureFailed,
-        Self::ClientCheckpointEvidenceInvalid,
         Self::OperationCancelled,
         Self::GeneratedMissing,
         Self::GeneratedStale,

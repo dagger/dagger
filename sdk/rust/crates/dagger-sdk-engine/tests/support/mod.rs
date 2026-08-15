@@ -46,7 +46,6 @@ pub struct ModelCorpus {
     pub runtime_plan: RuntimeBuildPlan,
     pub asset: PackagedAsset,
     pub asset_manifest: PackagedAssetManifest,
-    pub evidence: EngineEvidenceSubject,
 }
 
 pub fn model_corpus() -> impl Strategy<Value = ModelCorpus> {
@@ -337,20 +336,6 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         format_version: FormatVersion,
         assets,
     };
-    let mut operation_input_digests = BTreeSet::new();
-    operation_input_digests.insert(manifest.input_digest.clone());
-    let mut operation_manifest_digests = BTreeSet::new();
-    operation_manifest_digests.insert(runtime_project.operation_manifest_digest.clone());
-    let evidence = EngineEvidenceSubject {
-        target: target.clone(),
-        engine_source_digest: generator.engine_source_digest.clone(),
-        packaged_assets_digest: engine_source.packaged_asset_manifest_digest.clone(),
-        sdk_dependency: dependency.clone(),
-        rust_toolchain: value("1.97.1"),
-        operation_input_digests,
-        operation_manifest_digests,
-    };
-
     ModelCorpus {
         target,
         schema,
@@ -385,7 +370,6 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         runtime_plan,
         asset,
         asset_manifest,
-        evidence,
     }
 }
 

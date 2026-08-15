@@ -503,33 +503,29 @@ proptest! {
 
     // Feature: rust-sdk-core-codegen, Property 27: Bootstrap input failure is diagnostic
     #[test]
-    fn property_27_bootstrap_input_failure_diagnostic(kind in 0_u8..11) {
+    fn property_27_bootstrap_input_failure_diagnostic(kind in 0_u8..9) {
         let fixture = Fixture::new();
         let secret = b"super-secret-fixture-value";
         let mut request = fixture.request(GenerateMode::Check);
-        let target_path = fixture.workspace.join("completeness/target.json");
-        let schema_path = fixture.workspace.join("completeness/snapshots/schema.json");
-        let ledger_path = fixture.workspace.join("completeness/artifacts/ledger.json");
-        let mappings_path = fixture.workspace.join("completeness/core-codegen-mappings.json");
+        let target_path = fixture.workspace.join("codegen/target.json");
+        let schema_path = fixture.workspace.join("codegen/schema.json");
         let manifest_path = fixture.workspace.join(BINDING_MANIFEST);
 
         match kind {
             0 => write(&target_path, b"{super-secret-fixture-value"),
             1 => write(&schema_path, &[0xff, 0xfe, 0xfd]),
-            2 => write(&ledger_path, secret),
-            3 => write(&mappings_path, b"[]"),
-            4 => write(&manifest_path, secret),
-            5 => {
+            2 => write(&manifest_path, secret),
+            3 => {
                 fs::remove_file(&schema_path).expect("schema fixture must exist");
                 fs::create_dir(&schema_path).expect("schema directory fixture must be created");
             }
             #[cfg(unix)]
-            6 => {
+            4 => {
                 use std::os::unix::fs::symlink;
                 fs::remove_file(&schema_path).expect("schema fixture must exist");
-                symlink("../../target.json", &schema_path).expect("schema symlink must be created");
+                symlink("target.json", &schema_path).expect("schema symlink must be created");
             }
-            7 => {
+            5 => {
                 let parent = fixture.workspace.parent().expect("workspace must have a parent");
                 let outside = parent.join("outside-target.json");
                 write(&outside, support::TARGET);
@@ -539,12 +535,12 @@ proptest! {
                     ..GenerateOverrides::default()
                 };
             }
-            8 => {
+            6 => {
                 fs::remove_file(&target_path).expect("target fixture must exist");
                 fs::create_dir(&target_path).expect("target directory fixture must be created");
             }
             #[cfg(unix)]
-            10 => {
+            7 => {
                 use std::os::unix::fs::PermissionsExt as _;
                 fs::set_permissions(&target_path, fs::Permissions::from_mode(0o000))
                     .expect("target permissions must be changed");
@@ -552,7 +548,7 @@ proptest! {
             _ => {}
         }
 
-        let before = if kind == 10 { None } else { Some(record_files(&fixture.workspace)) };
+        let before = if kind == 7 { None } else { Some(record_files(&fixture.workspace)) };
         let first = execute_with(request.clone(), &RejectFormatter, &NoopPublicationObserver)
             .expect_err("invalid input or formatter rejection must fail");
         let second = execute_with(request, &RejectFormatter, &NoopPublicationObserver)

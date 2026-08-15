@@ -18,7 +18,7 @@ proptest! {
     #[test]
     fn property_30_canonical_models_round_trip_without_semantic_loss(
         corpus in model_corpus(),
-        invalid_kind in 0_u8..16,
+        invalid_kind in 0_u8..15,
     ) {
         round_trip_corpus(&corpus);
         reject_invalid_boundary(&corpus, invalid_kind);
@@ -59,7 +59,6 @@ fn round_trip_corpus(corpus: &ModelCorpus) {
     round_trip(&corpus.runtime_plan);
     round_trip(&corpus.asset);
     round_trip(&corpus.asset_manifest);
-    round_trip(&corpus.evidence);
 
     digest_round_trip(DigestDomain::OperationRequest, &corpus.request);
     digest_round_trip(DigestDomain::OperationManifest, &corpus.manifest);
@@ -127,10 +126,7 @@ fn reject_invalid_boundary(corpus: &ModelCorpus, invalid_kind: u8) {
         8 => reject::<RuntimeProvenanceInput>(&corpus.provenance_input, |value| {
             value["base_image_digest"] = json!("SHA256:BAD");
         }),
-        9 => reject::<EngineEvidenceSubject>(&corpus.evidence, |value| {
-            value["operation_input_digests"] = json!(["sha256:short"]);
-        }),
-        10 => reject::<PackagedAssetManifest>(&corpus.asset_manifest, |value| {
+        9 => reject::<PackagedAssetManifest>(&corpus.asset_manifest, |value| {
             let assets = value["assets"].as_object_mut().unwrap();
             let (_, asset) = assets.iter().next().unwrap();
             let mut asset = asset.clone();
@@ -138,20 +134,20 @@ fn reject_invalid_boundary(corpus: &ModelCorpus, invalid_kind: u8) {
             assets.clear();
             assets.insert("../private/tool".into(), asset);
         }),
-        11 => {
+        10 => {
             let non_canonical = serde_json::to_vec(&corpus.request).unwrap();
             assert!(decode_canonical::<OperationRequest>(&non_canonical).is_err());
         }
-        12 => reject::<ClientInitializationRequest>(&corpus.client_initialization, |value| {
+        11 => reject::<ClientInitializationRequest>(&corpus.client_initialization, |value| {
             value["client_root"] = json!("../escape");
         }),
-        13 => reject::<ClientProjectIdentity>(&corpus.client_project, |value| {
+        12 => reject::<ClientProjectIdentity>(&corpus.client_project, |value| {
             value["package_name"] = json!("async");
         }),
-        14 => reject::<OperationManifest>(&corpus.client_operation_manifest, |value| {
+        13 => reject::<OperationManifest>(&corpus.client_operation_manifest, |value| {
             value["client"]["module"]["resolved_pin"] = json!("main");
         }),
-        15 => reject::<EngineExecutionRequest>(&corpus.client_execution_request, |value| {
+        14 => reject::<EngineExecutionRequest>(&corpus.client_execution_request, |value| {
             value["request_kind"] = json!("initialize-everything");
         }),
         _ => unreachable!(),

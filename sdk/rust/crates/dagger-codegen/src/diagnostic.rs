@@ -70,16 +70,12 @@ pub enum DiagnosticCode {
     GeneratedDocumentationInvalid,
     /// Generated provenance is invalid.
     GeneratedProvenanceInvalid,
-    /// Completeness capability scope changed unexpectedly.
-    CapabilityScopeChanged,
     /// A capability has no generated binding.
     CapabilityBindingMissing,
     /// A capability has more than one generated binding.
     CapabilityBindingDuplicate,
     /// A capability implementation fingerprint changed unexpectedly.
     CapabilityFingerprintMismatch,
-    /// Capability evidence is incomplete.
-    CapabilityEvidenceIncomplete,
     /// The pinned formatter rejected generated source.
     GeneratedFormatFailed,
     /// Checked generated output differs from the candidate.
@@ -132,11 +128,9 @@ impl DiagnosticCode {
         Self::RustNameCollision,
         Self::GeneratedDocumentationInvalid,
         Self::GeneratedProvenanceInvalid,
-        Self::CapabilityScopeChanged,
         Self::CapabilityBindingMissing,
         Self::CapabilityBindingDuplicate,
         Self::CapabilityFingerprintMismatch,
-        Self::CapabilityEvidenceIncomplete,
         Self::GeneratedFormatFailed,
         Self::GeneratedOutputDrift,
         Self::GeneratedPublicationFailed,

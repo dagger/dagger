@@ -3,13 +3,12 @@
 `dagger-codegen` is the schema compiler used to build the generated client surface of
 the [Dagger Rust SDK](https://github.com/dagger/dagger/tree/main/sdk/rust). It is
 development tooling for the SDK rather than an application-facing client library.
-Application authors should depend on
-[`dagger-sdk`](https://crates.io/crates/dagger-sdk).
+Application authors should use the two repository release artifacts described in the
+[`dagger-sdk` README](../dagger-sdk/README.md).
 
 The crate owns the pure part of generation:
 
-- validating the reviewed Dagger, engine, schema, Go SDK, `sdk-sdk`, Rust SDK, and
-  toolchain identities;
+- validating the reviewed Dagger, engine, schema, Rust SDK, and toolchain identities;
 - checking that bounded introspection bytes match the target's SHA-256 digest;
 - compiling raw introspection into an ordered canonical schema with exact GraphQL
   wire names, recursive nullability, defaults, directives, documentation, and source
@@ -28,8 +27,8 @@ catalog by identity, emits a collision-free `dagger_client::<module>` namespace,
 never merges a selected module's dependencies. Each dependency requires its own bound
 client and ownership manifest.
 
-It deliberately has no filesystem, process, network, engine-session, publication, or
-completeness-ledger authority. Repository input discovery, formatting, comparison,
+It deliberately has no filesystem, process, network, engine-session, or publication
+authority. Repository input discovery, formatting, comparison,
 and transactional publication belong to `dagger-bootstrap`; runtime query execution
 belongs to `dagger-sdk`.
 
@@ -44,7 +43,7 @@ reinterpreted by that pipeline's templates.
 Canonical maps and sets are ordered by their exact GraphQL wire identities. Equivalent
 introspection input order therefore produces byte-identical candidate output. The
 crate performs no repository writes; callers must complete all validation, formatting,
-completeness, and ownership checks before publishing generated files.
+and ownership checks before publishing generated files.
 
 ## Development status
 

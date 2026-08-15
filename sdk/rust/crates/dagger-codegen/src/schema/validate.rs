@@ -1836,8 +1836,8 @@ mod tests {
 
     use super::validate_response;
 
-    const TARGET_BYTES: &[u8] = include_bytes!("../../../../completeness/target.json");
-    const SCHEMA_BYTES: &[u8] = include_bytes!("../../../../completeness/snapshots/schema.json");
+    const TARGET_BYTES: &[u8] = include_bytes!("../../../../codegen/target.json");
+    const SCHEMA_BYTES: &[u8] = include_bytes!("../../../../codegen/schema.json");
 
     static TARGET: LazyLock<CodegenTarget> = LazyLock::new(|| {
         CodegenTarget::decode_exact(TARGET_BYTES).expect("checked target must decode")

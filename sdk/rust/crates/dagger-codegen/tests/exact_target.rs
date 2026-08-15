@@ -4,8 +4,8 @@ use dagger_codegen::diagnostic::DiagnosticCode;
 use dagger_codegen::target::CodegenTarget;
 use dagger_codegen::{CoreProjectionRequest, project_core, render_core};
 
-const TARGET: &[u8] = include_bytes!("../../../completeness/target.json");
-const SCHEMA: &[u8] = include_bytes!("../../../completeness/snapshots/schema.json");
+const TARGET: &[u8] = include_bytes!("../../../codegen/target.json");
+const SCHEMA: &[u8] = include_bytes!("../../../codegen/schema.json");
 
 #[test]
 fn checked_target_compiles_complete_coordinate_inventory() {

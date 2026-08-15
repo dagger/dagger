@@ -39,8 +39,6 @@ where
         fixture_root: arguments.get_one::<PathBuf>("fixture-root").cloned(),
         target: arguments.get_one::<PathBuf>("target").cloned(),
         schema: arguments.get_one::<PathBuf>("schema").cloned(),
-        ledger: arguments.get_one::<PathBuf>("ledger").cloned(),
-        mappings: arguments.get_one::<PathBuf>("mappings").cloned(),
         manifest: arguments.get_one::<PathBuf>("manifest").cloned(),
     };
 
@@ -73,8 +71,6 @@ fn command() -> Command {
                 .arg(hidden_path("fixture-root"))
                 .arg(hidden_path("target"))
                 .arg(hidden_path("schema"))
-                .arg(hidden_path("ledger"))
-                .arg(hidden_path("mappings"))
                 .arg(hidden_path("manifest")),
         )
 }

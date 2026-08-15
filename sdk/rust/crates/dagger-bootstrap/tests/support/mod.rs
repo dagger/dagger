@@ -12,10 +12,8 @@ use dagger_bootstrap::generate::{ArtifactPath, GenerateMode, GenerateOverrides, 
 use dagger_codegen::target::CodegenTarget;
 use tempfile::TempDir;
 
-pub const TARGET: &[u8] = include_bytes!("../../../../completeness/target.json");
-pub const SCHEMA: &[u8] = include_bytes!("../../../../completeness/snapshots/schema.json");
-const LEDGER: &[u8] = include_bytes!("../../../../completeness/artifacts/ledger.json");
-const MAPPINGS: &[u8] = include_bytes!("../../../../completeness/core-codegen-mappings.json");
+pub const TARGET: &[u8] = include_bytes!("../../../../codegen/target.json");
+pub const SCHEMA: &[u8] = include_bytes!("../../../../codegen/schema.json");
 const TOOLCHAIN: &[u8] = include_bytes!("../../../../rust-toolchain.toml");
 
 pub struct Fixture {
@@ -30,29 +28,15 @@ impl Fixture {
         fs::create_dir_all(workspace.join("target"))
             .expect("fixture target directory must be created");
         write(&workspace.join("rust-toolchain.toml"), TOOLCHAIN);
-        write(&workspace.join("completeness/target.json"), TARGET);
-        write(
-            &workspace.join("completeness/snapshots/schema.json"),
-            SCHEMA,
-        );
-        write(
-            &workspace.join("completeness/artifacts/ledger.json"),
-            LEDGER,
-        );
-        write(
-            &workspace.join("completeness/core-codegen-mappings.json"),
-            MAPPINGS,
-        );
+        write(&workspace.join("codegen/target.json"), TARGET);
+        write(&workspace.join("codegen/schema.json"), SCHEMA);
         let target = target();
         let empty = FormattedArtifactSet::from_bytes(&target, BTreeMap::new(), "fixture")
             .expect("empty formatted set must be valid");
         let manifest = ArtifactManifest::from_artifacts(&target, &empty)
             .encode()
             .expect("empty manifest must encode");
-        write(
-            &workspace.join("completeness/artifacts/core-codegen-bindings.json"),
-            &manifest,
-        );
+        write(&workspace.join("codegen/generated.json"), &manifest);
         Self {
             _root: root,
             workspace,
