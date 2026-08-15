@@ -9,6 +9,7 @@ service Git {
   rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
   rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
   rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
+  rpc PackWorktree(PackWorktreeRequest) returns (stream PackWorktreeResponse);
 }
 
 message GitCredentialRequest {
@@ -98,6 +99,39 @@ message PackCheckoutMetadata {
   ErrorInfo error = 4;
 }
 
+// PackWorktreeRequest asks the client for the git-visible working-tree delta
+// relative to HEAD. The payload is a binary git patch containing tracked,
+// staged, and ordinary untracked nonignored files. Ignored files and contents
+// inside untracked nested repositories are deliberately omitted, matching
+// `git clean -fd` and GitRepository.uncommitted semantics.
+message PackWorktreeRequest {
+  string checkout_path = 1;
+  // expected_head_sha pins the patch to the canonical checkout already packed
+  // by the engine. A moved checkout reports HEAD_MISMATCH instead of producing
+  // a delta against a different commit.
+  string expected_head_sha = 2;
+}
+
+// PackWorktreeResponse streams one metadata message first, then binary patch
+// bytes in chunks.
+message PackWorktreeResponse {
+  oneof msg {
+    PackWorktreeMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PackWorktreeMetadata {
+  // head_sha anchors the patch and must match the canonical checkout to which
+  // the engine applies it.
+  string head_sha = 1;
+  // nested_repositories are untracked repository roots omitted from the patch.
+  // The engine recreates lightweight repository markers at these boundaries so
+  // later workspace overlays beneath them remain invisible to the outer repo.
+  repeated string nested_repositories = 2;
+  ErrorInfo error = 3;
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -109,6 +143,7 @@ message ErrorInfo {
     HEAD_MISMATCH = 6;
     NOT_A_REPO = 7;
     PACK_FAILED = 8;
+    WORKTREE_UNSUPPORTED = 9;
 }
   ErrorType type = 1;
   string message = 2;

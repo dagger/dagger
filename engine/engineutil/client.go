@@ -494,6 +494,7 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 const (
 	checkoutStateMethod = "/dagger.git.Git/CheckoutState"
 	packCheckoutMethod  = "/dagger.git.Git/PackCheckout"
+	packWorktreeMethod  = "/dagger.git.Git/PackWorktree"
 )
 
 // ErrGitPackUnsupported reports that the client cannot pack a checkout with
@@ -501,6 +502,10 @@ const (
 // git binary. Callers may degrade to whatever git state the synced tree
 // itself carries.
 var ErrGitPackUnsupported = errors.New("client cannot pack git checkouts")
+
+// ErrGitWorktreeUnsupported reports that the client cannot provide a packed
+// working-tree delta. Callers may fall back to syncing the checkout directory.
+var ErrGitWorktreeUnsupported = errors.New("client cannot pack git worktrees")
 
 // GitCheckoutState asks the client for a digest of a local checkout's current
 // git state (HEAD, symbolic HEAD, branch and tag refs), resolved by the
@@ -620,6 +625,84 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*Git
 	}
 	if pack.HeadSHA != "" && len(pack.Bundle) == 0 {
 		return nil, fmt.Errorf("missing bundle for checkout at %s", pack.HeadSHA)
+	}
+	return pack, nil
+}
+
+// GitWorktreePack is a checkout's git-visible working-tree delta relative to
+// HeadSHA. Patch is a binary git patch. NestedRepositories are omitted from the
+// patch but retain their boundaries when it is materialized engine-side.
+type GitWorktreePack struct {
+	HeadSHA            string
+	NestedRepositories []string
+	Patch              []byte
+}
+
+// PackGitWorktree asks the client to stream the working-tree delta relative to
+// expectedHeadSHA. Older clients and checkout states without a canonical HEAD
+// report ErrGitWorktreeUnsupported so callers can retain the directory-sync
+// fallback.
+func (c *Client) PackGitWorktree(ctx context.Context, checkoutPath, expectedHeadSHA string) (*GitWorktreePack, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(packWorktreeMethod) {
+		return nil, ErrGitWorktreeUnsupported
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).PackWorktree(ctx, &git.PackWorktreeRequest{
+		CheckoutPath:    checkoutPath,
+		ExpectedHeadSha: expectedHeadSHA,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open worktree pack stream: %w", err)
+	}
+
+	var pack *GitWorktreePack
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive worktree pack: %w", err)
+		}
+		switch msg := resp.Msg.(type) {
+		case *git.PackWorktreeResponse_Metadata:
+			if pack != nil {
+				return nil, fmt.Errorf("received more than one worktree metadata message")
+			}
+			if errInfo := msg.Metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND, git.WORKTREE_UNSUPPORTED:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitWorktreeUnsupported)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+			pack = &GitWorktreePack{
+				HeadSHA:            msg.Metadata.HeadSha,
+				NestedRepositories: append([]string(nil), msg.Metadata.NestedRepositories...),
+			}
+		case *git.PackWorktreeResponse_Chunk:
+			if pack == nil {
+				return nil, fmt.Errorf("received worktree patch before metadata")
+			}
+			pack.Patch = append(pack.Patch, msg.Chunk...)
+		}
+	}
+	if pack == nil {
+		return nil, fmt.Errorf("missing worktree pack metadata message")
+	}
+	if pack.HeadSHA != expectedHeadSHA {
+		return nil, fmt.Errorf("worktree pack HEAD %s does not match expected %s", pack.HeadSHA, expectedHeadSHA)
 	}
 	return pack, nil
 }
