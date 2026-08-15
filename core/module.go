@@ -514,10 +514,26 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 	return nil
 }
 
+func nameMatches(pattern string, names ...string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(s)
+		s = strings.ReplaceAll(s, "-", "")
+		s = strings.ReplaceAll(s, "_", "")
+		return s
+	}
+	p := norm(pattern)
+	for _, name := range names {
+		if matched, err := filepath.Match(p, norm(name)); err == nil && matched {
+			return true
+		}
+	}
+	return false
+}
+
 func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
 	for _, fn := range obj.Functions {
 		fnSelf := fn.Self()
-		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
+		if nameMatches(name, fnSelf.OriginalName, fnSelf.Name) {
 			return fn, true
 		}
 	}
@@ -527,7 +543,7 @@ func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.Object
 func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
 	for _, arg := range fn.Args {
 		argSelf := arg.Self()
-		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
+		if nameMatches(name, argSelf.OriginalName, argSelf.Name) {
 			return arg, true
 		}
 	}
@@ -568,41 +584,57 @@ func (mod *Module) mainObjectTypeDefResult() (dagql.ObjectResult[*TypeDef], bool
 	return mod.objectTypeDefResultByOriginalName(name)
 }
 
-func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeDef], dagql.ObjectResult[*Function], bool) {
+type customizationTargetMatch struct {
+	objDef      dagql.ObjectResult[*TypeDef]
+	fn          dagql.ObjectResult[*Function]
+	constructor bool
+}
+
+func (mod *Module) customizationTargets(path []string) []customizationTargetMatch {
 	objDef, ok := mod.mainObjectTypeDefResult()
 	if !ok {
-		return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+		return nil
 	}
 	obj := objDef.Self().AsObject.Value.Self()
 	if len(path) == 0 {
 		if !obj.Constructor.Valid {
-			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+			return nil
 		}
-		return objDef, obj.Constructor.Value, true
+		return []customizationTargetMatch{{objDef: objDef, fn: obj.Constructor.Value, constructor: true}}
+	}
+	if len(path) == 1 {
+		var matches []customizationTargetMatch
+		for _, fn := range obj.Functions {
+			fnSelf := fn.Self()
+			if nameMatches(path[0], fnSelf.OriginalName, fnSelf.Name) {
+				matches = append(matches, customizationTargetMatch{objDef: objDef, fn: fn})
+			}
+		}
+		return matches
 	}
 	for i, segment := range path {
 		fn, ok := functionResultByOriginalName(obj, segment)
 		if !ok {
-			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+			return nil
 		}
 		if i == len(path)-1 {
-			return objDef, fn, false
+			return []customizationTargetMatch{{objDef: objDef, fn: fn}}
 		}
 		returnType := fn.Self().ReturnType.Self()
 		if returnType == nil || !returnType.AsObject.Valid {
-			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+			return nil
 		}
 		nextObjDef, ok := mod.objectTypeDefResultByOriginalName(returnType.AsObject.Value.Self().OriginalName)
 		if !ok {
 			nextObjDef, ok = mod.objectTypeDefResultByName(returnType.AsObject.Value.Self().Name)
 			if !ok {
-				return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+				return nil
 			}
 		}
 		objDef = nextObjDef
 		obj = objDef.Self().AsObject.Value.Self()
 	}
-	return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
+	return nil
 }
 
 func (mod *Module) patchFunctionArg(
@@ -637,7 +669,6 @@ func (mod *Module) patchFunctionArg(
 	return updatedFn, !sameAttachedResult(updatedFn, fn), nil
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag *dagql.Server, customizations []*modules.ModuleConfigArgument) error {
 	if len(customizations) == 0 {
 		return nil
@@ -646,7 +677,36 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 		if cust == nil {
 			continue
 		}
-		objDef, fn, constructor := mod.customizationTarget(cust.Function)
+		var snapshots [][]string
+		for _, m := range mod.customizationTargets(cust.Function) {
+			if m.constructor {
+				snapshots = append(snapshots, nil)
+				continue
+			}
+			if len(cust.Function) <= 1 {
+				snapshots = append(snapshots, []string{m.fn.Self().OriginalName})
+			} else {
+				snapshots = append(snapshots, cust.Function)
+			}
+		}
+		if err := mod.applyLegacyCustomizationToTargets(ctx, dag, cust, snapshots); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+func (mod *Module) applyLegacyCustomizationToTargets(ctx context.Context, dag *dagql.Server, cust *modules.ModuleConfigArgument, snapshots [][]string) error {
+	for _, snapshot := range snapshots {
+		fresh := mod.customizationTargets(snapshot)
+		if len(fresh) == 0 {
+			continue
+		}
+		target := fresh[0]
+		objDef := target.objDef
+		fn := target.fn
+		constructor := target.constructor
 		if !objDef.Self().AsObject.Valid {
 			continue
 		}
