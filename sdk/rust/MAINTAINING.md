@@ -103,37 +103,7 @@ owned-path confinement, checksum verification, and credential-safe diagnostics.
 
 ## 6. Assemble and retrieve artifacts
 
-Commit the complete approved source and documentation state first. Build only from that
-exact clean detached commit, with no `._*` files. Use the ordinary Rust SDK Dagger
-module to:
-
-1. package exactly `dagger-sdk-macros` and `dagger-sdk`;
-2. build the Rust SDK engine content;
-3. compose a complete `linux/amd64` engine containing that content;
-4. run one isolated external Rust consumer against the completed engine;
-5. export the two `.crate` files and complete engine OCI archive; and
-6. create and independently verify `SHA256SUMS` over those three artifacts.
-
-Keep the package and engine build in one Dagger result so verification cannot select a
-different engine or workspace. A failure invalidates the candidate; stale output cannot
-validate it.
-
-Use a fresh Git checkout on the Linux builder; do not transfer a macOS worktree as a
-tar archive. Before any build, require this command to print nothing:
-
-```console
-find . -name '._*' -print
-```
-
-Do not run a bare `cargo package -p dagger-sdk`: its exact macro companion is
-intentionally absent from crates.io. `Build` first packages `dagger-sdk-macros`, then
-packages `dagger-sdk` with the local companion patch and validates the resulting pair.
-
-On `dag-rust-xl`, recheck `/vendor/docker/docker version` before the build. The Docker
-socket can be mounted while the bundled CLI remains outside the default `PATH`, so add
-`/vendor/docker` to `PATH` and set `_EXPERIMENTAL_DAGGER_RUNNER_HOST` on every Dagger
-invocation. A missing runner-host setting may provision an unintended default engine.
-
-This path creates local artifacts only. It does not publish to crates.io, create a tag,
-or create a GitHub Release. Attaching the checked artifacts to a GitHub Release is a
-separately invoked manual action and requires direct user authorization.
+Use the complete [Namespace Rust SDK artifact build](NAMESPACE_BUILD.md) runbook. It is
+the single authoritative procedure for the exact checkout, builder preflight, ordinary
+build and external verification, artifact export, checksum, download, and devbox pause.
+Do not duplicate or abbreviate that sequence here.

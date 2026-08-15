@@ -75,3 +75,5 @@ composes it into a complete `linux/amd64` Dagger engine. Its verification step u
 the two packages and runs one isolated external Rust consumer against that completed
 engine. It creates no tag or release and publishes no crate. Making those artifacts
 available through a manual GitHub Release requires separate, direct authorization.
+The complete builder and retrieval procedure is the
+[`dag-rust-xl` Namespace runbook](NAMESPACE_BUILD.md).

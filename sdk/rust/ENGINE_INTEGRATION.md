@@ -77,14 +77,6 @@ checks.
 
 ## Ordinary complete-engine build
 
-Run the build from the repository root with the active Dagger CLI syntax confirmed by
-`dagger api call --help`:
-
-```console
-./bin/dagger -m .dagger/modules/rust-client-dev api call \
-  build --platform=linux/amd64 verify
-```
-
 `Build` performs no publication. It:
 
 - packages exactly `dagger-sdk-macros` and `dagger-sdk` and validates package closure;
@@ -93,21 +85,16 @@ Run the build from the repository root with the active Dagger CLI syntax confirm
 - requires the normal engine and CLI binaries plus the selected Rust manifest; and
 - retains the complete engine and package directory for explicit export.
 
-Run this from a fresh Linux Git checkout after confirming `find . -name '._*' -print`
-has no output. Do not substitute a bare `cargo package -p dagger-sdk`: the ordinary
-build supplies the intentionally unpublished macro companion as a local packaging
-patch, then validates both archives together.
-
-On the Namespace `dag-rust-xl` builder, the Docker socket is mounted but its bundled
-CLI may not be on `PATH`. Confirm `/vendor/docker/docker version` first, then include
-`/vendor/docker` on `PATH` and set `_EXPERIMENTAL_DAGGER_RUNNER_HOST` on every Dagger
-invocation. If either preflight is omitted, the CLI can report that the manually
-managed runner driver is unavailable or provision an unintended default engine.
-
 `Verify` unpacks those packages into an isolated Cargo project, patches the macro
 companion locally, starts this build's completed engine, executes one SDK query, and
 closes the client cleanly. Export the two packages and complete engine only after
 verification passes. Checksums cover the exported bytes.
+
+The single authoritative Namespace procedure, including the fresh checkout,
+AppleDouble guard, Docker CLI `PATH`, pinned runner, exact CLI build, exports,
+checksums, retrieval, marker handling, and pause, is
+[Namespace Rust SDK artifact build](NAMESPACE_BUILD.md). Do not reconstruct the
+procedure from fragments in other documents.
 
 ## Immutable generated dependency
 
