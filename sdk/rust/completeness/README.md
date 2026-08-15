@@ -159,6 +159,8 @@ does not mutate the active contract.
   reproduce from a normal clean checkout rather than weakening the contract.
 
 Normal verification neither downloads authority sources nor mutates this directory.
+Standalone-client generation and its owned dependency boundary are described in
+[CLIENT_GENERATION.md](../CLIENT_GENERATION.md).
 Artifact assembly and one external consumer against the completed engine are separate
 release-readiness checks described in [MAINTAINING.md](../MAINTAINING.md); they do not
 change this contract or authorize publication.

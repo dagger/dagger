@@ -5,8 +5,11 @@
 This plan changes only the approved Rust SDK documentation, seven maintained child
 specifications, the release-readiness specification, and one new release-note fragment.
 It reuses existing completeness, immutable-dependency, package-closure, and selected-
-manifest authorities; it adds no source code, test, generated file, manifest, lockfile,
-Go/Dagger module change, committed acceptance runner, or upstream long-query check.
+manifest authorities. A canonical direct test found one stale generator-owned
+completeness manifest after the upstream merge, so the plan also permits its scoped
+generator refresh; it adds no source code, test, generated Rust file, Cargo manifest,
+lockfile, Go/Dagger module change, committed acceptance runner, or upstream long-query
+check.
 After local documentation acceptance, the complete allowed edit set is committed and
 that exact final revision becomes the artifact target. A clean detached devbox clone
 builds and exports its non-publishing `linux/amd64` artifacts through the existing Build
@@ -21,11 +24,11 @@ and Verify entry points.
       `0513782e713257a9285b101f45230af00e3558d8`, and preserves both named pre-existing
       stashes without applying, dropping, or rewriting them.
     - Record the exact nine maintained documentation paths, seven maintained child-spec
-      directories, readiness spec, and one new release-note fragment as the only allowed
-      tracked edits.
-    - Confirm Rust/Go/Dagger source, tests, generated files, Cargo manifests/lockfiles,
-      workflow files, CLI code, historical changelog records, and the clean umbrella spec
-      are excluded.
+      directories, readiness spec, one new release-note fragment, and the scoped
+      generated-ownership manifest repair as the only allowed tracked edits.
+    - Confirm Rust/Go/Dagger source, tests, generated Rust files, Cargo manifests/
+      lockfiles, workflow files, CLI code, historical changelog records, and the clean
+      umbrella spec are excluded.
     - _Requirements: 1.1, 1.3, 1.4, 1.12, 1.13, 1.14, 4.1, 5.11, 5.12_
   - [x] 1.2 Classify current sensitive occurrences before editing
     - Search the closed maintained scope for F8/F10, `SDK_Signoff`, the deleted workflow,
@@ -156,12 +159,17 @@ and Verify entry points.
     - Run the existing package-closure and selected-manifest tests from
       `ordinary_build.rs` without renaming or modifying them.
     - Confirm the tracked diff is limited exactly to approved documentation, child specs,
-      readiness specs, and one new release-note fragment; preserve named stashes and the
-      protected archive branch.
+      readiness specs, one new release-note fragment, and the scoped generated-ownership
+      manifest repair; preserve named stashes and the protected archive branch.
     - _Requirements: 1.1, 1.3, 1.4, 1.12, 1.13, 1.14, 3.5, 3.7, 4.1, 4.24, 5.1, 5.2, 5.3, 5.4, 5.12_
-  - [x] 4.5 Commit and freeze the artifact target
-    - Create one signed commit containing the complete approved edit set and record its
-      full lowercase revision as Artifact_Target.
+  - [x] 4.5 Repair generated ownership metadata, commit, and freeze the artifact target
+    - Run the read-only generator check and require its only drift report to be
+      `completeness/artifacts/core-codegen-bindings.json`; refresh it with the scoped
+      Rust generator and require generated source, schema identity, semantic hashes,
+      target revision, and SDK behavior to remain unchanged.
+    - Rerun the focused generated ownership test and read-only generator check.
+    - Commit the complete approved edit set and record its full lowercase revision as
+      Artifact_Target.
     - Confirm the public package READMEs in that commit are the bytes intended for the
       `.crate` artifacts; any later tracked edit invalidates the artifact run.
     - Transfer the commit to the devbox through a Git bundle when it has not been pushed.
@@ -235,8 +243,9 @@ and Verify entry points.
   - [ ] 7.1 Re-run local static acceptance and inspect the final tracked diff
     - Recheck diagnostics, fences, links, whitespace, hard-zero terms, semantic
       allowlists, positive boundaries, capability grounding, and exact allowed paths.
-    - Confirm no Rust SDK source/test/generated/manifests, Go/Dagger modules, workflows,
-      CLI code, historical records, or clean umbrella specification changed.
+    - Confirm no Rust SDK source/test/generated Rust files/Cargo manifests or lockfiles,
+      Go/Dagger modules, workflows, CLI code, historical records, or clean umbrella
+      specification changed; accept only the scoped generated-ownership manifest repair.
     - _Requirements: 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.11, 1.12, 1.14, 4.1, 4.2, 4.22, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 5.12_
   - [ ] 7.2 Reconcile exact artifacts and hard non-goals
     - Confirm Implementation_Baseline, Documentation_Base, Artifact_Target,

@@ -5,8 +5,9 @@
 This design implements a deliberately small, non-publishing readiness pass for the Rust
 SDK implementation merged at `0513782e713257a9285b101f45230af00e3558d8`. It updates
 nine maintained Rust documentation surfaces and seven accepted child specifications,
-commits that cleanup, then exports artifacts from that exact final commit through the
-existing `rust-client-dev` `Build` and `Verify` entry points.
+repairs one stale generator-owned completeness manifest, commits that bounded change,
+then exports artifacts from that exact final commit through the existing
+`rust-client-dev` `Build` and `Verify` entry points.
 
 The work changes no SDK capability and creates no release service. It removes obsolete
 delivery history while retaining real generated ownership, atomic publication,
@@ -16,7 +17,8 @@ Five identities remain distinct:
 
 - **implementation baseline:** `0513782e713257a9285b101f45230af00e3558d8`;
 - **documentation base:** `236a0eb2155b23c5d2e0359c3f8b4d658d4cb5f9`;
-- **artifact target:** the final committed documentation/specification cleanup revision;
+- **artifact target:** the final committed cleanup and generated-ownership manifest
+  repair revision;
 - **engine core:** beta.11 target `501b57e0476dee5881b99a064c3c04173134ecc7`
   with engine version `v1.0.0-beta.11.rust.1`; and
 - **Rust engine content:** the manifest built from the Rust SDK at the artifact target.
@@ -62,6 +64,8 @@ package layout, ownership, or public API shape was copied into Rust.
 - `dagger-rust-sdk-check` and `ordinary_build.rs` remain the package and selected-Rust-
   manifest authorities.
 - `dagger-sdk-engine` owns immutable generated-project dependency validation.
+- `dagger-rust generate` owns the scoped refresh of
+  `sdk/rust/completeness/artifacts/core-codegen-bindings.json`.
 
 ### Non-goals
 
@@ -69,8 +73,9 @@ package layout, ownership, or public API shape was copied into Rust.
 - Adding TUF, signing, publication credentials, or GitHub Actions.
 - Adding a committed readiness policy, acceptance runner, evidence registry, verdict
   schema, readiness database, or combined readiness record.
-- Changing Rust SDK source, tests, generated files, Cargo manifests/lockfiles, Go
-  integration code, Dagger modules, or CLI code.
+- Changing Rust SDK source, tests, generated Rust files, Cargo manifests/lockfiles, Go
+  integration code, Dagger modules, or CLI code; the only generated metadata change is
+  the scoped ownership-manifest repair.
 - Publishing to crates.io, creating a hosted release, or creating or pushing a Git tag.
 - Changing Dagger CLI behavior or source.
 - Revalidating, declaring resolved, or taking ownership of the separately tracked
@@ -411,10 +416,11 @@ explicitly named **Correctness Property** are executable properties requiring PB
 ### Acceptance Invariant 1: Cleanup scope is closed
 
 *For any* acceptance run, the maintained documentation set SHALL equal the nine approved
-paths and the maintained child-spec set SHALL equal the seven approved directories,
-while the umbrella, readiness spec, changelog, historical changes, Rust SDK source,
-tests, generated files, manifests, Go integration code, Dagger modules, and CLI code
-remain outside the edit set.
+paths and the maintained child-spec set SHALL equal the seven approved directories.
+The only other implementation-adjacent edit SHALL be the generator-owned completeness
+manifest repair; the umbrella, changelog, historical changes, Rust SDK source, tests,
+generated Rust files, Cargo manifests/lockfiles, Go integration code, Dagger modules,
+and CLI code remain outside the edit set.
 
 **Validates: Requirements 1.3, 1.4, 1.12, 1.14, 4.1, 5.11**
 

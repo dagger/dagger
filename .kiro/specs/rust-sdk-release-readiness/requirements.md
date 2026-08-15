@@ -22,7 +22,8 @@ action.
   `236a0eb2155b23c5d2e0359c3f8b4d658d4cb5f9`, which adds this readiness
   specification without changing the implementation.
 - **Artifact_Target:** The final committed revision containing the approved
-  documentation, child-specification, readiness-specification, and release-note cleanup.
+  documentation, child-specification, readiness-specification, release-note cleanup,
+  and scoped generated-ownership manifest repair.
   It descends from Documentation_Base, contains Implementation_Baseline, and becomes
   immutable before artifact work begins.
 - **Artifact_Platform:** Exact engine platform `linux/amd64`.
@@ -65,6 +66,10 @@ action.
   present-tense publication-promise scans.
 - **Readiness_Blocker:** A failed mandatory check that prevents artifact or release
   readiness from being claimed.
+- **Generated_Ownership_Manifest_Repair:** The generator-owned refresh of
+  `sdk/rust/completeness/artifacts/core-codegen-bindings.json` required after the
+  upstream merge changed generated headers without refreshing their derived hashes.
+  It changes no generated Rust source, schema identity, semantic hash, or SDK behavior.
 
 ## Target State
 
@@ -129,6 +134,10 @@ exact Artifact_Target.
 - **Stale child-spec terminology:** client-generation, engine-integration, and
   module-authoring specs still define `SDK_Signoff`; all seven child specs contain some
   obsolete future Feature 8/9 release ownership.
+- **Stale generated ownership manifest:** the documented read-only generator check
+  reports only `completeness/artifacts/core-codegen-bindings.json` as drifted. The
+  scoped generator update refreshes derived file and implementation fingerprints while
+  preserving generated source, schema identity, semantic hashes, and target revision.
 - **Protected historical branch:** remote branch
   `codex/rust-sdk-f8-signoff-archive` was observed at
   `a9f55dd48c88b91b69e6e36c8289178362ad979e` and is read-only for this work.
@@ -188,7 +197,7 @@ accepted capability or safety contracts.
 #### Acceptance Criteria
 
 1. WHEN release-readiness editing begins, THE implementation branch SHALL descend from
-   Documentation_Base and contain no implementation change after Implementation_Baseline.
+   Documentation_Base and contain no SDK capability change after Implementation_Baseline.
 2. WHEN repository cleanliness is checked, THE exact-build repository at
    Artifact_Target SHALL have no tracked or untracked changes and no `._*` files.
 3. WHEN child-spec cleanup is evaluated, THE scope SHALL contain exactly the seven
@@ -218,9 +227,12 @@ accepted capability or safety contracts.
 13. WHILE this work is active, THE protected historical branch SHALL remain unchanged at
     its observed commit.
 14. WHILE this work is active, THE implementation SHALL change no Rust SDK source,
-    test, generated file, Cargo manifest or lockfile, Go integration code, Dagger module,
-    or CLI code; tracked edits SHALL be limited to the approved documentation, child
-    specifications, release-readiness specification, and one release-note fragment.
+    test, generated Rust file, Cargo manifest or lockfile, Go integration code, Dagger
+    module, or CLI code; tracked edits SHALL be limited to the approved documentation,
+    child specifications, release-readiness specification, one release-note fragment,
+    and Generated_Ownership_Manifest_Repair. THE repair SHALL be written only by the
+    scoped generator and SHALL preserve schema identity, target revision, semantic
+    hashes, generated source bytes, and SDK behavior.
 15. WHEN local documentation acceptance passes, THE operator SHALL commit the complete
     approved edit set, record that revision as Artifact_Target, and SHALL invalidate and
     rebuild all artifacts after any later tracked edit.
