@@ -88,23 +88,23 @@
     large net deletion with no evidence registry refresh.
   - _Requirements: 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 7. Commit the exact artifact target
+- [x] 7. Commit the exact artifact target
   - [x] 7.1 Unwind all uncommitted digest-refresh experiments; retain only the deliberate
     registry deletion and simplified build changes.
-  - [ ] 7.2 Commit concise spec cleanup and code cleanup changes, then require a clean
+  - [x] 7.2 Commit concise spec cleanup and code cleanup changes, then require a clean
     exact commit and no AppleDouble files.
-  - [ ] 7.3 Push only after local checks are green; do not create a PR, tag, release, or
+  - [x] 7.3 Push only after local checks are green; do not create a PR, tag, release, or
     publish crates without separate direction.
   - _Requirements: 4.1, 4.7, 5.5, 5.6_
 
-- [ ] 8. Build and retrieve exact `linux/amd64` artifacts on `dag-rust-xl`
-  - [ ] 8.1 Revalidate the detached checkout, Dagger CLI, Docker state, disk, runner host,
+- [x] 8. Build and retrieve exact `linux/amd64` artifacts on `dag-rust-xl`
+  - [x] 8.1 Revalidate the detached checkout, Dagger CLI, Docker state, disk, runner host,
     activity marker, and artifact directory.
-  - [ ] 8.2 Run Ordinary_Build and Ordinary_Verification with the runner host present on
+  - [x] 8.2 Run Ordinary_Build and Ordinary_Verification with the runner host present on
     every Dagger invocation.
-  - [ ] 8.3 Export exactly two `.crate` packages, one complete engine OCI archive, and
+  - [x] 8.3 Export exactly two `.crate` packages, one complete engine OCI archive, and
     `SHA256SUMS` below Artifact_Output.
-  - [ ] 8.4 Download all four files, independently verify checksums, remove only the owned
+  - [x] 8.4 Download all four files, independently verify checksums, remove only the owned
     marker, and pause or stop the devbox as requested.
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 6.1, 6.2, 6.3, 6.4, 6.5_
 
