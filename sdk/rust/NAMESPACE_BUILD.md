@@ -1,16 +1,57 @@
 # Namespace Rust SDK artifact build
 
 This is the complete operator runbook for producing the Dagger Rust SDK artifacts on
-the Namespace `dag-rust-xl` devbox. Other maintained Rust SDK documents link here
-instead of duplicating this procedure.
+the Namespace `dagger-rust-builder-xl` devbox. This is a documentation name, not the
+name of any existing builder. Other maintained Rust SDK documents link here instead of
+duplicating this procedure.
 
 The devbox is a fast Linux builder, not the source of truth. Its `/workspaces` volume
 survives pause and reactivation; Docker containers, images, and volumes might not.
-Always repeat every preflight after reconnecting.
+Always repeat every preflight after reconnecting. See Namespace's
+[Devbox overview](https://namespace.so/docs/devbox) and
+[management guide](https://namespace.so/docs/devbox/managing).
 
 This procedure creates local artifacts only. It does not create a pull request, tag,
 GitHub Release, GitHub Actions workflow, crates.io publication, signature, attestation,
 or provenance bundle. A manual GitHub Release requires separate direct authorization.
+
+## Documented builder specification
+
+Provision `dagger-rust-builder-xl` as a private, non-ephemeral Namespace Devbox with
+this specification:
+
+| Property | Required value |
+| --- | --- |
+| Platform | Linux/amd64 |
+| Namespace size | XL: burstable to 32 vCPU with 64 GB memory |
+| Persistent volume | At least 200 GiB, mounted at `/workspaces` |
+| Devbox image | Namespace `builtin:agents` |
+| Access | Private |
+| Privilege | Enabled for the mounted Docker service |
+| Repository checkout | Disabled; this runbook performs a fresh exact Git checkout |
+| Idle timeout | One hour; the activity marker and SSH session suppress idleness during work |
+
+The XL CPU and memory values come from Namespace's
+[machine-size table](https://namespace.so/docs/devbox/managing#machine-sizes), while
+the persistent volume setting is documented under
+[Volume Size](https://namespace.so/docs/devbox/managing#volume-size). A reproducible
+Devbox spec is:
+
+```yaml
+name: dagger-rust-builder-xl
+image: builtin:agents
+size: XL
+access_mode: private
+volume_size_gb: 200
+auto_stop_idle_timeout: 1h
+privileged: true
+repository:
+  disabled: true
+```
+
+Create it with `devbox create --from <spec-file>` as described in Namespace's
+[spec-file reference](https://namespace.so/docs/devbox/managing#spec-file-reference).
+Workspace policy may impose stricter settings; do not weaken one to match this file.
 
 ## Security and operating rules
 
@@ -38,6 +79,9 @@ or provenance bundle. A manual GitHub Release requires separate direct authoriza
 - Remove only the activity marker created by this run. Pause the devbox after verified
   retrieval; never destroy it.
 
+Namespace counts active SSH connections and files under `/.namespace/tasks` as active
+work. See [Idleness & Auto-Stop](https://namespace.so/docs/devbox/managing#idleness--auto-stop).
+
 ## 1. Fix the immutable inputs
 
 Before using Namespace, push the intended commit to the repository and record its full
@@ -45,11 +89,13 @@ lowercase 40-character hash. The commit must contain all approved source,
 documentation, generated files, and task state. Local checks must already be green.
 
 On the operator workstation, locate the active Namespace instance and connect to its
-`devbox` container. Replace angle-bracketed values; do not copy secrets into them.
+workload container. Replace angle-bracketed values; do not copy secrets into them.
+The command shape follows the official
+[`nsc ssh` reference](https://namespace.so/docs/reference/cli/ssh).
 
 ```console
 export RUST_SDK_NS_INSTANCE="<namespace-instance-id>"
-export RUST_SDK_NS_CONTAINER="devbox"
+export RUST_SDK_NS_CONTAINER="<namespace-workload-container>"
 nsc list
 nsc ssh "$RUST_SDK_NS_INSTANCE" --container_name "$RUST_SDK_NS_CONTAINER"
 ```
@@ -278,7 +324,10 @@ mkdir -p "$RUST_SDK_LOCAL_OUTPUT"
 chmod 700 "$RUST_SDK_LOCAL_OUTPUT"
 ```
 
-Download exactly four files from the `devbox` container:
+Download exactly four files from the workload container.
+
+The `--container_name` option is documented in the
+[`nsc instance download` reference](https://namespace.so/docs/reference/cli/instance-download).
 
 ```console
 nsc instance download "$RUST_SDK_NS_INSTANCE" \
@@ -331,10 +380,12 @@ unlink "$RUST_SDK_MARKER"
 exit
 ```
 
-Pause `dag-rust-xl` from the Namespace console. Do not run `nsc destroy`: destruction is
-not pause and is outside this procedure. The verified remote outputs remain below
-`/workspaces/artifacts/<exact-commit>/`; the independently verified copies remain at the
-chosen local destination.
+Stop `dagger-rust-builder-xl` from the Namespace Devboxes dashboard or run
+`devbox shutdown` and select that documented name. Namespace documents both paths under
+[Starting & Stopping](https://namespace.so/docs/devbox/managing#starting--stopping).
+Do not run `nsc destroy`: destruction is not pause and is outside this procedure. The
+verified remote outputs remain below `/workspaces/artifacts/<exact-commit>/`; the
+independently verified copies remain at the chosen local destination.
 
 ## Failure and resume rule
 

@@ -191,7 +191,8 @@ build; an artifact from another commit cannot satisfy it.
 
 ### Engine-backed acceptance
 
-On `dag-rust-xl`, from one exact detached clean commit:
+On the documented `dagger-rust-builder-xl` Namespace devbox, from one exact detached
+clean commit:
 
 1. build exact CLI/help context and revalidate Docker/runner state;
 2. invoke `Build` with explicit `linux/amd64`;

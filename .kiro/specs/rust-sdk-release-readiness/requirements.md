@@ -47,7 +47,8 @@ a release action.
   downloaded CLI checksum verification, immutable generated dependencies, owned-file
   publication, and clean runtime promotion.
 - **Artifact_Platform:** `linux/amd64`.
-- **Artifact_Output:** `/workspaces/artifacts/<exact-commit>/` on `dag-rust-xl`.
+- **Artifact_Output:** `/workspaces/artifacts/<exact-commit>/` on the documented
+  `dagger-rust-builder-xl` Namespace devbox.
 
 ## Deletion Allowlist
 
@@ -189,8 +190,9 @@ artifacts survive devbox reactivation and shutdown.
 
 #### Acceptance Criteria
 
-1. WHEN `dag-rust-xl` is used, THE checkout SHALL be fresh or revalidated, detached at
-   the intended commit, clean, and treated as a builder rather than source of truth.
+1. WHEN `dagger-rust-builder-xl` is used, THE checkout SHALL be fresh or revalidated,
+   detached at the intended commit, clean, and treated as a builder rather than source
+   of truth.
 2. WHEN a build session begins, THE operator SHALL recheck Docker state and the Dagger
    CLI version.
 3. WHILE a manually managed runner is used, THE operator SHALL set

@@ -97,7 +97,8 @@
     publish crates without separate direction.
   - _Requirements: 4.1, 4.7, 5.5, 5.6_
 
-- [x] 8. Build and retrieve exact `linux/amd64` artifacts on `dag-rust-xl`
+- [x] 8. Build and retrieve exact `linux/amd64` artifacts on the documented
+  `dagger-rust-builder-xl` Namespace devbox
   - [x] 8.1 Revalidate the detached checkout, Dagger CLI, Docker state, disk, runner host,
     activity marker, and artifact directory.
   - [x] 8.2 Run Ordinary_Build and Ordinary_Verification with the runner host present on
