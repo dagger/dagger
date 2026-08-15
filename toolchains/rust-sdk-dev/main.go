@@ -11,9 +11,7 @@ import (
 	"sync"
 
 	"dagger/rust-sdk-dev/internal/enginefixture"
-	signoffmodel "dagger/rust-sdk-dev/internal/signoff"
 	"github.com/BurntSushi/toml"
-	"golang.org/x/mod/semver"
 
 	"dagger/rust-sdk-dev/internal/dagger"
 )
@@ -31,12 +29,10 @@ const (
 	focusedEngineBaseCommit = "1c6e07b197327c57e9db8584deb36e5166278677"
 	defaultEngineRepository = "https://github.com/dagger/dagger"
 
-	rustSdkCrate     = "dagger-sdk"
-	cargoEditVersion = "0.13.0"
-	cargoChefVersion = "0.1.77"
-	cargoDenyVersion = "0.19.9"
-
-	mockCargoRegistryName = "mock"
+	rustSdkCrate       = "dagger-sdk"
+	rustSdkMacrosCrate = "dagger-sdk-macros"
+	cargoChefVersion   = "0.1.77"
+	cargoDenyVersion   = "0.19.9"
 )
 
 var engineIntegrationCases = []string{
@@ -82,8 +78,8 @@ type RustSdkDev struct {
 }
 
 func New(
-	// A directory with all the files needed to develop the SDK
-	workspace *dagger.Workspace,
+	// Active repository workspace.
+	ws *dagger.Workspace,
 	// The path of the SDK source in the workspace
 	// +default="sdk/rust"
 	sourcePath string,
@@ -100,7 +96,7 @@ func New(
 	if engineRepository == "" {
 		engineRepository = defaultEngineRepository
 	}
-	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+	rustSrc := ws.Directory("/", dagger.WorkspaceDirectoryOpts{
 		Exclude: []string{
 			"*",
 			"!LICENSE",
@@ -152,7 +148,7 @@ func New(
 		Workspace:             rustSrc,
 		SourcePath:            sourcePath,
 		BaseContainer:         rustBaseContainer(),
-		Ws:                    workspace,
+		Ws:                    ws,
 		ClientDockerConfig:    clientDockerConfig,
 		EngineRepository:      engineRepository,
 		SDKDependencyRevision: sdkDependencyRevision,
@@ -199,36 +195,6 @@ func (t *RustSdkDev) focusedEngineSource() *dagger.Directory {
 		"!sdk/rust/crates/**/src/**",
 		"!sdk/rust/crates/**/assets/**",
 		"!sdk/rust/runtime/**",
-	}})
-}
-
-// focusedImmutableEngineSource selects the same subject-owned closure directly from an
-// immutable Git tree. Sign-off must not reuse focusedEngineSource: that helper intentionally
-// follows the live development workspace and would reopen a checkout-to-build TOCTOU window.
-func focusedImmutableEngineSource(source *dagger.Directory) *dagger.Directory {
-	return source.Filter(dagger.DirectoryFilterOpts{Include: []string{
-		"LICENSE",
-		"go.mod",
-		"go.sum",
-		"analytics/**",
-		"auth/**",
-		"cmd/**",
-		"core/**",
-		"dagql/**",
-		"engine/**",
-		"internal/**",
-		"network/**",
-		"util/**",
-		"sdk/go/**",
-		"sdk/rust/Cargo.lock",
-		"sdk/rust/Cargo.toml",
-		"sdk/rust/rust-toolchain.toml",
-		"sdk/rust/completeness/target.json",
-		"sdk/rust/completeness/snapshots/schema.json",
-		"sdk/rust/crates/**/Cargo.toml",
-		"sdk/rust/crates/**/src/**",
-		"sdk/rust/crates/**/assets/**",
-		"sdk/rust/runtime/**",
 	}})
 }
 
@@ -428,16 +394,14 @@ func (t *RustSdkDev) EngineUnit(ctx context.Context) error {
 // RustEngineContent retains one engine-dev content object with both identities
 // needed to prove the acyclic packaged-content boundary.
 type RustEngineContent struct {
-	Content                    *dagger.Directory
-	ManifestDigest             string
-	DescriptorDigest           string
-	dependencyDescriptor       string
-	dependencyDescriptorDigest string
-	MappingDigest              string
-	CompletenessTargetDigest   string
-	SDKDependency              sdkDependencyEvidence                 // +private
-	Engine                     *dagger.DaggerEngine                  // +private
-	Built                      *dagger.DaggerEngineRustEngineContent // +private
+	Content                  *dagger.Directory
+	ManifestDigest           string
+	DescriptorDigest         string
+	MappingDigest            string
+	CompletenessTargetDigest string
+	SDKDependency            sdkDependencyEvidence                 // +private
+	Engine                   *dagger.DaggerEngine                  // +private
+	Built                    *dagger.DaggerEngineRustEngineContent // +private
 }
 
 // EngineContent builds the Rust SDK content once and returns its reusable graph object.
@@ -447,46 +411,10 @@ func (t *RustSdkDev) EngineContent(ctx context.Context) (*RustEngineContent, err
 		Ws:                 t.Ws,
 		VcsRepository:      t.EngineRepository,
 	}).WithSource(t.focusedEngineSource())
-	dependencyRepository := ""
-	dependencyRevision := ""
-	if t.SDKDependencyRevision != "" {
-		dependencyRepository = t.EngineRepository
-		dependencyRevision = t.SDKDependencyRevision
-	}
-	return t.engineContent(ctx, engine, t.Ws.Directory("/"), dependencyRepository, dependencyRevision)
-}
-
-// signoffEngineContent constructs every subject-owned component and evidence input from the same
-// full immutable Git coordinate admitted before graph construction. WithGitSource also gives
-// nested engine toolchains a workspace derived from that ref, so no ambient checkout can leak
-// through a module constructor after the focused source filter is applied.
-func (t *RustSdkDev) signoffEngineContent(
-	ctx context.Context,
-	subject signoffmodel.ArtifactSubject,
-) (*RustEngineContent, error) {
-	ref := dag.Git(subject.Repository).Commit(subject.Revision)
-	immutableWorkspace := ref.AsWorkspace()
-	immutableTree := ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-	engine := dag.DaggerEngine(dagger.DaggerEngineOpts{
-		ClientDockerConfig: t.ClientDockerConfig,
-		VcsRepository:      subject.Repository,
-		Ws:                 immutableWorkspace,
-	}).WithGitSource(subject.Repository, subject.Revision).
-		WithSource(focusedImmutableEngineSource(immutableTree))
-	return t.engineContent(ctx, engine, immutableTree, subject.Repository, subject.Revision)
-}
-
-func (t *RustSdkDev) engineContent(
-	ctx context.Context,
-	engine *dagger.DaggerEngine,
-	evidenceRoot *dagger.Directory,
-	dependencyRepository string,
-	dependencyRevision string,
-) (*RustEngineContent, error) {
 	contentOptions := dagger.DaggerEngineRustSdkcontentOpts{Version: coreTargetVersion}
-	if dependencyRevision != "" {
-		contentOptions.DependencyRepository = dependencyRepository
-		contentOptions.DependencyRevision = dependencyRevision
+	if t.SDKDependencyRevision != "" {
+		contentOptions.DependencyRepository = t.EngineRepository
+		contentOptions.DependencyRevision = t.SDKDependencyRevision
 	}
 	built := engine.RustSdkcontent(contentOptions)
 	manifestDigest, err := built.ManifestDigest(ctx)
@@ -512,23 +440,7 @@ func (t *RustSdkDev) engineContent(
 		(sdkDependency.Source != "registry" && sdkDependency.Source != "git") {
 		return nil, fmt.Errorf("Rust SDK content returned an unsupported dependency descriptor")
 	}
-	canonicalDependencyDescriptor, err := json.Marshal(sdkDependency)
-	if err != nil || string(canonicalDependencyDescriptor) != dependencyDescriptor {
-		return nil, fmt.Errorf("Rust SDK content returned a non-canonical dependency descriptor")
-	}
-	if dependencyRevision != "" {
-		expectedRepository := strings.TrimSuffix(dependencyRepository, ".git")
-		if strings.HasPrefix(expectedRepository, "github.com/") {
-			expectedRepository = "https://" + expectedRepository
-		}
-		if sdkDependency.Source != "git" || sdkDependency.Registry != "" ||
-			sdkDependency.ExactVersion != "" || sdkDependency.URL != expectedRepository ||
-			sdkDependency.Revision != dependencyRevision {
-			return nil, fmt.Errorf("Rust SDK content did not retain the exact fork Git dependency")
-		}
-	}
-	dependencyDescriptorIdentity := sha256.Sum256(canonicalDependencyDescriptor)
-	mappingContents, err := evidenceRoot.File("sdk/rust/completeness/engine-integration-mappings.json").Contents(ctx)
+	mappingContents, err := t.Ws.File("sdk/rust/completeness/engine-integration-mappings.json").Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read Rust engine-integration mappings: %w", err)
 	}
@@ -543,16 +455,14 @@ func (t *RustSdkDev) engineContent(
 	}
 	mappingDigest := sha256.Sum256([]byte(mappingContents))
 	return &RustEngineContent{
-		Content:                    built.Content(),
-		ManifestDigest:             manifestDigest,
-		DescriptorDigest:           descriptorDigest,
-		dependencyDescriptor:       dependencyDescriptor,
-		dependencyDescriptorDigest: fmt.Sprintf("sha256:%x", dependencyDescriptorIdentity),
-		MappingDigest:              fmt.Sprintf("sha256:%x", mappingDigest),
-		CompletenessTargetDigest:   mappingSubject.TargetDigest,
-		SDKDependency:              sdkDependency,
-		Engine:                     engine,
-		Built:                      built,
+		Content:                  built.Content(),
+		ManifestDigest:           manifestDigest,
+		DescriptorDigest:         descriptorDigest,
+		MappingDigest:            fmt.Sprintf("sha256:%x", mappingDigest),
+		CompletenessTargetDigest: mappingSubject.TargetDigest,
+		SDKDependency:            sdkDependency,
+		Engine:                   engine,
+		Built:                    built,
 	}, nil
 }
 
@@ -562,8 +472,7 @@ func (content *RustEngineContent) Resolution(ctx context.Context) (string, error
 	if content.Engine == nil || content.Built == nil {
 		return "", fmt.Errorf("Rust SDK content is detached from its engine construction graph")
 	}
-	service := content.focusedService("rust-sdk-resolution")
-	return content.runResolution(ctx, content.installedBaseline(service))
+	return content.runResolution(ctx, content.focusedService("rust-sdk-resolution"))
 }
 
 func (content *RustEngineContent) focusedService(name string) *dagger.Service {
@@ -580,67 +489,77 @@ func (content *RustEngineContent) focusedService(name string) *dagger.Service {
 
 func (content *RustEngineContent) runResolution(
 	ctx context.Context,
-	installed *dagger.Container,
+	service *dagger.Service,
 ) (string, error) {
-	if err := verifyInstalledRustResolution(ctx, installed); err != nil {
-		return "", err
+	runner := content.Engine.InstallClient(
+		dag.Container().
+			From(goHelperImage+"@"+goHelperDigest).
+			WithDirectory("/work", dag.Directory()).
+			WithWorkdir("/work").
+			WithExec([]string{"git", "init"}).
+			WithExec([]string{"git", "config", "user.name", "Rust SDK Check"}).
+			WithExec([]string{"git", "config", "user.email", "rust-sdk-check@dagger.invalid"}).
+			WithExec([]string{"git", "commit", "--allow-empty", "-m", "initialize workspace"}),
+		dagger.DaggerEngineInstallClientOpts{
+			Service: service,
+			Version: coreTargetVersion,
+		},
+	)
+	first := runner.WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
+	firstConfig, err := first.File("/work/dagger.toml").Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("install bare Rust SDK: %w", err)
+	}
+	second := first.WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
+	secondConfig, err := second.File("/work/dagger.toml").Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("reinstall bare Rust SDK: %w", err)
+	}
+	if firstConfig != secondConfig {
+		return "", fmt.Errorf("bare Rust SDK reinstall changed workspace configuration")
+	}
+	installed, err := second.WithExec([]string{"dagger", "sdk", "installed"}).Stdout(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list installed Rust SDK: %w", err)
+	}
+	if !strings.Contains(installed, "rust") {
+		return "", fmt.Errorf("installed SDK listing omitted canonical Rust entry")
+	}
+	rejected := second.WithExec(
+		[]string{"dagger", "-y", "sdk", "install", "rust@v1.0.0-beta.10"},
+		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
+	)
+	exitCode, err := rejected.ExitCode(ctx)
+	if err != nil {
+		return "", fmt.Errorf("inspect Rust shorthand rejection: %w", err)
+	}
+	if exitCode == 0 {
+		return "", fmt.Errorf("versioned Rust built-in unexpectedly reached external resolution")
+	}
+	stderr, err := rejected.Stderr(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read Rust shorthand rejection: %w", err)
+	}
+	if !strings.Contains(stderr, "does not currently support selecting a specific version") {
+		return "", fmt.Errorf("versioned Rust built-in failed without the stable pre-fallback diagnostic")
 	}
 	evidence, err := json.Marshal(struct {
 		DescriptorDigest  string `json:"descriptor_digest"`
 		Installed         bool   `json:"installed"`
 		ManifestDigest    string `json:"manifest_digest"`
-		SingleInstall     bool   `json:"single_install"`
+		ReinstallNoop     bool   `json:"reinstall_noop"`
 		ShorthandRejected bool   `json:"shorthand_rejected"`
 	}{
 		DescriptorDigest:  content.DescriptorDigest,
 		Installed:         true,
 		ManifestDigest:    content.ManifestDigest,
-		SingleInstall:     true,
+		ReinstallNoop:     true,
 		ShorthandRejected: true,
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode Rust SDK resolution evidence: %w", err)
 	}
 	return string(evidence), nil
-}
-
-// verifyInstalledRustResolution owns the loader assertions shared by focused development and
-// exact-target sign-off. Keeping one assertion path prevents the sign-off adapter from silently
-// weakening the already-reviewed resolution boundary into a CLI reachability check.
-func verifyInstalledRustResolution(ctx context.Context, installed *dagger.Container) error {
-	installedConfig, err := installed.File("/work/dagger.toml").Contents(ctx)
-	if err != nil {
-		return fmt.Errorf("install bare Rust SDK: %w", err)
-	}
-	if !strings.Contains(installedConfig, "dagger-rust-sdk") {
-		return fmt.Errorf("installed workspace configuration omitted the Rust SDK")
-	}
-	installedList, err := installed.WithExec([]string{"dagger", "sdk", "installed"}).Stdout(ctx)
-	if err != nil {
-		return fmt.Errorf("list installed Rust SDK: %w", err)
-	}
-	if !strings.Contains(installedList, "rust") {
-		return fmt.Errorf("installed SDK listing omitted canonical Rust entry")
-	}
-	rejected := installed.WithExec(
-		[]string{"dagger", "-y", "sdk", "install", "rust@v1.0.0-beta.10"},
-		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
-	)
-	exitCode, err := rejected.ExitCode(ctx)
-	if err != nil {
-		return fmt.Errorf("inspect Rust shorthand rejection: %w", err)
-	}
-	if exitCode == 0 {
-		return fmt.Errorf("versioned Rust built-in unexpectedly reached external resolution")
-	}
-	stderr, err := rejected.Stderr(ctx)
-	if err != nil {
-		return fmt.Errorf("read Rust shorthand rejection: %w", err)
-	}
-	if !strings.Contains(stderr, "does not currently support selecting a specific version") {
-		return fmt.Errorf("versioned Rust built-in failed without the stable pre-fallback diagnostic")
-	}
-	return nil
 }
 
 // EngineIntegration exercises the initialization, operation, and runtime boundaries
@@ -672,7 +591,8 @@ func (content *RustEngineContent) EngineIntegration(
 	}
 
 	service := content.focusedService("rust-sdk-engine-integration")
-	installed := content.installedBaseline(service)
+	installed := content.integrationRunner(service).
+		WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
 	type caseResult struct {
 		identity                 string
 		operationInputDigests    []string
@@ -691,10 +611,10 @@ func (content *RustEngineContent) EngineIntegration(
 			var identity string
 			var err error
 			if name == "resolution" {
-				identity, err = content.runResolution(ctx, installed)
+				identity, err = content.runResolution(ctx, service)
 			} else {
 				runner := installed.WithEnvVariable("RUST_SDK_ENGINE_INTEGRATION_CASE", name)
-				identity, err = runEngineIntegrationCase(ctx, runner, name)
+				identity, err = content.runEngineIntegrationCase(ctx, runner, name)
 			}
 			if err != nil {
 				results[index].err = fmt.Errorf("run Rust engine-integration case %s: %w", name, err)
@@ -807,7 +727,7 @@ func (content *RustEngineContent) EngineEvidence(ctx context.Context) (string, e
 	return string(evidence), nil
 }
 
-func (content *RustEngineContent) installedBaseline(
+func (content *RustEngineContent) integrationRunner(
 	service *dagger.Service,
 ) *dagger.Container {
 	base := dag.Container().
@@ -820,10 +740,10 @@ func (content *RustEngineContent) installedBaseline(
 		WithExec([]string{"git", "commit", "--allow-empty", "-m", "initialize workspace"})
 	return content.Engine.InstallClient(base, dagger.DaggerEngineInstallClientOpts{
 		Service: service, Version: coreTargetVersion,
-	}).WithExec([]string{"dagger", "-y", "sdk", "install", "--here", "rust"})
+	})
 }
 
-func runEngineIntegrationCase(
+func (content *RustEngineContent) runEngineIntegrationCase(
 	ctx context.Context,
 	runner *dagger.Container,
 	name string,
@@ -946,17 +866,17 @@ func runEngineIntegrationCase(
 		}
 		return result.Directory("/work/modules/runtime-legacy").Digest(ctx)
 	case "negative-generated-lock-toolchain":
-		return runGeneratedLockToolchainFailures(ctx, installed)
+		return content.runGeneratedLockToolchainFailures(ctx, installed)
 	case "negative-path-ownership":
-		return runPathOwnershipFailures(ctx, installed)
+		return content.runPathOwnershipFailures(ctx, installed)
 	case "negative-redaction":
-		return runRedactionFailure(ctx, installed)
+		return content.runRedactionFailure(ctx, installed)
 	default:
 		return "", fmt.Errorf("unreachable Rust engine-integration case %q", name)
 	}
 }
 
-func runGeneratedLockToolchainFailures(
+func (content *RustEngineContent) runGeneratedLockToolchainFailures(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {
@@ -1000,7 +920,7 @@ func runGeneratedLockToolchainFailures(
 	return "missing-generation,stale-lockfile,incompatible-toolchain", nil
 }
 
-func runPathOwnershipFailures(
+func (content *RustEngineContent) runPathOwnershipFailures(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {
@@ -1045,7 +965,7 @@ func runPathOwnershipFailures(
 	return "lexical-escape,symlink-escape,ownership-collision", nil
 }
 
-func runRedactionFailure(
+func (content *RustEngineContent) runRedactionFailure(
 	ctx context.Context,
 	installed *dagger.Container,
 ) (string, error) {
@@ -1363,118 +1283,188 @@ func (t *RustSdkDev) CoreConformance(ctx context.Context) (string, error) {
 	return contents, nil
 }
 
-// Test the publishing process
-// +check
-func (t *RustSdkDev) ReleaseDryRun(
-	ctx context.Context,
+// RustSdkBuild is the ordinary, non-publishing Rust SDK build result.
+type RustSdkBuild struct {
+	// Packages contains exactly dagger-sdk-macros and dagger-sdk as .crate files.
+	// An authorized operator may export these files for a manually invoked GitHub Release;
+	// this build object has no publication operation.
+	Packages *dagger.Directory
 
-	// Source git tag to fake-release
-	// +default="HEAD"
-	sourceTag string,
-) (err error) {
-	version := strings.TrimPrefix(sourceTag, "sdk/rust/")
-	versionFlag := strings.TrimPrefix(version, "v")
-	targetVersion := versionFlag
-	if !semver.IsValid(version) {
-		// just pick any version, it's a dry-run
-		versionFlag = "--bump=rc"
-	}
+	// CompleteEngine contains the standard engine binaries and all standard SDK content,
+	// with the Rust content produced from the current workspace.
+	CompleteEngine *dagger.Container
 
-	base := t.releaseContainer(versionFlag).
-		WithExec([]string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features", "--dry-run", "--locked"})
+	Version string
 
-	// if the version is not a valid semver, use the one from the Cargo.toml
-	// to compare with.
-	if !semver.IsValid(version) {
-		cargoToml, err := base.File("Cargo.toml").Contents(ctx)
-		if err != nil {
-			return err
-		}
-		var config struct {
-			Workspace struct {
-				Package struct {
-					Version string
-				}
-			}
-		}
-		_, err = toml.Decode(cargoToml, &config)
-		if err != nil {
-			return err
-		}
-		targetVersion = config.Workspace.Package.Version
-	}
-
-	// check we created the right files
-	_, err = base.Directory(fmt.Sprintf("./target/package/dagger-sdk-%s", targetVersion)).Sync(ctx)
-	if err != nil {
-		return err
-	}
-	// Current Cargo verifies the publish archive and retains its expanded package, but
-	// does not promise to retain the intermediate .crate after a successful dry run.
-	// The command outcome plus the expanded manifest below prove both packaging and
-	// versioning without coupling this check to an implementation-detail artifact.
-
-	// check that Cargo.toml got the version
-	dt, err := base.File(fmt.Sprintf("./target/package/dagger-sdk-%s/Cargo.toml", targetVersion)).Contents(ctx)
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(dt, "\nversion = \""+targetVersion+"\"\n") {
-		//nolint:staticcheck
-		return fmt.Errorf("Cargo.toml did not contain %q", targetVersion)
-	}
-
-	_, err = base.Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to run test release: %w", err)
-	}
-
-	return nil
+	Checker      *dagger.File         // +private
+	TargetEngine *dagger.DaggerEngine // +private
+	NetworkCIDR  string               // +private
+	Consumer     *dagger.Directory    // +private
 }
 
-// Release the Rust SDK
-func (t *RustSdkDev) Release(
+// Build creates the two public Rust packages and the ordinary complete engine.
+// It validates both outputs and performs no publication or external mutation.
+func (t *RustSdkDev) Build(
 	ctx context.Context,
-
-	// Source git tag to release
-	sourceTag string,
-
-	cargoRegistryToken *dagger.Secret,
-
-	// Cargo registry index URL to publish to instead of crates.io.
 	// +optional
-	cargoRegistryIndex string,
-) (err error) {
-	version := strings.TrimPrefix(sourceTag, "sdk/rust/")
-	versionFlag := strings.TrimPrefix(version, "v")
-	if !semver.IsValid(version) {
-		return fmt.Errorf("invalid version %q", version)
+	platform dagger.Platform,
+) (*RustSdkBuild, error) {
+	version, err := t.workspacePackageVersion(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	ctr := t.releaseContainer(versionFlag)
-	args := []string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features", "--locked"}
-	if cargoRegistryIndex != "" {
-		// Cargo alternate registries are configured through
-		// CARGO_REGISTRIES_<NAME>_* environment variables.
-		ctr = ctr.
-			WithEnvVariable("CARGO_REGISTRIES_MOCK_INDEX", cargoRegistryIndex).
-			WithSecretVariable("CARGO_REGISTRIES_MOCK_TOKEN", cargoRegistryToken)
-		args = append(args, "--registry", mockCargoRegistryName)
-	} else {
-		ctr = ctr.WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken)
+	packageContainer := t.DevContainer(true).
+		WithExec([]string{
+			"cargo", "build", "-p", "dagger-sdk-completeness", "--bin", "dagger-rust-sdk-check", "--locked",
+		}).
+		WithExec([]string{
+			"cargo", "package", "-p", rustSdkMacrosCrate, "--locked",
+		}).
+		WithExec([]string{
+			"cargo", "package", "-p", rustSdkCrate, "--all-features", "--locked",
+			"--config", `patch.crates-io.dagger-sdk-macros.path="crates/dagger-sdk-macros"`,
+		}).
+		WithExec([]string{
+			"/src/sdk/rust/target/debug/dagger-rust-sdk-check", "packages",
+			"--workspace", "/src/sdk/rust",
+			"--packages", "/src/sdk/rust/target/package",
+		})
+	if _, err := packageContainer.Sync(ctx); err != nil {
+		return nil, fmt.Errorf("build and validate public Rust packages: %w", err)
+	}
+	checker := packageContainer.File("/src/sdk/rust/target/debug/dagger-rust-sdk-check")
+	packages := packageContainer.
+		Directory("/src/sdk/rust/target/package").
+		Filter(dagger.DirectoryFilterOpts{Include: []string{"*.crate"}})
+
+	content, err := t.EngineContent(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("build reusable Rust engine content: %w", err)
+	}
+	target := dag.DaggerEngine(dagger.DaggerEngineOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+		Ws:                 t.Ws,
+	}).WithGitSource(coreTargetRepository, coreTargetRevision)
+	completeEngine := target.ContainerWithRustSdkcontent(
+		content.Built,
+		dagger.DaggerEngineContainerWithRustSdkcontentOpts{
+			Platform: platform,
+			Version:  coreTargetVersion,
+		},
+	)
+	selectedManifest, err := completeEngine.EnvVariable(ctx, "DAGGER_RUST_SDK_MANIFEST_DIGEST")
+	if err != nil {
+		return nil, fmt.Errorf("read complete engine Rust manifest: %w", err)
+	}
+	for _, path := range []string{"/usr/local/bin/dagger-engine", "/usr/local/bin/dagger"} {
+		if _, err := completeEngine.File(path).Sync(ctx); err != nil {
+			return nil, fmt.Errorf("build complete engine file %s: %w", path, err)
+		}
+	}
+	engineCheck := rustBaseContainer().
+		WithFile("/usr/local/bin/dagger-rust-sdk-check", checker).
+		WithDirectory(
+			"/content",
+			completeEngine.Directory("/usr/local/share/dagger/content"),
+		).
+		WithExec([]string{
+			"dagger-rust-sdk-check", "engine",
+			"--content", "/content",
+			"--expected-rust-manifest", content.ManifestDigest,
+			"--rust-manifest", selectedManifest,
+		})
+	if _, err := engineCheck.Sync(ctx); err != nil {
+		return nil, fmt.Errorf("validate complete engine Rust content: %w", err)
+	}
+	networkCIDR, err := target.NetworkCidr(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve complete engine network: %w", err)
 	}
 
-	_, err = ctr.
-		WithExec(args).
-		Sync(ctx)
-
-	return err
+	return &RustSdkBuild{
+		Packages:       packages,
+		CompleteEngine: completeEngine,
+		Version:        version,
+		Checker:        checker,
+		TargetEngine:   target,
+		NetworkCIDR:    networkCIDR,
+		Consumer: t.Ws.Directory(
+			"toolchains/rust-sdk-dev/testdata/external-consumer",
+		),
+	}, nil
 }
 
-func (t *RustSdkDev) releaseContainer(
-	versionFlag string,
-) *dagger.Container {
-	return t.DevContainer(false).
-		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked"}).
-		WithExec([]string{"cargo", "set-version", "-p", rustSdkCrate, versionFlag})
+func (t *RustSdkDev) workspacePackageVersion(ctx context.Context) (string, error) {
+	contents, err := t.Ws.File(t.SourcePath + "/Cargo.toml").Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read Rust workspace manifest: %w", err)
+	}
+	var manifest struct {
+		Workspace struct {
+			Package struct {
+				Version string `toml:"version"`
+			} `toml:"package"`
+		} `toml:"workspace"`
+	}
+	if _, err := toml.Decode(contents, &manifest); err != nil {
+		return "", fmt.Errorf("decode Rust workspace manifest: %w", err)
+	}
+	version := strings.TrimSpace(manifest.Workspace.Package.Version)
+	if version == "" {
+		return "", fmt.Errorf("Rust workspace package version is empty")
+	}
+	return version, nil
+}
+
+// Verify compiles one isolated consumer from the packaged crates, queries this build's
+// complete engine, and closes the Rust SDK client cleanly.
+//
+// +check
+func (build *RustSdkBuild) Verify(ctx context.Context) error {
+	if build.Packages == nil || build.CompleteEngine == nil || build.Checker == nil ||
+		build.TargetEngine == nil || build.Consumer == nil || build.NetworkCIDR == "" {
+		return fmt.Errorf("ordinary Rust SDK build is incomplete")
+	}
+
+	unpacked := rustBaseContainer().
+		WithFile("/usr/local/bin/dagger-rust-sdk-check", build.Checker).
+		WithDirectory("/work/packages", build.Packages).
+		WithDirectory("/work/vendor", dag.Directory()).
+		WithExec([]string{
+			"dagger-rust-sdk-check", "unpack",
+			"--packages", "/work/packages",
+			"--destination", "/work/vendor",
+		})
+	vendor := unpacked.Directory("/work/vendor")
+
+	service := build.CompleteEngine.
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{
+			Protocol: dagger.NetworkProtocolTcp,
+		}).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{
+				"--addr", "tcp://0.0.0.0:1234",
+				"--network-name", "dagger-dev",
+				"--network-cidr", build.NetworkCIDR,
+			},
+			UseEntrypoint:            true,
+			InsecureRootCapabilities: true,
+		})
+	runner := build.TargetEngine.InstallClient(
+		rustBaseContainer().
+			WithDirectory("/work/consumer", build.Consumer).
+			WithDirectory("/work/vendor", vendor).
+			WithWorkdir("/work/consumer"),
+		dagger.DaggerEngineInstallClientOpts{
+			Service: service,
+			Version: coreTargetVersion,
+		},
+	)
+	if _, err := runner.
+		WithExec([]string{"dagger", "run", "cargo", "run", "--locked"}).
+		Sync(ctx); err != nil {
+		return fmt.Errorf("verify external Rust consumer: %w", err)
+	}
+	return nil
 }

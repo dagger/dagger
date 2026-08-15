@@ -87,12 +87,10 @@ func (r *Query) RustSDKDev(opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev
 type RustSDKDev struct { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:29:6)
 	query *querybuilder.Selection
 
-	cargoCheck    *Void
-	cargoFmt      *Void
-	id            *ID
-	release       *Void
-	releaseDryRun *Void
-	test          *Void
+	cargoCheck *Void
+	cargoFmt   *Void
+	id         *ID
+	test       *Void
 }
 type WithRustSDKDevFunc func(r *RustSDKDev) *RustSDKDev
 
@@ -226,59 +224,6 @@ func (r *RustSDKDev) UnmarshalJSON(bs []byte) error {
 	}
 	*r = RustSDKDev{query: selectNode(dag.query, id, "RustSdkDev")}
 	return nil
-}
-
-// RustSDKDevReleaseOpts contains options for RustSDKDev.Release
-type RustSDKDevReleaseOpts struct {
-	//
-	// Cargo registry index URL to publish to instead of crates.io.
-	//
-	CargoRegistryIndex string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:262:2)
-}
-
-// Release the Rust SDK
-func (r *RustSDKDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustSDKDevReleaseOpts) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:252:1)
-	assertNotNil("cargoRegistryToken", cargoRegistryToken)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `cargoRegistryIndex` optional argument
-		if !querybuilder.IsZeroValue(opts[i].CargoRegistryIndex) {
-			q = q.Arg("cargoRegistryIndex", opts[i].CargoRegistryIndex)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-	q = q.Arg("cargoRegistryToken", cargoRegistryToken)
-
-	return q.Execute(ctx)
-}
-
-// RustSDKDevReleaseDryRunOpts contains options for RustSDKDev.ReleaseDryRun
-type RustSDKDevReleaseDryRunOpts struct {
-	//
-	// Source git tag to fake-release
-	//
-	//
-	// Default: "HEAD"
-	SourceTag string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:189:2)
-}
-
-// Test the publishing process
-func (r *RustSDKDev) ReleaseDryRun(ctx context.Context, opts ...RustSDKDevReleaseDryRunOpts) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:184:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceTag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceTag) {
-			q = q.Arg("sourceTag", opts[i].SourceTag)
-		}
-	}
-
-	return q.Execute(ctx)
 }
 
 // Source returns the source directory for the Rust SDK.

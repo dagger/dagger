@@ -7,9 +7,7 @@ on:
       - main
     paths:
       - ".github/dependabot.yml"
-      - ".github/workflows/rust-sdk-platform.yml"
       - ".github/workflows/rust-sdk-security.yml"
-      - ".github/workflows/rust-sdk-windows-preflight.yml"
       - "dagger.toml"
       - "core/schema/workspace_install.go"
       - "core/sdk/**"
@@ -46,11 +44,22 @@ jobs:
       - name: Install cargo-deny
         run: cargo install --locked cargo-deny@0.19.9
       - name: Check dependencies and publication policy
-        run: ./scripts/ci-security-preflight.sh dependencies
+        run: |
+          cargo metadata --no-deps --format-version 1 --locked >/dev/null
+          cargo metadata --manifest-path examples/backend/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
+          cargo metadata --manifest-path examples/cli/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
+          cargo metadata --manifest-path examples/frontend/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
+          cargo deny check
       - name: Check generated source and security boundaries
-        run: ./scripts/ci-security-preflight.sh source-policy
+        run: cargo test --workspace --all-features --locked
       - name: Check packaged runtime metadata boundary
         working-directory: sdk/rust/runtime
-        run: ../scripts/ci-security-preflight.sh runtime
+        env:
+          DAGGER_SESSION_PORT: "1"
+          DAGGER_SESSION_TOKEN: engine-free-static-check
+        run: go test ./...
       - name: Verify the public SDK package
-        run: ./scripts/ci-security-preflight.sh packages
+        run: |
+          cargo package -p dagger-sdk-macros --locked
+          cargo package -p dagger-sdk --all-features --locked --config 'patch.crates-io.dagger-sdk-macros.path="crates/dagger-sdk-macros"'
+          cargo run -p dagger-sdk-completeness --bin dagger-rust-sdk-check --locked -- packages --workspace . --packages target/package

@@ -133,7 +133,6 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 			publishCheck{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
 			publishCheck{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
 			publishCheck{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
-			publishCheck{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
 			publishCheck{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
 			publishCheck{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
 		)
@@ -450,8 +449,6 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --npm-registry-url "http://verdaccio:4873" \
   --hex-apikey=env:FAKE_HEX_API_KEY \
   --hex-apiurl "http://mock:8080/hex/api" \
-  --cargo-registry-token=env:FAKE_CARGO_REGISTRY_TOKEN \
-  --cargo-registry-index "sparse+http://mock:8080/cargo/" \
   --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
   --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
   --aws-region "us-east-1" \
@@ -475,7 +472,6 @@ exit "$status"
 		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
 		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).
 		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key")).
-		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token")).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test")).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test")).
 		WithEnvVariable("MODULE_REF", env.moduleRef).

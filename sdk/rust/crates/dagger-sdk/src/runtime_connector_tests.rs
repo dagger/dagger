@@ -25,9 +25,8 @@ use crate::graphql::{GraphQlError, RawRequest, RawResponse, ResponseData};
 use crate::preflight::PropagationEnvironment;
 use crate::propagation::W3cPropagation;
 use crate::runtime_errors::{
-    CompatibilityErrorKind, CompatibilityEvidenceGap, ExecError, ProvisioningError,
-    ProvisioningErrorKind, SessionStartupError, SessionStartupErrorKind, ShutdownError,
-    ShutdownFailureKind,
+    CompatibilityErrorKind, ExecError, ProvisioningError, ProvisioningErrorKind,
+    SessionStartupError, SessionStartupErrorKind, ShutdownError, ShutdownFailureKind,
 };
 use crate::session::SecretString;
 use crate::session_startup::install_live_session_observer;
@@ -558,10 +557,12 @@ proptest! {
     // Exact compatibility is the conjunction of semantic identity and the generated
     // clean revision prefix; known mismatches never enter the unverified bypass class.
     // Feature: rust-sdk-transport-observability, Property 25: compatibility accepts exactly the declared target
+    // Feature: rust-sdk-f10-cleanup, Property 3: compatibility is exact when evidence exists
     #[test]
     fn property_25_compatibility_accepts_exact_declared_target(
         case in 0_u8..9,
         other_revision in "[0-9a-f]{8}",
+        allow_unverified in any::<bool>(),
     ) {
         let validator = CompatibilityValidator::exact().expect("generated target is valid");
         let expected_revision = validator.expected_revision_prefix().to_owned();
@@ -577,6 +578,16 @@ proptest! {
             _ => format!("v1.0.0-beta.10+{other_revision}"),
         };
         let result = validator.validate_version(&value);
+        let expected_kind = result.as_ref().err().map(|error| error.kind());
+        let response = StaticResponseConnection(Ok(RawResponse::new(ResponseData::Value(json!({
+            "version": value,
+        })))));
+        let observed = futures::executor::block_on(
+            validator.validate(&response, allow_unverified),
+        );
+        let expected_observed = result.is_ok()
+            || (allow_unverified && expected_kind == Some(CompatibilityErrorKind::Unverified));
+        prop_assert_eq!(observed.is_ok(), expected_observed);
         let expected_exact = matches!(case, 0 | 1)
             || (matches!(case, 5 | 8) && other_revision == expected_revision);
         prop_assert_eq!(result.is_ok(), expected_exact);
@@ -649,31 +660,6 @@ impl EngineConnection for StaticResponseConnection {
     }
 
     fn abort(&self) {}
-}
-
-#[tokio::test]
-async fn unverified_bypass_never_accepts_a_known_mismatch() {
-    let validator = CompatibilityValidator::exact().expect("generated target");
-    let unverified = StaticResponseConnection(Ok(RawResponse::new(ResponseData::Absent)));
-    assert!(validator.validate(&unverified, true).await.is_ok());
-
-    let mismatch = StaticResponseConnection(Ok(RawResponse::new(ResponseData::Value(json!({
-        "version": "v9.0.0+25300124"
-    })))));
-    let error = validator
-        .validate(&mismatch, true)
-        .await
-        .expect_err("known mismatch cannot be bypassed");
-    assert_eq!(error.kind(), CompatibilityErrorKind::VersionMismatch);
-
-    let malformed = validator
-        .validate(&unverified, false)
-        .await
-        .expect_err("missing evidence rejects by default");
-    assert_eq!(
-        malformed.evidence_gap(),
-        Some(CompatibilityEvidenceGap::MissingVersion)
-    );
 }
 
 proptest! {

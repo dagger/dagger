@@ -25,8 +25,6 @@ use crate::session_startup::{
     BackgroundFailureKind, ControlAccumulator, ControlErrorKind, SessionCloseReport,
     SessionLauncher, StreamOutcome, order_outcomes,
 };
-#[cfg(feature = "signoff-observation")]
-use crate::signoff_observation::{SignoffConnectorEvent, SignoffConnectorRecorder};
 use crate::test_support::io_proptest_config;
 use crate::{RawRequest, ResponseData};
 
@@ -217,6 +215,7 @@ proptest! {
     // Redaction is channel-local and streaming; callback failure changes only sink
     // availability while bounded sanitized tails continue to drain and remain safe.
     // Feature: rust-sdk-transport-observability, Property 21: diagnostics are isolated, redacted, bounded, and contained
+    // Feature: rust-sdk-f10-cleanup, Property 5: diagnostics are credential-free across chunking
     #[test]
     fn property_21_diagnostics_isolated_redacted_bounded_contained(
         secret in "CANARY_[A-Za-z0-9]{20,40}",
@@ -264,6 +263,18 @@ proptest! {
         prop_assert!(!snapshot.stderr().windows(secret.len()).any(|window| window == secret.as_bytes()));
         let snapshot_debug = format!("{snapshot:?}");
         prop_assert!(!snapshot_debug.contains(&secret));
+        let public_diagnostic = Diagnostic {
+            stream: DiagnosticStream::Lifecycle,
+            payload: secret.as_bytes(),
+        };
+        let public_error = DiagnosticSinkError::with_source(std::io::Error::other(secret.clone()));
+        for rendered in [
+            format!("{public_diagnostic:?}"),
+            format!("{public_error}"),
+            format!("{public_error:?}"),
+        ] {
+            prop_assert!(!rendered.contains(&secret));
+        }
     }
 
     // Completion order does not determine observation order, and each component keeps
@@ -434,56 +445,6 @@ fn fixture_start(mode: &str, sink: Option<Arc<dyn DiagnosticSink>>) -> CliSessio
         SelectedCli::explicit(LaunchExecutable::unmanaged(session_helper())),
         request,
     )
-}
-
-#[cfg(feature = "signoff-observation")]
-fn observed_fixture_start(mode: &str, recorder: SignoffConnectorRecorder) -> CliSessionStart {
-    let config = ClientConfig::builder()
-        .environment("DAGGER_TEST_SESSION_FIXTURE_MODE", mode)
-        .environment("DAGGER_TEST_SECRET", "FIXTURE_TOKEN_0123456789")
-        .signoff_recorder(recorder)
-        .build()
-        .expect("the observed helper config is valid");
-    let request = match preflight_with(
-        config,
-        &FixtureContext(ProcessInputs::explicit_cli(session_helper())),
-    )
-    .expect("observed helper preflight succeeds")
-    {
-        ConnectionPlan::NewCli { request, .. } => request,
-        _ => panic!("the observed helper must select a new CLI"),
-    };
-    CliSessionStart::new(
-        SelectedCli::explicit(LaunchExecutable::unmanaged(session_helper())),
-        request,
-    )
-}
-
-#[cfg(feature = "signoff-observation")]
-#[tokio::test]
-async fn signoff_recorder_tracks_real_child_control_and_reap_boundaries() {
-    let (recorder, recording) = SignoffConnectorRecorder::bounded();
-    let mut launcher = SessionLauncher::new(TokioProcessSpawner, TokioRetryClock);
-    let started = launcher
-        .launch(
-            observed_fixture_start("valid", recorder),
-            &ProvisioningCancellation::new(),
-        )
-        .await
-        .expect("the observed helper emits a valid control record");
-    let (_, resources) = started.transfer();
-    resources
-        .close()
-        .await
-        .expect("the observed helper is reaped cleanly");
-    assert_eq!(
-        recording.finish().expect("recording remains complete"),
-        [
-            SignoffConnectorEvent::ChildStarted,
-            SignoffConnectorEvent::SessionControlAccepted,
-            SignoffConnectorEvent::ChildReaped,
-        ]
-    );
 }
 
 #[tokio::test]
@@ -662,53 +623,6 @@ async fn default_connector_launches_validates_queries_and_shuts_down_the_rust_fi
         .expect("query executes through the owned connection");
     assert!(matches!(response.data(), ResponseData::Value(_)));
     connection.close().await.expect("owned fixture shuts down");
-}
-
-#[cfg(feature = "signoff-observation")]
-#[tokio::test]
-async fn signoff_recorder_follows_the_real_authenticated_connector_lifecycle() {
-    let (recorder, recording) = SignoffConnectorRecorder::bounded();
-    let config = ClientConfig::builder()
-        .environment("DAGGER_TEST_SESSION_FIXTURE_MODE", "engine")
-        .environment("DAGGER_TEST_SECRET", "FIXTURE_TOKEN_0123456789")
-        .signoff_recorder(recorder)
-        .build()
-        .expect("observed fixture config is valid");
-    let plan = preflight_with(
-        config,
-        &FixtureContext(ProcessInputs::explicit_cli(
-            session_helper().into_os_string(),
-        )),
-    )
-    .expect("observed fixture source planning succeeds");
-    let request = match ConnectionRequest::try_from(plan) {
-        Ok(request) => request,
-        Err(_) => panic!("observed fixture planning must remain implicit"),
-    };
-    let connection = DefaultConnector
-        .connect(request)
-        .await
-        .expect("observed connector validates the exact fixture target");
-    connection
-        .execute(RawRequest::new("query { version }"))
-        .await
-        .expect("observed query executes through authenticated loopback");
-    connection
-        .close()
-        .await
-        .expect("observed fixture shuts down");
-    assert_eq!(
-        recording.finish().expect("recording remains complete"),
-        [
-            SignoffConnectorEvent::ChildStarted,
-            SignoffConnectorEvent::SessionControlAccepted,
-            SignoffConnectorEvent::AuthenticatedLoopbackConstructed,
-            SignoffConnectorEvent::AuthenticatedQuerySucceeded,
-            SignoffConnectorEvent::CloseStarted,
-            SignoffConnectorEvent::ChildReaped,
-            SignoffConnectorEvent::CloseCompleted,
-        ]
-    );
 }
 
 #[test]

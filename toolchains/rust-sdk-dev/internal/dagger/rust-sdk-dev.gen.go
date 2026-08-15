@@ -25,8 +25,8 @@ type RustSDKDevOpts struct {
 	SDKDependencyRevision string
 }
 
-func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../:0:0)
-	assertNotNil("workspace", workspace)
+func (r *Query) RustSDKDev(ws *Workspace, opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("rustSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sourcePath` optional argument
@@ -46,7 +46,7 @@ func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSD
 			q = q.Arg("sdkDependencyRevision", opts[i].SDKDependencyRevision)
 		}
 	}
-	q = q.Arg("workspace", workspace)
+	q = q.Arg("ws", ws)
 
 	return &RustSDKDev{
 		query: q,
@@ -68,9 +68,6 @@ type RustSDKDev struct { // rust-sdk-dev (../../../../:0:0)
 	examples              *Void
 	generatedClientCheck  *Void
 	id                    *ID
-	release               *Void
-	releaseDryRun         *Void
-	signoff               *string
 	test                  *Void
 }
 type WithRustSDKDevFunc func(r *RustSDKDev) *RustSDKDev
@@ -103,6 +100,24 @@ func (r *RustSDKDev) BaseContainer() *Container {
 	return &Container{
 		query: q,
 	}
+}
+
+// RustSDKDevBuildOpts contains options for RustSDKDev.Build
+type RustSDKDevBuildOpts struct {
+	Platform Platform
+}
+
+// Build creates the two public Rust packages and the ordinary complete engine.
+// It validates both outputs and performs no publication or external mutation.
+func (r *RustSDKDev) Build(opts ...RustSDKDevBuildOpts) *RustSDKDevRustSdkBuild {
+	q := r.query.Select("build")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+	}
+
+	return &RustSDKDevRustSdkBuild{query: q}
 }
 
 // Run cargo check on the Rust SDK
@@ -326,91 +341,6 @@ func (r *RustSDKDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// RustSDKDevReleaseOpts contains options for RustSDKDev.Release
-type RustSDKDevReleaseOpts struct {
-	// Cargo registry index URL to publish to instead of crates.io.
-	CargoRegistryIndex string
-}
-
-// Release the Rust SDK
-func (r *RustSDKDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustSDKDevReleaseOpts) error {
-	assertNotNil("cargoRegistryToken", cargoRegistryToken)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `cargoRegistryIndex` optional argument
-		if !querybuilder.IsZeroValue(opts[i].CargoRegistryIndex) {
-			q = q.Arg("cargoRegistryIndex", opts[i].CargoRegistryIndex)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-	q = q.Arg("cargoRegistryToken", cargoRegistryToken)
-
-	return q.Execute(ctx)
-}
-
-// RustSDKDevReleaseDryRunOpts contains options for RustSDKDev.ReleaseDryRun
-type RustSDKDevReleaseDryRunOpts struct {
-	// Source git tag to fake-release
-	//
-	// Default: "HEAD"
-	SourceTag string
-}
-
-// Test the publishing process
-func (r *RustSDKDev) ReleaseDryRun(ctx context.Context, opts ...RustSDKDevReleaseDryRunOpts) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
-	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceTag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceTag) {
-			q = q.Arg("sourceTag", opts[i].SourceTag)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// Signoff runs the complete closed Rust case catalog against one reusable exact-target artifact.
-//
-// The returned JSON is a raw adapter observation. Rust policy remains solely responsible for
-// deriving the atomic verdict and any later status transition.
-func (r *RustSDKDev) Signoff(ctx context.Context, planJson string, catalogJson string, closureJson string, platformJson string, artifact *File) (string, error) {
-	assertNotNil("artifact", artifact)
-	if r.signoff != nil {
-		return *r.signoff, nil
-	}
-	q := r.query.Select("signoff")
-	q = q.Arg("planJson", planJson)
-	q = q.Arg("catalogJson", catalogJson)
-	q = q.Arg("closureJson", closureJson)
-	q = q.Arg("platformJson", platformJson)
-	q = q.Arg("artifact", artifact)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// SignoffArtifact constructs and exports one focused target without starting an engine service.
-//
-// The seed contains only independently derived, byte-free construction inputs. This method
-// observes the four component identities from the retained graph and lets the Rust policy tool
-// seal them into the Build plan before any artifact bytes are assembled.
-func (r *RustSDKDev) SignoffArtifact(seedJson string) *RustSDKDevRustSignoffArtifact {
-	q := r.query.Select("signoffArtifact")
-	q = q.Arg("seedJson", seedJson)
-
-	return &RustSDKDevRustSignoffArtifact{
-		query: q,
-	}
-}
-
 // Source returns the source directory for the Rust SDK.
 func (r *RustSDKDev) Source() *Directory {
 	q := r.query.Select("source")
@@ -609,47 +539,27 @@ func (r *RustSDKDevRustEngineContent) Resolution(ctx context.Context) (string, e
 	return response, q.Execute(ctx)
 }
 
-// RustSignoffArtifact is one exportable exact-target bundle and its retained build graph.
-// The target and CLI stay private because callers must not bypass Rust admission by supplying
-// graph objects detached from the verified portable bytes.
-type RustSDKDevRustSignoffArtifact struct { // rust-sdk-dev (../../../../:0:0)
+// RustSdkBuild is the ordinary, non-publishing Rust SDK build result.
+type RustSDKDevRustSdkBuild struct { // rust-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
-	buildReceiptJson *string
-	id               *ID
-	manifestJson     *string
-	payloadDigest    *string
-	planJson         *string
+	id      *ID
+	verify  *Void
+	version *string
 }
 
-func (r *RustSDKDevRustSignoffArtifact) WithGraphQLQuery(q *querybuilder.Selection) *RustSDKDevRustSignoffArtifact {
-	return &RustSDKDevRustSignoffArtifact{
-		query: q,
-	}
+func (r *RustSDKDevRustSdkBuild) WithGraphQLQuery(q *querybuilder.Selection) *RustSDKDevRustSdkBuild {
+	return &RustSDKDevRustSdkBuild{query: q}
 }
 
-func (r *RustSDKDevRustSignoffArtifact) BuildReceiptJSON(ctx context.Context) (string, error) {
-	if r.buildReceiptJson != nil {
-		return *r.buildReceiptJson, nil
-	}
-	q := r.query.Select("buildReceiptJson")
+func (r *RustSDKDevRustSdkBuild) CompleteEngine() *Container {
+	q := r.query.Select("completeEngine")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &Container{query: q}
 }
 
-func (r *RustSDKDevRustSignoffArtifact) Bundle() *File {
-	q := r.query.Select("bundle")
-
-	return &File{
-		query: q,
-	}
-}
-
-// A unique identifier for this RustSdkDevRustSignoffArtifact.
-func (r *RustSDKDevRustSignoffArtifact) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this RustSdkDevRustSdkBuild.
+func (r *RustSDKDevRustSdkBuild) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -661,18 +571,41 @@ func (r *RustSDKDevRustSignoffArtifact) ID(ctx context.Context) (ID, error) {
 	return response, q.Execute(ctx)
 }
 
+func (r *RustSDKDevRustSdkBuild) Packages() *Directory {
+	q := r.query.Select("packages")
+
+	return &Directory{query: q}
+}
+
+func (r *RustSDKDevRustSdkBuild) Verify(ctx context.Context) error {
+	if r.verify != nil {
+		return nil
+	}
+	return r.query.Select("verify").Execute(ctx)
+}
+
+func (r *RustSDKDevRustSdkBuild) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLType() string {
-	return "RustSdkDevRustSignoffArtifact"
+func (r *RustSDKDevRustSdkBuild) XXX_GraphQLType() string {
+	return "RustSdkDevRustSdkBuild"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLIDType() string {
+func (r *RustSDKDevRustSdkBuild) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *RustSDKDevRustSdkBuild) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -680,55 +613,19 @@ func (r *RustSDKDevRustSignoffArtifact) XXX_GraphQLID(ctx context.Context) (stri
 	return string(id), nil
 }
 
-func (r *RustSDKDevRustSignoffArtifact) MarshalJSON() ([]byte, error) {
+func (r *RustSDKDevRustSdkBuild) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(id)
 }
-func (r *RustSDKDevRustSignoffArtifact) UnmarshalJSON(bs []byte) error {
+func (r *RustSDKDevRustSdkBuild) UnmarshalJSON(bs []byte) error {
 	var id string
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = RustSDKDevRustSignoffArtifact{query: selectNode(dag.query, id, "RustSdkDevRustSignoffArtifact")}
+	*r = RustSDKDevRustSdkBuild{query: selectNode(dag.query, id, "RustSdkDevRustSdkBuild")}
 	return nil
-}
-
-func (r *RustSDKDevRustSignoffArtifact) ManifestJSON(ctx context.Context) (string, error) {
-	if r.manifestJson != nil {
-		return *r.manifestJson, nil
-	}
-	q := r.query.Select("manifestJson")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *RustSDKDevRustSignoffArtifact) PayloadDigest(ctx context.Context) (string, error) {
-	if r.payloadDigest != nil {
-		return *r.payloadDigest, nil
-	}
-	q := r.query.Select("payloadDigest")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *RustSDKDevRustSignoffArtifact) PlanJSON(ctx context.Context) (string, error) {
-	if r.planJson != nil {
-		return *r.planJson, nil
-	}
-	q := r.query.Select("planJson")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }

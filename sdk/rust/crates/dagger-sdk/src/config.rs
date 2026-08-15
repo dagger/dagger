@@ -14,8 +14,6 @@ use std::time::Duration;
 use crate::connection::EngineConnection;
 use crate::diagnostic::DiagnosticSink;
 use crate::errors::{ConfigError, ConfigOption, TimeoutPhase};
-#[cfg(feature = "signoff-observation")]
-use crate::signoff_observation::SignoffConnectorRecorder;
 
 const DEFAULT_SESSION_STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -57,8 +55,6 @@ pub struct ClientConfig {
     workdir: Option<PathBuf>,
     workspace: Option<String>,
     diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
-    #[cfg(feature = "signoff-observation")]
-    pub(crate) signoff_recorder: Option<SignoffConnectorRecorder>,
     load_workspace_modules: bool,
     connection: Option<Box<dyn EngineConnection>>,
     version: Option<String>,
@@ -81,8 +77,6 @@ pub(crate) struct ClientConfigParts {
     pub(crate) workdir: Option<PathBuf>,
     pub(crate) workspace: Option<String>,
     pub(crate) diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
-    #[cfg(feature = "signoff-observation")]
-    pub(crate) signoff_recorder: Option<SignoffConnectorRecorder>,
     pub(crate) load_workspace_modules: bool,
     pub(crate) connection: Option<Box<dyn EngineConnection>>,
     pub(crate) version: Option<String>,
@@ -182,8 +176,6 @@ impl ClientConfig {
             workdir: self.workdir,
             workspace: self.workspace,
             diagnostic_sink: self.diagnostic_sink,
-            #[cfg(feature = "signoff-observation")]
-            signoff_recorder: self.signoff_recorder,
             load_workspace_modules: self.load_workspace_modules,
             connection: self.connection,
             version: self.version,
@@ -205,8 +197,6 @@ impl Default for ClientConfig {
             workdir: None,
             workspace: None,
             diagnostic_sink: None,
-            #[cfg(feature = "signoff-observation")]
-            signoff_recorder: None,
             load_workspace_modules: false,
             connection: None,
             version: None,
@@ -238,14 +228,11 @@ impl fmt::Debug for ClientConfig {
         // Paths, URIs, trait objects, and values are intentionally represented only by
         // presence. They can contain credentials or sensitive host coordinates even
         // when the corresponding option is not conventionally called a secret.
-        let mut debug = formatter.debug_struct("ClientConfig");
-        debug
+        formatter
+            .debug_struct("ClientConfig")
             .field("workdir_present", &self.workdir.is_some())
             .field("workspace_present", &self.workspace.is_some())
-            .field("diagnostic_sink_present", &self.diagnostic_sink.is_some());
-        #[cfg(feature = "signoff-observation")]
-        debug.field("signoff_recorder_present", &self.signoff_recorder.is_some());
-        debug
+            .field("diagnostic_sink_present", &self.diagnostic_sink.is_some())
             .field("load_workspace_modules", &self.load_workspace_modules)
             .field("explicit_connection_present", &self.connection.is_some())
             .field("version_present", &self.version.is_some())
@@ -278,8 +265,6 @@ pub struct ClientConfigBuilder {
     workdir: Option<PathBuf>,
     workspace: Option<String>,
     diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
-    #[cfg(feature = "signoff-observation")]
-    signoff_recorder: Option<SignoffConnectorRecorder>,
     load_workspace_modules: Option<bool>,
     connection: Option<Box<dyn EngineConnection>>,
     version: Option<String>,
@@ -311,15 +296,6 @@ impl ClientConfigBuilder {
     #[must_use]
     pub fn diagnostic_sink(mut self, sink: Arc<dyn DiagnosticSink>) -> Self {
         self.diagnostic_sink = Some(sink);
-        self
-    }
-
-    /// Installs the credential-free recorder used by the exact-target sign-off runner.
-    #[cfg(feature = "signoff-observation")]
-    #[doc(hidden)]
-    #[must_use]
-    pub fn signoff_recorder(mut self, recorder: SignoffConnectorRecorder) -> Self {
-        self.signoff_recorder = Some(recorder);
         self
     }
 
@@ -438,8 +414,6 @@ impl ClientConfigBuilder {
             workdir: self.workdir,
             workspace: self.workspace,
             diagnostic_sink: self.diagnostic_sink,
-            #[cfg(feature = "signoff-observation")]
-            signoff_recorder: self.signoff_recorder,
             load_workspace_modules: self.load_workspace_modules.unwrap_or(false),
             connection: self.connection,
             version: self.version,

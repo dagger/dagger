@@ -131,8 +131,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	npmRegistryURL string, // +optional
 	hexAPIKey *dagger.Secret, // +optional
 	hexAPIURL string, // +optional
-	cargoRegistryToken *dagger.Secret, // +optional
-	cargoRegistryIndex string, // +optional
 	goSdkDestRemote string, // +optional
 	phpSdkDestRemote string, // +optional
 
@@ -319,21 +317,6 @@ func (r *Release) Publish( //nolint:gocyclo
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.ElixirSDKDev(dagger.ElixirSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
-			},
-		},
-		{
-			name: "⚙️ Rust SDK",
-			path: "sdk/rust/",
-			tag:  "sdk/rust/",
-			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
-			release: func(ctx context.Context) error {
-				return dag.RustSDKDev(dagger.RustSDKDevOpts{Workspace: r.Workspace}).
-					Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
-						CargoRegistryIndex: cargoRegistryIndex,
-					})
-			},
-			dryRun: func(ctx context.Context) error {
-				return dag.RustSDKDev(dagger.RustSDKDevOpts{Workspace: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{

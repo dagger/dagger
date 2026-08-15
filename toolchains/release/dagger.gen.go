@@ -566,20 +566,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg hexAPIURL", err))
 				}
 			}
-			var cargoRegistryToken *dagger.Secret
-			if inputArgs["cargoRegistryToken"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["cargoRegistryToken"]), &cargoRegistryToken)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryToken", err))
-				}
-			}
-			var cargoRegistryIndex string
-			if inputArgs["cargoRegistryIndex"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["cargoRegistryIndex"]), &cargoRegistryIndex)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryIndex", err))
-				}
-			}
 			var goSdkDestRemote string
 			if inputArgs["goSdkDestRemote"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["goSdkDestRemote"]), &goSdkDestRemote)
@@ -657,7 +643,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
 				}
 			}
-			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, githubToken, githubOrgName, githubHost, githubCaCert, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
+			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, githubToken, githubOrgName, githubHost, githubCaCert, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
 		case "PublishWithMockEndpoints":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -844,8 +830,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("npmRegistryURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 131, 2)}).
 							WithArg("hexAPIKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 132, 2)}).
 							WithArg("hexAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 2)}).
-							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 134, 2)}).
-							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 135, 2)}).
 							WithArg("goSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 2)}).
 							WithArg("phpSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 137, 2)}).
 							WithArg("awsAccessKeyID", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 139, 2)}).

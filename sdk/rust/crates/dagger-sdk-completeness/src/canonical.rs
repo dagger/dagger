@@ -28,30 +28,6 @@ pub enum DigestDomain {
     Compatibility,
     ModuleAuthoring,
     ClientGeneration,
-    ConformanceScope,
-    ConformanceApplicabilityReview,
-    ConformanceApplicabilityRecords,
-    ConformanceAssertionCatalog,
-    ConformanceFixtureRegistry,
-    ConformanceCaseCatalog,
-    ConformanceClosureBundle,
-    ConformanceHostProfile,
-    ConformanceHostPlan,
-    ConformanceHostRecord,
-    ConformancePlatformMatrix,
-    ConformanceSecurity,
-    ConformancePolicy,
-    ConformanceInstalledBaseline,
-    ConformanceCaseExecution,
-    ConformanceProgramRegistry,
-    ConformanceObservableRegistry,
-    ConformanceScenarioContract,
-    ConformanceScenarioCandidates,
-    ConformanceScenarioRegistry,
-    ConformanceScenarioManifest,
-    ConformanceRunPlan,
-    ConformanceVerdict,
-    ConformanceReleaseHandoff,
 }
 
 impl DigestDomain {
@@ -65,50 +41,6 @@ impl DigestDomain {
             Self::Compatibility => b"dagger-rust-sdk-compatibility-v1\0",
             Self::ModuleAuthoring => b"dagger-rust-sdk-module-authoring-v1\0",
             Self::ClientGeneration => b"dagger-rust-sdk-client-generation-v1\0",
-            Self::ConformanceScope => b"dagger-rust-sdk-conformance-scope-v1\0",
-            Self::ConformanceApplicabilityReview => {
-                b"dagger-rust-sdk-conformance-applicability-review-v1\0"
-            }
-            Self::ConformanceApplicabilityRecords => {
-                b"dagger-rust-sdk-conformance-applicability-records-v1\0"
-            }
-            Self::ConformanceAssertionCatalog => {
-                b"dagger-rust-sdk-conformance-assertion-catalog-v1\0"
-            }
-            Self::ConformanceFixtureRegistry => {
-                b"dagger-rust-sdk-conformance-fixture-registry-v1\0"
-            }
-            Self::ConformanceCaseCatalog => b"dagger-rust-sdk-conformance-case-catalog-v1\0",
-            Self::ConformanceClosureBundle => b"dagger-rust-sdk-conformance-closure-bundle-v1\0",
-            Self::ConformanceHostProfile => b"dagger-rust-sdk-signoff-host-profile-v1\0",
-            Self::ConformanceHostPlan => b"dagger-rust-sdk-signoff-host-plan-v1\0",
-            Self::ConformanceHostRecord => b"dagger-rust-sdk-signoff-host-record-v1\0",
-            Self::ConformancePlatformMatrix => b"dagger-rust-sdk-conformance-platform-matrix-v1\0",
-            Self::ConformanceSecurity => b"dagger-rust-sdk-conformance-security-v1\0",
-            Self::ConformancePolicy => b"dagger-rust-sdk-conformance-policy-v1\0",
-            Self::ConformanceInstalledBaseline => {
-                b"dagger-rust-sdk-signoff-installed-baseline-v1\0"
-            }
-            Self::ConformanceCaseExecution => b"dagger-rust-sdk-signoff-case-execution-v1\0",
-            Self::ConformanceProgramRegistry => b"dagger-rust-sdk-signoff-program-registry-v1\0",
-            Self::ConformanceObservableRegistry => {
-                b"dagger-rust-sdk-signoff-observable-registry-v1\0"
-            }
-            Self::ConformanceScenarioContract => {
-                b"dagger-rust-sdk-conformance-scenario-contract-v1\0"
-            }
-            Self::ConformanceScenarioCandidates => {
-                b"dagger-rust-sdk-conformance-scenario-candidates-v1\0"
-            }
-            Self::ConformanceScenarioRegistry => {
-                b"dagger-rust-sdk-conformance-scenario-registry-v1\0"
-            }
-            Self::ConformanceScenarioManifest => {
-                b"dagger-rust-sdk-conformance-scenario-manifest-v1\0"
-            }
-            Self::ConformanceRunPlan => b"dagger-rust-sdk-signoff-run-plan-v1\0",
-            Self::ConformanceVerdict => b"dagger-rust-sdk-signoff-verdict-v1\0",
-            Self::ConformanceReleaseHandoff => b"dagger-rust-sdk-signoff-release-handoff-v1\0",
         }
     }
 }

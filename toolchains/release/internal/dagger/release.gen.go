@@ -223,10 +223,6 @@ type ReleasePublishOpts struct {
 
 	HexApiurl string
 
-	CargoRegistryToken *Secret
-
-	CargoRegistryIndex string
-
 	GoSDKDestRemote string
 
 	PhpSDKDestRemote string
@@ -320,14 +316,6 @@ func (r *Release) Publish(tag string, commit string, opts ...ReleasePublishOpts)
 		// `hexApiurl` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HexApiurl) {
 			q = q.Arg("hexApiurl", opts[i].HexApiurl)
-		}
-		// `cargoRegistryToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].CargoRegistryToken) {
-			q = q.Arg("cargoRegistryToken", opts[i].CargoRegistryToken)
-		}
-		// `cargoRegistryIndex` optional argument
-		if !querybuilder.IsZeroValue(opts[i].CargoRegistryIndex) {
-			q = q.Arg("cargoRegistryIndex", opts[i].CargoRegistryIndex)
 		}
 		// `goSdkDestRemote` optional argument
 		if !querybuilder.IsZeroValue(opts[i].GoSDKDestRemote) {
