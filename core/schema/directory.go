@@ -294,6 +294,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
+		dagql.NodeFunc("__withGitWorktree", s.withGitWorktree),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this directory.").
@@ -1859,6 +1860,34 @@ func (s *directorySchema) terminal(
 	}
 
 	return dir, nil
+}
+
+type withGitWorktreeArgs struct {
+	CheckoutPath    string
+	ExpectedHeadSHA string `name:"expectedHeadSHA"`
+}
+
+// withGitWorktree applies the calling client's streamed git-visible worktree
+// delta directly to parent. Keeping this behind a DAG field gives the resulting
+// Directory its own call identity without putting patch bytes in that identity.
+func (s *directorySchema) withGitWorktree(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args withGitWorktreeArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("buildkit: %w", err)
+	}
+	pack, err := bk.PackGitWorktree(ctx, args.CheckoutPath, args.ExpectedHeadSHA)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return core.MaterializeGitWorktreePack(ctx, parent, pack)
 }
 
 func (s *directorySchema) asGit(

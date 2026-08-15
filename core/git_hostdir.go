@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -118,7 +121,7 @@ func MaterializeHostGitCheckout(
 			Field: "withoutDirectory",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}},
 		})
-	case errors.Is(err, fs.ErrNotExist):
+	case errors.Is(err, iofs.ErrNotExist):
 		// Nothing to replace.
 	default:
 		return tree, err
@@ -186,6 +189,112 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 	dir.Dir.setValue("/.git")
 	dir.Snapshot.setValue(snap)
 	return dir, nil
+}
+
+// MaterializeGitWorktreePack applies a client-produced binary worktree patch
+// to a canonical HEAD checkout and recreates lightweight markers for omitted
+// untracked nested repositories. The result keeps HEAD's canonical .git and a
+// dirty worktree suitable for LocalGitRepository.uncommitted.
+func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Directory], pack *engineutil.GitWorktreePack) (inst dagql.ObjectResult[*Directory], rerr error) {
+	srv := dagql.CurrentDagqlServer(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	parent, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result)
+	if err != nil {
+		return inst, fmt.Errorf("get canonical checkout snapshot: %w", err)
+	}
+	treePath, err := tree.Self().Dir.GetOrEval(ctx, tree.Result)
+	if err != nil {
+		return inst, fmt.Errorf("get canonical checkout path: %w", err)
+	}
+
+	bkref, err := query.SnapshotManager().New(ctx, parent,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("git packed worktree"))
+	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
+		worktree, err := fs.RootPath(root, treePath)
+		if err != nil {
+			return err
+		}
+		head, err := runGitEnv(ctx, worktree, nil, "rev-parse", "HEAD")
+		if err != nil {
+			return fmt.Errorf("read canonical checkout HEAD: %w", err)
+		}
+		if strings.TrimSpace(head) != pack.HeadSHA {
+			return fmt.Errorf("canonical checkout HEAD %s does not match worktree patch %s", strings.TrimSpace(head), pack.HeadSHA)
+		}
+
+		if len(pack.Patch) > 0 {
+			patch, err := os.CreateTemp("", "dagger-worktree-patch")
+			if err != nil {
+				return fmt.Errorf("create worktree patch file: %w", err)
+			}
+			patchPath := patch.Name()
+			defer os.Remove(patchPath)
+			if _, err := patch.Write(pack.Patch); err != nil {
+				patch.Close()
+				return fmt.Errorf("write worktree patch: %w", err)
+			}
+			if err := patch.Close(); err != nil {
+				return err
+			}
+			if _, err := runGitEnv(ctx, worktree, nil, "apply", "--binary", "--whitespace=nowarn", patchPath); err != nil {
+				return fmt.Errorf("apply worktree patch: %w", err)
+			}
+		}
+
+		for _, nested := range pack.NestedRepositories {
+			clean := filepath.Clean(filepath.FromSlash(nested))
+			if clean == "." || clean == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("invalid nested repository path %q", nested)
+			}
+			nestedRoot, err := fs.RootPath(worktree, clean)
+			if err != nil {
+				return fmt.Errorf("resolve nested repository path %q: %w", nested, err)
+			}
+			if err := os.MkdirAll(nestedRoot, 0o755); err != nil {
+				return fmt.Errorf("create nested repository boundary %q: %w", nested, err)
+			}
+			if _, err := runGitEnv(ctx, nestedRoot, nil, "init", "-q"); err != nil {
+				return fmt.Errorf("create nested repository boundary %q: %w", nested, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return inst, err
+	}
+
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bkref = nil
+	dir := &Directory{
+		Platform: query.Platform(),
+		Services: slices.Clone(tree.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue(treePath)
+	dir.Snapshot.setValue(snap)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		return inst, err
+	}
+	return inst, nil
 }
 
 func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack) error {
@@ -286,7 +395,7 @@ func DropRootGitPointerFile(
 ) (dagql.ObjectResult[*Directory], error) {
 	st, err := dir.Self().Stat(ctx, dir, dag, ".git", true)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, iofs.ErrNotExist) {
 			return dir, nil
 		}
 		return dir, err

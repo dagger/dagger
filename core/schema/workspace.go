@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/mod/semver"
@@ -3405,20 +3406,46 @@ func (s *workspaceSchema) workspaceGitRepository(
 			return inst, err
 		}
 
-		var err error
-		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
-		if err != nil {
-			return inst, fmt.Errorf("workspace git directory: %w", err)
+		var (
+			err  error
+			fast bool
+		)
+		if ws.HostPath() != "" && ws.ClientLocalBase() {
+			dir, fast, err = s.materializeWorkspaceGitWorktree(ctx, ws)
+			if err != nil {
+				return inst, fmt.Errorf("workspace git worktree: %w", err)
+			}
 		}
+		if !fast {
+			dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+			if err != nil {
+				return inst, fmt.Errorf("workspace git directory: %w", err)
+			}
 
-		// Git worktree and submodule checkouts have a .git *pointer file* at
-		// their root, whose target lives outside the workspace boundary.
-		// Replace whatever .git the synced tree carries with a canonical
-		// reconstruction of the checkout's repository (packed by the client's
-		// own git), so the LocalGitRepository sees a plain repository.
-		dir, err = s.materializeWorkspaceGit(ctx, ws, dir)
-		if err != nil {
-			return inst, fmt.Errorf("workspace git directory: %w", err)
+			// Git worktree and submodule checkouts have a .git *pointer file* at
+			// their root, whose target lives outside the workspace boundary.
+			// Replace whatever .git the synced tree carries with a canonical
+			// reconstruction of the checkout's repository (packed by the client's
+			// own git), so the LocalGitRepository sees a plain repository.
+			dir, err = s.materializeWorkspaceGit(ctx, ws, dir)
+			if err != nil {
+				return inst, fmt.Errorf("workspace git directory: %w", err)
+			}
+		} else if changes, ok := ws.OverlayChanges(); ok && changes.Self() != nil {
+			changesID, err := changes.ID()
+			if err != nil {
+				return inst, err
+			}
+			srv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return inst, err
+			}
+			if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+				Field: "withChanges",
+				Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+			}); err != nil {
+				return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
+			}
 		}
 	}
 
@@ -3435,6 +3462,92 @@ func (s *workspaceSchema) workspaceGitRepository(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+}
+
+// materializeWorkspaceGitWorktree builds a host-backed workspace repository
+// without resolving its whole root directory. It checks out the canonical pack
+// for HEAD, asks the client for only the git-visible worktree delta, and applies
+// that delta directly to an engine snapshot. The bool is false when the client
+// predates the delta RPC (or the checkout has no canonical HEAD), in which case
+// callers retain the full-directory compatibility path.
+func (s *workspaceSchema) materializeWorkspaceGitWorktree(
+	ctx context.Context,
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Directory], bool, error) {
+	var inst dagql.ObjectResult[*core.Directory]
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, false, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, false, err
+	}
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return inst, false, err
+	}
+
+	var scratch dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(clientCtx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
+		return inst, false, err
+	}
+	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "epoch:"+epoch)
+	if err != nil {
+		return inst, false, err
+	}
+	if _, err := canonical.Self().Stat(clientCtx, canonical, srv, ".git", true); err != nil {
+		// MaterializeHostGitCheckout leaves scratch unchanged for clients that
+		// do not implement checkout packing.
+		return inst, false, nil
+	}
+
+	var repoResult dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(clientCtx, canonical, &repoResult, dagql.Selector{Field: "asGit"}); err != nil {
+		return inst, false, err
+	}
+	var head dagql.Result[*core.GitRef]
+	if err := srv.Select(clientCtx, repoResult, &head, dagql.Selector{Field: "head"}); err != nil {
+		// An unborn checkout has no HEAD tree. The old directory route retains
+		// its existing behavior for this uncommon state.
+		return inst, false, nil
+	}
+	if head.Self() == nil || head.Self().Ref == nil || head.Self().Ref.SHA == "" {
+		return inst, false, nil
+	}
+	headID, err := head.ID()
+	if err != nil {
+		return inst, false, err
+	}
+	headObject, err := dagql.NewID[*core.GitRef](headID).Load(clientCtx, srv)
+	if err != nil {
+		return inst, false, err
+	}
+
+	var clean dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(clientCtx, headObject, &clean, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(true)},
+		},
+	}); err != nil {
+		return inst, false, err
+	}
+
+	if err := srv.Select(clientCtx, clean, &inst, dagql.Selector{
+		Field: "__withGitWorktree",
+		Args: []dagql.NamedInput{
+			{Name: "checkoutPath", Value: dagql.NewString(ws.HostPath())},
+			{Name: "expectedHeadSHA", Value: dagql.NewString(head.Self().Ref.SHA)},
+		},
+	}); errors.Is(err, engineutil.ErrGitWorktreeUnsupported) {
+		return dagql.ObjectResult[*core.Directory]{}, false, nil
+	} else if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, false, err
+	}
+	return inst, true, nil
 }
 
 // materializeWorkspaceGit replaces a host-backed workspace's synced .git with
