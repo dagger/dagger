@@ -99,6 +99,11 @@ type LLM struct {
 	model    string
 	provider string
 
+	// reasoningEffort, when set, overrides the provider-configured reasoning
+	// effort for this conversation (see LLMEndpoint.ReasoningEffort). "none"
+	// explicitly disables reasoning; empty defers to the provider config.
+	reasoningEffort string
+
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
 
@@ -444,6 +449,14 @@ func (m *LLMMessage) estimateTokens() int64 {
 		chars += len(b.ToolName)
 		chars += len(b.Arguments)
 	}
+	return estimateTextTokens(chars)
+}
+
+// estimateTextTokens turns a character count into a conservative token estimate
+// using the same chars/4 heuristic as LLMMessage.estimateTokens. It backs the
+// per-tool-call result size the TUI surfaces so an inordinate result is easy to
+// spot even though providers only report usage per API call, not per result.
+func estimateTextTokens(chars int) int64 {
 	if chars == 0 {
 		return 0
 	}
@@ -589,6 +602,12 @@ type LLMRouter struct {
 	LocalModel     string
 	LocalAPICompat string
 	LocalAPIKey    string
+
+	// localClient is the client whose configuration supplied LocalBaseURL.
+	// A local endpoint is reachable from that client's host, so the tunnel
+	// (see LLM.Endpoint) must run through that client's session. Set by
+	// loadLLMRouter; nil when the router was built for a single client.
+	localClient *engine.ClientMetadata
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -851,7 +870,7 @@ func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 	return endpoint, nil
 }
 
-func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
+func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) (suppliedLocal bool, _ error) {
 	if getenv == nil {
 		getenv = func(_ context.Context, key string) (string, error) { //nolint:unparam
 			return os.Getenv(key), nil
@@ -870,8 +889,17 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	}
 
 	var eg errgroup.Group
+	var anthropicKeySet, anthropicTokenSet bool
 	eg.Go(func() error {
-		return save("ANTHROPIC_API_KEY", &r.AnthropicAPIKey)
+		var v string
+		if err := save("ANTHROPIC_API_KEY", &v); err != nil {
+			return err
+		}
+		if v != "" {
+			r.AnthropicAPIKey = v
+			anthropicKeySet = true
+		}
+		return nil
 	})
 	eg.Go(func() error {
 		return save("ANTHROPIC_BASE_URL", &r.AnthropicBaseURL)
@@ -882,7 +910,15 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	eg.Go(func() error {
 		// OAuth (Claude Code subscription) bearer token, exported client-side
 		// from the persisted llmconfig by `dagger llm`.
-		return save("ANTHROPIC_AUTH_TOKEN", &r.AnthropicAuthToken)
+		var v string
+		if err := save("ANTHROPIC_AUTH_TOKEN", &v); err != nil {
+			return err
+		}
+		if v != "" {
+			r.AnthropicAuthToken = v
+			anthropicTokenSet = true
+		}
+		return nil
 	})
 	eg.Go(func() error {
 		return save("ANTHROPIC_REASONING_EFFORT", &r.AnthropicReasoningEffort)
@@ -927,7 +963,15 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 
 	eg.Go(func() error {
-		return save("LOCAL_BASE_URL", &r.LocalBaseURL)
+		var v string
+		if err := save("LOCAL_BASE_URL", &v); err != nil {
+			return err
+		}
+		if v != "" {
+			r.LocalBaseURL = v
+			suppliedLocal = true
+		}
+		return nil
 	})
 	eg.Go(func() error {
 		return save("LOCAL_MODEL", &r.LocalModel)
@@ -947,25 +991,42 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 
 	if err := eg.Wait(); err != nil {
-		return err
+		return false, err
 	}
 
 	if openAIDisableStreaming != "" {
 		v, err := strconv.ParseBool(openAIDisableStreaming)
 		if err != nil {
-			return err
+			return false, err
 		}
 		r.OpenAIDisableStreaming = v
+	}
+
+	// API key and subscription OAuth token are alternative credentials for
+	// the same provider. When this load supplies one but not the other, the
+	// supplied credential wins outright: clear the other so a value layered
+	// in by an earlier load (e.g. the host's OAuth login when a nested
+	// client sets an explicit API key) can't shadow it at request time —
+	// the Anthropic client prefers OAuth whenever a token is present.
+	if anthropicKeySet && !anthropicTokenSet {
+		r.AnthropicAuthToken = ""
+	}
+	if anthropicTokenSet && !anthropicKeySet {
+		r.AnthropicAPIKey = ""
 	}
 
 	// A bearer token implies OAuth (Claude Code) auth for Anthropic.
 	r.AnthropicIsOAuth = r.AnthropicAuthToken != ""
 
-	return nil
+	return suppliedLocal, nil
 }
 
-func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
-	router := new(LLMRouter)
+// LoadClientConfig loads LLM configuration from one client's environment into
+// the router: the client's ./.env file (if any) first, then its environment
+// variables. Only values the client actually provides overwrite fields already
+// set on the router, so configuration can be layered — e.g. the session's main
+// client as the base with the calling client's own values on top.
+func (r *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server) (suppliedLocal bool, _ error) {
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
@@ -987,8 +1048,6 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 		// If it's a regular plaintext:
 		return uriOrPlaintext, nil
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
 	env := make(map[string]string)
 	// Load .env from current directory, if it exists
 	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
@@ -996,7 +1055,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 			env = e
 		}
 	}
-	err := router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+	return r.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
 			return loadSecret(ctx, v)
@@ -1008,6 +1067,13 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 		}
 		return "", nil
 	})
+}
+
+func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
+	router := new(LLMRouter)
+	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	_, err := router.LoadClientConfig(ctx, srv)
 	return router, err
 }
 
@@ -1028,18 +1094,86 @@ func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error
 	}, nil
 }
 
-// loadLLMRouter creates an LLM router that routes to the root client
-func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
+// loadLLMRouter creates an LLM router for the calling client. LLM
+// configuration is a session-wide concern: the router is seeded from the
+// session's main client (the CLI on the host), then overlaid with the calling
+// (non-module) client's own configuration, which wins wherever it sets a
+// value.
+//
+// The seeding is what lets a nested client — e.g. an
+// experimentalPrivilegedNesting exec running `dagger agent` — inherit the
+// session's LLM auth without ever holding the credentials: the env:// and
+// file://.env lookups resolve through the *main* client's session, and only
+// the engine-side router sees the plaintext. Nothing is injected into the
+// nested container, so its processes cannot read the keys (its own env:// or
+// file:// secrets still resolve inside the container); they can only use the
+// LLM through the API.
+func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
 	parentClient, err := query.NonModuleParentClientMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ctx = engine.ContextWithClientMetadata(ctx, parentClient)
-	mainSrv, err := query.Server.Server(ctx)
+	router := new(LLMRouter)
+	loadFrom := func(client *engine.ClientMetadata) error {
+		clientCtx := engine.ContextWithClientMetadata(ctx, client)
+		srv, err := query.Server.Server(clientCtx)
+		if err != nil {
+			return err
+		}
+		suppliedLocal, err := router.LoadClientConfig(clientCtx, srv)
+		if err != nil {
+			return err
+		}
+		// Remember which client supplied the local endpoint: a local base URL
+		// is reachable from that client's host, so the tunnel (see
+		// LLM.Endpoint) must run through that client's session. Later loads
+		// win regardless of whether the URL string differs — localhost names
+		// a different host per client.
+		if suppliedLocal {
+			router.localClient = client
+		}
+		return nil
+	}
+	mainClient, err := query.MainClientCallerMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return NewLLMRouter(ctx, mainSrv)
+	if mainClient.ClientID != parentClient.ClientID {
+		if err := loadFrom(mainClient); err != nil {
+			return nil, err
+		}
+	}
+	if err := loadFrom(parentClient); err != nil {
+		return nil, err
+	}
+	return router, nil
+}
+
+// DefaultLLMRoute resolves the configured default model and the provider it
+// routes to, so llm() can re-call itself with both pinned (the way
+// Container.from re-calls itself with the digested ref). provider, when
+// non-empty, is the caller's explicit choice and is returned unchanged. A
+// ("", "") result means no default is configured — nothing to pin.
+func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, string, error) {
+	router, err := loadLLMRouter(ctx, q)
+	if err != nil {
+		return "", "", err
+	}
+	model := router.DefaultModel()
+	if model == "" {
+		return "", "", nil
+	}
+	if provider == "" {
+		endpoint, err := router.Route(model, "")
+		if err != nil {
+			return "", "", err
+		}
+		provider = string(endpoint.Provider)
+	}
+	return model, provider, nil
 }
 
 func (*LLM) Type() *ast.Type {
@@ -1111,6 +1245,18 @@ func (llm *LLM) AttachDependencyResults(
 		llm.mcp.boundTools[i].object = obj
 		deps = append(deps, attached)
 	}
+	for i, skillDir := range llm.mcp.skillDirs {
+		attached, err := attach(skillDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm skill directory: %w", err)
+		}
+		dir, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach llm skill directory: unexpected result %T", attached)
+		}
+		llm.mcp.skillDirs[i] = dir
+		deps = append(deps, attached)
+	}
 	return deps, nil
 }
 
@@ -1143,9 +1289,16 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	// traffic through the client's session, then rebuild the client so it
 	// dials through the tunnel.
 	if endpoint.Provider == Local {
-		parentClient, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("local LLM: parent client metadata: %w", err)
+		// Tunnel through the session of the client that configured the local
+		// endpoint (the base URL is reachable from *its* host) — the calling
+		// client by default, the session's main client when the config was
+		// inherited from it.
+		tunnelClient := router.localClient
+		if tunnelClient == nil {
+			tunnelClient, err = query.NonModuleParentClientMetadata(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("local LLM: parent client metadata: %w", err)
+			}
 		}
 		// The tunnel serves the endpoint beyond this call, so scope it to the
 		// client's session: it shuts down when the session closes.
@@ -1153,7 +1306,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		if err != nil {
 			return nil, fmt.Errorf("local LLM: session context: %w", err)
 		}
-		tunnelCtx := engine.ContextWithClientMetadata(sessionCtx, parentClient)
+		tunnelCtx := engine.ContextWithClientMetadata(sessionCtx, tunnelClient)
 		if err := setupLocalTunnel(tunnelCtx, endpoint); err != nil {
 			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
 		}
@@ -1163,6 +1316,14 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		case "anthropic":
 			endpoint.Client = newAnthropicClient(endpoint)
 		}
+	}
+
+	// Apply the conversation-level reasoning effort override, if any. Route()
+	// builds a fresh endpoint per call, so mutating it here is safe. "none" is
+	// passed through: providers treat it the same as empty (reasoning off),
+	// but it must override a non-empty provider-configured effort.
+	if llm.reasoningEffort != "" {
+		endpoint.ReasoningEffort = llm.reasoningEffort
 	}
 
 	llm.endpoint = endpoint
@@ -1194,6 +1355,20 @@ func (llm *LLM) WithModel(model, provider string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
 	llm.provider = provider
+
+	llm.endpointMtx.Lock()
+	defer llm.endpointMtx.Unlock()
+	llm.endpoint = nil
+
+	return llm
+}
+
+// WithReasoningEffort changes the reasoning effort for the rest of the
+// conversation, overriding any provider-configured default. "none" explicitly
+// disables reasoning.
+func (llm *LLM) WithReasoningEffort(effort string) *LLM {
+	llm = llm.Clone()
+	llm.reasoningEffort = effort
 
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
@@ -1337,6 +1512,22 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 		Service: svc,
 	})
 	return llm
+}
+
+// WithSkills installs a directory of skills — each a subdirectory holding a
+// SKILL.md — surfaced to the model through ListSkills/ReadSkill alongside
+// the engine-embedded and workspace-discovered skills.
+func (llm *LLM) WithSkills(dir dagql.ObjectResult[*Directory]) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithSkills(dir)
+	return llm
+}
+
+// Skills returns the discovery index of every skill visible to the model — the
+// same list the ListSkills tool serves, across all sources with the same
+// precedence.
+func (llm *LLM) Skills(ctx context.Context) ([]*LLMSkill, error) {
+	return listSkills(ctx, llm.mcp.skillSources())
 }
 
 // Return the last message sent by the agent
@@ -1560,7 +1751,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest)
+		emitMessageSpan(ctx, msg, llmCallDigest, nil)
 	}
 }
 
@@ -1616,6 +1807,13 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 // responseSelector builds the withResponse selector that records the model's
 // reply - its content blocks and token usage - as a new node in the LLM DAG.
 func responseSelector(res *LLMResponse) (dagql.Selector, error) {
+	return responseSelectorFromBlocks(res.Content, res.TokenUsage)
+}
+
+// responseSelectorFromBlocks builds a withResponse selector from raw content
+// blocks and token usage. Used for fresh responses (responseSelector) and for
+// re-emitting recorded assistant messages (recipeSelectors).
+func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
 	// Build content block input objects for the withResponse selector.
 	// An InputObject's fields are only populated by decoding a map through
 	// its Decoder; a bare struct literal leaves them nil and panics when the
@@ -1626,8 +1824,8 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 	// to nil and is omitted from the literal entirely, so the field must have
 	// a default tag or reloading the serialized ID fails with "missing
 	// required input field".
-	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
-	for i, block := range res.Content {
+	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
+	for i, block := range blocks {
 		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
 			"kind":      string(block.Kind),
 			"text":      block.Text,
@@ -1652,34 +1850,34 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 			Value: contentInputs,
 		},
 	}
-	if res.TokenUsage.InputTokens != 0 {
+	if tokenUsage.InputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "inputTokens",
-			Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			Value: dagql.NewInt(tokenUsage.InputTokens),
 		})
 	}
-	if res.TokenUsage.OutputTokens != 0 {
+	if tokenUsage.OutputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "outputTokens",
-			Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			Value: dagql.NewInt(tokenUsage.OutputTokens),
 		})
 	}
-	if res.TokenUsage.CachedTokenReads != 0 {
+	if tokenUsage.CachedTokenReads != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenReads",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			Value: dagql.NewInt(tokenUsage.CachedTokenReads),
 		})
 	}
-	if res.TokenUsage.CachedTokenWrites != 0 {
+	if tokenUsage.CachedTokenWrites != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenWrites",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			Value: dagql.NewInt(tokenUsage.CachedTokenWrites),
 		})
 	}
-	if res.TokenUsage.TotalTokens != 0 {
+	if tokenUsage.TotalTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "totalTokens",
-			Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			Value: dagql.NewInt(tokenUsage.TotalTokens),
 		})
 	}
 	return dagql.Selector{
@@ -1847,13 +2045,16 @@ func (llm *LLM) allowed(ctx context.Context) error {
 
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
 // used both during live step() execution and during replay. callDigest is the
-// DAG digest enabling TUI branching from that point.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+// DAG digest enabling TUI branching from that point. resultTokens maps a tool
+// call's ID to the estimated token size of the result it produced (populated
+// only during replay, where the whole conversation is known up front), so a
+// replayed tool-call span carries the same result-size badge as a live one.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest)
+		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens)
 	}
 }
 
@@ -1882,7 +2083,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	fmt.Fprint(stdio.Stdout, msg.TextContent())
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -1905,6 +2106,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 		}
 	}
 
+	toolAnchorCtx := ctx
 	for _, g := range groups {
 		func() {
 			var name string
@@ -1942,10 +2144,19 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				}
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.Bool(telemetry.UIBoundaryAttr, true),
 					attribute.String(telemetry.LLMToolAttr, block.ToolName),
 					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
+				// Mirror the live tool-call span's result-size badge: the result
+				// itself lives in a later user (tool-result) message, so replay
+				// looks it up by call ID from the pre-scanned conversation.
+				if tokens := resultTokens[block.CallID]; tokens > 0 {
+					extraAttrs = append(extraAttrs,
+						attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
+					)
+				}
 			default:
 				name = "LLM response"
 				contentType = "text/markdown"
@@ -1961,9 +2172,16 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			if callDigest != "" {
 				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 			}
-			ctx, span := Tracer(ctx).Start(ctx, name, trace.WithAttributes(attrs...))
+			startCtx := ctx
+			if g.kind == LLMContentToolCall {
+				startCtx = toolAnchorCtx
+			}
+			spanCtx, span := Tracer(startCtx).Start(startCtx, name, trace.WithAttributes(attrs...))
+			if g.kind != LLMContentToolCall {
+				toolAnchorCtx = spanCtx
+			}
 			defer span.End()
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+			stdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary,
 				log.String(telemetry.ContentTypeAttr, contentType))
 			defer stdio.Close()
 			for _, block := range g.blocks {
@@ -1981,10 +2199,21 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 // Replay re-emits telemetry spans for all messages in the conversation history.
 // This allows the TUI to display the conversation after loading a saved session.
 func (llm *LLM) Replay(ctx context.Context) {
+	// Pre-scan for each tool result's estimated size, keyed by call ID, so a
+	// replayed tool-call span carries the same result-size badge the live path
+	// stamps in endToolCallDisplay (the result lives in a later user message).
+	resultTokens := map[string]int64{}
+	for _, msg := range llm.Messages {
+		for _, block := range msg.Content {
+			if block.Kind == LLMContentToolResult && block.CallID != "" {
+				resultTokens[block.CallID] = estimateTextTokens(len(block.Text))
+			}
+		}
+	}
 	for _, msg := range llm.Messages {
 		// We don't have per-message call digests for replay, so pass empty.
 		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "")
+		emitMessageSpan(ctx, msg, "", resultTokens)
 	}
 }
 
@@ -2054,6 +2283,190 @@ func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
 
 func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
+}
+
+// recipeSelectors re-emits the conversation as a flat, data-only selector chain
+// rooted at Query.llm: the model, config, MCP servers, skills, tool bindings,
+// workspace binding, and full message history, in that order.
+//
+// It emits from the LLM's *final in-memory state*, never from its recorded ID
+// spine. That is what makes the result bounded and replay-safe. During a
+// session step() appends a withWorkspace selector on every workspace-mutating
+// tool call and a withTools selector on every object rebind, so the spine
+// accumulates each superseded binding; replaying those on a later load
+// re-applies edits that are already on disk (or fails outright, once the
+// content they were derived from has moved on). Emitting from final state
+// keeps only the tip-most binding per slot and drops the rest. Tool bindings
+// need no explicit dedupe: MCP.WithTools already keeps at most one binding per
+// object type, so BoundToolBindings is per-type final state by construction.
+//
+// The workspace binding is carried *verbatim*, including any overlay
+// derivations (withChanges and friends) sitting on top of its base. Pending,
+// un-exported edits are therefore preserved across a save/resume round trip;
+// once they are exported and the caller rebinds the live workspace, the
+// overlay-free binding is what gets emitted.
+//
+// The chain carries exactly the state that survives a save/load round trip
+// (selector-expressible state); transient state such as open MCP sessions or
+// the last tool result is not carried, same as save/load.
+func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
+	// The llm(maxAPICalls:) legacy knob is deliberately not carried: it is only
+	// settable through pre-v1 views, and this field only exists in v1+.
+	root := dagql.Selector{Field: "llm"}
+	if llm.model != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "model",
+			Value: dagql.Opt(dagql.NewString(llm.model)),
+		})
+	}
+	if llm.provider != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "provider",
+			Value: dagql.Opt(dagql.NewString(llm.provider)),
+		})
+	}
+	sels := []dagql.Selector{root}
+
+	if llm.disableDefaultSystemPrompt {
+		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {
+		cfg := llm.mcp.mcpServers[name]
+		svcID, err := cfg.Service.ID()
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %q service ID: %w", name, err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withMCPServer",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(name)},
+				{Name: "service", Value: dagql.NewID[*Service](svcID)},
+			},
+		})
+	}
+
+	for _, dir := range llm.mcp.skillDirs {
+		dirID, err := dir.ID()
+		if err != nil {
+			return nil, fmt.Errorf("skill directory ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withSkills",
+			Args: []dagql.NamedInput{
+				{Name: "directory", Value: dagql.NewID[*Directory](dirID)},
+			},
+		})
+	}
+
+	bindings, err := llm.mcp.BoundToolBindings()
+	if err != nil {
+		return nil, fmt.Errorf("bound tool bindings: %w", err)
+	}
+	for _, b := range bindings {
+		sels = append(sels, dagql.Selector{
+			Field: "withTools",
+			Args: []dagql.NamedInput{
+				{Name: "object", Value: dagql.NewAnyID(b.ID)},
+				{Name: "except", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(b.Except...))},
+			},
+		})
+	}
+
+	// Carry the current workspace binding verbatim. This is the tip-most
+	// binding — the one the last workspace-mutating tool call installed — so
+	// any overlay derivations riding on it (withChanges and friends) come
+	// along, and pending un-exported edits survive the round trip. Every
+	// superseded binding recorded on the spine is simply not emitted.
+	//
+	// A bare currentWorkspace binding is carried too, and is safe to carry:
+	// currentWorkspace is per-invocation (PerCallInput), so a loaded session
+	// re-detects the live workspace rather than pinning a stale detection.
+	// Emitting it unconditionally is what keeps a restored session bound —
+	// an unbound LLM fails LLM.workspace and silently degrades tool behavior
+	// (e.g. a workspace-returning tool reporting no diff).
+	if llm.mcp.workspace.Self() != nil {
+		wsID, err := llm.mcp.workspace.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("workspace recipe ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "workspace", Value: dagql.NewID[*Workspace](wsID)},
+			},
+		})
+	}
+
+	// Replay the conversation in message order. Every message shape the engine
+	// can produce maps to a selector; anything else is an error rather than
+	// silent data loss.
+	for i, msg := range llm.Messages {
+		switch msg.Role {
+		case LLMMessageRoleSystem:
+			sels = append(sels, dagql.Selector{
+				Field: "withSystemPrompt",
+				Args: []dagql.NamedInput{
+					{Name: "prompt", Value: dagql.NewString(msg.TextContent())},
+				},
+			})
+		case LLMMessageRoleAssistant:
+			var usage LLMTokenUsage
+			if msg.TokenUsage != nil {
+				usage = *msg.TokenUsage
+			}
+			sel, err := responseSelectorFromBlocks(msg.Content, usage)
+			if err != nil {
+				return nil, fmt.Errorf("message %d: %w", i, err)
+			}
+			sels = append(sels, sel)
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					sels = append(sels, dagql.Selector{
+						Field: "withToolResult",
+						Args: []dagql.NamedInput{
+							{Name: "callId", Value: dagql.NewString(block.CallID)},
+							{Name: "content", Value: dagql.NewString(block.Text)},
+							{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
+						},
+					})
+				case LLMContentText:
+					sels = append(sels, dagql.Selector{
+						Field: "withPrompt",
+						Args: []dagql.NamedInput{
+							{Name: "prompt", Value: dagql.NewString(block.Text)},
+						},
+					})
+				default:
+					return nil, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
+				}
+			}
+		default:
+			return nil, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
+		}
+	}
+
+	return sels, nil
+}
+
+// PortableRecipe materializes the conversation as a flat, self-contained
+// recipe (see recipeSelectors) rooted at Query.llm, suitable for persisting
+// and restoring in a later session. Backs LLM.portableID.
+func (llm *LLM) PortableRecipe(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	sels, err := llm.recipeSelectors(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("re-emit session recipe: %w", err)
+	}
+	return res, nil
 }
 
 // A variable in the LLM environment

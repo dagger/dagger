@@ -1,9 +1,9 @@
 {
-  "claim_digest": "sha256:acc461c049207088acb0906327e259e7fbf43d5ab57693d981443a4d008a6eda",
-  "rust_sdk_version": "1.0.0-beta.10",
+  "claim_digest": "sha256:15a4a280dddd584f6260ef9346db8f503292f4db7c096915506fa79730c44ea1",
+  "rust_sdk_version": "1.0.0-beta.11.rust.1",
   "supported_targets": {
     "exact": [
-      "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+      "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a"
     ]
   }
 }

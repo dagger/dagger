@@ -13,7 +13,7 @@ Use this checklist when asked to bump Go.
 
 - `GolangVersion = "X.Y.Z"`
 
-1. Update the Go default version string in `toolchains/go/main.go`:
+1. Update the Go default version string in `.dagger/modules/go/main.go`:
 
 - `// +default="X.Y.Z"` on the `version` argument in `New(...)`
 

@@ -35,10 +35,9 @@ pub use checkpoint::{
     CheckpointProposal, CheckpointRecord, CheckpointRequest, CheckpointTestTarget,
     ClientAssetDisposition, ClientCargoExpectation, ClientCheckedAssetState,
     ClientCheckpointActionObservation, ClientCheckpointObservation, ClientCheckpointPlan,
-    ClientCheckpointRecord, ClientCheckpointRequest, DeferredSignoffException,
-    ForbiddenCheckpointBoundary, ModuleProperty, PublicCheckpointPackage, RustGoAbiPackage,
-    client_feature_end_checkpoint_actions, plan_checkpoint, plan_client_checkpoint,
-    record_checkpoint, record_client_checkpoint,
+    ClientCheckpointRecord, ClientCheckpointRequest, ForbiddenCheckpointBoundary, ModuleProperty,
+    PublicCheckpointPackage, RustGoAbiPackage, client_feature_end_checkpoint_actions,
+    plan_checkpoint, plan_client_checkpoint, record_checkpoint, record_client_checkpoint,
 };
 pub use client::initialization::{execute_client_initialization, plan_client_initialization};
 pub use client::project::{

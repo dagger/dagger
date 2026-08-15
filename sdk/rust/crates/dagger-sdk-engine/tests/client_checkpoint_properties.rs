@@ -9,7 +9,7 @@ use dagger_sdk_engine::{
     CheckpointGenerationDecision, CheckpointPackage, CheckpointProposal, CheckpointRequest,
     CheckpointTestTarget, ClientCargoExpectation, ClientCheckedAssetState,
     ClientCheckpointActionObservation, ClientCheckpointObservation, ClientCheckpointRequest,
-    DeferredSignoffException, ForbiddenCheckpointBoundary, RustGoAbiPackage, Sha256Digest,
+    ForbiddenCheckpointBoundary, RustGoAbiPackage, Sha256Digest,
     client_feature_end_checkpoint_actions, plan_client_checkpoint, record_client_checkpoint,
 };
 use proptest::prelude::*;
@@ -120,12 +120,6 @@ fn valid_request(seed: u16, refresh: bool) -> ClientCheckpointRequest {
                     manifest_digest: output.clone(),
                 }
             },
-            deferred_signoff_exception: Some(DeferredSignoffException {
-                contract_gap: "engine-owned initialized client record".to_owned(),
-                model_insufficiency: "direct fixtures cannot create an engine record".to_owned(),
-                proposed_case: "one initialized local client".to_owned(),
-                approved: true,
-            }),
         },
         asset: ClientCheckedAssetState {
             owning_input_digest: owning,

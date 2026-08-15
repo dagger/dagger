@@ -1,10 +1,16 @@
 package llmconfig
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	toml "github.com/pelletier/go-toml"
@@ -439,5 +445,149 @@ func TestConfigPreservesOtherSections(t *testing.T) {
 	}
 	if tree.Has("llm") {
 		t.Error("Remove() left the [llm] section behind")
+	}
+}
+
+// TestRefreshOAuthProviderConcurrent verifies that concurrent calls to
+// RefreshOAuthProviderIfNeeded for the same expired provider result in exactly
+// one refresh against the token endpoint. Refresh tokens are one-time-use
+// (providers rotate them), so without serialization a second interleaved call
+// would double-spend the refresh token and fail with invalid_grant.
+func TestRefreshOAuthProviderConcurrent(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origConfigRoot := ConfigRoot
+	origConfigFile := ConfigFile
+	origTokenURL := oauthTokenURL
+	origProfileURL := oauthProfileURL
+	t.Cleanup(func() {
+		ConfigRoot = origConfigRoot
+		ConfigFile = origConfigFile
+		oauthTokenURL = origTokenURL
+		oauthProfileURL = origProfileURL
+	})
+
+	ConfigRoot = filepath.Join(tempDir, "dagger")
+	ConfigFile = filepath.Join(ConfigRoot, ConfigFileName)
+
+	// Fake OAuth server: the token endpoint rotates the refresh token on each
+	// successful grant, so a replayed (already-spent) refresh token gets
+	// invalid_grant — mirroring Anthropic's one-time refresh token behavior.
+	var (
+		mu                  sync.Mutex
+		currentRefreshToken = "rt-0"
+		refreshCalls        int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			var req struct {
+				GrantType    string `json:"grant_type"`
+				ClientID     string `json:"client_id"`
+				RefreshToken string `json:"refresh_token"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+				return
+			}
+			if req.GrantType != "refresh_token" || req.ClientID != oauthClientID {
+				http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if req.RefreshToken != currentRefreshToken {
+				http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
+				return
+			}
+			refreshCalls++
+			currentRefreshToken = fmt.Sprintf("rt-%d", refreshCalls)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  fmt.Sprintf("access-%d", refreshCalls),
+				"refresh_token": currentRefreshToken,
+				"expires_in":    3600,
+			})
+		case "/profile":
+			// Best-effort subscription lookup; serve a minimal valid response
+			// so it doesn't hit the real network.
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"organization":{"organization_type":"claude_max"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	oauthTokenURL = srv.URL + "/token"
+	oauthProfileURL = srv.URL + "/profile"
+
+	// Seed an OAuth provider whose access token expired long ago.
+	cfg := &Config{
+		LLM: LLMConfig{
+			DefaultProvider: "anthropic",
+			Providers: map[string]Provider{
+				"anthropic": {
+					AuthType:     "oauth",
+					AuthToken:    "stale-access",
+					RefreshToken: "rt-0",
+					TokenExpiry:  1,
+					Enabled:      true,
+				},
+			},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	type result struct {
+		token string
+		err   error
+	}
+	const workers = 10
+	start := make(chan struct{})
+	results := make(chan result, workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			<-start
+			token, err := RefreshOAuthProviderIfNeeded("anthropic")
+			results <- result{token, err}
+		}()
+	}
+	close(start)
+
+	for i := 0; i < workers; i++ {
+		res := <-results
+		if res.err != nil {
+			t.Errorf("RefreshOAuthProviderIfNeeded() call %d failed: %v", i, res.err)
+			continue
+		}
+		if res.token != "access-1" {
+			t.Errorf("RefreshOAuthProviderIfNeeded() call %d returned token %q, want %q", i, res.token, "access-1")
+		}
+	}
+
+	mu.Lock()
+	if refreshCalls != 1 {
+		t.Errorf("token endpoint hit %d times, want exactly 1", refreshCalls)
+	}
+	mu.Unlock()
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() after concurrent refresh failed: %v", err)
+	}
+	provider, ok := loaded.LLM.Providers["anthropic"]
+	if !ok {
+		t.Fatal("anthropic provider missing after refresh")
+	}
+	if provider.AuthToken != "access-1" {
+		t.Errorf("persisted AuthToken = %q, want %q", provider.AuthToken, "access-1")
+	}
+	if provider.RefreshToken != "rt-1" {
+		t.Errorf("persisted RefreshToken = %q, want %q", provider.RefreshToken, "rt-1")
+	}
+	if provider.TokenExpiry <= time.Now().UnixMilli() {
+		t.Errorf("persisted TokenExpiry %d not in the future", provider.TokenExpiry)
 	}
 }

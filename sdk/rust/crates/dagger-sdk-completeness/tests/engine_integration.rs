@@ -432,9 +432,9 @@ fn engine_subject() -> EngineEvidenceSubject {
     let target = TargetIdentity {
         format_version: FormatVersion,
         repository: "https://github.com/dagger/dagger".parse().unwrap(),
-        dagger_revision: "25300124ca110612edc09c43f89cb5fad6028170".parse().unwrap(),
-        engine_version: "1.0.0-beta.10".parse().unwrap(),
-        rust_sdk_version: "1.0.0-beta.10".parse().unwrap(),
+        dagger_revision: "501b57e0476dee5881b99a064c3c04173134ecc7".parse().unwrap(),
+        engine_version: "1.0.0-beta.11.rust.1".parse().unwrap(),
+        rust_sdk_version: "1.0.0-beta.11.rust.1".parse().unwrap(),
         rust_toolchain: "1.97.1".parse().unwrap(),
         core_schema_digest: digest(1),
     };
@@ -444,7 +444,7 @@ fn engine_subject() -> EngineEvidenceSubject {
         packaged_assets_digest: digest(3),
         sdk_dependency: PublishedSdkDependency::Git {
             url: "https://github.com/iw/dagger".parse().unwrap(),
-            revision: "25300124ca110612edc09c43f89cb5fad6028170".parse().unwrap(),
+            revision: "501b57e0476dee5881b99a064c3c04173134ecc7".parse().unwrap(),
             package: "dagger-sdk".parse().unwrap(),
         },
         rust_toolchain: "1.97.1".parse().unwrap(),
@@ -531,7 +531,7 @@ fn evidence_reference(
         evidence_id,
         evidence_kind,
         repository: ENGINE_POLICY.evidence_repository.clone(),
-        revision: CommitSha::new("25300124ca110612edc09c43f89cb5fad6028170").unwrap(),
+        revision: CommitSha::new("501b57e0476dee5881b99a064c3c04173134ecc7").unwrap(),
         path: RepositoryRelativePath::new(if verification {
             "sdk/rust/crates/dagger-sdk-completeness/tests/engine_integration.rs"
         } else {

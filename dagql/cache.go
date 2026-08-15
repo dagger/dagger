@@ -80,6 +80,50 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 }
 
+const (
+	cacheMetadataResultEstimatedBytes    int64 = 3072
+	cacheMetadataTermEstimatedBytes      int64 = 512
+	cacheMetadataClassSlotEstimatedBytes int64 = 768
+)
+
+// CacheMetadataEstimate is a coarse estimate of memory retained by the DAGQL
+// cache's live results and symbolic graph. It intentionally models only the
+// existing result, term, and allocated eq-class cardinalities.
+type CacheMetadataEstimate struct {
+	ResultCount    int
+	TermCount      int
+	ClassSlotCount int
+	EstimatedBytes int64
+}
+
+// CacheMetadataPruneReport summarizes an automatic structural pruning pass.
+// Unlike CachePruneReport, it never contains one entry per removed root.
+type CacheMetadataPruneReport struct {
+	MaximumEstimatedBytes int64
+	TargetEstimatedBytes  int64
+	Triggered             bool
+
+	BeforeCompaction       CacheMetadataEstimate
+	AfterInitialCompaction CacheMetadataEstimate
+	AfterPrune             CacheMetadataEstimate
+
+	InitialCompactionOldClassSlots int
+	InitialCompactionNewClassSlots int
+	FinalCompactionOldClassSlots   int
+	FinalCompactionNewClassSlots   int
+
+	CandidateCount                int
+	PlannedRootCount              int
+	SimulatedCollectedResultCount int
+	SimulatedStructuralBytes      int64
+	RemovedPersistedRootCount     int
+	CandidatesExhausted           bool
+
+	SnapshotGCAttempted bool
+	SnapshotGCSucceeded bool
+	Duration            time.Duration
+}
+
 type persistedEdge struct {
 	resultID          sharedResultID
 	createdAtUnixNano int64
@@ -788,21 +832,34 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 }
 
 func (c *Cache) snapshotSessionResultIDs() map[sharedResultID]struct{} {
+	roots, _ := c.snapshotSessionResultIDsCancelable(nil)
+	return roots
+}
+
+func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChecker) (map[sharedResultID]struct{}, error) {
 	if c == nil {
-		return nil
+		return nil, nil
 	}
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
+	if err := checker.checkNow(); err != nil {
+		return nil, err
+	}
 	if len(c.sessionResultIDsBySession) == 0 {
-		return nil
+		return nil, nil
 	}
 	roots := make(map[sharedResultID]struct{})
 	for _, resultIDs := range c.sessionResultIDsBySession {
 		for resultID := range resultIDs {
+			if checker != nil {
+				if err := checker.check(); err != nil {
+					return nil, err
+				}
+			}
 			roots[resultID] = struct{}{}
 		}
 	}
-	return roots
+	return roots, nil
 }
 
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
@@ -864,7 +921,8 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 		rerr       error
 	)
 	c.egraphMu.Lock()
-	if _, found := c.persistedEdgesByResult[resultID]; !found {
+	edge, found := c.persistedEdgesByResult[resultID]
+	if !found || edge.unpruneable {
 		c.egraphMu.Unlock()
 		return false, nil
 	}
@@ -3245,6 +3303,34 @@ func (c *Cache) EntryStats() CacheEntryStats {
 	c.egraphMu.RUnlock()
 
 	return stats
+}
+
+// MetadataEstimate returns the current O(1) structural estimate of DAGQL cache
+// memory. It does not inspect payloads or measure physical cache usage.
+func (c *Cache) MetadataEstimate() CacheMetadataEstimate {
+	if c == nil {
+		return CacheMetadataEstimate{}
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.cacheMetadataEstimateLocked()
+}
+
+// cacheMetadataEstimateLocked requires egraphMu for reading or writing.
+func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
+	classSlots := len(c.egraphParents) - 1
+	if classSlots < 0 {
+		classSlots = 0
+	}
+	estimate := CacheMetadataEstimate{
+		ResultCount:    len(c.resultsByID),
+		TermCount:      len(c.egraphTerms),
+		ClassSlotCount: classSlots,
+	}
+	estimate.EstimatedBytes = cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
+		cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
+		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
+	return estimate
 }
 
 func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {

@@ -43,7 +43,7 @@ func (r *runtime) eval(
 			}
 			dagMod, err := initDangModule(ctx, srv, env)
 			if err != nil {
-				return nil, fmt.Errorf("init module: %w", err)
+				return nil, err
 			}
 			return json.Marshal(dagMod)
 		}
@@ -426,7 +426,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 	}
 
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
-		return res, fmt.Errorf("failed to select module: %w", err)
+		return res, err
 	}
 
 	return res, nil
@@ -526,7 +526,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 }
 
 // functionDirectiveSelectors converts function-level directives (@check,
-// @generate, @up, @cache) into dagql selectors.
+// @generate, @up, @agent, @cache) into dagql selectors.
 func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
 	for _, directive := range directives {
@@ -537,6 +537,8 @@ func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, direct
 			sels = append(sels, dagql.Selector{Field: "withGenerator"})
 		case "up":
 			sels = append(sels, dagql.Selector{Field: "withUp"})
+		case "agent":
+			sels = append(sels, dagql.Selector{Field: "withAgent"})
 		case "cache":
 			sel, err := cacheDirectiveSelector(ctx, env, directive)
 			if err != nil {

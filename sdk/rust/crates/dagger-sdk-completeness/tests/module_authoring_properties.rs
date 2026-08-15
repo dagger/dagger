@@ -98,7 +98,7 @@ proptest! {
         }
         let scope = derived.unwrap();
         prop_assert_eq!(scope.mapping_digest(), &canonical_digest);
-        prop_assert_eq!(scope.mappings().len(), 111);
+        prop_assert_eq!(scope.mappings().len(), 110);
         prop_assert_eq!(scope.ownership_corrections().len(), 17);
 
         let mapping = scope.mappings().values().nth(usize::from(seed) % scope.mappings().len()).unwrap();
@@ -126,11 +126,11 @@ proptest! {
         let admission = admit_module_authoring_evidence(&scope, &observation);
         if evidence_mutation == 0 {
             prop_assert_eq!(admission.status_changes.len(), 1);
-            prop_assert_eq!(admission.blockers.len(), 110);
+            prop_assert_eq!(admission.blockers.len(), 109);
             prop_assert!(admission.rejection.is_none());
         } else {
             prop_assert!(admission.status_changes.is_empty());
-            prop_assert_eq!(admission.blockers.len(), 111);
+            prop_assert_eq!(admission.blockers.len(), 110);
             prop_assert!(admission.rejection.is_some());
         }
     }
@@ -389,7 +389,7 @@ struct PackageGraph {
 impl PackageGraph {
     fn valid(dependency_alias: String) -> Self {
         let metadata = Package {
-            version: "1.0.0-beta.10".to_owned(),
+            version: "1.0.0-beta.11.rust.1".to_owned(),
             edition: "2024".to_owned(),
             rust_version: "1.97.1".to_owned(),
             repository: "https://github.com/dagger/dagger".to_owned(),
@@ -465,8 +465,8 @@ fn digest(seed: u8, domain: u8) -> Sha256Digest {
 fn target(seed: u8) -> ModuleTarget {
     ModuleTarget {
         dagger_revision: TargetValue::new(format!("revision-{seed}")).unwrap(),
-        engine_version: TargetValue::new("v1.0.0-beta.10").unwrap(),
-        rust_sdk_version: TargetValue::new("1.0.0-beta.10").unwrap(),
+        engine_version: TargetValue::new("v1.0.0-beta.11.rust.1").unwrap(),
+        rust_sdk_version: TargetValue::new("1.0.0-beta.11.rust.1").unwrap(),
         rust_toolchain: TargetValue::new("1.97.1").unwrap(),
         rust_edition: TargetValue::new("2024").unwrap(),
         visible_schema_digest: digest(seed, 1),

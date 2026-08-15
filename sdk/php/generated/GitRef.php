@@ -35,6 +35,15 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The resolved commit SHA at this ref.
+     */
+    public function commitSHA(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitSHA');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commitSHA');
+    }
+
+    /**
      * Find the best common ancestor between this ref and another ref.
      */
     public function commonAncestor(GitRef $other): GitRef
@@ -54,12 +63,48 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+     */
+    public function log(?int $limit = 10, ?array $paths = null, ?GitRef $base = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('log');
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $base) {
+        $leafQueryBuilder->setArgument('base', $base);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'log');
+    }
+
+    /**
+     * The resolved name of this ref.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
      * The resolved ref name at this ref.
      */
     public function ref(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
         return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
+    }
+
+    /**
+     * The commit this ref resolves to.
+     */
+    public function targetCommit(): GitCommit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('targetCommit');
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

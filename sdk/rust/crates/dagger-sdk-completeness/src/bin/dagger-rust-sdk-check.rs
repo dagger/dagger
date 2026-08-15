@@ -473,11 +473,9 @@ fn validate_archive_set(archives: &[PackageArchive]) -> Result<PackageSet, Check
             "a public package omits required content".to_owned(),
         ));
     }
-    if sdk.files.contains("src/signoff_observation.rs")
-        || sdk.manifest.features.contains("signoff-observation")
-    {
+    if sdk.manifest.features != BTreeSet::from(["default".to_owned(), "gen".to_owned()]) {
         return Err(CheckError::PackageContract(
-            "dagger-sdk archive contains the removed signoff surface".to_owned(),
+            "dagger-sdk archive features differ from the ordinary public surface".to_owned(),
         ));
     }
     let expected_requirement = format!("={version}");

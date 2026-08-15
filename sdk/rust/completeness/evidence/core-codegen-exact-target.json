@@ -53,5 +53,5 @@
   "result_digest": "sha256:abbb510933b327023b7ec5cacd0d558190105e67da913db81e2233b0174d9378",
   "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
   "subject_revision": "sha256:9a9076aca5452851bd3fe92ca200111dff8d2c8d9e74d4dcd4ae10a6e3ef4d9a",
-  "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
+  "target_revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
 }

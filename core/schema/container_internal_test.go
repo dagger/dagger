@@ -13,6 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
+	t.Parallel()
+
+	dag, err := dagql.NewServer(t.Context(), &core.Query{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Container]{Typed: &core.Container{}}))
+
+	parent, err := dagql.NewObjectResultForCall(core.NewContainer(core.Platform{}), dag, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "scratch-container",
+		Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+	})
+	require.NoError(t, err)
+	require.True(t, parent.Self().CanUseFromContentDigest())
+
+	child, _, err := cloneContainerForSchemaChild(t.Context(), parent)
+	require.NoError(t, err)
+	require.False(t, child.CanUseFromContentDigest())
+}
+
 func TestWithImageConfigMetadataMutatesContainerConfig(t *testing.T) {
 	t.Parallel()
 

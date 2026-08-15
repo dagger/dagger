@@ -1,3 +1,8 @@
+"""
+Indicates that this function is an agent middleware, composed by dagger agent.
+"""
+directive @agent on FIELD_DEFINITION
+
 """Controls the caching behavior of a function."""
 directive @cache(
   """The cache policy to use."""
@@ -89,6 +94,39 @@ type Address implements Node {
 
   """Load a volume from the address."""
   volume: Volume!
+}
+
+type Agent implements Node {
+  """The description of the agent"""
+  description: String!
+
+  """A unique identifier for this Agent."""
+  id: ID!
+
+  """Return the fully qualified name of the agent"""
+  name: String!
+
+  """The original module in which the agent has been defined"""
+  originalModule: Module!
+
+  """The path of the agent within its module"""
+  path: [String!]!
+}
+
+type AgentGroup implements Node {
+  """
+  Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+  """
+  compose(
+    """The base LLM to compose onto. Defaults to a fresh workspace-bound LLM."""
+    base: ID @expectedType(name: "LLM")
+  ): LLM!
+
+  """A unique identifier for this AgentGroup."""
+  id: ID!
+
+  """Return a list of individual agents and their details"""
+  list: [Agent!]!
 }
 
 """Key value object that represents a build argument."""
@@ -1689,10 +1727,8 @@ type CurrentModule implements Node {
   Errors if the current module is not installed as an SDK in this workspace.
   """
   asSDK(
-    """
-    The workspace to resolve SDK-role data against. Defaults to the current workspace.
-    """
-    workspace: ID @expectedType(name: "Workspace")
+    """The workspace to resolve SDK-role data against."""
+    workspace: ID! @expectedType(name: "Workspace")
   ): CurrentModuleAsSDK!
 
   """The dependencies of the module."""
@@ -1756,7 +1792,7 @@ type CurrentModule implements Node {
 }
 
 """
-The SDK-role data for the currently executing module, as installed in the active workspace.
+The SDK-role data for the currently executing module, as installed in the supplied workspace.
 """
 type CurrentModuleAsSDK implements Node {
   """The generated clients this SDK produces in the workspace."""
@@ -1765,7 +1801,11 @@ type CurrentModuleAsSDK implements Node {
   """A unique identifier for this CurrentModuleAsSDK."""
   id: ID!
 
-  """The workspace-local modules this SDK authors and manages."""
+  """
+  The managed modules relevant to the bound workspace cwd: every module at or
+  below it, plus the nearest enclosing module when the cwd itself is not
+  managed.
+  """
   modules: [CurrentModuleAsSDKModule!]!
 
   """The user-facing name of this SDK in the workspace."""
@@ -2346,7 +2386,10 @@ type EngineCache implements Node {
   """Prune the cache of releaseable entries"""
   prune(
     """
-    Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    Use enabled engine-wide default disk and structural policies. If no default
+    disk policy is enabled, the disk stage falls back to pruning all releasable
+    disk-cache entries. If false, explicit options select stages; with no
+    options, all releasable disk-cache entries are pruned.
     """
     useDefaultPolicy: Boolean = false
 
@@ -2369,6 +2412,20 @@ type EngineCache implements Node {
     Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
     """
     targetSpace: String = ""
+
+    """
+    Override the maximum structural metadata estimate in absolute bytes.
+    Explicit values must be positive; the configured/default value is used when
+    omitted.
+    """
+    maxEstimatedBytes: Int
+
+    """
+    Override the structural metadata estimate to target in absolute bytes.
+    Explicit values must be positive and lower than the resolved maximum; the
+    configured/default value is used when omitted.
+    """
+    targetEstimatedBytes: Int
   ): Void
 
   """The minimum amount of disk space this policy is guaranteed to retain."""
@@ -2834,6 +2891,9 @@ type Function implements Node {
   """
   sourceModuleName: String!
 
+  """Returns the function with a flag indicating it is an agent middleware."""
+  withAgent: Function!
+
   """Returns the function with the provided argument"""
   withArg(
     """The name of the argument"""
@@ -3102,6 +3162,72 @@ type GeneratorGroup implements Node {
   run: GeneratorGroup!
 }
 
+"""An immutable git commit."""
+type GitCommit implements Node {
+  """The latest semver release tag reachable from this commit."""
+  ancestorReleaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """Git author email."""
+  authorEmail: String!
+
+  """Git author name."""
+  authorName: String!
+
+  """Git author date, in RFC3339 format."""
+  authoredDate: String!
+
+  """Git committer date, in RFC3339 format."""
+  committedDate: String!
+
+  """Git committer email."""
+  committerEmail: String!
+
+  """Git committer name."""
+  committerName: String!
+
+  """A unique identifier for this GitCommit."""
+  id: ID!
+
+  """Full commit message."""
+  message: String!
+
+  """Commit message body, excluding the headline."""
+  messageBody: String!
+
+  """First line of the commit message."""
+  messageHeadline: String!
+
+  """Parent commit SHAs."""
+  parentShas: [String!]!
+
+  """The latest semver release tag that points directly at this commit."""
+  releaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """The full commit SHA."""
+  sha: String!
+
+  """The abbreviated commit SHA."""
+  shortSha: String!
+
+  """The filesystem tree at this commit."""
+  tree(
+    """Set to true to discard .git directory."""
+    discardGitDir: Boolean = false
+
+    """The depth of the tree to fetch."""
+    depth: Int = 1
+
+    """Set to true to populate tag refs in the local checkout .git."""
+    includeTags: Boolean = false
+  ): Directory!
+}
+
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
   """Creates a synthetic workspace from this git ref."""
@@ -3113,7 +3239,10 @@ type GitRef implements Node {
   ): Workspace!
 
   """The resolved commit id at this ref."""
-  commit: String!
+  commit: String! @deprecated(reason: "Use \"commitSHA\" instead.")
+
+  """The resolved commit SHA at this ref."""
+  commitSHA: String!
 
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
@@ -3124,8 +3253,32 @@ type GitRef implements Node {
   """A unique identifier for this GitRef."""
   id: ID!
 
+  """
+  Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+  """
+  log(
+    """Maximum number of commits to return."""
+    limit: Int = 10
+
+    """
+    Only include commits touching these paths, relative to the root of the repository.
+    """
+    paths: [String!]
+
+    """
+    Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+    """
+    base: ID @expectedType(name: "GitRef")
+  ): [GitCommit!]!
+
+  """The resolved name of this ref."""
+  name: String!
+
   """The resolved ref name at this ref."""
-  ref: String!
+  ref: String! @deprecated(reason: "Use \"name\" instead.")
+
+  """The commit this ref resolves to."""
+  targetCommit: GitCommit!
 
   """The filesystem tree at this ref."""
   tree(
@@ -3168,7 +3321,7 @@ type GitRepository implements Node {
     Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     """
     id: String!
-  ): GitRef!
+  ): GitCommit!
 
   """Returns details for HEAD."""
   head: GitRef!
@@ -3548,7 +3701,11 @@ type LLM implements Node & Syncer {
   A portable, self-contained ID for the conversation that node() can resolve in
   any session. Unlike id, which may return an engine-local runtime handle valid
   only within the current session, this returns the recipe form suitable for
-  persisting and later restoring the conversation.
+  persisting and later restoring the conversation. The recipe is flattened:
+  bindings superseded during the session (workspace overlays recorded by each
+  mutating tool call, and re-bound toolsets) are dropped, while the current
+  workspace binding — including any pending, un-exported edits — is
+  preserved.
   """
   portableID: ID!
 
@@ -3558,9 +3715,21 @@ type LLM implements Node & Syncer {
   provider: String!
 
   """
+  The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+  """
+  reasoningEffort: String!
+
+  """
   Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
   """
   replay: ID! @expectedType(name: "LLM")
+
+  """
+  The skills visible to the model, exactly as the ListSkills tool serves them:
+  engine-embedded skills, skills installed with withSkills, and skills
+  discovered in the workspace.
+  """
+  skills: [LLMSkill!]!
 
   """
   Advance the conversation by a single step: send the queued prompt or tool
@@ -3630,6 +3799,20 @@ type LLM implements Node & Syncer {
   ): LLM!
 
   """
+  Change the reasoning effort for the rest of the conversation, overriding any
+  configured default. The message history is preserved; the new effort takes
+  effect on the next step.
+  """
+  withReasoningEffort(
+    """
+    The reasoning effort, e.g. "low", "medium", or "high"; "none" disables
+    reasoning. Supported levels are model-specific — some models also accept
+    e.g. "minimal", "xhigh", or "max".
+    """
+    effort: String!
+  ): LLM!
+
+  """
   Append an assistant response to the message history without calling the model,
   e.g. to reconstruct a conversation from another source.
   """
@@ -3651,6 +3834,18 @@ type LLM implements Node & Syncer {
 
     """Total tokens consumed by this response"""
     totalTokens: Int = 0
+  ): LLM!
+
+  """
+  Install skills from a directory, adding them to the skills the model discovers
+  with ListSkills and reads with ReadSkill. Each skill is a directory containing
+  a SKILL.md with name and description frontmatter, discovered anywhere in the
+  tree. Installed skills take precedence over skills discovered in the
+  workspace, but cannot shadow the engine's built-in skills.
+  """
+  withSkills(
+    """A directory containing skills, each a subdirectory holding a SKILL.md."""
+    directory: ID! @expectedType(name: "Directory")
   ): LLM!
 
   """
@@ -3808,6 +4003,20 @@ enum LLMMessageRole {
 
   """A system prompt."""
   SYSTEM
+}
+
+"""
+A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
+"""
+type LLMSkill implements Node {
+  """The one-line description from the SKILL.md frontmatter."""
+  description: String!
+
+  """A unique identifier for this LLMSkill."""
+  id: ID!
+
+  """The skill name, as passed to ReadSkill."""
+  name: String!
 }
 
 """A count of tokens consumed by LLM API calls."""
@@ -4057,6 +4266,17 @@ type ModuleSource implements Node & Syncer {
 
   """The engine version of the module."""
   engineVersion: String!
+
+  """
+  Return the supplied workspace with this module's generated context applied.
+
+  The workspace change baseline is preserved, so a later Workspace.changes call
+  includes this generation together with any other edits made by the caller.
+  """
+  generate(
+    """The workspace to apply generated files to."""
+    workspace: ID! @expectedType(name: "Workspace")
+  ): Workspace!
 
   """
   Generate this module's transitive local dependency closure and return the
@@ -5366,8 +5586,22 @@ type Workspace implements Node {
   """
   address: String!
 
-  """Return this workspace's pending overlay changes."""
-  changes: Changeset!
+  """Return all agent middlewares from modules loaded in the workspace."""
+  agents(
+    """Only include agents matching the specified patterns"""
+    include: [String!]
+  ): AgentGroup!
+
+  """
+  Return this workspace's changes, with paths relative to its working directory.
+
+  Pass from to compare against an earlier workspace state. Omitting it preserves
+  the cumulative behavior used by clients from before this argument was added.
+  """
+  changes(
+    """An earlier workspace state to compare against."""
+    from: ID @expectedType(name: "Workspace")
+  ): Changeset!
 
   """Return all checks from modules loaded in the workspace."""
   checks(
@@ -5464,6 +5698,31 @@ type Workspace implements Node {
   ): File!
 
   """
+  Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+
+  Returns cwd-relative directory paths for every marked directory at or below
+  start, plus the nearest marked ancestor when start itself is not marked.
+
+  Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+  """
+  findRoots(
+    """
+    Directory to start from. Relative paths resolve from the workspace cwd.
+    """
+    start: String = "."
+
+    """
+    File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+    """
+    markers: [String!]!
+
+    """
+    Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
+    """
+    exclude: [String!] = []
+  ): [String!]!
+
+  """
   Search for a file or directory by walking up from the start path within the workspace.
 
   Returns the absolute workspace path if found, or null if not found.
@@ -5514,7 +5773,11 @@ type Workspace implements Node {
   """
   migrate: WorkspaceMigration!
 
-  """Return a module defined in the workspace configuration."""
+  """
+  Return a module defined in the workspace configuration.
+
+  Reflects the selected env's effective view.
+  """
   module(
     """Module name to inspect."""
     name: String!
@@ -5535,8 +5798,19 @@ type Workspace implements Node {
     path: String!
   ): ModuleSource!
 
-  """List modules defined in the workspace configuration."""
+  """
+  List modules defined in the workspace configuration.
+
+  Reflects the selected env's effective view.
+  """
   modules: [WorkspaceModule!]!
+
+  """
+  Return this workspace with its cached host reads invalidated, so subsequent
+  file and directory reads re-read the live host instead of a snapshot cached
+  earlier in the session.
+  """
+  reloaded: Workspace!
 
   """An installed SDK, by name."""
   sdk(
@@ -5614,7 +5888,11 @@ type Workspace implements Node {
     here: Boolean = false
   ): Workspace!
 
-  """Return this workspace with a configuration value written."""
+  """
+  Return this workspace with a configuration value written.
+
+  When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
+  """
   withConfigValue(
     """Dotted key path."""
     key: String!
@@ -5691,7 +5969,11 @@ type Workspace implements Node {
     noGenerate: Boolean = false
   ): Workspace!
 
-  """Return this workspace with a module installed in its config."""
+  """
+  Return this workspace with a module installed in its config.
+
+  When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
+  """
   withModule(
     """Module reference to install."""
     ref: String!
@@ -5701,6 +5983,40 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """
+  Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but
+  shadows the source at the mount path and stays out of the pending changeset:
+  it never appears in changes, is never exported, and cannot be modified.
+  """
+  withMountedDirectory(
+    """
+    Location of the mounted directory. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+
+    """Directory to mount."""
+    source: ID! @expectedType(name: "Directory")
+  ): Workspace!
+
+  """
+  Return this workspace with a file mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but
+  shadows the source at the mount path and stays out of the pending changeset:
+  it never appears in changes, is never exported, and cannot be modified.
+  """
+  withMountedFile(
+    """
+    Location of the mounted file. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+
+    """File to mount."""
+    source: ID! @expectedType(name: "File")
   ): Workspace!
 
   """
@@ -5771,6 +6087,8 @@ type Workspace implements Node {
   Return this workspace with a configuration value removed.
 
   Errors when the key is not currently set.
+
+  When the session selects an env, the key is scoped to that env's overlay.
   """
   withoutConfigValue(
     """Dotted key path (e.g. modules.greeter.settings.greeting)."""
@@ -5800,7 +6118,11 @@ type Workspace implements Node {
     path: String!
   ): Workspace!
 
-  """Return this workspace with a module removed from its config."""
+  """
+  Return this workspace with a module removed from its config.
+
+  When the session selects an env, only that env's overlay entry is removed.
+  """
   withoutModule(
     """Name of the installed module entry to remove."""
     name: String!

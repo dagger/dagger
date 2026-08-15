@@ -125,6 +125,46 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 	}
 }
 
+func (GeneratorsSuite) TestGenerateValidationRejectsBadSignature(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("wrong return type", func(ctx context.Context, t *testctx.T) {
+		modGen, err := generatorsTestEnv(t, c)
+		require.NoError(t, err)
+		modGen = modGen.WithWorkdir("badgenerate-return")
+
+		// badgenerate-return's @generate returns Directory!, which must be
+		// rejected at module load.
+		out, err := modGen.
+			With(daggerExecFail("functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@generate functions must return the core Changeset! type")
+
+		// generate tolerates load failures by default (best-effort), but
+		// --require-load turns the skipped module fatal.
+		out, err = modGen.
+			With(daggerExecFail("generate", "-l", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "could not be loaded")
+	})
+
+	t.Run("required arg", func(ctx context.Context, t *testctx.T) {
+		modGen, err := generatorsTestEnv(t, c)
+		require.NoError(t, err)
+		modGen = modGen.WithWorkdir("badgenerate-arg")
+
+		// badgenerate-arg's @generate declares a required `name: String!`, which
+		// must be rejected at module load.
+		out, err := modGen.
+			With(daggerExecFail("functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@generate functions must be callable with no arguments")
+	})
+}
+
 func (GeneratorsSuite) TestGenerateApplyDisposition(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -359,12 +399,12 @@ type ClientGeneratorFixture struct{}
 
 // +generate
 func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	clients, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Clients(ctx)
+	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	generated := dag.Directory()
+	generated := ws
 	for _, client := range clients {
 		path, err := client.Path(ctx)
 		if err != nil {
@@ -392,7 +432,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		generated = generated.WithNewFile(path+"/generated.txt", contents)
 	}
 
-	return generated.Changes(dag.Directory()), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 `)
 
@@ -488,12 +528,12 @@ func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	modules, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Modules(ctx)
+	modules, err := dag.CurrentModule().AsSDK(ws).Modules(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	generated := dag.Directory()
+	generated := ws
 	for _, mod := range modules {
 		modPath, err := mod.Path(ctx)
 		if err != nil {
@@ -505,7 +545,7 @@ func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace)
 		}
 		generated = generated.WithNewFile(path.Join(rel, "generated-module.txt"), modPath+"\n")
 	}
-	return generated.Changes(dag.Directory()), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 
 // +generate
@@ -514,12 +554,12 @@ func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	clients, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Clients(ctx)
+	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	generated := dag.Directory()
+	generated := ws
 	for _, client := range clients {
 		clientPath, err := client.Path(ctx)
 		if err != nil {
@@ -535,7 +575,7 @@ func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace)
 		}
 		generated = generated.WithNewFile(path.Join(rel, "generated-client.txt"), module+"\n")
 	}
-	return generated.Changes(dag.Directory()), nil
+	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
 }
 
 func workspaceCwd(ctx context.Context, ws *dagger.Workspace) (string, error) {
@@ -725,7 +765,7 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 }
 
 // TestGenerateLocalDependenciesTerminatesOnRootDep locks in that
-// ModuleSource.generateLocalDependencies terminates when a module's local
+// Internal local-dependency generation terminates when a module's local
 // dependency closure leads back to a dependency that is currently being
 // generated one level up.
 //

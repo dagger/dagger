@@ -178,6 +178,9 @@ func (s *workspaceSchema) configRead(
 	args configReadArgs,
 ) (dagql.String, error) {
 	if parent.ConfigFile == "" {
+		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
+		}
 		result, err := workspace.ReadConfigValue(nil, args.Key)
 		if err != nil {
 			return "", err
@@ -185,18 +188,43 @@ func (s *workspaceSchema) configRead(
 		return dagql.String(result), nil
 	}
 
-	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+	envName, envSelected := selectedWorkspaceEnv(ctx)
+	overlay := parent.UserConfigOverlay()
+	switch {
+	case envSelected && !isExplicitEnvConfigKey(args.Key):
+		// Env-scoped reads return the effective active config: base values
+		// with the user-level overlay and the selected env applied, env
+		// tables hidden.
 		cfg, err := readWorkspaceConfig(ctx, parent)
 		if err != nil {
 			return "", err
 		}
 
-		effective, err := effectiveWorkspaceConfigBytes(cfg, envName)
+		effective, err := effectiveWorkspaceConfigBytes(parent, cfg, envName)
 		if err != nil {
 			return "", err
 		}
 
 		result, err := workspace.ReadConfigValue(effective, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+
+	case overlay != nil:
+		// User-level overrides merge over the repo config for reads; env
+		// tables stay visible (including user-added envs) since no env is
+		// being applied here.
+		cfg, err := readWorkspaceConfig(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+		merged, err := workspace.ApplyUserOverlay(cfg, overlay)
+		if err != nil {
+			return "", err
+		}
+
+		result, err := workspace.ReadConfigValue(workspace.SerializeConfig(merged), args.Key)
 		if err != nil {
 			return "", err
 		}
@@ -239,8 +267,16 @@ func isExplicitEnvConfigKey(key string) bool {
 	return key == "env" || strings.HasPrefix(key, "env.")
 }
 
-func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byte, error) {
-	applied, err := workspace.ApplyEnvOverlay(cfg, envName)
+// effectiveWorkspaceConfigBytes serializes cfg with the workspace's user-level
+// overlay and the selected env overlay (when envName is non-empty) applied.
+// The merge order matches module loading: base config, then user-level
+// overrides, then the selected environment.
+func effectiveWorkspaceConfigBytes(ws *core.Workspace, cfg *workspace.Config, envName string) ([]byte, error) {
+	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
+	applied, err = workspace.ApplyEnvOverlay(applied, envName)
 	if err != nil {
 		return nil, err
 	}
@@ -248,12 +284,17 @@ func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byt
 	return workspace.SerializeConfig(applied), nil
 }
 
-func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, error) {
+// envScopedConfigKey maps a modules.<name>.settings.* key into the selected
+// env's overlay storage. Under workspaceConfigInitIfMissing a missing env is
+// created by the write (writing a setting is the gesture that creates an env);
+// under workspaceConfigMustExist a missing env is rejected, so unsets keep
+// requiring the env to exist.
+func envScopedConfigKey(cfg *workspace.Config, envName, key string, policy workspaceConfigMutationPolicy) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 	}
-	if _, ok := cfg.Env[envName]; !ok {
-		return "", fmt.Errorf("workspace env %q is not defined", envName)
+	if _, ok := cfg.Env[envName]; !ok && policy == workspaceConfigMustExist {
+		return "", workspace.NewUndefinedEnvError(cfg, envName)
 	}
 
 	parts, err := workspace.SplitConfigPath(key)
@@ -266,7 +307,11 @@ func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, err
 
 	moduleName := parts[1]
 	if _, ok := cfg.Modules[moduleName]; !ok {
-		return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		// The module may be one the env itself adds, which only exists in the
+		// overlay.
+		if _, ok := cfg.Env[envName].Modules[moduleName]; !ok {
+			return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		}
 	}
 
 	return workspace.JoinConfigPath(append([]string{"env", envName}, parts...)...), nil

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -241,7 +242,7 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd, verbose bo
 			return []*SearchResult{}, nil
 		}
 		if errBuf.Len() > 0 {
-			if strings.Contains(errBuf.String(), "No files were searched") {
+			if engine.RipgrepNoFilesSearched(errBuf.String()) {
 				if errs == nil {
 					return []*SearchResult{}, nil
 				}

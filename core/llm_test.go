@@ -120,6 +120,110 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "local-api-key", r.LocalAPIKey)
 }
 
+// getenvFrom builds a LoadConfig getenv func serving values from a plain map,
+// so layering tests need no dagql plumbing.
+func getenvFrom(m map[string]string) func(context.Context, string) (string, error) {
+	return func(_ context.Context, k string) (string, error) {
+		return m[k], nil
+	}
+}
+
+// TestLlmConfigLayeredAnthropicAuth covers layered config loads (host client
+// first, then the calling/nested client): the Anthropic API key and the
+// subscription OAuth token are alternative credentials for the same slot, so
+// whichever one a later load supplies must win outright rather than being
+// shadowed by a credential accumulated from an earlier load.
+func TestLlmConfigLayeredAnthropicAuth(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("container API key overrides host OAuth login", func(t *testing.T) {
+		r := new(LLMRouter)
+		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
+			"ANTHROPIC_AUTH_TOKEN": "host-oauth",
+		}))
+		require.NoError(t, err)
+		_, err = r.LoadConfig(ctx, getenvFrom(map[string]string{
+			"ANTHROPIC_API_KEY": "container-key",
+		}))
+		require.NoError(t, err)
+		assert.Equal(t, "container-key", r.AnthropicAPIKey)
+		assert.Empty(t, r.AnthropicAuthToken)
+		assert.False(t, r.AnthropicIsOAuth)
+	})
+
+	t.Run("container OAuth overrides host API key", func(t *testing.T) {
+		r := new(LLMRouter)
+		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
+			"ANTHROPIC_API_KEY": "host-key",
+		}))
+		require.NoError(t, err)
+		_, err = r.LoadConfig(ctx, getenvFrom(map[string]string{
+			"ANTHROPIC_AUTH_TOKEN": "container-oauth",
+		}))
+		require.NoError(t, err)
+		assert.Equal(t, "container-oauth", r.AnthropicAuthToken)
+		assert.Empty(t, r.AnthropicAPIKey)
+		assert.True(t, r.AnthropicIsOAuth)
+	})
+
+	t.Run("container with no auth inherits host OAuth", func(t *testing.T) {
+		r := new(LLMRouter)
+		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
+			"ANTHROPIC_AUTH_TOKEN": "host-oauth",
+		}))
+		require.NoError(t, err)
+		_, err = r.LoadConfig(ctx, getenvFrom(map[string]string{}))
+		require.NoError(t, err)
+		assert.Equal(t, "host-oauth", r.AnthropicAuthToken)
+		assert.True(t, r.AnthropicIsOAuth)
+	})
+
+	t.Run("single load with both prefers OAuth", func(t *testing.T) {
+		r := new(LLMRouter)
+		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
+			"ANTHROPIC_API_KEY":    "key",
+			"ANTHROPIC_AUTH_TOKEN": "oauth",
+		}))
+		require.NoError(t, err)
+		assert.Equal(t, "key", r.AnthropicAPIKey)
+		assert.Equal(t, "oauth", r.AnthropicAuthToken)
+		assert.True(t, r.AnthropicIsOAuth)
+	})
+}
+
+// TestLlmConfigLocalSupplied covers LoadConfig's report of whether THIS load
+// supplied a local base URL. The tunnel to a local model must run through the
+// session of the client that configured it, and localhost names a different
+// host per client — so the signal must fire even when the URL string is
+// unchanged from an earlier load.
+func TestLlmConfigLocalSupplied(t *testing.T) {
+	ctx := context.Background()
+
+	r := new(LLMRouter)
+	supplied, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
+		"LOCAL_BASE_URL": "http://localhost:11434",
+	}))
+	require.NoError(t, err)
+	assert.True(t, supplied)
+	assert.Equal(t, "http://localhost:11434", r.LocalBaseURL)
+
+	// A load supplying nothing leaves the URL alone and reports false.
+	supplied, err = r.LoadConfig(ctx, getenvFrom(map[string]string{}))
+	require.NoError(t, err)
+	assert.False(t, supplied)
+	assert.Equal(t, "http://localhost:11434", r.LocalBaseURL)
+
+	// Supplying a value identical to the already-loaded one must still count:
+	// the same "http://localhost:11434" string reaches a different host from
+	// each client.
+	supplied, err = r.LoadConfig(ctx, getenvFrom(map[string]string{
+		"LOCAL_BASE_URL": "http://localhost:11434",
+	}))
+	require.NoError(t, err)
+	assert.True(t, supplied)
+	assert.Equal(t, "http://localhost:11434", r.LocalBaseURL)
+}
+
 func TestLocalModelRouting(t *testing.T) {
 	// A local endpoint is keyed by an exact model-name match (it has no naming
 	// convention to detect), and wins ahead of the prefix-based heuristics.

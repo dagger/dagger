@@ -215,7 +215,6 @@ proptest! {
     // Redaction is channel-local and streaming; callback failure changes only sink
     // availability while bounded sanitized tails continue to drain and remain safe.
     // Feature: rust-sdk-transport-observability, Property 21: diagnostics are isolated, redacted, bounded, and contained
-    // Feature: rust-sdk-f10-cleanup, Property 5: diagnostics are credential-free across chunking
     #[test]
     fn property_21_diagnostics_isolated_redacted_bounded_contained(
         secret in "CANARY_[A-Za-z0-9]{20,40}",

@@ -187,7 +187,7 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 		}
 		if token := tc.token(); token != "" {
 			ctr = ctr.
-				WithNewFile("/tmp/git-config", makeGitCredentials("https://"+tc.expectedHost, "git", token)).
+				WithNewFile("/tmp/git-config", makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername, token)).
 				WithEnvVariable("GIT_CONFIG_GLOBAL", "/tmp/git-config")
 		}
 

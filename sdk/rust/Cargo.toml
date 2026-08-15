@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
@@ -11,12 +11,12 @@ repository = "https://github.com/dagger/dagger"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-dagger-codegen = { version = "=1.0.0-beta.10", path = "crates/dagger-codegen" }
-dagger-bootstrap = { version = "=1.0.0-beta.10", path = "crates/dagger-bootstrap" }
-dagger-sdk = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk", default-features = false }
-dagger-sdk-macros = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-macros" }
-dagger-sdk-completeness = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-completeness" }
-dagger-sdk-engine = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-engine" }
+dagger-codegen = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-codegen" }
+dagger-bootstrap = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-bootstrap" }
+dagger-sdk = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk", default-features = false }
+dagger-sdk-macros = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk-macros" }
+dagger-sdk-completeness = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk-completeness" }
+dagger-sdk-engine = { version = "=1.0.0-beta.11.rust.1", path = "crates/dagger-sdk-engine" }
 
 eyre = "0.6.9"
 color-eyre = "0.6.2"

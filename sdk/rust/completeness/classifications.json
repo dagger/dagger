@@ -129,7 +129,7 @@
       "authority_id": "go-integration-tests",
       "classification": {
         "gap": "The Rust SDK has no target-scoped implementation and passing verification for this capability",
-        "owner_feature": "feature-8",
+        "owner_feature": "feature-9",
         "status": "Missing"
       },
       "expected_capability_ids": {
@@ -412,11 +412,11 @@
     "routing/go-client/client-tests": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 8 integration coverage lacks target-scoped verification",
+        "gap": "completed-engine integration coverage lacks target-scoped verification",
         "implementation_evidence": [
           "implementation/go-client-baseline"
         ],
-        "owner_feature": "feature-8",
+        "owner_feature": "feature-9",
         "status": "Partial"
       },
       "expected_capability_ids": {
@@ -424,7 +424,7 @@
       },
       "overrides": {
         "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%254%43oad%2557orkspace%254%44odules": {
-          "gap": "Feature 8 live engine verification of workspace-module loading is not yet present",
+          "gap": "completed-engine verification of workspace-module loading is not yet present",
           "implementation_evidence": [
             "implementation/feature-2-client-lifecycle"
           ],
@@ -432,7 +432,7 @@
           "status": "Partial"
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%2557orkspace": {
-          "gap": "Feature 8 live engine verification of workspace selection is not yet present",
+          "gap": "completed-engine verification of workspace selection is not yet present",
           "implementation_evidence": [
             "implementation/feature-2-client-lifecycle"
           ],

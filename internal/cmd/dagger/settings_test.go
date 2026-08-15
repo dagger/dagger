@@ -1,9 +1,13 @@
 package daggercmd
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/gqlerror"
+
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 )
 
 func TestWorkspaceSettingWriteValue(t *testing.T) {
@@ -44,4 +48,23 @@ func TestWorkspaceSettingWriteValue(t *testing.T) {
 		_, _, err := workspaceSettingWriteValue(workspaceSetting{Module: "m", Key: "k"}, []string{"one", "two"})
 		require.ErrorContains(t, err, "is not a list")
 	})
+}
+
+func TestIsUndefinedEnvError(t *testing.T) {
+	structured := &gqlerror.Error{
+		Message: "something wrapped beyond recognition",
+		Extensions: map[string]any{
+			"_type": workspacepkg.UndefinedEnvErrorType,
+			"env":   "dev",
+		},
+	}
+	require.True(t, isUndefinedEnvError(fmt.Errorf("wrap: %w", structured), "dev"))
+	// The structured match is authoritative: same _type, different env.
+	require.False(t, isUndefinedEnvError(structured, "prod"))
+
+	// Fallback for engines that don't attach extensions.
+	plain := fmt.Errorf(`connect: workspace env "dev" is not defined (no envs defined)`)
+	require.True(t, isUndefinedEnvError(plain, "dev"))
+	require.False(t, isUndefinedEnvError(plain, "prod"))
+	require.False(t, isUndefinedEnvError(nil, "dev"))
 }

@@ -401,6 +401,9 @@ func (c *entrypointFuncCtx) renderFunctionExpr(fn *TypedefFunction) string {
 	if fn.IsUp {
 		parts = append(parts, ".withUp()")
 	}
+	if fn.IsAgent {
+		parts = append(parts, ".withAgent()")
+	}
 	return strings.Join(parts, "")
 }
 

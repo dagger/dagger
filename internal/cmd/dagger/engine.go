@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
@@ -283,6 +284,12 @@ func applyWorkspaceClientParams(params *client.Params) error {
 	if params.WorkspaceEnv == nil && workspaceEnv != "" {
 		env := workspaceEnv
 		params.WorkspaceEnv = &env
+	}
+	if params.UserConfigPath == "" {
+		// The shared user-level config file (~/.config/dagger/config.toml, or
+		// $DAGGER_CONFIG). The engine reads its [workspaces.*] section for
+		// user-level workspace overrides.
+		params.UserConfigPath = llmconfig.ConfigFile
 	}
 	return nil
 }

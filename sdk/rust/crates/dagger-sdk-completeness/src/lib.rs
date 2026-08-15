@@ -48,17 +48,11 @@ pub use client_generation::{
     ClientGenerationDiagnosticSet, ClientGenerationEvidenceArtifact, ClientGenerationFormatVersion,
     ClientGenerationMapping, ClientGenerationReport, ClientGenerationScope,
     ClientGenerationScopeInput, ClientImplementationSubject, ClientOwnershipCorrection,
-    ClientReportSection, ClientSignoffAdmission, ClientSignoffArtifact, ClientSignoffArtifactInput,
-    ClientSignoffCase, ClientSignoffCaseObservation, ClientSignoffCaseOutcome,
-    ClientSignoffCaseSpec, ClientSignoffExecutionCounts, ClientSignoffInventory,
-    ClientSignoffObservation, ClientSignoffPhaseTimings, ClientSignoffRun, ClientTerminalStatus,
-    PreservedClientBoundary, admit_client_evidence, admit_client_generation_closure,
-    apply_client_ownership_correction, build_client_signoff_artifact,
-    build_client_signoff_inventory, client_generation_scope_input,
-    client_implementation_closure_claims, client_signoff_verdict_digest,
+    ClientReportSection, ClientTerminalStatus, PreservedClientBoundary, admit_client_evidence,
+    admit_client_generation_closure, apply_client_ownership_correction,
+    client_generation_scope_input, client_implementation_closure_claims,
     derive_client_generation_report, derive_client_generation_scope, plan_client_feature_end_gate,
-    required_client_closure_gates, required_client_signoff_cases,
-    validate_client_signoff_candidate,
+    required_client_closure_gates,
 };
 pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};
@@ -111,20 +105,15 @@ pub use io::{
 };
 pub use model::*;
 pub use module_authoring::{
-    ExactTargetArtifactInput, ExactTargetSignoffArtifact, ImplementationClosureEvidence,
-    ImplementationClosureGate, ImplementationClosureObservation, ImplementationGateObservation,
-    ImplementationGateOutcome, ModuleAuthoringEvidenceAdmission, ModuleAuthoringFormatVersion,
-    ModuleAuthoringMapping, ModuleAuthoringReport, ModuleAuthoringScope, ModuleAuthoringScopeInput,
-    ModuleAuthority, ModuleEvidenceDomain, ModuleEvidenceObservation, ModuleEvidenceOutcome,
-    ModuleEvidencePhase, ModuleImplementationSubject, ModuleSignoffAdmission, ModuleSignoffCase,
-    ModuleSignoffCaseObservation, ModuleSignoffCaseOutcome, ModuleSignoffCaseSpec,
-    ModuleSignoffExecutionShape, ModuleSignoffManifest, ModuleSignoffObservation,
-    ModuleSignoffPhaseTimings, ModuleTerminalStatus, OwnershipCorrection,
-    admit_module_authoring_evidence, admit_module_signoff, assemble_implementation_closure,
-    build_exact_target_signoff_artifact, build_module_signoff_manifest,
+    ImplementationClosureEvidence, ImplementationClosureGate, ImplementationClosureObservation,
+    ImplementationGateObservation, ImplementationGateOutcome, ModuleAuthoringEvidenceAdmission,
+    ModuleAuthoringFormatVersion, ModuleAuthoringMapping, ModuleAuthoringReport,
+    ModuleAuthoringScope, ModuleAuthoringScopeInput, ModuleAuthority, ModuleEvidenceDomain,
+    ModuleEvidenceObservation, ModuleEvidenceOutcome, ModuleEvidencePhase,
+    ModuleImplementationSubject, ModuleTerminalStatus, OwnershipCorrection,
+    admit_module_authoring_evidence, assemble_implementation_closure,
     derive_module_authoring_report, derive_module_authoring_scope, implementation_closure_claims,
     module_authoring_scope_input, required_implementation_closure_gates,
-    required_module_signoff_cases,
 };
 pub use observation::{
     ExactTargetRun, TransportAssertion, TransportObservationKind, TransportObservationMode,

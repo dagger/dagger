@@ -281,7 +281,7 @@ mod tests {
         TargetDescriptor {
             contract_format_version: SemverVersion::new("1.0.0").unwrap(),
             dagger_repository: RepositoryId::new("github.com/dagger/dagger").unwrap(),
-            dagger_revision: CommitSha::new("25300124ca110612edc09c43f89cb5fad6028170").unwrap(),
+            dagger_revision: CommitSha::new("501b57e0476dee5881b99a064c3c04173134ecc7").unwrap(),
             engine_version: DaggerVersion::new("v1.0.0-beta.9").unwrap(),
             schema_version: NonEmptyText::new("v1").unwrap(),
             schema_digest: Digest::sha256("schema"),
@@ -292,7 +292,7 @@ mod tests {
             sdk_contract_revision: CommitSha::new("8c164424b7a8a37b33a77367ef7547490d5b87b5")
                 .unwrap(),
             sdk_contract_cli_version: DaggerVersion::new("v1.0.0-beta.9").unwrap(),
-            rust_sdk_version: SemverVersion::new("1.0.0-beta.10").unwrap(),
+            rust_sdk_version: SemverVersion::new("1.0.0-beta.11.rust.1").unwrap(),
             rust_edition: RustEdition::Edition2024,
             rust_version: SemverVersion::new("1.97.1").unwrap(),
             previous_target: None,

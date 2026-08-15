@@ -4,7 +4,7 @@
       "claim": "The reviewed mapping expresses Go client options, raw execution, query composition, and connection contracts with Rust ownership, builders, and typed values",
       "evidence_id": "decision/feature-2-idiomatic-client-mappings",
       "evidence_kind": "decision",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "locator": "design:reviewed-idiomatic-equivalences",
       "path": ".kiro/specs/rust-sdk-client-lifecycle/design.md",
       "proved_capability_ids": [
@@ -20,13 +20,13 @@
         "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "decision/feature-2-no-closure-helper": {
       "claim": "The stable owned Client deliberately has no closure-scoped convenience API; one lifecycle contract therefore governs every handle",
       "evidence_id": "decision/feature-2-no-closure-helper",
       "evidence_kind": "decision",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "locator": "design:conditional-closure-helper-applicability",
       "path": ".kiro/specs/rust-sdk-client-lifecycle/design.md",
       "proved_capability_ids": [
@@ -34,13 +34,13 @@
         "policy/rust-policy/client-owned-lifecycle"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/core-codegen/generated-client": {
       "claim": "Checked generation reproduced the complete manifest-owned Rust client source",
       "evidence_id": "implementation/core-codegen/generated-client",
       "evidence_kind": "implementation",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "locator": "registry:implementation/core-codegen/generated-client",
       "path": "sdk/rust/completeness/evidence/core-codegen-registry.json",
       "proved_capability_ids": [
@@ -764,7 +764,7 @@
         "schema/engine-schema/schema-type/object/_%44irective%41pplication%41rg"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/engine-schema-baseline": {
       "claim": "Pinned Rust source implements part, but not yet all, of this authority scope",
@@ -1661,13 +1661,13 @@
         "schema/engine-schema/schema-type/scalar/%56oid"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/feature-2-client-lifecycle": {
       "claim": "The stable Rust facade implements the exact Feature 2 owned-client, configuration, lifecycle, raw execution, and connection-abstraction scope",
       "evidence_id": "implementation/feature-2-client-lifecycle",
       "evidence_kind": "implementation",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "locator": "rust:feature-2-client-lifecycle",
       "path": "sdk/rust/crates/dagger-sdk/src/lib.rs",
       "proved_capability_ids": [
@@ -1710,13 +1710,13 @@
         "policy/rust-policy/client-shared-handle-safety"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/feature-3-transport-observability": {
       "claim": "The stable Rust client implements the reviewed source, acquisition, cache, launch, protocol, HTTP, propagation, compatibility, error, and shutdown scope",
       "evidence_id": "implementation/feature-3-transport-observability",
       "evidence_kind": "implementation",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "locator": "rust:feature-3-transport-observability",
       "path": "sdk/rust/crates/dagger-sdk/src/lib.rs",
       "proved_capability_ids": [
@@ -1780,7 +1780,7 @@
         "policy/rust-policy/transport-verified-cli-download"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/go-client-baseline": {
       "claim": "Pinned Rust source implements part, but not yet all, of this authority scope",
@@ -3550,7 +3550,7 @@
         "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%2543hecksums%2555%2552%254%43"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/go-codegen-baseline": {
       "claim": "Pinned Rust source implements part, but not yet all, of this authority scope",
@@ -3623,7 +3623,7 @@
         "behavior/go-codegen/source%2Fgo-codegen%2Fgo-var%2Fgenerator%2F%2545rr%2555nknown%2553%2544%254%42%254%43ang"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "implementation/rust-policy-baseline": {
       "claim": "Pinned Rust source implements part, but not yet all, of this authority scope",
@@ -3641,7 +3641,7 @@
         "policy/rust-policy/workspace-target-verification"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "verification/core-codegen/release-closure": {
       "claim": "Fresh generation, property, compile, projection, documentation, and exact-target records close every declared domain for this exact capability scope",
@@ -3671,7 +3671,7 @@
       },
       "evidence_id": "verification/core-codegen/release-closure",
       "evidence_kind": "verification",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "expected_outcome": {
         "assertion": "Every published core-codegen status has complete fresh evidence and all unclosed capabilities remain blocking",
         "outcome": "passed"
@@ -4409,7 +4409,7 @@
         "schema/engine-schema/schema-type/object/_%44irective%41pplication%41rg"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "verification/feature-2-client-lifecycle": {
       "claim": "The locked Rust workspace passes the Feature 2 unit, property, Loom, UI, public API, raw-only, and integration contract in the pinned toolchain",
@@ -4427,7 +4427,7 @@
       },
       "evidence_id": "verification/feature-2-client-lifecycle",
       "evidence_kind": "verification",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "expected_outcome": {
         "assertion": "All locked Feature 2 workspace tests pass in the pinned Linux Rust toolchain",
         "outcome": "passed"
@@ -4467,7 +4467,7 @@
         "policy/rust-policy/client-shared-handle-safety"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "verification/feature-3-transport-deterministic": {
       "claim": "Locked deterministic Rust fixtures verify the complete reviewed transport scope without claiming that an engine executed",
@@ -4485,7 +4485,7 @@
       },
       "evidence_id": "verification/feature-3-transport-deterministic",
       "evidence_kind": "verification",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "expected_outcome": {
         "assertion": "All locked deterministic transport tests pass in the pinned Linux Rust toolchain without an engine",
         "outcome": "passed"
@@ -4559,7 +4559,7 @@
         "policy/rust-policy/transport-verified-cli-download"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     },
     "verification/rust-workspace-target": {
       "claim": "The locked Rust workspace compiles and tests against the pinned engine target",
@@ -4576,7 +4576,7 @@
       },
       "evidence_id": "verification/rust-workspace-target",
       "evidence_kind": "verification",
-      "execution_target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+      "execution_target": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a",
       "expected_outcome": {
         "assertion": "All locked workspace tests pass for the pinned target",
         "outcome": "passed"
@@ -4593,7 +4593,7 @@
         "policy/rust-policy/workspace-target-verification"
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7"
     }
   }
 }

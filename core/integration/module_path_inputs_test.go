@@ -1448,9 +1448,9 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 	remoteModule := "github.com/dagger/dagger-test-modules"
 	remoteRef := "context-git"
 	g := c.Git(remoteModule).Ref(remoteRef)
-	commit, err := g.Commit(ctx)
+	commit, err := g.CommitSHA(ctx)
 	require.NoError(t, err)
-	fullref, err := g.Ref(ctx)
+	fullref, err := g.Name(ctx)
 	require.NoError(t, err)
 
 	modPath := "github.com/dagger/dagger-test-modules/context-git@" + remoteRef
@@ -1496,7 +1496,7 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	for _, version := range []string{"", "main", "context-git", "v1.2.3"} {
 		t.Run("version="+version, func(ctx context.Context, t *testctx.T) {
 			g := c.Git(remoteRepo).Ref(cmp.Or(version, "HEAD"))
-			fullref, err := g.Ref(ctx)
+			fullref, err := g.Name(ctx)
 			require.NoError(t, err)
 			require.Contains(t, fullref, version)
 
@@ -1552,10 +1552,10 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 	pin := "v1.2.3"
 
 	g := c.Git(remoteRepo).Ref(pin)
-	fullref, err := g.Ref(ctx)
+	fullref, err := g.Name(ctx)
 	require.NoError(t, err)
 
-	commit, err := g.Commit(ctx)
+	commit, err := g.CommitSHA(ctx)
 	require.NoError(t, err)
 
 	modGen := goGitBase(t, c).

@@ -16,6 +16,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // TestObjectToolset locks in that the LLM's tools come from the objects it's
@@ -92,6 +94,100 @@ func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *t
 	require.NoError(t, err)
 	require.Contains(t, out, "FIRST.txt")
 	require.Contains(t, out, "SECOND.txt")
+}
+
+// TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
+// tool's empty directories survive the engine's patch normalization
+// (core.normalizeChangesetToPatch). Git patches carry file content only, so
+// without the directory reconciliation the normalized changeset — which
+// replaces the original on the live workspace binding — would silently drop
+// the empty directory while keeping the file beside it.
+func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("scaffold the project").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "addScaffold"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	t.Run("the file beside the empty directory lands", func(ctx context.Context, t *testctx.T) {
+		// Control: the file edit rode the patch path, so normalization ran
+		// rather than falling back to the raw changeset.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop | workspace | file scaffold/README.md | contents`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "scaffolded", strings.TrimSpace(out))
+	})
+
+	t.Run("the empty directory survives normalization", func(ctx context.Context, t *testctx.T) {
+		// Resolving the directory errors if the patch round trip dropped it.
+		_, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop | workspace | directory scaffold/empty-dir | entries`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err,
+			"an empty directory created by a tool's changeset must survive patch normalization")
+	})
+
+	t.Run("normalization actually ran", func(ctx context.Context, t *testctx.T) {
+		// The empty directory would also survive if normalization silently
+		// fell back to the raw changeset, so the subtest above cannot tell
+		// reconciliation from a skipped normalization. The recorded overlay
+		// discriminates: a normalized overlay is withPatch plus the
+		// withNewDirectory that restored the empty directory, while the raw
+		// changeset's chain has the tool's operations and no withPatch.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop | portable-id`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+
+		gid := new(call.ID)
+		require.NoError(t, gid.Decode(strings.TrimSpace(out)))
+		fields := map[string]bool{}
+		collectIDFieldNames(gid, fields)
+		require.True(t, fields["withPatch"],
+			"the recorded overlay must be patch-normalized, not the raw changeset")
+		require.True(t, fields["withNewDirectory"],
+			"the reconciliation must record the empty directory's restoration")
+	})
+}
+
+// collectIDFieldNames records every field name reachable in an ID — the
+// receiver spine plus every ID nested in argument literals.
+func collectIDFieldNames(id *call.ID, into map[string]bool) {
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		into[cur.Field()] = true
+		for _, arg := range cur.Args() {
+			collectLiteralFieldNames(arg.Value(), into)
+		}
+	}
+}
+
+func collectLiteralFieldNames(lit call.Literal, into map[string]bool) {
+	switch v := lit.(type) {
+	case *call.LiteralID:
+		collectIDFieldNames(v.Value(), into)
+	case *call.LiteralList:
+		for _, item := range v.Values() {
+			collectLiteralFieldNames(item, into)
+		}
+	case *call.LiteralObject:
+		for _, field := range v.Args() {
+			if field == nil {
+				continue
+			}
+			collectLiteralFieldNames(field.Value(), into)
+		}
+	}
 }
 
 // TestToolReturningWorkspaceRebinds locks in that a tool returning a Workspace

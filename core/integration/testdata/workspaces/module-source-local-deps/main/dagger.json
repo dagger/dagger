@@ -1,0 +1,13 @@
+{
+  "name": "main",
+  "engineVersion": "v1.0.0",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    {
+      "name": "dep",
+      "source": "../dep"
+    }
+  ]
+}

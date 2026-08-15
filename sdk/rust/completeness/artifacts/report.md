@@ -2,11 +2,11 @@
 
 ## Target
 
-- Dagger: v1.0.0-beta.10
-- Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
-- Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:b464cfb08bde5fd41a085cc0400163d1019a61b699e8b38b901b2351e93358d3`
-- Ledger digest: `sha256:0ca7dd487feb996d122d7ad13635601a76ad470ef996dc63a53fe26cf89d4e44`
+- Dagger: v1.0.0-beta.11.rust.1
+- Dagger revision: `501b57e0476dee5881b99a064c3c04173134ecc7`
+- Rust SDK: 1.0.0-beta.11.rust.1
+- Inventory digest: `sha256:b3f156761f0e0f3987da0e33b9e31fe7629d5f61309318e3583acd30b801811b`
+- Ledger digest: `sha256:4d2416bbf2558038195cdb3a168f1b6c80b11217fe990a06d5081fde1cd6264e`
 
 ## Verdicts
 
@@ -64,8 +64,7 @@
 - feature-5: 53
 - feature-6: 96
 - feature-7: 1
-- feature-8: 1081
-- feature-9: 20
+- feature-9: 1101
 
 ## Blocking capabilities
 

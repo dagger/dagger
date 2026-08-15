@@ -270,7 +270,7 @@ proptest! {
         change_index in 0_usize..5,
         user_facing in any::<bool>(),
         has_experimental_condition in any::<bool>(),
-        migration_index in 0_usize..3,
+        migration_index in 0_usize..2,
     ) {
         let (mut from, mut to) = transition_pair(&cases.forward);
         let capability_id = cases.forward.capability_record.capability_id.clone();
@@ -328,10 +328,6 @@ proptest! {
         }
         let migration_requirement = match migration_index {
             1 => Some(OwnedSpecReference {
-                owner_feature: FeatureId::Feature8,
-                reference: spec_reference("feature-8"),
-            }),
-            2 => Some(OwnedSpecReference {
                 owner_feature: FeatureId::Feature9,
                 reference: spec_reference("feature-9"),
             }),
@@ -356,7 +352,7 @@ proptest! {
                 RustApiChangeKind::Removed | RustApiChangeKind::Incompatible
             );
         let migration_valid = if migration_required {
-            migration_index == 2
+            migration_index == 1
         } else {
             migration_index == 0
         };
@@ -574,7 +570,6 @@ fn report_fixture(
         FeatureId::Feature5,
         FeatureId::Feature6,
         FeatureId::Feature7,
-        FeatureId::Feature8,
         FeatureId::Feature9,
     ]
     .into_iter()
@@ -616,9 +611,8 @@ fn report_fixture(
                 FeatureId::Feature5,
                 FeatureId::Feature6,
                 FeatureId::Feature7,
-                FeatureId::Feature8,
                 FeatureId::Feature9,
-            ][index % 8]
+            ][index % 7]
                 .clone();
             *expected_owners.get_mut(&owner).unwrap() += 1;
             Some(owner)

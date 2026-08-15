@@ -65,6 +65,9 @@ func init() {
 }
 
 func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("client init does not support --env; it scaffolds clients into the base workspace config")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
@@ -80,8 +83,9 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
-		updated := dag.CurrentWorkspace().WithInitClient(clientPath, sdkName, moduleRef, opts)
-		_, err = handleWorkspaceResponse(ctx, dag, updated, autoApply)
+		current := dag.CurrentWorkspace()
+		updated := current.WithInitClient(clientPath, sdkName, moduleRef, opts)
+		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})
 }

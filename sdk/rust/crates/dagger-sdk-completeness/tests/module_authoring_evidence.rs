@@ -1,13 +1,10 @@
-//! Implementation-closure and exact-target sign-off admission properties.
+//! Implementation-closure admission properties.
 
 use dagger_sdk_completeness::{
-    CanonicalSet, CapabilityId, Digest, ExactTargetArtifactInput, ImplementationClosureEvidence,
-    ImplementationClosureObservation, ImplementationGateObservation, ImplementationGateOutcome,
-    ModuleAuthoringScope, ModuleEvidenceDomain, ModuleEvidencePhase, ModuleSignoffCaseObservation,
-    ModuleSignoffCaseOutcome, ModuleSignoffExecutionShape, ModuleSignoffManifest,
-    ModuleSignoffObservation, ModuleSignoffPhaseTimings, NonEmptyText, Status, TargetDigest,
-    admit_module_signoff, assemble_implementation_closure, build_exact_target_signoff_artifact,
-    build_module_signoff_manifest, derive_module_authoring_report, derive_module_authoring_scope,
+    CanonicalSet, Digest, ImplementationClosureEvidence, ImplementationClosureObservation,
+    ImplementationGateObservation, ImplementationGateOutcome, ModuleAuthoringScope,
+    ModuleEvidenceDomain, ModuleEvidencePhase, NonEmptyText, Status, TargetDigest,
+    assemble_implementation_closure, derive_module_authoring_report, derive_module_authoring_scope,
     implementation_closure_claims, module_authoring_scope_input,
     required_implementation_closure_gates,
 };
@@ -48,16 +45,16 @@ proptest! {
             6 => observation.checkpoint.actions[0].outcome = CheckpointActionOutcome::Failed,
             7 => observation.checkpoint.actions[0].elapsed_millis = 0,
             8 => {
-                let engine_claim = scope
+                let capability = scope
                     .mappings()
                     .values()
-                    .find(|mapping| mapping.minimum_evidence_domain == ModuleEvidenceDomain::ExactEngineSignoff)
-                    .expect("reviewed sign-off claim")
+                    .next()
+                    .expect("reviewed capability")
                     .capability_id
                     .clone();
                 observation.claims.insert(
-                    ModuleEvidenceDomain::ExactEngineSignoff,
-                    CanonicalSet::new([engine_claim]),
+                    ModuleEvidenceDomain::CrossPlatform,
+                    CanonicalSet::new([capability]),
                 );
             }
             9 => observation.implementation_digest = digest(seed, 0x99),
@@ -68,62 +65,8 @@ proptest! {
         prop_assert_eq!(closure.is_ok(), mutation == 0);
         if let Ok(closure) = closure {
             prop_assert_eq!(closure.status_changes.len(), 110);
-            prop_assert_eq!(closure.signoff_blockers.len(), 1);
+            prop_assert!(closure.remaining_blockers.is_empty());
             prop_assert!(closure.status_changes.values().all(|status| matches!(status, Status::Implemented | Status::IdiomaticEquivalent)));
-        }
-    }
-
-    // Sign-off admits one atomic exact-target run and rejects every partial or duplicated resource graph.
-    #[test]
-    fn property_30_sdk_signoff_exact_target_claim_bounded(
-        seed in any::<u8>(),
-        mutation in 0_u8..13,
-    ) {
-        let (scope, closure) = valid_closure(seed);
-        let manifest = signoff_manifest(&scope, &closure, seed);
-        let mut observation = signoff_observation(&manifest, seed);
-        match mutation {
-            0 => {}
-            1 => { observation.cases.pop(); }
-            2 => observation.cases[0].result = ModuleSignoffCaseOutcome::Failed {
-                diagnostic: text("registration failed"),
-            },
-            3 => observation.cases[0].result = ModuleSignoffCaseOutcome::Skipped {
-                reason: text("case not selected"),
-            },
-            4 => observation.execution_shape.artifact_materializations = 2,
-            5 => observation.execution_shape.engine_starts = 2,
-            6 => observation.execution_shape.rust_baseline_installs = 2,
-            7 => observation.execution_shape.unrelated_builds = 1,
-            8 => observation.artifact_digest = digest(seed, 0x81),
-            9 => {
-                let local = scope
-                    .mappings()
-                    .values()
-                    .find(|mapping| mapping.minimum_evidence_domain != ModuleEvidenceDomain::ExactEngineSignoff)
-                    .expect("reviewed local capability")
-                    .capability_id
-                    .clone();
-                observation.capability_ids = CanonicalSet::new(
-                    observation.capability_ids.iter().cloned().chain([local]),
-                );
-            }
-            10 => observation.phase_timings.engine_start_millis = 0,
-            11 => observation.cases.push(observation.cases[0].clone()),
-            12 => observation.cases[0].case_digest = digest(seed, 0x82),
-            _ => unreachable!(),
-        }
-
-        let admission = admit_module_signoff(&scope, &manifest, &observation);
-        prop_assert_eq!(admission.rejection.is_none(), mutation == 0);
-        if mutation == 0 {
-            prop_assert!(admission.verdict_digest.is_some());
-            prop_assert_eq!(admission.status_changes.len(), 1);
-            prop_assert!(admission.blockers.is_empty());
-        } else {
-            prop_assert!(admission.verdict_digest.is_none());
-            prop_assert!(admission.status_changes.is_empty());
-            prop_assert_eq!(admission.blockers.len(), 111);
         }
     }
 }
@@ -163,7 +106,6 @@ fn closure_observation(seed: u8) -> (ModuleAuthoringScope, ImplementationClosure
                 manifest_digest: Sha256Digest::new(digest(seed, 0x21).as_str())
                     .expect("test digest satisfies engine grammar"),
             },
-            deferred_signoff_exception: None,
         },
         gates,
         claims: implementation_closure_claims(&scope),
@@ -176,77 +118,6 @@ fn valid_closure(seed: u8) -> (ModuleAuthoringScope, ImplementationClosureEviden
     let closure = assemble_implementation_closure(&scope, &observation)
         .expect("complete local evidence closes implementation");
     (scope, closure)
-}
-
-fn signoff_manifest(
-    scope: &ModuleAuthoringScope,
-    closure: &ImplementationClosureEvidence,
-    seed: u8,
-) -> ModuleSignoffManifest {
-    let artifact = build_exact_target_signoff_artifact(ExactTargetArtifactInput {
-        target_digest: closure.target_digest.clone(),
-        dagger_revision: text("25300124ca110612edc09c43f89cb5fad6028170"),
-        platform: text("linux/amd64"),
-        engine_cli_input_digest: digest(seed, 0x30),
-        go_runtime_digest: digest(seed, 0x31),
-        rust_content_digest: digest(seed, 0x32),
-        toolchain_digest: digest(seed, 0x33),
-    })
-    .expect("exact artifact input");
-    build_module_signoff_manifest(scope, closure, artifact, digest(seed, 0x34))
-        .expect("complete deferred sign-off manifest")
-}
-
-fn signoff_observation(manifest: &ModuleSignoffManifest, seed: u8) -> ModuleSignoffObservation {
-    let cases = manifest
-        .cases
-        .values()
-        .enumerate()
-        .map(|(index, spec)| ModuleSignoffCaseObservation {
-            case: spec.case,
-            case_digest: spec.case_digest.clone(),
-            workspace_digest: digest(
-                seed,
-                0x40_u8.wrapping_add(u8::try_from(index).unwrap_or_default()),
-            ),
-            elapsed_millis: u64::try_from(index).unwrap_or_default() + 1,
-            result: ModuleSignoffCaseOutcome::Passed {
-                observation_digest: digest(
-                    seed,
-                    0x50_u8.wrapping_add(u8::try_from(index).unwrap_or_default()),
-                ),
-            },
-        })
-        .collect();
-    ModuleSignoffObservation {
-        manifest_digest: dagger_sdk_completeness::canonical_digest(
-            dagger_sdk_completeness::DigestDomain::ModuleAuthoring,
-            manifest,
-        )
-        .expect("manifest is canonical"),
-        artifact_digest: manifest.artifact.artifact_digest.clone(),
-        implementation_closure_digest: manifest.implementation_closure_digest.clone(),
-        generated_assets_digest: manifest.generated_assets_digest.clone(),
-        runtime_digest: manifest.runtime_digest.clone(),
-        execution_shape: ModuleSignoffExecutionShape {
-            artifact_materializations: 1,
-            engine_starts: 1,
-            rust_baseline_installs: 1,
-            unrelated_builds: 0,
-        },
-        phase_timings: ModuleSignoffPhaseTimings {
-            artifact_build_or_import_millis: 1,
-            engine_start_millis: 1,
-            rust_install_millis: 1,
-        },
-        cases,
-        capability_ids: CanonicalSet::new(
-            manifest
-                .cases
-                .values()
-                .flat_map(|case| case.capability_ids.iter().cloned()),
-        ),
-    }
 }
 
 fn target(seed: u8) -> TargetDigest {
@@ -262,44 +133,14 @@ fn text(value: &str) -> NonEmptyText {
 }
 
 #[test]
-fn signoff_inventory_is_closed_and_case_claims_are_disjoint() {
-    let (scope, closure) = valid_closure(7);
-    let manifest = signoff_manifest(&scope, &closure, 7);
-    assert_eq!(manifest.cases.len(), 9);
-    let claims = manifest
-        .cases
-        .values()
-        .flat_map(|case| case.capability_ids.iter())
-        .collect::<Vec<&CapabilityId>>();
-    assert_eq!(claims.len(), 1);
-    assert_eq!(
-        closure.signoff_blockers,
-        CanonicalSet::new(claims.into_iter().cloned())
-    );
-}
-
-#[test]
-fn report_keeps_engine_free_closure_distinct_from_deferred_signoff() {
+fn report_reflects_complete_local_closure() {
     let (scope, closure) = valid_closure(9);
-    let local = derive_module_authoring_report(&scope, Some(&closure), None)
+    let local = derive_module_authoring_report(&scope, Some(&closure))
         .expect("complete local evidence derives an honest report");
     assert!(matches!(
         local.implementation_closure,
         ModuleEvidencePhase::Passed { .. }
     ));
-    assert_eq!(local.sdk_signoff, ModuleEvidencePhase::Unexecuted);
     assert_eq!(local.status_changes.len(), 110);
-    assert_eq!(local.blockers.len(), 1);
-
-    let manifest = signoff_manifest(&scope, &closure, 9);
-    let observation = signoff_observation(&manifest, 9);
-    let admission = admit_module_signoff(&scope, &manifest, &observation);
-    let signed_off = derive_module_authoring_report(&scope, Some(&closure), Some(&admission))
-        .expect("complete exact-target evidence derives a signed-off report");
-    assert!(matches!(
-        signed_off.sdk_signoff,
-        ModuleEvidencePhase::Passed { .. }
-    ));
-    assert_eq!(signed_off.status_changes.len(), 111);
-    assert!(signed_off.blockers.is_empty());
+    assert!(local.blockers.is_empty());
 }

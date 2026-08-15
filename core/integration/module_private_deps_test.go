@@ -120,15 +120,15 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 // credential-resolving client has git and the configured credential helper,
 // matching how git credential forwarding is exercised in gitcredential_test.go.
 func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *testctx.T) {
-	// HTTPS GitLab private repo authenticated with a read-only PAT, matching the
-	// originally reported scenario.
+	// Use a read-only deploy token for the same HTTPS credential-forwarding path
+	// as the originally reported PAT scenario.
 	tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 
 	workDir := t.TempDir()
 
 	// Isolated git credential helper for the private repo's host.
 	gitConfigPath := filepath.Join(workDir, ".gitconfig")
-	err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("https://"+tc.expectedHost, "x-token-auth", tc.token())), 0600)
+	err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername, tc.token())), 0600)
 	require.NoError(t, err)
 
 	// run executes a dagger command on the host in workDir with a git

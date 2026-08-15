@@ -221,6 +221,17 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("generatedContextChangeset", s.moduleSourceGeneratedContextChangeset).
 			Doc(`The generated files and directories made on top of the module source's context directory, returned as a Changeset.`),
 
+		dagql.NodeFunc("generate", s.moduleSourceGenerate).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Return the supplied workspace with this module's generated context applied.`,
+				`The workspace change baseline is preserved, so a later Workspace.changes call includes this generation together with any other edits made by the caller.`).
+			Args(
+				dagql.Arg("workspace").Doc(`The workspace to apply generated files to.`),
+			),
+
+		// TODO: remove this field after the official SDK migrations have shipped.
+		// Older SDK releases still call it while loading, so hiding it would make
+		// those SDKs unusable with the engine before they can migrate to generate.
 		dagql.NodeFunc("generateLocalDependencies", s.moduleSourceGenerateLocalDependencies).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.`,
@@ -3012,6 +3023,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	// ModuleSource has no workspace cwd of its own. Callers that need paths
+	// relative to a cwd apply these generated files to a Workspace, then call
+	// Workspace.changes with the workspace they started from.
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get dag server: %w", err)
@@ -3026,8 +3040,46 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 		return res, fmt.Errorf("failed to get original context directory ID: %w", err)
 	}
 
-	// Build the changeset: genDirInst.Changes(originalCtxDir).
-	if err := dag.Select(ctx, genDirInst, &res,
+	// Codegen may return a filtered context containing only the module and its
+	// dependencies. Compute its directory diff first, then apply that diff to
+	// the original context before constructing the Changeset. Diffing the
+	// filtered context directly against the original would incorrectly report
+	// every unrelated workspace path as removed.
+	var generatedDiff dagql.ObjectResult[*core.Directory]
+	genDirInstID, err := genDirInst.ID()
+	if err != nil {
+		return res, fmt.Errorf("failed to get generated context directory ID: %w", err)
+	}
+	if err := dag.Select(ctx, originalCtxDir, &generatedDiff,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*core.Directory](genDirInstID)},
+			},
+		},
+	); err != nil {
+		return res, fmt.Errorf("failed to compute generated context diff: %w", err)
+	}
+	generatedDiffID, err := generatedDiff.ID()
+	if err != nil {
+		return res, fmt.Errorf("failed to get generated context diff ID: %w", err)
+	}
+	var updatedCtxDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, originalCtxDir, &updatedCtxDir,
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](generatedDiffID)},
+			},
+		},
+	); err != nil {
+		return res, fmt.Errorf("failed to apply generated context diff: %w", err)
+	}
+
+	// Build the changeset from the full original context to the context with
+	// only the generated diff applied.
+	if err := dag.Select(ctx, updatedCtxDir, &res,
 		dagql.Selector{
 			Field: "changes",
 			Args: []dagql.NamedInput{
@@ -3037,8 +3089,61 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 	); err != nil {
 		return res, fmt.Errorf("failed to compute changeset: %w", err)
 	}
-
 	return res, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceGenerate(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	args struct {
+		Workspace dagql.ID[*core.Workspace]
+	},
+) (res dagql.ObjectResult[*core.Workspace], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	workspace, err := args.Workspace.Load(ctx, dag)
+	if err != nil {
+		return res, fmt.Errorf("load generation workspace: %w", err)
+	}
+
+	// Generate local dependencies only as input to this module's codegen. Apply
+	// them to a temporary workspace, reload the module source from that view, and
+	// then apply only this module's generated context to the caller's workspace.
+	dependencyChanges, err := s.moduleSourceGenerateLocalDependencies(ctx, srcInst, struct {
+		Workspace dagql.ID[*core.Workspace]
+	}{Workspace: args.Workspace})
+	if err != nil {
+		return res, fmt.Errorf("generate local dependencies: %w", err)
+	}
+	staged := workspace
+	empty, err := dependencyChanges.Self().IsEmpty(ctx)
+	if err != nil {
+		return res, fmt.Errorf("inspect local dependency generation: %w", err)
+	}
+	if !empty {
+		staged, err = (&workspaceSchema{}).workspaceWithChangeset(ctx, workspace, dependencyChanges)
+		if err != nil {
+			return res, fmt.Errorf("stage local dependency generation: %w", err)
+		}
+	}
+	var stagedSrc dagql.ObjectResult[*core.ModuleSource]
+	if err := dag.Select(ctx, staged, &stagedSrc, dagql.Selector{
+		Field: "moduleSource",
+		Args: []dagql.NamedInput{{
+			Name:  "path",
+			Value: dagql.String("/" + srcInst.Self().SourceRootSubpath),
+		}},
+	}); err != nil {
+		return res, fmt.Errorf("reload module source with generated dependencies: %w", err)
+	}
+
+	generated, err := s.moduleSourceGeneratedContextChangeset(ctx, stagedSrc, struct{}{})
+	if err != nil {
+		return res, err
+	}
+	return (&workspaceSchema{}).workspaceWithChangeset(ctx, workspace, generated)
 }
 
 // moduleSourceGenerateLocalDependencies generates this module source's
@@ -3052,7 +3157,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 // owning SDK generator against a workspace scoped to it (its path as cwd) with
 // exactly that closure staged. The staged workspace records the dependency in
 // its StagedGeneration set (via __withGeneratedLocalDependencies), so the SDK
-// generator's own nested generateLocalDependencies call for that module
+// generator's own nested local-dependency generation for that module
 // short-circuits instead of re-walking. Nested walks for other modules also
 // skip any dependency the workspace already marks as staged: the marked
 // dependency's generator run is what invoked them, so re-staging it would
@@ -3114,11 +3219,12 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		return emptyResult()
 	}
 
-	// Restore the workspace owner's client context. This runs nested inside an
-	// SDK module function (whose runtime client can't reach the workspace
-	// filesystem), so module-source loading below — which finds up .env/cwd via
-	// the requester session — must act as the workspace client.
-	ctx, err = withWorkspaceClientContext(ctx, workspace.Self())
+	// Restore the workspace owner's client context for client-backed workspaces.
+	// This runs nested inside an SDK module function, whose runtime client can't
+	// reach the caller's host filesystem. Value workspaces (Directory.asWorkspace
+	// and git workspaces) have no client ID and already contain everything needed
+	// to resolve their module sources.
+	ctx, err = withModuleSourceWorkspaceClientContext(ctx, workspace.Self())
 	if err != nil {
 		return res, fmt.Errorf("restore workspace client context: %w", err)
 	}
@@ -3142,14 +3248,6 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 	// select below would self-wait forever on its own in-flight call.
 	if cycle := localDepCycle(src); len(cycle) > 0 {
 		return res, fmt.Errorf("local dependency cycle: %s", strings.Join(cycle, " -> "))
-	}
-
-	// Map each workspace-managed module path to the SDK module that owns it, so
-	// each dependency is generated by only its own SDK — not the whole generator
-	// group. Source of truth: [[modules.<name>.as-sdk.modules]] in dagger.toml.
-	owners, err := sdkOwnersByModulePath(ctx, workspace.Self())
-	if err != nil {
-		return res, fmt.Errorf("read workspace SDK ownership: %w", err)
 	}
 
 	// Direct local dependencies, deduplicated, in declaration order. A
@@ -3183,6 +3281,16 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		"module", srcInst.Self().SourceRootSubpath, "directDeps", depPaths)
 	if len(depPaths) == 0 {
 		return emptyResult()
+	}
+
+	// Map each workspace-managed module path to the SDK module that owns it, so
+	// each dependency is generated by only its own SDK — not the whole generator
+	// group. This is only required when dependencies need generation; standalone
+	// value workspaces legitimately have no dagger.toml. Source of truth:
+	// [[modules.<name>.as-sdk.modules]] in dagger.toml.
+	owners, err := sdkOwnersByModulePath(ctx, workspace.Self())
+	if err != nil {
+		return res, fmt.Errorf("read workspace SDK ownership: %w", err)
 	}
 
 	// The unstaged workspace root: the overlay base and the returned
@@ -3285,11 +3393,17 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 	}); err != nil {
 		return res, fmt.Errorf("compute staged dependency changeset: %w", err)
 	}
+
+	// Deliberately workspace-root-measured, unlike generatedContextChangeset:
+	// this changeset is intermediate staging data, consumed by
+	// Workspace.withChanges / __withGeneratedLocalDependencies, which overlay
+	// at the workspace root — it is never handed to a client to apply at its
+	// cwd.
 	return res, nil
 }
 
 // maxParallelDepGeneration bounds how many direct local dependencies are
-// staged and generated at once per generateLocalDependencies call. Each job
+// staged and generated at once per local-dependency generation call. Each job
 // loads a module and runs its SDK generator — real containers and I/O — so
 // this matches the cap used for parallel changeset work (see
 // core.maxParallelChangesets) rather than fanning out per dependency.
@@ -3323,6 +3437,19 @@ func localDepCycle(src dagql.ObjectResult[*core.ModuleSource]) []string {
 		return nil
 	}
 	return visit(src, nil)
+}
+
+// withModuleSourceWorkspaceClientContext restores host access when a workspace
+// belongs to a client. Value workspaces carry their complete filesystem value
+// and therefore need no client context.
+func withModuleSourceWorkspaceClientContext(ctx context.Context, workspace *core.Workspace) (context.Context, error) {
+	if workspace.ClientID != "" {
+		return withWorkspaceClientContext(ctx, workspace)
+	}
+	if workspace.IsValueWorkspace() {
+		return ctx, nil
+	}
+	return nil, fmt.Errorf("workspace has no client ID")
 }
 
 // generateOneLocalDependency generates the single dependency at depPath by
@@ -3582,7 +3709,7 @@ func scopedStagedWorkspace(
 	}
 	// __withGeneratedLocalDependencies applies the staged dependency codegen
 	// and records the module in the workspace's StagedGeneration set, so the
-	// dependency's SDK generator — which calls generateLocalDependencies
+	// dependency's SDK generator — which triggers local-dependency generation
 	// itself — short-circuits instead of re-staging the closure this
 	// workspace already carries.
 	var staged dagql.ObjectResult[*core.Workspace]
@@ -3626,7 +3753,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			// path the capability-less SDK would have taken.
 			typeDefsEnabled = false
 		case terr != nil:
-			return nil, fmt.Errorf("failed to initialize module: %w", terr)
+			return nil, terr
 		default:
 			initialized = resultInst.Self()
 		}

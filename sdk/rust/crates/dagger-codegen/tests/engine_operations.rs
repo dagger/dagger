@@ -34,7 +34,7 @@ fn module() -> ModuleProjectionInput {
 fn dependency() -> PublishedSdkDependency {
     PublishedSdkDependency::Registry {
         registry: "crates-io".to_owned(),
-        exact_version: "1.0.0-beta.10".to_owned(),
+        exact_version: "1.0.0-beta.11.rust.1".to_owned(),
     }
 }
 

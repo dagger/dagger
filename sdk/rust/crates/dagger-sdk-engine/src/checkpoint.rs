@@ -3,8 +3,7 @@
 //! Checkpoint commands are represented as typed actions rather than shell text.  The
 //! validated form cannot name Dagger, an engine, a network graph, or another SDK, and
 //! an execution record is admitted only when it accounts for every planned action
-//! exactly once.  A requested engine observation is retained only as an approved,
-//! deferred sign-off exception; it never becomes a local checkpoint action.
+//! exactly once.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -223,20 +222,6 @@ pub enum CheckpointGenerationDecision {
     },
 }
 
-/// Reviewed exception retained for the later sign-off inventory only.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DeferredSignoffException {
-    /// Exact contract impossible to observe through the direct model.
-    pub contract_gap: String,
-    /// Reviewed proof that the production direct model cannot represent the contract.
-    pub model_insufficiency: String,
-    /// Smallest proposed sign-off case.
-    pub proposed_case: String,
-    /// Explicit human approval; absence keeps the whole plan invalid.
-    pub approved: bool,
-}
-
 /// Unvalidated local checkpoint request.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -247,8 +232,6 @@ pub struct CheckpointRequest {
     pub proposals: Vec<CheckpointProposal>,
     /// One generated-asset reuse or refresh decision.
     pub generation: CheckpointGenerationDecision,
-    /// Optional approved case retained only for deferred sign-off.
-    pub deferred_signoff_exception: Option<DeferredSignoffException>,
 }
 
 /// Validated local plan whose action set is engine-free by construction.
@@ -261,8 +244,6 @@ pub struct CheckpointPlan {
     pub actions: BTreeSet<CheckpointAction>,
     /// One generated-asset reuse or refresh decision.
     pub generation: CheckpointGenerationDecision,
-    /// Approved case retained only for deferred sign-off.
-    pub deferred_signoff_exception: Option<DeferredSignoffException>,
 }
 
 /// Terminal result of one planned action.
@@ -311,8 +292,6 @@ pub struct CheckpointRecord {
     pub actions: Vec<CheckpointActionObservation>,
     /// Generated-asset decision inherited from the validated plan.
     pub generation: CheckpointGenerationDecision,
-    /// Approved exception retained for sign-off, never executed locally.
-    pub deferred_signoff_exception: Option<DeferredSignoffException>,
 }
 
 /// Checked generated-asset identities used to select reuse or one scoped refresh.
@@ -444,21 +423,10 @@ pub fn plan_checkpoint(request: CheckpointRequest) -> Result<CheckpointPlan, Mod
             "scoped regeneration requires at least one changed owning input domain",
         ));
     }
-    if let Some(exception) = &request.deferred_signoff_exception
-        && (!exception.approved
-            || !safe_nonempty(&exception.contract_gap)
-            || !safe_nonempty(&exception.model_insufficiency)
-            || !safe_nonempty(&exception.proposed_case))
-    {
-        return Err(checkpoint_error(
-            "engine exception lacks an exact gap, model proof, minimal case, or explicit approval",
-        ));
-    }
     Ok(CheckpointPlan {
         implementation_digest: request.implementation_digest,
         actions,
         generation: request.generation,
-        deferred_signoff_exception: request.deferred_signoff_exception,
     })
 }
 
@@ -494,7 +462,6 @@ pub fn record_checkpoint(
         implementation_digest: plan.implementation_digest.clone(),
         actions: actions.into_values().collect(),
         generation: plan.generation.clone(),
-        deferred_signoff_exception: plan.deferred_signoff_exception.clone(),
     })
 }
 
@@ -782,19 +749,12 @@ fn cargo_action(action: &CheckpointAction) -> bool {
     )
 }
 
-fn safe_nonempty(value: &str) -> bool {
-    !value.is_empty()
-        && value.trim() == value
-        && value.len() <= 512
-        && !value.chars().any(char::is_control)
-}
-
 fn checkpoint_error(message: &'static str) -> ModuleDiagnosticSet {
     ModuleDiagnosticSet::new([ModuleDiagnostic::new(
         ModuleDiagnosticCode::CheckpointScopeInvalid,
         None,
         message,
-        "use only typed Rust-owned actions and defer exact-engine observations to SDK sign-off",
+        "use only typed Rust-owned actions; completed-engine verification runs separately",
     )
     .expect("static checkpoint diagnostics satisfy the safe renderer policy")])
     .expect("a singleton checkpoint diagnostic set is non-empty")

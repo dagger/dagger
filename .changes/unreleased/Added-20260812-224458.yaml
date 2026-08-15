@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Add explicit structural-memory controls to `Engine.localCache.prune`. Manual
+  pruning can now apply absolute `maxEstimatedBytes` and
+  `targetEstimatedBytes` limits without enabling automatic garbage collection,
+  and `useDefaultPolicy` applies both enabled disk and structural policies in
+  the same request.
+time: 2026-08-12T22:44:58Z
+custom:
+  Author: sipsma
+  PR: ""

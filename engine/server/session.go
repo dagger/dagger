@@ -253,6 +253,17 @@ type daggerClient struct {
 	workspaceLoaded      bool
 	workspaceErr         error
 
+	// workspaceReadEpoch is a monotonically bumped token folded into cached
+	// Workspace.file / Workspace.directory host reads' per-client cache
+	// namespace. Bumped on Workspace.export / Workspace.reloaded so a
+	// long-lived session re-reads
+	// the host after the workspace's on-disk content changed under it, instead
+	// of serving a stale per-client host.directory snapshot cached earlier in
+	// the session. Atomic (not guarded by workspaceMu) so a read resolver can
+	// consult it without risking the workspaceMu that ensureWorkspaceLoaded
+	// holds across module loading.
+	workspaceReadEpoch atomic.Uint64
+
 	// Cached workspace result from ensureWorkspaceLoaded.
 	workspace *core.Workspace
 
@@ -564,7 +575,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		if srv.isShuttingDown() {
 			return
 		}
-		time.AfterFunc(time.Second, srv.throttledGC)
+		time.AfterFunc(time.Second, srv.throttledSessionGC)
 	}()
 
 	var errs error
@@ -1300,6 +1311,9 @@ func (srv *Server) getOrInitClient(
 				client.clientMetadata.WorkspaceEnv = &env
 			}
 		}
+		if client.clientMetadata.UserConfigPath == "" && !client.workspaceLoaded {
+			client.clientMetadata.UserConfigPath = opts.ClientMetadata.UserConfigPath
+		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.extraModulesLoaded {
@@ -1482,6 +1496,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
 	var workspaceEnv *string
+	var userConfigPath string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
@@ -1505,6 +1520,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 			env := declaredEnv
 			workspaceEnv = &env
 		}
+		userConfigPath = md.UserConfigPath
 	}
 
 	clientMetadata.ExtraModules = extraModules
@@ -1515,6 +1531,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
 	clientMetadata.WorkspaceEnv = workspaceEnv
+	clientMetadata.UserConfigPath = userConfigPath
 	return &clientMetadata
 }
 

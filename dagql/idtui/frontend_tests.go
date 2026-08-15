@@ -1731,7 +1731,7 @@ const (
 )
 
 func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
-	if row == nil || row.Span == nil || row.Span.CheckName == "" {
+	if row == nil || row.Span == nil || (row.Span.CheckName == "" && row.Span.LLMTool == "") {
 		return false
 	}
 	if row.Expanded && !fe.finalRender {

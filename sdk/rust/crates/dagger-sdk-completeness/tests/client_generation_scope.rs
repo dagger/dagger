@@ -44,8 +44,8 @@ proptest! {
             8 => input.mappings[mapping_index].evidence_domains.clear(),
             9 => input.mappings[mapping_index].allowed_terminal_status = ClientTerminalStatus::IdiomaticEquivalent,
             10 => input.mappings[mapping_index].report_section = match input.mappings[mapping_index].report_section {
-                ClientReportSection::SdkSignoff => ClientReportSection::LocalClosure,
-                _ => ClientReportSection::SdkSignoff,
+                ClientReportSection::Initialization => ClientReportSection::LocalClosure,
+                _ => ClientReportSection::Initialization,
             },
             11 => input.mappings[mapping_index].target_digest = target_digest(seed.wrapping_add(1)),
             12 => input.mappings[mapping_index].blocker = false,
@@ -87,7 +87,7 @@ proptest! {
             ClientEvidenceDomain::QueryTransportProperty,
             ClientEvidenceDomain::DiagnosticSecurity,
             ClientEvidenceDomain::ImplementationClosure,
-            ClientEvidenceDomain::ExactEngineSignoff,
+            ClientEvidenceDomain::ExternalConsumer,
         ];
         let selected_domain = domains[usize::from(seed) % domains.len()];
         let mut capability_ids = scope
@@ -136,7 +136,7 @@ proptest! {
             prop_assert!(admission.status_changes.is_empty());
             prop_assert_eq!(remaining, 25);
         }
-        prop_assert_eq!(admission.report.blockers.len(), 7);
+        prop_assert_eq!(admission.report.blockers.len(), 6);
     }
 }
 

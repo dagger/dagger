@@ -18,6 +18,7 @@ import (
 
 	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -49,8 +50,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, os.FileMode(0o755), info.Mode().Perm(),
 			"module directory mode: got %#o, want %#o", info.Mode().Perm(), os.FileMode(0o755))
 
-		_, err = os.Stat(filepath.Join(workdir, "editor", workspacecfg.ModuleConfigFileName))
+		config, err := os.ReadFile(filepath.Join(workdir, "editor", workspacecfg.ModuleConfigFileName))
 		require.NoError(t, err, "engine-authored module config should be preserved")
+		require.Contains(t, string(config), fmt.Sprintf("engineVersion = %q", engine.Version))
 		_, err = os.Stat(filepath.Join(workdir, "editor", "main.dang"))
 		require.NoError(t, err, "SDK-authored starter source should be preserved")
 	})
@@ -62,8 +64,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
 
-		updated := c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		added, err := updated.Changes().AddedPaths(ctx)
+		current := c.CurrentWorkspace()
+		updated := current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{workspacecfg.ConfigFileName, workspacecfg.LockFileName}, added)
 		require.NoError(t, updated.Export(ctx))
@@ -85,8 +88,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Contains(t, string(lockBytes), `"git.tag"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated = c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		empty, err := updated.Changes().IsEmpty(ctx)
+		current = c.CurrentWorkspace()
+		updated = current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		empty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
 	})
@@ -101,8 +105,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated := c.CurrentWorkspace().WithModule("./dep")
-		added, err := updated.Changes().AddedPaths(ctx)
+		current := c.CurrentWorkspace()
+		updated := current.WithModule("./dep")
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspacecfg.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))

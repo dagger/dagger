@@ -1063,7 +1063,7 @@ proptest! {
     }
 }
 
-// Invariant: Feature 8 extensions preserve behavior through one public Rust-valid adapter.
+// Invariant: portable extensions preserve behavior through one public Rust-valid adapter.
 // Feature: rust-sdk-completeness-contract, Property 21: portable conformance extensions
 proptest! {
     #![proptest_config(property_config())]

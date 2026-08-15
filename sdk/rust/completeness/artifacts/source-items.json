@@ -43016,7 +43016,7 @@
     },
     "source/go-client/go-const/engineconn/%43%4C%49%56ersion": {
       "authority_id": "go-client",
-      "fingerprint": "sha256:6458605f4e5217ba1fb34f0e42315390cf5d822e97f4d50e488a0d5d13a49e6e",
+      "fingerprint": "sha256:9a0bfe208908a55af203ea454ef703efeffe5f1b222f9a556096bce939fac6fa",
       "item_kind": "go-const",
       "locator": "engineconn/version.gen.go:5:7",
       "semantic_signature": {
@@ -43025,7 +43025,7 @@
         "package": "engineconn",
         "parent": "",
         "receiver": "",
-        "signature": "CLIVersion = \"1.0.0-beta.10\""
+        "signature": "CLIVersion = \"1.0.0-beta.11.rust.1\""
       },
       "source_item_id": "source/go-client/go-const/engineconn/%43%4C%49%56ersion",
       "state": "active"

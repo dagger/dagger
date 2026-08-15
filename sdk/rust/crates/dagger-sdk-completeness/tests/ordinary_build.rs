@@ -101,7 +101,7 @@ fn mutate_package_contract(
         3 => {
             sdk(metadata)
                 .features
-                .insert("signoff-observation".to_owned(), Vec::new());
+                .insert("unexpected-build-feature".to_owned(), Vec::new());
         }
         4 => sdk(metadata).dependencies[0].requirement = "*".to_owned(),
         5 => sdk_archive(archives).safe = false,
@@ -110,8 +110,9 @@ fn mutate_package_contract(
         }
         7 => {
             sdk_archive(archives)
-                .files
-                .insert("src/signoff_observation.rs".to_owned());
+                .manifest
+                .features
+                .insert("unexpected-build-feature".to_owned());
         }
         8 => sdk_archive(archives).manifest.macro_dependency = Some("*".to_owned()),
         9 => macro_archive(archives).manifest.sdk_dependency_present = true,
@@ -173,7 +174,7 @@ fn other_digest(value: &str) -> String {
     other
 }
 
-// Feature: rust-sdk-f10-cleanup, Property 1: public package closure
+// The ordinary package result is valid only for the complete two-crate public closure.
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -196,7 +197,7 @@ proptest! {
     }
 }
 
-// Feature: rust-sdk-f10-cleanup, Property 2: engine manifest selection
+// Complete-engine validation selects the exact Rust manifest while tolerating unrelated blobs.
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 

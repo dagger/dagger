@@ -155,6 +155,15 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "agent",
+		Description: dagql.FormatDescription(`Indicates that this function is an agent middleware, composed by dagger agent.`),
+		Args:        dagql.NewInputSpecs(), // none
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+		ViewFilter: AfterVersion("v1.0.0-0"),
+	},
+	{
 		Name:        "cache",
 		Description: dagql.FormatDescription(`Controls the caching behavior of a function.`),
 		Args: dagql.NewInputSpecs(
@@ -233,7 +242,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
 			WithInput(dagql.CurrentSchemaInput).
 			Args(
-				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`),
+				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`).
+					View(AfterVersion("v0.21.0")),
 				dagql.Arg("hideCore").Doc(
 					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
@@ -432,7 +442,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Errors if the current module is not installed as an SDK in this workspace.`).
 			Args(
 				dagql.Arg("workspace").Doc(
-					`The workspace to resolve SDK-role data against. Defaults to the current workspace.`),
+					`The workspace to resolve SDK-role data against.`),
 			),
 	}.Install(dag)
 
@@ -446,7 +456,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.CurrentModuleAsSDK]{
 		dagql.Func("modules", s.currentModuleAsSDKModules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`The workspace-local modules this SDK authors and manages.`),
+			Doc(`The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.`),
 		dagql.Func("clients", s.currentModuleAsSDKClients).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The generated clients this SDK produces in the workspace.`),
@@ -479,6 +489,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withUp", s.functionWithUp).
 			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
+
+		dagql.Func("withAgent", s.functionWithAgent).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Returns the function with a flag indicating it is an agent middleware.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -1595,6 +1609,10 @@ func (s *moduleSchema) functionAsConstructor(ctx context.Context, fn *core.Funct
 
 func (s *moduleSchema) functionWithUp(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
 	return fn.WithUp(), nil
+}
+
+func (s *moduleSchema) functionWithAgent(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithAgent(), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {

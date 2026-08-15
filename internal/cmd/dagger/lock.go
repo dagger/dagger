@@ -42,11 +42,12 @@ func runWorkspaceUpdate(cmd *cobra.Command, _ []string) error {
 }
 
 func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client) error {
-	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithUpdatedLock())
+	current := dag.CurrentWorkspace()
+	updated, err := materializeWorkspace(ctx, dag, current.WithUpdatedLock())
 	if err != nil {
 		return err
 	}
-	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	isEmpty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	if err != nil {
 		return err
 	}

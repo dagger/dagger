@@ -280,7 +280,7 @@ proptest! {
         match mutation {
             1 => {
                 current.capabilities.get_mut(&selected).unwrap().owner_feature =
-                    Some(FeatureId::Feature8);
+                    Some(FeatureId::Feature9);
             }
             2 => {
                 candidate.changes.get_mut(&selected).unwrap().implementation_evidence =
@@ -319,7 +319,7 @@ proptest! {
                 blockers.insert(
                     selected.clone(),
                     ResidualBlocker {
-                        sibling_feature: FeatureId::Feature8,
+                        sibling_feature: FeatureId::Feature9,
                         gap: NonEmptyText::new("Live platform verification remains absent").unwrap(),
                     },
                 );

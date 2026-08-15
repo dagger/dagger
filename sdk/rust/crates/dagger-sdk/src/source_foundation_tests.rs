@@ -309,7 +309,7 @@ proptest! {
     ) {
         let (engine, cli, revision) = match drift_case {
             0 => (TARGET_ENGINE_VERSION, TARGET_CLI_VERSION, TARGET_REVISION),
-            1 => ("1.0.0-beta.10", TARGET_CLI_VERSION, TARGET_REVISION),
+            1 => ("1.0.0-beta.11.rust.1", TARGET_CLI_VERSION, TARGET_REVISION),
             2 => (TARGET_ENGINE_VERSION, "not-semver", TARGET_REVISION),
             3 => (TARGET_ENGINE_VERSION, TARGET_CLI_VERSION, "ABCDEF"),
             _ => (TARGET_ENGINE_VERSION, "1.0.0-beta.11", TARGET_REVISION),
@@ -351,14 +351,14 @@ proptest! {
                     Architecture::Arm64 => "arm64",
                 };
                 let extension = if os == OperatingSystem::Windows { "zip" } else { "tar.gz" };
-                let expected_name = format!("dagger_v1.0.0-beta.10_{os_name}_{arch_name}.{extension}");
+                let expected_name = format!("dagger_v1.0.0-beta.11.rust.1_{os_name}_{arch_name}.{extension}");
                 prop_assert_eq!(descriptor.archive_name(), expected_name.as_str());
                 prop_assert_eq!(
                     descriptor.member_name(),
                     if os == OperatingSystem::Windows { "dagger.exe" } else { "dagger" }
                 );
-                prop_assert_eq!(descriptor.manifest_url().as_str(), "https://dl.dagger.io/dagger/releases/1.0.0-beta.10/checksums.txt");
-                prop_assert_eq!(descriptor.archive_url().as_str(), format!("https://dl.dagger.io/dagger/releases/1.0.0-beta.10/{expected_name}"));
+                prop_assert_eq!(descriptor.manifest_url().as_str(), "https://dl.dagger.io/dagger/releases/1.0.0-beta.11.rust.1/checksums.txt");
+                prop_assert_eq!(descriptor.archive_url().as_str(), format!("https://dl.dagger.io/dagger/releases/1.0.0-beta.11.rust.1/{expected_name}"));
             }
             (Err(error), _) => prop_assert_eq!(error.kind(), PlatformErrorKind::UnsupportedOperatingSystem),
             (_, Err(error)) => prop_assert_eq!(error.kind(), PlatformErrorKind::UnsupportedArchitecture),
@@ -386,7 +386,7 @@ fn generated_target_matches_checked_repository_metadata() {
 fn exact_target_rejects_each_independent_drift_shape() {
     let cases = [
         (
-            "1.0.0-beta.10",
+            "1.0.0-beta.11.rust.1",
             TARGET_CLI_VERSION,
             TARGET_REVISION,
             TargetErrorKind::InvalidEngineVersion,
@@ -478,13 +478,13 @@ fn six_release_descriptors_match_the_published_naming_policy() {
         } else {
             "tar.gz"
         };
-        let archive = format!("dagger_v1.0.0-beta.10_{os_name}_{arch_name}.{extension}");
+        let archive = format!("dagger_v1.0.0-beta.11.rust.1_{os_name}_{arch_name}.{extension}");
         assert_eq!(descriptor.archive_name(), archive);
         assert_eq!(descriptor.member_name(), member);
         assert_eq!(descriptor.format(), format);
         assert_eq!(
             descriptor.archive_url().as_str(),
-            format!("https://dl.dagger.io/dagger/releases/1.0.0-beta.10/{archive}")
+            format!("https://dl.dagger.io/dagger/releases/1.0.0-beta.11.rust.1/{archive}")
         );
     }
 }
@@ -496,8 +496,8 @@ fn explicit_discovery_expands_home_resolves_symlinks_and_ignores_irrelevant_cwd(
         r"C:\Users\operator\bin\dagger.EXE",
     );
     let resolved = native_fixture_path(
-        "/opt/dagger-v1.0.0-beta.10",
-        r"C:\tools\dagger-v1.0.0-beta.10.exe",
+        "/opt/dagger-v1.0.0-beta.11.rust.1",
+        r"C:\tools\dagger-v1.0.0-beta.11.rust.1.exe",
     );
     let filesystem = TestDiscoveryFileSystem::new().executable(absolute.clone(), resolved.clone());
     let inputs = NativeDiscoveryInputs::new(

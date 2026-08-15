@@ -799,8 +799,6 @@ pub enum FeatureId {
     Feature6,
     #[serde(rename = "feature-7")]
     Feature7,
-    #[serde(rename = "feature-8")]
-    Feature8,
     #[serde(rename = "feature-9")]
     Feature9,
 }
@@ -1387,7 +1385,7 @@ mod tests {
         let value = json!({
             "contract_format_version": "1.0.0",
             "dagger_repository": "github.com/dagger/dagger",
-            "dagger_revision": "25300124ca110612edc09c43f89cb5fad6028170",
+            "dagger_revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
             "engine_version": "v1.0.0-beta.9",
             "schema_version": "v1",
             "schema_digest": Digest::sha256("schema"),
@@ -1396,7 +1394,7 @@ mod tests {
             "sdk_contract_repository": "github.com/dagger/sdk-sdk",
             "sdk_contract_revision": "8c164424b7a8a37b33a77367ef7547490d5b87b5",
             "sdk_contract_cli_version": "v1.0.0-beta.9",
-            "rust_sdk_version": "1.0.0-beta.10",
+            "rust_sdk_version": "1.0.0-beta.11.rust.1",
             "rust_edition": "2024",
             "rust_version": "1.97.1",
             "unknown": true

@@ -79,8 +79,8 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         format_version: FormatVersion,
         repository: value("https://github.com/dagger/dagger"),
         dagger_revision: value(&format!("{seed:040x}")),
-        engine_version: value("1.0.0-beta.10"),
-        rust_sdk_version: value("1.0.0-beta.10"),
+        engine_version: value("1.0.0-beta.11.rust.1"),
+        rust_sdk_version: value("1.0.0-beta.11.rust.1"),
         rust_toolchain: value("1.97.1"),
         core_schema_digest: digest(seed, 2),
     };
@@ -100,7 +100,7 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         PublishedSdkDependency::Registry {
             registry: value("crates-io"),
             package: value("dagger-sdk"),
-            exact_version: value("1.0.0-beta.10"),
+            exact_version: value("1.0.0-beta.11.rust.1"),
         }
     } else {
         PublishedSdkDependency::Git {
@@ -170,7 +170,7 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         result_digest: digest(seed, 5),
     };
     let generator = GeneratorIdentity {
-        version: value("1.0.0-beta.10"),
+        version: value("1.0.0-beta.11.rust.1"),
         engine_source_digest: digest(seed, 6),
     };
     let artifact_record = ArtifactRecord {

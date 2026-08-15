@@ -11,6 +11,7 @@ import {
 } from "../typescript_module/index.js"
 import { DaggerArgument, DaggerArguments } from "./argument.js"
 import {
+  AGENT_DECORATOR,
   CHECK_DECORATOR,
   FUNCTION_DECORATOR,
   GENERATOR_DECORATOR,
@@ -33,6 +34,7 @@ export class DaggerFunction extends Locatable {
   public isCheck: boolean = false
   public isGenerator: boolean = false
   public isUp: boolean = false
+  public isAgent: boolean = false
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -77,6 +79,11 @@ export class DaggerFunction extends Locatable {
     // Parse @up decorator
     if (this.ast.isNodeDecoratedWith(this.node, UP_DECORATOR)) {
       this.isUp = true
+    }
+
+    // Parse @agent decorator
+    if (this.ast.isNodeDecoratedWith(this.node, AGENT_DECORATOR)) {
+      this.isAgent = true
     }
 
     for (const parameter of this.node.parameters) {

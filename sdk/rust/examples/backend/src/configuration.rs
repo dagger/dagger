@@ -12,11 +12,7 @@ pub(super) struct Configuration {
 #[derive(Subcommand)]
 enum Action {
     /// Build and evaluate the service image without publishing it.
-    Build {
-        /// Exports the evaluated image for the bounded exact-target sign-off inspection.
-        #[arg(long, hide = true)]
-        signoff_export: bool,
-    },
+    Build,
     /// Publish the service image to an explicitly selected address.
     Publish {
         /// Complete registry address to publish.
@@ -29,17 +25,14 @@ enum Action {
 }
 
 pub(super) enum Output {
-    BuildOnly { signoff_export: bool },
+    BuildOnly,
     Publish(String),
 }
 
 impl Configuration {
     pub(super) fn into_output(self) -> eyre::Result<Output> {
         match self.action {
-            None => Ok(Output::BuildOnly {
-                signoff_export: false,
-            }),
-            Some(Action::Build { signoff_export }) => Ok(Output::BuildOnly { signoff_export }),
+            None | Some(Action::Build) => Ok(Output::BuildOnly),
             Some(Action::Publish {
                 address,
                 allow_publish: true,

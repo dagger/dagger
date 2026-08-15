@@ -175,6 +175,22 @@ export class Registry {
     return (target, propertyKey, descriptor) => descriptor
   }
 
+  /**
+   * The definition of @agent decorator that marks a function as an agent
+   * middleware, composed by `dagger agent`.
+   */
+  agent = (): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
   argument = (
     opts?: ArgumentOptions,
   ): ((

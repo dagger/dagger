@@ -11,6 +11,7 @@ from dagger.mod._types import Enum
 
 _default_mod = Module()
 
+agent = _default_mod.agent
 check = _default_mod.check
 enum_type = _default_mod.enum_type
 function = _default_mod.function
@@ -34,6 +35,7 @@ __all__ = [
     "Enum",
     "Ignore",
     "Name",
+    "agent",
     "check",
     "enum_type",
     "field",

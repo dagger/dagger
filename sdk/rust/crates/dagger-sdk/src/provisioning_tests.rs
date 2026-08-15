@@ -756,7 +756,7 @@ fn declared_archive_size_is_rejected_before_body_polling() {
 proptest! {
     #![proptest_config(io_proptest_config())]
 
-    // Feature: rust-sdk-f10-cleanup, Property 4: download publication follows integrity
+    // Downloaded CLI bytes are extracted and published only after checksum verification.
     #[test]
     fn checksum_verification_controls_extraction_and_publication(
         payload in proptest::collection::vec(any::<u8>(), 1..96),

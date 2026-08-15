@@ -38,7 +38,7 @@ or a better idiomatic Rust design.
   tests are generated. Change the generator or templates, then regenerate them; do not
   edit them directly.
 - `examples` contains executable examples and example applications.
-- `../../toolchains/rust-sdk-dev` contains the Dagger-based development, generation,
+- `../../.dagger/modules/rust-client-dev` contains the Dagger-based development, generation,
   test, and release automation for this SDK.
 - `completeness` contains authored target and ledger inputs plus reproducible derived
   artifacts for the Go-level completeness programme.
@@ -46,10 +46,10 @@ or a better idiomatic Rust design.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
 The focused built-in SDK build, case, and evidence procedure is in
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md).
-The module authoring contract, direct harness, and deferred exact-target case inventory
-are in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
+The module authoring contract, direct harness, and completed-engine verification
+boundary are in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
 The standalone-client compiler, project, generated API, ownership, checkpoint, and
-deferred sign-off workflow is in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
+verification workflow is in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
 The complete checked-target refresh and release procedure is in
 [MAINTAINING.md](MAINTAINING.md).
 
@@ -95,11 +95,10 @@ projects from it; investigate fixture sequencing and its owning input before a b
 rerun.
 
 An engine is not a local checkpoint fallback. If a contract cannot be represented by
-the direct production harness, document the precise model gap and smallest proposed
-sign-off case for maintainer approval. Exact-engine cases run only through the bounded
-SDK sign-off workflow documented in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
-Standalone-client exact-engine cases follow the same separation and remain the
-deferred five-case inventory in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
+the direct production harness, document the precise model gap and add the narrowest
+engine-backed regression test that owns it. Release readiness separately packages the
+two public crates, assembles the complete engine with Rust SDK content, and runs one
+isolated external Rust consumer as documented in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
 
 For non-module work whose owning contract genuinely requires a running Dagger engine,
 the relevant repository checks may be run through Dagger:
@@ -148,8 +147,8 @@ New public behaviour needs tests at the lowest useful level:
 For module authoring, “integration” normally means the engine-free production harness:
 real generated assets, registry, codecs, context, dispatcher, and result sink over a
 recording Rust transport. Engine registration, runtime-container construction, and
-real engine ID behaviour remain SDK-sign-off observations and cannot replace the
-direct compiler/dispatch closure.
+real engine ID behaviour are verified separately against the completed engine and
+cannot replace the direct compiler/dispatch closure.
 
 ## Pull requests
 

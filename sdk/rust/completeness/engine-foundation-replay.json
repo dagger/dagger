@@ -7,7 +7,7 @@
     },
     {
       "kind": "versioned-rust",
-      "source": "rust@v1.0.0-beta.10"
+      "source": "rust@v1.0.0-beta.11.rust.1"
     },
     {
       "kind": "immutable-external",

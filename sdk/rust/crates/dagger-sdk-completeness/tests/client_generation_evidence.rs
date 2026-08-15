@@ -1,4 +1,4 @@
-//! Standalone-client implementation-closure and deferred sign-off properties.
+//! Standalone-client implementation-closure properties.
 
 use std::collections::BTreeSet;
 
@@ -6,15 +6,12 @@ use dagger_sdk_completeness::{
     CanonicalSet, ClientClosureGateDisposition, ClientClosureGateObservation,
     ClientClosureGateOutcome, ClientDependencyScope, ClientEvidencePhase,
     ClientGenerationClosureEvidence, ClientGenerationClosureObservation,
-    ClientGenerationEvidenceArtifact, ClientGenerationScope, ClientReportSection,
-    ClientSignoffArtifactInput, ClientSignoffCaseObservation, ClientSignoffCaseOutcome,
-    ClientSignoffExecutionCounts, ClientSignoffInventory, ClientSignoffObservation,
-    ClientSignoffPhaseTimings, ClientSignoffRun, Digest, DigestDomain, FeatureId, NonEmptyText,
-    Status, TargetDescriptor, TargetDigest, admit_client_generation_closure,
-    build_client_signoff_artifact, build_client_signoff_inventory, canonical_bytes,
-    canonical_digest, client_generation_scope_input, client_implementation_closure_claims,
-    client_signoff_verdict_digest, derive_client_generation_report, derive_client_generation_scope,
-    plan_client_feature_end_gate, required_client_closure_gates, validate_client_signoff_candidate,
+    ClientGenerationEvidenceArtifact, ClientGenerationScope, ClientReportSection, Digest,
+    DigestDomain, FeatureId, NonEmptyText, Status, TargetDescriptor, TargetDigest,
+    admit_client_generation_closure, canonical_bytes, canonical_digest,
+    client_generation_scope_input, client_implementation_closure_claims,
+    derive_client_generation_report, derive_client_generation_scope, plan_client_feature_end_gate,
+    required_client_closure_gates,
 };
 use dagger_sdk_engine::{
     CheckpointAction, CheckpointActionObservation, CheckpointActionOutcome,
@@ -70,76 +67,22 @@ proptest! {
         prop_assert_eq!(closure.is_ok(), mutation == 0);
         if let Ok(closure) = closure {
             prop_assert_eq!(closure.status_changes.len(), 23);
-            prop_assert_eq!(closure.signoff_blockers.len(), 2);
+            prop_assert_eq!(closure.remaining_blockers.len(), 2);
             prop_assert!(closure.status_changes.values().all(|status| *status == Status::Implemented));
-        }
-    }
-
-    #[test]
-    fn property_27_sdk_signoff_inventory_bounded_reused_atomic(
-        seed in any::<u8>(),
-        mutation in 0_u8..17,
-    ) {
-        let (scope, closure) = valid_closure(seed);
-        let inventory = signoff_inventory(&scope, &closure, seed);
-        let mut observation = signoff_observation(&inventory, seed);
-        match mutation {
-            0 => {}
-            1 => { observation.run.cases.pop(); }
-            2 => observation.run.cases.push(observation.run.cases[0].clone()),
-            3 => observation.run.cases[0].result = ClientSignoffCaseOutcome::Failed {
-                diagnostic: text("local initialization failed"),
-            },
-            4 => observation.run.cases[0].result = ClientSignoffCaseOutcome::Skipped {
-                reason: text("case was not selected"),
-            },
-            5 => observation.run.cases[1].workspace_digest = observation.run.cases[0].workspace_digest.clone(),
-            6 => observation.run.execution_counts.artifact_materializations = 2,
-            7 => observation.run.execution_counts.engine_builds = 2,
-            8 => observation.run.execution_counts.cli_builds = 2,
-            9 => observation.run.execution_counts.go_runtime_builds = 2,
-            10 => observation.run.execution_counts.rust_content_builds = 2,
-            11 => observation.run.execution_counts.engine_starts = 2,
-            12 => observation.run.execution_counts.rust_baseline_installs = 2,
-            13 => observation.run.execution_counts.implementation_closure_replays = 1,
-            14 => observation.run.execution_counts.unrelated_actions = 1,
-            15 => observation.run.phase_timings.engine_start_millis = 0,
-            16 => observation.run.artifact_digest = digest(seed, 0x94),
-            _ => unreachable!(),
-        }
-        observation.verdict_digest = client_signoff_verdict_digest(&observation.run)
-            .expect("test run is canonical");
-
-        let admission = validate_client_signoff_candidate(
-            &scope,
-            &closure,
-            &inventory,
-            &observation,
-        );
-        prop_assert_eq!(admission.rejection.is_none(), mutation == 0);
-        if mutation == 0 {
-            prop_assert!(admission.verdict_digest.is_some());
-            prop_assert_eq!(admission.status_changes.len(), 2);
-            prop_assert!(admission.blockers.is_empty());
-        } else {
-            prop_assert!(admission.verdict_digest.is_none());
-            prop_assert!(admission.status_changes.is_empty());
-            prop_assert_eq!(admission.blockers.len(), 2);
         }
     }
 }
 
 #[test]
-fn report_keeps_local_closure_and_sdk_signoff_distinct() {
+fn report_keeps_external_verification_blockers_visible() {
     let (scope, closure) = valid_closure(7);
-    let report = derive_client_generation_report(&scope, Some(&closure), None)
+    let report = derive_client_generation_report(&scope, Some(&closure))
         .expect("admitted closure produces an honest report");
 
     assert!(matches!(
         report.implementation_closure,
         ClientEvidencePhase::Passed { .. }
     ));
-    assert_eq!(report.sdk_signoff, ClientEvidencePhase::Unexecuted);
     assert_eq!(
         report.dependency_scope,
         ClientDependencyScope::CorePlusOneBoundModule
@@ -148,9 +91,8 @@ fn report_keeps_local_closure_and_sdk_signoff_distinct() {
     assert_eq!(report.status_changes.len(), 23);
     assert_eq!(
         report.blockers[&ClientReportSection::Initialization].len(),
-        1
+        2
     );
-    assert_eq!(report.blockers[&ClientReportSection::SdkSignoff].len(), 1);
     assert!(
         report
             .preserved_boundaries
@@ -189,15 +131,12 @@ fn checked_client_generation_artifacts_are_canonical_and_current() {
     let (scope, observation) = current_feature_end_observation();
     let closure = admit_client_generation_closure(&scope, &observation)
         .expect("current feature-end evidence closes implementation");
-    let report = derive_client_generation_report(&scope, Some(&closure), None)
+    let report = derive_client_generation_report(&scope, Some(&closure))
         .expect("current closure produces honest report");
     let artifact = ClientGenerationEvidenceArtifact {
         format_version: dagger_sdk_completeness::ClientGenerationFormatVersion::current(),
         observation: observation.clone(),
         closure,
-        deferred_signoff_cases: CanonicalSet::new(
-            dagger_sdk_completeness::required_client_signoff_cases(),
-        ),
     };
     assert_eq!(
         canonical_bytes(&observation).unwrap(),
@@ -312,7 +251,6 @@ fn current_feature_end_observation() -> (ClientGenerationScope, ClientGeneration
             generation: CheckpointGenerationDecision::ReuseChecked {
                 manifest_digest: sha(&manifest_digest),
             },
-            deferred_signoff_exception: None,
         },
         disposition: ClientAssetDisposition::CheckedGeneratedReused,
         asset_input_digest: sha(&manifest_digest),
@@ -502,7 +440,6 @@ fn closure_observation(seed: u8) -> (ClientGenerationScope, ClientGenerationClos
             generation: CheckpointGenerationDecision::ReuseChecked {
                 manifest_digest: sha(&manifest_digest),
             },
-            deferred_signoff_exception: None,
         },
         disposition: ClientAssetDisposition::CheckedGeneratedReused,
         asset_input_digest: sha(&digest(seed, 0x21)),
@@ -532,81 +469,6 @@ fn valid_closure(seed: u8) -> (ClientGenerationScope, ClientGenerationClosureEvi
     let closure = admit_client_generation_closure(&scope, &observation)
         .expect("complete local evidence closes client implementation");
     (scope, closure)
-}
-
-fn signoff_inventory(
-    scope: &ClientGenerationScope,
-    closure: &ClientGenerationClosureEvidence,
-    seed: u8,
-) -> ClientSignoffInventory {
-    let artifact = build_client_signoff_artifact(ClientSignoffArtifactInput {
-        target_digest: closure.target_digest.clone(),
-        platform: text("linux/amd64"),
-        engine_cli_input_digest: digest(seed, 0x60),
-        go_runtime_digest: digest(seed, 0x61),
-        rust_manifest_digest: digest(seed, 0x62),
-        rust_descriptor_digest: digest(seed, 0x63),
-        rust_content_digest: digest(seed, 0x64),
-        toolchain_digest: digest(seed, 0x65),
-    })
-    .expect("exact artifact inputs");
-    build_client_signoff_inventory(scope, closure, artifact, digest(seed, 0x66))
-        .expect("complete local closure produces deferred inventory")
-}
-
-fn signoff_observation(inventory: &ClientSignoffInventory, seed: u8) -> ClientSignoffObservation {
-    let cases = inventory
-        .cases
-        .values()
-        .enumerate()
-        .map(|(index, spec)| ClientSignoffCaseObservation {
-            case: spec.case,
-            case_digest: spec.case_digest.clone(),
-            workspace_digest: digest(
-                seed,
-                0x70_u8.wrapping_add(u8::try_from(index).unwrap_or_default()),
-            ),
-            elapsed_millis: u64::try_from(index).unwrap_or_default() + 1,
-            result: ClientSignoffCaseOutcome::Passed {
-                observation_digest: digest(
-                    seed,
-                    0x80_u8.wrapping_add(u8::try_from(index).unwrap_or_default()),
-                ),
-            },
-        })
-        .collect();
-    let run = ClientSignoffRun {
-        inventory_digest: dagger_sdk_completeness::canonical_digest(
-            dagger_sdk_completeness::DigestDomain::ClientGeneration,
-            inventory,
-        )
-        .expect("inventory is canonical"),
-        artifact_digest: inventory.artifact.artifact_digest.clone(),
-        implementation_closure_digest: inventory.implementation_closure_digest.clone(),
-        rust_baseline_digest: inventory.rust_baseline_digest.clone(),
-        execution_counts: ClientSignoffExecutionCounts {
-            artifact_materializations: 1,
-            engine_builds: 1,
-            cli_builds: 1,
-            go_runtime_builds: 1,
-            rust_content_builds: 1,
-            engine_starts: 1,
-            rust_baseline_installs: 1,
-            implementation_closure_replays: 0,
-            unrelated_actions: 0,
-        },
-        phase_timings: ClientSignoffPhaseTimings {
-            artifact_build_or_import_millis: 1,
-            engine_start_millis: 1,
-            rust_install_millis: 1,
-        },
-        cases,
-    };
-    let verdict_digest = client_signoff_verdict_digest(&run).expect("run is canonical");
-    ClientSignoffObservation {
-        run,
-        verdict_digest,
-    }
 }
 
 fn target(seed: u8) -> TargetDigest {

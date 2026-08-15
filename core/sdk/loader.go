@@ -69,8 +69,8 @@ func (l *Loader) SDKForModule(
 	fmt.Fprintf(stdio.Stderr, "Could not load SDK %q.\n", sdk.Source)
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "Errors:")
-	fmt.Fprintln(stdio.Stderr, "-", builtinErr)
-	fmt.Fprintln(stdio.Stderr, "-", extErr)
+	fmt.Fprintln(stdio.Stderr, "-", core.StripErrorOrigins(builtinErr.Error()))
+	fmt.Fprintln(stdio.Stderr, "-", core.StripErrorOrigins(extErr.Error()))
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
 	for _, sdk := range sdkmeta.Builtins {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type llmSchema struct {
@@ -15,7 +16,7 @@ var _ SchemaResolvers = &llmSchema{}
 
 func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("llm", s.llm).
+		dagql.NodeFunc("llm", s.llm).
 			WithInput(dagql.PerSessionInput).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a new LLM conversation.`).
@@ -65,6 +66,16 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("provider").Doc(
 					`The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.`).
 					View(AfterVersion("v1.0.0-0")),
+			),
+		dagql.Func("reasoningEffort", s.reasoningEffort).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.`),
+		dagql.Func("withReasoningEffort", s.withReasoningEffort).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.").
+			Args(
+				dagql.Arg("effort").Doc(
+					`The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".`),
 			),
 		dagql.Func("withPrompt", s.withPrompt).
 			Doc("Queue a user prompt, to be sent to the model on the next step or loop.").
@@ -134,6 +145,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("The name of the MCP server"),
 				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
+		dagql.Func("withSkills", s.withSkills).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. " +
+				"Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. " +
+				"Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.").
+			Args(
+				dagql.Arg("directory").Doc("A directory containing skills, each a subdirectory holding a SKILL.md."),
+			),
+		dagql.Func("skills", s.skills).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace."),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
 			id, err := self.ID()
 			if err != nil {
@@ -143,7 +165,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine."),
 		dagql.NodeFunc("portableID", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.AnyID, error) {
-			id, err := self.RecipeID(ctx)
+			recipe, err := self.Self().PortableRecipe(ctx)
+			if err != nil {
+				return dagql.AnyID{}, err
+			}
+			id, err := recipe.RecipeID(ctx)
 			if err != nil {
 				return dagql.AnyID{}, err
 			}
@@ -153,7 +179,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			DoNotCache("An ID describes the current attached result and must not be served from cache.").
 			Doc("A portable, self-contained ID for the conversation that node() can resolve in any session. " +
 				"Unlike id, which may return an engine-local runtime handle valid only within the current session, " +
-				"this returns the recipe form suitable for persisting and later restoring the conversation."),
+				"this returns the recipe form suitable for persisting and later restoring the conversation. " +
+				"The recipe is flattened: bindings superseded during the session (workspace overlays recorded by " +
+				"each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — " +
+				"including any pending, un-exported edits — is preserved."),
 		dagql.NodeFunc("replay", s.replay).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -173,6 +202,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.Func("hasPending", s.hasPending).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete."),
 		dagql.Func("fork", s.fork).
 			View(AfterVersion("v1.0.0-0")).
@@ -199,8 +229,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	// ID/load fields and Env/Binding extensions.
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.LLMSkill](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.LLMMessage]{}.Install(srv)
 	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
+	dagql.Fields[*core.LLMSkill]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
@@ -270,6 +302,20 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Provider dagql.Optional[dagql.String]
 }) (*core.LLM, error) {
 	return llm.WithModel(args.Model, args.Provider.Value.String()), nil
+}
+
+func (s *llmSchema) reasoningEffort(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return "", err
+	}
+	return ep.ReasoningEffort, nil
+}
+
+func (s *llmSchema) withReasoningEffort(ctx context.Context, llm *core.LLM, args struct {
+	Effort string
+}) (*core.LLM, error) {
+	return llm.WithReasoningEffort(args.Effort), nil
 }
 
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
@@ -362,6 +408,24 @@ func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struc
 	return llm.WithMCPServer(args.Name, svc), nil
 }
 
+func (s *llmSchema) withSkills(ctx context.Context, llm *core.LLM, args struct {
+	Directory core.DirectoryID
+}) (*core.LLM, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := args.Directory.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithSkills(dir), nil
+}
+
+func (s *llmSchema) skills(ctx context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMSkill, error) {
+	return llm.Skills(ctx)
+}
+
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
 }) (*core.LLM, error) {
@@ -428,21 +492,69 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 	return llm.Clone(), nil
 }
 
-func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
+func (s *llmSchema) llm(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
 	Model    dagql.Optional[dagql.String]
 	Provider dagql.Optional[dagql.String]
 	// Legacy cap on API calls, only exposed to pre-v1 module views; v1+
 	// callers pass maxSteps to loop() instead.
 	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
-}) (*core.LLM, error) {
-	llm, err := parent.NewLLM(ctx, args.Model.Value.String(), args.Provider.Value.String())
+}) (inst dagql.ObjectResult[*core.LLM], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
+	}
+	model := args.Model.Value.String()
+	provider := args.Provider.Value.String()
+	if model == "" {
+		// No model requested: resolve the configured default and re-call this
+		// field with it pinned, the way Container.from re-calls itself with
+		// the digested ref. The recorded ID then names the model the
+		// conversation actually runs against, so a saved session resumes on
+		// its own model rather than whatever default the resuming
+		// environment happens to configure.
+		defModel, defProvider, routeErr := parent.Self().DefaultLLMRoute(ctx, provider)
+		switch {
+		case routeErr != nil:
+			// Routing reads the client's environment; a failure there should
+			// surface at first use, as it did before pinning existed — not
+			// break constructing the object.
+			slog.Warn("could not resolve default LLM route; leaving llm() unpinned", "error", routeErr)
+		case defModel != "":
+			llmArgs := []dagql.NamedInput{
+				{Name: "model", Value: dagql.Opt(dagql.NewString(defModel))},
+			}
+			if defProvider != "" {
+				llmArgs = append(llmArgs, dagql.NamedInput{
+					Name:  "provider",
+					Value: dagql.Opt(dagql.NewString(defProvider)),
+				})
+			}
+			var pinned dagql.ObjectResult[*core.LLM]
+			if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
+				Field: "llm",
+				Args:  llmArgs,
+			}); err != nil {
+				return inst, err
+			}
+			if args.MaxAPICalls.Valid && args.MaxAPICalls.Value.Int() > 0 {
+				// The legacy knob only exists in pre-v1 views while provider
+				// only exists in v1+, so no single view lets the inner call
+				// carry both. Apply it to this outer call's own result; it is
+				// deliberately not part of the durable recipe anyway.
+				llm := pinned.Self().WithMaxAPICalls(args.MaxAPICalls.Value.Int())
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, llm)
+			}
+			return pinned, nil
+		}
+	}
+	llm, err := parent.Self().NewLLM(ctx, model, provider)
+	if err != nil {
+		return inst, err
 	}
 	if args.MaxAPICalls.Valid && args.MaxAPICalls.Value.Int() > 0 {
 		llm = llm.WithMaxAPICalls(args.MaxAPICalls.Value.Int())
 	}
-	return llm, nil
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, llm)
 }
 
 func (s *llmSchema) messages(_ context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMMessage, error) {

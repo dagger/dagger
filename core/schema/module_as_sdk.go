@@ -3,6 +3,8 @@ package schema
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -10,7 +12,7 @@ import (
 )
 
 // currentModuleAsSDK treats the currently executing module as an SDK installed
-// in the active workspace and returns its persisted as-sdk role data (the
+// in the supplied workspace and returns its persisted as-sdk role data (the
 // modules and clients it authors/manages). This is the engine-owned source of
 // truth that SDK generators use to discover their workspace-managed modules,
 // rather than scanning the workspace filesystem themselves.
@@ -18,35 +20,22 @@ func (s *moduleSchema) currentModuleAsSDK(
 	ctx context.Context,
 	curMod *core.CurrentModule,
 	args struct {
-		// FIXME: optional for now to ease the rollout; make it required. See the
-		// fallback below.
-		Workspace dagql.Optional[dagql.ID[*core.Workspace]]
+		Workspace dagql.ID[*core.Workspace]
 	},
 ) (*core.CurrentModuleAsSDK, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// The workspace is meant to be passed explicitly: a module resolving its SDK
-	// role — as a dependency driven by another module, or as a generator run by
-	// the framework — hands in the workspace it was given rather than inheriting
-	// the caller's ambient one. Config reads route through that workspace's own
-	// rootfs/owner client, so there is no sandbox concern, and a synthetic (value)
-	// workspace that carries config is honored just like a detected one.
-	//
-	// FIXME: the workspace should be required. For now it's optional and, when
-	// omitted, falls back to the ambient current workspace, as asSDK did before
-	// the argument existed. Drop this fallback once the argument is required.
-	var wsResult dagql.ObjectResult[*core.Workspace]
-	if args.Workspace.Valid {
-		wsResult, err = args.Workspace.Value.Load(ctx, srv)
-		if err != nil {
-			return nil, fmt.Errorf("load workspace argument: %w", err)
-		}
-	} else if err := srv.Select(ctx, srv.Root(), &wsResult,
-		dagql.Selector{Field: "currentWorkspace"},
-	); err != nil {
-		return nil, fmt.Errorf("get current workspace: %w", err)
+	// The workspace is passed explicitly: a module resolving its SDK role — as a
+	// dependency driven by another module, or as a generator run by the framework
+	// — hands in the workspace it was given rather than inheriting the caller's
+	// ambient one. Config reads route through that workspace's own rootfs/owner
+	// client, so there is no sandbox concern, and a synthetic (value) workspace
+	// that carries config is honored just like a detected one.
+	wsResult, err := args.Workspace.Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load workspace argument: %w", err)
 	}
 	ws := wsResult.Self()
 	if ws.ConfigFile == "" {
@@ -76,6 +65,7 @@ func (s *moduleSchema) currentModuleAsSDK(
 	for _, mod := range entry.AsSDK.Modules {
 		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: mod.Path})
 	}
+	result.Modules = currentModuleAsSDKModulesForCwd(result.Modules, ws.Cwd)
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
 			Path:           client.Path,
@@ -108,6 +98,53 @@ func (s *moduleSchema) currentModuleAsSDKModules(
 	_ struct{},
 ) ([]*core.CurrentModuleAsSDKModule, error) {
 	return parent.Modules, nil
+}
+
+// currentModuleAsSDKModulesForCwd applies the same cwd selection policy
+// SDKs previously reconstructed with polyfill.findConfigDirs: all registered
+// modules at or below cwd, and, when cwd itself is not registered, the nearest
+// enclosing registered module. Results are the nearest ancestor first followed
+// by descendants in workspace-config order.
+func currentModuleAsSDKModulesForCwd(
+	modules []*core.CurrentModuleAsSDKModule,
+	cwd string,
+) []*core.CurrentModuleAsSDKModule {
+	cwd = cleanWorkspaceRelPath(cwd)
+
+	var descendants []*core.CurrentModuleAsSDKModule
+	var nearestAncestor *core.CurrentModuleAsSDKModule
+	hasExact := false
+	seen := map[string]bool{}
+
+	for _, mod := range modules {
+		if mod == nil {
+			continue
+		}
+		modPath := cleanWorkspaceRelPath(mod.Path)
+		if seen[modPath] {
+			continue
+		}
+		seen[modPath] = true
+
+		if cwd == "." || modPath == cwd || strings.HasPrefix(modPath, cwd+string(filepath.Separator)) {
+			descendants = append(descendants, mod)
+			if modPath == cwd {
+				hasExact = true
+			}
+			continue
+		}
+
+		if modPath == "." || strings.HasPrefix(cwd, modPath+string(filepath.Separator)) {
+			if nearestAncestor == nil || len(modPath) > len(cleanWorkspaceRelPath(nearestAncestor.Path)) {
+				nearestAncestor = mod
+			}
+		}
+	}
+
+	if hasExact || nearestAncestor == nil {
+		return descendants
+	}
+	return append([]*core.CurrentModuleAsSDKModule{nearestAncestor}, descendants...)
 }
 
 func (s *moduleSchema) currentModuleAsSDKClients(

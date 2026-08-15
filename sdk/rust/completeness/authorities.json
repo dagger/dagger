@@ -16,7 +16,7 @@
         }
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
       "source_digest": "sha256:41f172c2f702fc703ea4446e41649f97f6dfb42032a7e4414e9a81d8c6e01145"
     },
     "go-client": {
@@ -106,7 +106,7 @@
       ],
       "repository": "github.com/dagger/dagger-go-sdk",
       "revision": "1309520660f6a5b35ef97b4fbe151e32a06a8dc5",
-      "source_digest": "sha256:ebaa2dcbe50734dcd09a5aa2016e42cc70b0c1757c370f6227c6ec1b177d2b42"
+      "source_digest": "sha256:9db1b056345794ff3aad4f447bb45797898f8b832646e6d927506c6a04e44b83"
     },
     "go-codegen": {
       "authority_class": "go-codegen",
@@ -229,8 +229,8 @@
         }
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170",
-      "source_digest": "sha256:8fbb139bfbd3f4afd2b89f4ec3650e6770d135a44808f71af0e0a7cc28731bcc"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
+      "source_digest": "sha256:2f5241df561457205070fb5120feda99141f6640d3afee2ccd1ed077760c4313"
     },
     "go-engine-sdk": {
       "authority_class": "go-engine-sdk",
@@ -253,7 +253,7 @@
         }
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
       "source_digest": "sha256:aaaa14519e63ea7e26ee80306e533d905455dadc5eabda6192d650a2441999ae"
     },
     "go-integration-tests": {
@@ -897,8 +897,8 @@
         }
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170",
-      "source_digest": "sha256:bc5dfb40a9c0247523b2c3f34d5aeba3c413254552608d9ae81c381d5737118b"
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
+      "source_digest": "sha256:c0f0246b0c3e9f0f1a8e13f0695a5c69dbc0958f16cc9ce513d9a2ef81e449a4"
     },
     "rust-policy": {
       "authority_class": "rust-policy",
@@ -941,7 +941,7 @@
         }
       ],
       "repository": "github.com/dagger/dagger",
-      "revision": "25300124ca110612edc09c43f89cb5fad6028170",
+      "revision": "501b57e0476dee5881b99a064c3c04173134ecc7",
       "source_digest": "sha256:915305bb727d50813c9e161078e54c6f2c8f78851f298c4a808f0a7d31c18290"
     },
     "sdk-contract-harness": {

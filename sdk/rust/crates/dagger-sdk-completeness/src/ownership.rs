@@ -38,8 +38,10 @@ impl BlockingDomain {
             Self::StandaloneClientGeneration
             | Self::DependencyClientGeneration
             | Self::InitClient => FeatureId::Feature7,
-            Self::Conformance | Self::Platform | Self::Security => FeatureId::Feature8,
-            Self::PackagingReleaseCompatibilityDocumentation => FeatureId::Feature9,
+            Self::Conformance
+            | Self::Platform
+            | Self::Security
+            | Self::PackagingReleaseCompatibilityDocumentation => FeatureId::Feature9,
         }
     }
 }

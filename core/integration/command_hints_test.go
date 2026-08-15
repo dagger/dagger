@@ -70,6 +70,22 @@ func (CommandHintsSuite) TestSDKInstallAndClientInitHints(ctx context.Context, t
 		"client init generates the bindings, so it must not send the user to `dagger generate`")
 }
 
+// TestSDKInstallFullRefHints verifies that installing an SDK by full ref names
+// the SDK in the capability hints. The install name of a full ref is derived
+// engine-side, so the CLI only learns it back from the install.
+func (CommandHintsSuite) TestSDKInstallFullRefHints(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
+	installOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "install", "github.com/dagger/go-sdk")
+	require.NoError(t, err, "%s", string(installOut))
+
+	got := string(installOut)
+	require.Contains(t, got, `Installed SDK "go-sdk". This SDK can`)
+	require.Contains(t, got, "dagger module init go-sdk")
+	require.Contains(t, got, "dagger api client init go-sdk")
+}
+
 // TestUninstalledSDKInitHint verifies that `dagger module init <sdk> <name>`
 // for a registry-known but uninstalled SDK, in a workspace with no dagger.toml,
 // fails with a hint to install the SDK rather than a generic unknown-command

@@ -3,21 +3,19 @@
     "cargo-integration": [],
     "generated-content": [],
     "initialization": [
-      "behavior/go-client/init-client-lifecycle"
+      "behavior/go-client/init-client-lifecycle",
+      "policy/rust-policy/client-completed-engine-external-consumer"
     ],
     "local-closure": [],
     "query-usability": [],
-    "regeneration": [],
-    "sdk-signoff": [
-      "policy/rust-policy/client-exact-engine-signoff-boundary"
-    ]
+    "regeneration": []
   },
   "dependency_scope": "core-plus-one-bound-module",
   "implementation_closure": {
-    "evidence_digest": "sha256:7a37c676636518b9880487e886ebd6a5c1988a15ad03b34c868fd8cc9c4876bb",
+    "evidence_digest": "sha256:f83017a85a3f436ff7876e62d024fb869217edbb78ce9fe4e5d2886c1dddcdcb",
     "status": "passed"
   },
-  "mapping_digest": "sha256:9cf302052d932e7a7ec1bdfba7a74af7ba276223ff55c0f675da5a4affcb98c3",
+  "mapping_digest": "sha256:4e763ed3510ad38ffe31c8dea07e5f45a9b7c669a4087aeef85370c89d47bc02",
   "ownership_correction": {
     "capability_fingerprint": "sha256:42cf3a1fb160841bd3237cbf44dd394c9fff5d661a9361b44a518b34e1bde26d",
     "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2550rovision",
@@ -45,9 +43,6 @@
       "status": "Missing"
     }
   ],
-  "sdk_signoff": {
-    "status": "unexecuted"
-  },
   "status_changes": {
     "policy/rust-policy/client-capability-scope": "Implemented",
     "policy/rust-policy/client-cargo-project-adoption": "Implemented",
@@ -73,5 +68,5 @@
     "policy/rust-policy/client-workspace-cwd-scoping": "Implemented",
     "policy/rust-policy/client-workspace-record": "Implemented"
   },
-  "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+  "target_digest": "sha256:19c46032cab1f15e1f96b5b198e8fa5de5dabb45d7b084176e682ab320a9f50a"
 }
