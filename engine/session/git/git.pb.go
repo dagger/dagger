@@ -45,6 +45,7 @@ const (
 	PACK_FAILED                 ErrorInfo_ErrorType = 9
 	PUSH_FAILED                 ErrorInfo_ErrorType = 10
 	DETACHED_HEAD               ErrorInfo_ErrorType = 11
+	WORKTREE_UNSUPPORTED        ErrorInfo_ErrorType = 12
 )
 
 var ErrorInfo_ErrorType_name = map[int32]string{
@@ -60,6 +61,7 @@ var ErrorInfo_ErrorType_name = map[int32]string{
 	9:  "PACK_FAILED",
 	10: "PUSH_FAILED",
 	11: "DETACHED_HEAD",
+	12: "WORKTREE_UNSUPPORTED",
 }
 
 var ErrorInfo_ErrorType_value = map[string]int32{
@@ -75,10 +77,11 @@ var ErrorInfo_ErrorType_value = map[string]int32{
 	"PACK_FAILED":                 9,
 	"PUSH_FAILED":                 10,
 	"DETACHED_HEAD":               11,
+	"WORKTREE_UNSUPPORTED":        12,
 }
 
 func (ErrorInfo_ErrorType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{22, 0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{25, 0}
 }
 
 type GitCredentialRequest struct {
@@ -1274,6 +1277,217 @@ func (m *PackCheckoutMetadata) GetError() *ErrorInfo {
 	return nil
 }
 
+// PackWorktreeRequest asks the client for the git-visible working-tree delta
+// relative to HEAD. The payload is a binary git patch containing tracked,
+// staged, and ordinary untracked nonignored files. Ignored files and contents
+// inside untracked nested repositories are deliberately omitted, matching
+// `git clean -fd` and GitRepository.uncommitted semantics.
+type PackWorktreeRequest struct {
+	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	// expected_head_sha pins the patch to the canonical checkout already packed
+	// by the engine. A moved checkout reports HEAD_MISMATCH instead of producing
+	// a delta against a different commit.
+	ExpectedHeadSha string `protobuf:"bytes,2,opt,name=expected_head_sha,json=expectedHeadSha,proto3" json:"expected_head_sha,omitempty"`
+}
+
+func (m *PackWorktreeRequest) Reset()      { *m = PackWorktreeRequest{} }
+func (*PackWorktreeRequest) ProtoMessage() {}
+func (*PackWorktreeRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{18}
+}
+func (m *PackWorktreeRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PackWorktreeRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PackWorktreeRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PackWorktreeRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PackWorktreeRequest.Merge(m, src)
+}
+func (m *PackWorktreeRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *PackWorktreeRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_PackWorktreeRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PackWorktreeRequest proto.InternalMessageInfo
+
+func (m *PackWorktreeRequest) GetCheckoutPath() string {
+	if m != nil {
+		return m.CheckoutPath
+	}
+	return ""
+}
+
+func (m *PackWorktreeRequest) GetExpectedHeadSha() string {
+	if m != nil {
+		return m.ExpectedHeadSha
+	}
+	return ""
+}
+
+// PackWorktreeResponse streams one metadata message first, then binary patch
+// bytes in chunks.
+type PackWorktreeResponse struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*PackWorktreeResponse_Metadata
+	//	*PackWorktreeResponse_Chunk
+	Msg isPackWorktreeResponse_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *PackWorktreeResponse) Reset()      { *m = PackWorktreeResponse{} }
+func (*PackWorktreeResponse) ProtoMessage() {}
+func (*PackWorktreeResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{19}
+}
+func (m *PackWorktreeResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PackWorktreeResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PackWorktreeResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PackWorktreeResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PackWorktreeResponse.Merge(m, src)
+}
+func (m *PackWorktreeResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *PackWorktreeResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_PackWorktreeResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PackWorktreeResponse proto.InternalMessageInfo
+
+type isPackWorktreeResponse_Msg interface {
+	isPackWorktreeResponse_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type PackWorktreeResponse_Metadata struct {
+	Metadata *PackWorktreeMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+}
+type PackWorktreeResponse_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*PackWorktreeResponse_Metadata) isPackWorktreeResponse_Msg() {}
+func (*PackWorktreeResponse_Chunk) isPackWorktreeResponse_Msg()    {}
+
+func (m *PackWorktreeResponse) GetMsg() isPackWorktreeResponse_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *PackWorktreeResponse) GetMetadata() *PackWorktreeMetadata {
+	if x, ok := m.GetMsg().(*PackWorktreeResponse_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *PackWorktreeResponse) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*PackWorktreeResponse_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*PackWorktreeResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*PackWorktreeResponse_Metadata)(nil),
+		(*PackWorktreeResponse_Chunk)(nil),
+	}
+}
+
+type PackWorktreeMetadata struct {
+	// head_sha anchors the patch and must match the canonical checkout to which
+	// the engine applies it.
+	HeadSha string `protobuf:"bytes,1,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	// nested_repositories are untracked repository roots omitted from the patch.
+	// The engine recreates lightweight repository markers at these boundaries so
+	// later workspace overlays beneath them remain invisible to the outer repo.
+	NestedRepositories []string   `protobuf:"bytes,2,rep,name=nested_repositories,json=nestedRepositories,proto3" json:"nested_repositories,omitempty"`
+	Error              *ErrorInfo `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+}
+
+func (m *PackWorktreeMetadata) Reset()      { *m = PackWorktreeMetadata{} }
+func (*PackWorktreeMetadata) ProtoMessage() {}
+func (*PackWorktreeMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{20}
+}
+func (m *PackWorktreeMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PackWorktreeMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PackWorktreeMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PackWorktreeMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PackWorktreeMetadata.Merge(m, src)
+}
+func (m *PackWorktreeMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *PackWorktreeMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_PackWorktreeMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PackWorktreeMetadata proto.InternalMessageInfo
+
+func (m *PackWorktreeMetadata) GetHeadSha() string {
+	if m != nil {
+		return m.HeadSha
+	}
+	return ""
+}
+
+func (m *PackWorktreeMetadata) GetNestedRepositories() []string {
+	if m != nil {
+		return m.NestedRepositories
+	}
+	return nil
+}
+
+func (m *PackWorktreeMetadata) GetError() *ErrorInfo {
+	if m != nil {
+		return m.Error
+	}
+	return nil
+}
+
 // PushRequest streams a push order to the client: one metadata message
 // first, then — when the commit being pushed only exists engine-side — the
 // bytes of a git bundle carrying it, in chunks. The client's own git runs the
@@ -1290,7 +1504,7 @@ type PushRequest struct {
 func (m *PushRequest) Reset()      { *m = PushRequest{} }
 func (*PushRequest) ProtoMessage() {}
 func (*PushRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{18}
+	return fileDescriptor_0d2ecb6e8d788208, []int{21}
 }
 func (m *PushRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1388,7 +1602,7 @@ type PushMetadata struct {
 func (m *PushMetadata) Reset()      { *m = PushMetadata{} }
 func (*PushMetadata) ProtoMessage() {}
 func (*PushMetadata) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{19}
+	return fileDescriptor_0d2ecb6e8d788208, []int{22}
 }
 func (m *PushMetadata) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1470,7 +1684,7 @@ type PushResponse struct {
 func (m *PushResponse) Reset()      { *m = PushResponse{} }
 func (*PushResponse) ProtoMessage() {}
 func (*PushResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{20}
+	return fileDescriptor_0d2ecb6e8d788208, []int{23}
 }
 func (m *PushResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1556,7 +1770,7 @@ type PushResult struct {
 func (m *PushResult) Reset()      { *m = PushResult{} }
 func (*PushResult) ProtoMessage() {}
 func (*PushResult) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{21}
+	return fileDescriptor_0d2ecb6e8d788208, []int{24}
 }
 func (m *PushResult) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1607,7 +1821,7 @@ type ErrorInfo struct {
 func (m *ErrorInfo) Reset()      { *m = ErrorInfo{} }
 func (*ErrorInfo) ProtoMessage() {}
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{22}
+	return fileDescriptor_0d2ecb6e8d788208, []int{25}
 }
 func (m *ErrorInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1670,6 +1884,9 @@ func init() {
 	proto.RegisterType((*PackCheckoutRequest)(nil), "dagger.git.PackCheckoutRequest")
 	proto.RegisterType((*PackCheckoutResponse)(nil), "dagger.git.PackCheckoutResponse")
 	proto.RegisterType((*PackCheckoutMetadata)(nil), "dagger.git.PackCheckoutMetadata")
+	proto.RegisterType((*PackWorktreeRequest)(nil), "dagger.git.PackWorktreeRequest")
+	proto.RegisterType((*PackWorktreeResponse)(nil), "dagger.git.PackWorktreeResponse")
+	proto.RegisterType((*PackWorktreeMetadata)(nil), "dagger.git.PackWorktreeMetadata")
 	proto.RegisterType((*PushRequest)(nil), "dagger.git.PushRequest")
 	proto.RegisterType((*PushMetadata)(nil), "dagger.git.PushMetadata")
 	proto.RegisterType((*PushResponse)(nil), "dagger.git.PushResponse")
@@ -1680,82 +1897,89 @@ func init() {
 func init() { proto.RegisterFile("git.proto", fileDescriptor_0d2ecb6e8d788208) }
 
 var fileDescriptor_0d2ecb6e8d788208 = []byte{
-	// 1202 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x73, 0xdb, 0x44,
-	0x14, 0xb7, 0xe2, 0xff, 0xcf, 0x4e, 0xe2, 0x6c, 0xd2, 0xd6, 0x24, 0x44, 0x31, 0xea, 0xa5, 0x03,
-	0x43, 0xe8, 0xb4, 0xc0, 0x10, 0x0a, 0xcc, 0xc8, 0xb6, 0x12, 0x7b, 0xea, 0xd8, 0x46, 0xb6, 0xcb,
-	0xd0, 0x8b, 0x46, 0xb1, 0xd6, 0x7f, 0x88, 0x6d, 0x19, 0x69, 0x0d, 0xf5, 0x81, 0x19, 0xae, 0x5c,
-	0x18, 0x3e, 0x01, 0x17, 0x38, 0xf0, 0x19, 0xf8, 0x04, 0x1c, 0x73, 0x61, 0xa6, 0x47, 0xe2, 0x5c,
-	0x38, 0xf6, 0xc8, 0x91, 0xd9, 0xd5, 0x4a, 0x91, 0x1c, 0xbb, 0xd3, 0xf8, 0xa6, 0x7d, 0xfb, 0x7b,
-	0x3f, 0xbd, 0xf7, 0xdb, 0xf7, 0x76, 0x1f, 0x24, 0xbb, 0x7d, 0x72, 0x38, 0xb6, 0x4c, 0x62, 0x22,
-	0x30, 0xf4, 0x6e, 0x17, 0x5b, 0x87, 0xdd, 0x3e, 0x91, 0x9e, 0xc3, 0xce, 0x49, 0x9f, 0x14, 0x2c,
-	0x6c, 0xe0, 0x11, 0xe9, 0xeb, 0x03, 0x15, 0x7f, 0x3b, 0xc1, 0x36, 0x41, 0xbb, 0x90, 0x60, 0xe0,
-	0xb6, 0x39, 0xc8, 0x0a, 0x39, 0xe1, 0x41, 0x52, 0xf5, 0xd6, 0x08, 0x41, 0xa4, 0x67, 0xda, 0x24,
-	0xbb, 0xc6, 0xec, 0xec, 0x9b, 0xda, 0xc6, 0x3a, 0xe9, 0x65, 0xc3, 0x8e, 0x8d, 0x7e, 0x4b, 0x3f,
-	0x0b, 0x70, 0x67, 0x8e, 0xdc, 0x1e, 0x9b, 0x23, 0x1b, 0xa3, 0xcf, 0x00, 0xda, 0x9e, 0x95, 0xf1,
-	0xa7, 0x1e, 0xed, 0x1e, 0x5e, 0x87, 0x75, 0x78, 0xed, 0x53, 0x1e, 0x75, 0xcc, 0x52, 0x48, 0xf5,
-	0xe1, 0xd1, 0xfb, 0x10, 0xc5, 0x96, 0x65, 0x5a, 0x2c, 0x80, 0xd4, 0xa3, 0x3b, 0x7e, 0x47, 0x85,
-	0x6e, 0x70, 0x1f, 0x07, 0x95, 0x4f, 0x40, 0xcc, 0xc2, 0xf6, 0x64, 0x40, 0xa4, 0x17, 0xb0, 0x11,
-	0x24, 0xbe, 0x75, 0x9a, 0xbb, 0x90, 0x98, 0xd8, 0xd8, 0x1a, 0xe9, 0x43, 0xcc, 0x53, 0xf5, 0xd6,
-	0x8c, 0x4b, 0xb7, 0xed, 0xef, 0x4d, 0xcb, 0xc8, 0x46, 0x38, 0x17, 0x5f, 0x4b, 0x08, 0x32, 0x54,
-	0x09, 0x73, 0xd4, 0xe9, 0x77, 0xb9, 0xc4, 0xd2, 0x0f, 0xb0, 0xe5, 0xb3, 0x71, 0x65, 0x3e, 0x80,
-	0x58, 0x9b, 0x59, 0xb8, 0x2a, 0x81, 0xe4, 0x3c, 0x78, 0x29, 0xa4, 0x72, 0xd8, 0xea, 0x62, 0xc8,
-	0x90, 0xf4, 0xf8, 0xd0, 0x87, 0x10, 0xc7, 0x23, 0x62, 0xf5, 0xb1, 0x9d, 0x15, 0x72, 0xe1, 0xf9,
-	0xd3, 0xf0, 0x70, 0xca, 0x88, 0x58, 0x53, 0xd5, 0x85, 0x4a, 0x9f, 0xc0, 0x46, 0x70, 0x0b, 0x65,
-	0x20, 0x7c, 0x8e, 0xa7, 0x5c, 0x4a, 0xfa, 0x89, 0x76, 0x20, 0xfa, 0x9d, 0x3e, 0x98, 0x60, 0x2e,
-	0xa3, 0xb3, 0x90, 0x3e, 0x62, 0x9e, 0x25, 0xac, 0x1b, 0x6e, 0xc1, 0xdd, 0x87, 0xf5, 0x76, 0x0f,
-	0xb7, 0xcf, 0xcd, 0x09, 0xd1, 0x58, 0x25, 0x39, 0x1c, 0x69, 0xd7, 0x58, 0xa7, 0x15, 0xd5, 0x85,
-	0x4d, 0xcf, 0x8d, 0x0b, 0xb6, 0x07, 0x89, 0x1e, 0xd6, 0x0d, 0xcd, 0xee, 0xe9, 0x8e, 0x4b, 0x29,
-	0xa4, 0xc6, 0xa9, 0xa5, 0xd1, 0xd3, 0x57, 0x17, 0xc7, 0x02, 0x24, 0x8f, 0xc7, 0x83, 0x69, 0x7e,
-	0x32, 0x32, 0x06, 0xd8, 0x8d, 0xf1, 0x73, 0x48, 0x0c, 0x31, 0xd1, 0x0d, 0x9d, 0xe8, 0xfc, 0x78,
-	0x0e, 0xfc, 0x8c, 0x3e, 0x8f, 0x53, 0x0e, 0x2b, 0x85, 0x54, 0xcf, 0x05, 0xdd, 0x85, 0x68, 0xbb,
-	0x37, 0x19, 0x9d, 0xb3, 0x68, 0xd2, 0xf4, 0xb7, 0x6c, 0x99, 0x8f, 0x42, 0x78, 0x68, 0x77, 0xa5,
-	0xdf, 0x05, 0xd8, 0x5e, 0x40, 0xf1, 0x46, 0xca, 0xa0, 0x7d, 0x00, 0xa2, 0x5b, 0x5d, 0x4c, 0x98,
-	0x10, 0x8e, 0xd6, 0x49, 0xc7, 0x42, 0x85, 0x78, 0x17, 0xb6, 0xf0, 0x8b, 0x31, 0x6e, 0x13, 0x6c,
-	0x68, 0x67, 0xba, 0x8d, 0x19, 0xca, 0x29, 0xe0, 0x4d, 0x77, 0x23, 0xaf, 0xdb, 0x98, 0x62, 0xf7,
-	0x01, 0xce, 0x58, 0x04, 0x9a, 0x85, 0x3b, 0xbc, 0x92, 0x93, 0x67, 0x5c, 0x88, 0x8e, 0xf4, 0x53,
-	0x30, 0x4c, 0xef, 0x20, 0x8e, 0x20, 0xae, 0x8f, 0xc7, 0x83, 0x3e, 0x36, 0xb8, 0x36, 0xfb, 0x4b,
-	0xb4, 0x51, 0x99, 0xc4, 0xf4, 0x98, 0x38, 0x7e, 0xf5, 0x63, 0x3a, 0x84, 0xad, 0x1b, 0xc4, 0xe8,
-	0xad, 0xf9, 0x8a, 0xf0, 0xea, 0x41, 0x7a, 0x02, 0x3b, 0x05, 0xae, 0x5a, 0x83, 0xe8, 0x04, 0xdf,
-	0xaa, 0xf8, 0x26, 0x70, 0x67, 0xce, 0x99, 0x67, 0x7e, 0x1f, 0xd2, 0x36, 0x35, 0x68, 0x46, 0xbf,
-	0x8b, 0x6d, 0xe2, 0x95, 0x61, 0x8a, 0x59, 0x8b, 0xcc, 0xb8, 0x7a, 0x8e, 0x9f, 0xc2, 0x76, 0x5d,
-	0x6f, 0x9f, 0xbb, 0xbf, 0xbe, 0x65, 0xc8, 0x3b, 0x41, 0x5f, 0x1e, 0xf1, 0x17, 0x37, 0x0a, 0x39,
-	0xe7, 0x8f, 0xc7, 0xef, 0xb3, 0x4a, 0x25, 0xff, 0x2a, 0x04, 0xff, 0xeb, 0x95, 0xf2, 0xf2, 0xa3,
-	0xf1, 0xb6, 0x68, 0xcd, 0xad, 0x5d, 0x6f, 0xa9, 0xb8, 0x43, 0x53, 0x35, 0xcf, 0xbe, 0xc1, 0x6d,
-	0xa2, 0x75, 0x4c, 0x6b, 0xa8, 0x13, 0x5e, 0xb8, 0x69, 0xc7, 0x78, 0xcc, 0x6c, 0xe8, 0x3d, 0x57,
-	0xdf, 0xc8, 0x6b, 0xf4, 0xe5, 0xea, 0x4a, 0x06, 0xa4, 0xea, 0x13, 0xbb, 0xe7, 0x6a, 0xf9, 0xf1,
-	0x0d, 0x39, 0xb2, 0x01, 0x39, 0x26, 0x76, 0x6f, 0x15, 0x19, 0xfe, 0x14, 0x20, 0xed, 0xf7, 0x7d,
-	0xb3, 0x4e, 0xbe, 0x4b, 0x4f, 0x7e, 0x68, 0x12, 0xf7, 0xc6, 0xe4, 0x2b, 0x2a, 0x90, 0x81, 0x6d,
-	0xc2, 0x04, 0x72, 0x04, 0x88, 0xd3, 0x35, 0x15, 0x28, 0xd8, 0xfc, 0x91, 0xf9, 0xe6, 0xdf, 0x81,
-	0x68, 0xc7, 0xb4, 0xda, 0x38, 0x1b, 0xcd, 0x09, 0x0f, 0x12, 0xaa, 0xb3, 0x98, 0x6b, 0xf3, 0xd8,
-	0x7c, 0x9b, 0x4f, 0x9d, 0xd8, 0xbd, 0x92, 0x79, 0x08, 0xb1, 0xf1, 0xc4, 0xee, 0x79, 0xdd, 0x7d,
-	0x77, 0x5e, 0x21, 0xaf, 0xad, 0x39, 0x6e, 0xf5, 0x8a, 0x3f, 0x02, 0xb8, 0x26, 0x0c, 0xe4, 0x2d,
-	0x04, 0xf3, 0xce, 0x40, 0xf8, 0xfa, 0xb6, 0xa3, 0x9f, 0xd2, 0xdf, 0x6b, 0x90, 0xf4, 0xb8, 0xd1,
-	0x63, 0x88, 0x90, 0xe9, 0x18, 0x33, 0xb7, 0x8d, 0xe0, 0x5d, 0xed, 0x81, 0x9c, 0xaf, 0xe6, 0x74,
-	0x8c, 0x55, 0x06, 0x46, 0x59, 0x88, 0x0f, 0xb1, 0x6d, 0xeb, 0x5d, 0xf7, 0x00, 0xdc, 0xa5, 0xf4,
-	0x9f, 0xc0, 0xc9, 0x29, 0x1a, 0xa5, 0x20, 0xde, 0xaa, 0x3e, 0xad, 0xd6, 0xbe, 0xaa, 0x66, 0x42,
-	0x68, 0x1b, 0x36, 0xcb, 0xd5, 0x67, 0x72, 0xa5, 0x5c, 0xd4, 0x54, 0xe5, 0xcb, 0x96, 0xd2, 0x68,
-	0x66, 0x04, 0xb4, 0x0e, 0xc9, 0x6a, 0xad, 0xa9, 0x1d, 0xd7, 0x5a, 0xd5, 0x62, 0x66, 0x8d, 0x3a,
-	0x34, 0xcb, 0xa7, 0x4a, 0xad, 0xd5, 0xcc, 0x84, 0xd1, 0x01, 0xec, 0x15, 0x54, 0xa5, 0xa8, 0x54,
-	0x9b, 0x65, 0xb9, 0xa2, 0xa9, 0x4a, 0x53, 0x2d, 0x2b, 0xcf, 0xe4, 0x8a, 0x76, 0x2c, 0x97, 0x2b,
-	0x4a, 0x31, 0x13, 0x41, 0x7b, 0x70, 0xaf, 0x50, 0xab, 0x1e, 0x97, 0x4f, 0x6e, 0x6e, 0x46, 0xd1,
-	0x16, 0xac, 0x97, 0x14, 0xb9, 0xa8, 0x9d, 0x96, 0x1b, 0xa7, 0x72, 0xb3, 0x50, 0xca, 0xc4, 0xd0,
-	0x3d, 0xd8, 0xce, 0xb7, 0xaa, 0xc5, 0x8a, 0xa2, 0xc9, 0xf5, 0x7a, 0xe5, 0x6b, 0x17, 0x1b, 0x47,
-	0x1b, 0x00, 0x34, 0x0a, 0x59, 0x53, 0x95, 0x7a, 0x2d, 0x93, 0x40, 0x9b, 0x90, 0xaa, 0xcb, 0x85,
-	0xa7, 0x2e, 0x20, 0xc9, 0x0c, 0xad, 0x46, 0xc9, 0x35, 0x00, 0x65, 0x2f, 0x2a, 0x4d, 0xb9, 0x50,
-	0x52, 0x8a, 0x1a, 0xfd, 0x4d, 0x26, 0xf5, 0xe8, 0xb7, 0x08, 0x84, 0x4f, 0xfa, 0x04, 0x35, 0x61,
-	0xfd, 0x04, 0xfb, 0x26, 0x3a, 0x94, 0x9b, 0x9f, 0x13, 0xe6, 0x27, 0xc9, 0xdd, 0x77, 0x5e, 0x83,
-	0xe0, 0xb5, 0x55, 0x82, 0x24, 0x65, 0x75, 0x46, 0x91, 0xb7, 0x17, 0x4e, 0x1e, 0x2e, 0xdb, 0xfe,
-	0x92, 0x5d, 0xce, 0x94, 0x87, 0xf8, 0x09, 0x66, 0x03, 0x02, 0x9a, 0x9f, 0x60, 0x7c, 0xc3, 0xc6,
-	0xee, 0xde, 0xc2, 0x3d, 0xce, 0x51, 0x87, 0x94, 0xef, 0x51, 0x41, 0xe2, 0xd2, 0x67, 0xcc, 0xe1,
-	0x3a, 0x58, 0xfe, 0xcc, 0x31, 0xbe, 0x07, 0x02, 0x55, 0x2d, 0xf0, 0x72, 0x04, 0x55, 0x5b, 0xf4,
-	0x22, 0x05, 0x55, 0x5b, 0xfc, 0xec, 0x34, 0x20, 0xed, 0xbf, 0x64, 0xd1, 0xc1, 0xb2, 0x2b, 0xdc,
-	0xe5, 0xcc, 0x2d, 0x07, 0x38, 0x94, 0x0f, 0x05, 0xf4, 0x04, 0x22, 0xb4, 0xf7, 0xd0, 0xbd, 0x9b,
-	0xed, 0xed, 0x90, 0x64, 0x17, 0xf4, 0x3d, 0xcf, 0x33, 0x7f, 0x74, 0x71, 0x29, 0x86, 0x5e, 0x5e,
-	0x8a, 0xa1, 0x57, 0x97, 0xa2, 0xf0, 0xe3, 0x4c, 0x14, 0xfe, 0x98, 0x89, 0xc2, 0x5f, 0x33, 0x51,
-	0xb8, 0x98, 0x89, 0xc2, 0x3f, 0x33, 0x51, 0xf8, 0x77, 0x26, 0x86, 0x5e, 0xcd, 0x44, 0xe1, 0x97,
-	0x2b, 0x31, 0x74, 0x71, 0x25, 0x86, 0x5e, 0x5e, 0x89, 0xa1, 0xe7, 0xe1, 0x6e, 0x9f, 0x9c, 0xc5,
-	0xd8, 0xd8, 0xfd, 0xf8, 0xff, 0x00, 0x00, 0x00, 0xff, 0xff, 0x0e, 0x67, 0x82, 0x64, 0xa7, 0x0c,
+	// 1314 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x57, 0xcf, 0x73, 0xdb, 0xc4,
+	0x17, 0xb7, 0x62, 0x3b, 0xb6, 0x9f, 0x9d, 0xc4, 0xd9, 0xa4, 0xad, 0xbf, 0xc9, 0x37, 0x8a, 0x51,
+	0x2f, 0x19, 0x18, 0xd2, 0x4e, 0x0b, 0x0c, 0xa5, 0xc0, 0x8c, 0x7f, 0x28, 0xb1, 0xa7, 0x89, 0x6d,
+	0x64, 0xb9, 0x1d, 0x7a, 0xd1, 0x28, 0xd6, 0xfa, 0x07, 0x71, 0x2c, 0x21, 0xad, 0xa1, 0x39, 0x30,
+	0xc3, 0x95, 0x0b, 0x30, 0xfc, 0x01, 0x9c, 0x38, 0xf0, 0x37, 0xf0, 0x17, 0x70, 0xec, 0xb1, 0x47,
+	0xea, 0x5c, 0xb8, 0xd1, 0x23, 0x47, 0x66, 0x57, 0x2b, 0x59, 0x52, 0xe2, 0x4e, 0xe2, 0x9b, 0xf6,
+	0xed, 0x7b, 0x9f, 0x7d, 0xef, 0xb3, 0x1f, 0xbf, 0x7d, 0x86, 0x4c, 0x7f, 0x48, 0xf6, 0x2d, 0xdb,
+	0x24, 0x26, 0x02, 0x43, 0xef, 0xf7, 0xb1, 0xbd, 0xdf, 0x1f, 0x12, 0xe9, 0x39, 0x6c, 0x1e, 0x0e,
+	0x49, 0xc5, 0xc6, 0x06, 0x1e, 0x93, 0xa1, 0x3e, 0x52, 0xf0, 0xd7, 0x13, 0xec, 0x10, 0xb4, 0x05,
+	0x69, 0xe6, 0xdc, 0x35, 0x47, 0x05, 0xa1, 0x28, 0xec, 0x65, 0x14, 0x7f, 0x8d, 0x10, 0x24, 0x06,
+	0xa6, 0x43, 0x0a, 0x4b, 0xcc, 0xce, 0xbe, 0xa9, 0xcd, 0xd2, 0xc9, 0xa0, 0x10, 0x77, 0x6d, 0xf4,
+	0x5b, 0xfa, 0x51, 0x80, 0x5b, 0x11, 0x70, 0xc7, 0x32, 0xc7, 0x0e, 0x46, 0x9f, 0x02, 0x74, 0x7d,
+	0x2b, 0xc3, 0xcf, 0x3e, 0xd8, 0xda, 0x9f, 0xa5, 0xb5, 0x3f, 0x8b, 0xa9, 0x8f, 0x7b, 0x66, 0x2d,
+	0xa6, 0x04, 0xfc, 0xd1, 0xfb, 0x90, 0xc4, 0xb6, 0x6d, 0xda, 0x2c, 0x81, 0xec, 0x83, 0x5b, 0xc1,
+	0x40, 0x99, 0x6e, 0xf0, 0x18, 0xd7, 0xab, 0x9c, 0x86, 0x65, 0x1b, 0x3b, 0x93, 0x11, 0x91, 0x5e,
+	0xc0, 0x6a, 0x18, 0xf8, 0xc6, 0x65, 0x6e, 0x41, 0x7a, 0xe2, 0x60, 0x7b, 0xac, 0x9f, 0x61, 0x5e,
+	0xaa, 0xbf, 0x66, 0x58, 0xba, 0xe3, 0x7c, 0x6b, 0xda, 0x46, 0x21, 0xc1, 0xb1, 0xf8, 0x5a, 0x42,
+	0x90, 0xa7, 0x4c, 0x98, 0xe3, 0xde, 0xb0, 0xcf, 0x29, 0x96, 0xbe, 0x83, 0xf5, 0x80, 0x8d, 0x33,
+	0x73, 0x0f, 0x96, 0xbb, 0xcc, 0xc2, 0x59, 0x09, 0x15, 0xe7, 0xbb, 0xd7, 0x62, 0x0a, 0x77, 0x5b,
+	0x9c, 0x8c, 0x12, 0x64, 0x7c, 0x3c, 0xf4, 0x01, 0xa4, 0xf0, 0x98, 0xd8, 0x43, 0xec, 0x14, 0x84,
+	0x62, 0x3c, 0x7a, 0x1b, 0xbe, 0x9f, 0x3c, 0x26, 0xf6, 0xb9, 0xe2, 0xb9, 0x4a, 0x1f, 0xc3, 0x6a,
+	0x78, 0x0b, 0xe5, 0x21, 0x7e, 0x8a, 0xcf, 0x39, 0x95, 0xf4, 0x13, 0x6d, 0x42, 0xf2, 0x1b, 0x7d,
+	0x34, 0xc1, 0x9c, 0x46, 0x77, 0x21, 0x7d, 0xc8, 0x22, 0x6b, 0x58, 0x37, 0x3c, 0xc1, 0xdd, 0x85,
+	0x95, 0xee, 0x00, 0x77, 0x4f, 0xcd, 0x09, 0xd1, 0x98, 0x92, 0x5c, 0x8c, 0x9c, 0x67, 0x6c, 0x51,
+	0x45, 0xf5, 0x61, 0xcd, 0x0f, 0xe3, 0x84, 0x6d, 0x43, 0x7a, 0x80, 0x75, 0x43, 0x73, 0x06, 0xba,
+	0x1b, 0x52, 0x8b, 0x29, 0x29, 0x6a, 0x69, 0x0f, 0xf4, 0xc5, 0xc9, 0xb1, 0x01, 0x95, 0x2c, 0x6b,
+	0x74, 0x5e, 0x9e, 0x8c, 0x8d, 0x11, 0xf6, 0x72, 0xfc, 0x0c, 0xd2, 0x67, 0x98, 0xe8, 0x86, 0x4e,
+	0x74, 0x7e, 0x3d, 0xbb, 0x41, 0xc4, 0x40, 0xc4, 0x31, 0x77, 0xab, 0xc5, 0x14, 0x3f, 0x04, 0xdd,
+	0x86, 0x64, 0x77, 0x30, 0x19, 0x9f, 0xb2, 0x6c, 0x72, 0xf4, 0x58, 0xb6, 0x2c, 0x27, 0x21, 0x7e,
+	0xe6, 0xf4, 0xa5, 0xdf, 0x04, 0xd8, 0xb8, 0x02, 0xe2, 0x5a, 0xcc, 0xa0, 0x1d, 0x00, 0xa2, 0xdb,
+	0x7d, 0x4c, 0x18, 0x11, 0x2e, 0xd7, 0x19, 0xd7, 0x42, 0x89, 0x78, 0x17, 0xd6, 0xf1, 0x0b, 0x0b,
+	0x77, 0x09, 0x36, 0xb4, 0x13, 0xdd, 0xc1, 0xcc, 0xcb, 0x15, 0xf0, 0x9a, 0xb7, 0x51, 0xd6, 0x1d,
+	0x4c, 0x7d, 0x77, 0x00, 0x4e, 0x58, 0x06, 0x9a, 0x8d, 0x7b, 0x5c, 0xc9, 0x99, 0x13, 0x4e, 0x44,
+	0x4f, 0xfa, 0x21, 0x9c, 0xa6, 0x7f, 0x11, 0x8f, 0x20, 0xa5, 0x5b, 0xd6, 0x68, 0x88, 0x0d, 0xce,
+	0xcd, 0xce, 0x1c, 0x6e, 0x14, 0x46, 0x31, 0xbd, 0x26, 0xee, 0xbf, 0xf8, 0x35, 0xed, 0xc3, 0xfa,
+	0x25, 0x60, 0xf4, 0xbf, 0xa8, 0x22, 0x7c, 0x3d, 0x48, 0x8f, 0x61, 0xb3, 0xc2, 0x59, 0x6b, 0x13,
+	0x9d, 0xe0, 0x1b, 0x89, 0x6f, 0x02, 0xb7, 0x22, 0xc1, 0xbc, 0xf2, 0xbb, 0x90, 0x73, 0xa8, 0x41,
+	0x33, 0x86, 0x7d, 0xec, 0x10, 0x5f, 0x86, 0x59, 0x66, 0xad, 0x32, 0xe3, 0xe2, 0x35, 0x7e, 0x02,
+	0x1b, 0x2d, 0xbd, 0x7b, 0xea, 0x1d, 0x7d, 0xc3, 0x94, 0x37, 0xc3, 0xb1, 0x3c, 0xe3, 0xcf, 0x2f,
+	0x09, 0xb9, 0x18, 0xcc, 0x27, 0x18, 0xb3, 0x88, 0x92, 0x7f, 0x15, 0xc2, 0xe7, 0xfa, 0x52, 0x9e,
+	0x7f, 0x35, 0xfe, 0x16, 0xd5, 0xdc, 0xd2, 0x6c, 0x4b, 0xc1, 0x3d, 0x5a, 0xaa, 0x79, 0xf2, 0x15,
+	0xee, 0x12, 0xad, 0x67, 0xda, 0x67, 0x3a, 0xe1, 0xc2, 0xcd, 0xb9, 0xc6, 0x03, 0x66, 0x43, 0xef,
+	0x79, 0xfc, 0x26, 0xde, 0xc2, 0x2f, 0x67, 0x57, 0xea, 0xb9, 0x9c, 0x3e, 0x33, 0xed, 0x53, 0x62,
+	0xe3, 0x1b, 0xc9, 0x20, 0xf4, 0x53, 0xf2, 0x8b, 0x59, 0x0a, 0xff, 0x94, 0x6a, 0x5c, 0x6f, 0x9c,
+	0xff, 0xd9, 0x39, 0xd7, 0xe7, 0xdf, 0x8b, 0x59, 0x84, 0xff, 0x9f, 0x84, 0xf0, 0xb9, 0xd7, 0xe1,
+	0xff, 0x1e, 0x6c, 0x8c, 0xb1, 0x43, 0x8b, 0xb2, 0xb1, 0x65, 0x3a, 0x43, 0x62, 0xb2, 0xd7, 0x60,
+	0xa9, 0x18, 0xdf, 0xcb, 0x28, 0xc8, 0xdd, 0x52, 0x02, 0x3b, 0x33, 0xc2, 0xe3, 0xd7, 0x20, 0xdc,
+	0x80, 0x6c, 0x6b, 0xe2, 0x0c, 0x3c, 0xa2, 0x3f, 0xba, 0x54, 0x7f, 0x21, 0x54, 0xff, 0xc4, 0x19,
+	0x2c, 0x52, 0xf7, 0x1f, 0x02, 0xe4, 0x82, 0xb1, 0xd7, 0xbb, 0xd0, 0xdb, 0xf4, 0xa7, 0x76, 0x66,
+	0x12, 0xef, 0x89, 0xe2, 0x2b, 0x4a, 0x96, 0x81, 0x1d, 0xc2, 0x14, 0xe9, 0x2a, 0x2e, 0x45, 0xd7,
+	0x54, 0x91, 0xe1, 0x6e, 0x9b, 0x88, 0x76, 0xdb, 0x4d, 0x48, 0xf6, 0x4c, 0xbb, 0x8b, 0x0b, 0xc9,
+	0xa2, 0xb0, 0x97, 0x56, 0xdc, 0x45, 0xa4, 0xaf, 0x2e, 0x47, 0xfb, 0xea, 0xb9, 0x9b, 0xbb, 0xaf,
+	0x91, 0xfb, 0xb0, 0x6c, 0x4d, 0x9c, 0x81, 0xdf, 0x4e, 0x6f, 0x47, 0x19, 0xf2, 0xfb, 0x28, 0xf7,
+	0x5b, 0xbc, 0xc5, 0x3c, 0x02, 0x98, 0x01, 0x86, 0xea, 0x16, 0xc2, 0x75, 0xe7, 0x21, 0x3e, 0x53,
+	0x3b, 0xfd, 0x94, 0xfe, 0x59, 0x82, 0x8c, 0x8f, 0x8d, 0x1e, 0x42, 0x82, 0x9c, 0x5b, 0x98, 0x85,
+	0xad, 0x86, 0x1f, 0x47, 0xdf, 0xc9, 0xfd, 0x52, 0xcf, 0x2d, 0xac, 0x30, 0x67, 0x54, 0x80, 0xd4,
+	0x19, 0x76, 0x1c, 0xbd, 0xef, 0x5d, 0x80, 0xb7, 0x94, 0x7e, 0xf1, 0xc0, 0xa9, 0x37, 0xca, 0x42,
+	0xaa, 0xd3, 0x78, 0xd2, 0x68, 0x3e, 0x6b, 0xe4, 0x63, 0x68, 0x03, 0xd6, 0xea, 0x8d, 0xa7, 0xa5,
+	0xa3, 0x7a, 0x55, 0x53, 0xe4, 0x2f, 0x3a, 0x72, 0x5b, 0xcd, 0x0b, 0x68, 0x05, 0x32, 0x8d, 0xa6,
+	0xaa, 0x1d, 0x34, 0x3b, 0x8d, 0x6a, 0x7e, 0x89, 0x06, 0xa8, 0xf5, 0x63, 0xb9, 0xd9, 0x51, 0xf3,
+	0x71, 0xb4, 0x0b, 0xdb, 0x15, 0x45, 0xae, 0xca, 0x0d, 0xb5, 0x5e, 0x3a, 0xd2, 0x14, 0x59, 0x55,
+	0xea, 0xf2, 0xd3, 0xd2, 0x91, 0x76, 0x50, 0xaa, 0x1f, 0xc9, 0xd5, 0x7c, 0x02, 0x6d, 0xc3, 0x9d,
+	0x4a, 0xb3, 0x71, 0x50, 0x3f, 0xbc, 0xbc, 0x99, 0x44, 0xeb, 0xb0, 0x52, 0x93, 0x4b, 0x55, 0xed,
+	0xb8, 0xde, 0x3e, 0x2e, 0xa9, 0x95, 0x5a, 0x7e, 0x19, 0xdd, 0x81, 0x8d, 0x72, 0xa7, 0x51, 0x3d,
+	0x92, 0xb5, 0x52, 0xab, 0x75, 0xf4, 0xa5, 0xe7, 0x9b, 0x42, 0xab, 0x00, 0x34, 0x8b, 0x92, 0xa6,
+	0xc8, 0xad, 0x66, 0x3e, 0x8d, 0xd6, 0x20, 0xdb, 0x2a, 0x55, 0x9e, 0x78, 0x0e, 0x19, 0x66, 0xe8,
+	0xb4, 0x6b, 0x9e, 0x01, 0x28, 0x7a, 0x55, 0x56, 0x4b, 0x95, 0x9a, 0x5c, 0xd5, 0xe8, 0x31, 0xf9,
+	0x2c, 0x2a, 0xc0, 0xe6, 0xb3, 0xa6, 0xf2, 0x44, 0x55, 0x64, 0x59, 0xeb, 0x34, 0xda, 0x9d, 0x56,
+	0xab, 0xa9, 0xa8, 0x72, 0x35, 0x9f, 0x7b, 0xf0, 0x6f, 0x02, 0xe2, 0x87, 0x43, 0x82, 0x54, 0x58,
+	0x39, 0xc4, 0x81, 0xe1, 0x1a, 0x15, 0xa3, 0x23, 0x5b, 0x74, 0xa8, 0xdf, 0x7a, 0xe7, 0x2d, 0x1e,
+	0x5c, 0x75, 0x35, 0xc8, 0x50, 0x54, 0x77, 0x2a, 0xfc, 0xff, 0x95, 0x43, 0xa0, 0x87, 0xb6, 0x33,
+	0x67, 0x97, 0x23, 0x95, 0x21, 0x75, 0x88, 0xd9, 0xac, 0x86, 0xa2, 0xc3, 0x64, 0x60, 0xee, 0xdb,
+	0xda, 0xbe, 0x72, 0x8f, 0x63, 0xb4, 0x20, 0x1b, 0x78, 0xdf, 0x91, 0x38, 0x77, 0xa2, 0x70, 0xb1,
+	0x76, 0xe7, 0x4f, 0x1c, 0x0c, 0x6f, 0x4f, 0xa0, 0xac, 0x85, 0x1e, 0xf1, 0x30, 0x6b, 0x57, 0x0d,
+	0x07, 0x61, 0xd6, 0xae, 0x9e, 0x00, 0xda, 0x90, 0x0b, 0xbe, 0x77, 0x68, 0x77, 0xde, 0x6b, 0xea,
+	0x61, 0x16, 0xe7, 0x3b, 0xb8, 0x90, 0xf7, 0x05, 0x0f, 0xd4, 0x6b, 0xe2, 0x97, 0x41, 0x23, 0xcf,
+	0xd7, 0x56, 0x71, 0xbe, 0x83, 0x0f, 0xfa, 0x18, 0x12, 0xf4, 0xa7, 0x8e, 0xee, 0x5c, 0xee, 0x26,
+	0x2e, 0x48, 0xe1, 0x8a, 0x36, 0xc3, 0xc9, 0x2b, 0x3f, 0x7a, 0xf9, 0x5a, 0x8c, 0xbd, 0x7a, 0x2d,
+	0xc6, 0xde, 0xbc, 0x16, 0x85, 0xef, 0xa7, 0xa2, 0xf0, 0xfb, 0x54, 0x14, 0xfe, 0x9c, 0x8a, 0xc2,
+	0xcb, 0xa9, 0x28, 0xfc, 0x35, 0x15, 0x85, 0xbf, 0xa7, 0x62, 0xec, 0xcd, 0x54, 0x14, 0x7e, 0xbe,
+	0x10, 0x63, 0x2f, 0x2f, 0xc4, 0xd8, 0xab, 0x0b, 0x31, 0xf6, 0x3c, 0xde, 0x1f, 0x92, 0x93, 0x65,
+	0xf6, 0xb7, 0xea, 0xe1, 0x7f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x45, 0x66, 0x2b, 0xa2, 0x87, 0x0e,
 	0x00, 0x00,
 }
 
@@ -2614,6 +2838,146 @@ func (this *PackCheckoutMetadata) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *PackWorktreeRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PackWorktreeRequest)
+	if !ok {
+		that2, ok := that.(PackWorktreeRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CheckoutPath != that1.CheckoutPath {
+		return false
+	}
+	if this.ExpectedHeadSha != that1.ExpectedHeadSha {
+		return false
+	}
+	return true
+}
+func (this *PackWorktreeResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PackWorktreeResponse)
+	if !ok {
+		that2, ok := that.(PackWorktreeResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *PackWorktreeResponse_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PackWorktreeResponse_Metadata)
+	if !ok {
+		that2, ok := that.(PackWorktreeResponse_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *PackWorktreeResponse_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PackWorktreeResponse_Chunk)
+	if !ok {
+		that2, ok := that.(PackWorktreeResponse_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return false
+	}
+	return true
+}
+func (this *PackWorktreeMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PackWorktreeMetadata)
+	if !ok {
+		that2, ok := that.(PackWorktreeMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.HeadSha != that1.HeadSha {
+		return false
+	}
+	if len(this.NestedRepositories) != len(that1.NestedRepositories) {
+		return false
+	}
+	for i := range this.NestedRepositories {
+		if this.NestedRepositories[i] != that1.NestedRepositories[i] {
+			return false
+		}
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	return true
+}
 func (this *PushRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -3184,6 +3548,59 @@ func (this *PackCheckoutMetadata) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *PackWorktreeRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.PackWorktreeRequest{")
+	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
+	s = append(s, "ExpectedHeadSha: "+fmt.Sprintf("%#v", this.ExpectedHeadSha)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PackWorktreeResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.PackWorktreeResponse{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PackWorktreeResponse_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.PackWorktreeResponse_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *PackWorktreeResponse_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.PackWorktreeResponse_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
+func (this *PackWorktreeMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&git.PackWorktreeMetadata{")
+	s = append(s, "HeadSha: "+fmt.Sprintf("%#v", this.HeadSha)+",\n")
+	s = append(s, "NestedRepositories: "+fmt.Sprintf("%#v", this.NestedRepositories)+",\n")
+	if this.Error != nil {
+		s = append(s, "Error: "+fmt.Sprintf("%#v", this.Error)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *PushRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -3304,6 +3721,7 @@ type GitClient interface {
 	ApplyBundle(ctx context.Context, opts ...grpc.CallOption) (Git_ApplyBundleClient, error)
 	CheckoutState(ctx context.Context, in *CheckoutStateRequest, opts ...grpc.CallOption) (*CheckoutStateResponse, error)
 	PackCheckout(ctx context.Context, in *PackCheckoutRequest, opts ...grpc.CallOption) (Git_PackCheckoutClient, error)
+	PackWorktree(ctx context.Context, in *PackWorktreeRequest, opts ...grpc.CallOption) (Git_PackWorktreeClient, error)
 	Push(ctx context.Context, opts ...grpc.CallOption) (Git_PushClient, error)
 }
 
@@ -3417,8 +3835,40 @@ func (x *gitPackCheckoutClient) Recv() (*PackCheckoutResponse, error) {
 	return m, nil
 }
 
+func (c *gitClient) PackWorktree(ctx context.Context, in *PackWorktreeRequest, opts ...grpc.CallOption) (Git_PackWorktreeClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[2], "/dagger.git.Git/PackWorktree", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitPackWorktreeClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Git_PackWorktreeClient interface {
+	Recv() (*PackWorktreeResponse, error)
+	grpc.ClientStream
+}
+
+type gitPackWorktreeClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitPackWorktreeClient) Recv() (*PackWorktreeResponse, error) {
+	m := new(PackWorktreeResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *gitClient) Push(ctx context.Context, opts ...grpc.CallOption) (Git_PushClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[2], "/dagger.git.Git/Push", opts...)
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[3], "/dagger.git.Git/Push", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -3459,6 +3909,7 @@ type GitServer interface {
 	ApplyBundle(Git_ApplyBundleServer) error
 	CheckoutState(context.Context, *CheckoutStateRequest) (*CheckoutStateResponse, error)
 	PackCheckout(*PackCheckoutRequest, Git_PackCheckoutServer) error
+	PackWorktree(*PackWorktreeRequest, Git_PackWorktreeServer) error
 	Push(Git_PushServer) error
 }
 
@@ -3483,6 +3934,9 @@ func (*UnimplementedGitServer) CheckoutState(ctx context.Context, req *CheckoutS
 }
 func (*UnimplementedGitServer) PackCheckout(req *PackCheckoutRequest, srv Git_PackCheckoutServer) error {
 	return status.Errorf(codes.Unimplemented, "method PackCheckout not implemented")
+}
+func (*UnimplementedGitServer) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktreeServer) error {
+	return status.Errorf(codes.Unimplemented, "method PackWorktree not implemented")
 }
 func (*UnimplementedGitServer) Push(srv Git_PushServer) error {
 	return status.Errorf(codes.Unimplemented, "method Push not implemented")
@@ -3611,6 +4065,27 @@ func (x *gitPackCheckoutServer) Send(m *PackCheckoutResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Git_PackWorktree_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(PackWorktreeRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GitServer).PackWorktree(m, &gitPackWorktreeServer{stream})
+}
+
+type Git_PackWorktreeServer interface {
+	Send(*PackWorktreeResponse) error
+	grpc.ServerStream
+}
+
+type gitPackWorktreeServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitPackWorktreeServer) Send(m *PackWorktreeResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 func _Git_Push_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(GitServer).Push(&gitPushServer{stream})
 }
@@ -3667,6 +4142,11 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "PackCheckout",
 			Handler:       _Git_PackCheckout_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "PackWorktree",
+			Handler:       _Git_PackWorktree_Handler,
 			ServerStreams: true,
 		},
 		{
@@ -4591,6 +5071,163 @@ func (m *PackCheckoutMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *PackWorktreeRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PackWorktreeRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PackWorktreeRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ExpectedHeadSha) > 0 {
+		i -= len(m.ExpectedHeadSha)
+		copy(dAtA[i:], m.ExpectedHeadSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.ExpectedHeadSha)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CheckoutPath) > 0 {
+		i -= len(m.CheckoutPath)
+		copy(dAtA[i:], m.CheckoutPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutPath)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PackWorktreeResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PackWorktreeResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PackWorktreeResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PackWorktreeResponse_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PackWorktreeResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PackWorktreeResponse_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PackWorktreeResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PackWorktreeMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PackWorktreeMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PackWorktreeMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.NestedRepositories) > 0 {
+		for iNdEx := len(m.NestedRepositories) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.NestedRepositories[iNdEx])
+			copy(dAtA[i:], m.NestedRepositories[iNdEx])
+			i = encodeVarintGit(dAtA, i, uint64(len(m.NestedRepositories[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.HeadSha) > 0 {
+		i -= len(m.HeadSha)
+		copy(dAtA[i:], m.HeadSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.HeadSha)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *PushRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -5322,6 +5959,82 @@ func (m *PackCheckoutMetadata) Size() (n int) {
 	return n
 }
 
+func (m *PackWorktreeRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CheckoutPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.ExpectedHeadSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *PackWorktreeResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *PackWorktreeResponse_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *PackWorktreeResponse_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = len(m.Chunk)
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *PackWorktreeMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.HeadSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if len(m.NestedRepositories) > 0 {
+		for _, s := range m.NestedRepositories {
+			l = len(s)
+			n += 1 + l + sovGit(uint64(l))
+		}
+	}
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
 func (m *PushRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -5796,6 +6509,59 @@ func (this *PackCheckoutMetadata) String() string {
 		`HeadSha:` + fmt.Sprintf("%v", this.HeadSha) + `,`,
 		`HeadRef:` + fmt.Sprintf("%v", this.HeadRef) + `,`,
 		`ObjectFormat:` + fmt.Sprintf("%v", this.ObjectFormat) + `,`,
+		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PackWorktreeRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PackWorktreeRequest{`,
+		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
+		`ExpectedHeadSha:` + fmt.Sprintf("%v", this.ExpectedHeadSha) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PackWorktreeResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PackWorktreeResponse{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PackWorktreeResponse_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PackWorktreeResponse_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "PackWorktreeMetadata", "PackWorktreeMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PackWorktreeResponse_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PackWorktreeResponse_Chunk{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PackWorktreeMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PackWorktreeMetadata{`,
+		`HeadSha:` + fmt.Sprintf("%v", this.HeadSha) + `,`,
+		`NestedRepositories:` + fmt.Sprintf("%v", this.NestedRepositories) + `,`,
 		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
 		`}`,
 	}, "")
@@ -7940,6 +8706,388 @@ func (m *PackCheckoutMetadata) Unmarshal(dAtA []byte) error {
 			m.ObjectFormat = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &ErrorInfo{}
+			}
+			if err := m.Error.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PackWorktreeRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PackWorktreeRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PackWorktreeRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExpectedHeadSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ExpectedHeadSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PackWorktreeResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PackWorktreeResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PackWorktreeResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &PackWorktreeMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &PackWorktreeResponse_Metadata{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Msg = &PackWorktreeResponse_Chunk{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PackWorktreeMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PackWorktreeMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PackWorktreeMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HeadSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.HeadSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NestedRepositories", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.NestedRepositories = append(m.NestedRepositories, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
 			}
