@@ -32,9 +32,10 @@ possible module implementation using an engine SDK wrapper, procedural macros, a
 Rust dispatch runtime. It is open and unmerged at the baseline, so it informs the
 child designs without defining their requirements.
 
-The implementation is organized as Features 1–7 plus release readiness. The original
-feature numbering is retained so that accepted requirements and implementation history
-remain traceable.
+The maintained requirements preserve the accepted capability scope of Features 2–7
+plus release readiness. Feature 1's historical completeness registry has been retired;
+Git history retains its delivery record. The remaining feature numbering is preserved
+so accepted requirements and implementation history remain traceable.
 
 One deliberately small verification contract governs the maintained work:
 
@@ -51,35 +52,26 @@ One deliberately small verification contract governs the maintained work:
 
 **Dependency graph:**
 
-- Feature 1 (Completeness Contract) — no dependencies
-- Feature 2 (Client Lifecycle and Configuration) — depends on Feature 1
-- Feature 3 (Transport, Observability, and Reliability) — depends on Feature 1 and
-  supports Feature 2
-- Feature 4 (Core Schema Code Generation) — depends on Feature 1
-- Feature 5 (Engine SDK Integration) — depends on Features 1 and 4
+- Compatibility and Stability Policy — cross-cutting
+- Feature 2 (Client Lifecycle and Configuration) — no feature dependency
+- Feature 3 (Transport, Observability, and Reliability) — supports Feature 2
+- Feature 4 (Core Schema Code Generation) — no feature dependency
+- Feature 5 (Engine SDK Integration) — depends on Feature 4
 - Feature 6 (Rust Module Authoring and Dispatch) — depends on Feature 5
 - Feature 7 (Standalone Client and Dependency Generation) — depends on Features 4 and
   5
 - Feature 9 (Distribution, Documentation, and Stable Release) — depends on Features
-  1–7
+  2–7
 
-The child specifications are:
-
-- `rust-sdk-completeness-contract` (Feature 1)
-- `rust-sdk-client-lifecycle` (Feature 2)
-- `rust-sdk-transport-observability` (Feature 3)
-- `rust-sdk-core-codegen` (Feature 4)
-- `rust-sdk-engine-integration` (Feature 5)
-- `rust-sdk-module-authoring` (Feature 6)
-- `rust-sdk-client-generation` (Feature 7)
-- `rust-sdk-release-readiness` (Feature 9)
+The maintained child specification is `rust-sdk-release-readiness` (Feature 9).
+Completed Features 2–7 remain defined here; their delivery designs, tasks, and
+historical verification records remain available in Git history rather than the
+maintained specification tree.
 
 ## Glossary
 
 - **Behavioural_Parity:** Equivalent externally observable capability and semantics,
   allowing a Rust-native public API.
-- **Completeness_Ledger:** An exhaustive, versioned mapping from engine and Go SDK
-  capabilities to Rust implementation and verification evidence.
 - **Core_Schema:** The GraphQL schema exposed by the Dagger engine independently of a
   user's modules.
 - **Definitive_Go_SDK:** `sdk/go/**` and its tests at the target repository revision,
@@ -93,8 +85,8 @@ The child specifications are:
   environment rather than started by the Rust process.
 - **Generated_Bindings:** Rust source emitted from engine introspection for GraphQL
   objects, interfaces, enums, scalars, inputs, field arguments, and selections.
-- **Go_Level:** Complete according to the Completeness_Ledger, not source-compatible
-  with Go.
+- **Go_Level:** Behaviourally complete for the declared Target_Revision, not
+  source-compatible with Go.
 - **Idiomatic_Equivalence:** Rust API shape that preserves behaviour while following
   accepted Rust ownership, error, naming, async, and type-system conventions.
 - **Module_Dispatch:** Decoding an engine function call, invoking the matching Rust
@@ -119,14 +111,9 @@ author and execute a Dagger module selected with `--sdk rust`, consume other mod
 generate standalone clients, diagnose failures and traces, and rely on packaged crate
 artifacts and documentation under a coherent stability and compatibility policy.
 
-Every applicable engine and Definitive_Go_SDK capability is represented in the
-Completeness_Ledger as one of:
-
-- implemented by behaviourally equivalent Rust functionality;
-- implemented through a documented Idiomatic_Equivalence; or
-- explicitly inapplicable to Rust, with reviewed evidence and an automated guard
-  against accidental expansion of the exception.
-
+Applicable engine and Definitive_Go_SDK capabilities SHALL be implemented by
+behaviourally equivalent Rust functionality, documented as an Idiomatic_Equivalence,
+or explicitly classified as inapplicable to Rust and guarded by an appropriate test.
 Untracked omissions, permanently aspirational checklist items, and parity claims based
 only on API-name comparison are not acceptable. Go-specific syntax, Go memory models,
 and Go package layout are outside scope. Changes to the engine protocol solely to
@@ -188,9 +175,8 @@ All repository citations in this document refer to Target_Revision
 
 ## Audit Gap Traceability
 
-| Audited surface | Baseline state | Owning feature | Completion evidence |
+| Audited surface | Baseline state | Owning feature | Completion verification |
 |---|---|---|---|
-| Capability inventory | No exhaustive Go-to-Rust ledger | Feature 1 | Versioned Completeness_Ledger with automated drift detection |
 | Core GraphQL bindings | Broad generated surface exists; parity is not measured | Feature 4 | Schema fixtures, generated snapshots, and engine tests |
 | Client ownership | Connection is closure-scoped | Feature 2 | Owned_Client lifecycle tests |
 | Client options | Workdir, config path, module loading, timeouts, and logger only | Feature 2 | Configuration conformance table and tests |
@@ -235,31 +221,7 @@ choose Rust-native names and builders while preserving these semantics.
 
 ---
 
-## Feature 1: Completeness Contract
-
-### Requirement 1.1: Exhaustive, Versioned Parity Ledger
-
-**User Story:** As a Rust SDK maintainer, I want a reproducible completeness contract,
-so that “Go-level” is an evidence-backed release claim rather than an impression.
-
-#### Acceptance Criteria
-
-1. WHEN a Target_Revision is selected, THE Completeness_Ledger SHALL identify its
-   engine schema revision and Definitive_Go_SDK revision.
-2. THE Completeness_Ledger SHALL record the corresponding Rust support status for every
-   public engine schema type, field, argument, input, enum, scalar, and identifier.
-3. THE Completeness_Ledger SHALL record the corresponding Rust support status for every
-   observable Definitive_Go_SDK capability outside generated schema bindings.
-4. WHEN Rust uses an Idiomatic_Equivalence, THE Completeness_Ledger SHALL record the
-   behavioural mapping and rationale.
-5. IF a capability is classified as inapplicable, THEN THE Completeness_Ledger SHALL
-   cite reviewed evidence for the exception.
-6. WHEN a ledger item is marked complete, THE Completeness_Ledger SHALL link automated
-   verification evidence.
-7. WHEN the Target_Revision changes, THE parity tooling SHALL fail on unclassified
-   engine or Go SDK capability drift.
-
-### Requirement 1.2: Compatibility and Stability Policy
+## Cross-cutting Requirement: Compatibility and Stability Policy
 
 **User Story:** As a Rust SDK consumer, I want explicit compatibility guarantees, so
 that I can upgrade Dagger and the SDK without guessing which combinations work.
@@ -403,9 +365,9 @@ schema, so that every core Dagger capability is available with Rust-native types
 
 #### Acceptance Criteria
 
-1. THE Rust generator SHALL emit the corresponding binding required by the
-   Completeness_Ledger for every Core_Schema object, interface, enum, scalar, input,
-   field, and argument.
+1. THE Rust generator SHALL emit the corresponding binding for every supported
+   Core_Schema object, interface, enum, scalar, input, field, and argument, with
+   projection and reachability tests guarding schema coverage.
 2. WHEN the schema marks a value nullable, THE generated Rust signature SHALL preserve
    its nullability without runtime unwrapping.
 3. WHEN the schema marks a value required, THE generated Rust signature SHALL prevent
@@ -507,8 +469,8 @@ language.
    same engine function model as an asynchronous function.
 4. WHEN an exported function is asynchronous, THE Module_SDK SHALL preserve async
    execution without blocking the runtime executor.
-5. THE Rust authoring model SHALL provide a type-safe equivalent or a ledgered
-   inapplicability decision for every Go-supported module input and output type.
+5. THE Rust authoring model SHALL provide a type-safe equivalent or a documented,
+   tested inapplicability decision for every Go-supported module input and output type.
 6. WHEN a function argument is optional or defaulted, THE emitted TypeDef SHALL
    preserve omission, nullability, and default semantics.
 7. WHEN a declaration is not eligible for export, THE Module_SDK SHALL return a
@@ -657,8 +619,8 @@ distribution system.
 
 1. WHEN release readiness is evaluated, THE verification SHALL require passing normal
    Rust formatting, checking, testing, linting, documentation, and package checks.
-2. WHEN a Completeness_Ledger item is complete, THE release gate SHALL require linked
-   automated verification at its appropriate unit, generation, integration, or
+2. WHEN a capability is included in the release, THE release gate SHALL require its
+   automated verification at the appropriate unit, generation, integration, or
    end-to-end layer.
 3. WHEN generated schema fixtures change, THE verification SHALL report newly added,
    removed, or reclassified surface area.
@@ -682,11 +644,11 @@ distribution system.
 
 ## Iteration and Feedback Notes
 
-- Requirements approval is the consent gate before any child design is authored.
-- Child specs may split delivery into smaller reviewable pull requests, but each child
-  must retain traceability to its feature and numbered acceptance criteria here.
+- Requirements approval is the consent gate before a maintained child design is
+  authored.
+- Maintained child specs may split delivery into smaller reviewable pull requests, but
+  each child must retain traceability to its feature and numbered acceptance criteria
+  here.
 - PR #12229 should be re-evaluated during Features 5 and 6 for reusable tests, failure
   discoveries, and authoring ergonomics; its architecture remains subject to the same
   source-of-truth order as new work.
-- The Completeness_Ledger is the first implementation artifact because it turns later
-  scope decisions and the final stable-release claim into reviewable evidence.

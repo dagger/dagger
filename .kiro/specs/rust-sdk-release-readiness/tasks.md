@@ -1,299 +1,128 @@
 # Implementation Plan
 
-## Overview
+## Completed groundwork
 
-This plan changes only the approved Rust SDK documentation, seven maintained child
-specifications, the release-readiness specification, and one new release-note fragment.
-It reuses existing completeness, immutable-dependency, package-closure, and selected-
-manifest authorities. A canonical direct test found one stale generator-owned
-completeness manifest after the upstream merge, so the plan also permits its scoped
-generator refresh; it adds no source code, test, generated Rust file, Cargo manifest,
-lockfile, Go/Dagger module change, committed acceptance runner, or upstream long-query
-check.
-After local documentation acceptance, the complete allowed edit set is committed and
-that exact final revision becomes the artifact target. A clean detached devbox clone
-builds and exports its non-publishing `linux/amd64` artifacts through the existing Build
-and Verify entry points.
+- [x] 1. Merge the Rust SDK implementation and upstream beta.11 changes
+  - [x] 1.1 Preserve the Feature 8 archive branch unchanged.
+  - [x] 1.2 Remove the Feature 8 signoff implementation and release workflows.
+  - [x] 1.3 Establish ordinary `Build` and `Verify` entry points.
+  - [x] 1.4 Align the source version `1.0.0-beta.11.rust.1` with manual release identity
+    `v1.0.0-beta.11+rust.1`.
+  - _Requirements: 4.3, 4.4, 5.4, 5.6_
 
-## Tasks
+- [x] 2. Prepare current capability and release documentation
+  - [x] 2.1 Document the complete client and module SDK capabilities.
+  - [x] 2.2 Separate engine-free Rust-first checks from engine-backed assembly.
+  - [x] 2.3 Remove current crates.io promises and require direct authorization for a
+    manual GitHub Release.
+  - [x] 2.4 Clean obsolete Feature 8/F10 routing from the umbrella and child specs.
+  - _Requirements: 2.1, 5.1, 5.3, 5.5, 5.6_
 
-- [x] 1. Establish the closed local edit and acceptance scope
-  - [x] 1.1 Verify the visible local worktree boundary
-    - Confirm branch `codex/rust-sdk-release-readiness` is based on
-      `236a0eb2155b23c5d2e0359c3f8b4d658d4cb5f9`, contains implementation baseline
-      `0513782e713257a9285b101f45230af00e3558d8`, and preserves both named pre-existing
-      stashes without applying, dropping, or rewriting them.
-    - Record the exact nine maintained documentation paths, seven maintained child-spec
-      directories, readiness spec, one new release-note fragment, and the scoped
-      generated-ownership manifest repair as the only allowed tracked edits.
-    - Confirm Rust/Go/Dagger source, tests, generated Rust files, Cargo manifests/
-      lockfiles, workflow files, CLI code, historical changelog records, and the clean
-      umbrella spec are excluded.
-    - _Requirements: 1.1, 1.3, 1.4, 1.12, 1.13, 1.14, 4.1, 5.11, 5.12_
-  - [x] 1.2 Classify current sensitive occurrences before editing
-    - Search the closed maintained scope for F8/F10, `SDK_Signoff`, the deleted workflow,
-      Feature 8/9 release routing, publication, provenance, crates.io, evidence, verdict,
-      and signoff terms.
-    - Classify every match as obsolete delivery/external publication to remove, accepted
-      capability to retain, Internal_Publication to retain, Runtime_Safety_Identity to
-      retain, package classification to retain, or historical text outside the scan.
-    - Reuse existing completeness authority/capability data, immutable Git validators,
-      Build/Verify implementation, and documentation drift guards as ground truth; do
-      not create another policy model.
-    - _Requirements: 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.11, 4.21, 4.22, 5.1, 5.2, 5.3, 5.4_
+## Cleanup implementation
 
-- [x] 2. Rewrite the nine maintained Rust documentation surfaces
-  - [x] 2.1 Make the root README the current capability overview
-    - Add exact beta compatibility, an authority-bounded current capability table, one
-      concise owned-client quickstart, one concise module-authoring invocation, and links
-      to focused guides.
-    - Add a short Development and release builds section that separates canonical direct
-      Engine_Free_Checks from Ordinary_Build and Ordinary_Verification.
-    - Remove `cargo add dagger-sdk`, stable/publication promises, and Go source,
-      package-layout, ownership, or API-shape compatibility implications.
-    - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.23, 5.3, 5.5, 5.6, 5.7, 5.8_
-  - [x] 2.2 Document only artifact-supported package installation
-    - Update `sdk/rust/crates/dagger-sdk/README.md` to obtain and unpack both authorized
-      `.crate` artifacts, use a local path for `dagger-sdk`, and patch
-      `dagger-sdk-macros` to its sibling vendor directory.
-    - Preserve owned lifecycle, explicit close, macro companion, standalone-client reuse,
-      quickstart, and feature matrix while removing unconditional crates.io and release-
-      evidence language.
-    - _Requirements: 4.7, 4.21, 4.22, 5.3, 5.4_
-  - [x] 2.3 Preserve architecture and contributor safety boundaries
-    - Update `ARCHITECTURE.md` to say “two public package artifacts,” distinguish local
-      checks from engine-backed assembly, and describe Runtime_Safety_Identity as real
-      implementation safety rather than signoff.
-    - Update `CONTRIBUTING.md` without changing canonical Cargo/direct Go commands; state
-      explicitly that they construct no Dagger engine and keep complete-engine Verify
-      separate.
-    - Preserve ownership, acyclic package boundaries, operation manifests, clean runtime
-      promotion, peer authorities, toolchain, and generated ownership.
-    - _Requirements: 4.8, 4.9, 4.10, 4.11, 4.21, 5.4, 5.5, 5.7_
-  - [x] 2.4 Replace obsolete engine and maintenance delivery history
-    - Update `ENGINE_INTEGRATION.md` to remove the deleted workflow, old release matrix,
-      Feature closure, release-evidence flow, and canonical crates.io path; use current
-      Build/Verify and retain focused engine cases only as regression tools.
-    - Preserve immutable generated dependency policy through existing production rules:
-      credential-free canonical HTTPS plus one reachable lowercase 40-character commit,
-      rejecting path, branch, tag, default, credentials, query, and fragment forms.
-    - Reduce `MAINTAINING.md` to direct checks; exactly two package checks;
-      RustEngineContent/Complete_Engine; isolated Verify; package/OCI/checksum export;
-      and a separately invoked manual GitHub Release attachment only after direct
-      authorization.
-    - _Requirements: 4.12, 4.13, 4.14, 4.15, 4.16, 4.17, 4.18, 4.19, 4.20, 4.21, 4.22, 4.27, 5.3, 5.4, 5.6, 5.7, 5.8, 5.9, 5.10_
-  - [x] 2.5 Clean module, client-generation, and completeness guides semantically
-    - Remove stale Feature/signoff/external-publication language from
-      `MODULE_AUTHORING.md`, `CLIENT_GENERATION.md`, and `completeness/README.md`.
-    - Preserve macros, dispatch, Result_Sink terminal election, cancellation, engine-
-      free fixtures, immutable dependency, caller/generated ownership, manifest-last
-      Internal_Publication, deterministic derivation, isolated staging, completeness
-      checks, and peer-authority scope.
-    - _Requirements: 1.9, 1.10, 4.21, 4.22, 5.4, 5.6, 5.10_
+- [x] 3. Remove the completeness/evidence registry graph
+  - [x] 3.1 Relocate the ordinary Rust build checker
+    - Move `dagger-rust-sdk-check` into `dagger-bootstrap` without changing its three
+      commands.
+    - Move the two ordinary-build property tests and update only their module path and
+      internal-package fixture name.
+    - Add only the checker dependencies required by `dagger-bootstrap`.
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+  - [x] 3.2 Simplify checked code generation
+    - Move target/schema into `sdk/rust/codegen/` and update all consumers.
+    - Replace the extended capability-binding registry with
+      `codegen/generated.json` encoded from `ArtifactManifest::from_artifacts`.
+    - Remove ledger/mapping overrides, decoders, adapters, diagnostics, and their
+      registry-specific tests.
+    - Preserve exact-target validation, checked formatting, complete ownership,
+      obsolete-file removal, symlink defenses, journaling, and rollback tests.
+    - _Requirements: 1.3, 1.4, 1.5, 2.2_
+  - [x] 3.3 Delete registry machinery
+    - Delete `sdk/rust/crates/dagger-sdk-completeness` after the relocations.
+    - Delete `sdk/rust/completeness` after moving only target/schema.
+    - Remove the workspace dependency and update `Cargo.lock` normally.
+    - Require zero maintained references to the deleted crate, ledgers, mappings,
+      registries, closures, reports, authorities, or pinned harness.
+    - _Requirements: 1.1, 1.2, 1.7_
 
-- [x] 3. Clean the seven maintained child specifications without changing capability
-  - [x] 3.1 Clean completeness-contract and client-lifecycle delivery routing
-    - Preserve deterministic inventory/ledger/report, isolated staging, normalized
-      secret-free outcomes, owned client/session, close election, cancellation, and typed
-      configuration/errors.
-    - Remove or durably reframe future Feature 8/9 conformance, migration, publication,
-      release profiles, and final gates.
-    - _Requirements: 1.3, 1.7, 1.8, 1.11, 5.1, 5.2_
-  - [x] 3.2 Clean transport-observability and core-codegen delivery routing
-    - Preserve verified CLI download, redaction, tracing, artifact identity, atomic cache
-      publication, pure checked generation, schema mapping, generated ownership, and
-      scoped atomic publication.
-    - Remove or reframe obsolete platform/security/release owners, beta.10 release gate,
-      migration/release assets, and stable gate.
-    - _Requirements: 1.7, 1.8, 1.9, 1.10, 1.11, 5.1, 5.2, 5.4_
-  - [x] 3.3 Clean engine-integration, module-authoring, and client-generation ownership
-    - Remove `SDK_Signoff`, the deleted workflow, evidence admission, signoff manifests,
-      deferred verdict planes, sole-package/release-owner claims, and Feature 8/9
-      publication/self-hosting ownership.
-    - Preserve engine-free checks, focused regressions, immutable dependency, runtime
-      identity, two package artifacts, compiler/dispatcher, Result_Sink, cancellation,
-      generated assets, project/runtime checks, typed API, caller ownership, and authored-
-      byte preservation.
-    - _Requirements: 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.11, 5.1, 5.2, 5.4, 5.10_
-  - [x] 3.4 Review every child-spec diff against the preserve/remove classification
-    - Restore any accepted Features 1–7 capability, Internal_Publication,
-      Runtime_Safety_Identity, package classification, or technical regression case
-      removed by an over-broad edit.
-    - Confirm the clean umbrella and release-readiness specs were not included in child-
-      spec cleanup.
-    - _Requirements: 1.3, 1.4, 1.7, 1.8, 1.9, 1.10, 1.11_
+- [x] 4. Remove Dagger evidence entry points while retaining real tests
+  - [x] 4.1 Delete completeness module operations
+    - Delete `.dagger/modules/rust-client-dev/completeness.go`.
+    - Remove completeness paths from workspace construction.
+    - Regenerate Dagger bindings after the public development-module surface shrinks.
+    - _Requirements: 1.6, 2.7_
+  - [x] 4.2 Decouple normal engine checks
+    - Remove the completeness crate test from `EngineUnit` and generated-client checks.
+    - Remove `CoreConformance` registry production and `EngineEvidence`.
+    - Remove engine mapping/target fields used only by evidence admission.
+    - Keep `Resolution`, focused `EngineIntegration`, RustEngineContent, `Build`, and
+      `Verify`; describe returned JSON as results rather than admitted evidence.
+    - Build the relocated checker from `dagger-bootstrap`.
+    - _Requirements: 1.6, 2.1, 2.6, 3.1, 4.3, 4.4_
 
-- [x] 4. Add release-facing text and complete local static acceptance
-  - [x] 4.1 Add one concise Rust SDK unreleased fragment
-    - Add one new file under `sdk/rust/.changes/unreleased/` describing the current beta
-      capability/readiness boundary and exact compatibility without promising crates.io
-      publication or a hosted release.
-    - Leave every existing `CHANGELOG.md` and `.changes/**` record byte-for-byte
-      unchanged and use only generic consumer language.
-    - Include no Discord summary, signoff, workflow, TUF, downstream product/platform
-      name, publication action, or upstream long-query validation claim.
-    - _Requirements: 1.12, 1.14, 2.1, 2.2, 4.23, 4.24, 4.25, 4.26, 4.27, 5.11, 5.12_
-  - [x] 4.2 Run hard-zero and semantic-allowlist scans interactively
-    - Over exactly the nine docs and seven child specs, require zero current process
-      matches for F8, F10, `SDK_Signoff`, `rust-sdk-security.yml`,
-      `cargo add dagger-sdk`, canonical crates.io release, future Feature 8/9 owners,
-      signoff matrices/manifests, release evidence/verdicts, and public automation.
-    - Review every publication/provenance match and retain only Internal_Publication,
-      Runtime_Safety_Identity, `publish = false`, package classification, truthful
-      historical text outside scope, and the direct-authorization manual boundary.
-    - Save no committed scan result, policy file, verdict, evidence object, or registry.
-    - _Requirements: 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.14, 5.1, 5.2, 5.3, 5.4, 5.11, 5.12_
-  - [x] 4.3 Verify positive documentation boundaries and authority grounding
-    - Confirm maintained docs state engine-free direct checks, focused engine regression
-      scope, exact Build outputs, isolated Verify, no crate publication, direct release
-      authorization, and immutable Git requirements.
-    - Trace every root README capability row to merged Rust code and the applicable
-      schema, scoped harness, pinned Go, or Rust-policy authority; reject blanket Go
-      compatibility claims.
-    - Confirm no dedicated upstream long-query reproducer/result is part of Rust SDK
-      acceptance and no engine source change is authorized by this work.
-    - _Requirements: 2.1, 2.2, 2.3, 4.2, 4.3, 4.4, 4.5, 4.6, 4.23, 4.25, 4.26, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.12_
-  - [x] 4.4 Checkpoint: local documentation boundary is clean
-    - Run diagnostics over every changed Markdown/YAML file and check fences, links,
-      trailing whitespace, version/package/command names, and immutable Git examples.
-    - Run the existing package-closure and selected-manifest tests from
-      `ordinary_build.rs` without renaming or modifying them.
-    - Confirm the tracked diff is limited exactly to approved documentation, child specs,
-      readiness specs, one new release-note fragment, and the scoped generated-ownership
-      manifest repair; preserve named stashes and the protected archive branch.
-    - _Requirements: 1.1, 1.3, 1.4, 1.12, 1.13, 1.14, 3.5, 3.7, 4.1, 4.24, 5.1, 5.2, 5.3, 5.4, 5.12_
-  - [x] 4.5 Repair generated ownership metadata, commit, and freeze the artifact target
-    - Run the read-only generator check and require its only drift report to be
-      `completeness/artifacts/core-codegen-bindings.json`; refresh it with the scoped
-      Rust generator and require generated source, schema identity, semantic hashes,
-      target revision, and SDK behavior to remain unchanged.
-    - Rerun the focused generated ownership test and read-only generator check.
-    - Commit the complete approved edit set and record its full lowercase revision as
-      Artifact_Target.
-    - Confirm the public package READMEs in that commit are the bytes intended for the
-      `.crate` artifacts; any later tracked edit invalidates the artifact run.
-    - Transfer the commit to the devbox through a Git bundle when it has not been pushed.
-    - _Requirements: 1.1, 1.2, 1.14, 1.15, 3.6, 3.11, 3.13_
+- [x] 5. Align maintained docs and specs with the smaller build
+  - [x] 5.1 Verify the umbrella retains enduring Features 2–7 capability requirements,
+    then delete the completed Features 1–7 child specs; rely on Git history for their
+    delivery designs, tasks, checkpoints, and evidence records.
+  - [x] 5.2 Remove Feature 1 completeness-ledger and registry/release-gate language from
+    the umbrella while preserving compatibility, capability, safety, and ordinary-build
+    requirements.
+  - [x] 5.3 Update current docs for target, schema, and the compact ownership manifest
+    without deleting atomicity, compatibility, checksum, redaction, immutable-dependency,
+    module, or focused-test requirements.
+  - [x] 5.4 Confirm no F8/F10 process, TUF, Action, crates.io publication, Dagger CLI
+    change, downstream consumer name, or replacement readiness system was introduced.
+  - _Requirements: 1.2, 1.7, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 5.1, 5.2, 5.3, 5.5_
 
-- [ ] 5. Build and verify exact non-publishing artifacts in the devbox
-  - [ ] 5.1 Re-establish exact remote preconditions
-    - Reactivate `dag-rust-xl` without a second console session; require the clone to be
-      detached at Artifact_Target, clean, and free of `._*` files.
-    - Confirm the protected archive remains at
-      `a9f55dd48c88b91b69e6e36c8289178362ad979e`; confirm or create only
-      `/.namespace/tasks/codex-rust-sdk-readiness-<Artifact_Target-short>`.
-    - Record active `dagger` binary/version and Docker availability, determine the runner
-      host, and set `_EXPERIMENTAL_DAGGER_RUNNER_HOST` on every Dagger invocation.
-    - Do not patch local documentation/spec changes into the exact-build clone.
-    - _Requirements: 1.1, 1.2, 1.13, 1.14, 3.1, 3.2, 3.3, 3.11, 6.3_
-  - [ ] 5.2 Run canonical direct engine-free checkpoints
-    - Run the documented pinned Cargo suite with `--locked`, including format, check,
-      workspace tests, Clippy, rustdoc, no-default-features, deny, and focused codegen/
-      engine/completeness tests.
-    - Run preserved direct Go checkpoints for `engine-dev`, `rust-client-dev`
-      enginefixture/enginefree, runtime metadata, and Linux compile-only core SDK,
-      schema, and CLI boundaries; these checks construct no Dagger engine.
-    - _Requirements: 3.1, 3.2, 3.3, 4.10, 4.15, 5.5_
-  - [ ] 5.3 Invoke only existing Build and Verify entry points
-    - Confirm active CLI help, then run Build version, Build packages export, Build
-      complete-engine tarball export, and Build Verify with explicit `linux/amd64` plus
-      the runner host on every invocation.
-    - Place outputs only below `/workspaces/artifacts/<Artifact_Target>/`; invoke no historical
-      wrapper, publisher, tag, hosted-release path, or dedicated long-query reproducer.
-    - _Requirements: 2.1, 3.1, 3.2, 3.3, 3.4, 3.8, 3.11, 3.12_
-  - [ ] 5.4 Validate exact package, consumer, and engine closure
-    - Require only
-      `dagger-sdk-macros-1.0.0-beta.11.rust.1.crate` and
-      `dagger-sdk-1.0.0-beta.11.rust.1.crate`, with exact metadata, roots, files,
-      features, and macro dependency.
-    - Require Verify to unpack only those artifacts, compile the isolated path-based
-      consumer, run it against Complete_Engine, query the expected engine version, and
-      close cleanly.
-    - Require the OCI to contain standard engine/CLI binaries and selected
-      RustEngineContent equal to the workspace-built manifest while tolerating unrelated
-      standard SDK blobs.
-    - _Requirements: 2.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.13, 4.16, 4.17, 4.18, 5.7, 5.8_
+## Green checks and artifacts
 
-- [ ] 6. Finalize, retrieve, and independently verify the artifact set
-  - [ ] 6.1 Generate and verify canonical checksums
-    - Produce sorted relative-path lowercase SHA-256 entries for exactly the two crate
-      packages and
-      `dagger-engine-v1.0.0-beta.11.rust.1-linux-amd64.oci.tar` in `SHA256SUMS`.
-    - Rehash all three remote files independently; fail on missing, duplicate, extra,
-      renamed, or mismatched paths.
-    - Include no readiness record, evidence registry, TUF metadata, signature,
-      credential, conformance verdict, or signoff provenance.
-    - _Requirements: 3.10, 3.11, 3.12, 3.13, 4.19, 6.5_
-  - [ ] 6.2 Download every required output before shutdown
-    - Use `devbox download ... --mkdir` to retrieve both package files, complete OCI, and
-      `SHA256SUMS` from `/workspaces/artifacts/<Artifact_Target>/` to the agreed local artifact
-      directory.
-    - Compute local SHA-256 values and require a one-to-one match with the manifest;
-      preserve the marker and leave the task incomplete on any mismatch.
-    - _Requirements: 6.1, 6.2, 6.5_
-  - [ ] 6.3 Remove only the owned marker and shut down
-    - After local checksum success, remove only
-      `/.namespace/tasks/codex-rust-sdk-readiness-<Artifact_Target-short>` and verify no other marker
-      changed.
-    - Force shutdown only `dag-rust-xl`; do not create/push a tag, publish a crate,
-      create a GitHub Release, or invoke a manual attachment path.
-    - _Requirements: 1.13, 4.27, 6.3, 6.4, 6.5_
+- [x] 6. Drive the simplified source tree to green
+  - [x] 6.1 Run formatting and the read-only generator check; run update once only if the
+    compact ownership manifest or generated target paths require it.
+  - [x] 6.2 Run normal workspace check/test, no-default-feature test, Clippy, rustdoc,
+    Cargo Deny, and focused direct Go tests. Package validation remains part of the
+    ordinary Dagger build in task 8 because the companion crate is not on crates.io.
+  - [x] 6.3 Run the retained package-closure, selected-manifest, and generator atomicity
+    property tests.
+  - [x] 6.4 Inspect the final diff for accidental capability/test deletion and require a
+    large net deletion with no evidence registry refresh.
+  - _Requirements: 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 7. Final checkpoint: reconcile the original success criteria
-  - [ ] 7.1 Re-run local static acceptance and inspect the final tracked diff
-    - Recheck diagnostics, fences, links, whitespace, hard-zero terms, semantic
-      allowlists, positive boundaries, capability grounding, and exact allowed paths.
-    - Confirm no Rust SDK source/test/generated Rust files/Cargo manifests or lockfiles,
-      Go/Dagger modules, workflows, CLI code, historical records, or clean umbrella
-      specification changed; accept only the scoped generated-ownership manifest repair.
-    - _Requirements: 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.11, 1.12, 1.14, 4.1, 4.2, 4.22, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 5.12_
-  - [ ] 7.2 Reconcile exact artifacts and hard non-goals
-    - Confirm Implementation_Baseline, Documentation_Base, Artifact_Target,
-      `linux/amd64`, version/label mapping, exactly two packages, complete OCI,
-      isolated consumer, checksums, downloaded-byte verification, protected branch,
-      owned-marker removal, and devbox shutdown.
-    - State explicitly that no upstream long-query revalidation, engine fix, committed
-      readiness machinery, TUF, GitHub Action, Dagger CLI change, crates.io publication,
-      Git tag, GitHub Release, Discord summary, or downstream consumer name was created.
-    - _Requirements: 1.1, 1.2, 1.13, 1.14, 2.1, 2.2, 2.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 4.24, 4.25, 4.26, 4.27, 6.1, 6.2, 6.3, 6.4, 6.5_
+- [ ] 7. Commit the exact artifact target
+  - [x] 7.1 Unwind all uncommitted digest-refresh experiments; retain only the deliberate
+    registry deletion and simplified build changes.
+  - [ ] 7.2 Commit concise spec cleanup and code cleanup changes, then require a clean
+    exact commit and no AppleDouble files.
+  - [ ] 7.3 Push only after local checks are green; do not create a PR, tag, release, or
+    publish crates without separate direction.
+  - _Requirements: 4.1, 4.7, 5.5, 5.6_
+
+- [ ] 8. Build and retrieve exact `linux/amd64` artifacts on `dag-rust-xl`
+  - [ ] 8.1 Revalidate the detached checkout, Dagger CLI, Docker state, disk, runner host,
+    activity marker, and artifact directory.
+  - [ ] 8.2 Run Ordinary_Build and Ordinary_Verification with the runner host present on
+    every Dagger invocation.
+  - [ ] 8.3 Export exactly two `.crate` packages, one complete engine OCI archive, and
+    `SHA256SUMS` below Artifact_Output.
+  - [ ] 8.4 Download all four files, independently verify checksums, remove only the owned
+    marker, and pause or stop the devbox as requested.
+  - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 6.1, 6.2, 6.3, 6.4, 6.5_
 
 ## Task Dependency Graph
 
 ```json
 {
-  "waves": [
-    ["1"],
-    ["2", "3"],
-    ["4"],
-    ["5"],
-    ["6"],
-    ["7"]
-  ],
+  "waves": [["3"], ["4", "5"], ["6"], ["7"], ["8"]],
   "dependencies": {
-    "1": [],
-    "2": ["1"],
-    "3": ["1"],
-    "4": ["2", "3"],
-    "5": ["4"],
-    "6": ["5"],
-    "7": ["6"]
+    "3": [],
+    "4": ["3"],
+    "5": ["3"],
+    "6": ["4", "5"],
+    "7": ["6"],
+    "8": ["7"]
   }
 }
 ```
 
-## Notes
-
-- The user's request to begin tasks is the execution consent gate for this revised plan.
-- The local branch is the visible documentation/spec editing authority. The devbox clone
-  remains detached at the committed Artifact_Target and receives that commit through a
-  Git bundle when necessary, never through a dirty patch.
-- Existing completeness, documentation-drift, immutable-dependency, package-closure, and
-  selected-manifest models are reused unchanged. No new test or policy model is added.
-- The separately tracked, unverified upstream Dagger long-query regression is not
-  revalidated, declared resolved, recorded, or treated as Rust SDK acceptance evidence.
-- Existing historical changelog/changie files are preserved; one new unreleased Rust SDK
-  fragment supplies concise release-facing text without a publication promise.
-- No task authorizes TUF/signing, GitHub Actions, crates.io publication, a Git tag,
-  GitHub Release creation, Dagger CLI changes, Discord copy, or downstream consumer
-  names. A later manual GitHub Release attachment remains outside this plan and requires
-  direct authorization.
+No task authorizes TUF, GitHub Actions, crates.io publication, Dagger CLI changes, a tag,
+or a GitHub Release. Git history and the archive branch preserve removed machinery.
