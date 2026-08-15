@@ -528,8 +528,8 @@ func (c *Client) GetGitHead(ctx context.Context, checkoutPath string) (string, e
 }
 
 // ApplyGitBundle streams a git bundle to the client and has the client's own
-// git fast-forward a local checkout onto targetSHA. It returns the checkout's
-// resulting HEAD.
+// git land its staged stack on a local checkout, replaying onto an advanced
+// HEAD when necessary. It returns the checkout's actual resulting HEAD.
 func (c *Client) ApplyGitBundle(
 	ctx context.Context,
 	checkoutPath string,

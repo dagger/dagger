@@ -734,10 +734,11 @@ func (*ApplyBundleRequest) XXX_OneofWrappers() []interface{} {
 type ApplyBundleMetadata struct {
 	// checkout_path is the local checkout the bundle is applied in.
 	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
-	// target_sha is the commit the checkout must end up at.
+	// target_sha is the tip of the staged stack before any local replay.
 	TargetSha string `protobuf:"bytes,2,opt,name=target_sha,json=targetSha,proto3" json:"target_sha,omitempty"`
-	// expected_base_sha is the commit the checkout must currently be at; the
-	// client re-verifies this immediately before applying anything.
+	// expected_base_sha is the commit the staged stack was built from, or empty
+	// when it started from an unborn branch. If the checkout has advanced, the
+	// client replays the stack onto its current HEAD.
 	ExpectedBaseSha string `protobuf:"bytes,3,opt,name=expected_base_sha,json=expectedBaseSha,proto3" json:"expected_base_sha,omitempty"`
 	// bundle_ref is the ref the bundle records for target_sha, fetched by name.
 	BundleRef string `protobuf:"bytes,4,opt,name=bundle_ref,json=bundleRef,proto3" json:"bundle_ref,omitempty"`

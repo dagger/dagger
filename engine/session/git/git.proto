@@ -79,10 +79,11 @@ message ApplyBundleRequest {
 message ApplyBundleMetadata {
   // checkout_path is the local checkout the bundle is applied in.
   string checkout_path = 1;
-  // target_sha is the commit the checkout must end up at.
+  // target_sha is the tip of the staged stack before any local replay.
   string target_sha = 2;
-  // expected_base_sha is the commit the checkout must currently be at; the
-  // client re-verifies this immediately before applying anything.
+  // expected_base_sha is the commit the staged stack was built from, or empty
+  // when it started from an unborn branch. If the checkout has advanced, the
+  // client replays the stack onto its current HEAD.
   string expected_base_sha = 3;
   // bundle_ref is the ref the bundle records for target_sha, fetched by name.
   string bundle_ref = 4;
