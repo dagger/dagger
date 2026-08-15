@@ -15,7 +15,7 @@
     - Add the approved requirements source to `authorities.json` and extract all 26
       transport policy anchors by exact stable ID and normalized statement.
     - Add the 21 Feature 3-owned and 11 Feature 2-owned prior-blocker expectations;
-      keep both Feature 8-only rows outside this scope.
+      keep both live-verification-only rows outside this scope.
     - Add digest-fenced source/test routing candidates without changing a status until
       its routed implementation, test, and target evidence exists.
     - Add fixtures proving an unrelated `sdk-sdk` result cannot satisfy a transport
@@ -507,7 +507,7 @@
   - [x] 17.3 Update Feature 3 completeness candidates truthfully
     - Attach accepted deterministic evidence only to the 58 scoped candidate
       capabilities, derive each status/reason/owner through the policy engine, leave all
-      out-of-scope rows—including Feature 8—unchanged, and regenerate committed reports.
+      out-of-scope live-verification rows unchanged, and regenerate committed reports.
     - Add regression fixtures for evidence removal, owner mismatch, partial observation,
       exact observation, target drift, and untouched-ledger identity.
     - _Requirements: 1.1-1.12, 14.1-14.3, 14.12-14.16_

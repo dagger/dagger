@@ -90,25 +90,18 @@ explicit successor to Feature 5's “`dagger-sdk` is the sole external SDK entry
 rule: the externally consumed dependency graph now contains `dagger-sdk` and its
 exact-revision macro companion, while every engine, codegen, bootstrap, and
 completeness crate remains private. Feature 6 makes that graph Git-resolvable but does
-not release it; Feature 9 owns immutable Git-tagged distribution and stable-release
-presentation.
+not release it; distribution and external release decisions remain outside this design.
 
 Local implementation closure is strictly engine-free. It compiles representative
 module crates, drives the production compiler and dispatcher through direct Rust
 fixtures, and checks generated assets without continuously regenerating Core bindings.
-The Dagger engine is used only by the later exact-target SDK sign-off matrix unless a
+The Dagger engine is used only by the later exact-target focused engine regression matrix unless a
 separately documented and approved exception proves that a contract cannot be modeled
 locally.
 
-`MChorfa/dagger-zig` commit `1ae0304f173fc2f617960cd67a7daad1729357bb`
-provides comparative—not authoritative—evidence for this split. Its
-`tests/module_e2e.zig` invokes production TypeDef, dispatch, serde, and method shims
-without an engine; `.github/workflows/ci.yml` and `ci/pipeline/dagger.json` then use the
-repository SDK from a Zig-authored Dagger module; and `sdk/main.go` retains a narrow Go
-bootstrap. The v0.3.4 failure recorded in
-`docs/blog/v0.3.4-community-update.md` also demonstrates why a real sign-off consumer
-must resolve only packaged SDK contents. Zig reflection and API decisions do not alter
-the Rust authoring design.
+Historical downstream implementations are comparative rather than authoritative. They
+support the separation between direct authoring tests and engine-backed adapter cases,
+but their product names, reflection choices, and APIs do not enter this design.
 
 ## Dependencies and Non-Goals
 
@@ -128,14 +121,10 @@ the Rust authoring design.
 - Feature 7 owns complete standalone client projects and the final dependency-client
   authoring experience. Feature 6 emits the self and dependency types already present
   in the operation's `VisibleSchema`; it does not claim standalone-client closure.
-- Feature 8 owns the exhaustive engine-backed, cross-SDK, and cross-platform
-  conformance matrix, including promotion of the bounded packaged self-consumer into a
-  complete consumer workflow. Feature 6 defines only the representative exact-target
-  sign-off cases needed to admit its capabilities.
-- Feature 9 owns immutable Git-tagged distribution, migration guidance, compatibility
-  policy, release assets, and stable-release presentation, including any claim that
-  the Rust SDK builds, tests, and releases itself. It consumes the Git-resolvable
-  two-package external graph established here.
+- Exhaustive engine-backed, cross-SDK, and cross-platform conformance remains outside
+  this design. Feature 6 defines only named exact-target adapter regressions.
+- Distribution, migration guidance, release assets, and external release decisions
+  remain outside this design. The two-package graph is not a publication action.
 - `dagger-codegen` remains the pure compiler. `dagger-sdk-engine` owns filesystem,
   Cargo-project, process, publication, and engine-operation boundaries.
 - `dagger-sdk` owns public runtime types, call-scoped lifecycle, codecs, query
@@ -367,11 +356,11 @@ engine process or Go behavioural model participates.
 
 The completeness crate owns a target-bound `ModuleAuthoringScope` containing the 79
 retained existing capabilities after the 17 lifecycle rows are returned to Feature 5
-or SDK sign-off, plus the 32 declared Rust policy capabilities. Each row has exactly
+or focused engine regression, plus the 32 declared Rust policy capabilities. Each row has exactly
 one owning requirement, allowed terminal status, and minimum evidence domain. Local
 compiler, compile-fixture, property, hygiene, and security evidence may close only
 authoring/dispatch claims. Engine registration and invocation observations are admitted
-only from the exact-target sign-off manifest. Reports are always derived from admitted
+only from the exact-target focused regression manifest. Reports are always derived from admitted
 evidence and retain every unclosed blocker.
 
 ## Components and Interfaces
@@ -1085,7 +1074,7 @@ and current blocker state. Duplicate, missing, moved, stale, delegated, or out-o
 rows reject the complete mapping.
 
 Evidence producers emit strict observations for compiler properties, compile fixtures,
-dispatcher properties, hygiene/security gates, and later engine sign-off cases. The
+dispatcher properties, hygiene/security gates, and later engine regression cases. The
 Feature 1 admission API is the only status mutation route. Local observations cannot
 claim `engine-registration`, `runtime-container`, `sdk-sdk`, or cross-platform domains;
 an engine smoke cannot claim exhaustive source/type/dispatch closure.
@@ -1108,7 +1097,7 @@ engine process/module/network graph was started. No other language SDK is built.
 
 An engine exception requires a written contract gap, proof that the direct model cannot
 represent it, a minimal proposed engine observation, explicit approval, and a note that
-the result belongs to sign-off evidence. Convenience, uncertainty, or regeneration is
+the result belongs to focused regression evidence. Convenience, uncertainty, or regeneration is
 not a valid exception.
 
 ## Data Models and Invariants
@@ -1505,7 +1494,7 @@ change the result.
 command is Rust-package scoped, consumes checked assets unless an owning input changed,
 starts no engine process/module/network graph, builds no unrelated SDK, records elapsed
 time and generation decisions, and carries any requested engine use only as a separately
-approved sign-off exception with proof of necessity.
+approved focused regression exception with proof of necessity.
 
 **Validates: Requirements 16.12–16.19**
 
@@ -1513,23 +1502,12 @@ approved sign-off exception with proof of necessity.
 
 *For any* implementation-closure observation, admission SHALL succeed if and only if
 all production compiler/dispatcher properties, compile fixtures, changed-package
-format/check/test/clippy/rustdoc gates, cargo-deny, repository Rust security,
+format/check/test/clippy/rustdoc gates, cargo-deny, credential-safety and dependency-policy tests,
 generated-asset drift, ownership, and clean-worktree checks passed without constructing
 or executing an engine; a skipped, stale, failed, or engine-backed local gate SHALL not
 close implementation.
 
 **Validates: Requirements 17.1–17.8**
-
-### Property 30: SDK sign-off is exact-target and claim-bounded
-
-*For any* sign-off observation, admission SHALL require the exact target engine,
-complete registration, representative constructor/sync/async/unit/value/error/panic/
-context/self/dependency cases, applicable pinned common-harness results, matching
-generated-asset and implementation-evidence digests, and enumerated capability IDs;
-stale, cross-target, skipped, failed, local-only, or overbroad smoke claims SHALL be
-rejected, and the final report SHALL distinguish implementation closure from sign-off.
-
-**Validates: Requirements 17.9–17.18**
 
 ### Property 31: Public package graph is closed and version-coherent
 
@@ -1550,7 +1528,7 @@ unknown fields, invalid enum variants, malformed paths/digests, unsupported ABI/
 versions, and noncanonical JSON SHALL be rejected rather than normalized into a
 different meaning.
 
-**Validates: Requirements 8.1–8.4, 14.1, 15.1–15.2, 17.13–17.15**
+**Validates: Requirements 8.1–8.4, 14.1, 15.1–15.2**
 
 ## Error Handling
 
@@ -1641,7 +1619,7 @@ the suite does not maintain a second parser/dispatcher implementation.
 
 | Placement | Properties | Principal generated models |
 | --- | --- | --- |
-| `dagger-sdk-completeness/src/module_authoring.rs` | 1, 20, 29, 30 | ledger rows, helper inventory, evidence subjects, closure/sign-off manifests |
+| `dagger-sdk-completeness/src/module_authoring.rs` | 1, 20, 29 | ledger rows, helper inventory, evidence subjects, and closure records |
 | `dagger-codegen/src/module/authoring.rs` plus macro fixture driver | 2, 3, 27 | marked/unmarked Rust items, metadata tokens, fingerprints, source spans |
 | `dagger-codegen/src/module/source.rs` | 4 | module graphs, cfg expressions, file/declaration permutations, type-reference graphs |
 | `dagger-codegen/src/module/types.rs` and generated codec fixtures | 5–8 | object state, interface IDs, enums/scalars, recursive type/value trees |
@@ -1740,7 +1718,7 @@ The feature-end engine-free checkpoint runs from `sdk/rust` and includes:
    `dagger-sdk`, `dagger-sdk-engine`, and `dagger-sdk-completeness`;
 3. the complete `trybuild`, property, and direct production-dispatch fixture suites;
 4. warning-denied clippy and rustdoc for the changed Rust workspace;
-5. `cargo deny check` and the repository Rust security workflow equivalent;
+5. `cargo deny check` and the repository Rust security checks;
 6. generated-module asset drift/ownership/package checks; and
 7. a clean-worktree and command-record verification.
 
@@ -1750,36 +1728,13 @@ only when their owning schema/API changes; otherwise the suite consumes checked 
 No unscoped `dagger generate -y`, Dagger engine build, module invocation, other SDK
 build, or sdk-sdk run belongs to implementation closure.
 
-### SDK sign-off exact-target matrix
+### Focused engine adapter cases
 
-SDK sign-off is a separate later gate. It builds engine revision
-`25300124ca110612edc09c43f89cb5fad6028170` once, reuses that exact content across
-cases, and records target, generated-assets, implementation-evidence, runtime, and case
-digests. Representative cases prove:
-
-| Case | Required engine observation |
-| --- | --- |
-| `registration` | Complete descriptor TypeDefs register and introspect with exact metadata/source maps |
-| `constructor-state` | Root construction and public/private state round-trip through real calls |
-| `execution-shapes` | Sync, async, unit, value, fallible, and panic-contained functions report the expected terminal paths |
-| `types` | Primitive/list/optional/enum/scalar/local/interface and explicit zero/default values preserve target shape |
-| `handles-context` | Core, self, and dependency handles plus current-call/current-node/context operations reuse the nested session |
-| `negative-dispatch` | Unknown parent/function, malformed parent/input, application error, and publication failure retain typed distinctions |
-| `concurrency-cancellation` | Overlapping calls and cancellation isolate state and publish at most one result each |
-| `packaged-self-consumer` | A Rust-authored Dagger module resolves only the engine-packaged Rust SDK, uses its generated Core surface to run a bounded Rust SDK build-and-test workflow, and fails if any repository-relative or unpackaged SDK dependency is required |
-| `common-harness` | Applicable pinned sdk-sdk lifecycle checks pass without being used as authoring-content proof |
-
-The real engine adapter is exercised here because registration query execution,
-`FunctionCall` transport, runtime-container construction, and actual engine IDs are the
-contracts the pure harness deliberately does not claim. A smoke observation closes only
-the enumerated engine capabilities; it cannot replace the exhaustive compiler,
-dispatch, fixture, hygiene, or security evidence.
-
-The packaged self-consumer is a bounded Feature 6 sign-off observation, not the local
-checkpoint runner and not a complete self-hosting claim. Feature 8 expands it into the
-full initialization, development, generation, execution, dependency, and platform
-matrix. Feature 9 owns exact Git-revision installation, release rehearsal, signing,
-attestation, and stable-release automation.
+The real engine adapter remains available for named registration, runtime-container,
+and nested-session regressions that the pure harness cannot represent. Each case is
+target-bound and limited to the behavior it observes. It cannot replace exhaustive
+compiler, dispatch, fixture, hygiene, or credential-safety checks, and it is not a
+release gate or self-hosting claim.
 
 ### Documentation and review gates
 

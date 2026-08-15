@@ -15,16 +15,16 @@ The Rust SDK should provide the same capabilities and observable behaviour as th
 SDK without mechanically copying its API shape. The engine schema defines the public
 wire surface, target-compatible `sdk-sdk` checks define common lifecycle behaviour
 within their bounded scope, and the pinned Go SDK defines behaviour outside that scope
-while remaining reference evidence for overlap. Established Rust conventions determine
+while remaining a behavioral reference for overlap. Established Rust conventions determine
 ownership, error handling, naming, safety, and ergonomics.
 
 These are peer authorities, not a global precedence list. Genuine incompatibility must
 remain visible and reviewed. See the executable
 [completeness contract](completeness/README.md) for the pinned source selections,
-classification model, staged refresh flow, and evidence requirements.
+classification model, staged refresh flow, and verification scope.
 
 Historical Rust implementations and proposals, including pull request #12229, are
-useful evidence. They do not override the current engine contract, Go SDK behaviour,
+useful reference material. They do not override the current engine contract, Go SDK behaviour,
 or a better idiomatic Rust design.
 
 ## Repository layout
@@ -38,13 +38,13 @@ or a better idiomatic Rust design.
   tests are generated. Change the generator or templates, then regenerate them; do not
   edit them directly.
 - `examples` contains executable examples and example applications.
-- `../../.dagger/modules/rust-client-dev` contains the Dagger-based development, generation,
-  test, and release automation for this SDK.
+- `../../.dagger/modules/rust-client-dev` contains the Dagger-based development,
+  generation, test, packaging, and complete-engine assembly tooling for this SDK.
 - `completeness` contains authored target and ledger inputs plus reproducible derived
   artifacts for the Go-level completeness programme.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
-The focused built-in SDK build, case, and evidence procedure is in
+The focused built-in SDK build, case, and verification procedure is in
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md).
 The module authoring contract, direct harness, and completed-engine verification
 boundary are in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
@@ -66,7 +66,7 @@ The workspace also declares a minimum supported Rust version (MSRV). These are s
 contracts:
 
 - the pinned development toolchain keeps formatting, linting, and CI reproducible;
-- the MSRV describes the oldest compiler supported by published crates.
+- the MSRV describes the oldest compiler supported by the public package artifacts.
 
 Advancing the development toolchain does not by itself raise the MSRV. Raise the MSRV
 only in a deliberate compatibility change with corresponding CI, documentation, and
@@ -88,7 +88,7 @@ cargo deny check
 Use focused tests while iterating, but run the complete relevant set before submitting
 a pull request. Module-authoring and standalone-client checkpoints are explicitly
 engine-free: use the production compilers, generated fixtures, recording transport,
-and typed checkpoint/evidence suites directly through Cargo. Reuse checked generated
+and typed checkpoint suites directly through Cargo. Reuse checked generated
 assets unless an owning source, schema, target, or generator digest changed. The
 standalone-client fixture materializes one SDK baseline and fans out isolated Cargo
 projects from it; investigate fixture sequencing and its owning input before a broader
@@ -118,7 +118,7 @@ cargo run -p dagger-bootstrap --bin dagger-rust --locked -- \
   generate --workspace . --check
 ```
 
-Use `--update` only when intentionally publishing the complete generator-owned output
+Use `--update` only when intentionally replacing the complete generator-owned output
 set. Before submitting, run repository generation from the repository root:
 
 ```console

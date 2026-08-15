@@ -3,11 +3,11 @@
 ## Introduction
 
 This specification defines the deliberately small, non-publishing boundary required to
-assess and document the merged Rust SDK at Dagger commit
+assess and document the Rust SDK implementation merged at Dagger commit
 `0513782e713257a9285b101f45230af00e3558d8`. It adds no SDK capability. It aligns the
-maintained Rust documentation and child specifications with merged code, builds exact-
-commit artifacts through the normal Rust SDK module entry points, and prepares release-
-facing text.
+maintained Rust documentation and child specifications with merged code, commits that
+cleanup, builds artifacts from that exact final commit through the normal Rust SDK
+module entry points, and prepares release-facing text.
 
 The exact merged commit is the implementation authority. The agreed source package
 version is `1.0.0-beta.11.rust.1`; the corresponding release identity is
@@ -16,8 +16,16 @@ action.
 
 ## Glossary
 
-- **Target_Commit:** Dagger commit
+- **Implementation_Baseline:** Dagger commit
   `0513782e713257a9285b101f45230af00e3558d8`.
+- **Documentation_Base:** Dagger commit
+  `236a0eb2155b23c5d2e0359c3f8b4d658d4cb5f9`, which adds this readiness
+  specification without changing the implementation.
+- **Artifact_Target:** The final committed revision containing the approved
+  documentation, child-specification, readiness-specification, and release-note cleanup.
+  It descends from Documentation_Base, contains Implementation_Baseline, and becomes
+  immutable before artifact work begins.
+- **Artifact_Platform:** Exact engine platform `linux/amd64`.
 - **Source_Version:** Cargo-compatible version `1.0.0-beta.11.rust.1`.
 - **Release_Identity:** Git release label `v1.0.0-beta.11+rust.1`.
 - **Engine_Free_Check:** A canonical direct Cargo or Go check that exercises Rust SDK
@@ -31,12 +39,13 @@ action.
 - **Ordinary_Verification:** The `Verify` entry point on the result of Ordinary_Build.
 - **Public_Package_Set:** Exactly the `dagger-sdk-macros` and `dagger-sdk` crate package
   artifacts.
-- **RustEngineContent:** The Rust SDK OCI content produced from the Target_Commit
+- **RustEngineContent:** The Rust SDK OCI content produced from the Artifact_Target
   workspace and selected into Complete_Engine.
 - **Complete_Engine:** The standard beta.11-based engine container composed with
   RustEngineContent.
 - **Artifact_Output:** The devbox runtime directory
-  `/workspaces/artifacts/0513782e7/`.
+  `/workspaces/artifacts/<Artifact_Target>/`, where the directory component is the full
+  lowercase Artifact_Target commit.
 - **Runtime_Safety_Identity:** Runtime, dependency, lockfile, binary, CLI artifact, generated
   header, operation-manifest, or generated-file identity used to prevent unsafe reuse,
   mutation, credential exposure, or ownership ambiguity. It is not release signoff.
@@ -73,10 +82,11 @@ owners, or obsolete external publication flow. Internal_Publication and
 Runtime_Safety_Identity remain intact because they enforce real generated ownership, atomicity,
 credential safety, dependency immutability, and clean runtime construction.
 
-The upstream Dagger long-query regression is historical context only. Dagger already
-addressed and tested that issue; this Rust SDK readiness boundary neither revalidates it
-nor treats it as SDK acceptance evidence. Engine source changes and upstream regression
-ownership remain outside this feature.
+The previously observed upstream Dagger long-query regression remains a separately
+tracked, unverified engine issue. This Rust SDK readiness boundary neither revalidates
+it nor treats it as SDK acceptance evidence. It also does not claim that upstream
+session-teardown fixes cover the observed `Post "http://dagger/query": unexpected EOF`
+failure. Engine source changes and regression ownership remain outside this feature.
 
 For a passing exact-build path, Ordinary_Build and Ordinary_Verification produce and
 validate the Public_Package_Set, RustEngineContent, a Complete_Engine OCI archive,
@@ -84,7 +94,9 @@ checksums, and one isolated external Rust consumer result.
 
 ## Evidence From Current Code
 
-All repository evidence below is pinned to Target_Commit.
+Implementation evidence below is pinned to Implementation_Baseline. Documentation
+cleanup begins from Documentation_Base, and artifacts are accepted only from the later
+exact Artifact_Target.
 
 - **Source identity:** `sdk/rust/Cargo.toml` declares workspace version
   `1.0.0-beta.11.rust.1`, Rust 1.97.1, edition 2024, and exact internal workspace
@@ -108,9 +120,9 @@ All repository evidence below is pinned to Target_Commit.
   `CLIENT_GENERATION.md`, and `MAINTAINING.md` document operation manifests, generated
   ownership, immutable dependency identity, and clean runtime promotion. Those controls
   are implementation safety, not the removed signoff system.
-- **Removed machinery:** Target_Commit contains neither the former signoff implementation
-  nor `.github/workflows/rust-sdk-security.yml`; PR #69 replaced those surfaces with
-  ordinary build and verification.
+- **Removed machinery:** Implementation_Baseline contains neither the former signoff
+  implementation nor `.github/workflows/rust-sdk-security.yml`; PR #69 replaced those
+  surfaces with ordinary build and verification.
 - **Stale maintained documentation:** the root and crate READMEs still promise
   `cargo add dagger-sdk`; engine and maintenance guides still contain deleted workflow,
   release-evidence, Feature closure, crates.io, and historical command language.
@@ -120,20 +132,22 @@ All repository evidence below is pinned to Target_Commit.
 - **Protected historical branch:** remote branch
   `codex/rust-sdk-f8-signoff-archive` was observed at
   `a9f55dd48c88b91b69e6e36c8289178362ad979e` and is read-only for this work.
-- **Upstream regression boundary:** the previously reported long-running Dagger query
-  regression was addressed and tested by Dagger. It is historical context only and is
-  not a Rust SDK readiness check, record, or ownership transfer.
+- **Upstream regression boundary:** upstream commit `bd526813804931a520b9a7059baf8f426374f887`
+  moves slow session teardown off the client shutdown response path and tests that
+  boundary. It does not directly reproduce or prove correction of the separately
+  observed long-running module query `unexpected EOF`, which remains outside this
+  readiness check.
 
 ## Artifact Contract Policy
 
 | Surface | Required policy | Invalid state | Side-effect boundary |
 |---|---|---|---|
-| Source revision | Exact detached Target_Commit, clean status, no `._*` files | Any revision, worktree mutation, or AppleDouble file mismatch | Stop before validation or build |
+| Source revision | Exact detached Artifact_Target, clean status, no `._*` files | Any revision, worktree mutation, or AppleDouble file mismatch | Stop before validation or build |
 | Source version | Exact Source_Version in Cargo source and package metadata | Missing or inconsistent package identity | Stop before artifact acceptance |
 | Release label | Record Release_Identity in release-facing text only | Different tag/version mapping | Stop documentation acceptance; do not create a tag |
 | Public packages | Exactly `dagger-sdk-macros` and `dagger-sdk` package artifacts | Missing, extra, unpackable, or inconsistent package | Stop artifact acceptance; never publish |
-| Rust content | RustEngineContent produced from Target_Commit | Missing or mismatched selected Rust manifest | Stop engine acceptance |
-| Engine artifact | Complete OCI engine containing selected RustEngineContent | Missing standard engine binary, CLI binary, or selected Rust manifest | Stop artifact acceptance |
+| Rust content | RustEngineContent produced from Artifact_Target | Missing or mismatched selected Rust manifest | Stop engine acceptance |
+| Engine artifact | Complete Artifact_Platform OCI engine containing selected RustEngineContent | Missing standard engine binary, CLI binary, selected Rust manifest, or wrong platform | Stop artifact acceptance |
 | Checksums | Deterministic checksum manifest covering downloadable artifacts | Missing artifact, duplicate path, or checksum mismatch | Stop download/shutdown completion |
 | External consumer | One isolated Rust consumer compiled from packaged crates and run against Complete_Engine | Workspace-path dependency, wrong engine, failed query, or unclean close | Stop Ordinary_Verification |
 
@@ -173,17 +187,17 @@ accepted capability or safety contracts.
 
 #### Acceptance Criteria
 
-1. WHEN release-readiness work begins, THE working repository SHALL resolve exactly to
-   Target_Commit.
-2. WHEN repository cleanliness is checked, THE exact-build repository SHALL have no
-   tracked or untracked changes and no `._*` files.
+1. WHEN release-readiness editing begins, THE implementation branch SHALL descend from
+   Documentation_Base and contain no implementation change after Implementation_Baseline.
+2. WHEN repository cleanliness is checked, THE exact-build repository at
+   Artifact_Target SHALL have no tracked or untracked changes and no `._*` files.
 3. WHEN child-spec cleanup is evaluated, THE scope SHALL contain exactly the seven
    directories in the Child-Spec Cleanup Policy.
 4. WHEN child-spec cleanup is evaluated, THE clean umbrella and this release-readiness
    specification SHALL remain outside the cleanup scope.
-5. WHEN child specifications are aligned with Target_Commit, THE maintained child
+5. WHEN child specifications are aligned with Implementation_Baseline, THE maintained child
    specifications SHALL contain no `SDK_Signoff` process.
-6. WHEN child specifications are aligned with Target_Commit, THE maintained child
+6. WHEN child specifications are aligned with Implementation_Baseline, THE maintained child
    specifications SHALL contain no reference to
    `.github/workflows/rust-sdk-security.yml`.
 7. WHEN obsolete Feature 8, Feature 9, F8, or F10 release routing is encountered, THE
@@ -207,20 +221,23 @@ accepted capability or safety contracts.
     test, generated file, Cargo manifest or lockfile, Go integration code, Dagger module,
     or CLI code; tracked edits SHALL be limited to the approved documentation, child
     specifications, release-readiness specification, and one release-note fragment.
+15. WHEN local documentation acceptance passes, THE operator SHALL commit the complete
+    approved edit set, record that revision as Artifact_Target, and SHALL invalidate and
+    rebuild all artifacts after any later tracked edit.
 
-### Requirement 2: Upstream Dagger Regression Exclusion
+### Requirement 2: Separately Tracked Upstream Dagger Regression
 
-**User Story:** As a Rust SDK maintainer, I want an already-addressed upstream Dagger
-regression kept outside this work, so that Rust SDK readiness does not claim ownership
-of Dagger's fix or duplicate its validation.
+**User Story:** As a Rust SDK maintainer, I want the unverified upstream Dagger
+long-query regression kept outside this work, so that Rust SDK readiness neither claims
+that it is fixed nor takes ownership of engine investigation.
 
 #### Acceptance Criteria
 
 1. WHEN this readiness work is executed, THE operator SHALL NOT run or record a dedicated
    long-query reproducer as Rust SDK acceptance evidence.
 2. WHEN the previously reported Dagger long-query regression is mentioned, THE
-   documentation SHALL identify it only as historical upstream context already addressed
-   and tested by Dagger.
+   documentation SHALL identify it as a separately tracked, unverified engine issue and
+   SHALL NOT represent a shutdown-teardown test as direct coverage of the query failure.
 3. IF Ordinary_Build or Ordinary_Verification fails, THEN THE operator SHALL report the
    ordinary failure without attributing it to the historical long-query regression or
    changing engine source in this feature.
@@ -245,11 +262,11 @@ rather than earlier build evidence.
 5. WHEN package checks complete, THE Public_Package_Set SHALL contain exactly one
    `dagger-sdk-macros` package and one `dagger-sdk` package at Source_Version.
 6. WHEN Ordinary_Build constructs Rust content, THE result SHALL be RustEngineContent
-   produced from Target_Commit.
+   produced from Artifact_Target.
 7. WHEN Ordinary_Build completes, THE Complete_Engine SHALL contain the standard engine
    binaries and the selected RustEngineContent.
-8. WHEN the engine artifact is exported, THE exported artifact SHALL be a complete OCI
-   archive rather than isolated RustEngineContent.
+8. WHEN the engine artifact is exported, THE exported artifact SHALL be a complete
+   Artifact_Platform OCI archive rather than isolated RustEngineContent.
 9. WHEN Ordinary_Verification runs, THE isolated consumer SHALL resolve only the
    unpacked Public_Package_Set and SHALL execute successfully against Complete_Engine.
 10. WHEN downloadable artifacts are finalized, THE checksum manifest SHALL cover both
@@ -326,7 +343,7 @@ SDK without relying on obsolete publication or delivery history.
     signoff, release-evidence, and external publication language without replacing it
     with a new verdict system.
 23. WHEN compatibility is stated, THE documentation SHALL identify Source_Version and
-    the beta.11-based Complete_Engine validated from Target_Commit without claiming an
+    the beta.11-based Complete_Engine validated from Artifact_Target without claiming an
     untested engine range.
 24. WHEN release identity is stated, THE documentation SHALL map Release_Identity to
     Source_Version exactly.
@@ -392,8 +409,8 @@ remote builder is paused, so that volatile engine state cannot strand the exact 
    download all of them from Artifact_Output before shutting down the devbox.
 2. WHEN downloaded artifacts are compared with the checksum manifest, THE local copies
    SHALL match every recorded checksum.
-3. WHEN remote work is complete, THE operator SHALL remove only
-   `/.namespace/tasks/kiro-rust-sdk-readiness-0513782e7` from the task namespace.
+3. WHEN remote work is complete, THE operator SHALL remove only the activity marker
+   whose name contains the recorded Artifact_Target short commit from the task namespace.
 4. WHEN required outputs are downloaded and checksums match, THE operator SHALL force
    shutdown `dag-rust-xl`.
 5. IF any required artifact is absent or a downloaded checksum differs, THEN THE
@@ -411,6 +428,6 @@ remote builder is paused, so that volatile engine state cannot strand the exact 
 - Any committed readiness policy engine, acceptance runner, evidence registry, verdict
   schema, readiness database, or Rust SDK source/test/generated-code change.
 - Broad SDK capability changes or refactors.
-- Engine fixes or dedicated revalidation of already-addressed upstream Dagger regressions
+- Engine fixes or dedicated revalidation of the separately tracked upstream Dagger regression
   inside this feature specification.
 - Named downstream consumer products or platforms.

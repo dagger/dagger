@@ -32,8 +32,8 @@ Feature 6 depends on Feature 1's executable completeness contract, Feature 4's
 fallible schema compiler and generated Core_Schema bindings, and Feature 5's engine
 operation, project, runtime, and nested-session seams. It fills the semantic contents
 of Generate_Module and Generate_Entrypoint without changing their engine ABI. Feature
-7 owns complete standalone Core, module, and dependency client projects. Feature 8
-owns the full engine-backed, cross-SDK, and cross-platform conformance matrix. Feature
+7 owns complete standalone Core, module, and dependency client projects. Full
+engine-backed, cross-SDK, and cross-platform conformance remains outside this specification. Feature
 9 owns immutable Git-tagged distribution, migration, release assets, and stable-release
 presentation.
 
@@ -41,7 +41,7 @@ Local development and every Feature 6 implementation checkpoint are engine-free 
 contract. Production source analysis, descriptor construction, TypeDef projection,
 entrypoint generation, dispatch, state conversion, result conversion, cancellation,
 and failure isolation must all be executable through a direct Rust harness. A Dagger
-engine is reserved for final SDK sign-off unless a contract is proven impossible to
+engine is reserved for final focused engine regression unless a contract is proven impossible to
 model locally and the exception is separately documented and explicitly approved.
 Routine uncertainty, regeneration convenience, or similarity to another SDK is not
 such an exception.
@@ -51,14 +51,10 @@ entrypoint generation, and engine dispatch can be connected. Its provisional mac
 surface, Go-authored runtime, repository path mounts, global state, and old Cargo
 defaults do not define this specification.
 
-`MChorfa/dagger-zig` commit `1ae0304f173fc2f617960cd67a7daad1729357bb`
-is comparative implementation evidence that a native-language Dagger module can use
-its repository SDK to build and test that SDK, while an offline production-dispatch
-harness remains separate from live-engine verification. Its Zig comptime reflection,
-implicit public-method exports, positional arguments, raw defaults, Go code generator,
-and target version are not authorities for Rust behaviour or API shape. Its documented
-v0.3.4 packaging failure is evidence that SDK sign-off must exercise only packaged SDK
-contents rather than accidentally succeeding through repository-relative paths.
+Historical downstream implementations provide comparative evidence that direct
+production-dispatch tests and live-engine verification are distinct. Their product
+names, reflection models, public APIs, and release histories do not enter this
+specification.
 
 ## Glossary
 
@@ -120,8 +116,8 @@ contents rather than accidentally succeeding through repository-relative paths.
   codecs, module context, concurrency, and failures through Call_Envelopes.
 - **Result_Sink:** A single-assignment engine-independent boundary accepting either one
   canonical JSON value or one structured application error.
-- **SDK_Signoff:** The later release-readiness gate that builds the Exact_Target engine
-  and runs the complete engine-backed integration and conformance matrix.
+- **Focused_Engine_Regression:** A named engine-backed adapter case used only when the
+  Pure_Rust_Module_Harness cannot represent the boundary. It is not a release gate.
 - **Source_Coordinate:** A normalized Cargo-relative file, one-based line, and one-based
   column identifying an authored declaration or metadata item.
 - **Target_Revision:** Dagger commit
@@ -177,16 +173,14 @@ cancellation, telemetry, filesystem clone, result, error, or client lifecycle.
 Generated_Module_Assets are refreshed only when a declared authoring input,
 Visible_Schema, Exact_Target identity, or owning generator changes. Checkpoints consume
 the checked assets and deterministic fixtures directly; they do not continuously
-regenerate the whole SDK and do not build unrelated SDKs. Exact-engine execution
-remains mandatory at SDK_Signoff, not at Feature 6 Implementation_Closure.
+regenerate the whole SDK and do not build unrelated SDKs. Focused engine adapter cases
+remain separate from Feature 6 Implementation_Closure.
 
 Feature 6 does not redesign Feature 5's engine SDK ABI or runtime-container builder,
 generate complete standalone clients, publish crates, or claim full platform
-conformance. It supplies the public module model and the general dispatcher those
-later gates consume. SDK_Signoff additionally runs one Packaged_Self_Consumer to prove
-the packaged authoring/runtime boundary. Feature 8 owns promotion of that bounded case
-into exhaustive engine-backed consumer conformance; Feature 9 owns any claim that the
-Rust SDK builds, tests, and releases itself.
+conformance. It supplies the public module model and the general dispatcher. Focused
+engine adapter cases may observe their named boundary, but exhaustive engine-backed
+consumer conformance and external release claims remain outside this specification.
 
 ## Evidence From Current Code
 
@@ -251,7 +245,7 @@ Rust citations describe `main` after Feature 5.
 - **Common harness boundary:** `sdk-sdk.dang:91-289` at sdk-sdk commit
   `8c164424b7a8a37b33a77367ef7547490d5b87b5` declares installation,
   initialization, generation, and module-load checks. Those are Feature 5 lifecycle
-  and SDK_Signoff claims, not evidence that a general authoring surface or dispatcher
+  and Focused_Engine_Regression claims, not evidence that a general authoring surface or dispatcher
   is complete.
 - **Current generated protocol surface:**
   `sdk/rust/crates/dagger-sdk/src/gen/function_call.rs` exposes call name, parent,
@@ -270,15 +264,9 @@ Rust citations describe `main` after Feature 5.
 - **Historical evidence only:** pull request #12229 proposes module support through a
   provisional procedural-macro API and Go-authored runtime. It is not merged at the
   Target_Revision and is not an authority for public syntax or structure.
-- **Comparative self-hosting evidence only:** `MChorfa/dagger-zig` commit
-  `1ae0304f173fc2f617960cd67a7daad1729357bb` routes its GitHub CI through the
-  repository SDK via `.github/workflows/ci.yml` and `ci/pipeline/dagger.json`; its
-  `tests/module_e2e.zig` exercises production TypeDef, dispatch, serde, and invocation
-  plumbing without an engine; and `sdk/main.go` retains the Go bootstrap boundary.
-  `docs/blog/v0.3.4-community-update.md` records how repository-relative SDK placement
-  let offline work coexist with a completely broken packaged module runtime. These
-  sources inform the Packaged_Self_Consumer and harness separation but do not change
-  the engine, definitive Go SDK, sdk-sdk, or Rust-policy authority order.
+- **Comparative downstream evidence only:** Historical implementations can inform the
+  separation between direct harnesses and engine-backed adapter cases, but their names,
+  code structure, and release flows are excluded from Rust authoring authority.
 
 ## Completeness Contract Policy
 
@@ -290,7 +278,7 @@ lexicographically sorted compact-JSON Capability_ID list has scope digest
 `sha256:7a6c0d55f2e189a64a880e45120552e18cc548adcb2c01aafe3475720c8cc44f`.
 Ground-truth review shows that the 17 harness rows test SDK installation,
 initialization, generation, options, dependency listing, engine-version reporting, and
-scaffold loading. They belong to Feature 5's engine integration and SDK_Signoff, not
+scaffold loading. They belong to Feature 5's engine integration and Focused_Engine_Regression, not
 Feature 6 authoring or dispatch.
 
 After that ownership correction, Feature 6 owns 79 existing capabilities with scope
@@ -302,7 +290,7 @@ This document does not change a status merely by restating or rerouting the scop
 | `go-codegen` | 43 | 43 Partial | Preserve module traversal, TypeDef/introspection shape, naming, metadata, interface/object/enum conversion, pragma semantics, and deterministic order through a Rust-native authoring compiler |
 | `go-client` module globals | 36 | 36 Partial | Provide exhaustive capability mappings through Injected_Module_Context, entrypoint-owned lifecycle, or reviewed inapplicability without a process-global mutable client |
 | **Feature 6 total** | **79** | **79 Partial** | Close only rows whose implementation and target-compatible direct evidence are capability-local and complete |
-| `sdk-contract-harness` correction | 17 | 17 Missing | Route to Feature 5 and later SDK_Signoff; do not use broad lifecycle passes to close authoring or dispatch rows |
+| `sdk-contract-harness` correction | 17 | 17 Missing | Route to Feature 5 and later Focused_Engine_Regression; do not use broad lifecycle passes to close authoring or dispatch rows |
 
 The 43 `go-codegen` rows are inventory anchors rather than a complete enumeration of
 the public Rust contract. Most definitive Go module-parser helpers are unexported and
@@ -346,7 +334,7 @@ policy/rust-policy/module-cancellation
 policy/rust-policy/module-generated-asset-ownership
 policy/rust-policy/module-change-triggered-regeneration
 policy/rust-policy/module-engine-free-local-checkpoint
-policy/rust-policy/module-exact-engine-signoff-boundary
+policy/rust-policy/module-focused-engine-regression-boundary
 ```
 
 The Feature 6 mapping artifact connects every existing and added capability to one
@@ -359,13 +347,13 @@ rows cannot replace or alias an existing authority row.
 |---|---|---|---|
 | A Rust declaration is a valid module export | Rust language rules plus the Authoring_Surface contract | Compile-pass/compile-fail fixture at an exact Source_Coordinate | Not required for local closure |
 | A descriptor is complete and deterministic | Target Go module behaviour plus Rust policy | Production Authoring_Compiler over permuted multi-file fixtures and manifest closure | Not required for local closure |
-| A TypeDef has the correct target shape | Engine TypeDef contract plus target module generator | Canonical structural comparison from Module_Descriptor to checked target fixtures | Final sign-off confirms registration |
-| A call dispatches correctly | Engine `FunctionCall` contract plus Rust signature semantics | Production dispatcher through Call_Envelope fixtures | Final sign-off confirms adapter wiring |
-| Core, self, and dependency calls reuse one session | Feature 2-4 session/query contracts plus target module behaviour | Fake transport observations from Injected_Module_Context | Final sign-off confirms nested session |
+| A TypeDef has the correct target shape | Engine TypeDef contract plus target module generator | Canonical structural comparison from Module_Descriptor to checked target fixtures | Final focused regression confirms registration |
+| A call dispatches correctly | Engine `FunctionCall` contract plus Rust signature semantics | Production dispatcher through Call_Envelope fixtures | Final focused regression confirms adapter wiring |
+| Core, self, and dependency calls reuse one session | Feature 2-4 session/query contracts plus target module behaviour | Fake transport observations from Injected_Module_Context | Final focused regression confirms nested session |
 | A module-global Go helper is accounted for | Definitive_Go_SDK `dag/dag.gen.go` row | Exhaustive mapping to context method, lifecycle ownership, or inapplicability | No symbol-name parity requirement |
-| Engine installation and generation work | Target engine SDK contract and sdk-sdk | Feature 5 evidence plus SDK_Signoff | Never inferred from Feature 6 unit tests |
+| Engine installation and generation work | Target engine SDK contract and sdk-sdk | Feature 5 evidence plus Focused_Engine_Regression | Never inferred from Feature 6 unit tests |
 | Feature 6 is implementation-complete | This specification and Rust repository policy | Complete Pure_Rust_Module_Harness plus scoped hygiene/security | No engine is started |
-| Feature 6 is release-signed-off | Exact_Target engine and admitted ledger evidence | All local evidence plus exact-engine matrix | Required only at SDK_Signoff |
+| A focused engine adapter boundary is observed | Exact_Target engine and named case | One target-bound adapter observation | Cannot replace local compiler or dispatch closure |
 
 ### Authoring and Discovery Policy
 
@@ -442,7 +430,7 @@ Rust shape by silently flattening a distinction or substituting `serde_json::Val
 |---|---|---|---|
 | Source analysis | Cargo project, Exact_Target, Visible_Schema, declared authoring inputs | Canonical Module_Descriptor | Typed source diagnostic; no partial descriptor |
 | Registration projection | Module_Descriptor | Module TypeDefs and equivalent Module_Introspection | Structural diagnostic; no engine call locally |
-| Engine registration | Empty `FunctionCall.parentName` | Serve the complete projected module definition | Engine adapter error at SDK_Signoff |
+| Engine registration | Empty `FunctionCall.parentName` | Serve the complete projected module definition | Engine adapter error at Focused_Engine_Regression |
 | Invocation selection | Parent wire name plus function wire name | Exactly one Dispatch_Registry entry | Unknown/ambiguous dispatch diagnostic |
 | Parent decode | Parent JSON plus selected local object codec | One reconstructed receiver or an empty root constructor input | Parent-state diagnostic |
 | Argument decode | Named JSON arguments plus selected signature | One typed argument set | Missing, duplicate, unknown, or invalid-value diagnostic |
@@ -457,14 +445,14 @@ Rust shape by silently flattening a distinction or substituting `serde_json::Val
 | Activity | Feature 6 local policy | Deferred policy |
 |---|---|---|
 | Source discovery tests | Direct production Authoring_Compiler over fixture Cargo projects | Exact engine not permitted |
-| TypeDef/introspection tests | Direct structural comparison from one Module_Descriptor | Registration smoke at SDK_Signoff |
+| TypeDef/introspection tests | Direct structural comparison from one Module_Descriptor | Registration smoke at Focused_Engine_Regression |
 | Compile-pass/fail authoring tests | Scoped Cargo/rustc fixture compilation | No whole-repository SDK build |
-| Dispatch tests | Production Dispatch_Registry through Call_Envelopes and fake Result_Sinks | Engine adapter smoke at SDK_Signoff |
-| Core/self/dependency tests | Fake transport on the active Shared_Session | Nested engine session at SDK_Signoff |
-| Concurrency/cancellation tests | Deterministic Rust scheduling and property tests | Runtime-container isolation at SDK_Signoff |
+| Dispatch tests | Production Dispatch_Registry through Call_Envelopes and fake Result_Sinks | Engine adapter smoke at Focused_Engine_Regression |
+| Core/self/dependency tests | Fake transport on the active Shared_Session | Nested engine session at Focused_Engine_Regression |
+| Concurrency/cancellation tests | Deterministic Rust scheduling and property tests | Runtime-container isolation at Focused_Engine_Regression |
 | Regeneration | Explicit, scoped, input-digest-triggered refresh | No unconditional generation in ordinary test loops |
-| Rust hygiene | Changed-crate fmt, locked tests, warning-denied clippy/rustdoc, security gates | Broader repository matrix at Feature 8/release |
-| Dagger engine | Not constructed, started, or invoked | Exact_Target engine only at SDK_Signoff |
+| Rust hygiene | Changed-crate fmt, locked tests, warning-denied clippy/rustdoc, security gates | Broader matrices remain outside this specification |
+| Dagger engine | Not constructed, started, or invoked | Exact_Target engine only at Focused_Engine_Regression |
 
 ## Requirements
 
@@ -479,7 +467,7 @@ dispatch behaviour.
 1. THE Feature 6 scope SHALL enumerate every retained `go-codegen` and module-global
    `go-client` Capability_ID.
 2. THE ownership correction SHALL route all 17 `sdk-contract-harness` lifecycle rows
-   to Feature 5 and SDK_Signoff.
+   to Feature 5 or leave them blocking outside Feature 6 authoring scope.
 3. THE Feature 6 scope SHALL add every declared Rust policy capability without
    replacing an authority capability.
 4. THE Feature 6 mapping SHALL bind each capability to one requirement and one
@@ -991,7 +979,7 @@ surfaces.
 ### Requirement 16: Engine-Free Local Checkpoints
 
 **User Story:** As a contributor, I want fast deterministic local checkpoints, so that
-most defects are found in Rust before expensive engine sign-off.
+most defects are found in Rust before expensive engine regression.
 
 #### Acceptance Criteria
 
@@ -1023,16 +1011,16 @@ most defects are found in Rust before expensive engine sign-off.
     input digest changed.
 17. THE Feature_6_Local_Checkpoint SHALL report its scoped commands, elapsed time, and
     generated-asset decision.
-18. IF a proposed pre-signoff check needs an engine, THEN THE exception record SHALL
+18. IF a proposed pre-engine check needs an engine, THEN THE exception record SHALL
     identify the exact contract that the Pure_Rust_Module_Harness cannot model.
-19. IF a proposed pre-signoff check needs an engine, THEN THE exception record SHALL
+19. IF a proposed pre-engine check needs an engine, THEN THE exception record SHALL
     receive explicit maintainer approval before execution.
 
-### Requirement 17: Implementation Closure and SDK Sign-off Boundary
+### Requirement 17: Implementation Closure and Focused Engine Boundary
 
-**User Story:** As a release engineer, I want local implementation closure separated
-from exact-engine sign-off, so that fast development evidence is neither undervalued
-nor misrepresented as end-to-end conformance.
+**User Story:** As a maintainer, I want local implementation closure separated from
+focused engine observations, so that direct compiler and dispatch checks retain their
+exact scope.
 
 #### Acceptance Criteria
 
@@ -1052,27 +1040,14 @@ nor misrepresented as end-to-end conformance.
    ownership checks.
 8. THE Feature 6 Implementation_Closure SHALL avoid constructing or executing a
    Dagger engine.
-9. THE SDK_Signoff suite SHALL build an engine from the exact Target_Revision.
-10. THE SDK_Signoff suite SHALL register the complete Feature 6 TypeDef_Projection
-    through the real Feature 5 adapter.
-11. THE SDK_Signoff suite SHALL invoke the Packaged_Self_Consumer plus representative
-    constructor, sync, async, stateful, core, self, dependency, interface, enum,
-    default, error, panic, cancellation, and concurrent-call cases.
-12. THE SDK_Signoff suite SHALL execute the applicable pinned sdk-sdk checks without
-    treating them as exhaustive authoring coverage.
-13. WHEN SDK_Signoff observations pass, THE evidence producer SHALL bind them to the
-    engine revision, engine version, schema digest, Rust SDK source digest, toolchain,
-    generated-asset digest, and packaged-runtime digest.
-14. WHEN SDK_Signoff observations pass, THE evidence producer SHALL enumerate only the
-    Capability_IDs directly proved by each observation.
-15. IF an engine observation is produced against another target or stale generated
-    asset set, THEN THE evidence registry SHALL reject it.
-16. IF a local harness result claims engine registration, runtime-container, or
-    cross-platform conformance, THEN THE evidence registry SHALL reject it.
-17. IF an engine smoke result claims exhaustive source, type, or dispatch closure,
-    THEN THE evidence registry SHALL reject it.
-18. THE final Feature 6 report SHALL distinguish Implementation_Closure from
-    SDK_Signoff status.
+9. WHEN a Focused_Engine_Regression runs, THE case SHALL bind to the exact target and
+   name only the adapter behavior it observes.
+10. IF a local harness result claims engine registration, runtime-container, or
+    cross-platform conformance, THEN THE capability record SHALL reject that claim.
+11. IF an engine smoke result claims exhaustive source, type, or dispatch closure,
+    THEN THE capability record SHALL reject that claim.
+12. THE ordinary package and completed-engine build SHALL remain a separate
+    release-readiness boundary and SHALL not replace the Pure_Rust_Module_Harness.
 
 ## Out of Scope
 
@@ -1081,9 +1056,9 @@ nor misrepresented as end-to-end conformance.
 - Generating complete standalone Core_Schema, module, or dependency client projects;
   those are Feature 7 responsibilities.
 - Claiming all target integration tests, platforms, architectures, or supported engine
-  versions; those are Feature 8 responsibilities.
+  versions; those remain outside this specification.
 - Publishing crates, selecting final stable package versions, writing migration
-  material, or cutting the `1.0.0` release; those are Feature 9 responsibilities.
+  material, or cutting an external release.
 - Running ordinary Feature 6 checkpoints through a self-hosted Dagger pipeline or
   claiming complete build, test, conformance, and release self-hosting; Features 8 and
   9 own those engine-backed and release-wide gates.
@@ -1097,8 +1072,8 @@ nor misrepresented as end-to-end conformance.
 - The umbrella's nine Feature 6 criteria are expanded here into source discovery,
   public authoring, TypeDef/introspection equivalence, typed dispatch, module context,
   isolation, diagnostics, generated ownership, and evidence boundaries.
-- Ground-truth review corrects the coarse 17-row sdk-sdk allocation from Feature 6 to
-  Feature 5 and SDK_Signoff. Broad lifecycle checks remain authoritative within their
+- Ground-truth review removes the coarse 17-row sdk-sdk allocation from Feature 6.
+  Broad lifecycle checks remain authoritative within their
   declared scope but do not prove module authoring or dispatch.
 - The 36 Definitive_Go_SDK `dag` helpers are retained as capability obligations. Their
   public Rust equivalent is a call-scoped module context plus entrypoint-owned
@@ -1107,12 +1082,11 @@ nor misrepresented as end-to-end conformance.
   behavioural evidence only where required by the engine wire contract.
 - Feature 5's fixed protocol probe is a proven seam, not a foundation for a second
   dispatcher. Feature 6 generalizes the same operation and runtime boundary.
-- The dagger-zig self-consumer and offline module test validate the selected separation
-  as comparative evidence. Feature 6 adds only a bounded packaged consumer case at
-  SDK_Signoff; it does not move an engine into local checkpoints or claim release
+- Historical self-consumer examples are comparative evidence only. Focused engine
+  adapter cases do not move an engine into local checkpoints or establish release
   self-hosting.
-- Local checkpoints are deliberately engine-free and change-triggered. Exact-engine
-  execution remains mandatory at SDK_Signoff and cannot be replaced by unit evidence.
+- Local checkpoints are deliberately engine-free and change-triggered. A focused
+  engine observation cannot replace direct unit and property evidence.
 - Design remains consent-gated. It must select the precise attribute, derive,
   procedural-macro, generated-trait, descriptor, and fixture architecture while
   preserving every requirement above.

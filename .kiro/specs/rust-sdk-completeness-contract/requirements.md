@@ -48,8 +48,8 @@ wire-shape authority.
 This feature is foundational and has no implementation dependency on the later
 features. Every later child specification consumes stable Capability_IDs from this
 contract, updates their status and evidence, and leaves the validator able to detect
-unclassified source changes. Feature 8 expands the conformance execution behind the
-evidence records. Feature 9 consumes the Completeness_Verdict as a release gate.
+unclassified source changes. Additional live conformance and any external release
+decision remain outside this contract.
 
 ## Glossary
 
@@ -149,9 +149,9 @@ Harness_Check identities. Each check is classified by Harness_Check_Kind; every
 `subject-conformance` check is mapped to the exact Capability_IDs and target scope that
 its assertions cover before any result can become Verification_Evidence. Harness
 self-checks protect the integrity of the imported harness but never count as Rust
-capability evidence. Feature 8 expands this execution profile with Rust-native client,
-transport, observability, semantic, security, and platform checks, reusing `SdkTarget`
-and `mod-test` where their public contracts fit.
+capability evidence. Rust-native client, transport, observability, semantic, security,
+and platform scenarios may extend this profile only by reusing `SdkTarget` and
+`mod-test` where their public contracts fit.
 
 The initial ledger is expected to have a true Integrity_Verdict and a false
 Completeness_Verdict. Existing Rust support is classified conservatively: code
@@ -220,8 +220,8 @@ Unless another revision is stated, repository citations refer to Dagger commit
   target, or another platform.
 - **Reusable black-box assertions:** The pinned repository's `SdkTarget` supports a
   language SDK target plus additional checks, while `mod-test/mod-test.dang` provides
-  `dagger api call -j` success, failure, output, JSON, and list assertions. Feature 8
-  can extend the generic profile without copying its runner.
+  `dagger api call -j` success, failure, output, JSON, and list assertions. Additional
+  scenarios can extend the generic profile without copying its runner.
 - **Official Go SDK adoption (comparative evidence):**
   [`dagger/go-sdk@7dcaf4f`](https://github.com/dagger/go-sdk/commit/7dcaf4f65b97f54923d2ec0064f64a9dc4bcd14c)
   registers `github.com/dagger/sdk-sdk` in the Go SDK checks. This confirms intended
@@ -336,7 +336,7 @@ type relationships, and TypeRefs participate in semantic compatibility drift.
 | `status` | Required value from the Status Policy | `CAPABILITY_STATUS_INVALID` | Determines Completeness_Verdict |
 | `stability` | Required `stable`, `experimental`, `internal`, or `not-applicable` classification for Rust public API impact | `CAPABILITY_STABILITY_INVALID` | Feeds transition SemVer policy |
 | `gap` | Required exact missing behaviour for `Missing` or `Partial`; absent otherwise | `CAPABILITY_GAP_INVALID` | Guides owning child spec |
-| `owner_feature` | Required Feature 2–9 owner for `Missing` or `Partial`; optional otherwise | `CAPABILITY_OWNER_MISSING` | Routes implementation work |
+| `owner_feature` | Required accepted capability owner for `Missing` or `Partial`; optional otherwise | `CAPABILITY_OWNER_MISSING` | Routes implementation work |
 | `implementation_evidence` | Required for `Partial`, `Implemented`, and `Idiomatic_Equivalent` | `IMPLEMENTATION_EVIDENCE_MISSING` | Links Rust source only |
 | `verification_evidence` | Required for `Implemented` and `Idiomatic_Equivalent` | `VERIFICATION_EVIDENCE_MISSING` | Supports complete claims |
 | `decision_evidence` | Required for `Idiomatic_Equivalent`, `Inapplicable`, and experimental public APIs; optional for other reviewed compatibility decisions | `DECISION_EVIDENCE_INVALID` | Records reviewed exceptions and stability conditions |
@@ -376,7 +376,7 @@ work remains truthfully `Missing` or `Partial` until its evidence changes.
 | `changed_capabilities` | Required complete ordered set of prior and successor fingerprints | `TRANSITION_DIFF_INVALID` | Requires evidence revalidation |
 | `authority_changes` | Required complete ordered authority-source diff | `TRANSITION_DIFF_INVALID` | Exposes source-boundary movement |
 | `semver_effect` | Required `none`, `additive`, `deprecation`, or `breaking` classification | `TRANSITION_SEMVER_INVALID` | Feeds release planning |
-| `migration_requirements` | Required references for every user-facing breaking change; empty otherwise | `TRANSITION_MIGRATION_MISSING` | Routes Feature 9 work |
+| `migration_requirements` | Required references for every user-facing breaking change; empty otherwise | `TRANSITION_MIGRATION_MISSING` | Records migration needs without assigning a release workflow |
 
 ### Compatibility Claim
 
@@ -557,7 +557,7 @@ not mistaken for SDK completeness.
 ### Requirement 5: Stable Capability Identity and Rule Expansion
 
 **User Story:** As a child-spec author, I want stable atomic Capability_IDs, so that
-requirements, implementation, tests, and release evidence keep traceability across
+requirements, implementation, tests, and verification records keep traceability across
 target updates.
 
 #### Acceptance Criteria
@@ -679,7 +679,7 @@ cannot appear, disappear, or change behind a refreshed generated file.
 11. WHEN a Target_Transition is reviewed, THE transition record SHALL classify its
     public Rust SemVer impact.
 12. WHERE a Target_Transition has user-facing incompatibility, THE transition record
-    SHALL reference a migration requirement owned by Feature 9.
+    SHALL reference a migration requirement without assigning an external release owner.
 13. IF the pinned harness adds, removes, or semantically changes a Harness_Check outside
     a Target_Transition, THEN THE contract tooling SHALL return `LEDGER_DRIFT` with the
     affected `check_id`.
@@ -711,8 +711,8 @@ all development or producing a false green release signal.
    only for a true Completeness_Verdict.
 10. WHEN the initial F1 baseline enters normal CI, THE CI check SHALL enforce the
     Integrity_Verdict without requiring the Completeness_Verdict.
-11. WHEN Feature 9 evaluates stable release readiness, THE release gate SHALL enforce
-    the Completeness_Verdict.
+11. WHEN a consumer selects the Completeness gate, THE command SHALL enforce the
+    Completeness_Verdict without treating it as release authorization.
 
 ### Requirement 10: Initial Baseline and Downstream Traceability
 
@@ -740,10 +740,11 @@ plan rather than empty infrastructure.
    dispatch, THE ledger row SHALL assign Feature 6.
 9. WHEN a `Missing` or `Partial` row belongs to standalone or dependency client
    generation, THE ledger row SHALL assign Feature 7.
-10. WHEN a `Missing` or `Partial` row belongs to conformance, platform, or security
-    gates, THE ledger row SHALL assign Feature 8.
-11. WHEN a `Missing` or `Partial` row belongs to packaging, release, compatibility
-    publication, or documentation, THE ledger row SHALL assign Feature 9.
+10. WHEN a `Missing` or `Partial` row retains an unverified conformance, platform, or
+    security obligation, THE ledger row SHALL remain blocking.
+11. WHEN a `Missing` or `Partial` row describes packaging, compatibility, or
+    documentation work outside an accepted child specification, THE ledger row SHALL
+    remain blocking without assigning an external release owner.
 12. WHEN a later child specification is authored, THE child requirements SHALL cite
     every Capability_ID whose status they intend to change.
 13. WHEN a later implementation changes a capability status, THE same change SHALL
@@ -753,7 +754,7 @@ plan rather than empty infrastructure.
 15. WHEN the pinned harness omits `initClient`, THE ledger SHALL retain standalone and
     dependency client-generation gaps under Feature 7.
 16. WHEN the pinned harness supplies only `linux/amd64` execution evidence, THE ledger
-    SHALL retain unverified platform obligations under Feature 8.
+    SHALL retain every other platform obligation as unverified.
 
 ### Requirement 11: Compatibility and Stability Contract
 
@@ -811,8 +812,8 @@ lifecycle conformance without mistaking the common harness for complete Go parit
    generation completeness.
 9. BECAUSE the pinned harness runner is `linux/amd64`, THE contract tooling SHALL
    reject any inference that a green generic profile proves another platform.
-10. WHERE Feature 8 adds Rust-specific black-box scenarios, THE Rust conformance
-    profile SHALL reuse the harness's public `SdkTarget` or `mod-test` contracts as the
+10. WHERE Rust-specific black-box scenarios are added, THE Rust conformance profile
+    SHALL reuse the harness's public `SdkTarget` or `mod-test` contracts as the
     integration boundary.
 11. WHEN a cross-SDK scenario is ported from the active integration corpus or
     `future/sdk-tests.md`, THE Rust conformance profile SHALL preserve the observable

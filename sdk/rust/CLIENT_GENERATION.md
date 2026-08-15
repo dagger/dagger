@@ -16,7 +16,7 @@ dagger api client init rust clients/acme github.com/acme/daggerverse/acme@<full-
 
 Initialization adopts a compatible Cargo package or creates a minimal one, records the
 client in the workspace, and initially generates only that client. Add `--no-generate`
-to create the scaffold and workspace record without publishing bindings. Subsequent
+to create the scaffold and workspace record without generating bindings. Subsequent
 workspace generation selects managed clients at or below the current workspace
 directory; it does not rewrite sibling clients.
 
@@ -62,7 +62,7 @@ complete; all generated handles share that one lifecycle.
 ## Cargo and ownership policy
 
 The reconciler preserves unrelated dependencies, features, targets, profiles, source,
-README content, and `.gitattributes` entries. It adds the exact published `dagger-sdk`
+README content, and `.gitattributes` entries. It adds the exact `dagger-sdk` package
 dependency and Tokio features required by the generated quickstart. A conflicting
 dependency, toolchain, module declaration, or generated-region claim is a diagnostic,
 not an invitation to replace caller policy.
@@ -99,8 +99,8 @@ outside that region is authored and preserved.
 ## Contributor checkpoint
 
 Standalone-client development is Rust-first and engine-free. From `sdk/rust`, run only
-the affected typed slices; the feature-end gate schedules missing, failed, or stale
-observations and reuses current checked assets and the materialized fixture baseline:
+the affected typed slices and reuse current checked assets and the materialized fixture
+baseline:
 
 ```console
 cargo test -p dagger-sdk-completeness --test client_generation_evidence --locked

@@ -5,13 +5,13 @@
     - Remove the unconditional Dagger engine/client installation from
       `toolchains/rust-sdk-dev.New`; retain a Rust-only base and introduce an explicit
       engine-bearing path used only by engine-content and integration cases.
-    - Add the SDK-sign-off `engine-unit` function for focused Rust engine-tool and Go
+    - Add the focused-engine-regression `engine-unit` function for focused Rust engine-tool and Go
       adapter tests, include the approved Feature 5 specifications and required engine
       source in the toolchain input filter, and prove that the ordinary direct test path
       does not construct an engine.
     - Keep existing public Rust checks behaviorally unchanged and document why test-only
       changes cannot invalidate the packaged compiler/toolchain layer.
-    - _Requirements: 13.31, 13.32, 13.33, 13.35_
+    - _Requirements: 13.25-13.30_
   - [x] 1.2 Add the private Rust engine-tool crate and approved dependency graph
     - Add `dagger-sdk-engine` with `publish = false`, binary
       `dagger-rust-engine`, library entrypoint, README, Apache-2.0 metadata, module
@@ -30,7 +30,7 @@
       guarantees on caller-relevant items, and inline WHY comments for digest domains,
       path confinement, ownership, precedence, cancellation, credential boundaries,
       and deliberate engine/Rust translations.
-    - _Requirements: 12.8, 12.9, 12.15, 12.16, 13.33_
+    - _Requirements: 12.8, 12.9, 12.15, 12.16_
   - [x] 1.4 Add strict canonical engine-integration models and shared strategies
     - Add the target identity, relative path, operation request/kind, module input,
       operation plan/manifest, artifact record, engine source/dependency descriptor,
@@ -69,7 +69,7 @@
       encode/decode equality and digest equality while rejecting unknown fields,
       invalid enums, mutable refs, malformed digests, and non-canonical paths.
     - Test identifier: `property_30_canonical_models_round_trip_without_semantic_loss`.
-    - _Requirements: 2.6-2.8, 5.9-5.16, 6.10, 8.2-8.9, 13.24-13.26_
+    - _Requirements: 2.6-2.8, 5.9-5.16, 6.10, 8.2-8.9_
 
 - [x] 2. Checkpoint: scope, canonical models, and engine-free development are green
   - Run Rust formatting, locked check/test for the new private crate and completeness
@@ -314,7 +314,7 @@
     - Assert that generated projects reference only public `dagger-sdk`, that private
       crates remain unpublished build inputs, and that a fork engine's immutable Git
       descriptor is preserved without a local checkout dependency.
-    - _Requirements: 11.1-11.12, 11.24, 13.34, 13.37_
+    - _Requirements: 11.1-11.12, 11.24, 13.28, 13.31_
   - [x] 8.5 Property test: Property 2 — deterministic Rust SDK resolution
     - Use Rust `proptest` to generate at least 256 bare, versioned, immutable external,
       mutable external, unknown, and ambiguous loader registries and canonical replay
@@ -338,7 +338,7 @@
     - _Requirements: 3.1-3.3, 3.14, 3.15_
   - [x] 8.8 Property test: Property 23 — packaged assets and public dependencies form a closed graph
     - Generate at least 256 asset/dependency/publication graphs; require every runtime
-      payload beneath the content digest, exactly one publishable crate, no private or
+      payload beneath the content digest, exactly two public package artifacts, no private or
       checkout dependency in generated projects, and exact fork/canonical descriptors.
     - Test identifier: `property_23_packaged_assets_public_dependencies_closed_graph`.
     - _Requirements: 11.1-11.12_
@@ -347,7 +347,7 @@
       unreachable, duplicate, and omitted subjects; compare derived audit roots to an
       independent graph traversal and reject every missing locked security input.
     - Test identifier: `property_25_security_audit_roots_cover_shipped_graph`.
-    - _Requirements: 11.24, 13.34, 13.37_
+    - _Requirements: 11.24, 13.28, 13.31_
 
 - [x] 9. Checkpoint: built-in resolution and reusable engine content are green
   - Run formatting, locked Rust workspace tests, Properties 2-4/23/25, focused changed
@@ -356,7 +356,7 @@
   - Prove canonical metadata, immutable dependency selection, shorthand rejection,
     packaged asset/descriptor integrity, and no repository-checkout dependency without
     constructing `RustEngineContent`; object construction and the focused exact-target
-    `resolution` case belong to SDK sign-off.
+    `resolution` case belong to focused engine regression.
 
 - [x] 10. Wire Rust initialization, codegen, and client hooks through the packaged adapter
   - [x] 10.1 Add one data-only adapter operation helper
@@ -506,7 +506,7 @@
   - Require the production project/runtime planners to prove scoped initialization and
     codegen, exact dependency/toolchain/lock behavior, clean runtime promotion, and no
     leaked secret, cache, or source material. Exact-target `init-*`, `operations`, and
-    `runtime-*` executions belong to SDK sign-off.
+    `runtime-*` executions belong to focused engine regression.
 
 - [x] 13. Execute the private module protocol boundary and close cross-layer failures
   - [x] 13.1 Generate only the fixed private protocol probe
@@ -585,35 +585,35 @@
     - Require one implementation subject, required evidence-domain set, and allowed
       terminal classification per capability; reject missing/extra/duplicate/name-only/
       wrong-owner/drifted mappings and prohibit hook-to-content substitution.
-    - _Requirements: 1.1-1.12, 13.24-13.29_
+    - _Requirements: 1.1-1.12_
   - [x] 14.2 Assemble target-bound integration manifests and observation fixtures
     - Generate canonical engine-integration manifest/report models containing scope,
       target, descriptor, schema, SDK dependency, Rust toolchain, packaged OCI asset,
       operation input/output, runtime provenance, case result, evidence, and exact
-      proved Capability IDs; use non-live fixtures until SDK sign-off.
+      proved Capability IDs; use non-live fixtures until focused engine regression.
     - Reject skipped, stale, failed, wrong-engine/version/schema/source/toolchain/asset,
       sibling, and out-of-domain observations atomically before calling Feature 1's
       transition API.
-    - _Requirements: 13.24-13.27_
+    - _Requirements: 1.3-1.11_
   - [x] 14.3 Derive honest statuses and reports through Feature 1 only
     - Separate engine-hook, checked-generation, legacy-generation, protocol, and
       delegated-content evidence IDs; admit only capability-local domains and let the
       existing transition policy derive every status.
     - Render remaining blocker identities without presentation relabeling and ensure a
       source/build/test/report alone cannot move a row lacking all declared evidence.
-    - _Requirements: 1.6, 1.10-1.12, 9.12, 13.28, 13.29_
+    - _Requirements: 1.3-1.12, 9.12_
   - [x] 14.4 Property test: Property 28 — evidence admission is exact-target and capability-local
     - Generate at least 256 valid observations and target/version/schema/source/
       toolchain/asset/case/capability mutations; compare all-or-nothing admission and
       unchanged rejection state to an independent subject/domain set model.
     - Test identifier: `property_28_evidence_admission_exact_target_capability_local`.
-    - _Requirements: 13.24-13.27_
+    - _Requirements: 1.3-1.11_
   - [x] 14.5 Property test: Property 29 — completeness reports are derived rather than presented
     - Generate at least 256 prior ledgers, admitted evidence sets, missing domains, hook/
       content overlaps, and checked/legacy observations; require Feature 1 transition
       equality and exact remaining blocker/evidence-domain rendering.
     - Test identifier: `property_29_completeness_reports_derived_not_presented`.
-    - _Requirements: 1.6, 1.10-1.12, 9.12, 13.28, 13.29_
+    - _Requirements: 1.3-1.12, 9.12_
 
 - [x] 15. Checkpoint: pure protocol and evidence models are green
   - Run formatting, locked Rust tests for Properties 15 and 21-22/26-29, compile/static
@@ -629,9 +629,9 @@
       evidence-model suites through direct Cargo commands, plus direct compile/static Go
       tests for the ABI adapter.
     - Retain `engine-unit`, `engine-content`, `engine-integration`, and
-      `engine-evidence` as explicit SDK-sign-off functions; no local checkpoint invokes
+      `engine-evidence` as explicit focused-engine-regression functions; no local checkpoint invokes
       them or treats their absence as simulated success.
-    - _Requirements: 13.24-13.29, 13.36_
+    - _Requirements: 13.24-13.31_
   - [x] 16.2 Admit only the authoritative dynamic `sourceMap` omission
     - Add a deterministic engine-authored module schema fixture whose type and Query
       constructor carry `sourceMap(module: ...)` while `filename`, `line`, `column`, and
@@ -656,13 +656,13 @@
     - Require typed, bounded, redacted diagnostics and byte-identical prior state for
       every rejected fixture.
     - _Requirements: 5.4-5.6, 5.14, 5.15, 6.2, 6.9, 6.12, 6.16, 12.1-12.16_
-  - [x] 16.5 Fence live evidence until SDK sign-off
+  - [x] 16.5 Keep live observations outside implementation closure
     - Prove that source presence, successful pure tests, packaged-content construction,
       and incomplete/skipped case sets cannot produce an admissible live observation or
       transition an engine-dependent completeness row.
-    - Keep the exact-target case inventory and one-shared-content sign-off workflow
+    - Keep the exact-target case inventory and one-shared-content focused regression workflow
       documented and callable, but outside Feature 5 implementation checkpoints.
-    - _Requirements: 1.6, 1.10-1.12, 13.24-13.29_
+    - _Requirements: 1.6, 1.10-1.12_
 
 - [x] 17. Stabilize documentation, security policy, and committed derived outputs
   - [x] 17.1 Document the durable engine-integration contracts
@@ -682,9 +682,9 @@
       generated ownership repair, security review, and clean-output verification.
     - Document target/descriptor refresh, fork versus canonical dependency descriptors,
       engine-content/per-case/evidence commands, cache identities, protocol probe, and
-      evidence interpretation in a separate SDK-sign-off section. Reproducing sign-off
+      observation interpretation in a separate focused-regression section. Reproducing a focused regression
       must not require ambient local crate paths or expose credentials.
-    - _Requirements: 2.5-2.8, 4.20, 8.2-8.9, 11.8-11.23, 13.24-13.37_
+    - _Requirements: 2.5-2.8, 4.20, 8.2-8.9, 11.8-11.23, 13.1-13.31_
   - [x] 17.3 Publish only manifest-owned generated and evidence artifacts
     - If and only if an owning Dagger module API/schema changed, run one scoped
       generation/update, inspect the exact declared changeset, and commit only its
@@ -693,11 +693,11 @@
     - Commit operation/asset manifests, client metadata, and derived engine-free reports;
       use direct diff and compile/static checks for the remainder of the checkpoint.
     - Do not create, refresh, or present an exact-target observation during
-      Implementation_Closure. Integration observations and resulting status reports are
-      published only after the SDK-sign-off matrix has actually passed.
+      Implementation_Closure. Integration observations may update internal capability
+      records only after the focused-regression matrix has actually passed.
     - Remove or replace only paths authorized by compatible prior manifests; keep
       caller-authored Cargo/source/VCS files and unrelated repository outputs unchanged.
-    - _Requirements: 4.13-4.20, 6.13-6.17, 9.1-9.12, 13.29, 13.30_
+    - _Requirements: 1.10-1.12, 4.13-4.20, 6.13-6.17, 9.1-9.12, 13.24_
   - [x] 17.4 Fence final dependency, release-note, and public-surface policy
     - Complete cargo-deny and Rust security coverage for the locked graph, immutable
       Git/registry sources, credential redaction, confined paths, subprocesses, cache/
@@ -707,7 +707,7 @@
       publication, or a wider platform/release matrix.
     - Confirm the public `dagger-sdk` API/dependency snapshot changes only where the
       private probe/runtime needs already-approved Feature 2-4 surfaces.
-    - _Requirements: 10.10-10.13, 11.6-11.24, 12.14-12.16, 13.34, 13.37_
+    - _Requirements: 10.10-10.13, 11.6-11.24, 12.14-12.16, 13.28, 13.31_
 
 - [x] 18. Final checkpoint: Feature 5 implementation is engine-free complete
   - Run `cargo fmt --all --check`, locked workspace check/test, warning-denied clippy
@@ -724,9 +724,9 @@
     honestly `Missing` or `Partial`; Implementation_Closure, a green build, registered
     hook, source presence, or sibling implementation cannot close it.
 
-## Deferred SDK Sign-off Gate
+## Focused Engine Regression Boundary
 
-Requirements 13.1-13.29 remain mandatory after Implementation_Closure. SDK sign-off
+Requirements 13.1-13.23 define focused cases outside Implementation_Closure. A focused regression
 builds the exact Target_Revision once, constructs one shared `RustEngineContent`, fans
 out the complete positive and negative case inventory, executes both runtime protocol
 branches, admits only the resulting target-bound observation, regenerates derived
@@ -754,16 +754,15 @@ engine-dependent row may move before it passes.
   "15": ["14"],
   "16": ["15"],
   "17": ["16"],
-  "18": ["17"],
-  "sdk-signoff": ["18"]
+  "18": ["17"]
 }
 ```
 
 The seven checkpoints are strict review boundaries. Pure models and renderers precede
 Cargo/project I/O; project planning precedes publication; a tested private runner
 precedes packaging; packaged resolution precedes engine hooks; hooks precede runtime;
-runtime precedes protocol/evidence models; Implementation_Closure precedes the separate
-exact-target SDK-sign-off evidence and any committed engine-dependent status.
+runtime precedes protocol/evidence models; Implementation_Closure remains distinct from
+exact-target focused regressions and any internal engine-dependent status update.
 
 ## Notes
 
@@ -778,7 +777,7 @@ exact-target SDK-sign-off evidence and any committed engine-dependent status.
 - Checkpoint 2 deliberately removes the eager engine dependency. Every ordinary
   checkpoint and Feature 5 Implementation_Closure is engine-free. Checkpoint 9 proves
   the reusable content construction boundary without making later local checkpoints
-  execute it. SDK sign-off alone shares the actual object within one top-level DAG and
+  execute it. A focused engine regression shares the actual object within one top-level DAG and
   records its digest as evidence; cross-runner cache availability is never a
   correctness premise.
 - Checkpoints are the preferred commit and pull-request boundaries. A checkpoint may be

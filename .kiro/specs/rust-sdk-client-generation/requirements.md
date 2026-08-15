@@ -38,16 +38,15 @@ test govern this specification.
 
 Feature 7 depends on Feature 1's completeness contract, Feature 2's client ownership,
 Feature 3's transport and reliability, Feature 4's exact Core projection, Feature 5's
-engine operation and workspace seams, and Feature 6's module TypeDef surface. Feature
-8 owns cross-platform and complete engine-backed conformance, including the bounded
-exact-target SDK sign-off. Feature 9 owns immutable Git-tagged distribution, release
-migration, release assets, and stable release presentation.
+engine operation and workspace seams, and Feature 6's module TypeDef surface.
+Cross-platform conformance, distribution, migration, and external release decisions
+remain outside this specification.
 
 Every Feature 7 implementation checkpoint is engine-free and Rust-first. Production
 schema composition, project reconciliation, formatting, compilation, query
 construction, workspace selection, diagnostics, and evidence admission must be
 exercisable directly through Rust fixtures. Checked Core artifacts are reused unless
-an owning input digest changes. A Dagger engine is reserved for final SDK sign-off
+an owning input digest changes. A Dagger engine is reserved for final ordinary verification
 unless a direct model is proven insufficient and the exception is separately recorded
 and approved.
 
@@ -88,10 +87,10 @@ and approved.
   path driven by SDK-owned client records in `dagger.toml`.
 - **Published_SDK_Dependency:** The exact registry version or immutable Git URL and
   full revision selected by the engine-packaged Rust SDK; never an ambient path or
-  mutable branch.
-- **SDK_Signoff:** The later bounded exact-target gate that consumes matching
-  Implementation_Closure evidence and runs only the real-engine cases that direct
-  Rust fixtures cannot prove.
+mutable branch.
+- **Ordinary_Verification:** The `Verify` entry point on the ordinary Rust SDK build. It
+  unpacks the two public packages and runs one isolated external Rust consumer against
+  that build's complete engine.
 - **Standalone_Client_Project:** A path-confined Cargo project containing a reusable
   Core_Client_Surface, one optional Generated_Module_Surface, and no module-runtime or
   dispatch entrypoint.
@@ -141,9 +140,9 @@ symlinks, stale targets, or ambiguous ownership fail before publication.
 The generated project composes with ordinary Cargo commands and a standard Rust async
 runtime under the documented `dagger-sdk` runtime policy. Engine-free fixtures compile
 the exact candidate, construct representative Core and module queries through a
-recording transport, and verify the emitted GraphQL contract. SDK_Signoff later proves
-workspace initialization, exact engine schema delivery, one local client, one pinned
-remote client, regeneration, and one real query without broadening local checkpoints.
+recording transport, and verify the emitted GraphQL contract. Ordinary_Verification
+separately proves that the packaged SDK can run one external consumer query against the
+completed engine; focused initialization and schema regressions retain their own scope.
 
 Feature 7 does not change module authoring or dispatch, duplicate Core bindings,
 publish a crate, run a platform matrix, claim transitive module-dependency generation,
@@ -269,7 +268,7 @@ policy/rust-policy/client-multi-client-isolation
 policy/rust-policy/client-query-usability
 policy/rust-policy/client-diagnostic-and-secret-safety
 policy/rust-policy/client-engine-free-local-checkpoint
-policy/rust-policy/client-exact-engine-signoff-boundary
+policy/rust-policy/client-ordinary-engine-verification-boundary
 ```
 
 The Feature 7 mapping artifact connects every retained and added capability to one
@@ -279,16 +278,15 @@ authority rows.
 
 ### Authority and Evidence Boundary
 
-| Claim | Authority | Minimum implementation evidence | Engine evidence policy |
+| Claim | Authority | Minimum implementation evidence | Separate engine-backed scope |
 |---|---|---|---|
-| Rust supports client initialization | Engine ClientInitializer and workspace contracts | Direct adapter fixture plus path-confined scaffold reconciliation | Exact CLI path at SDK_Signoff |
-| A supplied schema is client-visible | Engine client-schema construction and exact target manifest | Canonical schema fixture proving Core closure, one namespaced module, and dependency exclusion | Exact delivered schema at SDK_Signoff |
+| Rust supports client initialization | Engine ClientInitializer and workspace contracts | Direct adapter fixture plus path-confined scaffold reconciliation | Focused engine initialization regression |
+| A supplied schema is client-visible | Engine client-schema construction and exact target manifest | Canonical schema fixture proving Core closure, one namespaced module, and dependency exclusion | Focused delivered-schema regression |
 | Generated Core behaviour is complete | Feature 4 Core bindings plus Features 2–3 runtime | Reuse identity plus existing Core property evidence | Not re-proved by copying symbols |
-| Generated module behaviour is complete | Bound_Module TypeDefs and Rust policy | Exhaustive semantic catalog, typed compile fixtures, and recording-transport query properties | One local and one pinned remote client at SDK_Signoff |
+| Generated module behaviour is complete | Bound_Module TypeDefs and Rust policy | Exhaustive semantic catalog, typed compile fixtures, and recording-transport query properties | Not replaced by Ordinary_Verification |
 | Existing Cargo state is preserved | Rust/Cargo policy plus target generator preservation behaviour | Permuted manifest and filesystem reconciliation properties | No engine required |
-| A client query is correct | Client_Visible_Schema Wire_Names plus public Rust runtime | Production generated API against a recording transport | One real representative query at SDK_Signoff |
+| A client query is correct | Client_Visible_Schema Wire_Names plus public Rust runtime | Production generated API against a recording transport | One packaged Core query at Ordinary_Verification |
 | Feature 7 is implementation-complete | This specification and Rust repository policy | Complete engine-free client harness plus scoped hygiene/security | No engine is started |
-| Feature 7 is release-signed-off | Exact_Target engine plus admitted closure evidence | All local evidence plus the bounded exact-engine client cases | Required only at SDK_Signoff |
 
 ## Contract Policy
 
@@ -346,18 +344,18 @@ authority rows.
 | Documentation or quickstart | Create concise compile-and-query guidance with generated ownership markers | Refresh only the SDK-owned section | Preserve unrelated prose and reject ambiguous ownership |
 | Obsolete generated paths | None on first generation | Remove only paths proved obsolete by the previous manifest | Never infer ownership from filename or directory alone |
 
-### Local Checkpoint and Sign-off Boundary
+### Local Checkpoint and Engine-Backed Boundary
 
-| Activity | Feature 7 local policy | Deferred SDK sign-off policy |
+| Activity | Feature 7 local policy | Separate engine-backed scope |
 |---|---|---|
-| Schema tests | Direct production compiler over Core-only, local-module, and dependency-bound fixtures | Confirm exact engine supplies the same schema classes |
-| Project tests | Temporary Cargo roots and semantic filesystem reconciliation | Confirm engine Changesets land at the intended workspace roots |
-| Compile and query tests | Exact generated candidate plus local package resolver and recording transport | Run one real Core and Bound_Module query path |
-| Regeneration | Invoke only when target, schema, module, dependency, generator, or ownership input changes | Confirm one update through the real CLI path |
-| Workspace selection | Pure Rust workspace records and cwd fixtures | Confirm one multi-client workspace selection case |
-| Rust hygiene | Scoped fmt, locked tests, warning-denied clippy/rustdoc, package policy, and security checks | Consume admitted closure evidence without replaying it |
-| Dagger engine | Not constructed, started, or invoked | Reuse the one Exact_Target artifact and engine service |
-| Other SDKs | Not built, tested, generated, or distributed | Build only the engine-required Go runtime content once |
+| Schema tests | Direct production compiler over Core-only, local-module, and dependency-bound fixtures | Focused delivered-schema regression only |
+| Project tests | Temporary Cargo roots and semantic filesystem reconciliation | Focused initialization regression only |
+| Compile and query tests | Exact generated candidate plus local package resolver and recording transport | Ordinary_Verification runs one packaged Core query |
+| Regeneration | Invoke only when target, schema, module, dependency, generator, or ownership input changes | No ordinary release-readiness regeneration |
+| Workspace selection | Pure Rust workspace records and cwd fixtures | Focused workspace regression only |
+| Rust hygiene | Scoped fmt, locked tests, warning-denied clippy/rustdoc, package policy, and security checks | Not replayed as engine behavior |
+| Dagger engine | Not constructed, started, or invoked | Complete engine only in the separate build |
+| Other SDKs | Not built, tested, generated, or distributed | No separate SDK matrix |
 
 ## Requirements
 
@@ -388,7 +386,7 @@ client.
 10. IF evidence is stale, skipped, failed, incomplete, or target-incompatible, THEN THE
     completeness registry SHALL reject it.
 11. THE rendered completeness report SHALL distinguish client initialization,
-    generated content, local implementation closure, and SDK sign-off.
+    generated content, local implementation closure, and ordinary verification.
 12. THE umbrella correction SHALL define dependency generation as independently bound
     clients rather than one transitive dependency graph.
 
@@ -634,7 +632,7 @@ overwritten.
 ### Requirement 9: Engine-Free Generated-Client Usability
 
 **User Story:** As a Rust application author, I want generated output proven through
-ordinary Rust tools before engine sign-off, so that routine defects are found quickly
+ordinary Rust tools before engine verification, so that routine defects are found quickly
 without an expensive build graph.
 
 #### Acceptance Criteria
@@ -664,11 +662,10 @@ without an expensive build graph.
 14. THE generated-client harness SHALL exercise the production renderer and public
     runtime rather than a test-only client implementation.
 
-### Requirement 10: Engine-Free Checkpoints and Deferred Exact-Target Sign-off
+### Requirement 10: Engine-Free Checkpoints and Ordinary Verification
 
-**User Story:** As a maintainer, I want fast Rust-first checkpoints separated from one
-bounded engine sign-off, so that development remains efficient without weakening the
-release claim.
+**User Story:** As a maintainer, I want fast Rust-first checkpoints separated from the
+ordinary completed-engine check, so that each verification retains its real scope.
 
 #### Acceptance Criteria
 
@@ -688,17 +685,13 @@ release claim.
     explicit approval before execution.
 11. WHEN Implementation_Closure is evaluated, THE closure report SHALL require every
     Feature 7 production, fixture, hygiene, security, and evidence gate.
-12. WHEN SDK_Signoff is evaluated, THE sign-off SHALL consume matching
-    Implementation_Closure evidence without replaying local checks.
-13. THE SDK_Signoff inventory SHALL include one initialized local-module client.
-14. THE SDK_Signoff inventory SHALL include one pinned remote dependency-bound client.
-15. THE SDK_Signoff inventory SHALL include one regeneration after a schema change.
-16. THE SDK_Signoff inventory SHALL include one representative Core query.
-17. THE SDK_Signoff inventory SHALL include one representative namespaced module query.
-18. THE SDK_Signoff SHALL reuse the umbrella's one exact-target artifact, engine
-    service, and installed Rust baseline.
-19. IF any required sign-off case is absent, stale, skipped, or failed, THEN THE final
-    Rust SDK sign-off SHALL fail atomically.
+12. WHEN Ordinary_Verification is evaluated, THE check SHALL use the two packaged
+    public crates and the complete engine produced by the same ordinary Build result.
+13. THE Ordinary_Verification SHALL compile one isolated external consumer without a
+    workspace path dependency.
+14. THE Ordinary_Verification SHALL execute one Core query and close the client cleanly.
+15. THE Ordinary_Verification SHALL not replace the engine-free client-generation
+    compiler, project, regeneration, module-query, or ownership checks.
 
 ## Out of Scope
 
@@ -707,10 +700,10 @@ release claim.
 - Reimplementing Core_Schema bindings already owned by Feature 4.
 - Changing Feature 5's engine ABI, runtime container, or generic operation runner.
 - Changing Feature 6 module authoring, TypeDef registration, or dispatch.
-- Running the Feature 8 platform, cross-SDK, or complete engine conformance matrix.
+- Running a platform, cross-SDK, or complete engine conformance matrix.
 - Publishing crates, synchronizing release versions, or presenting the stable release.
 - Treating repository-relative dependency patches as valid generated output.
-- Claiming Feature 7 SDK sign-off from engine-free Implementation_Closure alone.
+- Treating engine-free Implementation_Closure as a completed-engine observation.
 
 ## Iteration and Feedback Notes
 

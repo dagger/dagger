@@ -61,10 +61,10 @@ artifacts satisfy Feature 1's evidence rules.
   transport diagnostics, compatibility validation, and engine-domain error mapping.
 - Feature 4 owns schema-complete generated operations. Mapping an already-represented
   `EXEC_ERROR` extension is transport error semantics and belongs here.
-- Feature 8 owns the closing live platform, conformance, and security matrices.
-  Deterministic Linux, macOS, and Windows archive fixtures here do not claim that gate.
-- Feature 9 owns migration guidance, immutable Git-tagged distribution, and verified
-  release assets for the complete SDK.
+- Live platform and conformance matrices remain outside this specification.
+  Deterministic Linux, macOS, and Windows archive fixtures do not claim those runs.
+- Migration guidance, distribution, and external release assets remain outside this
+  specification.
 
 ### Rust construction rules
 
@@ -777,7 +777,7 @@ Feature 3 supplies its own descriptor for the approved 32 status-change IDs and 
 new policies. Eleven declared status rows may retain Feature 2 as their blocking owner
 until Feature 3 supplies the missing transport evidence; the validator therefore
 checks the exact approved owner map rather than assuming that every scoped row is
-owned by the current feature. Feature 8 rows remain untouched.
+owned by the current feature. Out-of-scope rows remain untouched.
 
 The requirements source is added to `authorities.json`. Policy extraction validates
 exact identifiers and normalized text, not merely a count. Status changes require
@@ -995,7 +995,7 @@ policies are accepted.
 For any scoped capability, a complete transition is accepted if and only if its
 routed implementation, test, and target evidence is valid and its prior blocking
 owner matches the approved owner map. The 11 cross-feature rows may transition from
-their declared Feature 2 owner; Feature 8-only rows and unverified rows cannot change.
+their declared Feature 2 owner; live-verification-only and unverified rows cannot change.
 
 **Validates: Requirements 1.4-1.12**
 
@@ -1343,7 +1343,7 @@ Feature 3 integration performs these steps as one contract change:
 The candidate change set is 58 rows: 32 existing declarations plus 26 new policies.
 That is a scope ceiling, not a promised status count. A row whose residual evidence is
 still missing remains `Partial` or `Missing` with an exact blocker. The two Feature 2
-rows reserved for Feature 8 live verification are outside the descriptor and any
+rows reserved for live verification are outside the descriptor and any
 attempt to change them fails integrity validation.
 
 Generated reports remain pure projections of the ledger. Neither implementation nor

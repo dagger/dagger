@@ -28,9 +28,8 @@ projection and the committed core binding artifacts. Feature 5 owns engine SDK
 registration and the `GenerateLibrary`, `GenerateModule`, `GenerateClient`, and
 `GenerateEntrypoint` hooks. Feature 6 owns Rust source discovery, module TypeDef
 emission, and dispatch. Feature 7 owns standalone, module, and dependency client
-project generation. Feature 8 owns the closing multi-platform and end-to-end
-conformance matrix. Feature 9 owns immutable Git-tagged distribution, migration
-material, release assets, and the stable release gate.
+project generation. Multi-platform conformance, distribution, migration, and external
+release decisions remain outside this specification.
 
 The current `sdk-sdk` harness has no check that enumerates Core_Schema coordinates or
 directly exercises the generated typed bindings. Its generation and module-load checks
@@ -152,7 +151,7 @@ worktree unchanged.
 
 Feature 4 does not register Rust with the engine generator, parse user Rust source,
 emit module TypeDefs or dispatch code, create standalone Cargo projects, publish a
-crate, or claim Feature 8's multi-platform closure. It supplies the core generator and
+crate, or claim unexecuted multi-platform closure. It supplies the core generator and
 bindings those later features consume.
 
 ## Evidence From Current Code
@@ -327,10 +326,10 @@ does not prove wire names, argument omission, nullable decoding, ID conversion,
 directive projection, or public reachability.
 
 Feature 4 evidence may establish completion for generator and generated-binding
-capabilities without waiting for Feature 8's platform matrix when it is deterministic,
-target-scoped, and capability-complete. Feature 8 remains responsible for cross-SDK,
-multi-platform, and full application end-to-end closure. An unrelated `sdk-sdk` check
-cannot be attached as Feature 4 verification evidence.
+capabilities when it is deterministic, target-scoped, and capability-complete.
+Cross-SDK, multi-platform, and full application end-to-end coverage remains outside
+this specification. An unrelated `sdk-sdk` check cannot be attached as Feature 4
+verification evidence.
 
 ## Core Schema Contract Policy
 

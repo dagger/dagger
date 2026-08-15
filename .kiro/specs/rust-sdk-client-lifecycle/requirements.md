@@ -22,9 +22,8 @@ Feature 2 depends on Feature 1's executable Completeness_Ledger. It defines the 
 contract consumed by Feature 3, while Feature 3 owns session-source precedence, CLI
 discovery and download, HTTP authentication, OpenTelemetry propagation, transport
 retry behaviour, and the detailed transport error taxonomy. Feature 4 owns complete
-schema-derived binding generation; Feature 8 owns the closing platform, conformance,
-and security matrices; Feature 9 owns release migration material and the final stable
-publication gate. Feature 2 may change generated handle storage through the generator
+schema-derived binding generation. Live platform matrices and external distribution
+remain outside this specification. Feature 2 may change generated handle storage through the generator
 when lifecycle ownership requires it, but it does not add or alter schema mappings.
 
 The F1 baseline deliberately used a coarse classification rule that assigned every
@@ -263,9 +262,9 @@ are semantic coordinates; source line numbers are evidence locators only.
 The remaining 1,759 currently Feature 2-owned rows receive ownership-only corrections.
 Generated schema declarations route to Feature 4; module-global generated helpers
 route to Feature 6; connection selection, CLI, environment, transport, and transport
-error behaviours route to Feature 3; general integration coverage routes to Feature 8;
-standalone-client behaviour routes to Feature 7; and examples or release-facing
-documentation route to Feature 9. Each correction preserves the row's current status,
+error behaviours route to Feature 3; standalone-client behaviour routes to Feature 7;
+and unverified integration or release-facing work remains blocking outside this
+specification. Each correction preserves the row's current status,
 fingerprint, authority anchors, and implementation evidence.
 
 ### Reviewed Idiomatic Equivalences
@@ -524,8 +523,8 @@ that invalid combinations fail predictably before the SDK starts external work.
     `config_path` option.
 17. WHEN the stable 1.0 configuration is exposed, THE Rust SDK SHALL omit unit-encoded
     `timeout_ms` and `execute_timeout_ms` fields.
-18. WHEN the beta configuration is replaced, THE release migration input SHALL record
-    every removed or renamed public field for Feature 9.
+18. WHEN the beta configuration is replaced, THE checked migration input SHALL record
+    every removed or renamed public field without assigning an external release owner.
 
 ### Requirement 6: Deterministic Configuration Effects
 

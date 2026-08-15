@@ -47,17 +47,16 @@ capture, and artifact writes stay in adapters.
 - Features 2–7 implement client, transport, schema generation, engine SDK, module, and
   client-generation capabilities. They update rows created here; they do not create
   parallel parity lists.
-- Feature 8 extends live conformance beyond the common `sdk-sdk` profile and supplies
-  Rust-specific evidence for client, transport, observability, semantic, security,
-  and platform capabilities.
-- Feature 9 consumes validated compatibility data and the Completeness_Verdict for
-  release gating and public compatibility publication.
+- Additional live scenarios may extend the common `sdk-sdk` profile with scoped Rust
+  observations for client, transport, observability, semantic, security, and platform
+  capabilities.
+- External distribution and release decisions are outside this contract.
 - `toolchains/rust-sdk-dev/main.go` remains the Dagger automation boundary. It already
   captures engine introspection through `DaggerEngine.IntrospectionJSON()` for client
   generation and runs Rust checks in a digest-pinned Rust container. This design adds
   completeness operations to that toolchain rather than creating another CI module.
 - `future/sdk-tests.md` and active `core/integration/module_*_test.go` scenarios are
-  source inventory for later Feature 8 ports. F1 records their stable identities and
+  source inventory for later scoped scenario ports. F1 records their stable identities and
   ownership but does not port them.
 - `sdk/rust/AGENTS.md` and `sdk/rust/CONTRIBUTING.md` remain authored contributor
   guidance. F1 updates their source-of-truth wording to the approved peer authority
@@ -499,8 +498,8 @@ captures the engine schema through the existing `DaggerEngine.IntrospectionJSON(
 path, renders into staging, and returns only the resulting Changeset. The initial
 `CompletenessHarness` is callable but not annotated `+check`, because expected subject
 failures must not make the programme's Integrity CI red. It returns a normalized run
-file suitable for `import-evidence`. Feature 8 may promote profiles to required checks
-as their owned capabilities become complete.
+file suitable for `import-evidence`. A profile becomes required only through a reviewed
+contract change after its scoped capabilities are complete.
 
 The Dagger path runs the Go helper in a digest-pinned Go container compatible with the
 root `go.mod` directive, then passes only its normalized JSON to the digest-pinned Rust
@@ -675,7 +674,7 @@ enum HarnessAdapter {
 The extra stable IDs and proved-capability set make references deduplicable and
 auditable; the canonical Resolved_Ledger expands them to the requirements' evidence
 field shape. `harness-self` requires an empty Capability_ID set. `ConformanceScenario`
-is the extension boundary consumed by Feature 8: every port records its source
+is the extension boundary for additional scenarios: every port records its source
 behaviour independently of Go command syntax and selects exactly one public harness
 adapter. Command environments accept only documented non-secret keys; session tokens
 and credentials are never durable fields.
@@ -881,7 +880,7 @@ require revalidation, and added rows SHALL require explicit classification.
 
 *For any* public Rust capability transition, the transition validator SHALL require a
 valid stability state, classify incompatible stable API movement as breaking, require
-graduation/removal conditions for experimental APIs, and require a Feature 9 migration
+graduation/removal conditions for experimental APIs, and require a reviewed migration
 reference for every user-facing breaking change.
 
 **Validates: Requirements 8.11, 8.12, 11.4–11.6**
@@ -899,16 +898,15 @@ diagnostic exists, and Completeness SHALL be true exactly when Integrity is true
 ### Property 16: Gate selection
 
 *For any* CompletenessReport and selected gate, CLI success SHALL be equivalent to the
-selected verdict, with the initial CI profile selecting Integrity and the Feature 9
-release profile selecting Completeness.
+selected verdict. Selecting Completeness does not authorize an external release.
 
 **Validates: Requirements 9.8–9.11, 10.14**
 
 ### Property 17: Blocking-work ownership
 
 *For any* `Missing` or `Partial` capability, ownership routing SHALL assign exactly the
-Feature 2–9 domain defined by the approved umbrella, retain `initClient` omissions in
-Feature 7, and retain unverified platform obligations in Feature 8.
+accepted capability domain defined by the approved umbrella, retain `initClient`
+omissions in Feature 7, and leave unverified platform obligations blocking.
 
 **Validates: Requirements 10.4–10.11, 10.15, 10.16**
 
@@ -940,7 +938,7 @@ unchanged and emit all applicable deterministic diagnostics.
 
 ### Property 21: Portable conformance extensions
 
-*For any* Rust-specific black-box scenario added by Feature 8, extension validation
+*For any* Rust-specific black-box scenario, extension validation
 SHALL accept it only when it reuses the public `SdkTarget` or `mod-test` integration
 boundary, maps an exact non-empty Capability_ID set, and expresses the observable
 source behaviour without requiring obsolete or Go-specific CLI syntax.
@@ -1019,7 +1017,7 @@ Fixed fixtures cover facts that are not useful generated input spaces:
   `initModuleRendersRootType` classification;
 - `initClient` absence, the `linux/amd64` runner boundary, and explicit CLI selection;
 - all durable enum spellings and every diagnostic-code serialization;
-- the exact five status rows and Feature 2–9 routing boundaries;
+- the exact five status rows and accepted capability routing boundaries;
 - fixed malformed paths, Git revisions, schema TypeRefs, skipped/removed evidence, and
   version-range boundaries; and
 - human report headings and stable zero-count rendering.

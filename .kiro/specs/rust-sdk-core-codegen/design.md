@@ -82,11 +82,11 @@ and Rust `1.97.1` toolchain.
 - Feature 7 owns complete standalone, module, and dependency client projects. Feature
   4 supplies the core bindings those projects import; it does not create their Cargo
   projects or workspace configuration.
-- Feature 8 owns the multi-platform, cross-SDK, and full application conformance
-  matrix. Feature 4 supplies focused exact-target engine evidence for the generated
-  categories it claims.
-- Feature 9 owns immutable Git-tagged distribution, user migration, final SemVer
-  review, release assets, and the stable release gate. Feature 4 detects when its
+- Multi-platform, cross-SDK, and full application conformance remains outside this
+  specification. Feature 4 supplies focused exact-target engine observations for the
+  generated categories it claims.
+- Distribution, user migration, final SemVer review, release assets, and external
+  release decisions remain outside this specification. Feature 4 detects when its
   public change requires a breaking-change fragment but does not create a release.
 
 ### Rust construction rules

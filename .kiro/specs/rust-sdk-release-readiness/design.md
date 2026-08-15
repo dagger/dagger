@@ -3,30 +3,34 @@
 ## Overview
 
 This design implements a deliberately small, non-publishing readiness pass for the Rust
-SDK merged at `0513782e713257a9285b101f45230af00e3558d8`. It updates nine maintained Rust
-documentation surfaces and seven accepted child specifications, then exports exact
-merged-main artifacts through the existing `rust-client-dev` `Build` and `Verify` entry
-points.
+SDK implementation merged at `0513782e713257a9285b101f45230af00e3558d8`. It updates
+nine maintained Rust documentation surfaces and seven accepted child specifications,
+commits that cleanup, then exports artifacts from that exact final commit through the
+existing `rust-client-dev` `Build` and `Verify` entry points.
 
 The work changes no SDK capability and creates no release service. It removes obsolete
 delivery history while retaining real generated ownership, atomic publication,
 immutable dependency, runtime safety, and completeness contracts.
 
-Three identities remain distinct:
+Five identities remain distinct:
 
-- **working source:** `0513782e713257a9285b101f45230af00e3558d8`;
+- **implementation baseline:** `0513782e713257a9285b101f45230af00e3558d8`;
+- **documentation base:** `236a0eb2155b23c5d2e0359c3f8b4d658d4cb5f9`;
+- **artifact target:** the final committed documentation/specification cleanup revision;
 - **engine core:** beta.11 target `501b57e0476dee5881b99a064c3c04173134ecc7`
   with engine version `v1.0.0-beta.11.rust.1`; and
-- **Rust engine content:** the manifest built from the Rust SDK at the working source.
+- **Rust engine content:** the manifest built from the Rust SDK at the artifact target.
 
 The normal build composes the pinned engine core with the current Rust content. Records
 preserve both identities rather than describing the engine core as if it came from the
 working-source commit.
 
-The local branch is the reviewable editing surface. The devbox clone remains the clean
-artifact authority. A local patch is applied there only when validation requires it,
-and exact artifacts are exported only after the clone is restored to a clean detached
-working-source commit.
+The local branch is the reviewable editing surface. After local acceptance, its complete
+allowed edit set is committed and that commit becomes the immutable artifact target.
+The devbox clone remains the clean artifact authority and receives that commit through
+a Git bundle when it has not been pushed. Exact artifacts are exported only from the
+clean detached artifact target. This matters because the public crate packages include
+their README content, so documentation cleanup can change package bytes.
 
 ## Behavioral Authorities
 
@@ -69,7 +73,8 @@ package layout, ownership, or public API shape was copied into Rust.
   integration code, Dagger modules, or CLI code.
 - Publishing to crates.io, creating a hosted release, or creating or pushing a Git tag.
 - Changing Dagger CLI behavior or source.
-- Revalidating or taking ownership of an already-addressed upstream Dagger regression.
+- Revalidating, declaring resolved, or taking ownership of the separately tracked
+  upstream Dagger long-query regression.
 - Changing accepted behavior, generated output, package APIs, or compatibility.
 - Removing runtime, dependency, generated-file, cache, or Result_Sink safety semantics.
 - Claiming source, package-layout, ownership, or API-shape compatibility with Go.
@@ -84,11 +89,12 @@ flowchart TD
     A["Approved spec"] --> B["Docs and child specs"]
     A --> C["Devbox preflight"]
     B --> D["Static acceptance"]
-    C --> E["Clean target commit"]
-    D --> F["Build and verify"]
+    D --> E["Commit artifact target"]
+    C --> F["Clean detached artifact target"]
     E --> F
-    F --> G["Export and checksum"]
-    G --> H["Download and shutdown"]
+    F --> G["Build and verify linux/amd64"]
+    G --> H["Export and checksum"]
+    H --> I["Download and shutdown"]
 ```
 
 ### Control plane
@@ -98,11 +104,13 @@ flowchart TD
    occurrence before editing it.
 3. Validate hard-zero patterns, semantic preservation, and positive boundary assertions
    over the closed maintained scope.
-4. Before every remote build session, record the `dagger` binary and version, Docker
+4. Commit the complete approved local edit set and record its full revision as the
+   artifact target; any later tracked edit invalidates the artifact run.
+5. Before every remote build session, record the `dagger` binary and version, Docker
    availability, runner host, Git revision, status, and AppleDouble scan.
-5. Reverse any temporary remote patch and recheck the clean detached revision before
-   exact artifact export.
-6. Finalize and download artifacts without publication.
+6. Transfer the artifact target by Git bundle when necessary and recheck the clean
+   detached revision before exact artifact export.
+7. Finalize and download artifacts without publication.
 
 ### Data plane
 
@@ -115,20 +123,21 @@ the Rust client. No parallel build aggregate or publisher is introduced.
 
 ## Components and Interfaces
 
-### 1. Local worktree and remote patch protocol
+### 1. Local worktree and exact-commit transfer protocol
 
-The branch `kiro/rust-sdk-release-readiness` is authoritative for edits. Its base is the
-working-source commit. Remote transfer follows this contract:
+The branch `codex/rust-sdk-release-readiness` is authoritative for edits. Its base is
+the documentation-base commit. Remote transfer follows this contract:
 
 ```text
-local base == working-source commit
-remote base == working-source commit
-patch paths == explicitly approved validation paths
-remote post-apply diff == local scoped patch
+local base == documentation-base commit
+artifact target == one committed allowed edit set
+remote detached HEAD == artifact target
+remote status == clean
 ```
 
-Documentation/spec changes are not required in the devbox to build exact merged-main
-artifacts. Any validation patch is reverted before artifact export.
+When the artifact target is not present on the remote, a Git bundle containing the
+commit is uploaded to the devbox and used as a read-only transfer mechanism. No patch is
+applied to the artifact checkout. The two pre-existing local stashes remain untouched.
 
 ### 2. Sensitive-occurrence classifier
 
@@ -336,14 +345,14 @@ RustSdkBuild.Version            -> String
 RustSdkBuild.Verify()           -> Void
 ```
 
-Exact command syntax is confirmed from active CLI help before long work. Expected
-operations are:
+Exact command syntax is confirmed from active CLI help before long work. The build
+selects `linux/amd64` explicitly. Expected operations are:
 
 ```console
-dagger -m .dagger/modules/rust-client-dev call build version
-dagger -m .dagger/modules/rust-client-dev call build packages export --path <packages>
-dagger -m .dagger/modules/rust-client-dev call build complete-engine as-tarball export --path <oci>
-dagger -m .dagger/modules/rust-client-dev call build verify
+dagger -m .dagger/modules/rust-client-dev call build --platform linux/amd64 version
+dagger -m .dagger/modules/rust-client-dev call build --platform linux/amd64 packages export --path <packages>
+dagger -m .dagger/modules/rust-client-dev call build --platform linux/amd64 complete-engine as-tarball export --path <oci>
+dagger -m .dagger/modules/rust-client-dev call build --platform linux/amd64 verify
 ```
 
 The package directory contains only:
@@ -392,9 +401,14 @@ Failures remain ordinary terminal command/check failures with bounded native
 diagnostics. No blocker database or custom error-code registry is created. A failure is
 reported to the user and stops dependent work.
 
-## Correctness Properties
+## Acceptance Invariants and Executable Correctness Properties
 
-### Property 1: Cleanup scope is closed
+Acceptance invariants are enforced by closed-scope searches, diff review, exact Git
+identity checks, and artifact rehashing. They are operational checks rather than
+property-based tests and introduce no committed policy runner. Only the two sections
+explicitly named **Correctness Property** are executable properties requiring PBTs.
+
+### Acceptance Invariant 1: Cleanup scope is closed
 
 *For any* acceptance run, the maintained documentation set SHALL equal the nine approved
 paths and the maintained child-spec set SHALL equal the seven approved directories,
@@ -404,7 +418,7 @@ remain outside the edit set.
 
 **Validates: Requirements 1.3, 1.4, 1.12, 1.14, 4.1, 5.11**
 
-### Property 2: Cleanup preserves accepted semantics
+### Acceptance Invariant 2: Cleanup preserves accepted semantics
 
 *For any* sensitive occurrence, classification SHALL remove obsolete delivery or
 external publication machinery and SHALL retain Internal_Publication,
@@ -413,7 +427,7 @@ behavior.
 
 **Validates: Requirements 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.11, 4.21, 4.22, 5.1, 5.2, 5.3, 5.4**
 
-### Property 3: README capability claims are authority-bounded
+### Acceptance Invariant 3: README capability claims are authority-bounded
 
 *For any* capability claimed in the root README, the claim SHALL be supported by merged
 Rust implementation and applicable engine-schema, scoped harness, pinned Go, and Rust-
@@ -421,7 +435,7 @@ policy authorities, and SHALL NOT imply Go source or API-shape compatibility.
 
 **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 4.23**
 
-### Property 4: Every maintained document satisfies its policy
+### Acceptance Invariant 4: Every maintained document satisfies its policy
 
 *For any* approved documentation path, acceptance SHALL succeed only when every
 required assertion from the per-document table is present, every prohibited
@@ -430,7 +444,7 @@ represented.
 
 **Validates: Requirements 4.7, 4.8, 4.9, 4.10, 4.11, 4.12, 4.14, 4.15, 4.16, 4.17, 4.18, 4.19, 4.20, 4.21, 4.22**
 
-### Property 5: Generated Git dependency coordinates are immutable and safe
+### Acceptance Invariant 5: Generated Git dependency coordinates are immutable and safe
 
 *For any* documented generated Git dependency, acceptance SHALL require a credential-
 free canonical HTTPS repository plus one reachable lowercase 40-character commit and
@@ -438,15 +452,16 @@ SHALL reject paths, credentials, branches, tags, defaults, queries, and fragment
 
 **Validates: Requirements 4.13, 5.10**
 
-### Property 6: Upstream regressions remain outside Rust SDK readiness
+### Acceptance Invariant 6: Upstream regressions remain outside Rust SDK readiness
 
 *For any* readiness execution, a dedicated long-query reproducer or result SHALL NOT be
-required, recorded, or accepted as Rust SDK evidence, and an ordinary Build/Verify
-failure SHALL NOT authorize attribution to that historical issue or an engine change.
+required, recorded, or accepted as Rust SDK evidence, an ordinary Build/Verify failure
+SHALL NOT authorize attribution to that separate unverified issue or an engine change,
+and readiness SHALL NOT claim that the issue is resolved.
 
 **Validates: Requirements 2.1, 2.2, 2.3**
 
-### Property 7: Public package closure is exact
+### Correctness Property 1: Public package closure is exact
 
 *For any* package metadata and archive set, validation SHALL succeed if and only if the
 public set is exactly the two required packages at one version with required roots,
@@ -456,7 +471,7 @@ files, features, and exact macro dependency.
 
 This is already implemented with 256 Proptest cases in `ordinary_build.rs`.
 
-### Property 8: Complete-engine Rust manifest selection is exact
+### Correctness Property 2: Complete-engine Rust manifest selection is exact
 
 *For any* expected digest, selected digest, and blob set, validation SHALL succeed if
 and only if both digests are equal canonical SHA-256 values and the selected blob
@@ -466,7 +481,7 @@ exists, regardless of unrelated standard SDK blobs.
 
 This is already implemented with 256 Proptest cases in `ordinary_build.rs`.
 
-### Property 9: Positive boundaries cannot be satisfied by deletion
+### Acceptance Invariant 7: Positive boundaries cannot be satisfied by deletion
 
 *For any* maintained-document edit, hard-zero scans alone SHALL NOT pass acceptance
 unless engine-free checks, focused-regression scope, exact Build outputs, isolated
@@ -475,7 +490,7 @@ are all positively stated.
 
 **Validates: Requirements 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.12**
 
-### Property 10: Artifact checksums form a bijection
+### Acceptance Invariant 8: Artifact checksums form a bijection
 
 *For any* finalized file set and checksum manifest, retrieval SHALL be accepted if and
 only if every required relative path occurs exactly once, no extra release artifact is
@@ -483,7 +498,7 @@ present, and every downloaded byte stream matches its digest.
 
 **Validates: Requirements 3.10, 3.11, 3.12, 6.1, 6.2, 6.5**
 
-### Property 11: Release identity and authorization are invariant
+### Acceptance Invariant 9: Release identity and authorization are invariant
 
 *For any* changed release-facing document, Release_Identity SHALL map exactly to
 Source_Version, compatibility SHALL remain exact, no crates.io/automated release action
@@ -492,12 +507,12 @@ direct authorization.
 
 **Validates: Requirements 4.20, 4.23, 4.24, 4.25, 4.26, 4.27, 5.9, 5.12**
 
-### Property 12: Failure cannot be replaced by stale evidence
+### Acceptance Invariant 10: Failure cannot be replaced by stale evidence
 
 *For any* readiness execution, the first blocker SHALL prevent later acceptance, and no
 artifact or command result from another revision, prior build, or retry SHALL substitute.
 
-**Validates: Requirements 1.1, 1.2, 1.13, 1.14, 3.1, 3.2, 3.3, 3.13, 6.3, 6.4, 6.5**
+**Validates: Requirements 1.1, 1.2, 1.13, 1.14, 1.15, 3.1, 3.2, 3.3, 3.13, 6.3, 6.4, 6.5**
 
 ## Error Handling
 
@@ -508,7 +523,7 @@ artifact or command result from another revision, prior build, or retry SHALL su
 | Internal publication, safety provenance, or accepted capability removed | `preservation-loss` | Restore semantic contract before acceptance |
 | Required positive boundary absent | `positive-assertion-missing` | Add grounded current wording |
 | Changed Markdown is invalid | `markdown-invalid` | Correct before design/task completion |
-| Wrong revision | `source-mismatch` | Stop before Dagger |
+| Wrong artifact-target revision | `source-mismatch` | Stop before Dagger |
 | Dirty exact-build source | `worktree-dirty` | Stop before artifact build |
 | AppleDouble file | `appledouble-present` | Stop before validation/build |
 | Dagger unavailable | `dagger-unavailable` | Stop build session |
@@ -541,8 +556,9 @@ against its approved preserve/remove row.
 ### Existing package and engine properties
 
 Reuse the existing 256-case Proptest coverage for package closure and engine-manifest
-selection in `sdk/rust/crates/dagger-sdk-completeness/tests/ordinary_build.rs`. Do not
-duplicate those reference models.
+selection in `sdk/rust/crates/dagger-sdk-completeness/tests/ordinary_build.rs`. These
+tests implement Executable Correctness Properties 1 and 2; do not duplicate those
+reference models. The acceptance invariants remain direct operational checks.
 
 ### Documentation checks
 
@@ -555,7 +571,8 @@ duplicate those reference models.
 
 ### Ordinary integration acceptance
 
-1. Check source, cleanliness, AppleDouble files, Dagger, Docker, and runner.
+1. Check Artifact_Target, cleanliness, AppleDouble files, Dagger, Docker, runner, and
+   explicit `linux/amd64` platform.
 2. Run Ordinary_Build and Ordinary_Verification.
 3. Export exact packages and complete OCI.
 4. Validate filenames, versions, binaries, selected manifest, and consumer close.

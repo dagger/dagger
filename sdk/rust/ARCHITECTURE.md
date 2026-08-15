@@ -9,7 +9,7 @@ handle can outlive or bypass the client's lifecycle state.
 
 - `crates/dagger-sdk` owns the public client, generated bindings, module runtime
   bridges, implicit connector, raw GraphQL values, diagnostics, errors, and session
-  lifecycle. It is one of exactly two publishable crates.
+  lifecycle. It is one of exactly two public package artifacts.
 - `crates/dagger-sdk-macros` is the exact-version procedural-macro companion re-exported
   by `dagger-sdk`. It owns authoring syntax and typed crate-local bridge emission only;
   it has no runtime dependency on `dagger-sdk` and performs no schema, I/O, engine, or
@@ -18,12 +18,12 @@ handle can outlive or bypass the client's lifecycle state.
   engine schema into Rust source. Generated output is reviewed through fixtures and is
   never edited by hand.
 - `crates/dagger-bootstrap` supports code-generation bootstrapping and is not a
-  publishable application dependency.
+  public application dependency.
 - `crates/dagger-sdk-engine` owns the private, data-only operation compiler, Cargo
   adoption, generated ownership, descriptor, runtime, and protocol contracts used by
   the engine adapter. It is deliberately absent from the public SDK dependency graph.
 - `crates/dagger-sdk-completeness` is workspace-private and derives the source
-  inventory, ledger, evidence, and reports used to measure the Rust SDK against the
+  inventory, ledger, observations, and reports used to measure the Rust SDK against the
   pinned Go SDK, engine schema, common SDK harness, and Rust policy.
 
 The public package graph is deliberately closed and acyclic: an application depends on
@@ -162,7 +162,7 @@ The stable surface is fenced by a normalized API manifest, compile-pass and
 compile-fail fixtures, denied rustdoc warnings, source-policy tests, deterministic
 properties, portable process/HTTP/archive/cache fixtures, and an isolated exact-target
 default-connector run. The completeness crate admits status changes only from
-machine-readable evidence with exact target and capability scope.
+machine-readable observations with exact target and capability scope.
 
 ## Built-in engine boundary
 
@@ -183,7 +183,7 @@ The private entrypoint proves registration and invocation hooks against the nest
 engine session. Those hooks cannot stand in for arbitrary module dispatch or complete
 standalone-client content, which remain separately scoped work. See
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md) for the reproducible build audit,
-focused case workflow, and exact-target evidence rules.
+focused case workflow, and exact-target verification rules.
 
 ## Implementation closure and completed-engine verification
 
@@ -198,5 +198,5 @@ Release readiness then packages exactly the two public crates, assembles the com
 Dagger engine with the Rust SDK content, and runs one isolated external Rust consumer
 against that completed engine. Focused engine-backed regression tests remain available
 for boundaries that cannot be represented by the direct harness; they are not a second
-release-evidence system. The maintainer procedure is documented in
+release mechanism. The maintainer procedure is documented in
 [MODULE_AUTHORING.md](MODULE_AUTHORING.md).

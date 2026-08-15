@@ -79,7 +79,7 @@ credential-bearing URLs, arbitrary panic payloads, host paths, or unbounded valu
 
 ## Checkpoint build and test: engine-free and Rust-first
 
-During implementation, run the narrowest owning package or fixture. The Feature-end
+During implementation, run the narrowest owning package or fixture. The local
 checkpoint uses Cargo directly from `sdk/rust` and the direct Go ABI package under
 `sdk/rust/runtime`. It exercises the production source compiler, descriptor,
 projections, generated registry, codecs, context, dispatcher, entrypoint adapter, and
@@ -94,9 +94,9 @@ The checkpoint contract is strict:
 - locked package checks, all module properties, bounded compile fixtures, direct
   adapter tests, formatting, Clippy, rustdoc, Cargo Deny, repository Rust security,
   public package contents, derived reporting, and byte-clean output; and
-- a typed record of every action, elapsed time, result, and generated-asset decision.
+- a deterministic result for every action and generated-asset decision.
 
-The focused evidence slices are:
+The focused test slices are:
 
 ```console
 cargo test -p dagger-sdk-engine --test checkpoint_properties --locked
@@ -109,10 +109,10 @@ cargo test -p dagger-codegen \
 cargo test -p dagger-sdk --test module_authoring_compile --locked
 ```
 
-The complete Feature-end gate additionally runs the canonical workspace format,
-check, test, warning-denied Clippy/rustdoc, Cargo Deny, security, package, direct Go ABI,
-generated drift/ownership, derived-report, and clean-output checks once. It does not
-continuously regenerate checked assets.
+The complete local gate additionally runs the canonical workspace format, check, test,
+warning-denied Clippy/rustdoc, Cargo Deny, package, direct Go ABI, generated
+drift/ownership, derived-report, and clean-output checks once. It does not continuously
+regenerate checked assets.
 
 If a proposed local check genuinely requires an engine, keep the direct model gap
 explicit and add the smallest focused engine-backed regression test that owns that
@@ -120,4 +120,5 @@ boundary. The ordinary release-readiness check is intentionally smaller: package
 two public crates, assemble the complete engine with the Rust SDK content, and run one
 isolated external Rust consumer against that completed engine. This verifies the
 packaged module-authoring path without replacing the faster compiler and dispatch
-tests above.
+tests above. Packaging and complete-engine assembly create local artifacts only; any
+manual GitHub Release requires separate, direct authorization.

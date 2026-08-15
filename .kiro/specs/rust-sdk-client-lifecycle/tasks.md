@@ -420,7 +420,7 @@
   - [x] 11.3 Add the beta-to-stable migration input
     - Record callback `connect`, `connect_opts`, `DaggerConn`, `Config`, `config_path`,
       `timeout_ms`, `execute_timeout_ms`, public generated storage fields, and their
-      stable replacements in the machine-readable migration input consumed by Feature 9.
+      stable replacements in the machine-readable migration input.
     - Validate removed/renamed items against the old public-API snapshot and target
       facade so stale or missing migration rows fail tests.
     - _Requirements: 2.13–2.15, 5.16, 5.17, 5.18, 10.13_
@@ -571,5 +571,6 @@ in listed order unless their text names a stronger prerequisite.
 - Feature 3 owns real source precedence, provisioning, authentication, observability,
   retry, and detailed transport semantics. Feature 2 builds and tests the stable seams
   they consume; a row remains `Partial` until its required cross-feature evidence exists.
-- Feature 9 owns published migration prose and the final release gate. Feature 2 supplies
-  the checked migration input and stable public-API snapshot it will consume.
+- Published migration prose and external release decisions remain outside this
+  specification. Feature 2 supplies only the checked migration input and stable
+  public-API snapshot.

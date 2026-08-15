@@ -10,16 +10,32 @@ loopback-only; downloaded CLI bytes are checksum-verified before use.
 
 ## Install
 
-```bash
-cargo add dagger-sdk
+The SDK is supplied as two checked repository release artifacts rather than through
+crates.io. Download `dagger-sdk-1.0.0-beta.11.rust.1.crate`,
+`dagger-sdk-macros-1.0.0-beta.11.rust.1.crate`, and `SHA256SUMS` from the same manual
+GitHub Release, then verify both package checksums before unpacking them:
+
+```console
+mkdir -p vendor/dagger-sdk vendor/dagger-sdk-macros
+tar -xzf dagger-sdk-1.0.0-beta.11.rust.1.crate -C vendor/dagger-sdk --strip-components=1
+tar -xzf dagger-sdk-macros-1.0.0-beta.11.rust.1.crate -C vendor/dagger-sdk-macros --strip-components=1
 ```
 
-The SDK uses Tokio for asynchronous work. Applications need a Tokio runtime, for
-example:
+Reference the unpacked SDK and its exact procedural-macro companion from
+`Cargo.toml`:
 
-```bash
-cargo add tokio --features macros,rt-multi-thread
+```toml
+[dependencies]
+dagger-sdk = { path = "vendor/dagger-sdk" }
+tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread"] }
+
+[patch.crates-io]
+dagger-sdk-macros = { path = "vendor/dagger-sdk-macros" }
 ```
+
+The patch is required because the packaged SDK pins its macro companion to the exact
+matching version. Keep both directories together and commit an application lockfile
+under the application's own reproducibility policy.
 
 ## Use
 
@@ -88,4 +104,4 @@ live in [`../../examples`](../../examples).
 
 Development and verification commands are documented in
 [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md); generated-client maintenance and
-release evidence are documented in [`../../MAINTAINING.md`](../../MAINTAINING.md).
+release assembly are documented in [`../../MAINTAINING.md`](../../MAINTAINING.md).

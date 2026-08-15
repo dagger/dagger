@@ -78,9 +78,9 @@ legal after the first generation.
 Every local checkpoint is Rust-first and engine-free. The production compiler,
 reconciler, publisher, runtime bridge, generated API, recording transport, fixture
 resolver, completeness validator, and direct Go ABI helpers are exercised directly.
-Checked Core output is reused unless an owning input changes. Feature 8 later consumes
-this closure evidence and uses one reusable exact-target engine artifact for the small
-set of workspace and real-query facts that a direct harness cannot prove.
+Checked Core output is reused unless an owning input changes. Ordinary_Verification is
+a separate packaged-consumer check and does not widen the direct client-generation
+claims.
 
 ## Dependencies and Non-Goals
 
@@ -104,13 +104,9 @@ set of workspace and real-query facts that a direct harness cannot prove.
 - Feature 6 owns module TypeDef authoring and dispatch. Its output determines the
   bound module schema consumed here; none of its dispatcher or module binary is copied
   into a standalone client.
-- Feature 8 owns the reusable exact-target engine artifact, one-engine sign-off run,
-  platform and cross-SDK conformance, and the final digest-bound verdict. Feature 7
-  defines and validates the client case inventory but does not execute it locally.
-- Feature 9 owns immutable Git-tagged SDK distribution, public release automation,
-  migration policy, release assets, and stable-release presentation. Feature 7
-  consumes an immutable Git `PublishedSdkDependency`; it does not release the
-  generated package or the SDK.
+- Platform and cross-SDK conformance, migration, distribution, and external release
+  decisions remain outside this specification. Feature 7 consumes an immutable SDK
+  dependency descriptor but does not release the generated package or SDK.
 - `dagger-codegen` remains the pure compiler. It owns client schema scope, local names,
   type projection, method shape, Rust rendering, and the semantic binding catalog.
 - `dagger-sdk` owns the public runtime and a deliberately tiny, exact-version,
@@ -219,7 +215,7 @@ set of workspace and real-query facts that a direct harness cannot prove.
 - Running another SDK's generator, building another SDK, starting a Dagger engine, or
   continuously regenerating checked Core bindings at Feature 7 checkpoints.
 - Claiming the exact CLI workspace flow, remote fetch, or real engine query before the
-  deferred SDK sign-off.
+  deferred ordinary verification.
 
 ## Repository Layout
 
@@ -247,7 +243,7 @@ sdk/rust/
 │   │       ├── fixture.rs              # engine-free candidate compilation
 │   │       └── checkpoint.rs           # Feature 7 checkpoint composition
 │   └── dagger-sdk-completeness/
-│       └── src/client_generation.rs    # scope, closure, and sign-off admission
+│       └── src/client_generation.rs    # scope, closure, and ordinary verification admission
 ├── completeness/
 │   ├── mappings/rust-sdk-client-generation.json
 │   ├── policies/rust-client-generation.json
@@ -452,7 +448,7 @@ root `node(id:)` re-entry builder on the same session, and adding lazily resolve
 target-typed ID inputs. `SessionHandle` and `Selection` remain private, and Core's
 `Loadable` trait remains sealed.
 
-### Engine-free checkpoint and deferred sign-off plane
+### Engine-free checkpoint and ordinary verification boundary
 
 ```mermaid
 flowchart LR
@@ -463,8 +459,8 @@ flowchart LR
     CARGO --> REC["Recording transport query assertions"]
     LOCAL --> CLOSE["Implementation_Closure record"]
     REC --> CLOSE
-    CLOSE --> SIGN["Feature 8 exact-target sign-off"]
-    SIGN --> CASES["init, local, pinned remote, regeneration, Core + module query"]
+    CLOSE --> BUILD["Ordinary Build"]
+    BUILD --> VERIFY["One packaged external consumer against complete engine"]
 ```
 
 The fixture compiler runs the real production `ClientCompiler`, project reconciler,
@@ -480,11 +476,10 @@ unscoped generation, distribution builds, and network dependency resolution. A
 proposed engine exception is evidence data requiring separate approval, not an action
 the local planner can execute.
 
-Feature 8 consumes the resulting exact-target closure record. It builds the target
-artifact, required Go engine/CLI/runtime content, and Rust content at most once; starts
-one engine; installs one Rust baseline; fans out the bounded client cases; records
-phase timings; rejects duplicate builds or starts; and emits one atomic verdict bound
-to all input digests. It does not replay the Feature 7 Cargo/property/security suite.
+Ordinary_Verification consumes the two public packages and complete engine from one
+ordinary Build result, compiles an isolated path-based consumer, runs one Core query,
+and closes the client. It does not replace the Feature 7 compiler, project,
+regeneration, module-query, ownership, or hygiene suites.
 
 ## Components and Interfaces
 
@@ -993,8 +988,7 @@ the same Rust discovery and reconciliation code.
 
 ### Completeness and evidence (`dagger-sdk-completeness/src/client_generation.rs`)
 
-The completeness component defines closed records for scope, local closure, and
-deferred sign-off:
+The completeness component defines closed records for scope and local closure:
 
 ```rust
 pub struct ClientGenerationClosureObservation {
@@ -1009,23 +1003,9 @@ pub struct ClientGenerationClosureObservation {
     pub checkpoint: CheckpointRecord,
 }
 
-pub struct ClientSignoffInventory {
-    pub initialized_local: SignoffCase,
-    pub pinned_remote: SignoffCase,
-    pub regeneration: SignoffCase,
-    pub core_query: SignoffCase,
-    pub module_query: SignoffCase,
-}
-
 pub fn admit_client_generation_closure(
     observation: ClientGenerationClosureObservation,
 ) -> Result<ClientGenerationClosure, CompletenessDiagnosticSet>;
-
-pub fn validate_client_signoff_candidate(
-    closure: &ClientGenerationClosure,
-    run: &ExactTargetSignoffRun,
-    inventory: &ClientSignoffInventory,
-) -> Result<ClientSignoffVerdict, CompletenessDiagnosticSet>;
 ```
 
 Closure admission requires every mapped Feature 7 evidence domain, exact target,
@@ -1033,12 +1013,6 @@ passed engine-free checkpoint record, matching implementation and input digests,
 no engine/other-SDK observation. It can mark Rust policy capabilities only according
 to their mapping's allowed terminal status. It cannot promote the engine-backed
 initialization lifecycle merely from an adapter fixture.
-
-Sign-off validation is a pure evidence check in Feature 7. It requires the five client
-cases, one admitted matching closure, one exact-target artifact identity, at-most-once
-engine/CLI/Go-runtime/Rust builds, one engine start, one installed Rust baseline,
-isolated case outcomes, phase timings, and one atomic digest-bound verdict. Feature 8
-later produces those observations.
 
 The mapping correction changes only the owning feature for the pinned `TestProvision`
 capability and retains its fingerprint and status. The umbrella requirement that
@@ -1057,10 +1031,10 @@ The guide explains:
 - why a dependency requires a separately bound client;
 - engine-free contributor fixtures and change-triggered regeneration;
 - how to inspect the generated manifest and typed diagnostics; and
-- the exact boundary between Implementation_Closure and Feature 8 SDK_Signoff.
+- the exact boundary between Implementation_Closure and Ordinary_Verification.
 
-It includes commands that use only `sdk/rust` packages at local checkpoints. Engine
-sign-off commands remain in the separate sign-off guide and are not presented as a
+It includes commands that use only `sdk/rust` packages at local checkpoints. Ordinary
+verification commands remain in the maintenance guide and are not presented as a
 fallback for a failing local fixture.
 
 ## Data Models
@@ -1132,7 +1106,7 @@ pub enum ClientBindingSource {
 
 Core descriptors point to an exact Feature 4 fingerprint and `dagger_sdk` Rust path.
 Generated descriptors point below the local module namespace. Policy descriptors
-account for project, ownership, checkpoint, and sign-off rules which intentionally
+account for project, ownership, checkpoint, and ordinary verification rules which intentionally
 have no schema coordinate. The catalog is exhaustive: a visible public coordinate with
 no descriptor or more than one emitted descriptor is an error.
 
@@ -1201,17 +1175,11 @@ plans without exposing credentials. `clients` is sorted by path. Validation prov
 that every path is at or below `cwd` and that no pair is equal or prefix-overlapping.
 The Go adapter holds engine objects transiently beside this safe semantic plan.
 
-### Checkpoint and sign-off records
+### Checkpoint records
 
 Feature 7 reuses Feature 6's `CheckpointPlan`, `CheckpointRecord`,
 `GeneratedAssetDecision`, and phase timing types. New stable test targets are added to
 the closed Rust package enum rather than represented as shell strings.
-
-`ClientSignoffInventory` uses case-kind enum values rather than display names. Every
-case records the exact target artifact digest, installed Rust baseline digest, client
-manifest digest, module/schema identity, outcome, and elapsed time. The final verdict
-hashes the admitted closure, shared build identities, engine start identity, sorted
-case records, and phase timings.
 
 ## Correctness Properties
 
@@ -1226,7 +1194,7 @@ subject, non-empty evidence domain, and allowed terminal status; Feature 5 hook
 ownership is preserved; content claims cannot be closed by hook-only evidence; stale,
 skipped, failed, incomplete, or target-incompatible evidence admits no transition; and
 the rendered report separates initialization, generated contents, Cargo integration,
-regeneration, query usability, local closure, and sign-off blockers. The umbrella
+regeneration, query usability, local closure, and engine-backed blockers. The umbrella
 scope SHALL describe dependencies as separately bound clients rather than transitive
 surfaces in one client.
 
@@ -1517,25 +1485,11 @@ non-executable and require a separately recorded proof and explicit approval.
 if and only if every mapped implementation, compiler, project, generated API, query,
 diagnostic/security, hygiene, and checkpoint domain passed for the same exact target,
 implementation digest, catalog/manifest identities, and engine-free boundary. The
-result SHALL be canonical and consumable by sign-off without replaying local work;
+result SHALL be canonical and reusable without replaying local work;
 missing, stale, skipped, failed, mismatched, engine-backed, or other-SDK local evidence
 SHALL reject closure.
 
 **Validates: Requirements 10.11–10.12**
-
-### Property 27: SDK sign-off inventory is bounded, reused, and atomic
-
-*For any* admitted matching closure, exact-target build/run observation, and client
-case inventory, sign-off validation SHALL succeed if and only if the inventory contains
-one initialized local client, one pinned remote dependency-bound client, one schema
-regeneration, one Core query, and one namespaced module query; engine, CLI/Go runtime,
-and Rust content were built at most once from one reusable artifact identity; exactly
-one engine and installed Rust baseline were used; cases are isolated; phase timings are
-complete; and one verdict binds all digests. Any missing, stale, skipped, failed,
-duplicated-build, duplicated-engine, or digest-mismatched observation SHALL reject the
-entire verdict.
-
-**Validates: Requirements 10.13–10.19**
 
 ## Error Handling
 
@@ -1586,8 +1540,6 @@ only a fixed operation label; it never appends raw process output or a module re
 | Checkpoint observation is incomplete/stale or lacks timing/reuse decision | existing checkpoint record diagnostic | `CLIENT_CHECKPOINT_EVIDENCE_INVALID` |
 | Capability scope/mapping/fingerprint is wrong | existing completeness scope diagnostic | `CAPABILITY_SCOPE_CHANGED`, `CAPABILITY_BINDING_*`, or `CAPABILITY_FINGERPRINT_MISMATCH` |
 | Closure evidence is missing, stale, failed, skipped, mismatched, or engine-backed | `ClientClosureDiagnostic` | `CLIENT_CLOSURE_INCOMPLETE` |
-| Sign-off case is absent, stale, skipped, failed, or digest-mismatched | `ClientSignoffDiagnostic` | `CLIENT_SIGNOFF_INCOMPLETE` |
-| Exact-target artifact/build/engine is duplicated | `ClientSignoffDiagnostic` | `CLIENT_SIGNOFF_DUPLICATE_WORK` |
 
 New codes are added only where existing categories would erase an actionable client
 contract distinction: `ClientInitializationInvalid`, `ClientPinMismatch`,
@@ -1625,7 +1577,7 @@ explain enduring invariants rather than carrying Feature or task labels.
 | `dagger-sdk-engine/tests/client_fixture_properties.rs` | 23 | Core-only/local/dependency schemas and new/adopted projects |
 | `dagger-sdk/tests/generated_client_query_properties.rs` | 9, 24 | typed arguments, omissions, ID failures, responses, lifecycle schedules |
 | `dagger-sdk-engine/tests/client_checkpoint_properties.rs` | 25 | action graphs, package selectors, asset states, observations, exceptions |
-| `dagger-sdk-completeness/tests/client_generation_evidence.rs` | 26, 27 | closure/sign-off evidence permutations, digests, counts, timings |
+| `dagger-sdk-completeness/tests/client_generation_evidence.rs` | 26, 27 | closure/ordinary verification evidence permutations, digests, counts, timings |
 
 Schema tests compare the production compiler with a small graph reachability reference
 model. Cargo tests compare semantic TOML maps plus exact unaffected byte slices. Name
@@ -1744,23 +1696,13 @@ The checkpoint must record per-phase elapsed milliseconds and one of
 It fails if an action expands to `dagger`, engine construction, another SDK, repository-
 wide generation, a distribution build, or network resolution.
 
-### Deferred exact-target sign-off
+### Ordinary release-readiness verification
 
-No Feature 7 implementation task runs the engine. The feature-end result is
-Implementation_Closure plus a validated sign-off inventory contract. Feature 8 later
-executes exactly:
-
-- one `dagger api client init rust` local-module case, including scoped generation;
-- one pinned remote dependency-bound client;
-- one schema-change regeneration;
-- one representative Core query; and
-- one representative namespaced module query.
-
-The run consumes one exact-target artifact, builds engine/CLI/Go-runtime/Rust content
-at most once, starts one engine, installs one Rust baseline, fans out isolated cases,
-and emits one atomic verdict with phase timings. It does not build or test unrelated
-SDKs and does not replay local compiler, project, Cargo hygiene, query-property, or
-security evidence.
+No Feature 7 implementation task runs the engine. Separately, the ordinary Build
+packages the two public crates and completes the engine; Ordinary_Verification uses
+those exact outputs for one isolated external Core query and clean close. It does not
+replace or replay local compiler, project, Cargo hygiene, module-query, ownership, or
+security checks.
 
 ### Documentation and review gate
 
@@ -1772,7 +1714,6 @@ invariants, public-item guarantees and failure/omission semantics, and inline WH
 where ownership, session identity, wire fidelity, or transactional correctness would
 otherwise be easy to simplify incorrectly.
 
-Implementation closure is not release sign-off. The report must say which policy
-capabilities gained admitted evidence, which engine-backed initialization claim still
-awaits Feature 8, and why a successful Feature 5 hook or local compilation alone does
-not claim complete standalone-client behaviour.
+Implementation closure is not a completed-engine observation. The report must say
+which policy capabilities gained admitted evidence and why a successful Feature 5 hook
+or local compilation alone does not claim every standalone-client behavior.

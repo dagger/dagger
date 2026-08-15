@@ -24,10 +24,10 @@ Feature 3 consumes Feature 2's validated Connection_Plan, owned Shared_Session,
 Diagnostic_Sink, Raw_Request, and Raw_Response. It supplies the concrete connector that
 turns an implicit plan into one transferred Session_Resource. Feature 4 owns complete
 schema-derived bindings, although Feature 3 maps engine-authored execution extensions
-already represented by Feature 2's lossless raw response. Feature 8 owns the closing
-live platform, conformance, and security matrices; Feature 9 owns migration and release
-publication. Feature 3 implements Linux, macOS, and Windows archive logic and proves it
-with deterministic fixtures, but does not claim Feature 8's multi-platform live gate.
+already represented by Feature 2's lossless raw response. Live platform matrices,
+migration, and external publication remain outside this specification. Feature 3
+implements Linux, macOS, and Windows archive logic and proves it with deterministic
+fixtures without claiming unexecuted live-platform coverage.
 
 The current `sdk-sdk` harness remains authoritative for the common checks it actually
 defines. Its pinned checks do not exercise client-side source selection, CLI download,
@@ -279,7 +279,7 @@ behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%254
 behavior/go-engine-sdk/typed-outside-target-response
 ```
 
-The two Feature 2 test rows whose remaining gap is Feature 8 live verification are not
+The two Feature 2 test rows whose remaining gap is live verification are not
 in this scope. Feature 3 must not relabel them complete merely because deterministic
 CLI projection or a single target run succeeds.
 
@@ -495,7 +495,7 @@ extensions, or unknown members.
 
 **User Story:** As a Rust SDK maintainer, I want Feature 3 tied to exact ledger
 capabilities, so that transport work raises the honest completeness count without
-claiming Feature 8's platform and release gates.
+claiming unexecuted platform or release gates.
 
 #### Acceptance Criteria
 
@@ -516,7 +516,7 @@ claiming Feature 8's platform and release gates.
    Completeness_Ledger SHALL exclude that check from Feature 3 Verification_Evidence.
 8. WHEN a Feature 2 row's exact residual Feature 3 gap is verified, THE
    Completeness_Ledger SHALL update that row in the same evidence-bearing change.
-9. WHEN a Feature 2 row retains a Feature 8 live-verification gap, THE
+9. WHEN a Feature 2 row retains a live-verification gap, THE
    Completeness_Ledger SHALL preserve its Blocking_Status.
 10. IF a Feature 3 behaviour still lacks target-scoped verification, THEN THE
     Completeness_Ledger SHALL retain its exact residual Blocking_Status.
@@ -1090,8 +1090,8 @@ security, or lifecycle guarantees.
 - The exact runtime target handshake is required by Feature 1's compatibility claim.
   It does not imply that every future Rust release must remain exact-target-only; a
   future target transition may widen the range only with its own boundary evidence.
-- Linux, macOS, and Windows archive logic belongs here. Feature 8 still owns live
-  platform-matrix evidence and must retain its blockers until those runs exist.
+- Linux, macOS, and Windows archive logic belongs here. Unexecuted live platform
+  obligations remain blocking until those runs exist.
 - The design must derive executable properties for source determinism, fallback
   monotonicity, archive bounds, atomic publication, protocol isolation, redaction,
   at-most-once requests, resource cleanup, error preservation, and target compatibility

@@ -24,8 +24,8 @@ namespace. This adds one explicit method call while keeping the 1.0 API evolvabl
 
 The beta callback APIs `connect(callback)` and `connect_opts(config, callback)` are
 removed rather than retained as a second lifecycle model. The stable functions are
-`connect()` and `connect_with(config)`, both of which return an owned client. Feature 9
-will publish the mechanical migration. The conditional closure-helper criteria in
+`connect()` and `connect_with(config)`, both of which return an owned client. The
+checked migration input records the mechanical change without publishing it. The conditional closure-helper criteria in
 Requirements 2.13-2.15 therefore do not apply to the target API.
 
 Shutdown is a single-flight state machine. The caller that wins `Open -> Closing`
@@ -51,9 +51,8 @@ available, and uses the resource's synchronous kill-on-drop backstop otherwise.
 - Feature 4 owns schema coverage and generated binding semantics. Feature 2 may replace
   a generated handle's lifecycle fields, but it does not add, remove, or reinterpret a
   schema field or method.
-- Feature 8 owns live platform and engine conformance beyond the focused Feature 2
-  tests. Feature 9 owns beta migration material, examples, immutable Git-tagged
-  distribution, release assets, and the final SemVer gate.
+- Live platform and engine conformance beyond the focused Feature 2 tests, migration
+  prose, distribution, and release decisions remain outside this specification.
 
 ### Dependency changes
 
@@ -92,7 +91,7 @@ Dependabot, and the workspace `unsafe_code = "deny"` policy.
 
 | Criteria | Decision | Evidence treatment |
 |---|---|---|
-| Requirements 2.13-2.15 | Inapplicable because the target exposes no closure-scoped convenience API | Record reviewed decision evidence with the three rows; Feature 9 records the beta callback migration |
+| Requirements 2.13-2.15 | Inapplicable because the target exposes no closure-scoped convenience API | Record reviewed decision evidence with the three rows and retain the checked beta callback migration input |
 
 If a closure helper is proposed later, all three criteria become applicable together;
 it cannot be introduced as a connection path with independent lifecycle semantics.
@@ -884,7 +883,7 @@ verification exists. Ownership correction alone never increases the Implemented 
 - Rustdoc runs with warnings denied and doctests demonstrate owned connect, generated
   query use, raw execution, explicit close, and injected test connections.
 - A checked public-API snapshot makes re-exports and removal of `pub mod core`
-  reviewable; Feature 9 uses the same snapshot for the stable release gate.
+  reviewable without turning that snapshot into a release gate.
 - A source audit rejects `unwrap`, `expect`, `panic!`, and unsafe blocks in the new
   lifecycle, connector, request, shutdown, and background-task paths, with any
   syntactically unavoidable test-only occurrence explicitly excluded.

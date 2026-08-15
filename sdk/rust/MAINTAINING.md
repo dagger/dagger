@@ -1,151 +1,86 @@
-# Maintaining the Dagger Rust generated client
+# Maintaining the Dagger Rust SDK
 
-This runbook is the review and recovery contract for the checked core-schema client.
-Generation is deliberately based on repository inputs, not live introspection: the
-target descriptor, schema snapshot, compatibility mappings, projection rules, and
-formatter toolchain must all agree before output can be published.
+This runbook covers generated-client ownership, target refresh, recovery, local
+acceptance, and non-publishing artifact assembly. It has six ordered steps.
 
-## Ownership boundary
+## 1. Confirm ownership and target identity
 
-The generator owns only these paths:
+The core-schema generator owns only:
 
 - `crates/dagger-sdk/src/gen/`;
 - `crates/dagger-sdk/tests/core_projection.rs`;
 - `crates/dagger-sdk/tests/core_reachability.rs`; and
 - `completeness/artifacts/core-codegen-bindings.json`.
 
-Every generated Rust file contains a machine-readable provenance header. The binding
-manifest records the exact owned path set, byte digest, semantic digest, checked Dagger
-revision, and schema digest. Never edit an owned Rust file or the derived manifest by
-hand. A correction belongs in schema validation, projection, naming, documentation,
-rendering, or publication logic.
+Generated Rust files carry a machine-readable source header. The binding manifest binds
+the exact path set, byte and semantic digests, checked Dagger revision, and schema
+digest. Never edit an owned output or derived manifest by hand. Fix schema validation,
+projection, naming, documentation, rendering, or atomic update policy instead.
 
-## Check and update
+Before maintenance, confirm `completeness/target.json`, the workspace version, lockfile,
+and pinned Rust toolchain agree with the intended target.
 
-Run direct generation from `sdk/rust`. Check mode is read-only and silent on success:
+## 2. Check and update generated output
+
+Run read-only generation from `sdk/rust`:
 
 ```console
 cargo run -p dagger-bootstrap --bin dagger-rust --locked -- \
   generate --workspace . --check
 ```
 
-After an intentional generator, mapping, or checked-target change, publish the complete
-candidate explicitly:
+After an intentional generator, mapping, schema, or target change, update the complete
+owned candidate once:
 
 ```console
 cargo run -p dagger-bootstrap --bin dagger-rust --locked -- \
   generate --workspace . --update
 ```
 
-The update command prints only added, removed, or changed owned paths. Immediately run
-check mode again, then inspect both `git diff --stat` and `git diff`. The path set in the
-diff must equal the change set explained by the binding manifest. An unrelated file,
-missing generated file, formatter-only repair, or source change made after generation is
-a failed update, even if the crate compiles.
+The update is failure-atomic and may replace only manifest-authorized paths. Run check
+mode again and inspect `git diff --stat` and `git diff`. The diff must match the
+binding manifest; unknown or authored content must remain unchanged.
 
-Repository generation is the final integration fence. From the repository root:
+From the repository root, the scoped integration fence is:
 
 ```console
 ./hack/with-dev ./bin/dagger generate -y rust-sdk:apiclient
 ```
 
-It must leave the checked generated client unchanged. Do not substitute the unscoped
-`dagger generate -y`: that runs every generator in the workspace and tests unrelated
-SDK, engine, docs, and release generation rather than the Rust publication boundary.
-The focused graph-local gate is:
+It must leave the checked generated client unchanged. Do not substitute unscoped
+workspace generation.
 
-```console
-./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev call generated-client-check
-```
+## 3. Refresh the target deliberately
 
-## Refreshing the target
-
-A target refresh changes an immutable compatibility claim and should be reviewed
-separately from ordinary renderer work.
+A target refresh changes an immutable compatibility claim and is separate from ordinary
+renderer work:
 
 1. Update `completeness/target.json` with the exact Dagger version, full revision,
    schema digest, CLI identities, Rust toolchain, and authority revisions.
-2. Capture the schema through the repository's completeness workflow; do not substitute
-   a schema from a nearby engine or reserialize it by hand.
-3. Re-run source extraction and review inventory drift before changing classifications.
-4. Review every failure in `core-codegen-mappings.json`. Mapping rules are closed sets:
-   a new matching Go declaration is not adopted until its semantics, disposition,
-   required evidence, and any idiomatic-equivalence decision are reviewed.
-5. Run direct update, inspect the localized owned diff, and complete the verification
-   matrix below.
+2. Capture schema through the completeness workflow; do not use a nearby engine or
+   hand-reserialize it.
+3. Re-extract the selected authorities and review inventory drift before changing a
+   classification.
+4. Review every changed mapping as a closed-set contract decision.
+5. Run the direct update, inspect the owned diff, and repeat local acceptance.
 
-Changed or removed schema coordinates must fail closed until their generated and
-compatibility policies are explicit. Do not refresh digests merely to make a check pass.
+Changed or removed schema coordinates fail closed until their generated and
+compatibility policies are explicit. Never refresh a digest merely to make a check pass.
 
-## Manifest and evidence review
+## 4. Recover or roll back as one unit
 
-The binding manifest is an exhaustive join, not a completeness assertion. Each active
-generated-client capability names its authority fingerprint, Rust representation,
-implementation fingerprint, and required evidence domains. A manifest row with absent,
-failed, stale, wrong-target, or wrong-scope evidence remains blocking.
+A validation, formatting, or cancellation failure leaves the previous generated set
+intact. If review rejects a completed update, restore the whole owned set from the
+reviewed pre-update commit or repeat in a clean worktree. Restoring selected generated
+files can combine different source and manifest identities.
 
-Evidence admission checks the target and schema, source subject, command identity,
-result digest, projection fingerprint, implementation fingerprint, and exact capability
-scope. Shared compile or property evidence may cover the catalog entries it actually
-enumerates. Exact-target evidence covers only the runtime strategies represented by its
-record; it must not be widened because a neighbouring operation passed.
+After recovery, direct `--check` must pass. If it does not, compare target, schema,
+mappings, toolchain, and generator revision in that order. Compiler fix-ups and hand
+edits are not recovery tools.
 
-Run focused live conformance from the repository root:
+## 5. Run engine-free acceptance
 
-```console
-./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev call core-conformance
-```
-
-The result is normalized, credential-free candidate evidence. Its subject digest covers
-the compilable Cargo workspace and excludes derived evidence/status artifacts, avoiding
-a self-referential digest while the binding manifest continues to bind every generated
-byte. Admit only a passing record produced from the reviewed source.
-
-To publish evidence, capture that JSON without the progress stream, then run the sole
-status transition command from `sdk/rust`:
-
-```console
-./hack/with-dev ./bin/dagger --silent -m .dagger/modules/rust-client-dev \
-  call core-conformance \
-  > sdk/rust/completeness/evidence/core-codegen-exact-target.json
-
-cargo run -p dagger-sdk-completeness \
-  --bin dagger-core-evidence-registry --locked -- \
-  --root . \
-  --exact-target completeness/evidence/core-codegen-exact-target.json \
-  --registry-output completeness/evidence/core-codegen-registry.json \
-  --policy-output completeness/evidence/core-codegen-policy.json \
-  --evidence-output completeness/evidence/registry.json
-```
-
-The command verifies freshness and domain closure before publishing the Feature 1
-evidence links. Contract rendering applies those links through the capability-local
-status transition engine. It is intentionally conservative: exact-target evidence
-closes only the operations observed by the live matrix, while rows needing an
-unobserved live operation remain blocking. Never edit files under
-`completeness/artifacts/` or change a label to improve the headline count.
-
-## Recovery and rollback
-
-Generation publishes atomically, so a failed validation or formatting pass should
-leave the previous output intact. If an update completes but review rejects it, restore
-the whole owned path set from the reviewed pre-update commit or discard the entire
-worktree and repeat in a clean worktree. Do not restore only selected modules: that can
-create a client whose source, tests, and manifest describe different subjects.
-
-After recovery, direct `--check` must pass before further work. If it does not, compare
-the checked target, schema, mappings, toolchain, and generator revision in that order;
-do not use compiler fix-ups or hand edits as recovery tools.
-
-## Release verification
-
-The maintained Rust build produces both public `.crate` packages and a complete
-engine containing the Rust SDK content. It does not publish either crate. An operator
-may attach the exported packages to a GitHub Release only through a separately invoked
-manual path after direct authorization; crates.io publication is not part of this
-repository's Rust release flow.
-
-Run from `sdk/rust`:
+From `sdk/rust`:
 
 ```console
 cargo fmt --all --check
@@ -159,21 +94,32 @@ cargo run -p dagger-bootstrap --bin dagger-rust --locked -- \
   generate --workspace . --check
 ```
 
-Also run `generated-client-check`, `core-conformance`, the scoped
-`rust-sdk:apiclient` repository generator, and the Rust SDK security workflow. Review
-direct dependencies and feature activation with `cargo tree -p dagger-sdk -e features`;
-inspect every cargo-deny advisory, license, ban, and source result rather than treating
-configured warnings as invisible.
+Also run the direct Go ABI and Dagger-module Go tests listed in
+[ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md). Review dependency activation with
+`cargo tree -p dagger-sdk -e features` and inspect every Cargo Deny advisory, license,
+ban, and source result. These checks do not construct an engine.
 
-Release review must confirm:
+Acceptance confirms `unsafe_code = "deny"`, both public package contents, default and
+no-default feature paths, warning-denied documentation, generated serde semantics,
+owned-path confinement, checksum verification, and credential-safe diagnostics.
 
-- `unsafe_code = "deny"` still applies to every workspace crate;
-- only `dagger-sdk` and `dagger-sdk-macros` are publishable, and their packages contain
-  the required source, documentation, and license files;
-- default, `gen`, no-default, all-features, MSRV, and warning-denied documentation
-  builds have all passed;
-- generated serde preserves optional omission and explicit zero-like values;
-- generated docs need no module-wide rustdoc or missing-docs suppression;
-- generation cannot escape owned paths, follow output symlinks, expose credentials in
-  diagnostics, or invoke an unpinned formatter; and
-- every capability lacking any declared evidence domain remains honestly blocking.
+## 6. Assemble and retrieve artifacts
+
+Commit the complete approved source and documentation state first. Build only from that
+exact clean detached commit, with no `._*` files. Use the ordinary Rust SDK Dagger
+module to:
+
+1. package exactly `dagger-sdk-macros` and `dagger-sdk`;
+2. build the Rust SDK engine content;
+3. compose a complete `linux/amd64` engine containing that content;
+4. run one isolated external Rust consumer against the completed engine;
+5. export the two `.crate` files and complete engine OCI archive; and
+6. create and independently verify `SHA256SUMS` over those three artifacts.
+
+Keep the package and engine build in one Dagger result so verification cannot select a
+different engine or workspace. A failure invalidates the candidate; stale output cannot
+validate it.
+
+This path creates local artifacts only. It does not publish to crates.io, create a tag,
+or create a GitHub Release. Attaching the checked artifacts to a GitHub Release is a
+separately invoked manual action and requires direct user authorization.

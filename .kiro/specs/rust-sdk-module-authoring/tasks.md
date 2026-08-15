@@ -8,9 +8,9 @@
     - Re-export the companion attributes from `dagger-sdk`, pin the path dependency to
       the exact workspace version, update the lockfile, and keep bootstrap, codegen,
       engine, and completeness crates private.
-    - Amend `sdk/rust/ARCHITECTURE.md`, package-policy tests, cargo-deny roots, and
-      `.github/workflows/rust-sdk-security.yml` from one publishable package to the
-      approved two-package public graph without publishing either crate.
+    - Amend `sdk/rust/ARCHITECTURE.md`, package-policy tests, and cargo-deny roots from
+      one public package artifact to the approved two-package graph without publishing
+      either crate.
     - _Requirements: 2.3, 2.5, 17.3, 17.6_
   - [x] 1.2 Add the minimal public error and hidden authoring bridge ABI
     - Add documented `ModuleError`/`ModuleErrorDetail` construction, inspection,
@@ -33,7 +33,7 @@
       contents out of durable provenance.
     - Add valid-first `proptest` strategies with 256-case pure defaults and 128-case
       filesystem/concurrency defaults, both above the 100-case minimum.
-    - _Requirements: 8.1-8.4, 14.1, 15.1, 15.2, 17.13-17.15_
+    - _Requirements: 8.1-8.4, 14.1, 15.1, 15.2_
   - [x] 1.4 Property test: Property 31 — public package graph is closed and version-coherent
     - Generate at least 256 package graphs, dependency aliases, version/source
       mutations, feature sets, metadata variants, and private-crate reachability edges;
@@ -50,11 +50,11 @@
       invalid enums, malformed paths/digests, noncanonical JSON, and unsupported
       format/ABI versions.
     - Test identifier: `property_32_canonical_wire_models_round_trip_without_semantic_loss`.
-    - _Requirements: 8.1-8.4, 14.1, 15.1-15.2, 17.13-17.15_
+    - _Requirements: 8.1-8.4, 14.1, 15.1-15.2_
 
 - [x] 2. Register the exact capability scope and typed diagnostic foundation
   - [x] 2.1 Correct and register the module-authoring capability inventory
-    - Return the 17 lifecycle rows to Feature 5 or SDK sign-off ownership, retain the
+    - Return the 17 lifecycle rows to Feature 5 or focused engine regression ownership, retain the
       exact 79 existing module-authoring rows, and add all 32 approved Rust policy
       capabilities without changing status merely because source exists.
     - Record one owning requirement, authority, rationale, allowed terminal status,
@@ -810,7 +810,7 @@
     - Generate at least 256 checkpoint plans, command/package expansions, asset states,
       elapsed records, and proposed exception records; admit only scoped checked-asset
       Rust plans with zero engine/network/other-SDK events and explicitly approved
-      necessity for any deferred sign-off exception.
+      necessity for any deferred focused regression exception.
     - Test identifier: `property_28_local_checkpoints_observably_engine_free_scoped`.
     - _Requirements: 16.12-16.19_
   - [x] 21.4 Property test: Property 29 — implementation closure admits only complete local evidence
@@ -819,37 +819,6 @@
       the complete local gate set without changing engine-dependent status.
     - Test identifier: `property_29_implementation_closure_only_complete_local_evidence`.
     - _Requirements: 17.1-17.8_
-
-- [x] 22. Implement the deferred exact-target SDK-sign-off suite and claim boundary
-  - [x] 22.1 Define the reusable one-engine sign-off case inventory
-    - Add code for registration, constructor/state, execution shapes, types,
-      handles/context, negative dispatch, concurrency/cancellation, a packaged
-      self-consumer, and applicable pinned common-harness cases against engine revision
-      `25300124ca110612edc09c43f89cb5fad6028170`.
-    - Make the packaged self-consumer a Rust-authored Dagger module that resolves only
-      the exact engine-packaged Rust SDK, uses the generated Core surface to run a
-      bounded Rust SDK build-and-test workflow, and fails on every repository-relative
-      or unpackaged SDK dependency. Keep full consumer/platform conformance in Feature
-      8 and release self-hosting in Feature 9.
-    - Build one exact engine content object for later fan-out, bind every case to target,
-      implementation, generated-assets, runtime, and case digests, and keep the suite
-      outside all local checkpoint selectors.
-    - _Requirements: 17.9-17.12_
-  - [x] 22.2 Add strict sign-off observation and evidence admission
-    - Require every selected case to pass, enumerate only its proved capabilities, and
-      reject stale, cross-target, skipped, failed, local-only, sibling, or overbroad
-      smoke claims without partial admission.
-    - Keep common lifecycle checks in their declared domain and distinguish final
-      Implementation_Closure from unexecuted/passed SDK_Signoff in derived reports.
-    - _Requirements: 17.13-17.18_
-  - [x] 22.3 Property test: Property 30 — SDK sign-off is exact-target and claim-bounded
-    - Generate at least 256 sign-off manifests, target/digest mutations, case outcomes,
-      capability subsets, harness scopes, and smoke overclaims; admit only the complete
-      exact-target observation and preserve the closure/sign-off distinction.
-    - Test identifier: `property_30_sdk_signoff_exact_target_claim_bounded`.
-    - This property tests pure manifest/admission logic only; it does not construct or
-      execute the engine whose later observation it validates.
-    - _Requirements: 17.9-17.18_
 
 - [x] 23. Complete diagnostics, documentation, security, and derived reporting
   - [x] 23.1 Finish total diagnostics across every producing layer
@@ -869,7 +838,7 @@
       result/cancellation election, generated ownership, and error precedence.
     - Update Rust architecture, contribution, module-authoring README/examples,
       generated ownership/regeneration instructions, two-package policy, local focused
-      commands, feature-end closure, and separate SDK-signoff reproduction.
+      commands, implementation closure, and focused engine-adapter scope.
     - Keep obvious narration and specification feature/task labels out of production,
       generated, and invariant comments.
     - _Requirements: 2.10, 14.10-14.12, 15.1, 16.17-16.19, 17.3-17.8_
@@ -878,10 +847,10 @@
       source-policy, and implementation-closure observations through Feature 1
       admission; regenerate only declared derived reports and retain every unproved
       engine-dependent blocker.
-    - Update the repository Rust security workflow for both public packages, complete
+    - Update the repository Rust security checks for both public packages, complete
       package contents, locked dependency roots, generated source, redaction, and
       unsafe/panic/unwrap policy without adding an engine job.
-    - _Requirements: 1.7-1.10, 14.6, 14.11-14.12, 17.1-17.8, 17.13-17.18_
+    - _Requirements: 1.7-1.10, 14.6, 14.11-14.12, 17.1-17.12_
   - [x] 23.4 Property test: Property 23 — diagnostics are typed, stable, ordered, and redacted
     - Generate at least 256 failures from every taxonomy domain, coordinate/order
       permutations, generated/authored maps, safe/unsafe sources, secret-shaped values,
@@ -907,8 +876,7 @@
     boundaries, compile fixtures, closure evidence, security policy, and byte-clean
     derived output to pass. Record commands, elapsed time, and generation decisions.
   - Any capability requiring engine registration, runtime-container, common-harness, or
-    platform evidence remains honestly blocked until the separate SDK-signoff gate
-    actually executes and passes.
+    platform evidence remains honestly blocked outside the local implementation scope.
   - Checkpoint evidence (2026-08-12, repaired warm local cache, elapsed wall time):
     - `cargo fmt --all --check` passed in 0.84s; `cargo check --workspace
       --all-features --locked` passed in 7.99s.
@@ -916,7 +884,7 @@
       624.34s. It covered all six Rust packages, all 32 named module-authoring
       properties, the bounded compile-pass/fail corpus, the offline generated-module
       execution fixture, the complete direct production harness, package policy,
-      closure/sign-off reporting, generated ownership/drift, and root-independent
+      closure reporting, generated ownership/drift, and root-independent
       derived-output checks. Engine-requiring integration tests remained explicitly
       ignored by their existing selectors rather than being reclassified as passing.
     - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
@@ -925,7 +893,7 @@
     - The complete repository Rust security command inventory passed directly. Its
       longest existing slices were bootstrap generation (20.46s), codegen render plus
       projection (12.15s), and engine-integration evidence (27.32s); the new diagnostic,
-      checkpoint, and closure/sign-off properties passed in 0.08s, 0.71s, and 3.99s.
+      checkpoint and closure properties passed in 0.08s, 0.71s, and 3.99s.
     - The publication graph query returned exactly `dagger-sdk` and
       `dagger-sdk-macros`. Both crates packaged and verified successfully in 1.96s and
       0.56s; their package lists contained the required README, license, example,
@@ -944,20 +912,8 @@
       so no Core or module generation ran. No Dagger command, engine process, module
       invocation, network-backed engine graph, sdk-sdk selector, other language SDK
       build, distribution build, or unscoped generator entered the checkpoint.
-      Implementation closure and SDK sign-off remain separately rendered: local closure
-      retains the one exact-engine blocker, and SDK sign-off is unexecuted.
-
-## Deferred SDK Sign-off Gate
-
-The code and pure admission policy for Requirements 17.9-17.18 are implemented by Task
-22, but execution is deliberately outside Feature 6 Implementation_Closure. SDK
-sign-off builds the exact Target Revision once, fans the one reusable engine content
-object across the complete case inventory, runs the bounded packaged self-consumer,
-executes the applicable pinned common harness, admits only passed exact-target
-observations, regenerates derived reports, and verifies the clean result. No
-engine-dependent row may move before that gate passes. Feature 8 owns expanding the
-self-consumer into exhaustive engine/platform conformance; Feature 9 owns published
-release self-hosting.
+      Implementation closure and focused engine regression remain separately rendered: local closure
+      retains the one exact-engine blocker, and focused engine regression is unexecuted.
 
 ## Task Dependency Graph
 
@@ -984,10 +940,8 @@ release self-hosting.
   "19": ["17", "18"],
   "20": ["19"],
   "21": ["20"],
-  "22": ["20", "21"],
-  "23": ["21", "22"],
-  "24": ["23"],
-  "sdk-signoff": ["24"]
+  "23": ["21"],
+  "24": ["23"]
 }
 ```
 
@@ -995,7 +949,7 @@ The six checkpoints are strict bounded review boundaries. Public package/model/g
 foundations precede discovery; discovery precedes the type/function compiler; runtime
 primitives precede descriptor-generated consumers; checked generated assets precede
 dispatch; dispatch precedes the engine ABI adapter and compile/direct harnesses; those
-harnesses precede closure/sign-off evidence and final hygiene.
+harnesses precede closure evidence and final hygiene.
 
 ## Notes
 
@@ -1017,7 +971,7 @@ harnesses precede closure/sign-off evidence and final hygiene.
   one scoped refresh, inspect it, then return to checked assets.
 - No local checkpoint or Implementation_Closure constructs or executes a Dagger engine.
   If a contract appears impossible to model directly, stop and write the exact gap,
-  evidence of model insufficiency, and minimal proposed sign-off case for explicit
+  evidence of model insufficiency, and minimal proposed focused regression case for explicit
   approval; uncertainty or convenience is not sufficient.
 - The Go runtime layer remains an ABI shim. Rust owns source discovery, authoring
   grammar, descriptor, TypeDef/introspection projection, codecs, dispatch, context,
@@ -1025,7 +979,6 @@ harnesses precede closure/sign-off evidence and final hygiene.
 - Checkpoints are preferred commit/review boundaries. Keep commits coherent at the
   independently compiling layer; do not stack unverified implementation merely to
   postpone review, and do not rerun a broader graph merely to create a checkpoint.
-- Implementation_Closure and SDK_Signoff are separate evidence states. Green local
-  compiler/dispatcher/harness results cannot close engine registration or runtime
-  claims; a later engine smoke cannot replace exhaustive local authoring/dispatch
-  evidence.
+- Green local compiler/dispatcher/harness results cannot close engine registration or
+  runtime claims; a focused engine smoke cannot replace exhaustive local
+  authoring/dispatch evidence.

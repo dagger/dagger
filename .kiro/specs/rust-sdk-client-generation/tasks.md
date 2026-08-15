@@ -14,7 +14,7 @@
     - _Requirements: 2.1-2.3, 3.13, 5.5-5.9, 6.1-6.3, 8.7-8.13_
   - [x] 1.2 Add the client compiler, engine, fixture, checkpoint, and evidence codes
     - Add only the new stable codes approved by the design for initialization, pin,
-      project, root-overlap, module-root, schema-scope, fixture, closure, and sign-off
+      project, root-overlap, module-root, schema-scope, fixture, closure, and ordinary verification
       failures; reuse existing target, schema, wrapper, naming, Cargo, dependency,
       toolchain, path, ownership, publication, cancellation, checkpoint, and
       completeness codes everywhere else.
@@ -29,13 +29,13 @@
     - Add shared strategies for exact-target identities, Core-plus-module schema
       graphs, wrapper trees, module/local names, Cargo documents, authored trees,
       manifests/amendments, workspace records/pins, checkpoint actions, and
-      closure/sign-off observations.
+      closure/ordinary verification observations.
     - Use at least 256 cases for pure schema, naming, Cargo, ownership, publication,
       diagnostic, and evidence models and at least 128 for filesystem, Cargo-process,
       and async transport models, all above the 100-case requirement.
     - Keep expensive compiler/Cargo invocations outside per-case loops: properties
       compare pure plans first and use a bounded representative compile corpus.
-    - _Requirements: 3.4-3.13, 4.4-4.14, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 10.1-10.19_
+    - _Requirements: 3.4-3.13, 4.4-4.14, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 10.1-10.15_
 
 - [x] 2. Register the exact Feature 7 capability scope and ownership correction
   - [x] 2.1 Add the client-generation mapping and Rust policy inventory
@@ -766,7 +766,7 @@
 - [x] 19. Complete client diagnostics, security boundaries, and checkpoint planning
   - [x] 19.1 Audit every rejection site against the total diagnostic table
     - Map every schema/name/codec, workspace/pin/path, project/Cargo/toolchain,
-      ownership/publication, fixture/checkpoint, closure, and sign-off rejection to one
+      ownership/publication, fixture/checkpoint, closure, and ordinary verification rejection to one
       stable primary code and the approved safe coordinate class.
     - Aggregate compiler/completeness diagnostics deterministically, retain typed safe
       causes for engine diagnostics, and add exhaustive fixed cases for every error
@@ -789,7 +789,7 @@
     - Reject Dagger/engine/module commands, another SDK, unscoped generation,
       distribution builds, network resolution, duplicate/empty actions, incomplete
       observations, and executable engine exceptions. Model an exception only as
-      separately approvable sign-off evidence.
+      separately approvable ordinary verification evidence.
     - _Requirements: 10.1-10.10_
   - [x] 19.4 Property test: Property 20 — diagnostics are total, stable, ordered, and safely located
     - Implement `property_20_diagnostics_total_stable_ordered_safely_located` over at
@@ -858,7 +858,7 @@
     - No Dagger command, engine process, module invocation, unrelated SDK, unscoped
       generation, distribution build, or network-backed dependency resolution ran.
 
-- [x] 21. Implement client-generation closure and deferred sign-off evidence admission
+- [x] 21. Implement client-generation closure evidence admission
   - [x] 21.1 Add the exact engine-free Implementation Closure gate
     - Add `ClientGenerationClosureObservation`, exact required evidence-domain set,
       implementation/capability/catalog/manifest/checkpoint identities, canonical
@@ -868,18 +868,8 @@
       other-SDK event; reject missing, stale, skipped, failed, duplicate, mismatched, or
       unplanned evidence as one complete-set failure.
     - Advance only mapped policy capabilities whose allowed evidence domain is fully
-      admitted; retain the engine initialization lifecycle blocker until SDK sign-off.
+      admitted; retain the engine initialization lifecycle blocker until ordinary verification.
     - _Requirements: 1.4-1.11, 10.11-10.12_
-  - [x] 21.2 Add the bounded client SDK sign-off inventory validator
-    - Add typed cases for one initialized local client, pinned remote dependency-bound
-      client, schema regeneration, Core query, and namespaced module query plus exact
-      target artifact, build/start/install counts, isolated outcomes, phase timings,
-      and one digest-bound verdict.
-    - Consume one matching local closure without replaying it; reject absent, stale,
-      skipped, failed, cross-target, duplicate-build, duplicate-engine, multiple
-      baseline, incomplete timing, or non-atomic verdict observations.
-    - Keep the validator pure and its execution deferred to Feature 8.
-    - _Requirements: 10.12-10.19_
   - [x] 21.3 Property test: Property 26 — Implementation Closure consumes only complete matching local evidence
     - Implement `property_26_implementation_closure_complete_matching_local_evidence`
       over at least 256 evidence-set permutations, exact-target and implementation
@@ -888,21 +878,14 @@
     - Admit only the complete matching engine-free set and require canonical reusable
       closure output without replaying local work.
     - _Requirements: 10.11-10.12_
-  - [x] 21.4 Property test: Property 27 — SDK sign-off inventory is bounded, reused, and atomic
-    - Implement `property_27_sdk_signoff_inventory_bounded_reused_atomic` over at least
-      256 closure/inventory/build/start/baseline/case/timing/verdict mutations.
-    - Require all five exact cases, at-most-once builds, one engine/baseline, isolated
-      results, complete timings, and one matching atomic verdict; reject the complete
-      candidate after any invalid observation.
-    - _Requirements: 10.13-10.19_
   - [x] 21.5 Render the honest Feature 7 completeness result
     - Regenerate the mapping/policy/evidence-derived report only from admitted records,
       distinguish initialization, generated content, Cargo integration, regeneration,
-      query usability, local closure, and sign-off, and retain every unexecuted
+      query usability, local closure, and engine-backed blockers, and retain every unexecuted
       engine-backed blocker.
     - Verify the `TestProvision` correction and dependency-scope wording survive all
       derived inventories and no Feature 5 hook evidence is reused as content proof.
-    - _Requirements: 1.1-1.12, 10.11-10.19_
+    - _Requirements: 1.1-1.12, 10.11-10.15_
 
 - [x] 22. Document the durable standalone-client and contributor workflow
   - [x] 22.1 Add `sdk/rust/CLIENT_GENERATION.md`
@@ -927,19 +910,17 @@
   - [x] 22.3 Correct and strengthen the umbrella contract
     - Replace the stale implication that one client contains transitive dependency
       surfaces with the approved independent bound-client model.
-    - Place the engine-free Rust-first checkpoint rule and the bounded reusable SDK
-      sign-off contract together near the top: one exact-target artifact, at-most-once
-      engine/CLI/Go-runtime/Rust content, one engine and installed Rust baseline, no
-      unrelated SDK work, reused closure evidence, isolated cases, phase timings, and
-      an atomic verdict rejecting duplicate builds/starts.
-    - Keep Feature 8 as sign-off owner and Feature 9 as publication/release owner.
-    - _Requirements: 1.12, 10.1-10.19_
+    - Place the engine-free Rust-first checkpoint rule beside the ordinary Build/Verify
+      boundary: exactly two packages, one complete engine, and one isolated packaged
+      external consumer query.
+    - Keep distribution and external release decisions outside this specification.
+    - _Requirements: 1.12, 10.1-10.15_
   - [x] 22.4 Add documentation and command-drift tests
     - Verify every documented local command resolves to the typed checkpoint action set,
       paths/test names exist, quickstarts compile, dependency and ownership claims match
       production constants, and no local section invokes Dagger, an engine, another
       SDK, unscoped generation, distribution, or network resolution.
-    - _Requirements: 5.1-5.17, 9.11-9.14, 10.1-10.19_
+    - _Requirements: 5.1-5.17, 9.11-9.14, 10.1-10.15_
 
 - [x] 23. Wire and record the complete engine-free feature-end gate
   - [x] 23.1 Add the executable scoped gate and derived-evidence recorder
@@ -960,23 +941,23 @@
       Cargo counts, generated-asset decisions, and complete implementation digest for
       closure admission.
     - _Requirements: 9.1-9.14, 10.1-10.12_
-  - [x] 23.2 Produce canonical closure evidence and leave sign-off explicitly unexecuted
+  - [x] 23.2 Produce canonical closure evidence and keep engine checks separate
     - Admit only passed current feature-end observations, write canonical Feature 7
       evidence and report artifacts, and prove regeneration of those derived files is
       deterministic and leaves the worktree byte-clean.
-    - Render the exact-engine local/pinned/regeneration/Core/module inventory as pending
-      Feature 8 work; do not synthesize, skip-as-pass, or execute an engine observation.
-    - _Requirements: 1.4-1.11, 10.11-10.19_
+    - Retain engine-backed initialization blockers without synthesizing,
+      skip-as-passing, or executing an engine observation.
+    - _Requirements: 1.4-1.11, 10.11-10.15_
 
 - [x] 24. Final checkpoint: Feature 7 is engine-free implementation-complete
   - Run the executable Task 23 gate once from the documented working directories. Its
-    admitted current evidence must cover all 27 required property tests at their
+    admitted current evidence must cover all 26 required property tests at their
     declared case counts, fixed and `trybuild` cases, the complete generated-client
     Cargo/recording-transport corpus, direct Go ABI tests, fmt, warning-denied
     Clippy/rustdoc, Cargo Deny, source/package/security policy, generated
     ownership/drift, completeness derivation, documentation commands, and clean output.
   - Execute only actions whose owning inputs changed since their recorded checkpoint.
-    In the expected path after Task 20, rerun the new closure/sign-off properties,
+    In the expected path after Task 20, rerun the new closure properties,
     documentation/derived-report checks, format, and clean-output checks while reusing
     matching compiler/runtime/project/fixture/security observations. If a later task
     touched one of those domains, rerun that domain's scoped action—not the whole graph.
@@ -990,7 +971,7 @@
   - Confirm no Dagger command, engine process, module invocation, other SDK, unscoped
     generation, distribution build, or network resolution occurred. Confirm the
     current report admits Feature 7 Implementation Closure while retaining every
-    Feature 8 SDK-sign-off blocker.
+    engine-backed blocker.
   - Record exact commands and elapsed times in this task when executed; do not copy
     planned commands into evidence as though they ran.
   - Checkpoint evidence (2026-08-12, warm local cache as executed):
@@ -1021,9 +1002,7 @@
       byte-checked the canonical observation, closure, and report. Closure digest
       `sha256:7a37c676636518b9880487e886ebd6a5c1988a15ad03b34c868fd8cc9c4876bb`
       admits all 23 local policy mappings. The report retains exactly
-      `behavior/go-client/init-client-lifecycle` and
-      `policy/rust-policy/client-exact-engine-signoff-boundary`; SDK sign-off remains
-      explicitly `unexecuted`.
+      the engine-backed initialization blocker; no engine observation was synthesized.
     - The current checkpoint records 14 Cargo processes: eight top-level scoped Cargo
       invocations plus the six nested offline usability phases. It records one
       materialized fixture SDK baseline, checked generated-asset reuse, and individual
@@ -1035,18 +1014,7 @@
     - `git diff --check`, the recorder's `--check` mode, and the canonical artifact
       regression were clean. No Dagger command, engine process, module invocation,
       other SDK, unscoped generation, distribution build, or network resolution ran.
-  - _Requirements: 1.1-1.12, 2.1-2.13, 3.1-3.13, 4.1-4.17, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 9.1-9.14, 10.1-10.19_
-
-## Deferred SDK Sign-off Gate
-
-Feature 7 implements and property-tests the sign-off inventory/admission contract but
-does not execute it. Feature 8 consumes the admitted matching Implementation Closure,
-builds one reusable exact-target artifact and engine/CLI/Go-runtime/Rust content at
-most once, starts one engine, installs one Rust baseline, runs the isolated initialized
-local, pinned remote, regeneration, Core-query, and namespaced-module-query cases, and
-emits one atomic digest-bound verdict with phase timings. It rejects duplicate builds
-or engine starts and does not replay Feature 7's compiler, Cargo, fixture, hygiene,
-security, or other-SDK work.
+  - _Requirements: 1.1-1.12, 2.1-2.13, 3.1-3.13, 4.1-4.17, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 9.1-9.14, 10.1-10.15_
 
 ## Task Dependency Graph
 
@@ -1075,8 +1043,7 @@ security, or other-SDK work.
   "21": ["20"],
   "22": ["21"],
   "23": ["21", "22"],
-  "24": ["23"],
-  "sdk-signoff": ["24"]
+  "24": ["23"]
 }
 ```
 
@@ -1109,7 +1076,7 @@ checkpoint compiles and proves only the graph introduced since the prior boundar
 - No local checkpoint or Implementation Closure constructs or invokes a Dagger engine.
   If a contract appears impossible to model directly, stop and record the exact gap,
   evidence that the production direct model is insufficient, and the smallest proposed
-  Feature 8 sign-off case for explicit approval. Convenience or uncertainty is not
+  focused engine regression case for explicit approval. Convenience or uncertainty is not
   sufficient.
 - The Go runtime remains an ABI shim around Dagger objects. Rust owns client-set
   preflight, schema validation, public API shape, Cargo/project reconciliation,
@@ -1118,6 +1085,6 @@ checkpoint compiles and proves only the graph introduced since the prior boundar
 - Checkpoints are suitable coherent commit/review boundaries. Diagnose a failed
   fixture against its contract and sequencing before running a broader graph; do not
   accumulate unverified layers or repeat expensive suites merely to reach a PR.
-- Implementation Closure and SDK Sign-off are distinct evidence states. Green local
+- Implementation Closure and SDK Ordinary verification are distinct evidence states. Green local
   code cannot close the engine-owned initialization lifecycle; a later engine smoke
   cannot replace exhaustive local compiler/project/runtime evidence.

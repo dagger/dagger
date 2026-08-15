@@ -11,7 +11,7 @@
   - [x] 1.2 Implement validated scalar and identity types
     - Add strict newtypes for commit SHAs, digests, repository identities, relative paths,
       source locators, versions, target digests, capability/check/evidence/rule IDs,
-      platforms, and Feature 2–9 ownership.
+      platforms, and accepted capability ownership.
     - Reject unknown values, malformed revisions and digests, absolute or escaping paths,
       unsupported feature owners, and invalid Dagger/Rust version spellings without
       panicking.
@@ -198,9 +198,9 @@
       documentation, issue, PR, and harness-self records ineligible as passing verification.
     - _Requirements: 2.9, 6.10–6.12, 7.1–7.10_
   - [x] 8.4 Implement deterministic blocking-work ownership
-    - Route every `Missing` and `Partial` capability to exactly one Feature 2–9 domain,
+    - Route every `Missing` and `Partial` capability to exactly one accepted capability domain,
       preserving `initClient` and standalone/dependency client-generation gaps under
-      Feature 7 and unverified platform obligations under Feature 8.
+      Feature 7 and leaving unverified platform obligations blocking.
     - _Requirements: 10.4–10.11, 10.15, 10.16_
   - [x] 8.5 Implement downstream traceability validation
     - Validate child-spec Capability_ID declarations and candidate status changes against
@@ -261,7 +261,7 @@
     - Record only normalized command/result identities and output digests; keep raw logs
       ephemeral and redact process failures and secrets.
     - _Requirements: 7.5–7.10, 12.4–12.9_
-  - [x] 9.4 Implement the portable Feature 8 extension boundary
+  - [x] 9.4 Implement the portable conformance extension boundary
     - Validate `ConformanceScenario` values using exactly one public `SdkTarget` or
       `mod-test` adapter, an exact non-empty Capability_ID set, source anchors, normalized
       observable behaviour, and Rust-valid invocation independent of obsolete or
@@ -302,7 +302,7 @@
   - [x] 11.2 Implement Rust stability and migration classification
     - Validate stable, experimental, internal, and not-applicable states; compute none,
       additive, deprecation, or breaking SemVer effects; require graduation/removal
-      conditions and Feature 9 migration references where specified.
+      conditions and reviewed migration references where specified.
     - _Requirements: 8.11, 8.12, 11.4–11.6_
   - [x] 11.3 Implement compatibility validation and release-data derivation
     - Validate exact target sets or inclusive ranges with ordered full target boundaries,
@@ -318,7 +318,7 @@
   - [x] 11.5 Property test: Property 14 — stability and migration classification
     - Implement a reference-table `proptest` with at least 256 public Rust transitions
       across stability states, compatible/incompatible changes, experimental conditions,
-      and present/missing Feature 9 migrations.
+      and present/missing migration references.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 14: stability and migration classification`
     - _Requirements: 8.11, 8.12, 11.4–11.6_
   - [x] 11.6 Property test: Property 19 — compatibility-claim truthfulness
@@ -331,7 +331,7 @@
 - [x] 12. Implement reports, gates, CLI, and artifact-preserving staging
   - [x] 12.1 Implement deterministic report aggregation
     - Build exact counts by primary authority, kind, all five statuses including zeroes,
-      and Feature 2–9 owner; emit deterministically ordered diagnostics, blockers, and
+      and accepted capability owner; emit deterministically ordered diagnostics, blockers, and
       decision-backed complete exceptions.
     - Compute Integrity solely from integrity diagnostics and Completeness solely from true
       Integrity plus absence of `Missing`/`Partial` rows.
@@ -345,8 +345,8 @@
     - Add `verify`, `render`, `transition`, and `import-evidence` with the designed argv,
       stdout/stderr separation, selected integrity/completeness gate semantics, and exit
       statuses `0`, `1`, and `2`.
-    - Make `verify` read-only and network-free; keep the initial CI profile on Integrity and
-      expose Completeness for Feature 9 without enabling it as the F1 required gate.
+    - Make `verify` read-only and network-free; keep the initial CI profile on Integrity
+      and expose Completeness as a separately selected verification gate.
     - _Requirements: 1.8, 9.8–9.11, 10.14_
   - [x] 12.4 Implement isolated staging and atomic output adapters
     - Refuse a non-empty output directory; render and import into a destination-filesystem
@@ -362,7 +362,7 @@
     - _Requirements: 9.1–9.7_
   - [x] 12.6 Property test: Property 16 — gate selection
     - Implement a truth-table `proptest` with at least 256 generated reports and gate
-      selections, including initial Integrity CI and Feature 9 Completeness release profiles.
+      selections, including Integrity and separately selected Completeness profiles.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 16: gate selection`
     - _Requirements: 9.8–9.11, 10.14_
   - [x] 12.7 Property test: Property 20 — rejection is artifact-preserving
@@ -429,7 +429,7 @@
   - [x] 15.4 Add exact initial-target regression fixtures
     - Lock tests for the three source commits, Go literal-vs-comment selection, 18-check
       and 17/1 partition, `initClient` omission, `linux/amd64` scope, explicit CLI
-      selection, five statuses, Feature 2–9 routing boundaries, schema TypeRefs, malformed
+      selection, five statuses, accepted capability routing boundaries, schema TypeRefs, malformed
       paths/revisions, and compatibility range boundaries.
     - _Requirements: 1.1–1.11, 3.10–3.12, 6.1–6.10, 7.2–7.4, 10.4–10.11, 10.15, 10.16, 11.1–11.7, 12.1, 12.5, 12.8, 12.9, 12.15_
   - [x] 15.5 Align contributor documentation with the executable authority model
@@ -513,7 +513,7 @@ top-level task execute in listed order unless their text names a stronger depend
 
 - This plan implements the F1 measuring and governance system. A subject SDK check that
   currently fails is captured as truthful `Missing` or `Partial` state; making that Rust
-  capability pass belongs to its owning Feature 2–9 specification.
+  capability pass belongs to its owning accepted capability specification.
 - Every property task is mandatory, uses the workspace-standard `proptest` library, runs
   at least 256 generated cases, and carries the exact feature/property tag shown above.
 - Reference models should remain deliberately simpler than production logic. Generated
@@ -523,4 +523,4 @@ top-level task execute in listed order unless their text names a stronger depend
   explicit immutable target transitions, and every write-producing command targets an
   empty staging directory or Dagger Changeset.
 - The initial required CI signal is Integrity. Completeness is still calculated and
-  reported, but Feature 9—not F1—owns promoting it to the stable-release gate.
+  reported, but this contract does not promote it into an external release gate.

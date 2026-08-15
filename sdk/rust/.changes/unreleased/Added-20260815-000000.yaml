@@ -1,0 +1,9 @@
+kind: Added
+body: |
+    Document the beta Rust SDK's engine-free development and completed-engine release-assembly boundaries.
+
+    The `1.0.0-beta.11.rust.1` packages target Dagger `v1.0.0-beta.11`; assembly exports exactly the two public crate artifacts plus a complete `linux/amd64` engine and verifies one isolated external Rust consumer. The build performs no publication.
+time: 2026-08-15T00:00:00Z
+custom:
+    Author: iw
+    PR: ""

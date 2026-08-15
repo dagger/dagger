@@ -31,9 +31,8 @@ It establishes the engine-facing seams that later work fills:
 - Feature 7 owns complete standalone Core, module, and dependency client projects,
   while Feature 5 owns the engine hook and lossless operation boundary used to request
   them;
-- Feature 8 owns the full cross-platform and cross-SDK release matrix; and
-- Feature 9 owns final Git-tagged SDK distribution, version synchronization, user
-  migration, release assets, and stable-release presentation.
+- cross-platform conformance, external distribution, migration, and release decisions
+  remain outside this specification.
 
 The engine contract, checked target, and Definitive_Go_SDK are peer authorities within
 their declared scopes. Rust policy owns Cargo project shape, dependency sources,
@@ -84,8 +83,8 @@ template, and provisional procedural macros do not define this specification.
   carry machine-readable provenance.
 - **Generated_Code_Result:** The engine `GeneratedCode` value containing generated
   code plus the declared VCS-generated and VCS-ignored path sets.
-- **Integration_Evidence:** Target-bound evidence produced by engine construction and
-  end-to-end SDK operations during SDK_Signoff rather than source-name comparison.
+- **Focused_Engine_Regression:** A named engine-backed case retained for behavior that
+  cannot be represented by the Pure_Rust_Contract_Harness.
 - **Implementation_Closure:** The Feature 5 boundary at which production Rust and ABI
   adapter code is complete, focused pure contract evidence passes, canonical Rust
   hygiene is green, and no exact-engine observation or status transition is claimed.
@@ -122,9 +121,6 @@ template, and provisional procedural macros do not define this specification.
 - **Runtime_Target:** The canonical engine runtime reference recorded for a newly
   initialized module when the workspace-facing SDK implementation and execution runtime
   are separated.
-- **SDK_Signoff:** The later release-readiness gate that builds the exact target engine,
-  executes the complete positive and negative integration matrix, and admits
-  capability-local Integration_Evidence.
 - **Rust_Initialization:** SDK-owned workspace changes applied by `dagger module init
   rust <name>` before the scoped generator run.
 - **Rust_SDK_Config:** The engine SDK configuration associated with a Rust module,
@@ -198,10 +194,9 @@ occurred.
 
 All Feature 5 status changes remain evidence-derived. Source presence, a green Cargo
 build, engine registration, or Implementation_Closure alone cannot close an
-engine-dependent capability. SDK_Signoff retains the complete exact-target engine
-matrix, negative boundary observations, packaged-asset provenance, and capability-local
-evidence admission; affected rows remain Partial until that evidence agrees and the
-Feature 1 transition policy records Implemented or Idiomatic_Equivalent.
+engine-dependent capability. Focused_Engine_Regressions remain available for their
+named boundaries, while ordinary artifact assembly and external-consumer verification
+are defined outside this accepted implementation specification.
 
 ## Evidence From Current Code
 
@@ -279,10 +274,9 @@ shown explicitly.
 - **Current Rust integration gap:** no Rust entry exists in sdkmeta, loader selection,
   workspace SDK mapping, engine build content, or engine integration fixtures; no Rust
   crate implements a module runtime or an engine-operation adapter.
-- **Current publication policy:** `sdk/rust/ARCHITECTURE.md` and
-  `.github/workflows/rust-sdk-security.yml` make `dagger-sdk` the sole publishable Rust
-  crate. `dagger-codegen`, `dagger-bootstrap`, and `dagger-sdk-completeness` are private
-  repository tooling.
+- **Current package policy:** `dagger-sdk` and `dagger-sdk-macros` are the two public
+  package artifacts. `dagger-codegen`, `dagger-bootstrap`,
+  `dagger-sdk-completeness`, and `dagger-sdk-engine` are private repository tooling.
 - **Historical evidence only:** upstream pull request #12229 adds `rust` loader
   resolution, a Go-authored SDK module, Cargo templates, provisional macros, and local
   mounts of private Rust crates. It is open and unmerged; those choices are not target
@@ -926,75 +920,62 @@ an ambiguous half-state.
 16. THE production integration path SHALL avoid panic, unchecked unwrap, and unsafe
     Rust.
 
-### Requirement 13: Implementation Closure, SDK Sign-off, and Evidence Admission
+### Requirement 13: Engine-Free Closure and Focused Engine Regressions
 
 **User Story:** As a Rust SDK consumer, I want implementation completion separated from
-engine sign-off, so that development can progress quickly without presenting a green
-unit suite as proof of an engine integration run.
+focused engine regressions, so that fast direct checks and engine-only observations
+retain distinct scopes.
 
 #### Acceptance Criteria
 
-1. THE SDK_Signoff suite SHALL build an engine from the exact Target_Revision.
-2. THE SDK_Signoff suite SHALL assert that canonical SDK metadata contains
+1. THE Focused_Engine_Regression suite SHALL build an engine from the exact Target_Revision.
+2. THE Focused_Engine_Regression suite SHALL assert that canonical SDK metadata contains
    `rust` exactly once.
-3. THE SDK_Signoff suite SHALL execute `dagger sdk install rust` against the
+3. THE Focused_Engine_Regression suite SHALL execute `dagger sdk install rust` against the
    exact target engine.
-4. THE SDK_Signoff suite SHALL execute Rust initialization for an empty
+4. THE Focused_Engine_Regression suite SHALL execute Rust initialization for an empty
    project.
-5. THE SDK_Signoff suite SHALL execute Rust initialization for an existing
+5. THE Focused_Engine_Regression suite SHALL execute Rust initialization for an existing
    compatible Cargo project.
-6. THE SDK_Signoff suite SHALL prove that initialization preserves unrelated
+6. THE Focused_Engine_Regression suite SHALL prove that initialization preserves unrelated
    workspace files.
-7. THE SDK_Signoff suite SHALL prove that automatic generation touches only
+7. THE Focused_Engine_Regression suite SHALL prove that automatic generation touches only
    the initialized module.
-8. THE SDK_Signoff suite SHALL prove `--no-generate` omits generated output.
-9. THE SDK_Signoff suite SHALL exercise every Codegen_Operation through its
+8. THE Focused_Engine_Regression suite SHALL prove `--no-generate` omits generated output.
+9. THE Focused_Engine_Regression suite SHALL exercise every Codegen_Operation through its
    real operation selector.
-10. THE SDK_Signoff suite SHALL exercise the Generate_Client hook with a
+10. THE Focused_Engine_Regression suite SHALL exercise the Generate_Client hook with a
     finite test renderer.
-11. THE SDK_Signoff suite SHALL exercise the Generate_Entrypoint hook with a
+11. THE Focused_Engine_Regression suite SHALL exercise the Generate_Entrypoint hook with a
     finite test renderer.
-12. THE SDK_Signoff suite SHALL build one Runtime_Container under
+12. THE Focused_Engine_Regression suite SHALL build one Runtime_Container under
     Checked_Generated_Mode.
-13. THE SDK_Signoff suite SHALL build one Runtime_Container under
+13. THE Focused_Engine_Regression suite SHALL build one Runtime_Container under
     Legacy_Runtime_Codegen_Mode.
-14. THE SDK_Signoff suite SHALL execute Module_Protocol_Probe registration.
-15. THE SDK_Signoff suite SHALL execute Module_Protocol_Probe invocation.
-16. THE SDK_Signoff suite SHALL cover invalid Rust shorthand.
-17. THE SDK_Signoff suite SHALL cover missing generated files.
-18. THE SDK_Signoff suite SHALL cover a stale Cargo.lock.
-19. THE SDK_Signoff suite SHALL cover an incompatible Rust toolchain.
-20. THE SDK_Signoff suite SHALL cover an escaping output path.
-21. THE SDK_Signoff suite SHALL cover a symlink escaping its operation
+14. THE Focused_Engine_Regression suite SHALL execute Module_Protocol_Probe registration.
+15. THE Focused_Engine_Regression suite SHALL execute Module_Protocol_Probe invocation.
+16. THE Focused_Engine_Regression suite SHALL cover invalid Rust shorthand.
+17. THE Focused_Engine_Regression suite SHALL cover missing generated files.
+18. THE Focused_Engine_Regression suite SHALL cover a stale Cargo.lock.
+19. THE Focused_Engine_Regression suite SHALL cover an incompatible Rust toolchain.
+20. THE Focused_Engine_Regression suite SHALL cover an escaping output path.
+21. THE Focused_Engine_Regression suite SHALL cover a symlink escaping its operation
     boundary.
-22. THE SDK_Signoff suite SHALL cover an unknown ownership collision.
-23. THE SDK_Signoff suite SHALL cover credential redaction failures.
-24. WHEN exact-target observations pass, THE evidence producer SHALL bind their result
-    to the exact engine revision, engine version, schema digest, Rust SDK source digest,
-    toolchain, and packaged-asset digest.
-25. WHEN exact-target observations pass, THE evidence producer SHALL enumerate the
-    exact proved Capability_ID set.
-26. IF an observation is skipped, stale, failed, or produced against another target,
-    THEN THE evidence registry SHALL reject it.
-27. IF an observation claims a sibling Feature 6 or Feature 7 content capability, THEN
-    THE evidence registry SHALL reject it.
-28. WHEN evidence admission changes a status, THE completeness renderer SHALL derive
-    that status through the Feature 1 transition policy.
-29. THE committed integration report SHALL identify remaining Feature 5 blockers
-    without relabeling them for presentation.
-30. THE Feature 5 Implementation_Closure SHALL require checked-in generated bindings
+22. THE Focused_Engine_Regression suite SHALL cover an unknown ownership collision.
+23. THE Focused_Engine_Regression suite SHALL cover credential redaction failures.
+24. THE Feature 5 Implementation_Closure SHALL require checked-in generated bindings
     to remain unchanged unless their owning Dagger module API or schema changed and one
     scoped refresh was reviewed.
-31. THE Feature 5 Implementation_Closure SHALL require repository formatting checks for all
+25. THE Feature 5 Implementation_Closure SHALL require repository formatting checks for all
     changed Rust and Go sources.
-32. THE Feature 5 Implementation_Closure SHALL require locked Rust checks and tests.
-33. THE Feature 5 Implementation_Closure SHALL require warning-denied clippy and rustdoc.
-34. THE Feature 5 Implementation_Closure SHALL require the repository cargo-deny gate.
-35. THE Feature 5 Implementation_Closure SHALL require compile or static tests for every
+26. THE Feature 5 Implementation_Closure SHALL require locked Rust checks and tests.
+27. THE Feature 5 Implementation_Closure SHALL require warning-denied clippy and rustdoc.
+28. THE Feature 5 Implementation_Closure SHALL require the repository cargo-deny gate.
+29. THE Feature 5 Implementation_Closure SHALL require compile or static tests for every
     changed Go ABI-adapter package.
-36. THE Feature 5 Implementation_Closure SHALL require the complete
+30. THE Feature 5 Implementation_Closure SHALL require the complete
     Pure_Rust_Contract_Harness without constructing or executing a Dagger engine.
-37. THE Feature 5 Implementation_Closure SHALL require the repository Rust security checks.
+31. THE Feature 5 Implementation_Closure SHALL require credential-safety and dependency-policy tests.
 
 ## Iteration and Feedback Notes
 
@@ -1004,9 +985,8 @@ unit suite as proof of an engine integration run.
   `dagger module init rust <name>`.
 - The current 31-row Feature 5 scope is retained. Hook evidence is explicitly prevented
   from closing Feature 6 authoring/dispatch or Feature 7 standalone-project content.
-- Implementation closure and SDK sign-off are deliberately separate: exact-engine
-  requirements remain mandatory at sign-off, while engine-dependent ledger rows remain
-  Partial after Feature 5 implementation closes.
+- Implementation closure and focused engine regressions are deliberately separate;
+  engine-dependent ledger rows remain Partial after direct implementation checks alone.
 - Historical PR #12229 informed the negative policies around Go-authored runtime
   coupling, unpublished path dependencies, mutable repository mounts, old edition
   templates, and premature macro commitment. It is not a behavioural authority.
