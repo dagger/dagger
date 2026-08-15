@@ -2813,11 +2813,11 @@ func (s *workspaceSchema) export(
 		return core.Void{}, fmt.Errorf("save: %w", err)
 	}
 
-	// Staged commits land first, as a fast-forward of the local checkout's
-	// current ref, so the remaining overlay changes below are written on top of
-	// the new HEAD (and `git status` on the host then shows exactly them).
-	// Preconditions are verified before anything is written, so a rejected save
-	// leaves the checkout untouched.
+	// Staged commits land first. They fast-forward unchanged when the checkout
+	// has not moved, or are replayed onto its new tip when another save advanced
+	// the branch, so the remaining overlay changes below are written on top of
+	// the resulting HEAD (and `git status` on the host then shows exactly them).
+	// A conflict is prepared away from the checkout and leaves it untouched.
 	if len(ws.PendingCommits()) > 0 {
 		if err := s.exportPendingCommits(ctx, ws); err != nil {
 			return core.Void{}, err

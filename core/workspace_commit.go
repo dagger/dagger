@@ -204,9 +204,10 @@ const WorkspaceStagedCommitsRef = "refs/dagger/staged-commits"
 // WorkspaceStagedCommitsBundle packs the commits between baseSHA (exclusive)
 // and targetSHA (inclusive) from a staged repository tree into a git bundle,
 // returning its bytes. The bundle is how staged commits travel to the user's
-// checkout: the client's own git fetches it and fast-forwards, which is the
-// only way to update a checkout git itself understands — reflogs, index, work
-// tree, and worktree/submodule layouts included.
+// checkout: the client's own git fetches it and either fast-forwards unchanged
+// or replays it when the checkout advanced, which is the only way to update a
+// checkout git itself understands — reflogs, index, work tree, and
+// worktree/submodule layouts included.
 func WorkspaceStagedCommitsBundle(
 	ctx context.Context,
 	repoDir dagql.ObjectResult[*Directory],
