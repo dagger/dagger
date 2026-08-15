@@ -541,6 +541,233 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	require.Equal(t, pressureBytes, pressureSize)
 }
 
+func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		maximumEstimatedBytes = 4 * 1024
+		targetEstimatedBytes  = 2 * 1024
+		workloadCalls         = 64
+		minimumGrowthBytes    = 64 * 1024
+		sessionGCWaitTimeout  = 75 * time.Second
+	)
+
+	engine := devEngineContainer(c,
+		engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+			cfg.GC.DagqlCache = config.DagqlCacheGCConfig{
+				MaxEstimatedBytes:    maximumEstimatedBytes,
+				TargetEstimatedBytes: targetEstimatedBytes,
+			}
+			// Keep disk GC enabled but far from pressure. The workload below uses
+			// no-match globs on a scratch directory and creates no physical cache
+			// identities, so only structural metadata pressure can remove it.
+			cfg.GC.Policies = []config.GCPolicy{{
+				All: true,
+				GCSpace: config.GCSpace{
+					MaxUsedSpace: config.DiskSpace{Bytes: 1 << 50},
+				},
+			}}
+			return cfg
+		}),
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
+				WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
+					Protocol: dagger.NetworkProtocolTcp,
+				})
+		},
+	)
+	devEngine := devEngineContainerAsService(engine)
+
+	metricsCtr := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngine).
+		WithExec([]string{"apk", "add", "curl"})
+
+	getMetrics := func() (map[string]float64, error) {
+		out, err := metricsCtr.
+			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithExec([]string{
+				"sh", "-ec",
+				`curl --fail --silent --show-error http://dev-engine:9090/metrics | grep -E '^(dagger_connected_clients|dagger_dagql_cache_metadata_estimated_bytes|dagger_local_cache_total_disk_size_bytes) '`,
+			}).
+			Stdout(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		sought := map[string]struct{}{
+			"dagger_connected_clients":                    {},
+			"dagger_dagql_cache_metadata_estimated_bytes": {},
+			"dagger_local_cache_total_disk_size_bytes":    {},
+		}
+		found := map[string]float64{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			for metricName := range sought {
+				numStr, ok := strings.CutPrefix(line, metricName+" ")
+				if !ok {
+					continue
+				}
+				num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+				if err != nil {
+					return nil, fmt.Errorf("parse metric %s=%q: %w", metricName, numStr, err)
+				}
+				found[metricName] = num
+				delete(sought, metricName)
+				break
+			}
+		}
+		if len(sought) > 0 {
+			return nil, fmt.Errorf("missing metrics: %v", sought)
+		}
+		return found, nil
+	}
+
+	waitForMetrics := func(label string, timeout time.Duration, ready func(map[string]float64) bool) map[string]float64 {
+		t.Helper()
+		deadline := time.Now().Add(timeout)
+		var last map[string]float64
+		for {
+			metrics, err := getMetrics()
+			if err == nil {
+				last = metrics
+				if ready(metrics) {
+					return metrics
+				}
+			} else {
+				t.Logf("%s: metrics unavailable: %v", label, err)
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: timed out waiting for metrics; last=%v", label, last)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+
+	// Warm the static core schema first. Its typedef results are deliberately
+	// unpruneable and form the stable engine-lifetime floor for this test.
+	_, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{"dagger", "core", "version"}).
+		Sync(ctx)
+	require.NoError(t, err)
+	waitForMetrics("warmup session close", 30*time.Second, func(metrics map[string]float64) bool {
+		return metrics["dagger_connected_clients"] == 0
+	})
+	// Session-completion pruning is scheduled after one second. Wait beyond it
+	// before capturing the warmed, compacted baseline.
+	time.Sleep(3 * time.Second)
+	baseline := waitForMetrics("warmed baseline", 30*time.Second, func(metrics map[string]float64) bool {
+		return metrics["dagger_connected_clients"] == 0 &&
+			metrics["dagger_dagql_cache_metadata_estimated_bytes"] > maximumEstimatedBytes
+	})
+	baselineEstimate := baseline["dagger_dagql_cache_metadata_estimated_bytes"]
+	baselineDisk := baseline["dagger_local_cache_total_disk_size_bytes"]
+
+	var query strings.Builder
+	query.WriteByte('{')
+	patternPrefix := identity.NewID()
+	for i := range workloadCalls {
+		fmt.Fprintf(&query, "g%d:directory{glob(pattern:%q)}", i, fmt.Sprintf("%s-%d-*", patternPrefix, i))
+	}
+	query.WriteByte('}')
+	queryBody, err := json.Marshal(map[string]string{"query": query.String()})
+	require.NoError(t, err)
+
+	workloadCtr := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{"apk", "add", "curl", "jq"}).
+		WithNewFile("/tmp/query.json", string(queryBody)).
+		WithExec([]string{
+			"dagger", "api", "with-session", "sh", "-ec",
+			`curl --fail --silent --show-error \
+  -u "$DAGGER_SESSION_TOKEN:" \
+  -H "content-type: application/json" \
+  --data-binary @/tmp/query.json \
+  "http://127.0.0.1:$DAGGER_SESSION_PORT/query" >/tmp/response.json
+jq -e '.data != null and (.errors | not)' /tmp/response.json >/dev/null
+sleep 30`,
+		})
+	workloadDone := make(chan error, 1)
+	go func() {
+		_, err := workloadCtr.Sync(ctx)
+		workloadDone <- err
+	}()
+
+	active := waitForMetrics("active metadata workload", 30*time.Second, func(metrics map[string]float64) bool {
+		return metrics["dagger_connected_clients"] == 1 &&
+			metrics["dagger_dagql_cache_metadata_estimated_bytes"] >= baselineEstimate+minimumGrowthBytes
+	})
+	activeEstimate := active["dagger_dagql_cache_metadata_estimated_bytes"]
+
+	// Leave the session active through at least one five-second pressure-monitor
+	// interval. Its exact dependency closure must remain above the warmed floor.
+	time.Sleep(7 * time.Second)
+	protected := waitForMetrics("active closure protected", 5*time.Second, func(metrics map[string]float64) bool {
+		return metrics["dagger_connected_clients"] == 1
+	})
+	require.GreaterOrEqual(t,
+		protected["dagger_dagql_cache_metadata_estimated_bytes"],
+		baselineEstimate+minimumGrowthBytes,
+		"automatic metadata pruning must not cut the active session closure",
+	)
+	require.LessOrEqual(t,
+		protected["dagger_local_cache_total_disk_size_bytes"],
+		baselineDisk+1024*1024,
+		"no-match scratch globs should not create meaningful disk pressure",
+	)
+
+	select {
+	case err := <-workloadDone:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for metadata workload session to close")
+	}
+
+	// The warmup used the first immediate session-completion GC slot. A workload
+	// close during the existing one-minute throttle queues the next pass, so give
+	// that lifecycle retry a bounded window and report the observed boundaries.
+	t.Logf("waiting up to %s for throttled session GC: baselineEstimate=%v activeEstimate=%v baselineDisk=%v protectedDisk=%v",
+		sessionGCWaitTimeout,
+		baselineEstimate,
+		activeEstimate,
+		baselineDisk,
+		protected["dagger_local_cache_total_disk_size_bytes"],
+	)
+	final := waitForMetrics("metadata prune after session close (one-minute session GC throttle)", sessionGCWaitTimeout, func(metrics map[string]float64) bool {
+		return metrics["dagger_connected_clients"] == 0 &&
+			metrics["dagger_dagql_cache_metadata_estimated_bytes"] <= baselineEstimate+minimumGrowthBytes
+	})
+	finalEstimate := final["dagger_dagql_cache_metadata_estimated_bytes"]
+	require.Less(t, finalEstimate, activeEstimate-minimumGrowthBytes,
+		"session-completion GC should remove cold zero-disk persisted roots")
+	require.Greater(t, finalEstimate, float64(maximumEstimatedBytes),
+		"the unpruneable core schema floor must survive an exhausted structural pass")
+
+	// A fresh core call verifies that retaining the unpruneable floor was not
+	// merely visible in the gauge; the schema remains usable after the cut.
+	version, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{"dagger", "core", "version"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(version))
+}
+
+func (LocalCacheSuite) TestLocalCacheManualMetadataPruneCLI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	devEngine := devEngineContainerAsService(engine)
+
+	_, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{
+			"dagger", "-m", "core", "api", "call",
+			"engine", "local-cache", "prune",
+			"--max-estimated-bytes=4294967296",
+			"--target-estimated-bytes=3221225472",
+		}).
+		Sync(ctx)
+	require.NoError(t, err, "the CLI must accept 64-bit structural thresholds when automatic GC is disabled")
+}
+
 func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {

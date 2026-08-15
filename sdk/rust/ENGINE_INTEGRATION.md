@@ -3,7 +3,7 @@
 This document is the maintainer contract for building, exercising, and auditing the
 built-in Rust SDK. It complements [ARCHITECTURE.md](ARCHITECTURE.md): that document
 describes the public client, while this one describes the private engine-packaged
-compiler, adapter, runtime image, and exact-target evidence workflow.
+compiler, adapter, runtime image, and completed-engine verification workflow.
 
 ## Runtime build audit
 
@@ -21,36 +21,30 @@ observable build hygiene, not copying another language's implementation shape.
 | Runtime shape is explicit | Go and Java set a fixed entrypoint and workdir | Rust clears inherited default arguments, installs one fixed entrypoint, and uses `/scratch`, matching the engine's `core.RuntimeWorkdirPath`. |
 | Platform and executable are engine-owned | Go selects its fixed runtime output; Java promotes the resolved application JAR | Rust selects only the engine platform's reviewed target triple and the manifest-owned `dagger-module` binary. Callers cannot supply a command, target directory, executable, or workdir. |
 
-`toolchains/rust-sdk-dev/internal/enginefree` keeps the source-level audit executable.
+`.dagger/modules/rust-client-dev/internal/enginefree` keeps the source-level audit executable.
 If one of the reviewed SDKs changes its build contract, that test directs maintainers
 back to this table so the Rust decision is reconsidered rather than drifting silently.
 
-## Verification authority and feature layering
+## Verification authority
 
 The release matrix in [MAINTAINING.md](MAINTAINING.md), the Rust development module,
 and the Rust security workflow remain the definitive SDK verification contract.
-Feature checkpoints add evidence for a newly introduced boundary; they do not replace,
-fork, or reinterpret that contract. A feature is complete only when its implementation
-continues to satisfy the canonical Rust checks and its additional evidence passes.
-
-Completed Feature checkpoints are absorbed into the ordinary unit, integration,
-generation, conformance, and security suites. Do not replay earlier Feature workflows
-serially at every later checkpoint. The development progression is:
+Completed implementation checkpoints are absorbed into the ordinary unit, integration,
+generation, conformance, and security suites. Do not replay their development workflows
+serially. The maintained progression is:
 
 1. While iterating, run the narrowest crate, package, fixture, or named integration
    case that exercises the changed boundary.
-2. At an implementation checkpoint, run the relevant canonical Rust checks plus only
-   the current Feature's focused evidence.
-3. At Feature implementation closure, run the complete canonical Rust matrix and pure
+2. At an implementation checkpoint, run the relevant canonical Rust checks plus the
+   focused regression tests for the changed boundary.
+3. Before release-readiness verification, run the complete canonical Rust matrix and pure
    contract harness once, directly through Cargo and Go, without Dagger orchestration.
-4. At SDK sign-off, run the exact-engine evidence matrix. At release, additionally run
-   the publication, security, generated-client, and live-conformance gates prescribed
-   by `MAINTAINING.md`; no Feature-specific recipe may weaken them.
+4. Build the two public crate packages and complete engine, then run one isolated
+   external Rust consumer against that engine.
 
 `engine-unit`, `engine-content`, `engine-integration`, and `engine-evidence` below are
-therefore the SDK-sign-off branch. They reproduce or prove boundaries beyond ordinary
-Cargo and Go checks, but are subordinate to the canonical SDK build and release
-instructions. None is an ordinary local checkpoint gate.
+focused engine regression tools. They remain useful for diagnosing their specific
+boundaries but are not a release-evidence system and are not ordinary local gates.
 
 ## Engine-free development workflow
 
@@ -65,10 +59,10 @@ cargo test -p dagger-codegen --test engine_operations --test visible_schema_prop
 cargo test -p dagger-sdk-engine --locked
 cargo test -p dagger-sdk-completeness --locked
 
-cd ../../toolchains/engine-dev
+cd ../../.dagger/modules/engine-dev
 GOCACHE=/tmp/dagger-rust-go-cache go test . ./build -count=1
 
-cd ../rust-sdk-dev
+cd ../rust-client-dev
 GOCACHE=/tmp/dagger-rust-go-cache go test . ./internal/enginefixture ./internal/enginefree -count=1
 
 cd ../../sdk/rust/runtime
@@ -96,8 +90,8 @@ GOOS=linux GOARCH=amd64 GOCACHE=/tmp/dagger-rust-go-cache \
 
 Linux maintainers may run the corresponding engine-free unit packages directly. The
 local contract is compile/static compatibility for these ABI packages plus behavioral
-ownership in Rust and the portable toolchain tests; an exact engine remains a sign-off
-concern.
+ownership in Rust and the portable toolchain tests; an exact engine remains a separate
+verification concern.
 
 ### Change-triggered generation
 
@@ -105,24 +99,23 @@ Generation is not part of the continuous local checkpoint loop. Do not invoke a 
 generator for documentation, fixtures, Rust internals, or implementation-only Go
 changes. Refresh bindings only when their owning Dagger module API/schema changes, and
 then do it once with that module's scoped changeset, inspect the exact diff, and return
-to direct compile/static checks. A later SDK-sign-off reproducibility pass is separate
-from local implementation closure.
+to direct compile/static checks. Completed-engine verification is separate from local
+implementation closure.
 
-## SDK sign-off workflow
+## Focused engine regression workflow
 
-Run these commands from the repository root only when collecting exact-engine sign-off
-evidence. A focused case is useful for sign-off diagnosis; the complete matrix is the
-admission gate.
+Run these commands from the repository root only when diagnosing the corresponding
+engine-backed boundary. The ordinary release-readiness path uses `build verify` instead.
 
 ```console
-./bin/dagger api call -m toolchains/rust-sdk-dev engine-unit
-./bin/dagger api call -m toolchains/rust-sdk-dev engine-content manifest-digest
-./bin/dagger api call -m toolchains/rust-sdk-dev engine-content engine-integration --cases operations
-./bin/dagger api call -m toolchains/rust-sdk-dev engine-content engine-evidence
+./bin/dagger api call -m .dagger/modules/rust-client-dev engine-unit
+./bin/dagger api call -m .dagger/modules/rust-client-dev engine-content manifest-digest
+./bin/dagger api call -m .dagger/modules/rust-client-dev engine-content engine-integration --cases operations
+./bin/dagger api call -m .dagger/modules/rust-client-dev engine-content engine-evidence
 ```
 
 - `engine-unit` reproduces Rust engine-tool, completeness-boundary, Go adapter, and
-  focused source-graph tests inside the sign-off Dagger graph.
+  focused source-graph tests inside the Dagger graph.
 - `engine-content` builds one target-bound OCI content object. Its manifest and
   descriptor digests are evidence coordinates, not a promise that another runner can
   recover the object's bytes.
@@ -136,7 +129,7 @@ The closed case inventory is:
 
 | Case | Boundary proved |
 | --- | --- |
-| `resolution` | Canonical installed built-in selection from the common baseline and pre-fallback shorthand rejection |
+| `resolution` | Canonical built-in selection, idempotent installation, and pre-fallback shorthand rejection |
 | `init-empty` | New Cargo package, lockfile, toolchain, starter source, and checked generation |
 | `init-existing` | Semantic Cargo adoption and byte-preservation of caller-owned source |
 | `init-no-generate` | Initialization without accidental generated publication |
@@ -146,11 +139,6 @@ The closed case inventory is:
 | `negative-generated-lock-toolchain` | Missing generation, stale lockfile, and incompatible toolchain rejection |
 | `negative-path-ownership` | Lexical escape, symlink escape, and unknown generated-file ownership rejection |
 | `negative-redaction` | Credential-bearing immutable-dependency rejection without secret rendering |
-
-The engine-free installation state-machine property retains the reinstall no-op and
-collision assertions. Exact-target sign-off does not replay a second installation:
-all cases branch from the one installed baseline, so the run can prove that SDK
-installation happened exactly once.
 
 The checked target is declared in `sdk/rust/completeness/target.json`. The packaged
 dependency descriptor may select the canonical crates.io release or a credential-free
@@ -202,17 +190,17 @@ Before a fork-backed run:
    build. `engine-unit` has no engine content and therefore needs neither coordinate:
 
    ```console
-   ./bin/dagger api call -m toolchains/rust-sdk-dev \
+   ./bin/dagger api call -m .dagger/modules/rust-client-dev \
      --engine-repository <credential-free-fork-url> \
      --sdk-dependency-revision <full-reachable-revision> \
      engine-content manifest-digest
 
-   ./bin/dagger api call -m toolchains/rust-sdk-dev \
+   ./bin/dagger api call -m .dagger/modules/rust-client-dev \
      --engine-repository <credential-free-fork-url> \
      --sdk-dependency-revision <full-reachable-revision> \
      engine-content engine-integration --cases operations
 
-   ./bin/dagger api call -m toolchains/rust-sdk-dev \
+   ./bin/dagger api call -m .dagger/modules/rust-client-dev \
      --engine-repository <credential-free-fork-url> \
      --sdk-dependency-revision <full-reachable-revision> \
      engine-content engine-evidence
@@ -247,13 +235,13 @@ case:
    invent an `api client init` command or run the complete workspace generator group;
    Feature 7 will own user-facing client initialization.
 6. Assert exact commands, config anchors, paths, and forbidden sequencing in
-   `toolchains/rust-sdk-dev/internal/enginefree`.
+   `.dagger/modules/rust-client-dev/internal/enginefree`.
 7. Inspect the Dagger graph for broad generator discovery, repeated content/engine
    construction, unrelated SDK source, and unbounded fan-out.
 8. Run the engine-free audit before the one focused case:
 
    ```console
-   cd toolchains/rust-sdk-dev
+   cd .dagger/modules/rust-client-dev
    go test ./internal/enginefree -count=1
    ```
 
@@ -263,8 +251,8 @@ using a multi-minute engine build as the next assertion is not the development l
 
 ## Local triage
 
-Start with the owning direct Cargo test and its deterministic fixture. For an SDK
-sign-off failure, reproduce the observed contract in the pure Rust harness before
+Start with the owning direct Cargo test and its deterministic fixture. For an engine-backed
+verification failure, reproduce the observed contract in the pure Rust harness before
 rerunning only the named engine case. Inspect the stable Rust diagnostic code and
 coordinate. Repair generated ownership with scoped generation; do not delete
 caller-authored Cargo, source, VCS, or workspace files. Missing or stale locks are
@@ -274,8 +262,8 @@ The generated module binary adapts one existing nested-session call into the sam
 engine-independent envelope used by the direct Rust harness. Empty parent names publish
 the descriptor-derived registration; non-empty parent names enter the generated typed
 registry, where an empty function name selects construction.
-Local checkpoints prove those semantics without an engine, while exact-target sign-off
-retains the final nested-session observation. The standalone client renderer likewise
+Local checkpoints prove those semantics without an engine, while completed-engine
+verification retains the final nested-session observation. The standalone client renderer likewise
 proves the engine hook without claiming complete client content.
 
 Before evidence or release review, inspect the runtime image for exactly the installed
@@ -291,14 +279,14 @@ source rather than invoking every workspace generator:
 
 ```console
 ./bin/dagger api call -M -j module-source \
-  --ref-string toolchains/rust-sdk-dev --require-kind LOCAL_SOURCE \
+  --ref-string .dagger/modules/rust-client-dev --require-kind LOCAL_SOURCE \
   generated-context-changeset modified-paths
 ./bin/dagger api call -M module-source \
-  --ref-string toolchains/rust-sdk-dev --require-kind LOCAL_SOURCE \
+  --ref-string .dagger/modules/rust-client-dev --require-kind LOCAL_SOURCE \
   generated-context-changeset export --path .
 ```
 
-The preview is expected to name only `toolchains/rust-sdk-dev/dagger.gen.go` and the
-affected files beneath `toolchains/rust-sdk-dev/internal/dagger`. The unscoped
+The preview is expected to name only `.dagger/modules/rust-client-dev/dagger.gen.go` and the
+affected files beneath `.dagger/modules/rust-client-dev/internal/dagger`. The unscoped
 `dagger generate` command belongs to repository-wide generation and is not part of a
 Rust engine-integration checkpoint.

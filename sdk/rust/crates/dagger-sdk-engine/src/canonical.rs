@@ -25,8 +25,6 @@ pub enum DigestDomain {
     RuntimeProvenance,
     /// Packaged private engine asset manifest.
     PackagedAssets,
-    /// Complete engine-free conformance checkpoint closure.
-    ConformanceCheckpoint,
 }
 
 impl DigestDomain {
@@ -37,7 +35,6 @@ impl DigestDomain {
             Self::EngineSource => b"dagger-rust-engine-source-v1\0",
             Self::RuntimeProvenance => b"dagger-rust-engine-runtime-provenance-v1\0",
             Self::PackagedAssets => b"dagger-rust-engine-packaged-assets-v1\0",
-            Self::ConformanceCheckpoint => b"dagger-rust-sdk-conformance-checkpoint-v1\0",
         }
     }
 }

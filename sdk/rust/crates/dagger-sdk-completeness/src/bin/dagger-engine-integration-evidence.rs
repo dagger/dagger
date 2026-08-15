@@ -375,7 +375,7 @@ fn evidence_registry(
                 target_digest,
                 observation.evidence_id.clone(),
                 EvidenceKind::Verification,
-                "toolchains/rust-sdk-dev/main.go",
+                ".dagger/modules/rust-client-dev/main.go",
                 domain_slug(&observation.evidence_domain),
                 "The complete exact-target engine matrix passed for this capability-local domain",
                 observation.proved_capabilities.clone(),
@@ -411,7 +411,7 @@ fn reference(
             args: vec![
                 "call".to_owned(),
                 "-m".to_owned(),
-                "../../toolchains/rust-sdk-dev".to_owned(),
+                "../../.dagger/modules/rust-client-dev".to_owned(),
                 "engine-content".to_owned(),
                 "engine-evidence".to_owned(),
             ],

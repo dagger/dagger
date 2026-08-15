@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"unicode"
 
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
@@ -146,6 +147,12 @@ type ClientMetadata struct {
 	// WorkspaceEnv explicitly selects the workspace environment overlay for
 	// this client. When unset, no environment overlay is applied.
 	WorkspaceEnv *string `json:"workspace_env,omitempty"`
+
+	// UserConfigPath is the caller-host path to the user-level Dagger config
+	// file (~/.config/dagger/config.toml). The engine reads it through the
+	// caller host session to apply user-level workspace overrides. When unset,
+	// no user-level config is consulted.
+	UserConfigPath string `json:"user_config_path,omitempty"`
 
 	// WorkspaceModuleScope hints at the workspace module this client's first
 	// schema introspection targets: the leading CLI command token, unresolved
@@ -352,6 +359,20 @@ type LocalSearchOpts struct {
 	Limit       *int     `json:"limit,omitempty"`
 	Paths       []string `json:"paths,omitempty"`
 	Globs       []string `json:"globs,omitempty"`
+}
+
+// RipgrepNoFilesSearched reports whether ripgrep's stderr says it exited only
+// because every candidate file was excluded by a filter (globs, ignore rules,
+// hidden-file rules), rather than because something actually went wrong.
+//
+// ripgrep exits 2 with "No files were searched, which means ripgrep probably
+// applied a filter you didn't expect." even though "the filter matched nothing"
+// is a perfectly ordinary outcome of a search - e.g. a --glob naming a file
+// that doesn't exist in the tree being searched. Since search results from one
+// tree get merged with results from others (workspace overlays, cache mounts),
+// treating this as fatal loses matches that do exist in the other trees.
+func RipgrepNoFilesSearched(stderr string) bool {
+	return strings.Contains(stderr, "No files were searched")
 }
 
 type LocalExportOpts struct {

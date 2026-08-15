@@ -9,7 +9,7 @@
 //go:test:include ../../cmd/dagger
 //go:test:include ../../core/gitref
 //go:test:include ../../core/modules
-//go:test:include ../../core/openrouter
+//go:test:include ../../core/modelcatalog
 //go:test:include ../../core/prompts
 //go:test:include ../../core/sdk/sdkmeta
 //go:test:include ../../core/workspace
@@ -21,8 +21,8 @@
 //go:test:include ../../modules/alpine
 //go:test:include ../../modules/wolfi
 //go:test:include ../../sdk/go
-//go:test:include ../../toolchains/cli-dev
-//go:test:include ../../toolchains/go
+//go:test:include ../../.dagger/modules/cli-dev
+//go:test:include ../../.dagger/modules/go
 //go:test:include ../../util
 package helm
 
@@ -220,7 +220,7 @@ func helmContainer(dag *dagger.Client) *dagger.Container {
 
 	return dag.Container().
 		From(helmImage).
-		WithExec([]string{"apk", "add", "--no-cache", "helm~3.18.4", "kubectl"}).
+		WithExec([]string{"apk", "add", "--no-cache", "helm-3~3.19.2", "kubectl"}).
 		WithDirectory("/dagger-helm", chart).
 		WithWorkdir("/dagger-helm")
 }

@@ -323,7 +323,7 @@ prop_compose! {
             value in any::<u64>(),
             status_index in 0_usize..5,
             stability_index in 0_usize..4,
-            feature_index in 0_usize..8,
+            feature_index in 0_usize..7,
             os_index in 0_usize..3,
             architecture_index in 0_usize..2,
             authority_index in 0_usize..7,
@@ -363,7 +363,6 @@ prop_compose! {
                 FeatureId::Feature5,
                 FeatureId::Feature6,
                 FeatureId::Feature7,
-                FeatureId::Feature8,
                 FeatureId::Feature9,
             ][feature_index].clone(),
             operating_system: [

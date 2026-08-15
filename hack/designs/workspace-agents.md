@@ -116,8 +116,11 @@ dagger agent                                    # prompt with all of them compos
   alphabetical `module:fn` order, passing it explicitly to the base arg. The
   base is *not* ambient — unlike a workspace, an LLM is always handed in
   explicitly; the only seeding happens at the composition entrypoint.
-- On a tool-name collision, last `withTools` wins (existing policy) and a
-  warning names the shadowed tool and both contributing modules.
+- On a tool-name collision, ALL tools of every bound object involved are
+  served under namespaced names (`<object>_<tool>`, e.g. `tuiQa_start` and
+  `engineLab_start`) so nothing is silently shadowed, and a warning names the
+  collision and the namespaced names. Objects with no collisions keep bare
+  tool names — the common case stays terse.
 - `@agent` methods are auto-excluded from `withTools` toolsets, so authors
   don't need `except: ["agent"]` for the standing-in-it case.
 - **CLI:** `dagger agent` composes all installed agents and drops into the

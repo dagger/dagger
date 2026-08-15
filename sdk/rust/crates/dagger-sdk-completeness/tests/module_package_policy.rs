@@ -54,7 +54,7 @@ fn cargo_metadata_exposes_only_the_exact_acyclic_public_pair() {
     let sdk = package(&metadata, "dagger-sdk");
     let macros = package(&metadata, "dagger-sdk-macros");
     for package in [sdk, macros] {
-        assert_eq!(package.version, "1.0.0-beta.10");
+        assert_eq!(package.version, "1.0.0-beta.11.rust.1");
         assert_eq!(package.edition, "2024");
         assert_eq!(package.rust_version.as_deref(), Some("1.97.1"));
         assert_eq!(
@@ -65,7 +65,7 @@ fn cargo_metadata_exposes_only_the_exact_acyclic_public_pair() {
     }
     assert!(sdk.dependencies.iter().any(|dependency| {
         dependency.name == "dagger-sdk-macros"
-            && dependency.req == "=1.0.0-beta.10"
+            && dependency.req == "=1.0.0-beta.11.rust.1"
             && dependency.kind.is_none()
     }));
     for private in [

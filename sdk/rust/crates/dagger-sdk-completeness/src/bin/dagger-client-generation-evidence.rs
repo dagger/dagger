@@ -6,10 +6,10 @@ use std::process::ExitCode;
 
 use clap::{Arg, ArgAction, Command, value_parser};
 use dagger_sdk_completeness::{
-    CanonicalSet, ClientGenerationClosureObservation, ClientGenerationEvidenceArtifact,
+    ClientGenerationClosureObservation, ClientGenerationEvidenceArtifact,
     ClientGenerationFormatVersion, admit_client_generation_closure, canonical_bytes,
     client_generation_scope_input, decode_canonical, derive_client_generation_report,
-    derive_client_generation_scope, required_client_signoff_cases,
+    derive_client_generation_scope,
 };
 
 fn main() -> ExitCode {
@@ -64,13 +64,12 @@ fn run() -> Result<(), &'static str> {
     .map_err(|_| "reviewed standalone-client scope is invalid")?;
     let closure = admit_client_generation_closure(&scope, &observation)
         .map_err(|_| "observation does not close the engine-free implementation")?;
-    let report = derive_client_generation_report(&scope, Some(&closure), None)
+    let report = derive_client_generation_report(&scope, Some(&closure))
         .map_err(|_| "closure cannot produce the standalone-client report")?;
     let artifact = ClientGenerationEvidenceArtifact {
         format_version: ClientGenerationFormatVersion::current(),
         observation,
         closure,
-        deferred_signoff_cases: CanonicalSet::new(required_client_signoff_cases()),
     };
     let evidence = canonical_bytes(&artifact).map_err(|_| "evidence encoding failed")?;
     let report = canonical_bytes(&report).map_err(|_| "report encoding failed")?;

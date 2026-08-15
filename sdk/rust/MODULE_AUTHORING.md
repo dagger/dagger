@@ -1,8 +1,8 @@
 # Rust module authoring and verification
 
 This guide records the durable authoring, generation, dispatch, local-checkpoint, and
-SDK-sign-off contracts for the Rust SDK. The public syntax is ordinary typed Rust; the
-engine adapter and generated support remain implementation details.
+completed-engine verification contracts for the Rust SDK. The public syntax is ordinary
+typed Rust; the engine adapter and generated support remain implementation details.
 
 ## Authoring surface
 
@@ -114,36 +114,10 @@ check, test, warning-denied Clippy/rustdoc, Cargo Deny, security, package, direc
 generated drift/ownership, derived-report, and clean-output checks once. It does not
 continuously regenerate checked assets.
 
-If a proposed local check appears to require an engine, stop. Record the exact
-unmodellable contract, evidence that the production direct model is insufficient, and
-the smallest proposed sign-off case. Explicit approval records the case for sign-off;
-it does not authorize an engine inside the local checkpoint.
-
-## SDK sign-off: bounded exact-target evidence
-
-SDK sign-off is separate from implementation closure. It consumes matching closure
-evidence and does not replay engine-free compiler, fixture, hygiene, or security work.
-Its invariant is:
-
-- one reusable exact-target artifact;
-- engine, CLI, mandatory Go runtime, and Rust content built at most once;
-- one engine service and one installed Rust baseline;
-- no unrelated SDK builders, tests, generation, or distribution builds;
-- isolated case workspaces branched from the installed baseline;
-- one digest-bound atomic verdict with artifact/import, engine-start, Rust-install,
-  and per-case timings; and
-- rejection of duplicate artifact construction, engine starts, baseline installation,
-  stale identities, skipped/failed/missing cases, or overbroad claims.
-
-The closed Feature 6 inventory is `registration`, `constructor-state`,
-`execution-shapes`, `types`, `handles-context`, `negative-dispatch`,
-`concurrency-cancellation`, `packaged-self-consumer`, and `common-harness`. The packaged
-self-consumer is a Rust-authored Dagger module that resolves only the exact
-engine-packaged Rust SDK and uses its generated Core surface to run a bounded Rust SDK
-workflow; a repository-relative or unpackaged SDK dependency fails the case.
-
-The common harness retains only its declared lifecycle authority. A smoke case closes
-only its enumerated engine capability and cannot replace source, type, dispatch,
-fixture, security, or implementation-closure evidence. Feature 8 expands this bounded
-matrix into complete platform conformance, and Feature 9 owns published-release
-self-hosting.
+If a proposed local check genuinely requires an engine, keep the direct model gap
+explicit and add the smallest focused engine-backed regression test that owns that
+boundary. The ordinary release-readiness check is intentionally smaller: package the
+two public crates, assemble the complete engine with the Rust SDK content, and run one
+isolated external Rust consumer against that completed engine. This verifies the
+packaged module-authoring path without replacing the faster compiler and dispatch
+tests above.

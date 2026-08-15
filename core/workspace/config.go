@@ -225,14 +225,24 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 
 	env, ok := cfg.Env[envName]
 	if !ok {
-		return nil, fmt.Errorf("workspace env %q is not defined", envName)
+		return nil, NewUndefinedEnvError(cfg, envName)
 	}
 
-	for moduleName, overlay := range env.Modules {
+	if err := applyModuleOverlays(applied, env.Modules, fmt.Sprintf("workspace env %q", envName)); err != nil {
+		return nil, err
+	}
+
+	return applied, nil
+}
+
+// applyModuleOverlays merges module overlays into applied in place. origin
+// names the overlay source ("workspace env %q", "user config") for errors.
+func applyModuleOverlays(applied *Config, overlays map[string]EnvModuleOverlay, origin string) error {
+	for moduleName, overlay := range overlays {
 		entry, ok := applied.Modules[moduleName]
 		if !ok {
 			if overlay.Source == "" {
-				return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
+				return fmt.Errorf("%s references unknown module %q", origin, moduleName)
 			}
 			if applied.Modules == nil {
 				applied.Modules = map[string]ModuleEntry{}
@@ -255,8 +265,52 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		}
 		applied.Modules[moduleName] = entry
 	}
+	return nil
+}
 
-	return applied, nil
+// UndefinedEnvError reports a selected env that has no env.<name>.* entry in
+// the config. Enumerating the defined envs is the actionable part: a missing
+// env is most often a typo, and the list is what disambiguates. No creation
+// hint — envs come into being through env-scoped writes, but we can't know
+// which write the user meant.
+type UndefinedEnvError struct {
+	Env     string
+	Defined []string
+}
+
+func NewUndefinedEnvError(cfg *Config, envName string) error {
+	return &UndefinedEnvError{Env: envName, Defined: EnvNames(cfg)}
+}
+
+func (e *UndefinedEnvError) Error() string {
+	return fmt.Sprintf(UndefinedEnvErrorPrefix+" (%s)", e.Env, definedEnvsFragment(e.Defined))
+}
+
+// Extensions marks the error for structured detection across the GraphQL
+// boundary: dagql attaches these to the error response for any error in the
+// wrap chain, so the CLI's create-on-write retry can match _type and env
+// instead of parsing the message.
+func (e *UndefinedEnvError) Extensions() map[string]any {
+	return map[string]any{
+		"_type": UndefinedEnvErrorType,
+		"env":   e.Env,
+	}
+}
+
+// UndefinedEnvErrorType is the _type extension value identifying an
+// UndefinedEnvError in a GraphQL error response.
+const UndefinedEnvErrorType = "UNDEFINED_ENV_ERROR"
+
+// UndefinedEnvErrorPrefix is the format string every "undefined env" error
+// message starts with. Clients that cannot see extensions (version-skewed
+// engines, non-GraphQL boundaries) match on it as a fallback.
+const UndefinedEnvErrorPrefix = "workspace env %q is not defined"
+
+func definedEnvsFragment(names []string) string {
+	if len(names) == 0 {
+		return "no envs defined"
+	}
+	return "defined envs: " + strings.Join(names, ", ")
 }
 
 // EnvNames returns the configured environment names in deterministic order.
@@ -289,10 +343,10 @@ func EnsureEnv(cfg *Config, envName string) bool {
 // RemoveEnv removes the named environment from the config.
 func RemoveEnv(cfg *Config, envName string) error {
 	if cfg == nil || len(cfg.Env) == 0 {
-		return fmt.Errorf("workspace env %q is not defined", envName)
+		return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(EnvNames(cfg)))
 	}
 	if _, ok := cfg.Env[envName]; !ok {
-		return fmt.Errorf("workspace env %q is not defined", envName)
+		return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(EnvNames(cfg)))
 	}
 	delete(cfg.Env, envName)
 	if len(cfg.Env) == 0 {

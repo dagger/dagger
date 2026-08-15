@@ -23,11 +23,28 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace's pending overlay changes.
+     * Return all agent middlewares from modules loaded in the workspace.
      */
-    public function changes(): Changeset
+    public function agents(?array $include = null): AgentGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\AgentGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace's changes, with paths relative to its working directory.
+     *
+     * Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
+     */
+    public function changes(?Workspace $from = null): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        if (null !== $from) {
+        $innerQueryBuilder->setArgument('from', $from);
+        }
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -152,6 +169,26 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+     *
+     * Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+     *
+     * Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+     */
+    public function findRoots(array $markers, ?string $start = '.', ?array $exclude = []): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findRoots');
+        $leafQueryBuilder->setArgument('markers', $markers);
+        if (null !== $start) {
+        $leafQueryBuilder->setArgument('start', $start);
+        }
+        if (null !== $exclude) {
+        $leafQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'findRoots');
+    }
+
+    /**
      * Search for a file or directory by walking up from the start path within the workspace.
      *
      * Returns the absolute workspace path if found, or null if not found.
@@ -225,6 +262,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return a module defined in the workspace configuration.
+     *
+     * Reflects the selected env's effective view.
      */
     public function module(string $name): WorkspaceModule
     {
@@ -249,11 +288,22 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * List modules defined in the workspace configuration.
+     *
+     * Reflects the selected env's effective view.
      */
     public function modules(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
         return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
+    }
+
+    /**
+     * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+     */
+    public function reloaded(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reloaded');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -367,6 +417,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a configuration value written.
+     *
+     * When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
      */
     public function withConfigValue(string $key, string $value, ?array $values = null, ?bool $here = false): Workspace
     {
@@ -452,6 +504,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a module installed in its config.
+     *
+     * When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
      */
     public function withModule(string $ref, ?string $name = '', ?bool $here = false): Workspace
     {
@@ -463,6 +517,32 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+     *
+     * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+     */
+    public function withMountedDirectory(string $path, Directory $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+     *
+     * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+     */
+    public function withMountedFile(string $path, File $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -546,6 +626,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      * Return this workspace with a configuration value removed.
      *
      * Errors when the key is not currently set.
+     *
+     * When the session selects an env, the key is scoped to that env's overlay.
      */
     public function withoutConfigValue(string $key, ?bool $here = false): Workspace
     {
@@ -579,6 +661,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a module removed from its config.
+     *
+     * When the session selects an env, only that env's overlay entry is removed.
      */
     public function withoutModule(string $name, ?bool $here = false): Workspace
     {

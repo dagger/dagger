@@ -64,8 +64,8 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 			return err
 		}
 
-		if err := generator.Overlay(ctx, generated.Overlay, cfg.OutputDir); err != nil {
-			return fmt.Errorf("failed to overlay generated code: %w", err)
+		if err := generator.Apply(ctx, generated, cfg.OutputDir); err != nil {
+			return fmt.Errorf("failed to apply generated code: %w", err)
 		}
 
 		for _, cmd := range generated.PostCommands {

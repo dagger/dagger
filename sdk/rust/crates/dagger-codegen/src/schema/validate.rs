@@ -1364,7 +1364,7 @@ fn allows_engine_source_map_omission(
 
     // The target declares every sourceMap input non-null, but its dynamic schema
     // merger stamps module-owned types with only this discriminator
-    // (core/schematool.go @ 25300124ca110612edc09c43f89cb5fad6028170). Keeping the
+    // (core/schematool.go @ 501b57e0476dee5881b99a064c3c04173134ecc7). Keeping the
     // exception conditional on a valued module argument prevents it from weakening
     // ordinary GraphQL required-argument validation.
     supplied.get(&module).is_some_and(Option::is_some)

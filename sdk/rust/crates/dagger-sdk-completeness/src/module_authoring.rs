@@ -83,7 +83,7 @@ pub enum ModuleImplementationSubject {
     ModuleContext,
     /// Generated ownership and scoped regeneration.
     GeneratedAssets,
-    /// Scope, local closure, and exact-engine sign-off separation.
+    /// Scope and local closure verification.
     EvidenceBoundary,
 }
 
@@ -101,8 +101,6 @@ pub enum ModuleEvidenceDomain {
     AssetProperty,
     /// Warning, documentation, package, and security hygiene.
     SecurityHygiene,
-    /// Exact-target engine sign-off.
-    ExactEngineSignoff,
     /// Sibling standalone-client work, never admitted here.
     SiblingStandaloneClient,
     /// Feature 5 lifecycle-only engine integration, never authoring evidence.
@@ -345,7 +343,7 @@ pub struct ImplementationClosureObservation {
     pub claims: BTreeMap<ModuleEvidenceDomain, CanonicalSet<CapabilityId>>,
 }
 
-/// Admitted local closure, kept distinct from SDK sign-off.
+/// Admitted local closure.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImplementationClosureEvidence {
@@ -361,185 +359,8 @@ pub struct ImplementationClosureEvidence {
     pub generated_assets_digest: Digest,
     /// Locally admitted capability status changes.
     pub status_changes: BTreeMap<CapabilityId, Status>,
-    /// Engine-dependent blockers deliberately retained after local closure.
-    pub signoff_blockers: CanonicalSet<CapabilityId>,
-}
-
-/// One exact target-engine sign-off case.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ModuleSignoffCase {
-    /// Complete descriptor registration, introspection, metadata, and source maps.
-    Registration,
-    /// Root construction plus public and private state round trips.
-    ConstructorState,
-    /// Sync, async, unit, value, error, and panic-contained execution.
-    ExecutionShapes,
-    /// Primitive, list, optional, enum, scalar, local, interface, and explicit values.
-    Types,
-    /// Core, self, dependency, and current-call handles on the nested session.
-    HandlesContext,
-    /// Typed negative dispatch, input, application, and publication failures.
-    NegativeDispatch,
-    /// Concurrent call isolation and cancellation result election.
-    ConcurrencyCancellation,
-    /// Rust-authored packaged SDK consumer with no checkout-relative dependency.
-    PackagedSelfConsumer,
-    /// Applicable pinned sdk-sdk lifecycle checks in their own evidence domain.
-    CommonHarness,
-}
-
-/// Immutable inputs from which one reusable target artifact identity is derived.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExactTargetArtifactInput {
-    /// Exact completeness target.
-    pub target_digest: TargetDigest,
-    /// Full pinned Dagger revision.
-    pub dagger_revision: NonEmptyText,
-    /// Target operating-system and architecture spelling.
-    pub platform: NonEmptyText,
-    /// Combined immutable engine and CLI build input identity.
-    pub engine_cli_input_digest: Digest,
-    /// Mandatory engine-packaged Go runtime content identity.
-    pub go_runtime_digest: Digest,
-    /// Rust SDK manifest, descriptor, and source content identity.
-    pub rust_content_digest: Digest,
-    /// Exact Rust and Go build-toolchain identity.
-    pub toolchain_digest: Digest,
-}
-
-/// One reusable exact-target artifact shared by every sign-off case.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExactTargetSignoffArtifact {
-    /// Complete immutable artifact inputs.
-    pub input: ExactTargetArtifactInput,
-    /// Domain-separated canonical artifact identity.
-    pub artifact_digest: Digest,
-}
-
-/// One case bound to the shared artifact and an exact claim subset.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleSignoffCaseSpec {
-    /// Stable case identity.
-    pub case: ModuleSignoffCase,
-    /// Shared-artifact-bound case identity.
-    pub case_digest: Digest,
-    /// Capabilities this case is permitted to claim.
-    pub capability_ids: CanonicalSet<CapabilityId>,
-}
-
-/// Complete deferred sign-off manifest; construction performs no engine work.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleSignoffManifest {
-    /// Strict evidence format.
-    pub format_version: ModuleAuthoringFormatVersion,
-    /// Exact Feature 6 mapping identity.
-    pub mapping_digest: Digest,
-    /// Engine-free closure consumed rather than replayed.
-    pub implementation_closure_digest: Digest,
-    /// Checked generated-module assets used by every case.
-    pub generated_assets_digest: Digest,
-    /// Exact packaged runtime content identity.
-    pub runtime_digest: Digest,
-    /// One reusable target artifact.
-    pub artifact: ExactTargetSignoffArtifact,
-    /// Complete closed case inventory.
-    pub cases: BTreeMap<ModuleSignoffCase, ModuleSignoffCaseSpec>,
-}
-
-/// Terminal state for one engine-backed sign-off case.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "outcome", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum ModuleSignoffCaseOutcome {
-    /// Case completed successfully.
-    Passed { observation_digest: Digest },
-    /// Case ran and failed.
-    Failed { diagnostic: NonEmptyText },
-    /// Case did not execute.
-    Skipped { reason: NonEmptyText },
-}
-
-/// One isolated case result branched from the installed Rust baseline.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleSignoffCaseObservation {
-    /// Stable case identity.
-    pub case: ModuleSignoffCase,
-    /// Expected case digest from the manifest.
-    pub case_digest: Digest,
-    /// Isolated workspace identity derived from the common baseline.
-    pub workspace_digest: Digest,
-    /// Measured case duration.
-    pub elapsed_millis: u64,
-    /// Passed, failed, or skipped result.
-    pub result: ModuleSignoffCaseOutcome,
-}
-
-/// Counts proving that sign-off reused its expensive resources.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleSignoffExecutionShape {
-    /// Target artifact build or import count.
-    pub artifact_materializations: u32,
-    /// Engine service start count.
-    pub engine_starts: u32,
-    /// Installed Rust baseline construction count.
-    pub rust_baseline_installs: u32,
-    /// Unrelated SDK or distribution path entries.
-    pub unrelated_builds: u32,
-}
-
-/// Timings for expensive shared sign-off phases.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleSignoffPhaseTimings {
-    /// Build or import duration for the target artifact.
-    pub artifact_build_or_import_millis: u64,
-    /// Duration to start the one engine service.
-    pub engine_start_millis: u64,
-    /// Duration to materialize the one installed Rust baseline.
-    pub rust_install_millis: u64,
-}
-
-/// Complete exact-target observation submitted for atomic sign-off admission.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleSignoffObservation {
-    /// Canonical manifest identity observed by the runner.
-    pub manifest_digest: Digest,
-    /// Exact shared artifact used by all cases.
-    pub artifact_digest: Digest,
-    /// Matching engine-free closure consumed by the run.
-    pub implementation_closure_digest: Digest,
-    /// Matching generated-module assets.
-    pub generated_assets_digest: Digest,
-    /// Matching packaged runtime content.
-    pub runtime_digest: Digest,
-    /// Resource construction/start counts.
-    pub execution_shape: ModuleSignoffExecutionShape,
-    /// Shared expensive-phase timings.
-    pub phase_timings: ModuleSignoffPhaseTimings,
-    /// Authored list retained so missing and duplicate cases remain observable.
-    pub cases: Vec<ModuleSignoffCaseObservation>,
-    /// Exact capability claims made by the complete run.
-    pub capability_ids: CanonicalSet<CapabilityId>,
-}
-
-/// Atomic sign-off admission result, intentionally distinct from local closure.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModuleSignoffAdmission {
-    /// Digest-bound atomic verdict, absent for every rejection.
-    pub verdict_digest: Option<Digest>,
-    /// Permitted engine-dependent status changes.
-    pub status_changes: BTreeMap<CapabilityId, Status>,
-    /// Remaining blockers after this complete observation.
-    pub blockers: CanonicalSet<CapabilityId>,
-    /// Stable rejection reason, absent only for admitted sign-off.
-    pub rejection: Option<NonEmptyText>,
+    /// Blockers deliberately retained after local closure.
+    pub remaining_blockers: CanonicalSet<CapabilityId>,
 }
 
 /// Independently observable state of one module evidence phase.
@@ -552,25 +373,23 @@ pub enum ModuleEvidencePhase {
     Passed { evidence_digest: Digest },
 }
 
-/// Feature-local report that cannot conflate implementation closure with SDK sign-off.
+/// Feature-local report derived from implementation closure.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleAuthoringReport {
-    /// Exact completeness target assessed by both phases.
+    /// Exact completeness target assessed by the report.
     pub target_digest: TargetDigest,
     /// Reviewed module-authoring mapping identity.
     pub mapping_digest: Digest,
     /// Engine-free compiler, dispatcher, fixture, package, and security closure.
     pub implementation_closure: ModuleEvidencePhase,
-    /// Deferred exact-target engine evidence.
-    pub sdk_signoff: ModuleEvidencePhase,
-    /// Status changes supported by the phases that actually passed.
+    /// Status changes supported by the phase that passed.
     pub status_changes: BTreeMap<CapabilityId, Status>,
     /// Every capability still requiring evidence.
     pub blockers: CanonicalSet<CapabilityId>,
 }
 
-/// Constructs the one reviewed 79/32 scope plus 17-row ownership correction.
+/// Constructs the one reviewed 79/31 scope plus 17-row ownership correction.
 pub fn module_authoring_scope_input(target_digest: TargetDigest) -> ModuleAuthoringScopeInput {
     let mappings = FEATURE6_EXISTING_IDS
         .iter()
@@ -625,7 +444,7 @@ pub fn derive_module_authoring_scope(
     }
     if CanonicalSet::new(mappings.keys().cloned()) != expected_ids {
         return Err(reason(
-            "module authoring mapping is not the exact 79/32 set",
+            "module authoring mapping is not the exact 79/31 set",
         ));
     }
 
@@ -753,12 +572,10 @@ pub fn implementation_closure_claims(
 ) -> BTreeMap<ModuleEvidenceDomain, CanonicalSet<CapabilityId>> {
     let mut claims = BTreeMap::<ModuleEvidenceDomain, Vec<CapabilityId>>::new();
     for mapping in scope.mappings.values() {
-        if mapping.minimum_evidence_domain != ModuleEvidenceDomain::ExactEngineSignoff {
-            claims
-                .entry(mapping.minimum_evidence_domain)
-                .or_default()
-                .push(mapping.capability_id.clone());
-        }
+        claims
+            .entry(mapping.minimum_evidence_domain)
+            .or_default()
+            .push(mapping.capability_id.clone());
     }
     claims
         .into_iter()
@@ -818,11 +635,7 @@ pub fn assemble_implementation_closure(
     }
 
     let expected_claims = implementation_closure_claims(scope);
-    if observation.claims != expected_claims
-        || observation
-            .claims
-            .contains_key(&ModuleEvidenceDomain::ExactEngineSignoff)
-    {
+    if observation.claims != expected_claims {
         return Err(reason(
             "implementation closure claims are incomplete, overbroad, or engine-backed",
         ));
@@ -857,7 +670,7 @@ pub fn assemble_implementation_closure(
         }
         status_changes.extend(admission.status_changes);
     }
-    let signoff_blockers = CanonicalSet::new(
+    let remaining_blockers = CanonicalSet::new(
         scope
             .blockers()
             .iter()
@@ -871,218 +684,21 @@ pub fn assemble_implementation_closure(
         implementation_digest: observation.implementation_digest.clone(),
         generated_assets_digest: observation.generated_assets_digest.clone(),
         status_changes,
-        signoff_blockers,
+        remaining_blockers,
     })
 }
 
-/// Builds the one immutable target artifact identity used by all sign-off cases.
-pub fn build_exact_target_signoff_artifact(
-    input: ExactTargetArtifactInput,
-) -> Result<ExactTargetSignoffArtifact, NonEmptyText> {
-    if input.dagger_revision.as_str() != "25300124ca110612edc09c43f89cb5fad6028170" {
-        return Err(reason("sign-off artifact uses the wrong Dagger revision"));
-    }
-    let artifact_digest = canonical_digest(DigestDomain::ModuleAuthoring, &input)
-        .map_err(|_| reason("sign-off artifact could not be hashed"))?;
-    Ok(ExactTargetSignoffArtifact {
-        input,
-        artifact_digest,
-    })
-}
-
-/// Constructs the complete deferred case inventory without starting an engine.
-pub fn build_module_signoff_manifest(
-    scope: &ModuleAuthoringScope,
-    closure: &ImplementationClosureEvidence,
-    artifact: ExactTargetSignoffArtifact,
-    runtime_digest: Digest,
-) -> Result<ModuleSignoffManifest, NonEmptyText> {
-    if closure.target_digest != scope.target_digest
-        || closure.mapping_digest != scope.mapping_digest
-        || closure.target_digest != artifact.input.target_digest
-        || build_exact_target_signoff_artifact(artifact.input.clone())? != artifact
-    {
-        return Err(reason(
-            "sign-off manifest combines stale or cross-target identities",
-        ));
-    }
-    let engine_claims = exact_signoff_claims(scope);
-    if closure.signoff_blockers != engine_claims {
-        return Err(reason(
-            "sign-off manifest does not consume complete local closure",
-        ));
-    }
-    let mut cases = BTreeMap::new();
-    for case in required_module_signoff_cases() {
-        let capability_ids = if case == ModuleSignoffCase::Registration {
-            engine_claims.clone()
-        } else {
-            CanonicalSet::default()
-        };
-        let case_digest = canonical_digest(
-            DigestDomain::ModuleAuthoring,
-            &(case, &artifact.artifact_digest, &capability_ids),
-        )
-        .map_err(|_| reason("sign-off case could not be hashed"))?;
-        cases.insert(
-            case,
-            ModuleSignoffCaseSpec {
-                case,
-                case_digest,
-                capability_ids,
-            },
-        );
-    }
-    Ok(ModuleSignoffManifest {
-        format_version: ModuleAuthoringFormatVersion::current(),
-        mapping_digest: scope.mapping_digest.clone(),
-        implementation_closure_digest: closure.closure_digest.clone(),
-        generated_assets_digest: closure.generated_assets_digest.clone(),
-        runtime_digest,
-        artifact,
-        cases,
-    })
-}
-
-/// Returns the complete closed engine-backed case inventory.
-#[must_use]
-pub fn required_module_signoff_cases() -> BTreeSet<ModuleSignoffCase> {
-    BTreeSet::from([
-        ModuleSignoffCase::Registration,
-        ModuleSignoffCase::ConstructorState,
-        ModuleSignoffCase::ExecutionShapes,
-        ModuleSignoffCase::Types,
-        ModuleSignoffCase::HandlesContext,
-        ModuleSignoffCase::NegativeDispatch,
-        ModuleSignoffCase::ConcurrencyCancellation,
-        ModuleSignoffCase::PackagedSelfConsumer,
-        ModuleSignoffCase::CommonHarness,
-    ])
-}
-
-/// Atomically admits a complete exact-target sign-off observation.
-pub fn admit_module_signoff(
-    scope: &ModuleAuthoringScope,
-    manifest: &ModuleSignoffManifest,
-    observation: &ModuleSignoffObservation,
-) -> ModuleSignoffAdmission {
-    let reject = |message: &'static str| ModuleSignoffAdmission {
-        verdict_digest: None,
-        status_changes: BTreeMap::new(),
-        blockers: scope.blockers(),
-        rejection: Some(reason(message)),
-    };
-    let Ok(expected_artifact) =
-        build_exact_target_signoff_artifact(manifest.artifact.input.clone())
-    else {
-        return reject("sign-off artifact is not canonical or exact-target");
-    };
-    let Ok(manifest_digest) = canonical_digest(DigestDomain::ModuleAuthoring, manifest) else {
-        return reject("sign-off manifest could not be hashed");
-    };
-    if expected_artifact != manifest.artifact
-        || observation.manifest_digest != manifest_digest
-        || observation.artifact_digest != manifest.artifact.artifact_digest
-        || observation.implementation_closure_digest != manifest.implementation_closure_digest
-        || observation.generated_assets_digest != manifest.generated_assets_digest
-        || observation.runtime_digest != manifest.runtime_digest
-    {
-        return reject("sign-off observation is stale or cross-target");
-    }
-    if observation.execution_shape.artifact_materializations != 1
-        || observation.execution_shape.engine_starts != 1
-        || observation.execution_shape.rust_baseline_installs != 1
-        || observation.execution_shape.unrelated_builds != 0
-    {
-        return reject("sign-off did not reuse one artifact, engine, and Rust baseline");
-    }
-    if observation.phase_timings.artifact_build_or_import_millis == 0
-        || observation.phase_timings.engine_start_millis == 0
-        || observation.phase_timings.rust_install_millis == 0
-    {
-        return reject("sign-off omitted an expensive phase timing");
-    }
-
-    let mut cases = BTreeMap::new();
-    for case in &observation.cases {
-        let Some(spec) = manifest.cases.get(&case.case) else {
-            return reject("sign-off observation contains an unknown case");
-        };
-        if case.case_digest != spec.case_digest
-            || case.elapsed_millis == 0
-            || !matches!(case.result, ModuleSignoffCaseOutcome::Passed { .. })
-            || cases.insert(case.case, case).is_some()
-        {
-            return reject("sign-off case is stale, duplicated, skipped, or failed");
-        }
-    }
-    if CanonicalSet::new(cases.keys().copied())
-        != CanonicalSet::new(required_module_signoff_cases())
-    {
-        return reject("sign-off observation omits a required case");
-    }
-
-    let expected_claims = exact_signoff_claims(scope);
-    let manifest_claims = CanonicalSet::new(
-        manifest
-            .cases
-            .values()
-            .flat_map(|case| case.capability_ids.iter().cloned()),
-    );
-    if manifest_claims != expected_claims || observation.capability_ids != expected_claims {
-        return reject("sign-off capability claims are incomplete or overbroad");
-    }
-    let verdict_digest = match canonical_digest(DigestDomain::ModuleAuthoring, observation) {
-        Ok(digest) => digest,
-        Err(_) => return reject("sign-off verdict could not be hashed"),
-    };
-    let admission = admit_module_authoring_evidence(
-        scope,
-        &ModuleEvidenceObservation {
-            format_version: ModuleAuthoringFormatVersion::current(),
-            evidence_id: EvidenceId::new("verification/module-authoring/sdk-signoff")
-                .expect("static sign-off evidence identity is valid"),
-            target_digest: scope.target_digest.clone(),
-            mapping_digest: scope.mapping_digest.clone(),
-            domain: ModuleEvidenceDomain::ExactEngineSignoff,
-            capability_ids: expected_claims,
-            result: ModuleEvidenceOutcome::Passed {
-                observation_digest: verdict_digest.clone(),
-            },
-        },
-    );
-    if admission.rejection.is_some() {
-        return reject("sign-off claims failed capability-local evidence admission");
-    }
-    ModuleSignoffAdmission {
-        verdict_digest: Some(verdict_digest),
-        status_changes: admission.status_changes,
-        // The manifest can exist only after exact local closure, so the one admitted
-        // engine-domain partition is the complete residual blocker set.
-        blockers: CanonicalSet::default(),
-        rejection: None,
-    }
-}
-
-/// Derives the honest module report from independently admitted closure and sign-off.
+/// Derives the honest module report from admitted local closure.
 pub fn derive_module_authoring_report(
     scope: &ModuleAuthoringScope,
     closure: Option<&ImplementationClosureEvidence>,
-    signoff: Option<&ModuleSignoffAdmission>,
 ) -> Result<ModuleAuthoringReport, NonEmptyText> {
-    if signoff.is_some() && closure.is_none() {
-        return Err(reason("SDK sign-off cannot precede implementation closure"));
-    }
-
     let mut status_changes = BTreeMap::new();
     let implementation_closure = if let Some(closure) = closure {
         if closure.target_digest != scope.target_digest
             || closure.mapping_digest != scope.mapping_digest
-            || closure.status_changes
-                != expected_status_changes(scope, |mapping| {
-                    mapping.minimum_evidence_domain != ModuleEvidenceDomain::ExactEngineSignoff
-                })
-            || closure.signoff_blockers != exact_signoff_claims(scope)
+            || closure.status_changes != expected_status_changes(scope, |_| true)
+            || closure.remaining_blockers != remaining_module_claims(scope, &closure.status_changes)
         {
             return Err(reason(
                 "implementation closure report input is stale or incomplete",
@@ -1091,29 +707,6 @@ pub fn derive_module_authoring_report(
         status_changes.extend(closure.status_changes.clone());
         ModuleEvidencePhase::Passed {
             evidence_digest: closure.closure_digest.clone(),
-        }
-    } else {
-        ModuleEvidencePhase::Unexecuted
-    };
-
-    let sdk_signoff = if let Some(signoff) = signoff {
-        let Some(verdict_digest) = &signoff.verdict_digest else {
-            return Err(reason("rejected SDK sign-off cannot enter the report"));
-        };
-        if signoff.rejection.is_some()
-            || signoff.status_changes
-                != expected_status_changes(scope, |mapping| {
-                    mapping.minimum_evidence_domain == ModuleEvidenceDomain::ExactEngineSignoff
-                })
-            || !signoff.blockers.is_empty()
-        {
-            return Err(reason(
-                "SDK sign-off report input is rejected or incomplete",
-            ));
-        }
-        status_changes.extend(signoff.status_changes.clone());
-        ModuleEvidencePhase::Passed {
-            evidence_digest: verdict_digest.clone(),
         }
     } else {
         ModuleEvidencePhase::Unexecuted
@@ -1130,7 +723,6 @@ pub fn derive_module_authoring_report(
         target_digest: scope.target_digest.clone(),
         mapping_digest: scope.mapping_digest.clone(),
         implementation_closure,
-        sdk_signoff,
         status_changes,
         blockers,
     })
@@ -1155,15 +747,16 @@ fn expected_status_changes(
         .collect()
 }
 
-fn exact_signoff_claims(scope: &ModuleAuthoringScope) -> CanonicalSet<CapabilityId> {
+fn remaining_module_claims(
+    scope: &ModuleAuthoringScope,
+    status_changes: &BTreeMap<CapabilityId, Status>,
+) -> CanonicalSet<CapabilityId> {
     CanonicalSet::new(
         scope
-            .mappings
-            .values()
-            .filter(|mapping| {
-                mapping.minimum_evidence_domain == ModuleEvidenceDomain::ExactEngineSignoff
-            })
-            .map(|mapping| mapping.capability_id.clone()),
+            .blockers()
+            .iter()
+            .filter(|id| !status_changes.contains_key(*id))
+            .cloned(),
     )
 }
 
@@ -1174,7 +767,6 @@ const fn evidence_domain_slug(domain: ModuleEvidenceDomain) -> &'static str {
         ModuleEvidenceDomain::DispatchProperty => "dispatch-property",
         ModuleEvidenceDomain::AssetProperty => "asset-property",
         ModuleEvidenceDomain::SecurityHygiene => "security-hygiene",
-        ModuleEvidenceDomain::ExactEngineSignoff => "exact-engine-signoff",
         ModuleEvidenceDomain::SiblingStandaloneClient => "sibling-standalone-client",
         ModuleEvidenceDomain::LifecycleIntegration => "lifecycle-integration",
         ModuleEvidenceDomain::CrossPlatform => "cross-platform",
@@ -1230,10 +822,7 @@ fn subject_for(id: &str, authority: ModuleAuthority) -> ModuleImplementationSubj
         ModuleImplementationSubject::DispatchRuntime
     } else if id.contains("explicit-export") || id.contains("authoring-single-source") {
         ModuleImplementationSubject::AuthoringBridge
-    } else if id.contains("engine-free")
-        || id.contains("signoff-boundary")
-        || id.contains("source-coordinate-diagnostics")
-    {
+    } else if id.contains("engine-free") || id.contains("source-coordinate-diagnostics") {
         ModuleImplementationSubject::EvidenceBoundary
     } else if authority == ModuleAuthority::GoCodegen
         || id.contains("descriptor")
@@ -1255,19 +844,15 @@ fn subject_for(id: &str, authority: ModuleAuthority) -> ModuleImplementationSubj
     }
 }
 
-fn evidence_for(id: &str, subject: ModuleImplementationSubject) -> ModuleEvidenceDomain {
-    if id.contains("exact-engine-signoff-boundary") {
-        ModuleEvidenceDomain::ExactEngineSignoff
-    } else {
-        match subject {
-            ModuleImplementationSubject::AuthoringBridge => ModuleEvidenceDomain::CompileFixture,
-            ModuleImplementationSubject::SourceCompiler
-            | ModuleImplementationSubject::TypeProjection => ModuleEvidenceDomain::CompilerProperty,
-            ModuleImplementationSubject::DispatchRuntime
-            | ModuleImplementationSubject::ModuleContext => ModuleEvidenceDomain::DispatchProperty,
-            ModuleImplementationSubject::GeneratedAssets => ModuleEvidenceDomain::AssetProperty,
-            ModuleImplementationSubject::EvidenceBoundary => ModuleEvidenceDomain::SecurityHygiene,
-        }
+fn evidence_for(_id: &str, subject: ModuleImplementationSubject) -> ModuleEvidenceDomain {
+    match subject {
+        ModuleImplementationSubject::AuthoringBridge => ModuleEvidenceDomain::CompileFixture,
+        ModuleImplementationSubject::SourceCompiler
+        | ModuleImplementationSubject::TypeProjection => ModuleEvidenceDomain::CompilerProperty,
+        ModuleImplementationSubject::DispatchRuntime
+        | ModuleImplementationSubject::ModuleContext => ModuleEvidenceDomain::DispatchProperty,
+        ModuleImplementationSubject::GeneratedAssets => ModuleEvidenceDomain::AssetProperty,
+        ModuleImplementationSubject::EvidenceBoundary => ModuleEvidenceDomain::SecurityHygiene,
     }
 }
 
@@ -1348,8 +933,6 @@ fn requirement_for(id: &str, authority: ModuleAuthority) -> &'static str {
         "15.7"
     } else if id.contains("engine-free") {
         "16.1"
-    } else if id.contains("signoff-boundary") {
-        "17.9"
     } else {
         "8.2"
     }
@@ -1418,7 +1001,6 @@ const FEATURE6_POLICY_IDS: &[&str] = &[
     "policy/rust-policy/module-generated-asset-ownership",
     "policy/rust-policy/module-change-triggered-regeneration",
     "policy/rust-policy/module-engine-free-local-checkpoint",
-    "policy/rust-policy/module-exact-engine-signoff-boundary",
 ];
 
 const FEATURE6_LIFECYCLE_CORRECTIONS: &[&str] = &[
@@ -1534,7 +1116,7 @@ mod tests {
     #[test]
     fn reviewed_partition_has_exact_counts_and_is_disjoint() {
         assert_eq!(FEATURE6_EXISTING_IDS.len(), 79);
-        assert_eq!(FEATURE6_POLICY_IDS.len(), 32);
+        assert_eq!(FEATURE6_POLICY_IDS.len(), 31);
         assert_eq!(FEATURE6_LIFECYCLE_CORRECTIONS.len(), 17);
         let existing = FEATURE6_EXISTING_IDS
             .iter()
@@ -1558,8 +1140,8 @@ mod tests {
         let target = TargetDigest::new(Digest::sha256(b"module-authoring-target"));
         let input = module_authoring_scope_input(target.clone());
         let scope = derive_module_authoring_scope(&input, &target).expect("reviewed scope derives");
-        assert_eq!(scope.mappings().len(), 111);
+        assert_eq!(scope.mappings().len(), 110);
         assert_eq!(scope.ownership_corrections().len(), 17);
-        assert_eq!(scope.blockers().len(), 111);
+        assert_eq!(scope.blockers().len(), 110);
     }
 }

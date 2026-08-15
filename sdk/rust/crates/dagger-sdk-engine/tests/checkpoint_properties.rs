@@ -6,8 +6,8 @@ use dagger_codegen::module::RegenerationClass;
 use dagger_sdk_engine::{
     CheckpointAction, CheckpointActionObservation, CheckpointActionOutcome,
     CheckpointGenerationDecision, CheckpointObservation, CheckpointPackage, CheckpointProposal,
-    CheckpointRequest, DeferredSignoffException, ForbiddenCheckpointBoundary, ModuleProperty,
-    Sha256Digest, plan_checkpoint, record_checkpoint,
+    CheckpointRequest, ForbiddenCheckpointBoundary, ModuleProperty, Sha256Digest, plan_checkpoint,
+    record_checkpoint,
 };
 use proptest::prelude::*;
 
@@ -56,7 +56,6 @@ fn valid_request(seed: u8) -> CheckpointRequest {
         generation: CheckpointGenerationDecision::ReuseChecked {
             manifest_digest: digest(seed.wrapping_add(1)),
         },
-        deferred_signoff_exception: None,
     }
 }
 
@@ -67,7 +66,7 @@ proptest! {
     #[test]
     fn property_28_local_checkpoints_observably_engine_free_scoped(
         seed in any::<u8>(),
-        mutation in 0_u8..10,
+        mutation in 0_u8..7,
         forbidden in 0_u8..6,
     ) {
         let mut request = valid_request(seed);
@@ -82,24 +81,18 @@ proptest! {
                 changed_domains: BTreeSet::new(),
                 manifest_digest: digest(seed.wrapping_add(2)),
             },
-            5 => request.deferred_signoff_exception = Some(exception(false)),
-            6 => request.deferred_signoff_exception = Some(DeferredSignoffException {
-                contract_gap: String::new(),
-                ..exception(true)
-            }),
-            7 => request.proposals = vec![CheckpointProposal::Action {
+            5 => request.proposals = vec![CheckpointProposal::Action {
                 action: CheckpointAction::Format { packages: BTreeSet::new() },
             }],
-            8 => request.generation = CheckpointGenerationDecision::ScopedRefresh {
+            6 => request.generation = CheckpointGenerationDecision::ScopedRefresh {
                 changed_domains: BTreeSet::from([RegenerationClass::Authoring]),
                 manifest_digest: digest(seed.wrapping_add(2)),
             },
-            9 => request.deferred_signoff_exception = Some(exception(true)),
             _ => unreachable!(),
         }
 
         let plan = plan_checkpoint(request);
-        let should_plan = matches!(mutation, 0 | 8 | 9);
+        let should_plan = matches!(mutation, 0 | 6);
         prop_assert_eq!(plan.is_ok(), should_plan);
         let Ok(plan) = plan else {
             return Ok(());
@@ -152,14 +145,5 @@ fn forbidden_boundary(value: u8) -> ForbiddenCheckpointBoundary {
         3 => ForbiddenCheckpointBoundary::OtherSdk,
         4 => ForbiddenCheckpointBoundary::UnscopedGeneration,
         _ => ForbiddenCheckpointBoundary::Distribution,
-    }
-}
-
-fn exception(approved: bool) -> DeferredSignoffException {
-    DeferredSignoffException {
-        contract_gap: "engine TypeDef registration response".to_owned(),
-        model_insufficiency: "the direct sink cannot issue an engine registration query".to_owned(),
-        proposed_case: "registration".to_owned(),
-        approved,
     }
 }

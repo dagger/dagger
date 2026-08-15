@@ -109,6 +109,6 @@ cargo test -p dagger-sdk-engine --test client_checkpoint_properties --locked
 ```
 
 Investigate fixture sequencing and the owning input before broadening a failed slice.
-Do not use an engine run as a local checkpoint substitute. Exact-engine initialization,
-pin, regeneration, Core-query, and module-query cases are one later bounded SDK
-sign-off owned by the conformance work.
+Do not use an engine run as a local checkpoint substitute. The ordinary completed-engine
+check runs one isolated external Rust consumer and leaves focused engine regressions to
+their owning tests.

@@ -48,45 +48,11 @@ Standalone-client closure adds one deliberately separate evidence chain:
 checkpoint, current/reused gate inputs, timings, and Cargo counts;
 `evidence/client-generation-closure.json` is its admitted canonical closure; and
 `artifacts/client-generation-report.json` is the derived honest report. Reproduce or
-check those files with `dagger-client-generation-evidence`. The report must leave the
-five exact-engine cases unexecuted and retain both sign-off blockers until Feature 8;
-local closure never fabricates an engine result.
-The governing workflow and deferred case semantics are documented in
+check those files with `dagger-client-generation-evidence`. Local closure never
+fabricates a completed-engine result; that boundary is verified by the isolated
+external Rust consumer in the ordinary build.
+The governing workflow is documented in
 [`CLIENT_GENERATION.md`](../CLIENT_GENERATION.md).
-
-Feature 8 adds a distinct five-phase conformance path: reviewed applicability,
-engine-free implementation closure, native platform evidence, exact-artifact security,
-and one atomic exact-engine verdict. Only the final verdict can derive status changes,
-and a failed or absent verdict retains every blocker. Its reproducible operator
-procedure, including the exact-byte evidence-only handoff to Feature 9, is documented
-in [`CONFORMANCE_SIGNOFF.md`](../CONFORMANCE_SIGNOFF.md).
-
-For selected Dagger integration behaviour, the pinned Go test supplies immutable
-authority provenance and candidate-scaffolding input, not the executable Rust
-contract. The checked Rust-first manifest binds a deliberately small scenario spine to
-exactly one generated public-Core realization or reviewed idiomatic Rust fixture. It
-has no general SDK backend. Exact-target admission fails before artifact work if a
-selected scenario lacks one unambiguous executable Rust realization or would construct
-another SDK; the condition is reported as verification mapping drift, not inferred
-Rust API incompleteness.
-
-`conformance-scenario-candidates.json` is the deterministic realization queue for that
-manifest. It currently contains 612 authority-selected spines, partitioned across the
-shared CLI, production module dispatcher, and exact packaged runtime. A
-`realization-required` state means that its semantic candidate exists but no executable
-Rust implementation has been registered. It is deliberately invalid as sign-off
-evidence. The file therefore describes work precisely; it does not inflate the
-implemented count or claim that a Rust boundary label is an executable test.
-
-`conformance-scenario-realizations.json` is the separately reviewed implementation
-registry. It binds every admitted selector to the domain-separated digest of the entire
-candidate queue and to the raw digest of
-`toolchains/rust-sdk-dev/testdata/scenario_conformance.rs`. The registry may remain
-partial while implementation is reviewed, but exact-target admission requires a total,
-one-to-one join before it constructs or imports an artifact or starts an engine. The
-catalog updater may initialize an empty registry; it never infers implementations or
-promotes candidates automatically. Ordinary Rust tests compile the runner and prove its
-selector inventory equals the checked registry without using an engine.
 
 ## Reproducing the checked F1 baseline
 
@@ -142,7 +108,7 @@ From the repository root, rerun Go extraction and the offline Integrity gate ins
 containers:
 
 ```console
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev \
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev \
   check completeness-integrity
 ```
 
@@ -154,7 +120,7 @@ Next, capture real engine introspection, rerun the Go helper, render every deriv
 ask whether the resulting Changeset is empty:
 
 ```console
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev api call \
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev api call \
   completeness-artifacts is-empty
 ```
 
@@ -163,10 +129,10 @@ request to overwrite the checked artifacts. Inspect it without mutation using ei
 commands; each recomputes the graph and can take several minutes on a cold cache:
 
 ```console
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev api call \
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev api call \
   completeness-artifacts diff-stats
 
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev api call \
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev api call \
   completeness-artifacts as-patch contents
 ```
 
@@ -178,7 +144,7 @@ itself.
 Run the profile through the pinned `linux/amd64` beta.9 CLI and engine:
 
 ```console
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev api call \
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev api call \
   completeness-harness contents
 ```
 
@@ -219,7 +185,7 @@ From `sdk/rust/completeness/extractors/go`, verify the dependency-free helper:
 GO111MODULE=off go test ./...
 ```
 
-From `toolchains/rust-sdk-dev`, verify the Dagger module binding:
+From `.dagger/modules/rust-client-dev`, verify the Dagger module binding:
 
 ```console
 go test ./...
@@ -230,8 +196,7 @@ go test ./...
 The exact result is locked by
 [`initial_baseline.rs`](../crates/dagger-sdk-completeness/tests/initial_baseline.rs) and reproduced
 in [`artifacts/report.json`](artifacts/report.json). Feature 2 completes the stable owned-client
-contract while retaining explicit Feature 3 and Feature 8 blockers for live CLI, resource, and
-workspace behaviour:
+contract while retaining explicit blockers for live CLI, resource, and workspace behaviour:
 
 | Observation | Expected value |
 | --- | ---: |
@@ -322,7 +287,7 @@ before accepting any change.
   surface to a disposable path:
 
   ```console
-  ./hack/with-dev ./bin/dagger -m toolchains/engine-dev api call \
+  ./hack/with-dev ./bin/dagger -m .dagger/modules/engine-dev api call \
     introspection-json export --path /tmp/dagger-engine-schema.json
   ```
 
@@ -336,7 +301,7 @@ before accepting any change.
   in the F1 harness. Judge acquisition and normalization by the outer exit status, then judge SDK
   completeness from the normalized per-check outcomes.
 - **Regenerate bindings only when the Dagger module API changes.** Adding or renaming a public
-  function in `toolchains/rust-sdk-dev` requires the repository's Go module-binding generator
+  function in `.dagger/modules/rust-client-dev` requires the repository's Go module-binding generator
   and review of `dagger.gen.go`. That exceptional binding refresh is distinct from the normal
   Rust API-client workflow, `dagger generate -y rust-sdk:apiclient`; ordinary contract
   reproduction requires neither.

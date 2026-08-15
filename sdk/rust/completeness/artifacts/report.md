@@ -2,11 +2,11 @@
 
 ## Target
 
-- Dagger: v1.0.0-beta.10
-- Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
-- Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:61456617323ab3fc5ca1659f15f9459e732d21d17839cc9d4683764b7e1b7df8`
-- Ledger digest: `sha256:6b9a9c6770a418ff33d0005ed2cd5af5171f4ffba7f8f7df430da1e1e5299756`
+- Dagger: v1.0.0-beta.11.rust.1
+- Dagger revision: `501b57e0476dee5881b99a064c3c04173134ecc7`
+- Rust SDK: 1.0.0-beta.11.rust.1
+- Inventory digest: `sha256:b3f156761f0e0f3987da0e33b9e31fe7629d5f61309318e3583acd30b801811b`
+- Ledger digest: `sha256:4d2416bbf2558038195cdb3a168f1b6c80b11217fe990a06d5081fde1cd6264e`
 
 ## Verdicts
 
@@ -20,7 +20,7 @@
 - go-codegen: 83
 - go-engine-sdk: 13
 - go-integration-tests: 1072
-- rust-policy: 107
+- rust-policy: 85
 - sdk-contract-harness: 17
 
 ## Counts by capability kind
@@ -37,7 +37,7 @@
 - go-type: 321
 - go-var: 8
 - harness-check: 17
-- rust-policy: 106
+- rust-policy: 84
 - schema-argument: 611
 - schema-directive: 12
 - schema-directive-argument: 14
@@ -50,7 +50,7 @@
 
 ## Counts by status
 
-- Missing: 1146
+- Missing: 1124
 - Partial: 2753
 - Implemented: 733
 - Idiomatic_Equivalent: 10
@@ -64,8 +64,7 @@
 - feature-5: 53
 - feature-6: 96
 - feature-7: 1
-- feature-8: 1103
-- feature-9: 20
+- feature-9: 1101
 
 ## Blocking capabilities
 
@@ -3006,10 +3005,6 @@
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Finstall-registers-sdk`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fscaffolded-module-loads`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fsdk-reports-module-options`
-- `policy/rust-policy/conformance-applicability-accounting`
-- `policy/rust-policy/conformance-capability-scope`
-- `policy/rust-policy/conformance-case-catalog`
-- `policy/rust-policy/conformance-engine-free-checkpoint`
 - `policy/rust-policy/engine-bare-sdk-resolution`
 - `policy/rust-policy/engine-build-provenance-selection`
 - `policy/rust-policy/engine-committed-generated-runtime`
@@ -3032,24 +3027,6 @@
 - `policy/rust-policy/engine-version-shorthand-rejection`
 - `policy/rust-policy/engine-visible-schema-core-compatibility`
 - `policy/rust-policy/engine-workspace-sdk-installation`
-- `policy/rust-policy/platform-native-matrix`
-- `policy/rust-policy/security-artifact-provenance`
-- `policy/rust-policy/security-artifact-vulnerability-scan`
-- `policy/rust-policy/security-expiring-exception`
-- `policy/rust-policy/security-locked-supply-chain`
-- `policy/rust-policy/security-secret-canary`
-- `policy/rust-policy/signoff-artifact-import-reuse`
-- `policy/rust-policy/signoff-atomic-verdict`
-- `policy/rust-policy/signoff-case-retry-honesty`
-- `policy/rust-policy/signoff-closure-evidence`
-- `policy/rust-policy/signoff-duplicate-work-rejection`
-- `policy/rust-policy/signoff-exact-target-artifact`
-- `policy/rust-policy/signoff-host-preflight`
-- `policy/rust-policy/signoff-isolated-case-fanout`
-- `policy/rust-policy/signoff-phase-budget`
-- `policy/rust-policy/signoff-release-handoff`
-- `policy/rust-policy/signoff-single-engine`
-- `policy/rust-policy/signoff-single-rust-baseline`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fdependency-policy`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust`

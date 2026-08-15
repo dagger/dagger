@@ -15,7 +15,20 @@ type perClientCacheScopeKey struct{}
 // cache namespace while preserving the real client metadata used by resolvers.
 // Use it when a resolution must be replayed against request-scoped state.
 func WithPerClientCacheScope(ctx context.Context) context.Context {
-	return context.WithValue(ctx, perClientCacheScopeKey{}, identity.NewID())
+	return WithNamedPerClientCacheScope(ctx, identity.NewID())
+}
+
+// WithNamedPerClientCacheScope is like WithPerClientCacheScope but pins the
+// cache namespace to a caller-provided value instead of a random one. Calls
+// made under the same scope value share a cache namespace, while a changed
+// value invalidates it — use it to bust a client's cached reads at a
+// controlled boundary (e.g. a bumped generation counter) rather than on every
+// call. An empty scope leaves the client's default namespace untouched.
+func WithNamedPerClientCacheScope(ctx context.Context, scope string) context.Context {
+	if scope == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, perClientCacheScopeKey{}, scope)
 }
 
 // PerClientInput scopes a call ID per client by mixing in the client ID as

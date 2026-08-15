@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 use dagger_sdk_completeness::*;
 use serde::Serialize;
 
-const DAGGER_REVISION: &str = "25300124ca110612edc09c43f89cb5fad6028170";
+const DAGGER_REVISION: &str = "501b57e0476dee5881b99a064c3c04173134ecc7";
 const GO_REVISION: &str = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5";
 const HARNESS_REVISION: &str = "8c164424b7a8a37b33a77367ef7547490d5b87b5";
 const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d19a9a22ef9e3890a40";
 const GO_CLIENT_FEATURE2_DIGEST: &str =
-    "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
+    "sha256:97b482de395126d20e6d2e22d739c507898c4d301b9df8eb0078a9e4fabf54e2";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:a2e75bcf36dc3c8625fc24a837630c52bf1faeee2456f0892fb2711bad297270";
+    "sha256:8d9cf4f0f858b268a5232df83241fd3b20387cae20985975da9cd713ca3a3840";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -43,7 +43,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
     assert_eq!(target.sdk_contract_revision.as_str(), HARNESS_REVISION);
     assert_eq!(target.rust_version.to_string(), "1.97.1");
     assert_eq!(target.rust_edition, RustEdition::Edition2024);
-    assert_eq!(target.engine_version.to_string(), "v1.0.0-beta.10");
+    assert_eq!(target.engine_version.to_string(), "v1.0.0-beta.11.rust.1");
     assert_eq!(target.schema_version.as_str(), "v1.0.0");
     assert_eq!(target.go_sdk_version_label, None);
 
@@ -110,13 +110,13 @@ fn target_locks_authorities_harness_status_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:61456617323ab3fc5ca1659f15f9459e732d21d17839cc9d4683764b7e1b7df8"
+        "sha256:b3f156761f0e0f3987da0e33b9e31fe7629d5f61309318e3583acd30b801811b"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:6b9a9c6770a418ff33d0005ed2cd5af5171f4ffba7f8f7df430da1e1e5299756"
+        "sha256:4d2416bbf2558038195cdb3a168f1b6c80b11217fe990a06d5081fde1cd6264e"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 3_899);
+    assert_eq!(derived.report.blocking_capabilities.len(), 3_877);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
     assert!(
         derived
@@ -155,7 +155,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (AuthorityId::new("go-codegen").unwrap(), 83),
             (AuthorityId::new("go-engine-sdk").unwrap(), 13),
             (AuthorityId::new("go-integration-tests").unwrap(), 1_072),
-            (AuthorityId::new("rust-policy").unwrap(), 107),
+            (AuthorityId::new("rust-policy").unwrap(), 85),
             (AuthorityId::new("sdk-contract-harness").unwrap(), 17),
         ])
     );
@@ -165,7 +165,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (Status::IdiomaticEquivalent, 10),
             (Status::Implemented, 733),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_146),
+            (Status::Missing, 1_124),
             (Status::Partial, 2_753),
         ])
     );
@@ -209,8 +209,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (FeatureId::Feature5, 53),
             (FeatureId::Feature6, 96),
             (FeatureId::Feature7, 1),
-            (FeatureId::Feature8, 1_103),
-            (FeatureId::Feature9, 20),
+            (FeatureId::Feature9, 1_101),
         ])
     );
     let init_client = derived
@@ -227,7 +226,6 @@ fn target_locks_authorities_harness_status_and_ownership() {
         FeatureId::Feature5,
         FeatureId::Feature6,
         FeatureId::Feature7,
-        FeatureId::Feature8,
         FeatureId::Feature9,
     ] {
         assert!(

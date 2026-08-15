@@ -15,10 +15,4 @@ The smaller API-focused examples packaged inside `dagger-sdk` run with
 
 The backend and frontend examples are build-only by default and make no registry write.
 Publishing is deliberately separate: select the `publish` subcommand, provide the complete
-`--address`, and add `--allow-publish` to confirm the external write. Exact-target SDK sign-off
-uses only the default build path and rejects any publication attempt.
-
-Exact-target sign-off additionally selects a hidden, fixed-path build export for the backend and
-frontend images. It forces OCI media types with Gzip-compressed layers, retains each tar only
-inside the isolated case workspace, rejects output larger than 256 MiB, and never turns that
-inspection path into a registry write.
+`--address`, and add `--allow-publish` to confirm the external write.

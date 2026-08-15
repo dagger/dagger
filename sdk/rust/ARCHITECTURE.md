@@ -185,7 +185,7 @@ standalone-client content, which remain separately scoped work. See
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md) for the reproducible build audit,
 focused case workflow, and exact-target evidence rules.
 
-## Implementation closure and SDK sign-off
+## Implementation closure and completed-engine verification
 
 Local Feature closure is Rust-first and engine-free. A closed typed planner admits only
 scoped Cargo actions, direct Rust-owned Go ABI tests, generated drift/ownership checks,
@@ -194,14 +194,9 @@ checked-asset decision, rejects Dagger, engines, network graphs, unrelated SDKs,
 distribution builds, and admits closure only when every required gate passed against
 one implementation identity.
 
-SDK sign-off is a later exact-target observation. It consumes that closure rather than
-replaying it, binds one artifact, runtime, generated-assets set, engine service, and
-installed Rust baseline to a closed isolated case inventory, and emits one atomic
-digest-bound verdict. A failed, skipped, stale, missing, duplicated, or overbroad case
-admits no partial sign-off evidence. A passing imported-artifact verdict may emit only
-an evidence-only release handoff bound to the retained outer bundle and inner payload;
-it cannot authorize publication or widen the exact-engine platform. The complete
-operator procedure is in [CONFORMANCE_SIGNOFF.md](CONFORMANCE_SIGNOFF.md); the
-module-authoring and standalone-client inventories remain documented in
-[MODULE_AUTHORING.md](MODULE_AUTHORING.md) and
-[CLIENT_GENERATION.md](CLIENT_GENERATION.md).
+Release readiness then packages exactly the two public crates, assembles the complete
+Dagger engine with the Rust SDK content, and runs one isolated external Rust consumer
+against that completed engine. Focused engine-backed regression tests remain available
+for boundaries that cannot be represented by the direct harness; they are not a second
+release-evidence system. The maintainer procedure is documented in
+[MODULE_AUTHORING.md](MODULE_AUTHORING.md).

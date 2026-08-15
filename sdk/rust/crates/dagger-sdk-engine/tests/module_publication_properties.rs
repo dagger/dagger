@@ -232,7 +232,7 @@ fn module_target(seed: u16) -> ModuleTarget {
     ModuleTarget {
         dagger_revision: target_value("0123456789abcdef0123456789abcdef01234567"),
         engine_version: target_value("v1.0.0"),
-        rust_sdk_version: target_value("1.0.0-beta.10"),
+        rust_sdk_version: target_value("1.0.0-beta.11.rust.1"),
         rust_toolchain: target_value("1.89.0"),
         rust_edition: target_value("2024"),
         visible_schema_digest: module_digest(format!("schema-{seed}").as_bytes()),

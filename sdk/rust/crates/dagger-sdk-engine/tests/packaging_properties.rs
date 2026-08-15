@@ -216,14 +216,14 @@ proptest! {
             ]),
         };
         if dependency_shape == 1 {
-            let valid = registry_dependency("1.0.0-beta.10", "dagger-sdk");
+            let valid = registry_dependency("1.0.0-beta.11.rust.1", "dagger-sdk");
             let mut invalid = serde_json::to_value(valid).unwrap();
             invalid["package"] = serde_json::json!("dagger-codegen");
             prop_assert!(decode_canonical::<PublishedSdkDependency>(&canonical_bytes(&invalid).unwrap()).is_err());
             return Ok(());
         }
         let dependency = match dependency_shape {
-            0 => registry_dependency("1.0.0-beta.10", "dagger-sdk"),
+            0 => registry_dependency("1.0.0-beta.11.rust.1", "dagger-sdk"),
             _ => PublishedSdkDependency::Git {
                 url: value("https://github.com/acme/dagger"),
                 revision: revision(seed),
@@ -286,10 +286,10 @@ fn repository_security_inputs_cover_derived_shipped_graph() {
     const CARGO_LOCK: &str = include_str!("../../../Cargo.lock");
     const RUNTIME_GO_MOD: &str = include_str!("../../../runtime/go.mod");
     const RUNTIME_GO_SUM: &str = include_str!("../../../runtime/go.sum");
-    const ENGINE_BUILDER: &str = include_str!("../../../../../toolchains/engine-dev/build/sdk.go");
-    const SECURITY_WORKFLOW: &str =
-        include_str!("../../../../../.github/workflows/rust-sdk-security.yml");
-    const SECURITY_PREFLIGHT: &str = include_str!("../../../scripts/ci-security-preflight.sh");
+    const ENGINE_BUILDER: &str =
+        include_str!("../../../../../.dagger/modules/engine-dev/build/sdk.go");
+    const RUST_TOOLCHAIN: &str =
+        include_str!("../../../../../.dagger/modules/rust-client-dev/main.go");
 
     let manifest = synthetic_manifest(1);
     let graph = derive_shipped_audit_graph(&manifest).unwrap();
@@ -312,10 +312,9 @@ fn repository_security_inputs_cover_derived_shipped_graph() {
                 "rust:1.97.1-bookworm@sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb",
             ),
             "distribution:rust-sdk" => {
-                SECURITY_WORKFLOW.contains("ci-security-preflight.sh source-policy")
-                    && SECURITY_PREFLIGHT.contains(
-                        "cargo test -p dagger-sdk-engine --test packaging_properties --locked",
-                    )
+                RUST_TOOLCHAIN.contains("func (t *RustClientDev) Test")
+                    && RUST_TOOLCHAIN.contains("func (t *RustClientDev) CargoDeny")
+                    && RUST_TOOLCHAIN.contains("dagger-rust-sdk-check")
             }
             id if id.starts_with("asset:") => manifest
                 .assets
@@ -476,13 +475,13 @@ fn package_identity(seed: u8, fork: bool) -> PackageIdentity {
             package: value("dagger-sdk"),
         }
     } else {
-        registry_dependency("1.0.0-beta.10", "dagger-sdk")
+        registry_dependency("1.0.0-beta.11.rust.1", "dagger-sdk")
     };
     PackageIdentity {
         repository,
         dagger_revision,
-        engine_version: value("1.0.0-beta.10"),
-        rust_sdk_version: value("1.0.0-beta.10"),
+        engine_version: value("1.0.0-beta.11.rust.1"),
+        rust_sdk_version: value("1.0.0-beta.11.rust.1"),
         rust_toolchain: value("1.97.1"),
         sdk_dependency,
         core_schema_digest: digest(seed, 200),

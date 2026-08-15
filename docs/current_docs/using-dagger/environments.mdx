@@ -44,3 +44,34 @@ Without `--env`, you read and write the base configuration, which every environm
 ```shell
 dagger workspace config env.staging.modules.<module>.settings.<key> <value>
 ```
+
+## Personal overrides (user-level config)
+
+Some values should not be committed to the repository: private account profiles, local paths, personal development clusters. Keep those in your user-level Dagger config file — `~/.config/dagger/config.toml` (or the file named by `$DAGGER_CONFIG`) — under a `[workspaces.*]` section keyed by the workspace's Git remote:
+
+```toml
+# Always applied when working in the github.com/acme/api workspace:
+[workspaces."github.com/acme/api".modules.aws.settings]
+profile = "alice-dev"
+
+# A personal environment, selected with `dagger --env dev ...`:
+[workspaces."github.com/acme/api".env.dev.modules.aws.settings]
+region = "us-west-2"
+```
+
+User-level values merge over the repository's `dagger.toml` without modifying it, and user-level environments are added to (and merge over) the repository's own. The merge order is: base config, then your user-level overrides, then the selected `--env` overlay.
+
+The workspace key is the normalized form of the repository's `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent remote URL spellings all match — `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, in the key and in your git config alike. A repository with multiple remotes is keyed by `origin` only, and a repository with no remote (or a purely local one) matches no user-level overrides.
+
+You don't have to edit the file by hand: pass `-g/--global` to `dagger settings` or `dagger workspace config` to target your user-level config instead of the repository's `dagger.toml`:
+
+```shell
+dagger settings -g aws profile alice-dev             # always applied here
+dagger settings -g --env dev aws region us-west-2    # personal env overlay
+dagger settings -g -u aws profile                    # remove the override
+dagger workspace config -g modules.aws.settings.profile alice-dev
+```
+
+`--global` chooses where a write is stored; reads always show the effective merged view. Only module settings can be stored user-level (`modules.<name>.settings.*`, optionally under `env.<name>.*`), and a user-level entry for a module that doesn't exist in some checkout is simply ignored there — the same key spans every branch and clone of the repository.
+
+See [Workspace configuration](../reference/configuration/workspace.mdx#user-level-configuration) for the full schema and key-normalization rules.

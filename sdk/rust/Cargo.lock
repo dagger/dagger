@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-bootstrap"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "clap",
  "dagger-codegen",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-codegen"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "convert_case",
  "graphql-parser",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk-completeness"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "clap",
  "dagger-codegen",
@@ -366,7 +366,6 @@ dependencies = [
  "flate2",
  "pretty_assertions",
  "proptest",
- "rand 0.8.7",
  "semver",
  "serde",
  "serde_json",
@@ -374,13 +373,12 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 1.0.69",
- "tokio",
- "url",
+ "toml_edit",
 ]
 
 [[package]]
 name = "dagger-sdk-engine"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "clap",
  "dagger-codegen",
@@ -401,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk-macros"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11.rust.1"
 dependencies = [
  "proc-macro2",
  "proptest",

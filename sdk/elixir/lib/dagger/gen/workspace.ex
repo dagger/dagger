@@ -27,12 +27,35 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace's pending overlay changes.
+  Return all agent middlewares from modules loaded in the workspace.
   """
-  @spec changes(t()) :: Dagger.Changeset.t()
-  def changes(%__MODULE__{} = workspace) do
+  @spec agents(t(), [{:include, [String.t()]}]) :: Dagger.AgentGroup.t()
+  def agents(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("changes")
+      workspace.query_builder
+      |> QB.select("agents")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.AgentGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace's changes, with paths relative to its working directory.
+
+  Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
+  """
+  @spec changes(t(), [{:from, Dagger.Workspace.t() | nil}]) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("changes")
+      |> QB.maybe_put_arg(
+        "from",
+        if(optional_args[:from], do: Dagger.ID.id!(optional_args[:from]), else: nil)
+      )
 
     %Dagger.Changeset{
       query_builder: query_builder,
@@ -176,6 +199,26 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+
+  Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+
+  Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+  """
+  @spec find_roots(t(), [String.t()], [{:start, String.t() | nil}, {:exclude, [String.t()]}]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def find_roots(%__MODULE__{} = workspace, markers, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("findRoots")
+      |> QB.put_arg("markers", markers)
+      |> QB.maybe_put_arg("start", optional_args[:start])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Search for a file or directory by walking up from the start path within the workspace.
 
   Returns the absolute workspace path if found, or null if not found.
@@ -268,6 +311,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return a module defined in the workspace configuration.
+
+  Reflects the selected env's effective view.
   """
   @spec module(t(), String.t()) :: Dagger.WorkspaceModule.t()
   def module(%__MODULE__{} = workspace, name) do
@@ -300,6 +345,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   List modules defined in the workspace configuration.
+
+  Reflects the selected env's effective view.
   """
   @spec modules(t()) :: {:ok, [Dagger.WorkspaceModule.t()]} | {:error, term()}
   def modules(%__MODULE__{} = workspace) do
@@ -319,6 +366,20 @@ defmodule Dagger.Workspace do
          }
        end}
     end
+  end
+
+  @doc """
+  Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+  """
+  @spec reloaded(t()) :: Dagger.Workspace.t()
+  def reloaded(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("reloaded")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
   end
 
   @doc """
@@ -460,6 +521,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a configuration value written.
+
+  When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
   """
   @spec with_config_value(t(), String.t(), String.t(), [
           {:values, [String.t()]},
@@ -541,6 +604,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a module installed in its config.
+
+  When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
   """
   @spec with_module(t(), String.t(), [{:name, String.t() | nil}, {:here, boolean() | nil}]) ::
           Dagger.Workspace.t()
@@ -551,6 +616,44 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+  """
+  @spec with_mounted_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
+  def with_mounted_directory(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a file mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+  """
+  @spec with_mounted_file(t(), String.t(), Dagger.File.t()) :: Dagger.Workspace.t()
+  def with_mounted_file(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedFile")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -666,6 +769,8 @@ defmodule Dagger.Workspace do
   Return this workspace with a configuration value removed.
 
   Errors when the key is not currently set.
+
+  When the session selects an env, the key is scoped to that env's overlay.
   """
   @spec without_config_value(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
   def without_config_value(%__MODULE__{} = workspace, key, optional_args \\ []) do
@@ -711,6 +816,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a module removed from its config.
+
+  When the session selects an env, only that env's overlay entry is removed.
   """
   @spec without_module(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
   def without_module(%__MODULE__{} = workspace, name, optional_args \\ []) do

@@ -21,7 +21,7 @@ only Rust SDK package actions, direct Rust-owned Go ABI tests, generated ownersh
 security, package, and clean-output checks. Engine, Dagger, network-graph, unrelated
 SDK, unscoped-generation, and distribution proposals are rejected before they can be
 rendered as executable work. See [`../../MODULE_AUTHORING.md`](../../MODULE_AUTHORING.md)
-for the boundary between this local record and deferred SDK sign-off.
+for the boundary between this local record and completed-engine verification.
 
 For standalone clients, this crate also owns confined Cargo discovery, semantic
 amendments, workspace client preflight, manifest-authorized failure-atomic publication,

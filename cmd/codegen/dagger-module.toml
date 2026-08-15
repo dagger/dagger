@@ -7,4 +7,4 @@ source = ".dagger"
 
 [[dependencies]]
   name = "go"
-  source = "../../toolchains/go"
+  source = "../../.dagger/modules/go"

@@ -21,6 +21,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 )
 
@@ -163,6 +164,32 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 		})
 	})
+}
+
+// TestEngineVersionLatestPinsOnConfigWrite verifies that "latest" is accepted
+// as input but config writes resolve it to the current concrete version.
+func (ModuleConfigSuite) TestEngineVersionLatestPinsOnConfigWrite(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	moduleSource := func(engineVersion string) *dagger.ModuleSource {
+		return c.Directory().
+			WithNewFile("dagger.json", fmt.Sprintf(`{"name":"foo","engineVersion":%q,"sdk":{"source":"dang"}}`, engineVersion)).
+			WithNewFile("main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
+			AsModuleSource()
+	}
+
+	writtenEngineVersion := func(ctx context.Context, t *testctx.T, src *dagger.ModuleSource) string {
+		t.Helper()
+		contents, err := src.GeneratedContextChangeset().Layer().File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(contents), &modCfg))
+		return modCfg.EngineVersion
+	}
+
+	want := engine.NormalizeVersion(engine.Version)
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("latest").WithName("bar")))
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0").WithEngineVersion("latest")))
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
@@ -610,10 +637,13 @@ type vcsTestCase struct {
 	isPrivateRepo      bool
 	skipProxyTest      bool
 
-	// encodedToken is a based64 encoded read-only PAT
-	encodedToken string
+	// HTTP credentials for private repositories. Tokens are base64 encoded to
+	// avoid storing token-shaped strings directly in the source.
+	httpAuthUsername string
+	encodedToken     string
 	// encodedToken2 is an optional second token to test cases of using different tokens for the same repo
-	encodedToken2 string
+	httpAuthUsername2 string
+	encodedToken2     string
 	// sshKey determines whether to propagate the host's ssh-key
 	sshKey bool
 }
@@ -691,7 +721,7 @@ var vcsTestCases = []vcsTestCase{
 		skipProxyTest:            true,
 		sshKey:                   true,
 	},
-	// GitLab private repository using PAT
+	// GitLab private repository using project-scoped deploy tokens
 	{
 		name:                     "Private GitLab",
 		gitTestRepoRef:           "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
@@ -701,10 +731,11 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
-		// NOTE: this is not a security vulnerability, these tokens are read-only and scoped to a test repository
-		// with no actual private code
-		encodedToken:  "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx",
-		encodedToken2: "Z2xwYXQtcFVIWDVmZmVCUmdjZ2FYTHdndjNPVzg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxa2oyMHJi",
+		// NOTE: these tokens are read-only and scoped to a test repository with no actual private code.
+		httpAuthUsername:  "dagger-read-only",
+		encodedToken:      "Z2xkdC1ucHU2TTFGRkF3WXFoUnFrcHhXdA==",
+		httpAuthUsername2: "dagger-read-only-2",
+		encodedToken2:     "Z2xkdC1LN3p3Q3I3RW1HclFocmJSZmcteg==",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{
@@ -945,4 +976,53 @@ func (ModuleConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	out, err := ctr.With(daggerExec("call", "hello")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "VERSION 2")
+}
+
+// TestGeneratedContextChangesetPreservesUnrelatedContext verifies that a
+// filtered codegen result does not turn paths outside the module into
+// removals. Module sources loaded from a workspace carry a broader context
+// than the directory returned by an SDK's codegen implementation.
+func (ModuleConfigSuite) TestGeneratedContextChangesetPreservesUnrelatedContext(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	src := c.Directory().
+		WithNewFile("outside.txt", "keep me").
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
+		WithNewFile("mod/main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
+		AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: "mod"})
+
+	removed, err := src.GeneratedContextChangeset().RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, removed, "outside.txt")
+}
+
+// TestModuleSourceGenerateWorkspace verifies that generation composes as a
+// Workspace operation: generated files and later workspace edits share one
+// final changeset, while unrelated context remains present.
+func (ModuleConfigSuite) TestModuleSourceGenerateWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ws := c.Directory().
+		WithNewFile("outside.txt", "keep me").
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("mod/main.go", "package main\n\ntype Foo struct{}\n").
+		AsWorkspace()
+
+	src := ws.ModuleSource("mod")
+	generatedPaths, err := src.GeneratedContextChangeset().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, generatedPaths)
+
+	generated := src.Generate(ws).WithNewFile("extra.txt", "extra")
+	contents, err := generated.File("outside.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "keep me", contents)
+
+	added, err := generated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, added, "extra.txt")
+	require.NotContains(t, added, "outside.txt")
+	for _, path := range generatedPaths {
+		require.Contains(t, added, path)
+	}
 }

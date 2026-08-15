@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>The SDK-role data for the currently executing module, as installed in the active workspace.</p></p>                    </div>
+            <p><p>The SDK-role data for the currently executing module, as installed in the supplied workspace.</p></p>                    </div>
             
         
     
@@ -168,7 +168,7 @@
                 <div class="col-md-8">
                     <a href="#method_modules">modules</a>()
         
-                                            <p><p>The workspace-local modules this SDK authors and manages.</p></p>                </div>
+                                            <p><p>The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -352,7 +352,7 @@
             
 
         <div class="method-description">
-                            <p><p>The workspace-local modules this SDK authors and manages.</p></p>                        
+                            <p><p>The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.</p></p>                        
         </div>
         <div class="tags">
             

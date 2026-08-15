@@ -150,9 +150,8 @@ type Server interface {
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
-	// use the engine-wide default pruning policy, otherwise prune the whole cache
-	// of any releasable entries.
+	// Prune releaseable local-cache entries using explicit disk and/or structural
+	// controls, or the enabled engine-wide default policies when requested.
 	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.

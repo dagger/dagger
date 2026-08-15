@@ -781,7 +781,7 @@ fn target(visible_schema_digest: Sha256Digest) -> ModuleTarget {
     ModuleTarget {
         dagger_revision: value("0123456789abcdef0123456789abcdef01234567"),
         engine_version: value("v1.0.0"),
-        rust_sdk_version: value("1.0.0-beta.10"),
+        rust_sdk_version: value("1.0.0-beta.11.rust.1"),
         rust_toolchain: value("1.89.0"),
         rust_edition: value("2024"),
         visible_schema_digest,

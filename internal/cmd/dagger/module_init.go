@@ -173,6 +173,9 @@ func init() {
 }
 
 func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("module init does not support --env; it scaffolds modules into the base workspace config")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
@@ -189,8 +192,9 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
-		updated := dag.CurrentWorkspace().WithInitModule(name, sdkName, opts)
-		_, err = handleWorkspaceResponse(ctx, dag, updated, autoApply)
+		current := dag.CurrentWorkspace()
+		updated := current.WithInitModule(name, sdkName, opts)
+		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})
 }

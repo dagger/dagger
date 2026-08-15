@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
@@ -71,8 +70,9 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 
 	srv := &http.Server{
 		Handler: handler,
-		// Gosec G112: prevent slowloris attacks
-		ReadHeaderTimeout: 10 * time.Second,
+		// NOTE: no ReadHeaderTimeout (gosec G112) — see cmd/engine/main.go. On
+		// Go >= 1.26.6 it becomes a hard lifetime cap on unencrypted HTTP/2
+		// connections, which would kill every session outliving it.
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},

@@ -1,0 +1,7 @@
+"""A deliberately malformed generator module (@generate returning a non-Changeset) for validation tests."""
+type BadgenerateReturn {
+  """@generate that does not return Changeset!, which the contract forbids."""
+  pub gen(workdir: Directory! @defaultPath(path: ".")): Directory! @generate {
+    workdir.withNewFile("generated.txt", "nope")
+  }
+}

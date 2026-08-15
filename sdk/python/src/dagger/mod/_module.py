@@ -56,6 +56,7 @@ FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
 GENERATOR_DEF_KEY: typing.Final[str] = "__dagger_generate__"
 UP_DEF_KEY: typing.Final[str] = "__dagger_up__"
+AGENT_DEF_KEY: typing.Final[str] = "__dagger_agent__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
@@ -214,6 +215,8 @@ class Module:
                     func_def = func_def.with_generator()
                 if func.service:
                     func_def = func_def.with_up()
+                if func.agent:
+                    func_def = func_def.with_agent()
 
                 for param in func.parameters.values():
                     arg_def = to_typedef(
@@ -695,6 +698,40 @@ class Module:
 
         return wrapper(func) if func else wrapper
 
+    def agent(
+        self,
+        func: Func[P, R] | None = None,
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
+        """Mark a function as an agent middleware.
+
+        Agent middlewares take a base :py:class:`dagger.LLM` and return an
+        ``LLM`` with the module's tools and prompting folded onto it. They are
+        discovered and composed by ``dagger agent``. Besides the base ``LLM``,
+        an agent function may not declare any other required argument. This
+        decorator can be combined with :py:meth:`function`.
+
+        Example usage::
+
+            @object_type
+            class MyModule:
+                @function
+                @agent
+                def agent(self, base: dagger.LLM) -> dagger.LLM:
+                    return base.with_tools(dag.current_node())
+
+        Parameters
+        ----------
+        func:
+            The function to mark as an agent middleware. Should be an instance
+            method in a class decorated with :py:meth:`object_type`.
+        """
+
+        def wrapper(fn: Func[P, R]) -> Func[P, R]:
+            setattr(fn, AGENT_DEF_KEY, True)
+            return fn
+
+        return wrapper(func) if func else wrapper
+
     @overload
     def function(
         self,
@@ -759,6 +796,7 @@ class Module:
             check = getattr(func, CHECK_DEF_KEY, False)
             generator = getattr(func, GENERATOR_DEF_KEY, False)
             service = getattr(func, UP_DEF_KEY, False)
+            agent = getattr(func, AGENT_DEF_KEY, False)
 
             meta = FunctionDefinition(
                 name=name,
@@ -768,6 +806,7 @@ class Module:
                 check=check,
                 generator=generator,
                 service=service,
+                agent=agent,
             )
 
             if inspect.isclass(func):

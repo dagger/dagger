@@ -1,0 +1,11 @@
+kind: Breaking
+body: |
+  `GitRepository.commit(id:)` now returns a `GitCommit` instead of a `GitRef`.
+  Code that used `git(...).commit(id).commit` should use
+  `git(...).commit(id).sha`; code that needs ref behavior should use
+  `git(...).ref(id)`. Older schema views keep the previous `GitRef` return for
+  compatibility.
+time: 2026-07-26T18:30:01Z
+custom:
+  Author: vito
+  PR: 13088

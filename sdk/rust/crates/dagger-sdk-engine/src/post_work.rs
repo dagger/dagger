@@ -214,11 +214,11 @@ async fn execute_fixed_with_stdout_policy(
     coordinate: &str,
     stdout_policy: StdoutPolicy,
 ) -> Result<ProcessOutcome, EngineDiagnostic> {
-    validate_environment(allowlisted_environment)?;
-    validate_fixed_secret_mounts()?;
     if cancel.is_cancelled() {
         return Err(cancelled());
     }
+    validate_environment(allowlisted_environment)?;
+    validate_fixed_secret_mounts()?;
     let mut command = Command::new(spec.executable);
     command
         .args(&spec.arguments)

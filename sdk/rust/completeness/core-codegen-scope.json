@@ -2,7 +2,7 @@
   "baseline": {
     "existing_count": 3329,
     "fingerprint_digest": "sha256:cf2406d940c0a868a0b54b96785ef1f0bb09acf72861e672339dda02d0f5663b",
-    "rows_digest": "sha256:d86abf888d74e80e7e7895152f8ba43c5ad99edb653084f256e6fa7a28155263",
+    "rows_digest": "sha256:9468e18302d7049a904cbd9c2c86ae5ad443fb88d5eb3e0857cf433a4466390a",
     "status_digest": "sha256:c4eb8c2ab0bf82a0fe0e7d745df4a893ad982baab6d9df85ab811f6c3375f327"
   },
   "corrections": [

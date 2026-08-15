@@ -142,6 +142,16 @@ impl CacheExecutionLease {
     }
 }
 
+impl Drop for CacheExecutionLease {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.lock) == 1 {
+            // A concurrent fork inherits the descriptor until exec, so explicitly
+            // release the shared flock before closing our final Rust handle.
+            let _ = fs4::FileExt::unlock(self.lock.as_ref());
+        }
+    }
+}
+
 impl std::fmt::Debug for CacheExecutionLease {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("CacheExecutionLease")

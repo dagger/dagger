@@ -175,6 +175,16 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
+	staleBindings, err := findStaleDependencyBindings(
+		g.Config.OutputDir,
+		filepath.Join(outDir, internalDaggerDir),
+		genSt.Overlay,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find stale dependency bindings: %w", err)
+	}
+	genSt.RemovePaths = append(genSt.RemovePaths, staleBindings...)
+
 	return genSt, nil
 }
 

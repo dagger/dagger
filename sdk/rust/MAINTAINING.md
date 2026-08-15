@@ -55,7 +55,7 @@ SDK, engine, docs, and release generation rather than the Rust publication bound
 The focused graph-local gate is:
 
 ```console
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev call generated-client-check
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev call generated-client-check
 ```
 
 ## Refreshing the target
@@ -93,7 +93,7 @@ record; it must not be widened because a neighbouring operation passed.
 Run focused live conformance from the repository root:
 
 ```console
-./hack/with-dev ./bin/dagger -m toolchains/rust-sdk-dev call core-conformance
+./hack/with-dev ./bin/dagger -m .dagger/modules/rust-client-dev call core-conformance
 ```
 
 The result is normalized, credential-free candidate evidence. Its subject digest covers
@@ -105,7 +105,7 @@ To publish evidence, capture that JSON without the progress stream, then run the
 status transition command from `sdk/rust`:
 
 ```console
-./hack/with-dev ./bin/dagger --silent -m toolchains/rust-sdk-dev \
+./hack/with-dev ./bin/dagger --silent -m .dagger/modules/rust-client-dev \
   call core-conformance \
   > sdk/rust/completeness/evidence/core-codegen-exact-target.json
 
@@ -139,6 +139,12 @@ do not use compiler fix-ups or hand edits as recovery tools.
 
 ## Release verification
 
+The maintained Rust build produces both public `.crate` packages and a complete
+engine containing the Rust SDK content. It does not publish either crate. An operator
+may attach the exported packages to a GitHub Release only through a separately invoked
+manual path after direct authorization; crates.io publication is not part of this
+repository's Rust release flow.
+
 Run from `sdk/rust`:
 
 ```console
@@ -162,8 +168,8 @@ configured warnings as invisible.
 Release review must confirm:
 
 - `unsafe_code = "deny"` still applies to every workspace crate;
-- only `dagger-sdk` is publishable and its package contains the generated modules,
-  README, and Apache-2.0 license;
+- only `dagger-sdk` and `dagger-sdk-macros` are publishable, and their packages contain
+  the required source, documentation, and license files;
 - default, `gen`, no-default, all-features, MSRV, and warning-denied documentation
   builds have all passed;
 - generated serde preserves optional omission and explicit zero-like values;

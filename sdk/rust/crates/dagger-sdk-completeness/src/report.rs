@@ -310,7 +310,6 @@ const fn feature_label(feature: &FeatureId) -> &'static str {
         FeatureId::Feature5 => "feature-5",
         FeatureId::Feature6 => "feature-6",
         FeatureId::Feature7 => "feature-7",
-        FeatureId::Feature8 => "feature-8",
         FeatureId::Feature9 => "feature-9",
     }
 }
@@ -325,7 +324,7 @@ fn all_statuses() -> [Status; 5] {
     ]
 }
 
-fn all_features() -> [FeatureId; 8] {
+fn all_features() -> [FeatureId; 7] {
     [
         FeatureId::Feature2,
         FeatureId::Feature3,
@@ -333,7 +332,6 @@ fn all_features() -> [FeatureId; 8] {
         FeatureId::Feature5,
         FeatureId::Feature6,
         FeatureId::Feature7,
-        FeatureId::Feature8,
         FeatureId::Feature9,
     ]
 }

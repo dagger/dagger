@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.
+ * A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
  */
 class LLMSkill extends Client\AbstractObject implements Client\IdAble, Node
 {
@@ -32,7 +32,7 @@ class LLMSkill extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The skill name, as passed to read_skill.
+     * The skill name, as passed to ReadSkill.
      */
     public function name(): string
     {

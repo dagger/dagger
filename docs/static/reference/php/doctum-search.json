@@ -410,7 +410,7 @@
 			"t": "C",
 			"n": "Dagger\\CurrentModuleAsSDK",
 			"p": "Dagger/CurrentModuleAsSDK.html",
-			"d": "<p>The SDK-role data for the currently executing module, as installed in the active workspace.</p>",
+			"d": "<p>The SDK-role data for the currently executing module, as installed in the supplied workspace.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -938,6 +938,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\GitCommit",
+			"p": "Dagger/GitCommit.html",
+			"d": "<p>An immutable git commit.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitRef",
 			"p": "Dagger/GitRef.html",
 			"d": "<p>A git ref (tag, branch, or commit).</p>",
@@ -1170,7 +1180,7 @@
 			"t": "C",
 			"n": "Dagger\\LLMSkill",
 			"p": "Dagger/LLMSkill.html",
-			"d": "<p>A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.</p>",
+			"d": "<p>A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -3518,7 +3528,7 @@
 			"t": "M",
 			"n": "Dagger\\CurrentModuleAsSDK::modules",
 			"p": "Dagger/CurrentModuleAsSDK.html#method_modules",
-			"d": "<p>The workspace-local modules this SDK authors and manages.</p>"
+			"d": "<p>The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.</p>"
 		},
 		{
 			"t": "M",
@@ -5112,6 +5122,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withAgent",
+			"p": "Dagger/Function_.html#method_withAgent",
+			"d": "<p>Returns the function with a flag indicating it is an agent middleware.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withArg",
 			"p": "Dagger/Function_.html#method_withArg",
 			"d": "<p>Returns the function with the provided argument</p>"
@@ -5286,6 +5302,102 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitCommit::ancestorReleaseTag",
+			"p": "Dagger/GitCommit.html#method_ancestorReleaseTag",
+			"d": "<p>The latest semver release tag reachable from this commit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::authorEmail",
+			"p": "Dagger/GitCommit.html#method_authorEmail",
+			"d": "<p>Git author email.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::authorName",
+			"p": "Dagger/GitCommit.html#method_authorName",
+			"d": "<p>Git author name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::authoredDate",
+			"p": "Dagger/GitCommit.html#method_authoredDate",
+			"d": "<p>Git author date, in RFC3339 format.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::committedDate",
+			"p": "Dagger/GitCommit.html#method_committedDate",
+			"d": "<p>Git committer date, in RFC3339 format.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::committerEmail",
+			"p": "Dagger/GitCommit.html#method_committerEmail",
+			"d": "<p>Git committer email.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::committerName",
+			"p": "Dagger/GitCommit.html#method_committerName",
+			"d": "<p>Git committer name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::id",
+			"p": "Dagger/GitCommit.html#method_id",
+			"d": "<p>A unique identifier for this GitCommit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::message",
+			"p": "Dagger/GitCommit.html#method_message",
+			"d": "<p>Full commit message.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::messageBody",
+			"p": "Dagger/GitCommit.html#method_messageBody",
+			"d": "<p>Commit message body, excluding the headline.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::messageHeadline",
+			"p": "Dagger/GitCommit.html#method_messageHeadline",
+			"d": "<p>First line of the commit message.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::parentShas",
+			"p": "Dagger/GitCommit.html#method_parentShas",
+			"d": "<p>Parent commit SHAs.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::releaseTag",
+			"p": "Dagger/GitCommit.html#method_releaseTag",
+			"d": "<p>The latest semver release tag that points directly at this commit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::sha",
+			"p": "Dagger/GitCommit.html#method_sha",
+			"d": "<p>The full commit SHA.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::shortSha",
+			"p": "Dagger/GitCommit.html#method_shortSha",
+			"d": "<p>The abbreviated commit SHA.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::tree",
+			"p": "Dagger/GitCommit.html#method_tree",
+			"d": "<p>The filesystem tree at this commit.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::asWorkspace",
 			"p": "Dagger/GitRef.html#method_asWorkspace",
 			"d": "<p>Creates a synthetic workspace from this git ref.</p>"
@@ -5295,6 +5407,12 @@
 			"n": "Dagger\\GitRef::commit",
 			"p": "Dagger/GitRef.html#method_commit",
 			"d": "<p>The resolved commit id at this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::commitSHA",
+			"p": "Dagger/GitRef.html#method_commitSHA",
+			"d": "<p>The resolved commit SHA at this ref.</p>"
 		},
 		{
 			"t": "M",
@@ -5310,9 +5428,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRef::log",
+			"p": "Dagger/GitRef.html#method_log",
+			"d": "<p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::name",
+			"p": "Dagger/GitRef.html#method_name",
+			"d": "<p>The resolved name of this ref.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::ref",
 			"p": "Dagger/GitRef.html#method_ref",
 			"d": "<p>The resolved ref name at this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::targetCommit",
+			"p": "Dagger/GitRef.html#method_targetCommit",
+			"d": "<p>The commit this ref resolves to.</p>"
 		},
 		{
 			"t": "M",
@@ -5684,7 +5820,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::portableID",
 			"p": "Dagger/LLM.html#method_portableID",
-			"d": "<p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p>"
+			"d": "<p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding \u2014 including any pending, un-exported edits \u2014 is preserved.</p>"
 		},
 		{
 			"t": "M",
@@ -5694,9 +5830,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::reasoningEffort",
+			"p": "Dagger/LLM.html#method_reasoningEffort",
+			"d": "<p>The reasoning effort in use, e.g. &quot;low&quot;, &quot;medium&quot;, or &quot;high&quot;. Empty or &quot;none&quot; when reasoning is disabled.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::replay",
 			"p": "Dagger/LLM.html#method_replay",
 			"d": "<p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::skills",
+			"p": "Dagger/LLM.html#method_skills",
+			"d": "<p>The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -5754,9 +5902,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::withReasoningEffort",
+			"p": "Dagger/LLM.html#method_withReasoningEffort",
+			"d": "<p>Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::withResponse",
 			"p": "Dagger/LLM.html#method_withResponse",
 			"d": "<p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withSkills",
+			"p": "Dagger/LLM.html#method_withSkills",
+			"d": "<p>Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p>"
 		},
 		{
 			"t": "M",
@@ -5900,7 +6060,7 @@
 			"t": "M",
 			"n": "Dagger\\LLMSkill::name",
 			"p": "Dagger/LLMSkill.html#method_name",
-			"d": "<p>The skill name, as passed to read_skill.</p>"
+			"d": "<p>The skill name, as passed to ReadSkill.</p>"
 		},
 		{
 			"t": "M",
@@ -6207,6 +6367,12 @@
 			"n": "Dagger\\ModuleSource::engineVersion",
 			"p": "Dagger/ModuleSource.html#method_engineVersion",
 			"d": "<p>The engine version of the module.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::generate",
+			"p": "Dagger/ModuleSource.html#method_generate",
+			"d": "<p>Return the supplied workspace with this module's generated context applied.</p>"
 		},
 		{
 			"t": "M",
@@ -7110,9 +7276,15 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::agents",
+			"p": "Dagger/Workspace.html#method_agents",
+			"d": "<p>Return all agent middlewares from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::changes",
 			"p": "Dagger/Workspace.html#method_changes",
-			"d": "<p>Return this workspace's pending overlay changes.</p>"
+			"d": "<p>Return this workspace's changes, with paths relative to its working directory.</p>"
 		},
 		{
 			"t": "M",
@@ -7161,6 +7333,12 @@
 			"n": "Dagger\\Workspace::file",
 			"p": "Dagger/Workspace.html#method_file",
 			"d": "<p>Returns a File from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::findRoots",
+			"p": "Dagger/Workspace.html#method_findRoots",
+			"d": "<p>Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.</p>"
 		},
 		{
 			"t": "M",
@@ -7215,6 +7393,12 @@
 			"n": "Dagger\\Workspace::modules",
 			"p": "Dagger/Workspace.html#method_modules",
 			"d": "<p>List modules defined in the workspace configuration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::reloaded",
+			"p": "Dagger/Workspace.html#method_reloaded",
+			"d": "<p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p>"
 		},
 		{
 			"t": "M",
@@ -7275,6 +7459,18 @@
 			"n": "Dagger\\Workspace::withModule",
 			"p": "Dagger/Workspace.html#method_withModule",
 			"d": "<p>Return this workspace with a module installed in its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withMountedDirectory",
+			"p": "Dagger/Workspace.html#method_withMountedDirectory",
+			"d": "<p>Return this workspace with a directory mounted read-only at the given path, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withMountedFile",
+			"p": "Dagger/Workspace.html#method_withMountedFile",
+			"d": "<p>Return this workspace with a file mounted read-only at the given path, without mutating the source.</p>"
 		},
 		{
 			"t": "M",

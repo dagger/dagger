@@ -575,7 +575,6 @@ fn feature_subject(feature: &FeatureId) -> &'static str {
         FeatureId::Feature5 => "feature-5",
         FeatureId::Feature6 => "feature-6",
         FeatureId::Feature7 => "feature-7",
-        FeatureId::Feature8 => "feature-8",
         FeatureId::Feature9 => "feature-9",
     }
 }

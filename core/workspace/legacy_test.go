@@ -131,7 +131,7 @@ func TestParseCompatWorkspace(t *testing.T) {
 	require.NotNil(t, compat.MainModule)
 	require.Equal(t, "app", compat.MainModule.Name)
 	require.Equal(t, ModuleEntry{
-		Source:     ".dagger/modules/app",
+		Source:     ".",
 		Entrypoint: true,
 	}, compat.MainModule.Entry)
 	require.Len(t, compat.Modules, 1)
@@ -158,7 +158,7 @@ func TestParseRuntimeCompatWorkspace(t *testing.T) {
 	require.NotNil(t, compat.MainModule)
 	require.Equal(t, "app", compat.MainModule.Name)
 	require.Equal(t, ModuleEntry{
-		Source:     ".dagger/modules/app",
+		Source:     ".",
 		Entrypoint: true,
 	}, compat.MainModule.Entry)
 	require.Empty(t, compat.Modules)

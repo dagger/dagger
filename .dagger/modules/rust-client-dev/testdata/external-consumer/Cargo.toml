@@ -1,0 +1,13 @@
+[package]
+name = "dagger-rust-sdk-external-consumer"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+
+[dependencies]
+dagger-sdk = { path = "../vendor/dagger-sdk" }
+tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread"] }
+
+[patch.crates-io]
+dagger-sdk-macros = { path = "../vendor/dagger-sdk-macros" }

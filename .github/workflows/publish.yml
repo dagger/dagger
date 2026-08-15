@@ -62,7 +62,6 @@ jobs:
             --pypi-repo="$PYPI_REPO" \
             --npm-token=env:NPM_TOKEN \
             --hex-apikey=env:HEX_API_KEY \
-            --cargo-registry-token=env:CARGO_REGISTRY_TOKEN \
             --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
             --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
             --aws-region="$AWS_REGION" \
@@ -85,7 +84,6 @@ jobs:
           PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
           NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}

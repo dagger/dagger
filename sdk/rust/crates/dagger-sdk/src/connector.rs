@@ -9,11 +9,6 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[cfg(feature = "signoff-observation")]
-use sha2::{Digest as _, Sha256};
-#[cfg(feature = "signoff-observation")]
-use std::io::Read as _;
-
 use async_trait::async_trait;
 #[cfg(test)]
 use tokio::process::{Child, ChildStdin, Command};
@@ -39,10 +34,6 @@ use crate::runtime_errors::{
 };
 use crate::session::{ExistingSessionInput, validate_existing_session};
 use crate::session_startup::{SessionLauncher, SessionResources, SessionStartError};
-#[cfg(feature = "signoff-observation")]
-use crate::signoff_observation::{
-    SignoffCliSource, SignoffConnectorEvent, SignoffObservationDispatcher, SignoffSha256,
-};
 use crate::target::ArchiveDescriptor;
 use crate::transport::{LoopbackTransportFactory, ReqwestLoopbackFactory};
 
@@ -131,9 +122,7 @@ async fn connect_new_cli(
     request: CliLaunchRequest,
 ) -> Result<Box<dyn EngineConnection>, ConnectError> {
     let prepared = PreparedCliSource::from_plan(source)?;
-    #[cfg(feature = "signoff-observation")]
-    let signoff = request.signoff().clone();
-    #[cfg(any(test, feature = "signoff-observation"))]
+    #[cfg(test)]
     let compiled_source = matches!(&prepared, PreparedCliSource::CompiledRelease { .. });
     let cancellation = ProvisioningCancellation::new();
     let selected = match prepared {
@@ -144,11 +133,7 @@ async fn connect_new_cli(
         } => {
             let http = ReqwestProvisioningHttp::new()
                 .map_err(|error| ConnectError::Provisioning(ProvisioningError::from(error)))?;
-            #[cfg(not(feature = "signoff-observation"))]
             let provisioner = DefaultCliProvisioner::native(http)
-                .map_err(|error| ConnectError::Provisioning(ProvisioningError::from(error)))?;
-            #[cfg(feature = "signoff-observation")]
-            let provisioner = DefaultCliProvisioner::native_observed(http, signoff.clone())
                 .map_err(|error| ConnectError::Provisioning(ProvisioningError::from(error)))?;
             select_compiled_cli(
                 &provisioner,
@@ -161,20 +146,6 @@ async fn connect_new_cli(
             .map_err(map_selection_error)?
         }
     };
-
-    #[cfg(feature = "signoff-observation")]
-    if compiled_source {
-        let executable_sha256 = hash_selected_executable(selected.executable().path())?;
-        let source = if selected.is_compatibility_fallback() {
-            SignoffCliSource::CompatibilityPathFallback
-        } else {
-            SignoffCliSource::VerifiedDownload
-        };
-        signoff.emit(SignoffConnectorEvent::CliSelected {
-            source,
-            executable_sha256,
-        });
-    }
 
     let inherited = request.ambient().propagation().clone();
     let connect_timeout = request.http_connect_timeout;
@@ -206,11 +177,7 @@ async fn connect_new_cli(
         inherited,
         None,
     ) {
-        Ok(transport) => {
-            #[cfg(feature = "signoff-observation")]
-            signoff.emit(SignoffConnectorEvent::AuthenticatedLoopbackConstructed);
-            transport
-        }
+        Ok(transport) => transport,
         Err(error) => {
             started.rollback().await;
             return Err(ConnectError::Connection(error));
@@ -222,47 +189,7 @@ async fn connect_new_cli(
         return Err(ConnectError::Compatibility(error));
     }
     let (_, resources) = started.transfer();
-    Ok(Box::new(OwnedCliConnection::new(
-        transport,
-        resources,
-        #[cfg(feature = "signoff-observation")]
-        signoff,
-    )))
-}
-
-#[cfg(feature = "signoff-observation")]
-fn hash_selected_executable(path: &std::path::Path) -> Result<SignoffSha256, ConnectError> {
-    const HASH_LIMIT: u64 = 256 * 1024 * 1024;
-    let mut file = std::fs::File::open(path).map_err(|_| {
-        ConnectError::Connection(EngineConnectionError::new(EngineConnectionErrorKind::Other))
-    })?;
-    if file
-        .metadata()
-        .map_or(true, |metadata| metadata.len() > HASH_LIMIT)
-    {
-        return Err(ConnectError::Connection(EngineConnectionError::new(
-            EngineConnectionErrorKind::Other,
-        )));
-    }
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    let mut observed = 0_u64;
-    loop {
-        let count = file.read(&mut buffer).map_err(|_| {
-            ConnectError::Connection(EngineConnectionError::new(EngineConnectionErrorKind::Other))
-        })?;
-        if count == 0 {
-            break;
-        }
-        observed = observed.saturating_add(count as u64);
-        if observed > HASH_LIMIT {
-            return Err(ConnectError::Connection(EngineConnectionError::new(
-                EngineConnectionErrorKind::Other,
-            )));
-        }
-        hasher.update(&buffer[..count]);
-    }
-    Ok(SignoffSha256::from_bytes(hasher.finalize().into()))
+    Ok(Box::new(OwnedCliConnection::new(transport, resources)))
 }
 
 fn map_selection_error(error: CliSelectionError) -> ConnectError {
@@ -294,21 +221,13 @@ fn map_start_error(error: SessionStartError) -> ConnectError {
 struct OwnedCliConnection<T> {
     transport: T,
     resources: Mutex<Option<SessionResources>>,
-    #[cfg(feature = "signoff-observation")]
-    signoff: SignoffObservationDispatcher,
 }
 
 impl<T> OwnedCliConnection<T> {
-    fn new(
-        transport: T,
-        resources: SessionResources,
-        #[cfg(feature = "signoff-observation")] signoff: SignoffObservationDispatcher,
-    ) -> Self {
+    fn new(transport: T, resources: SessionResources) -> Self {
         Self {
             transport,
             resources: Mutex::new(Some(resources)),
-            #[cfg(feature = "signoff-observation")]
-            signoff,
         }
     }
 
@@ -326,25 +245,16 @@ where
     T: EngineConnection,
 {
     async fn execute(&self, request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
-        let response = self.transport.execute(request).await?;
-        #[cfg(feature = "signoff-observation")]
-        self.signoff
-            .emit(SignoffConnectorEvent::AuthenticatedQuerySucceeded);
-        Ok(response)
+        self.transport.execute(request).await
     }
 
     async fn close(&self) -> Result<(), EngineConnectionError> {
-        #[cfg(feature = "signoff-observation")]
-        self.signoff.emit(SignoffConnectorEvent::CloseStarted);
         let transport = self.transport.close().await;
         let resources = match self.take_resources() {
             Some(resources) => resources.close().await.map(|_| ()),
             None => Ok(()),
         };
-        transport.and(resources)?;
-        #[cfg(feature = "signoff-observation")]
-        self.signoff.emit(SignoffConnectorEvent::CloseCompleted);
-        Ok(())
+        transport.and(resources)
     }
 
     fn abort(&self) {

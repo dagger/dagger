@@ -142,7 +142,7 @@ fn run() -> Result<(), &'static str> {
     let command = CommandSpec {
         program: ExecutableId::new("dagger").map_err(|_| "command program is invalid")?,
         args: vec!["call".to_owned(), "core-conformance".to_owned()],
-        working_directory: RepositoryRelativePath::new("toolchains/rust-sdk-dev")
+        working_directory: RepositoryRelativePath::new(".dagger/modules/rust-client-dev")
             .map_err(|_| "command working directory is invalid")?,
         environment: BTreeMap::new(),
     };

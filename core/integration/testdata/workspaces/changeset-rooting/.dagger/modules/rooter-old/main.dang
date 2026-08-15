@@ -1,0 +1,17 @@
+type RooterOld {
+  """
+  Return the changed paths from generating the module the caller stands in.
+  """
+  pub generated(ws: Workspace!): [String!]! {
+    let changes = ws.moduleSource(".").generatedContextChangeset
+    changes.addedPaths + changes.modifiedPaths
+  }
+
+  """
+  Return the changed paths from a normal workspace edit.
+  """
+  pub edited(ws: Workspace!): [String!]! {
+    let changes = ws.withNewFile("/app/edited.txt", "edited").changes(ws)
+    changes.addedPaths + changes.modifiedPaths
+  }
+}

@@ -662,7 +662,7 @@ pub fn run_harness_check(
     }))
 }
 
-/// Validates the portable Feature 8 extension boundary without importing Go command syntax.
+/// Validates the portable extension boundary without importing Go command syntax.
 pub fn validate_conformance_scenario(
     scenario: &ConformanceScenario,
     inventory: &CanonicalInventory,

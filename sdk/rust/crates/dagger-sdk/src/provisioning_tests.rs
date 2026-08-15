@@ -29,11 +29,6 @@ use crate::provisioning_control::{
     NoopProvisioningObserver, ProvisionCheckpoint, ProvisioningCancellation, ProvisioningObserver,
 };
 use crate::provisioning_error::{ProvisionError, ProvisionErrorKind};
-#[cfg(feature = "signoff-observation")]
-use crate::signoff_observation::{
-    SignoffConnectorEvent, SignoffConnectorRecorder, SignoffObservationDispatcher, SignoffSha256,
-    SignoffUnavailableStatus,
-};
 use crate::target::{
     Architecture, ArchiveDescriptor, ArchiveFormat, OperatingSystem, exact_target,
 };
@@ -276,67 +271,6 @@ fn runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .expect("the property runtime is available")
-}
-
-#[cfg(feature = "signoff-observation")]
-#[test]
-fn production_provisioner_reports_exclusive_manifest_and_checksum_facts() {
-    let descriptor = descriptor(ArchiveFormat::TarGz);
-    let archive = archive_for(
-        ArchiveFormat::TarGz,
-        &[(
-            descriptor.member_name().to_owned(),
-            b"observed-cli".to_vec(),
-            FixtureEntryKind::File,
-        )],
-    );
-    let manifest = manifest_for(&descriptor, &archive);
-    let (recorder, recording) = SignoffConnectorRecorder::bounded();
-    let dispatcher = SignoffObservationDispatcher::new(Some(recorder));
-    let cache = tempfile::tempdir().expect("observed cache fixture");
-    runtime()
-        .block_on(
-            DefaultCliProvisioner::with_cache_root(
-                fixture_http(&descriptor, archive, 7),
-                cache.path().to_path_buf(),
-                dispatcher,
-            )
-            .acquire(&descriptor, &ProvisioningCancellation::new()),
-        )
-        .expect("observed verified acquisition succeeds");
-    assert_eq!(
-        recording.finish().expect("recording remains complete"),
-        [
-            SignoffConnectorEvent::ManifestAvailable {
-                manifest_sha256: SignoffSha256::from_bytes(digest(&manifest)),
-            },
-            SignoffConnectorEvent::ArchiveChecksumVerified,
-        ]
-    );
-
-    let (recorder, unavailable) = SignoffConnectorRecorder::bounded();
-    let dispatcher = SignoffObservationDispatcher::new(Some(recorder));
-    let cache = tempfile::tempdir().expect("unavailable cache fixture");
-    let error = runtime()
-        .block_on(
-            DefaultCliProvisioner::with_cache_root(
-                FixtureHttp::new(
-                    ResponseFixture::bytes(404, Vec::new(), 1),
-                    ResponseFixture::bytes(200, Vec::new(), 1),
-                ),
-                cache.path().to_path_buf(),
-                dispatcher,
-            )
-            .acquire(&descriptor, &ProvisioningCancellation::new()),
-        )
-        .expect_err("unavailable manifest rejects before archive");
-    assert_eq!(error.kind(), ProvisionErrorKind::ReleaseUnavailable);
-    assert_eq!(
-        unavailable.finish().expect("recording remains complete"),
-        [SignoffConnectorEvent::ManifestUnavailable {
-            status: SignoffUnavailableStatus::NotFound,
-        }]
-    );
 }
 
 fn checkpoint_case(value: u8) -> ProvisionCheckpoint {
@@ -819,42 +753,67 @@ fn declared_archive_size_is_rejected_before_body_polling() {
     assert_eq!(error.kind(), ProvisionErrorKind::ArchiveTooLarge);
 }
 
-#[test]
-fn checksum_mismatch_never_extracts_or_publishes() {
-    let descriptor = descriptor(ArchiveFormat::TarGz);
-    let archive = archive_for(
-        ArchiveFormat::TarGz,
-        &[(
-            descriptor.member_name().to_owned(),
-            b"verified executable".to_vec(),
-            FixtureEntryKind::File,
-        )],
-    );
-    let manifest = format!("{}  {}\n", "0".repeat(64), descriptor.archive_name()).into_bytes();
-    let http = FixtureHttp::new(
-        ResponseFixture::bytes(200, manifest, 7),
-        ResponseFixture::bytes(200, archive, 11),
-    );
-    let fixture = tempfile::tempdir().expect("cache fixture");
-    let error = runtime()
-        .block_on(
+proptest! {
+    #![proptest_config(io_proptest_config())]
+
+    // Downloaded CLI bytes are extracted and published only after checksum verification.
+    #[test]
+    fn checksum_verification_controls_extraction_and_publication(
+        payload in proptest::collection::vec(any::<u8>(), 1..96),
+        manifest_chunk in 1_usize..24,
+        archive_chunk in 1_usize..24,
+        digest_matches in any::<bool>(),
+        unrelated_digest in any::<[u8; 32]>(),
+    ) {
+        let descriptor = descriptor(ArchiveFormat::TarGz);
+        let archive = archive_for(
+            ArchiveFormat::TarGz,
+            &[(
+                descriptor.member_name().to_owned(),
+                payload.clone(),
+                FixtureEntryKind::File,
+            )],
+        );
+        let actual_digest = digest(&archive);
+        let mut selected_digest = actual_digest;
+        if !digest_matches {
+            selected_digest[0] ^= 1;
+        }
+        let manifest = format!(
+            "{}  unrelated-archive.tar.gz\n{}  {}\n",
+            hex::encode(unrelated_digest),
+            hex::encode(selected_digest),
+            descriptor.archive_name(),
+        )
+        .into_bytes();
+        let http = FixtureHttp::new(
+            ResponseFixture::bytes(200, manifest, manifest_chunk),
+            ResponseFixture::bytes(200, archive, archive_chunk),
+        );
+        let fixture = tempfile::tempdir().expect("cache fixture");
+        let observed = runtime().block_on(
             DefaultCliProvisioner::with_cache_root(
                 http,
                 fixture.path().to_path_buf(),
                 NoopProvisioningObserver,
             )
             .acquire(&descriptor, &ProvisioningCancellation::new()),
-        )
-        .expect_err("checksum mismatch rejects");
-    assert_eq!(error.kind(), ProvisionErrorKind::ChecksumMismatch);
-    assert!(error.expected_digest().is_some());
-    assert!(error.actual_digest().is_some());
-    let cache = cache_for_test(
-        fixture.path().to_path_buf(),
-        descriptor_version(&descriptor),
-        ArchiveFormat::TarGz,
-    );
-    assert!(!cache.selected_path().exists());
+        );
+        let cache = cache_for_test(
+            fixture.path().to_path_buf(),
+            descriptor_version(&descriptor),
+            ArchiveFormat::TarGz,
+        );
+        if digest_matches {
+            let executable = observed.expect("matching digest publishes");
+            prop_assert_eq!(std::fs::read(executable.path()).expect("published bytes"), payload);
+            prop_assert!(cache.selected_path().exists());
+        } else {
+            let error = observed.expect_err("mismatching digest rejects");
+            prop_assert_eq!(error.kind(), ProvisionErrorKind::ChecksumMismatch);
+            prop_assert!(!cache.selected_path().exists());
+        }
+    }
 }
 
 #[cfg(unix)]

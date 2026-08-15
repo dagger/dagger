@@ -48,6 +48,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
@@ -166,6 +167,7 @@ func init() {
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
 	upCmd.GroupID = "daily"
+	agentCmd.GroupID = "daily"
 	activityCmd.GroupID = "daily"
 
 	moduleDepInstallCmd.GroupID = "workspace"
@@ -197,6 +199,7 @@ func init() {
 		settingsCmd,
 		checksCmd,
 		upCmd,
+		agentCmd,
 		generateCmd,
 		workspaceCmd,
 		moduleDepInstallCmd,
@@ -413,7 +416,7 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
-	flags.StringVar(&workspaceEnv, "env", "", "Apply the named workspace environment overlay")
+	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
@@ -666,10 +669,14 @@ func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
 }
 
 func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
-	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
+	// Writes to the repository's workspace config need a local workspace.
+	// --global writes target the user-level config file instead, which is
+	// always local to the caller, so a remote workspace stays selectable as
+	// the key/introspection target.
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 && !workspaceConfigGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
-	if isWorkspaceSettingsWriteCommand(cmd, args) {
+	if isWorkspaceSettingsWriteCommand(cmd, args) && !workspaceSettingsGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
 
@@ -920,7 +927,10 @@ func Main() {
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			exitWithCode(2)
 		default:
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			// Strip [traceparent:...] error-origin markers — they are span
+			// attribution plumbing for the TUI, not part of the message.
+			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), msg)
 			var es interp.ExitStatus
 			if errors.As(err, &es) {
 				exitWithCode(int(es))

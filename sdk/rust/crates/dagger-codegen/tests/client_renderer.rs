@@ -422,7 +422,7 @@ fn operation_adapter_uses_the_standalone_content_domain() {
     let output = RelativeOperationPath::parse("client").expect("fixture path must validate");
     let dependency = PublishedSdkDependency::Registry {
         registry: "crates-io".to_owned(),
-        exact_version: "1.0.0-beta.10".to_owned(),
+        exact_version: "1.0.0-beta.11.rust.1".to_owned(),
     };
     let plan = project_operation(OperationProjectionRequest {
         target: &target,
