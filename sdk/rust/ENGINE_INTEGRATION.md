@@ -98,6 +98,12 @@ has no output. Do not substitute a bare `cargo package -p dagger-sdk`: the ordin
 build supplies the intentionally unpublished macro companion as a local packaging
 patch, then validates both archives together.
 
+On the Namespace `dag-rust-xl` builder, the Docker socket is mounted but its bundled
+CLI may not be on `PATH`. Confirm `/vendor/docker/docker version` first, then include
+`/vendor/docker` on `PATH` and set `_EXPERIMENTAL_DAGGER_RUNNER_HOST` on every Dagger
+invocation. If either preflight is omitted, the CLI can report that the manually
+managed runner driver is unavailable or provision an unintended default engine.
+
 `Verify` unpacks those packages into an isolated Cargo project, patches the macro
 companion locally, starts this build's completed engine, executes one SDK query, and
 closes the client cleanly. Export the two packages and complete engine only after

@@ -129,6 +129,11 @@ Do not run a bare `cargo package -p dagger-sdk`: its exact macro companion is
 intentionally absent from crates.io. `Build` first packages `dagger-sdk-macros`, then
 packages `dagger-sdk` with the local companion patch and validates the resulting pair.
 
+On `dag-rust-xl`, recheck `/vendor/docker/docker version` before the build. The Docker
+socket can be mounted while the bundled CLI remains outside the default `PATH`, so add
+`/vendor/docker` to `PATH` and set `_EXPERIMENTAL_DAGGER_RUNNER_HOST` on every Dagger
+invocation. A missing runner-host setting may provision an unintended default engine.
+
 This path creates local artifacts only. It does not publish to crates.io, create a tag,
 or create a GitHub Release. Attaching the checked artifacts to a GitHub Release is a
 separately invoked manual action and requires direct user authorization.
