@@ -107,6 +107,50 @@ func (r *RustClientDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+func (r RustSdkBuild) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Packages       *dagger.Directory
+		CompleteEngine *dagger.Container
+		Version        string
+		Checker        *dagger.File
+		TargetEngine   *dagger.DaggerEngine
+		NetworkCIDR    string
+		Consumer       *dagger.Directory
+	}
+	concrete.Packages = r.Packages
+	concrete.CompleteEngine = r.CompleteEngine
+	concrete.Version = r.Version
+	concrete.Checker = r.Checker
+	concrete.TargetEngine = r.TargetEngine
+	concrete.NetworkCIDR = r.NetworkCIDR
+	concrete.Consumer = r.Consumer
+	return json.Marshal(&concrete)
+}
+
+func (r *RustSdkBuild) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Packages       *dagger.Directory
+		CompleteEngine *dagger.Container
+		Version        string
+		Checker        *dagger.File
+		TargetEngine   *dagger.DaggerEngine
+		NetworkCIDR    string
+		Consumer       *dagger.Directory
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Packages = concrete.Packages
+	r.CompleteEngine = concrete.CompleteEngine
+	r.Version = concrete.Version
+	r.Checker = concrete.Checker
+	r.TargetEngine = concrete.TargetEngine
+	r.NetworkCIDR = concrete.NetworkCIDR
+	r.Consumer = concrete.Consumer
+	return nil
+}
+
 func (r RustEngineContent) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Content                  *dagger.Directory
@@ -152,50 +196,6 @@ func (r *RustEngineContent) UnmarshalJSON(bs []byte) error {
 	r.SDKDependency = concrete.SDKDependency
 	r.Engine = concrete.Engine
 	r.Built = concrete.Built
-	return nil
-}
-
-func (r RustSdkBuild) MarshalJSON() ([]byte, error) {
-	var concrete struct {
-		Packages       *dagger.Directory
-		CompleteEngine *dagger.Container
-		Version        string
-		Checker        *dagger.File
-		TargetEngine   *dagger.DaggerEngine
-		NetworkCIDR    string
-		Consumer       *dagger.Directory
-	}
-	concrete.Packages = r.Packages
-	concrete.CompleteEngine = r.CompleteEngine
-	concrete.Version = r.Version
-	concrete.Checker = r.Checker
-	concrete.TargetEngine = r.TargetEngine
-	concrete.NetworkCIDR = r.NetworkCIDR
-	concrete.Consumer = r.Consumer
-	return json.Marshal(&concrete)
-}
-
-func (r *RustSdkBuild) UnmarshalJSON(bs []byte) error {
-	var concrete struct {
-		Packages       *dagger.Directory
-		CompleteEngine *dagger.Container
-		Version        string
-		Checker        *dagger.File
-		TargetEngine   *dagger.DaggerEngine
-		NetworkCIDR    string
-		Consumer       *dagger.Directory
-	}
-	err := json.Unmarshal(bs, &concrete)
-	if err != nil {
-		return err
-	}
-	r.Packages = concrete.Packages
-	r.CompleteEngine = concrete.CompleteEngine
-	r.Version = concrete.Version
-	r.Checker = concrete.Checker
-	r.TargetEngine = concrete.TargetEngine
-	r.NetworkCIDR = concrete.NetworkCIDR
-	r.Consumer = concrete.Consumer
 	return nil
 }
 
@@ -316,51 +316,6 @@ func dispatch(ctx context.Context) (rerr error) {
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	_ = inputArgs
 	switch parentName {
-	case "RustEngineContent":
-		switch fnName {
-		case "EngineEvidence":
-			var parent RustEngineContent
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustEngineContent).EngineEvidence(&parent, ctx)
-		case "EngineIntegration":
-			var parent RustEngineContent
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var cases []string
-			if inputArgs["cases"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["cases"]), &cases)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cases", err))
-				}
-			}
-			return (*RustEngineContent).EngineIntegration(&parent, ctx, cases)
-		case "Resolution":
-			var parent RustEngineContent
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*RustEngineContent).Resolution(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "RustSdkBuild":
-		switch fnName {
-		case "Verify":
-			var parent RustSdkBuild
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustSdkBuild).Verify(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
 	case "RustClientDev":
 		switch fnName {
 		case "APIClient":
@@ -562,57 +517,102 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "RustEngineContent":
+		switch fnName {
+		case "EngineEvidence":
+			var parent RustEngineContent
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*RustEngineContent).EngineEvidence(&parent, ctx)
+		case "EngineIntegration":
+			var parent RustEngineContent
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var cases []string
+			if inputArgs["cases"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cases"]), &cases)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cases", err))
+				}
+			}
+			return (*RustEngineContent).EngineIntegration(&parent, ctx, cases)
+		case "Resolution":
+			var parent RustEngineContent
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*RustEngineContent).Resolution(&parent, ctx)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "RustSdkBuild":
+		switch fnName {
+		case "Verify":
+			var parent RustSdkBuild
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSdkBuild).Verify(&parent, ctx)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
 	case "":
 		return dag.Module().
 			WithDescription("Toolchain to develop and verify the Dagger Rust SDK.\n").
 			WithObject(
-				dag.TypeDef().WithObject("RustClientDev", dagger.TypeDefWithObjectOpts{Description: "Develop and verify the Dagger Rust SDK.", SourceMap: dag.SourceMap("main.go", 73, 6)}).
+				dag.TypeDef().WithObject("RustClientDev", dagger.TypeDefWithObjectOpts{Description: "Develop and verify the Dagger Rust SDK.", SourceMap: dag.SourceMap("main.go", 69, 6)}).
 					WithFunction(
 						dag.Function("APIClient",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate the Rust SDK API client.").
-							WithSourceMap(dag.SourceMap("main.go", 1248, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 1169, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("Build",
 							dag.TypeDef().WithObject("RustSdkBuild")).
 							WithDescription("Build creates the two public Rust packages and the ordinary complete engine.\nIt validates both outputs and performs no publication or external mutation.").
-							WithSourceMap(dag.SourceMap("main.go", 1307, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 1310, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 1306, 1)).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 1309, 2)})).
 					WithFunction(
 						dag.Function("CargoCheck",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run cargo check on the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 314, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 279, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoClippy",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run Clippy on all Rust SDK targets.").
-							WithSourceMap(dag.SourceMap("main.go", 326, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 291, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoDeny",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check the Rust SDK dependency advisories, licenses, bans, and sources.").
-							WithSourceMap(dag.SourceMap("main.go", 347, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 312, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoDoc",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Build the Rust SDK documentation with warnings denied.").
-							WithSourceMap(dag.SourceMap("main.go", 336, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 301, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoFmt",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run cargo fmt on the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 304, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 269, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Changes",
 							dag.TypeDef().WithObject("Changeset")).
-							WithSourceMap(dag.SourceMap("main.go", 1252, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 1173, 1))).
 					WithFunction(
 						dag.Function("CompletenessArtifacts",
 							dag.TypeDef().WithObject("Changeset")).
@@ -634,95 +634,96 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("CoreConformance",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Run focused generated-client observations against the immutable checked engine source.").
-							WithSourceMap(dag.SourceMap("main.go", 1309, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 1230, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("DevContainer",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Return the Rust SDK workspace mounted in a dev container,\nand working directory set to the SDK source.").
-							WithSourceMap(dag.SourceMap("main.go", 247, 1)).
-							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", SourceMap: dag.SourceMap("main.go", 251, 2), DefaultValue: dagger.JSON("\"false\"")})).
+							WithSourceMap(dag.SourceMap("main.go", 212, 1)).
+							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", SourceMap: dag.SourceMap("main.go", 216, 2), DefaultValue: dagger.JSON("\"false\"")})).
 					WithFunction(
 						dag.Function("EngineContent",
 							dag.TypeDef().WithObject("RustEngineContent")).
 							WithDescription("EngineContent builds the Rust SDK content once and returns its reusable graph object.").
-							WithSourceMap(dag.SourceMap("main.go", 444, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 407, 1))).
 					WithFunction(
 						dag.Function("EngineUnit",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run the focused Rust engine-tool and adapter unit suite without constructing an engine.\n\nTests are mounted only after dependency installation, so test-only edits do not invalidate the\ncompiler/toolchain and dependency layer shared by later engine-content checkpoints.").
-							WithSourceMap(dag.SourceMap("main.go", 391, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 356, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Examples",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Format and lint each standalone Rust SDK example.").
-							WithSourceMap(dag.SourceMap("main.go", 358, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 323, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("GeneratedClientCheck",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify the complete checked-input generated client in graph-local state.").
-							WithSourceMap(dag.SourceMap("main.go", 1279, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 1200, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Source",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Source returns the source directory for the Rust SDK.").
-							WithSourceMap(dag.SourceMap("main.go", 298, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 263, 1))).
 					WithFunction(
 						dag.Function("Test",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Test the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 375, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 340, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("WithGeneratedClient",
 							dag.TypeDef().WithObject("RustClientDev")).
-							WithSourceMap(dag.SourceMap("main.go", 1256, 1))).
-					WithField("BaseContainer", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 77, 2)}).
+							WithSourceMap(dag.SourceMap("main.go", 1177, 1))).
+					WithField("BaseContainer", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 73, 2)}).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("RustClientDev")).
-							WithSourceMap(dag.SourceMap("main.go", 84, 1)).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "Active repository workspace.", SourceMap: dag.SourceMap("main.go", 86, 2)}).
-							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 89, 2), DefaultValue: dagger.JSON("\"sdk/rust\"")}).
-							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 92, 2)}).
-							WithArg("engineRepository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Credential-free HTTPS repository that owns the engine source revision.", SourceMap: dag.SourceMap("main.go", 95, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger\"")}).
-							WithArg("sdkDependencyRevision", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Full reachable revision in the engine repository containing the public dagger-sdk package.", SourceMap: dag.SourceMap("main.go", 98, 2)}))).
+							WithSourceMap(dag.SourceMap("main.go", 80, 1)).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "Active repository workspace.", SourceMap: dag.SourceMap("main.go", 82, 2)}).
+							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 85, 2), DefaultValue: dagger.JSON("\"sdk/rust\"")}).
+							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 88, 2)}).
+							WithArg("engineRepository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Credential-free HTTPS repository that owns the engine source revision.", SourceMap: dag.SourceMap("main.go", 91, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger\"")}).
+							WithArg("sdkDependencyRevision", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Full reachable revision in the engine repository containing the public dagger-sdk package.", SourceMap: dag.SourceMap("main.go", 94, 2)}))).
 			WithObject(
-				dag.TypeDef().WithObject("RustEngineContent", dagger.TypeDefWithObjectOpts{Description: "RustEngineContent retains one engine-dev content object with both identities\nneeded to prove the acyclic packaged-content boundary.", SourceMap: dag.SourceMap("main.go", 430, 6)}).
+				dag.TypeDef().WithObject("RustSdkBuild", dagger.TypeDefWithObjectOpts{Description: "RustSdkBuild is the ordinary, non-publishing Rust SDK build result.", SourceMap: dag.SourceMap("main.go", 1286, 6)}).
+					WithFunction(
+						dag.Function("Verify",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Verify compiles one isolated consumer from the packaged crates, queries this build's\ncomplete engine, and closes the Rust SDK client cleanly.").
+							WithSourceMap(dag.SourceMap("main.go", 1423, 1)).
+							WithCheck()).
+					WithField("Packages", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "Packages contains exactly dagger-sdk-macros and dagger-sdk as .crate files.\nAn authorized operator may export these files for a manually invoked GitHub Release;\nthis build object has no publication operation.", SourceMap: dag.SourceMap("main.go", 1290, 2)}).
+					WithField("CompleteEngine", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{Description: "CompleteEngine contains the standard engine binaries and all standard SDK content,\nwith the Rust content produced from the current workspace.", SourceMap: dag.SourceMap("main.go", 1294, 2)}).
+					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 1296, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("RustEngineContent", dagger.TypeDefWithObjectOpts{Description: "RustEngineContent retains one engine-dev content object with both identities\nneeded to prove the acyclic packaged-content boundary.", SourceMap: dag.SourceMap("main.go", 395, 6)}).
 					WithFunction(
 						dag.Function("EngineEvidence",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("EngineEvidence runs the complete closed case set before publishing target-bound evidence.\n\nA caller cannot supply selectors here: focused case subsets are useful during development but\nare never equivalent to the complete matrix admitted by the completeness contract.").
-							WithSourceMap(dag.SourceMap("main.go", 754, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 675, 1))).
 					WithFunction(
 						dag.Function("EngineIntegration",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("EngineIntegration exercises the initialization, operation, and runtime boundaries\nagainst one exact-target engine and one previously built Rust SDK content object.").
-							WithSourceMap(dag.SourceMap("main.go", 646, 1)).
-							WithArg("cases", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "Focused case names; an empty list runs the complete checkpoint.", SourceMap: dag.SourceMap("main.go", 649, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 566, 1)).
+							WithArg("cases", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "Focused case names; an empty list runs the complete checkpoint.", SourceMap: dag.SourceMap("main.go", 569, 2)})).
 					WithFunction(
 						dag.Function("Resolution",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Resolution starts an exact-target engine from this object's content and exercises\nthe built-in loader and workspace install path without reconstructing that content.").
-							WithSourceMap(dag.SourceMap("main.go", 559, 1))).
-					WithField("Content", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 431, 2)}).
-					WithField("ManifestDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 432, 2)}).
-					WithField("DescriptorDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 433, 2)}).
-					WithField("MappingDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 436, 2)}).
-					WithField("CompletenessTargetDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 437, 2)})).
-			WithObject(
-				dag.TypeDef().WithObject("RustSdkBuild", dagger.TypeDefWithObjectOpts{Description: "RustSdkBuild is the ordinary, non-publishing Rust SDK build result.", SourceMap: dag.SourceMap("main.go", 1287, 6)}).
-					WithFunction(
-						dag.Function("Verify", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Verify compiles one isolated consumer from the packaged crates, queries this build's\ncomplete engine, and closes the Rust SDK client cleanly.").
-							WithSourceMap(dag.SourceMap("main.go", 1424, 1)).
-							WithCheck()).
-					WithField("Packages", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "Packages contains exactly dagger-sdk-macros and dagger-sdk as .crate files.\nAn authorized operator may export these files for a manually invoked GitHub Release;\nthis build object has no publication operation.", SourceMap: dag.SourceMap("main.go", 1291, 2)}).
-					WithField("CompleteEngine", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{Description: "CompleteEngine contains the standard engine binaries and all standard SDK content,\nwith the Rust content produced from the current workspace.", SourceMap: dag.SourceMap("main.go", 1295, 2)}).
-					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 1297, 2)})), nil
+							WithSourceMap(dag.SourceMap("main.go", 470, 1))).
+					WithField("Content", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 396, 2)}).
+					WithField("ManifestDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 397, 2)}).
+					WithField("DescriptorDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 398, 2)}).
+					WithField("MappingDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 399, 2)}).
+					WithField("CompletenessTargetDigest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 400, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -152,7 +152,7 @@ func (dev *EngineDev) WithGitSource(
 	revision string,
 ) *EngineDev {
 	ref := dag.Git(repository).Commit(revision)
-	dev.Source = ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	dev.Source = ref.Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true})
 	// The full commit is both the immutable Git object selector and the value
 	// stamped into built artifacts; an absent object fails when the tree loads.
 	dev.VCSCommit = revision
@@ -161,7 +161,7 @@ func (dev *EngineDev) WithGitSource(
 	// Nested toolchains require an explicit workspace in module-runtime calls.
 	// Deriving it from the same immutable ref prevents ambient checkout state
 	// from entering the build while keeping those constructor calls valid.
-	dev.Ws = ref.AsWorkspace()
+	dev.Ws = dev.Source.AsWorkspace()
 	return dev
 }
 
@@ -380,7 +380,7 @@ func (dev *EngineDev) RustSDKContent(
 func focusedEngineSupportSource(repository, revision string) *dagger.Directory {
 	return dag.Git(repository).
 		Commit(revision).
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).
 		Filter(dagger.DirectoryFilterOpts{Include: []string{
 			"go.mod",
 			"go.sum",
@@ -458,14 +458,15 @@ func (dev *EngineDev) focusedRustContainer(
 	}
 
 	targetRef := dag.Git(targetRepository).Commit(targetRevision)
+	targetSource := targetRef.Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true})
 	targetBuilder, err := build.NewBuilder(
 		ctx,
-		targetRef.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}),
+		targetSource,
 		targetRepository,
 		version,
 		targetRevision,
 		false,
-		targetRef.AsWorkspace(),
+		targetSource.AsWorkspace(),
 	)
 	if err != nil {
 		return nil, err

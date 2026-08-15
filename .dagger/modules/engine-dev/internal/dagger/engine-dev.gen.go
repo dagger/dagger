@@ -405,6 +405,10 @@ type EngineDevRustSdkcontentOpts struct {
 	Platform Platform
 
 	Version string
+	// Credential-free repository containing the public dagger-sdk package.
+	DependencyRepository string
+	// Full reachable revision whose public dagger-sdk package matches this build.
+	DependencyRevision string
 }
 
 // RustSDKContent builds the Rust SDK integration once so focused engine cases can reuse
@@ -419,6 +423,14 @@ func (r *EngineDev) RustSdkcontent(opts ...EngineDevRustSdkcontentOpts) *EngineD
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `dependencyRepository` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DependencyRepository) {
+			q = q.Arg("dependencyRepository", opts[i].DependencyRepository)
+		}
+		// `dependencyRevision` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DependencyRevision) {
+			q = q.Arg("dependencyRevision", opts[i].DependencyRevision)
 		}
 	}
 
@@ -460,6 +472,48 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 		}
 	}
 	q = q.Arg("name", name)
+
+	return &Service{
+		query: q,
+	}
+}
+
+// EngineDevServiceWithFocusedRustSdkcontentOpts contains options for EngineDev.ServiceWithFocusedRustSdkcontent
+type EngineDevServiceWithFocusedRustSdkcontentOpts struct {
+	SharedCache bool
+
+	Metrics bool
+
+	Version string
+}
+
+// ServiceWithFocusedRustSDKContent starts a development engine by overlaying the
+// current engine binary, exact-target Go SDK, and reusable Rust SDK content onto a
+// digest-pinned baseline whose support slice is proven equal to the target revision.
+// The complete release builder remains the authority outside this focused test path.
+func (r *EngineDev) ServiceWithFocusedRustSdkcontent(rustSdkcontent *EngineDevRustEngineContent, name string, baseImage string, baseRevision string, targetRepository string, targetRevision string, opts ...EngineDevServiceWithFocusedRustSdkcontentOpts) *Service {
+	assertNotNil("rustSdkcontent", rustSdkcontent)
+	q := r.query.Select("serviceWithFocusedRustSdkcontent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sharedCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
+			q = q.Arg("sharedCache", opts[i].SharedCache)
+		}
+		// `metrics` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Metrics) {
+			q = q.Arg("metrics", opts[i].Metrics)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("rustSdkcontent", rustSdkcontent)
+	q = q.Arg("name", name)
+	q = q.Arg("baseImage", baseImage)
+	q = q.Arg("baseRevision", baseRevision)
+	q = q.Arg("targetRepository", targetRepository)
+	q = q.Arg("targetRevision", targetRevision)
 
 	return &Service{
 		query: q,
@@ -750,6 +804,19 @@ func (r *EngineDev) WithRace() *EngineDev {
 	}
 }
 
+// WithSource replaces the injected workspace view without changing its VCS identity.
+// Callers use this when one development operation needs a smaller content-addressed
+// source boundary than the complete engine distribution.
+func (r *EngineDev) WithSource(source *Directory) *EngineDev {
+	assertNotNil("source", source)
+	q := r.query.Select("withSource")
+	q = q.Arg("source", source)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
 type EngineDevLoadedEngine struct { // engine-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -873,12 +940,13 @@ func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoad
 }
 
 // RustEngineContent is one reusable OCI layout and its exact engine manifest identity.
-type EngineDevRustEngineContent struct { // engine-dev (../../../../:0:0)
+type EngineDevRustEngineContent struct { // engine-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
-	descriptorDigest *string
-	id               *ID
-	manifestDigest   *string
+	dependencyDescriptor *string
+	descriptorDigest     *string
+	id                   *ID
+	manifestDigest       *string
 }
 
 func (r *EngineDevRustEngineContent) WithGraphQLQuery(q *querybuilder.Selection) *EngineDevRustEngineContent {
@@ -893,6 +961,18 @@ func (r *EngineDevRustEngineContent) Content() *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+func (r *EngineDevRustEngineContent) DependencyDescriptor(ctx context.Context) (string, error) {
+	if r.dependencyDescriptor != nil {
+		return *r.dependencyDescriptor, nil
+	}
+	q := r.query.Select("dependencyDescriptor")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 func (r *EngineDevRustEngineContent) DescriptorDigest(ctx context.Context) (string, error) {

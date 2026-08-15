@@ -25,7 +25,7 @@ type RustClientDevOpts struct {
 	SDKDependencyRevision string
 }
 
-func (r *Query) RustClientDev(ws *Workspace, opts ...RustClientDevOpts) *RustClientDev { // rust-client-dev (../../../../:0:0)
+func (r *Query) RustClientDev(ws *Workspace, opts ...RustClientDevOpts) *RustClientDev { // rust-client-dev (../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("rustClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -54,7 +54,7 @@ func (r *Query) RustClientDev(ws *Workspace, opts ...RustClientDevOpts) *RustCli
 }
 
 // Develop and verify the Dagger Rust SDK.
-type RustClientDev struct { // rust-client-dev (../../../../:0:0)
+type RustClientDev struct { // rust-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	cargoCheck            *Void
@@ -109,15 +109,18 @@ type RustClientDevBuildOpts struct {
 
 // Build creates the two public Rust packages and the ordinary complete engine.
 // It validates both outputs and performs no publication or external mutation.
-func (r *RustClientDev) Build(opts ...RustClientDevBuildOpts) *RustClientDevRustSdkBuild {
+func (r *RustClientDev) Build(opts ...RustClientDevBuildOpts) *RustClientDevRustSDKBuild {
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
 		}
 	}
 
-	return &RustClientDevRustSdkBuild{query: q}
+	return &RustClientDevRustSDKBuild{
+		query: q,
+	}
 }
 
 // Run cargo check on the Rust SDK
@@ -370,7 +373,7 @@ func (r *RustClientDev) WithGeneratedClient() *RustClientDev {
 
 // RustEngineContent retains one engine-dev content object with both identities
 // needed to prove the acyclic packaged-content boundary.
-type RustClientDevRustEngineContent struct { // rust-client-dev (../../../../:0:0)
+type RustClientDevRustEngineContent struct { // rust-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	completenessTargetDigest *string
@@ -540,7 +543,7 @@ func (r *RustClientDevRustEngineContent) Resolution(ctx context.Context) (string
 }
 
 // RustSdkBuild is the ordinary, non-publishing Rust SDK build result.
-type RustClientDevRustSdkBuild struct { // rust-client-dev (../../../../:0:0)
+type RustClientDevRustSDKBuild struct { // rust-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id      *ID
@@ -548,18 +551,24 @@ type RustClientDevRustSdkBuild struct { // rust-client-dev (../../../../:0:0)
 	version *string
 }
 
-func (r *RustClientDevRustSdkBuild) WithGraphQLQuery(q *querybuilder.Selection) *RustClientDevRustSdkBuild {
-	return &RustClientDevRustSdkBuild{query: q}
+func (r *RustClientDevRustSDKBuild) WithGraphQLQuery(q *querybuilder.Selection) *RustClientDevRustSDKBuild {
+	return &RustClientDevRustSDKBuild{
+		query: q,
+	}
 }
 
-func (r *RustClientDevRustSdkBuild) CompleteEngine() *Container {
+// CompleteEngine contains the standard engine binaries and all standard SDK content,
+// with the Rust content produced from the current workspace.
+func (r *RustClientDevRustSDKBuild) CompleteEngine() *Container {
 	q := r.query.Select("completeEngine")
 
-	return &Container{query: q}
+	return &Container{
+		query: q,
+	}
 }
 
 // A unique identifier for this RustClientDevRustSdkBuild.
-func (r *RustClientDevRustSdkBuild) ID(ctx context.Context) (ID, error) {
+func (r *RustClientDevRustSDKBuild) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -571,41 +580,18 @@ func (r *RustClientDevRustSdkBuild) ID(ctx context.Context) (ID, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *RustClientDevRustSdkBuild) Packages() *Directory {
-	q := r.query.Select("packages")
-
-	return &Directory{query: q}
-}
-
-func (r *RustClientDevRustSdkBuild) Verify(ctx context.Context) error {
-	if r.verify != nil {
-		return nil
-	}
-	return r.query.Select("verify").Execute(ctx)
-}
-
-func (r *RustClientDevRustSdkBuild) Version(ctx context.Context) (string, error) {
-	if r.version != nil {
-		return *r.version, nil
-	}
-	q := r.query.Select("version")
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *RustClientDevRustSdkBuild) XXX_GraphQLType() string {
+func (r *RustClientDevRustSDKBuild) XXX_GraphQLType() string {
 	return "RustClientDevRustSdkBuild"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *RustClientDevRustSdkBuild) XXX_GraphQLIDType() string {
+func (r *RustClientDevRustSDKBuild) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *RustClientDevRustSdkBuild) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *RustClientDevRustSDKBuild) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -613,19 +599,53 @@ func (r *RustClientDevRustSdkBuild) XXX_GraphQLID(ctx context.Context) (string, 
 	return string(id), nil
 }
 
-func (r *RustClientDevRustSdkBuild) MarshalJSON() ([]byte, error) {
+func (r *RustClientDevRustSDKBuild) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(id)
 }
-func (r *RustClientDevRustSdkBuild) UnmarshalJSON(bs []byte) error {
+func (r *RustClientDevRustSDKBuild) UnmarshalJSON(bs []byte) error {
 	var id string
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = RustClientDevRustSdkBuild{query: selectNode(dag.query, id, "RustClientDevRustSdkBuild")}
+	*r = RustClientDevRustSDKBuild{query: selectNode(dag.query, id, "RustClientDevRustSdkBuild")}
 	return nil
+}
+
+// Packages contains exactly dagger-sdk-macros and dagger-sdk as .crate files.
+// An authorized operator may export these files for a manually invoked GitHub Release;
+// this build object has no publication operation.
+func (r *RustClientDevRustSDKBuild) Packages() *Directory {
+	q := r.query.Select("packages")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Verify compiles one isolated consumer from the packaged crates, queries this build's
+// complete engine, and closes the Rust SDK client cleanly.
+func (r *RustClientDevRustSDKBuild) Verify(ctx context.Context) error {
+	if r.verify != nil {
+		return nil
+	}
+	q := r.query.Select("verify")
+
+	return q.Execute(ctx)
+}
+
+func (r *RustClientDevRustSDKBuild) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }

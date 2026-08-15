@@ -289,7 +289,7 @@ func validateRustSDKGitDependency(
 	localPackage = localPackage.Filter(dependencySourceFilter)
 	remotePackage := dag.Git(repository).
 		Commit(revision).
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).
 		Directory("sdk/rust/crates/dagger-sdk").
 		Filter(dependencySourceFilter)
 	// Directory digests include source-root metadata, so a Git tree and an
