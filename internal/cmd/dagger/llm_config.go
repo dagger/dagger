@@ -108,7 +108,7 @@ func applyLLMConfigEnv() {
 		switch cfg.LLM.DefaultProvider {
 		case "anthropic":
 			setIfEmpty("ANTHROPIC_MODEL", cfg.LLM.DefaultModel)
-		case "openai", "openrouter":
+		case "openai", "openrouter", "orcarouter":
 			setIfEmpty("OPENAI_MODEL", cfg.LLM.DefaultModel)
 		case "openai-codex":
 			setIfEmpty("OPENAI_CODEX_MODEL", cfg.LLM.DefaultModel)
@@ -123,7 +123,7 @@ func applyLLMConfigEnv() {
 	// otherwise openai — so map iteration order can't pair one provider's key
 	// with the other's base URL.
 	openAISlotOwner := ""
-	for _, name := range []string{"openai", "openrouter"} {
+	for _, name := range []string{"openai", "openrouter", "orcarouter"} {
 		if p, ok := cfg.LLM.Providers[name]; ok && p.Enabled {
 			if openAISlotOwner == "" || name == cfg.LLM.DefaultProvider {
 				openAISlotOwner = name
@@ -177,6 +177,18 @@ func applyLLMConfigEnv() {
 			base := p.BaseURL
 			if base == "" {
 				base = "https://openrouter.ai/api/v1"
+			}
+			setIfEmpty("OPENAI_BASE_URL", base)
+		case "orcarouter":
+			// OrcaRouter is OpenAI-compatible; route it through the OpenAI vars.
+			if name != openAISlotOwner {
+				continue
+			}
+			setIfEmpty("OPENAI_API_KEY", p.APIKey)
+			setIfEmpty("OPENAI_MODEL", p.Model)
+			base := p.BaseURL
+			if base == "" {
+				base = "https://api.orcarouter.ai/v1"
 			}
 			setIfEmpty("OPENAI_BASE_URL", base)
 		case "local":
@@ -291,6 +303,7 @@ var llmAddKeyCmd = &cobra.Command{
 	Long: `Add or update API key for a provider.
 
 Supported providers:
+  - orcarouter: Unified access to 150+ models (https://www.orcarouter.ai/console)
   - openrouter: Unified access to 100+ models (https://openrouter.ai/keys)
   - anthropic: Claude models (https://console.anthropic.com/settings/keys)
   - openai: GPT models (https://platform.openai.com/api-keys)
@@ -301,7 +314,7 @@ Supported providers:
 		provider := args[0]
 
 		// Validate provider name
-		validProviders := []string{"openrouter", "anthropic", "openai", "google"}
+		validProviders := []string{"orcarouter", "openrouter", "anthropic", "openai", "google"}
 		if !slices.Contains(validProviders, provider) {
 			return fmt.Errorf("unsupported provider %q, must be one of: %s",
 				provider, strings.Join(validProviders, ", "))
@@ -336,9 +349,12 @@ Supported providers:
 			Enabled: true,
 		}
 
-		// Set BaseURL for OpenRouter
+		// Set BaseURL for OpenRouter and OrcaRouter
 		if provider == "openrouter" {
 			providerCfg.BaseURL = "https://openrouter.ai/api/v1"
+		}
+		if provider == "orcarouter" {
+			providerCfg.BaseURL = "https://api.orcarouter.ai/v1"
 		}
 
 		cfg.LLM.Providers[provider] = providerCfg
@@ -353,6 +369,8 @@ Supported providers:
 			switch provider {
 			case "openrouter":
 				cfg.LLM.DefaultModel = "anthropic/claude-sonnet-4.5"
+			case "orcarouter":
+				cfg.LLM.DefaultModel = "openai/gpt-5.5"
 			case "anthropic":
 				cfg.LLM.DefaultModel = "claude-sonnet-4.5"
 			case "openai":
