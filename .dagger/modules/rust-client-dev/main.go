@@ -1081,8 +1081,7 @@ func (t *RustClientDev) GeneratedCoreIntegration(ctx context.Context) error {
 		t.Ws.File(".dagger/modules/rust-client-dev/testdata/core_conformance.rs"),
 	)
 
-	exactEngine := dag.DaggerEngine(dagger.DaggerEngineOpts{Ws: t.Ws}).
-		WithGitSource(coreTargetRepository, coreTargetRevision)
+	exactEngine := t.coreTargetEngine()
 	service := exactEngine.Service("rust-sdk-core-conformance", dagger.DaggerEngineServiceOpts{
 		Version: coreTargetVersion,
 	})
@@ -1099,6 +1098,19 @@ func (t *RustClientDev) GeneratedCoreIntegration(ctx context.Context) error {
 		return fmt.Errorf("run exact-target generated Core integration: %w", err)
 	}
 	return nil
+}
+
+func (t *RustClientDev) coreTargetEngine() *dagger.DaggerEngine {
+	// Keep the immutable Core contract and revision while giving this fork's engine and
+	// CLI binaries the release version that the Rust client validates at connection time.
+	source := dag.Git(coreTargetRepository).
+		Commit(coreTargetRevision).
+		Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).
+		WithNewFile("internal/version/VERSION", coreTargetVersion+"\n")
+	return dag.DaggerEngine(dagger.DaggerEngineOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+		Ws:                 t.Ws,
+	}).WithGitSource(coreTargetRepository, coreTargetRevision).WithSource(source)
 }
 
 // RustSdkBuild is the ordinary, non-publishing Rust SDK build result.
@@ -1160,10 +1172,7 @@ func (t *RustClientDev) Build(
 	if err != nil {
 		return nil, fmt.Errorf("build reusable Rust engine content: %w", err)
 	}
-	target := dag.DaggerEngine(dagger.DaggerEngineOpts{
-		ClientDockerConfig: t.ClientDockerConfig,
-		Ws:                 t.Ws,
-	}).WithGitSource(coreTargetRepository, coreTargetRevision)
+	target := t.coreTargetEngine()
 	completeEngine := target.ContainerWithRustSdkcontent(
 		content.Built,
 		dagger.DaggerEngineContainerWithRustSdkcontentOpts{
