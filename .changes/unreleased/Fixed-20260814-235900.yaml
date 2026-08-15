@@ -1,0 +1,15 @@
+kind: Fixed
+body: |
+  Resetting invalid local cache state (e.g. after an unclean engine shutdown)
+  no longer blocks engine startup, and no longer saturates the disk while it
+  happens. The discarded worker state — often tens of GB across millions of
+  files — was previously deleted inline before the engine came up, pinning the
+  disk queue hard enough to make the whole machine stutter. It is now renamed
+  aside instantly and removed in the background at a bounded duty cycle,
+  switching to full speed only under disk pressure. Interrupted removals are
+  resumed on the next startup, and stale mounts left behind by the crashed
+  engine are detached instead of failing the reset.
+time: 2026-08-14T23:59:00Z
+custom:
+  Author: vito
+  PR: 0
