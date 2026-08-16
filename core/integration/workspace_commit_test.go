@@ -282,6 +282,19 @@ func (WorkspaceSuite) TestWorkspaceWithCommitMessageIdempotence(ctx context.Cont
 		requireErrOut(t, err, "nothing to commit")
 	})
 
+	t.Run("same subject different body errors", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withCommit(message: "repeat\n\nbody one", date: "` + commitTestDate + `") {
+        withCommit(message: "repeat\n\nbody two", date: "` + commitTestDate + `") { id }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		requireErrOut(t, err, "nothing to commit")
+	})
+
 	t.Run("dirty duplicate stages normally", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerQuery(`{
   currentWorkspace {
