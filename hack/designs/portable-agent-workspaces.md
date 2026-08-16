@@ -130,27 +130,36 @@ L  logical local HEAD, including commits not yet on the selected remote
 W  approved effective worktree relative to L
 ```
 
-For phase 1, `R..L` must be linear. Merge commits are rejected with a clear
-error until the pending-commit model either supports a graph or defines an
-explicit flattening policy.
+For phase 1, `R..L` is restored as a linear semantic pending-commit stack.
+Preserving the exact commit graph is ideal but not required; merge commits are
+rejected until the pending-commit model either supports a graph or defines an
+explicit flattening policy. Messages, authors, dates, order, and origin matter;
+topology and SHAs may change.
 
-The payload contains:
+The portable state has two separately approved payloads:
 
-- a prerequisite Git bundle/pack with objects reachable from `L` but not `R`;
-- a private snapshot commit/ref whose tree is `W`, with `L` as its parent, so
-  the same payload contains changed tracked blobs and approved untracked blobs;
+- a prerequisite Git bundle/pack containing committed objects reachable from
+  `L` but not `R`;
+- one selected worktree delta from `L` to `W`, containing approved tracked dirt
+  and ordinary untracked files but no initially ignored content;
 - a manifest with format version, object format, sanitized remote URL, remote
-  ref hint, `R`, `L`, the private snapshot ref/tree, and ordered pending-commit
-  metadata; and
+  ref hint, `R`, `L`, the ordered pending-commit metadata, and worktree-delta
+  digest; and
 - Workspace metadata needed independently of Git: cwd, config and lockfile
   paths, author defaults, and capture-policy version.
 
-A prerequisite bundle is compact for a large repository: unchanged commits,
-blobs, and trees are supplied by `R`; the payload adds local commit objects and
-only the tree paths and blobs changed in `W`. The private snapshot commit is
-transport plumbing, not user history. After import its ref is removed, `HEAD`
-and the index describe `L`, and the worktree is materialized from `W` without
-staging it.
+Keeping committed history and the worktree delta separate is an important safety
+boundary: an untracked file cannot enter the commit bundle accidentally. The
+bundle is compact for a large repository because unchanged commits, blobs, and
+trees are supplied by `R`; it adds only local committed objects. Restore imports
+the commit bundle, reconstructs the pending stack, and applies the approved
+worktree delta once.
+
+A later compaction may replace the worktree delta with a private snapshot
+commit/ref whose tree is `W` and whose parent is `L`. That can be more efficient
+for very large or deeply edited worktrees. The private commit remains transport
+plumbing: after import its ref is removed, `HEAD` and the index describe `L`, and
+its tree only populates the dirty/untracked worktree.
 
 The implementation may preserve the original objects and SHAs when no rewrite
 is needed, but that is not an API guarantee. The manifest preserves ordering,
@@ -210,9 +219,10 @@ It runs before module/tool derivation and before the agent loop starts.
 5. Revalidate the approved paths and content digests while packing. If files
    changed after review, abort and repeat rather than capturing unreviewed
    bytes.
-6. Ask client Git to create the prerequisite graph and `W` snapshot using only
-   the approved set. Validate bundle headers, prerequisites, object format, and
-   connectivity locally and again on import.
+6. Ask client Git to create the prerequisite commit bundle and the selected
+   `L..W` worktree delta as separate payloads. Validate bundle headers,
+   prerequisites, object format, connectivity, patch paths, and final worktree
+   digest locally and again on import.
 7. Construct bounded checkpoint-data calls and select the pure Workspace
    constructor from them. Only then bind and start the agent.
 
@@ -251,9 +261,20 @@ Approval is meaningful only before payload construction. A design that first
 uses today's `PackWorktree`, receives all ordinary untracked bytes in the
 engine, and scans there is not sufficient for this boundary.
 
+These mitigations are cumulative defense in depth, not alternatives. In
+particular, keeping committed history and untracked worktree data in separate
+payloads prevents the commit bundle from sweeping in an untracked secret, while
+path rules, content scanning, explicit approval, size limits, opaque rendering,
+and trace access control each cover a different failure mode. Tracked dirt is
+scanned too; “tracked” does not mean “safe to upload.”
+
 Raw-trace readers can recover every approved source byte. Compression, Git
 object hashing, and opaque rendering are not encryption. Trace authorization,
 retention, and deletion policy must treat a checkpoint like a source archive.
+Cloud's existing **Delete trace** action is useful last-resort containment, but
+it is not a pre-upload control. Before relying on it, verify that deletion covers
+the call-payload closure and its retained checkpoint chunks, not only the
+user-visible span index.
 
 ## 7. Core API shape
 
@@ -280,6 +301,36 @@ but its resolver returns the ObjectResult selected from a pure internal
 constructor, rather than minting a result whose recipe contains the effectful
 `checkpoint` call. This is the same identity-preserving technique used when an
 effectful Workspace operation returns an existing/pure result.
+
+Semantically, restoration should align with `Workspace.withCommitsFrom`, not
+expose arbitrary pack manipulation. The commit half is conceptually:
+
+```graphql
+input WorkspaceBundledCommit {
+  sha: String!
+  origin: String
+  message: String!
+  date: String!
+  authorName: String!
+  authorEmail: String!
+  paths: [String!]!
+}
+
+extend type Workspace {
+  """Restore bundled local history as engine-staged pending commits."""
+  withCommitBundle(
+    base: GitRef!
+    manifest: String!
+    chunks: [WorkspaceCheckpointChunkID!]!
+    commits: [WorkspaceBundledCommit!]!
+  ): Workspace!
+}
+```
+
+The initial worktree delta is then applied once with ordinary Workspace or
+Changeset semantics. The implementation may fuse both steps into one internal
+constructor, but the observable model remains “import pending commits, then
+apply selected uncommitted state.”
 
 The pure side is conceptually:
 
@@ -346,16 +397,15 @@ This is display opacity, not a new secret or storage abstraction.
 On a cold engine the constructor:
 
 1. evaluates the remote `GitRef` recipe and obtains exact `R`;
-2. reassembles chunks and verifies manifest version, digest, size, and object
+2. reassembles chunks and verifies manifest version, digests, sizes, and object
    format;
 3. initializes a canonical scratch repository using existing snapshot APIs;
-4. imports the prerequisite bundle, requiring `R`, and verifies connectivity,
-   `L`, and the private worktree snapshot ref;
+4. imports the prerequisite commit bundle, requiring `R`, and verifies
+   connectivity and logical tip `L`;
 5. constructs repository states for the ordered pending commits after `R` and
    records their metadata, with `BaseHeadSHA = R`;
 6. sets logical `HEAD` and a normalized index to `L`;
-7. materializes `W` as the unstaged worktree, then removes private transport
-   refs from the visible repository;
+7. applies the selected worktree delta once and verifies that the result is `W`;
 8. constructs a value-backed Workspace source plus overlay remainder, cwd,
    config/lockfile, and author defaults; and
 9. returns a Workspace with no client ID, host path, `currentWorkspace`,
@@ -375,11 +425,11 @@ the recipe. They are not additional restore inputs.
 ## 10. Long sessions and large monorepos
 
 Initial capture must not use today's full `PackCheckout`. The remote supplies
-all objects through `R`; client transfer contains only `R..L`, approved `W`
-objects, and bounded metadata. Git ignore traversal omits large ignored trees,
-and untracked limits prevent accidental asset/cache uploads. Object packing and
-chunking stream to temporary files; implementations must not hold both raw and
-base64 copies of a large pack in memory.
+all objects through `R`; client transfer contains only `R..L`, the approved
+worktree delta, and bounded metadata. Git ignore traversal omits large ignored
+trees, and untracked limits prevent accidental asset/cache uploads. Object
+packing and chunking stream to temporary files; implementations must not hold
+both raw and base64 copies of a large pack in memory.
 
 `LLM.PortableRecipe` already drops superseded Workspace *bindings*, but it
 carries the final Workspace recipe verbatim. It does not collapse that
