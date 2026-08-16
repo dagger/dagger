@@ -216,6 +216,114 @@ func (WorkspaceSuite) TestWorkspaceWithCommitNothingToCommit(ctx context.Context
 	})
 }
 
+// TestWorkspaceWithCommitMessageIdempotence covers the direct API semantics:
+// clean retries are identity only when their exact full message is reachable,
+// while a repeated message never suppresses new committable changes.
+func (WorkspaceSuite) TestWorkspaceWithCommitMessageIdempotence(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := withCommitBase(t, c)
+
+	t.Run("clean retry is identity", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withCommit(message: "repeat\n\nfull body\n", date: "` + commitTestDate + `") {
+        withNewFile(path: "b.txt", contents: "b2") {
+          withCommit(message: "intervening", date: "` + commitTestDate + `") {
+            id
+            retry: withCommit(message: "repeat\n\nfull body\n", date: "` + commitTestDate + `") {
+              id
+              git { stagedCommits { sha } }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+		var got struct {
+			CurrentWorkspace struct {
+				WithNewFile struct {
+					WithCommit struct {
+						WithNewFile struct {
+							WithCommit struct {
+								ID    string `json:"id"`
+								Retry struct {
+									ID  string `json:"id"`
+									Git struct {
+										StagedCommits []struct {
+											SHA string `json:"sha"`
+										} `json:"stagedCommits"`
+									} `json:"git"`
+								} `json:"retry"`
+							} `json:"withCommit"`
+						} `json:"withNewFile"`
+					} `json:"withCommit"`
+				} `json:"withNewFile"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		committed := got.CurrentWorkspace.WithNewFile.WithCommit.WithNewFile.WithCommit
+		require.Equal(t, committed.ID, committed.Retry.ID)
+		require.Len(t, committed.Retry.Git.StagedCommits, 2)
+	})
+
+	t.Run("clean new message errors", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withCommit(message: "repeat", date: "` + commitTestDate + `") {
+        withCommit(message: "repeat typo", date: "` + commitTestDate + `") { id }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		requireErrOut(t, err, "nothing to commit")
+	})
+
+	t.Run("dirty duplicate stages normally", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withCommit(message: "repeat", date: "` + commitTestDate + `") {
+        withNewFile(path: "b.txt", contents: "b2") {
+          withCommit(message: "repeat", date: "` + commitTestDate + `") {
+            git { stagedCommits { sha message } }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+		var got struct {
+			CurrentWorkspace struct {
+				WithNewFile struct {
+					WithCommit struct {
+						WithNewFile struct {
+							WithCommit struct {
+								Git struct {
+									StagedCommits []struct {
+										SHA     string `json:"sha"`
+										Message string `json:"message"`
+									} `json:"stagedCommits"`
+								} `json:"git"`
+							} `json:"withCommit"`
+						} `json:"withNewFile"`
+					} `json:"withCommit"`
+				} `json:"withNewFile"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		commits := got.CurrentWorkspace.WithNewFile.WithCommit.WithNewFile.WithCommit.Git.StagedCommits
+		require.Len(t, commits, 2)
+		require.Equal(t, "repeat", commits[0].Message)
+		require.Equal(t, "repeat", commits[1].Message)
+		require.NotEqual(t, commits[0].SHA, commits[1].SHA)
+	})
+}
+
 // TestWorkspaceCommitFileVisibility covers the report's finding 1: content that
 // is in a staged commit but not yet exported stayed visible to the diff views
 // while vanishing from the tree — Workspace.file, Workspace.directory, and

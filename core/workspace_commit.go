@@ -120,6 +120,46 @@ func WorkspaceRepoHeadSHA(ctx context.Context, repoDir dagql.ObjectResult[*Direc
 	return sha, nil
 }
 
+// WorkspaceRepoContainsCommitMessage reports whether any commit reachable from
+// the repository tree's HEAD has the exact full message.
+func WorkspaceRepoContainsCommitMessage(
+	ctx context.Context,
+	repoDir dagql.ObjectResult[*Directory],
+	message string,
+) (bool, error) {
+	var contains bool
+	_, err := withGitMergeWorkspace(ctx, repoDir, "Workspace repo commit messages", func(ws *gitMergeWorkspace) error {
+		// NUL cannot occur in a commit message, so it is the only safe delimiter
+		// for arbitrary subjects and bodies. Pair each message with its hash so
+		// git's newline between pretty-format records lands in an ignored hash
+		// field rather than becoming part of the next message.
+		out, err := runGitEnv(ctx, ws.workDir, nil, "log", "--format=%H%x00%B%x00", "HEAD")
+		if err != nil {
+			return err
+		}
+		fields := strings.Split(out, "\x00")
+		for i := 1; i < len(fields); i += 2 {
+			if gitCommitMessagesEqual(fields[i], message) {
+				contains = true
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return contains, nil
+}
+
+// gitCommitMessagesEqual compares full commit messages, ignoring only the one
+// terminal newline Git uses to store/render a message. In particular, leading
+// whitespace, trailing spaces, and additional trailing newlines stay
+// significant.
+func gitCommitMessagesEqual(a, b string) bool {
+	return strings.TrimSuffix(a, "\n") == strings.TrimSuffix(b, "\n")
+}
+
 // WorkspaceRepoContainsCommits reports, for each hash, whether the repository
 // tree's HEAD already has that commit in its history. Every hash is probed
 // inside ONE mount, because mounting is the expensive part and the probes
