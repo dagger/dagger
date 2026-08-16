@@ -31,7 +31,7 @@ R  latest ancestor of local HEAD proven present on a remote
 Agent overlays and `Workspace.withCommit` calls then build on that value. The
 trace recipe must reconstruct the same effective tree and pending history from
 its own call payloads plus the remote containing `R`. Persisted result records,
-BuildKit snapshots, Git mirrors, and any other state on the originating engine
+Dagger snapshots, Git mirrors, and any other state on the originating engine
 are cache accelerators only; deleting all of them must not change correctness.
 
 The design has the following settled constraints:
@@ -76,7 +76,7 @@ secret, or user-approval preflight. Portable capture must not call this path and
 then try to filter the result.
 
 `core/git_hostdir.go` reconstructs a canonical repository in a scratch
-BuildKit snapshot by fetching the client bundle, setting symbolic or detached
+Dagger snapshot by fetching the client bundle, setting symbolic or detached
 `HEAD`, rebuilding the index with `git read-tree HEAD`, packing refs, and
 removing hooks, reflogs, and scratch files. The checkpoint importer should reuse
 these patterns. A canonical snapshot is still only an evaluation result, not a
@@ -105,7 +105,7 @@ same machinery as they do today.
 
 ### 2.3 Recipes, persistence, and trace reconstruction
 
-Directories are backed by BuildKit snapshots. Persisted objects retain result
+Directories are backed by Dagger snapshots. Persisted objects retain result
 metadata and local snapshot links; for example, `RemoteGitMirror` persists a
 mutable snapshot ID. Neither a Directory ID nor a persisted snapshot link puts
 filesystem bytes in an exported trace. They only work while the relevant engine
