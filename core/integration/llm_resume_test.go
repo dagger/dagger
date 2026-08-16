@@ -306,10 +306,10 @@ func conflictedFiles(ctx context.Context, t *testctx.T, llm *dagger.LLM, baselin
 	return files
 }
 
-// TestResumeSkipsCommitAlreadyExported covers the trace failure where a saved
-// conversation still records a successful Workspace.withCommit after that
-// commit has been exported to the live checkout. Recipe replay sees the path as
-// clean; that is a redundant operation, not an invalid historical call.
+// TestResumeSkipsCommitAlreadyExported covers a saved conversation whose
+// successful Workspace.withCommit has since been exported to the live checkout.
+// On resume the scope is clean, but the exact message in reachable history makes
+// the operation an idempotent retry rather than an invalid empty commit.
 func (LLMSuite) TestResumeSkipsCommitAlreadyExported(ctx context.Context, t *testctx.T) {
 	for _, arrangement := range resumeArrangements() {
 		t.Run(arrangement.name, func(ctx context.Context, t *testctx.T) {
