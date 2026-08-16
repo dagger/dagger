@@ -146,7 +146,7 @@ func (l *Loader) namedSDK(
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
-	case sdkJava, sdkPHP, sdkElixir:
+	case sdkJava, sdkPHP, sdkElixir, sdkCSharp:
 		sdkMod, ok := workspaceModuleForBuiltinSDK(sdkNamedParsed, sdkSuffix)
 		if !ok {
 			return nil, errUnknownBuiltinSDK
@@ -281,8 +281,8 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
-	// for php, elixir we point them to github ref, so default the version to engine's tag
-	if slices.Contains([]sdk{sdkPHP, sdkElixir, sdkJava}, sdk(sdkNameParsed)) && sdkVersion == "" {
+	// for php, elixir, java, csharp we point them to github ref, so default the version to engine's tag
+	if slices.Contains([]sdk{sdkPHP, sdkElixir, sdkJava, sdkCSharp}, sdk(sdkNameParsed)) && sdkVersion == "" {
 		sdkVersion = engine.Tag
 	}
 

@@ -10,6 +10,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,14 +37,25 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 		{sdk: "go", path: "./testdata/modules/go/ifaces"},
 		{sdk: "typescript", path: "./testdata/modules/typescript/ifaces"},
 		{sdk: "python", path: "./testdata/modules/python/ifaces"},
+		{sdk: "csharp", path: "./testdata/modules/csharp/ifaces"},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			_, err := core.NewQuery(c).Container().From(golangImage).
+			ctr := core.NewQuery(c).Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithMountedDirectory("/work", core.NewQuery(c).Host().Directory(tc.path)).
-				WithWorkdir("/work").
+				WithWorkdir("/work")
+			if tc.sdk == "csharp" {
+				sdkSrc, err := filepath.Abs("../../sdk/csharp")
+				require.NoError(t, err)
+				ctr = ctr.
+					WithMountedDirectory("/work/sdk/csharp", core.NewQuery(c).Host().Directory(sdkSrc)).
+					WithExec([]string{"apk", "add", "git"}).
+					WithExec([]string{"git", "init"})
+			}
+
+			_, err := ctr.
 				With(daggerCallAt(".", "test")).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -100,6 +112,11 @@ func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 			depFixture:  "python/iface-call-mallard",
 			testFixture: "python/iface-call-test",
 		},
+		{
+			sdk:         "csharp",
+			depFixture:  "csharp/iface-call-mallard",
+			testFixture: "csharp/iface-call-test",
+		},
 	}
 
 	for _, tc := range tests {
@@ -113,11 +130,52 @@ func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 			t.Run(fmt.Sprintf("%s implementation defined in %s", tc.sdk, rtc.sdk), func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				out, err := core.NewQuery(c).Container().From(golangImage).
+				var ctr *core.Container
+				if rtc.sdk == "csharp" {
+					sdkSrc, err := filepath.Abs("../../sdk/csharp")
+					require.NoError(t, err)
+					// Keep /work itself from being a C# module so find-up
+					// does not steal mallard's SDK load. Both modules live as
+					// siblings and share /work/sdk/csharp, matching TestCsharp.
+					ctr = goGitBase(t, c).
+						With(withModuleFixture(t, c, "test", rtc.testFixture)).
+						With(withModuleFixture(t, c, "mallard", tc.depFixture)).
+						WithDirectory("/work/sdk/csharp", core.NewQuery(c).Host().Directory(sdkSrc))
+					out, err := ctr.
+						WithWorkdir("/work/mallard").
+						With(daggerCallAt(".", "quack")).
+						WithWorkdir("/work/test").
+						With(daggerCallAt(".", "get-duck", "quack")).
+						Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "mallard quack", strings.TrimSpace(out))
+					return
+				}
+				if tc.sdk == "csharp" {
+					sdkSrc, err := filepath.Abs("../../sdk/csharp")
+					require.NoError(t, err)
+					// Go (or other) caller at /work; C# mallard as a sibling.
+					// This layout already passed for csharp_implementation_defined_in_go.
+					ctr = goGitBase(t, c).
+						With(withModuleFixture(t, c, ".", rtc.testFixture)).
+						With(withModuleFixture(t, c, "mallard", tc.depFixture)).
+						WithDirectory("/work/sdk/csharp", core.NewQuery(c).Host().Directory(sdkSrc))
+					out, err := ctr.
+						With(daggerCallAt("mallard", "quack")).
+						With(daggerCallAt(".", "get-duck", "quack")).
+						Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "mallard quack", strings.TrimSpace(out))
+					return
+				}
+
+				ctr = core.NewQuery(c).Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
 					With(withModuleFixture(t, c, ".", rtc.testFixture)).
-					With(withModuleFixture(t, c, "mallard", tc.depFixture)).
+					With(withModuleFixture(t, c, "mallard", tc.depFixture))
+
+				out, err := ctr.
 					With(daggerCallAt("mallard", "quack")).
 					With(daggerCallAt(".", "get-duck", "quack")).
 					Stdout(ctx)

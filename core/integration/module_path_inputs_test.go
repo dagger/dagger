@@ -1469,13 +1469,55 @@ public class Test {
 }
 `,
 		},
+		{
+			sdk:     "csharp",
+			fixture: "csharp/path-context-git-05",
+			source: `#pragma warning disable DAGGER010 // [DefaultPath] on GitRepository/GitRef is engine-supported
+
+using Dagger;
+
+[Object]
+public class Test
+{
+    [Function]
+    public Task<string> TestRepoLocal([DefaultPath("./.git")] GitRepository git)
+        => CommitAndRef(git.Head());
+
+    [Function]
+    public Task<string> TestRepoLocalAbs([DefaultPath("/")] GitRepository git)
+        => CommitAndRef(git.Head());
+
+    [Function]
+    public Task<string> TestRepoRemote(
+        [DefaultPath("https://github.com/dagger/dagger.git")] GitRepository git)
+        => CommitAndRef(git.Tag("v0.18.2"));
+
+    [Function]
+    public Task<string> TestRefLocal([DefaultPath("./.git")] GitRef git)
+        => CommitAndRef(git);
+
+    [Function]
+    public Task<string> TestRefRemote(
+        [DefaultPath("https://github.com/dagger/dagger.git#v0.18.3")] GitRef git)
+        => CommitAndRef(git);
+
+    private static async Task<string> CommitAndRef(GitRef git)
+    {
+        var commit = await git.Commit();
+        var reference = await git.Ref();
+        return $"{reference}@{commit}";
+    }
+}
+`,
+		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			modGen := moduleFixture(t, c, tc.fixture)
-			if tc.sdk == "java" {
+			switch tc.sdk {
+			case "java":
 				// This test compares defaultPath behavior across SDKs, so keep
 				// every fixture's git repo at /work. The usual javaModule helper
 				// puts modules under /work/modules, which would change what
@@ -1483,6 +1525,14 @@ public class Test {
 				sdkSrc, err := filepath.Abs("../../sdk/java")
 				require.NoError(t, err)
 				modGen = modGen.WithMountedDirectory("sdk/java", core.NewQuery(c).Host().Directory(sdkSrc))
+			case "csharp":
+				// Same as java: the module stays at the git repo root (/work),
+				// unlike csharpModInit which nests it under /work/modules, so
+				// the local SDK checkout is mounted inside the module's context
+				// and referenced as ./sdk/csharp by the fixture's dagger.json.
+				sdkSrc, err := filepath.Abs("../../sdk/csharp")
+				require.NoError(t, err)
+				modGen = modGen.WithMountedDirectory("sdk/csharp", core.NewQuery(c).Host().Directory(sdkSrc))
 			}
 
 			modGen = modGen.

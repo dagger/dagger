@@ -104,16 +104,20 @@ func checksTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 }
 
 func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*core.Container, error) {
-	// java SDK is not embedded in the engine, so we mount the java sdk to be able
-	// to test non released features
+	// java and csharp SDKs are not embedded in the engine, so we mount them
+	// to be able to test non released features
 	javaSdkSrc, err := filepath.Abs("../../sdk/java")
+	if err != nil {
+		return nil, err
+	}
+	csharpSdkSrc, err := filepath.Abs("../../sdk/csharp")
 	if err != nil {
 		return nil, err
 	}
 	return core.NewQuery(c).Container().
 		From(alpineImage).
-		// init git in a directory containing both the modules and the java SDK
-		// that way dagger sees this directory as the root
+		// init git in a directory containing both the modules and the mounted
+		// SDKs, that way dagger sees this directory as the root
 		WithWorkdir("/work").
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
@@ -121,6 +125,7 @@ func specificTestEnv(t *testctx.T, c *dagger.Client, subfolder string) (*core.Co
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithDirectory(".", core.NewQuery(c).Host().Directory("./testdata/"+subfolder)).
 		WithMountedDirectory("/work/sdk/java", core.NewQuery(c).Host().Directory(javaSdkSrc)).
+		WithMountedDirectory("/work/sdk/csharp", core.NewQuery(c).Host().Directory(csharpSdkSrc)).
 		WithDirectory("app", core.NewQuery(c).Directory()), nil
 }
 
@@ -134,6 +139,7 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 		{"typescript", "hello-with-checks-ts"},
 		{"python", "hello-with-checks-py"},
 		{"java", "hello-with-checks-java"},
+		{"csharp", "hello-with-checks-cs"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen, err := checksTestEnv(t, c)
@@ -236,6 +242,7 @@ func (ChecksSuite) TestChecksViaLegacyBlueprintConfig(ctx context.Context, t *te
 		{"typescript", "hello-with-checks-ts"},
 		{"python", "hello-with-checks-py"},
 		{"java", "hello-with-checks-java"},
+		{"csharp", "hello-with-checks-cs"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			modGen, err := checksTestEnv(t, c)
@@ -821,6 +828,7 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		{"typescript", "hello-with-checks-ts"},
 		{"python", "hello-with-checks-py"},
 		{"java", "hello-with-checks-java"},
+		{"csharp", "hello-with-checks-cs"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			// Install hello-with-checks into the current workspace.

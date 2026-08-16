@@ -1,0 +1,19 @@
+{
+  "name": "caller",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "./sdk/csharp"
+  },
+  "dependencies": [
+    {
+      "name": "impl",
+      "source": "impl"
+    },
+    {
+      "name": "test",
+      "source": "test"
+    }
+  ],
+  "source": "caller",
+  "disableDefaultFunctionCaching": true
+}

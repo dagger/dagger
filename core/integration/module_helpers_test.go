@@ -299,6 +299,8 @@ func sdkSourceFile(sdk string) string {
 		return "main.dang"
 	case "java", "./sdk/java":
 		return "src/main/java/io/dagger/modules/test/Test.java"
+	case "csharp":
+		return "Main.cs"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}

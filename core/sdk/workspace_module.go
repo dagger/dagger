@@ -51,6 +51,8 @@ func workspaceModuleForBuiltinSDK(sdkName sdk, suffix string) (WorkspaceModule, 
 		return WorkspaceModule{Name: "php-sdk", Source: "github.com/dagger/dagger/sdk/php" + suffix}, true
 	case sdkElixir:
 		return WorkspaceModule{Name: "elixir-sdk", Source: "github.com/dagger/dagger/sdk/elixir" + suffix}, true
+	case sdkCSharp:
+		return WorkspaceModule{Name: "csharp-sdk", Source: "github.com/dagger/dagger/sdk/csharp" + suffix}, true
 	default:
 		return WorkspaceModule{}, false
 	}

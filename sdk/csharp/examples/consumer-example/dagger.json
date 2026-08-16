@@ -1,0 +1,34 @@
+{
+  "name": "consumer-example",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "../.."
+  },
+  "dependencies": [
+    {
+      "name": "attributes-example",
+      "source": "../attributes-example"
+    },
+    {
+      "name": "constructor-example",
+      "source": "../constructor-example"
+    },
+    {
+      "name": "defaults-example",
+      "source": "../defaults-example"
+    },
+    {
+      "name": "interface-example",
+      "source": "../interface-example"
+    },
+    {
+      "name": "multi-file-example",
+      "source": "../multi-file-example"
+    },
+    {
+      "name": "processor-impl",
+      "source": "../processor-impl"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}

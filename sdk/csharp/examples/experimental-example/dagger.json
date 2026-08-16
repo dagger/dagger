@@ -1,0 +1,8 @@
+{
+  "name": "experimental-example",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "../.."
+  },
+  "disableDefaultFunctionCaching": true
+}
