@@ -169,9 +169,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.",
 				"The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.",
+				"The operation is message-idempotent: when no committable change exists in scope and reachable history already contains the exact full message, the workspace is returned unchanged. A clean scope with no matching message is still an error.",
 				"The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.").
 			Args(
-				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("message").Doc("Full commit message. Its exact value is also the logical identity used to recognize an already-applied retry across rebases and cherry-picks."),
 				dagql.Arg("paths").Doc("Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes."),
 				dagql.Arg("date").Doc("RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock."),
 				dagql.Arg("authorName").Doc("Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else \"Dagger\"."),
