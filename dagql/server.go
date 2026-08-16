@@ -1360,7 +1360,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 	}
 
 	state := &recipeLoadState{
-		ctx:       ctx,
+		ctx:       context.WithValue(ctx, recipeReplayContextKey{}, struct{}{}),
 		srv:       s,
 		cache:     cache,
 		sessionID: clientMetadata.SessionID,
@@ -1369,6 +1369,19 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 		notReplayableMemo: make(map[string]bool),
 	}
 	return state.load(id)
+}
+
+type recipeReplayContextKey struct{}
+
+// IsRecipeReplay reports whether ctx is evaluating a recipe-form ID through
+// Server.Load. Resolvers can use this narrowly when a value operation has a
+// replay-only redundant outcome that remains an error for a direct API call.
+//
+// It says how the resolver was reached, not whether this particular vertex
+// missed cache: a recipe load may serve some vertices and execute others.
+func IsRecipeReplay(ctx context.Context) bool {
+	_, ok := ctx.Value(recipeReplayContextKey{}).(struct{})
+	return ok
 }
 
 type recipeLoadFuture struct {
