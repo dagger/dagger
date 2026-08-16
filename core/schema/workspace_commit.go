@@ -77,7 +77,56 @@ func (s *workspaceSchema) withCommit(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceWithCommitArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	return s.stageCommit(ctx, parent, args, "")
+	inst, err := s.stageCommit(ctx, parent, args, "")
+	if err == nil {
+		return inst, nil
+	}
+	ws := parent.Self()
+	if errors.Is(err, core.ErrNothingToCommit) && dagql.IsRecipeReplay(ctx) &&
+		workspaceCommitWasRecordedInOverlay(ws, args) {
+		// A recipe can outlive the staged commit it records: exporting the
+		// workspace lands that commit in the live checkout, while the persisted
+		// LLM still contains the successful withCommit call. Replaying it then
+		// sees a clean path. Treat that as the operation having already landed,
+		// just as commit replay classifies already-present content as redundant.
+		// Direct API calls still reject empty commits, and only paths represented
+		// by a host overlay qualify, so missing unrecorded host changes and value
+		// workspaces are never silently discarded.
+		return parent, nil
+	}
+	return inst, err
+}
+
+// workspaceCommitWasRecordedInOverlay reports whether this commit's scope
+// intersects the host-backed overlay carried by its receiver. That intent
+// ledger survives even when replay finds the overlay's content already present
+// in the checkout and its computed changeset is therefore empty.
+//
+// A pristine host workspace can also become clean between recording and replay,
+// but in that case the dirty content was never represented in the recipe and
+// cannot safely be called redundant; keep returning the load error instead.
+func workspaceCommitWasRecordedInOverlay(ws *core.Workspace, args workspaceWithCommitArgs) bool {
+	if ws == nil || !ws.ClientLocalBase() {
+		return false
+	}
+	overlay, ok := ws.Source().(*core.WorkspaceSourceOverlay)
+	if !ok || len(overlay.TouchedPaths) == 0 {
+		return false
+	}
+	resolved := make([]string, 0, len(args.Paths))
+	for _, p := range args.Paths {
+		r, err := resolveWorkspacePath(p, ws.Cwd)
+		if err != nil {
+			return false
+		}
+		resolved = append(resolved, r)
+	}
+	for _, p := range overlay.TouchedPaths {
+		if commitPathInScope(p, resolved) {
+			return true
+		}
+	}
+	return false
 }
 
 // workspaceReplayCommitArgs is workspaceWithCommitArgs plus the provenance a
@@ -282,7 +331,7 @@ func (s *workspaceSchema) stagedCommit(
 	dir, err := core.WorkspaceCommitChangeset(ctx, scope.repo, scope.scoped.Self(), args.commitOpts(parent.Self()))
 	if err != nil {
 		if errors.Is(err, core.ErrNothingToCommit) {
-			return inst, fmt.Errorf("withCommit: nothing to commit")
+			return inst, fmt.Errorf("withCommit: %w", err)
 		}
 		return inst, err
 	}
@@ -590,7 +639,7 @@ func (s *workspaceSchema) workspaceCommitScope(
 
 	if commitScopeCoversAll(resolved) {
 		if len(paths.Added)+len(paths.Modified)+len(paths.AllRemoved) == 0 {
-			return scope, fmt.Errorf("withCommit: nothing to commit")
+			return scope, fmt.Errorf("withCommit: %w", core.ErrNothingToCommit)
 		}
 		scope.scoped = uncommitted
 		return scope, nil
@@ -621,7 +670,7 @@ func (s *workspaceSchema) workspaceCommitScope(
 					"they will still be written to the checkout on save, but cannot be committed",
 				unmanaged)
 		}
-		return scope, fmt.Errorf("withCommit: nothing to commit for paths %v", args.Paths)
+		return scope, fmt.Errorf("withCommit: %w for paths %v", core.ErrNothingToCommit, args.Paths)
 	}
 
 	scoped, _, err := s.scopeChangesetToPaths(ctx, uncommitted, resolved)

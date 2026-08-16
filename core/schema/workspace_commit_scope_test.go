@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,4 +61,32 @@ func TestCommitRemovedPathsInScope(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestWorkspaceCommitWasRecordedInOverlay(t *testing.T) {
+	hostOverlay := func(touched ...string) *core.Workspace {
+		ws := &core.Workspace{Cwd: "pkg"}
+		ws.SetSource(core.NewWorkspaceSourceOverlay(
+			core.NewWorkspaceSourceClientLocal("/work"),
+			touched,
+			nil,
+			dagql.ObjectResult[*core.Changeset]{},
+		))
+		return ws
+	}
+
+	require.True(t, workspaceCommitWasRecordedInOverlay(
+		hostOverlay("pkg/a.txt"), workspaceWithCommitArgs{Paths: []string{"a.txt"}}))
+	require.True(t, workspaceCommitWasRecordedInOverlay(
+		hostOverlay("pkg/a.txt"), workspaceWithCommitArgs{Paths: []string{"/pkg"}}))
+	require.True(t, workspaceCommitWasRecordedInOverlay(
+		hostOverlay("pkg/a.txt"), workspaceWithCommitArgs{}))
+	require.False(t, workspaceCommitWasRecordedInOverlay(
+		hostOverlay("other.txt"), workspaceWithCommitArgs{Paths: []string{"a.txt"}}))
+
+	pristine := &core.Workspace{Cwd: "pkg"}
+	pristine.SetSource(core.NewWorkspaceSourceClientLocal("/work"))
+	require.False(t, workspaceCommitWasRecordedInOverlay(
+		pristine, workspaceWithCommitArgs{Paths: []string{"a.txt"}}),
+		"unrecorded dirty host content must not be mistaken for a redundant overlay")
 }
