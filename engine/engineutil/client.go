@@ -698,6 +698,10 @@ var ErrGitPackUnsupported = errors.New("client cannot pack git checkouts")
 // working-tree delta. Callers may fall back to syncing the checkout directory.
 var ErrGitWorktreeUnsupported = errors.New("client cannot pack git worktrees")
 
+// ErrGitWorktreeHeadMismatch reports that the checkout moved away from the
+// HEAD against which the caller planned to apply its packed worktree delta.
+var ErrGitWorktreeHeadMismatch = errors.New("git worktree HEAD moved")
+
 // GitCheckoutState asks the client for a digest of a local checkout's current
 // git state (HEAD, symbolic HEAD, branch and tag refs), resolved by the
 // client's own git so every checkout layout works. The digest changes exactly
@@ -874,6 +878,8 @@ func (c *Client) PackGitWorktree(ctx context.Context, checkoutPath, expectedHead
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
 				case git.NOT_FOUND, git.WORKTREE_UNSUPPORTED:
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitWorktreeUnsupported)
+				case git.HEAD_MISMATCH:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitWorktreeHeadMismatch)
 				default:
 					return nil, errors.New(errInfo.Message)
 				}
