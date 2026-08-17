@@ -47,6 +47,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -2354,23 +2355,14 @@ func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, 
 }
 
 // rebuildDigest turns any advertised call digest into an encoded ID the way a
-// resuming client would: find the span carrying it and walk the call payloads
-// this client has ingested back into a chain. Unlike rebuild it asserts
-// nothing about which field the digest names, because the caller does.
+// resuming client would: walk the call payloads this client has ingested back
+// into a chain. The digest need not have its own span: payload-only frames are
+// exactly why the call-payload log channel exists.
 func (sink *agentTraceSink) rebuildDigest(t *testctx.T, digest string) string {
 	t.Helper()
 	var encoded string
 	sink.read(func(db *dagui.DB) {
-		var match *dagui.Span
-		for _, span := range db.Spans.Map {
-			if span.CallDigest == digest {
-				match = span
-				break
-			}
-		}
-		require.NotNil(t, match, "no span carries the advertised digest %q", digest)
-
-		callID, err := match.CallID()
+		callID, err := db.CallIDForDigest(digest)
 		require.NoError(t, err)
 		encoded, err = callID.Encode()
 		require.NoError(t, err)
@@ -2447,6 +2439,99 @@ func (AgentRuntimeSuite) TestResumeAnchorRecords(ctx context.Context, t *testctx
 	stopped := sink.awaitAgent(t, "STOPPED")
 	require.Equal(t, string(core.AgentStopExplicit), stopped.StopReason,
 		"a dismissal must be distinguishable from session teardown")
+}
+
+// TestResumeAnchorDropsSupersededWorkspaceCommit is the stale-input failure
+// that motivated making the agent snapshot anchor portable. A conversation's
+// raw receiver chain retains old withWorkspace bindings after a rebind. If one
+// of those bindings contains Workspace.withCommit, loading the raw recipe in a
+// later session re-evaluates currentWorkspace and then re-runs the old commit.
+// Once that commit has been exported, the replay fails with "nothing to commit"
+// even though the effective conversation uses the clean, rebound workspace.
+//
+// The trace anchor must therefore name PortableRecipe's flat conversation, not
+// rt.last's historical receiver chain. This test stages and exports a commit,
+// retains that now-stale binding below a later clean rebind, publishes the
+// agent's anchor, and re-hydrates it in a second session. The old raw anchor
+// fails while loading its inputs at withCommit; the portable anchor never
+// reaches that superseded call and preserves the conversation.
+func (AgentRuntimeSuite) TestResumeAnchorDropsSupersededWorkspaceCommit(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to forward telemetry to the sink")
+	}
+
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "resume.txt"), []byte("before\n"), 0o644))
+	for _, args := range [][]string{{"add", "resume.txt"}, {"commit", "-m", "base"}} {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = workdir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "resume.txt"), []byte("committed\n"), 0o644))
+
+	sink := newAgentTraceSink(t)
+	sourceOpts := append(sink.clientOpts(), dagger.WithWorkdir(workdir))
+	source := connect(ctx, t, sourceOpts...)
+
+	// Force the staged workspace and the LLM that binds it into attached
+	// results before export. Their recipe provenance still records the
+	// currentWorkspace.withCommit derivation even when later passed by handle.
+	staged := source.CurrentWorkspace().WithCommit(
+		"staged before rebind", commitTestDate,
+		dagger.WorkspaceWithCommitOpts{Paths: []string{"resume.txt"}},
+	)
+	stagedID, err := staged.ID(ctx)
+	require.NoError(t, err)
+	staged = dagger.Ref[*dagger.Workspace](source, stagedID)
+
+	old := source.LLM(dagger.LLMOpts{Model: emptyReplayModel}).
+		WithWorkspace(staged).
+		WithSystemPrompt("keep the old workspace binding below the rebind")
+	oldID, err := old.ID(ctx)
+	require.NoError(t, err)
+	old = dagger.Ref[*dagger.LLM](source, oldID)
+
+	// The operation on the old binding is now stale: currentWorkspace in any
+	// new session sees this commit already in HEAD, so replaying withCommit for
+	// resume.txt has nothing left to stage.
+	require.NoError(t, staged.Export(ctx))
+	status := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	status.Dir = workdir
+	out, err := status.CombinedOutput()
+	require.NoError(t, err, string(out))
+	require.Empty(t, string(out))
+
+	marker := "portable anchor " + identity.NewID()
+	rebound := old.
+		WithWorkspace(source.CurrentWorkspace()).
+		WithPrompt(marker)
+	reboundID, err := rebound.ID(ctx)
+	require.NoError(t, err)
+
+	instanceID := identity.NewID()
+	_, err = rehydrateAgent(ctx, source, string(reboundID), instanceID, "portable", "IDLE", "")
+	require.NoError(t, err)
+	node := sink.awaitAgent(t, "IDLE")
+	require.Equal(t, instanceID, node.ID)
+
+	anchor := sink.rebuildDigest(t, node.SnapshotDigest)
+	anchorID := new(call.ID)
+	require.NoError(t, anchorID.Decode(anchor))
+	fields := map[string]bool{}
+	collectIDFieldNames(anchorID, fields)
+	require.False(t, fields["withCommit"],
+		"a trace anchor must not retain a superseded Workspace.withCommit binding")
+
+	// A fresh session is the boundary that taints currentWorkspace and forces
+	// recorded dependants to re-execute. Successful re-hydration here is the
+	// end-to-end assertion that attach no longer revalidates the stale commit.
+	target := connect(ctx, t, dagger.WithWorkdir(workdir))
+	restored, err := rehydrateAgent(ctx, target, anchor, instanceID, "portable", "IDLE", "")
+	require.NoError(t, err)
+	transcript, _ := restored.snapshot(ctx, t)
+	require.Contains(t, transcript, marker)
 }
 
 // TestRehydrateAdoptsConversation covers the verb a restore is built out of

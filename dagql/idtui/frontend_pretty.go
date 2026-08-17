@@ -3607,14 +3607,19 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 // surfaceRoot returns the span the reveal-independent surfacing (checks,
 // conversation, services, generators) should roll up beneath for this render:
-// the currently ZOOMED span, or nil -- meaning the DB root, i.e. the whole
-// trace -- when the zoom IS the DB root or isn't loaded.
+// the currently ZOOMED span, or nil -- meaning the whole trace -- when the
+// zoom IS the DB root or isn't loaded.
 //
 // Surfacing is zoom-relative (see DB.surfaceRoot): "what ran beneath what I'm
 // looking at". The unzoomed interactive case resolves to nil and is therefore
 // byte-for-byte what it always was, while a subtree-scoped report -- an LLM
 // tool result, whose primary/zoom is the tool-call display span -- gets the
 // checks that tool ran, even though the display span is itself a Boundary.
+//
+// The two families read nil slightly differently, deliberately: checks,
+// services and generators resolve it to db.RootSpan, while the conversation
+// reads it as every message span in the DB, so an imported trace's transcript
+// surfaces alongside the live one (DB.SurfacedConversation).
 func (fe *frontendPretty) surfaceRoot() *dagui.Span {
 	if fe.db == nil {
 		return nil
@@ -6035,36 +6040,64 @@ func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
 // digest from the call payloads this client has ingested, and encodes it.
 //
 // This is the one proven digest→handle path, shared by branch-from-message
-// (which finds an LLM.withPrompt/withResponse call) and roster addressing
-// (which finds the pinned agent(id:, name:) lookup a loop span advertises).
-// It fails loudly when a frame's span never reached this client -- ID.decode
-// reports "call digest %q not found" -- which is the read-only signal a
+// (which finds an LLM.withPrompt/withResponse call), roster addressing (which
+// finds the pinned agent(id:, name:) lookup a loop span advertises) and
+// resume (which finds an agent's committed conversation). It fails loudly
+// when a frame's payload never reached this client -- DB.CallIDForDigest
+// names the frame that referenced it -- which is the read-only signal a
 // caller must surface rather than treat as a working handle.
+//
+// It resolves through the payloads rather than by scanning for a span that
+// carries the digest, because a payload can reach a client with no span at
+// all: span emission dedupes per session by call digest, while the closure
+// still rides the log channel.
 func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
-	if digest == "" {
-		return "", fmt.Errorf("no call digest")
-	}
 	if db == nil {
 		return "", fmt.Errorf("no trace to rebuild from")
 	}
-	var firstErr error
-	for _, s := range db.Spans.Map {
-		if s.CallDigest != digest {
-			continue
-		}
-		id, err := loadIDFromSpan(s)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		return id, nil
+	id, err := db.CallIDForDigest(digest)
+	if err != nil {
+		return "", err
 	}
-	if firstErr != nil {
-		return "", firstErr
-	}
-	return "", fmt.Errorf("no span carries call digest %s", digest)
+	return id.Encode()
+}
+
+// AgentRestorePlan projects the imported trace's agents into a restore plan
+// (AgentRestorer, design §5.1's "Reading the DB back").
+//
+// It runs on the event loop and blocks for the result, like every other DB
+// read a run-goroutine caller makes: `dagger agent --trace` calls this
+// immediately after a fetch whose exports are still being dispatched onto
+// this same goroutine, and RestorePlan walks every span in the DB.
+func (fe *frontendPretty) AgentRestorePlan() []dagui.AgentRestore {
+	var plan []dagui.AgentRestore
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		plan = fe.db.RestorePlan()
+	})
+	<-done
+	return plan
+}
+
+// EncodedIDForCallDigest rebuilds and encodes the ID of the call with the
+// given digest, on the event loop for the same reason AgentRestorePlan is.
+//
+// This is the one proven digest->handle path (see encodedIDForCallDigest);
+// exposing it on the frontend rather than exporting the package-level
+// function is what keeps that read under the DB's owner.
+func (fe *frontendPretty) EncodedIDForCallDigest(digest string) (string, error) {
+	var (
+		encoded string
+		err     error
+	)
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		encoded, err = encodedIDForCallDigest(fe.db, digest)
+	})
+	<-done
+	return encoded, err
 }
 
 func loadIDFromSpan(span *dagui.Span) (string, error) {
