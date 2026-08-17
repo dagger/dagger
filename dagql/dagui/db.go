@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"slices"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -415,6 +417,10 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 	for _, log := range logs {
 		if db.ingestProgress(log) {
 			// streaming progress data, not log text
+			continue
+		}
+		if db.ingestCallPayload(log) {
+			// dagql call payload, not log text
 			continue
 		}
 		if log.Body().AsString() == "" {
@@ -1174,6 +1180,10 @@ func (*DB) Close() error {
 }
 
 func (db *DB) Call(dig string) *callpbv1.Call {
+	return db.call(dig, nil)
+}
+
+func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 	// First, check if we already have the call cached
 	if cached, ok := db.Calls[dig]; ok {
 		return cached
@@ -1196,9 +1206,16 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 
 	// Finally, try to find the call through creator spans
 	if creators, ok := db.CreatorSpans[dig]; ok {
+		if seen == nil {
+			seen = map[string]bool{}
+		}
+		seen[dig] = true
 		// Try each creator in order
 		for _, creator := range creators.Order {
-			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+			if seen[creator.CallDigest] {
+				continue
+			}
+			if creatorCall := db.call(creator.CallDigest, seen); creatorCall != nil {
 				return creatorCall
 			}
 		}
@@ -1206,6 +1223,35 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 
 	// No call found
 	return nil
+}
+
+// CallIDForDigest rebuilds the ID of the dagql call with the given digest
+// from the call payloads this client has ingested.
+func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
+	if digest == "" {
+		return nil, fmt.Errorf("no call digest")
+	}
+	rootCall := db.Call(digest)
+	if rootCall == nil {
+		return nil, fmt.Errorf("cannot rebuild ID: %s", missingCall{digest: digest})
+	}
+
+	recipe := &callpbv1.RecipeDAG{
+		RootDigest:    rootCall.Digest,
+		CallsByDigest: map[string]*callpbv1.Call{},
+	}
+	if missing := extractIntoDAG(recipe, db, rootCall.Digest); len(missing) > 0 {
+		return nil, fmt.Errorf("cannot rebuild ID for %s: %s", frameLabel(rootCall), missing[0])
+	}
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{Recipe: recipe},
+	}
+
+	var id call.ID
+	if err := id.FromProto(dag); err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {
