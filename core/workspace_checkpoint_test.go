@@ -101,6 +101,7 @@ func TestWorkspaceCheckpointExportTargetIsSessionState(t *testing.T) {
 	ws := &Workspace{}
 	ws.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
 	ws.SetPortableCheckpoint()
+	ws.SetWorkspaceEnv("dev")
 	ws.SetCheckpointID(checkpointID)
 
 	ctx := context.Background()
@@ -122,6 +123,7 @@ func TestWorkspaceCheckpointExportTargetIsSessionState(t *testing.T) {
 	// Derived workspaces keep the identity, so the agent's edits and commits
 	// save to the same checkout the checkpoint was captured from.
 	clone := ws.Clone()
+	require.Equal(t, "dev", clone.WorkspaceEnv())
 	require.Equal(t, checkpointID, clone.CheckpointID())
 	clientID, hostPath, err := clone.ExportTarget(ctx)
 	require.NoError(t, err)
@@ -134,6 +136,7 @@ func TestWorkspaceCheckpointExportTargetIsSessionState(t *testing.T) {
 	encoded, err := clone.EncodePersistedObject(ctx, nil)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded.JSON), checkpointID)
+	require.Contains(t, string(encoded.JSON), `"workspaceEnv":"dev"`)
 	require.NotContains(t, string(encoded.JSON), "live-client")
 	require.NotContains(t, string(encoded.JSON), "/checkout")
 

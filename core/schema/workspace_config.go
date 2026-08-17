@@ -188,7 +188,7 @@ func (s *workspaceSchema) configRead(
 		return dagql.String(result), nil
 	}
 
-	envName, envSelected := selectedWorkspaceEnv(ctx)
+	envName, envSelected := selectedWorkspaceEnvFor(ctx, parent)
 	overlay := parent.UserConfigOverlay()
 	switch {
 	case envSelected && !isExplicitEnvConfigKey(args.Key):
@@ -261,6 +261,17 @@ func selectedWorkspaceEnv(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return *clientMetadata.WorkspaceEnv, true
+}
+
+// selectedWorkspaceEnvFor prefers the environment captured on a portable
+// workspace. Nested module clients intentionally do not inherit the caller's
+// workspace environment metadata, but a frozen workspace must keep resolving
+// the same effective module set wherever its recipe is evaluated.
+func selectedWorkspaceEnvFor(ctx context.Context, ws *core.Workspace) (string, bool) {
+	if env := ws.WorkspaceEnv(); env != "" {
+		return env, true
+	}
+	return selectedWorkspaceEnv(ctx)
 }
 
 func isExplicitEnvConfigKey(key string) bool {

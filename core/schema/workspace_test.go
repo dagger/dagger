@@ -21,11 +21,21 @@ import (
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "checkpointID", "ClientID", "userConfigKey", "userConfigOverlay"} {
+	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "workspaceEnv", "checkpointID", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
 	}
+}
+
+func TestSelectedWorkspaceEnvForUsesCapturedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	ws := &core.Workspace{}
+	ws.SetWorkspaceEnv("dev")
+	env, ok := selectedWorkspaceEnvFor(context.Background(), ws)
+	require.True(t, ok)
+	require.Equal(t, "dev", env)
 }
 
 // TestEffectiveWorkspaceConfigBytesAppliesUserOverlay verifies the schema-level
@@ -822,7 +832,7 @@ func TestCheckpointManifestUsesCapturedPayloadsAndMetadata(t *testing.T) {
 	}
 	ws := &core.Workspace{Cwd: ".", ConfigFile: "dagger.toml", LockFile: ".dagger/lock.json", GitAuthorName: "A", GitAuthorEmail: "a@example.com"}
 
-	manifest := checkpointManifest(ws, metadata, bundle, worktree)
+	manifest := checkpointManifest(ws, metadata, bundle, worktree, "dev")
 	require.Equal(t, "HEAD", manifest.BundleRef)
 	require.Equal(t, digest.FromBytes([]byte("bundle-onebundle-two")).String(), manifest.Bundle.Digest)
 	require.Equal(t, []core.WorkspaceCheckpointChunkDescriptor{
@@ -835,6 +845,7 @@ func TestCheckpointManifestUsesCapturedPayloadsAndMetadata(t *testing.T) {
 		AuthorName: "A", AuthorEmail: "a@example.com", Paths: []string{"a.txt"},
 	}}, manifest.Commits)
 	require.Equal(t, ".dagger/lock.json", manifest.Workspace.LockFile)
+	require.Equal(t, "dev", manifest.Workspace.Environment)
 }
 
 func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {

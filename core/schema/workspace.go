@@ -662,7 +662,8 @@ func (s *workspaceSchema) checkpoint(
 	}
 
 	bundleChunks, worktreeChunks := checkpointChunksByKind(chunks)
-	manifest := checkpointManifest(ws, metadata, bundleChunks, worktreeChunks)
+	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx)
+	manifest := checkpointManifest(ws, metadata, bundleChunks, worktreeChunks, workspaceEnv)
 	manifest.WorktreeTree, err = checkpointWorktreeTree(clientCtx, srv, base, manifest, bundleChunks, worktreeChunks)
 	if err != nil {
 		return inst, err
@@ -783,7 +784,12 @@ func checkpointPayload(parts [][]byte, size int64, hexDigest string) core.Worksp
 	return payload
 }
 
-func checkpointManifest(ws *core.Workspace, metadata *gitsession.CaptureGitMetadata, bundle, worktree [][]byte) *core.WorkspaceGitCheckpointManifest {
+func checkpointManifest(
+	ws *core.Workspace,
+	metadata *gitsession.CaptureGitMetadata,
+	bundle, worktree [][]byte,
+	workspaceEnv string,
+) *core.WorkspaceGitCheckpointManifest {
 	manifest := &core.WorkspaceGitCheckpointManifest{
 		Version: core.WorkspaceCheckpointFormatVersion, ObjectFormat: metadata.ObjectFormat,
 		RemoteURL: metadata.RemoteUrl, RemoteRef: metadata.RemoteRef,
@@ -793,7 +799,7 @@ func checkpointManifest(ws *core.Workspace, metadata *gitsession.CaptureGitMetad
 		CapturePolicyVersion: "portable-git-v1",
 		Workspace: core.WorkspaceCheckpointWorkspace{
 			Address: "git-checkpoint://" + metadata.HeadSha, Cwd: ws.Cwd,
-			ConfigFile: ws.ConfigFile, LockFile: ws.LockFile,
+			ConfigFile: ws.ConfigFile, LockFile: ws.LockFile, Environment: workspaceEnv,
 			GitAuthorName: ws.GitAuthorName, GitAuthorEmail: ws.GitAuthorEmail,
 		},
 	}
@@ -1159,6 +1165,7 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 		GitAuthorEmail: meta.GitAuthorEmail,
 	}
 	ws.SetPortableCheckpoint()
+	ws.SetWorkspaceEnv(meta.Environment)
 	// The manifest digest is this checkpoint's content identity: pure, equal on
 	// both sides of a capture/restore, and carried through every workspace
 	// derived from it. The capturing session retains its originating checkout
