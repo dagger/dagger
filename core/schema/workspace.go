@@ -979,14 +979,14 @@ func validateWorkspaceCheckpointManifest(manifest *core.WorkspaceGitCheckpointMa
 	}
 	if len(manifest.Commits) == 0 {
 		if manifest.HeadSHA != manifest.BaseSHA {
-			return fmt.Errorf("workspace checkpoint with no pending commits must have identical base and head")
+			return fmt.Errorf("workspace checkpoint with no captured local commits must have identical base and head")
 		}
 		if manifest.Bundle.Size != 0 || len(manifest.Bundle.Chunks) != 0 || manifest.BundleRef != "" {
-			return fmt.Errorf("workspace checkpoint with no pending commits must not contain a bundle")
+			return fmt.Errorf("workspace checkpoint with no captured local commits must not contain a bundle")
 		}
 	} else {
 		if manifest.BundleRef == "" || manifest.Bundle.Size == 0 || len(manifest.Bundle.Chunks) == 0 {
-			return fmt.Errorf("workspace checkpoint pending commits require a bundle and bundle ref")
+			return fmt.Errorf("workspace checkpoint captured local commits require a bundle and bundle ref")
 		}
 		if manifest.Commits[len(manifest.Commits)-1].SHA != manifest.HeadSHA {
 			return fmt.Errorf("workspace checkpoint final commit does not match logical HEAD")
@@ -1133,88 +1133,16 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 		return inst, fmt.Errorf("workspace checkpoint worktree tree is %s, expected %s", worktreeTree, manifest.WorktreeTree)
 	}
 
-	var baseContent dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, base, &baseContent, dagql.Selector{
-		Field: "tree",
-		Args: []dagql.NamedInput{
-			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
-			{Name: "depth", Value: dagql.NewInt(0)},
-			{Name: "includeTags", Value: dagql.NewBoolean(false)},
-		},
-	}); err != nil {
-		return inst, fmt.Errorf("checkout workspace checkpoint base content: %w", err)
-	}
-	var gitDir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, latestRepo, &gitDir, dagql.Selector{
-		Field: "directory",
-		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".git")}},
-	}); err != nil {
-		return inst, fmt.Errorf("read workspace checkpoint git directory: %w", err)
-	}
-	gitDirID, err := gitDir.ID()
-	if err != nil {
-		return inst, err
-	}
-	var sourceBase dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, baseContent, &sourceBase, dagql.Selector{
-		Field: "withDirectory",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(".git")},
-			{Name: "source", Value: dagql.NewID[*core.Directory](gitDirID)},
-		},
-	}); err != nil {
-		return inst, fmt.Errorf("compose workspace checkpoint base: %w", err)
-	}
-	sourceBaseID, err := sourceBase.ID()
+	latestRepoID, err := latestRepo.ID()
 	if err != nil {
 		return inst, err
 	}
 	var overlay dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, worktreeRepo, &overlay, dagql.Selector{
 		Field: "changes",
-		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](sourceBaseID)}},
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](latestRepoID)}},
 	}); err != nil {
 		return inst, fmt.Errorf("construct workspace checkpoint overlay: %w", err)
-	}
-
-	pending := make([]core.WorkspacePendingCommit, 0, len(manifest.Commits))
-	for i, bundled := range manifest.Commits {
-		var commitContent dagql.ObjectResult[*core.Directory]
-		if err := srv.Select(ctx, latestRepo, &commitContent,
-			dagql.Selector{Field: "asGit"},
-			dagql.Selector{Field: "commit", Args: []dagql.NamedInput{{Name: "id", Value: dagql.NewString(bundled.SHA)}}},
-			dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
-		); err != nil {
-			return inst, fmt.Errorf("checkout workspace checkpoint commit %d: %w", i, err)
-		}
-		var commitTree dagql.ObjectResult[*core.Directory]
-		if err := srv.Select(ctx, commitContent, &commitTree, dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(".git")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](gitDirID)},
-			},
-		}); err != nil {
-			return inst, err
-		}
-		var committed dagql.ObjectResult[*core.Changeset]
-		if err := srv.Select(ctx, commitTree, &committed, dagql.Selector{
-			Field: "changes",
-			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](sourceBaseID)}},
-		}); err != nil {
-			return inst, err
-		}
-		pending = append(pending, core.WorkspacePendingCommit{
-			SHA:         bundled.SHA,
-			Origin:      bundled.Origin,
-			Message:     bundled.Message,
-			Date:        bundled.Date,
-			AuthorName:  bundled.AuthorName,
-			AuthorEmail: bundled.AuthorEmail,
-			Paths:       slices.Clone(bundled.Paths),
-			Repo:        latestRepo,
-			Committed:   committed,
-		})
 	}
 
 	meta := manifest.Workspace
@@ -1229,14 +1157,10 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 		LockFile:       meta.LockFile,
 		GitAuthorName:  meta.GitAuthorName,
 		GitAuthorEmail: meta.GitAuthorEmail,
-		BaseHeadSHA:    manifest.BaseSHA,
 	}
 	ws.SetPortableCheckpoint()
 	ws.SetRootfs(worktreeRepo)
-	ws.SetSource(core.NewWorkspaceSourceOverlay(core.NewWorkspaceSourceDirectory(sourceBase), nil, nil, overlay))
-	for _, commit := range pending {
-		ws = ws.WithPendingCommit(commit)
-	}
+	ws.SetSource(core.NewWorkspaceSourceOverlay(core.NewWorkspaceSourceDirectory(latestRepo), nil, nil, overlay))
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 

@@ -503,8 +503,9 @@ func WorkspaceGitTreeHash(ctx context.Context, tree dagql.ObjectResult[*Director
 }
 
 // ValidateWorkspaceGitCheckpointHistory proves that the imported graph is the
-// linear pending stack described by the manifest and that its user-visible
-// metadata and changed-path scopes were not forged independently of the bundle.
+// linear captured local history described by the manifest and that its
+// user-visible metadata and changed-path scopes were not forged independently
+// of the bundle.
 func ValidateWorkspaceGitCheckpointHistory(
 	ctx context.Context,
 	repo dagql.ObjectResult[*Directory],
@@ -565,10 +566,10 @@ func ValidateWorkspaceGitCheckpointHistory(
 			expectedParent = commit.SHA
 		}
 		if expectedParent != manifest.HeadSHA {
-			return fmt.Errorf("checkpoint pending stack ends at %s, expected logical HEAD %s", expectedParent, manifest.HeadSHA)
+			return fmt.Errorf("checkpoint captured history ends at %s, expected logical HEAD %s", expectedParent, manifest.HeadSHA)
 		}
 		if len(manifest.Commits) == 0 && manifest.HeadSHA != manifest.BaseSHA {
-			return fmt.Errorf("checkpoint with no pending commits must have identical base and head")
+			return fmt.Errorf("checkpoint with no captured local commits must have identical base and head")
 		}
 		return nil
 	})

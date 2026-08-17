@@ -471,7 +471,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceFindUpValidatesNames(ctx context.Con
 	}
 }
 
-func (WorkspaceSuite) TestGitCheckpointReconstructsPendingHistoryAndWorktree(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestGitCheckpointReconstructsLocalHistoryAndWorktree(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("tracked.txt", "base\n"))
 	baseRef := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
@@ -585,17 +585,28 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsPendingHistoryAndWorktree(ctx
 
 	res, err := testutil.QueryWithClient[struct {
 		Workspace struct {
-			Cwd  string
-			One  struct{ Contents string }
-			Two  struct{ Contents string }
-			Dirt struct{ Contents string }
-			Git  struct {
+			Cwd     string
+			One     struct{ Contents string }
+			Two     struct{ Contents string }
+			Dirt    struct{ Contents string }
+			Changes struct {
+				AddedPaths    []string
+				ModifiedPaths []string
+			}
+			Git struct {
 				Head          struct{ Commit string }
 				StagedCommits []struct {
 					SHA     string
 					Message string
 				}
 				Uncommitted struct{ ModifiedPaths []string }
+			}
+			Saved struct {
+				Changes struct{ IsEmpty bool }
+				Git     struct {
+					StagedCommits []struct{ Message string }
+					Uncommitted   struct{ IsEmpty bool }
+				}
 			}
 		}
 	}](c, t, `query($base: ID!, $manifest: String!, $chunks: [ID!]!) {
@@ -604,10 +615,18 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsPendingHistoryAndWorktree(ctx
 			one: file(path: "one.txt") { contents }
 			two: file(path: "two.txt") { contents }
 			dirt: file(path: "tracked.txt") { contents }
+			changes { addedPaths modifiedPaths }
 			git {
 				head { commit }
 				stagedCommits { sha message }
 				uncommitted { modifiedPaths }
+			}
+			saved: withCommit(message: "save worktree", date: "2026-01-02T05:06:07Z") {
+				changes { isEmpty }
+				git {
+					stagedCommits { message }
+					uncommitted { isEmpty }
+				}
 			}
 		}
 	}`, &testutil.QueryOptions{Variables: map[string]any{
@@ -621,15 +640,14 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsPendingHistoryAndWorktree(ctx
 	require.Equal(t, "two\n", res.Workspace.Two.Contents)
 	require.Equal(t, "base\ndirty\n", res.Workspace.Dirt.Contents)
 	require.Equal(t, commits[1], res.Workspace.Git.Head.Commit)
-	require.Equal(t, []string{commits[0], commits[1]}, []string{
-		res.Workspace.Git.StagedCommits[0].SHA,
-		res.Workspace.Git.StagedCommits[1].SHA,
-	})
-	require.Equal(t, []string{"local one", "local two"}, []string{
-		res.Workspace.Git.StagedCommits[0].Message,
-		res.Workspace.Git.StagedCommits[1].Message,
-	})
+	require.Empty(t, res.Workspace.Git.StagedCommits, "captured user commits are already saved in the checkout")
+	require.Empty(t, res.Workspace.Changes.AddedPaths, "captured user commits are part of the workspace baseline")
+	require.Equal(t, []string{"tracked.txt"}, res.Workspace.Changes.ModifiedPaths)
 	require.Equal(t, []string{"tracked.txt"}, res.Workspace.Git.Uncommitted.ModifiedPaths)
+	require.True(t, res.Workspace.Saved.Changes.IsEmpty)
+	require.True(t, res.Workspace.Saved.Git.Uncommitted.IsEmpty)
+	require.Len(t, res.Workspace.Saved.Git.StagedCommits, 1)
+	require.Equal(t, "save worktree", res.Workspace.Saved.Git.StagedCommits[0].Message)
 }
 
 func syntheticWorkspaceSource(c *dagger.Client) *dagger.Directory {
