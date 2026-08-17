@@ -41,6 +41,21 @@ type captureRemote struct {
 	distance                                        int
 }
 
+// captureAdvertisedRef is one ref a remote currently advertises, reduced to
+// what base selection needs. sha is the advertised object, which revalidation
+// compares against a later advertisement, and commit is that object peeled to a
+// commit, which is what history queries take.
+type captureAdvertisedRef struct {
+	remote, url, ref, sha, commit string
+}
+
+// captureLocalOnlyEnv keeps base selection's object lookups inside the local
+// store. Selection probes commits a remote advertises but the checkout may not
+// have, and in a partial clone an ordinary lookup silently fetches every miss
+// from the promisor remote, which is both a network round trip per advertised
+// ref and a quiet write to the checkout being captured.
+var captureLocalOnlyEnv = []string{"GIT_NO_LAZY_FETCH=1"}
+
 type capturedPath struct {
 	path       string
 	tracked    bool
@@ -250,11 +265,61 @@ func normalizeCaptureLimits(policy *CaptureGitPolicy) (captureLimits, error) {
 	return limits, nil
 }
 
+// selectCaptureRemote proves the closest ancestor of head that a remote still
+// advertises, and names the ref a restore fetches to get it.
+//
+// The work is bounded by the number of remotes, not by how many refs they
+// advertise. One listing per remote is unavoidable, but everything after it
+// answers for the whole candidate set at once: a single batched object probe,
+// a single history walk, and a halving search for the ref that carries the
+// base. A repository whose remotes advertise tens of thousands of refs costs
+// the same handful of local git invocations as one with a dozen.
 func selectCaptureRemote(ctx context.Context, checkout, head string) (captureRemote, error) {
-	remotes := orderedCaptureRemotes(ctx, checkout)
-	best := captureRemote{distance: int(^uint(0) >> 1)}
-	found := false
-	for _, remote := range remotes {
+	unproven := errors.New("no currently advertised remote-backed ancestor was found")
+
+	advertised := advertisedCaptureRefs(ctx, checkout)
+	if len(advertised) == 0 {
+		return captureRemote{}, unproven
+	}
+	commits := make([]string, len(advertised))
+	for i, ref := range advertised {
+		commits[i] = ref.commit
+	}
+	// Walking head against every candidate at once yields the best base any
+	// single one of them can prove, which is the base to look for a ref for.
+	nearest, _, ok := captureFrontier(ctx, checkout, head, commits)
+	if !ok {
+		return captureRemote{}, unproven
+	}
+	selected, ok := advertisedRefReaching(ctx, checkout, nearest, advertised)
+	if !ok {
+		return captureRemote{}, unproven
+	}
+	// Measure against the one ref being recorded rather than against the
+	// combined candidate set, so the recorded base is exactly what a restore
+	// fetching that ref finds.
+	base, distance, ok := captureFrontier(ctx, checkout, head, []string{selected.commit})
+	if !ok {
+		return captureRemote{}, unproven
+	}
+	return captureRemote{
+		name:          selected.remote,
+		sanitizedURL:  sanitizeRemoteURL(selected.url),
+		ref:           selected.ref,
+		advertisedSHA: selected.sha,
+		baseSHA:       base,
+		distance:      distance,
+	}, nil
+}
+
+// advertisedCaptureRefs lists what every configured remote currently
+// advertises, in remote preference order, keeping only the refs that can
+// actually prove a base: ones a restore can fetch by name, and whose commit the
+// checkout already has.
+func advertisedCaptureRefs(ctx context.Context, checkout string) []captureAdvertisedRef {
+	var refs []captureAdvertisedRef
+	seen := map[string]struct{}{}
+	for _, remote := range orderedCaptureRemotes(ctx, checkout) {
 		out, err := runHostGit(ctx, checkout, "ls-remote", "--refs", remote)
 		if err != nil {
 			continue
@@ -263,40 +328,152 @@ func selectCaptureRemote(ctx context.Context, checkout, head string) (captureRem
 		if err != nil {
 			continue
 		}
+		url := strings.TrimSpace(urlOut)
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			fields := strings.Fields(line)
 			if len(fields) != 2 {
 				continue
 			}
-			advertised, ref := fields[0], fields[1]
-			if _, err := runHostGit(ctx, checkout, "cat-file", "-e", advertised+"^{commit}"); err != nil {
-				if _, err := runHostGit(ctx, checkout, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--filter=blob:none", remote, advertised); err != nil {
-					continue
-				}
-			}
-			baseOut, err := runHostGit(ctx, checkout, "merge-base", head, advertised)
-			if err != nil {
+			sha, ref := fields[0], fields[1]
+			// Branches and tags are the refs a restore can name. Forge-managed
+			// namespaces such as refs/pull/* and mirrored refs/remotes/* are not
+			// something a checkout is based on, and on a large repository they
+			// are the bulk of the advertisement.
+			if !strings.HasPrefix(ref, "refs/heads/") && !strings.HasPrefix(ref, "refs/tags/") {
 				continue
 			}
-			base := strings.TrimSpace(baseOut)
-			countOut, err := runHostGit(ctx, checkout, "rev-list", "--count", base+".."+head)
-			if err != nil {
+			// Remotes share history, so the same commit is usually advertised
+			// many times over. Keeping the first sighting keeps the preferred
+			// remote's name for it.
+			if _, ok := seen[sha]; ok {
 				continue
 			}
-			distance, err := strconv.Atoi(strings.TrimSpace(countOut))
-			if err != nil {
-				continue
-			}
-			if !found || distance < best.distance {
-				best = captureRemote{name: remote, sanitizedURL: sanitizeRemoteURL(strings.TrimSpace(urlOut)), ref: ref, advertisedSHA: advertised, baseSHA: base, distance: distance}
-				found = true
-			}
+			seen[sha] = struct{}{}
+			refs = append(refs, captureAdvertisedRef{remote: remote, url: url, ref: ref, sha: sha})
 		}
 	}
-	if !found {
-		return captureRemote{}, errors.New("no currently advertised remote-backed ancestor was found")
+	return localAdvertisedCommits(ctx, checkout, refs)
+}
+
+// localAdvertisedCommits keeps the advertised refs whose commit the checkout
+// already has, resolving annotated tags to the commit they name. One batched
+// probe answers for every ref at once.
+//
+// A ref the checkout has no commit for cannot prove anything: a base has to be
+// an ancestor of head, so it is already local, and what selection needs from a
+// ref is the history that connects the two. Fetching the rest would be a
+// network round trip per advertised ref to learn about commits that cannot
+// improve the answer.
+func localAdvertisedCommits(ctx context.Context, checkout string, refs []captureAdvertisedRef) []captureAdvertisedRef {
+	if len(refs) == 0 {
+		return nil
 	}
-	return best, nil
+	var stdin bytes.Buffer
+	for _, ref := range refs {
+		stdin.WriteString(ref.sha)
+		stdin.WriteString("^{commit}\n")
+	}
+	out, err := runHostGitBytes(ctx, checkout, captureLocalOnlyEnv, &stdin, "cat-file", "--batch-check")
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != len(refs) {
+		return nil
+	}
+	local := make([]captureAdvertisedRef, 0, len(refs))
+	for i, line := range lines {
+		// A resolved object reports "<oid> commit <size>"; a missing one echoes
+		// the request followed by "missing".
+		fields := strings.Fields(line)
+		if len(fields) != 3 || fields[1] != "commit" {
+			continue
+		}
+		resolved := refs[i]
+		resolved.commit = fields[0]
+		local = append(local, resolved)
+	}
+	return local
+}
+
+// captureFrontier walks head's history against a set of commits at once and
+// reports the newest ancestor of head those commits already contain, along with
+// how many commits sit between it and head. That ancestor is the base a bundle
+// can be cut from, and the count is what makes one candidate better than
+// another.
+func captureFrontier(ctx context.Context, checkout, head string, commits []string) (string, int, bool) {
+	var stdin bytes.Buffer
+	stdin.WriteString(head)
+	stdin.WriteString("\n")
+	for _, commit := range commits {
+		stdin.WriteString("^")
+		stdin.WriteString(commit)
+		stdin.WriteString("\n")
+	}
+	out, err := runHostGitBytes(ctx, checkout, captureLocalOnlyEnv, &stdin,
+		"rev-list", "--topo-order", "--boundary", "--stdin")
+	if err != nil {
+		return "", 0, false
+	}
+	var base string
+	distance := 0
+	for _, line := range strings.Fields(string(out)) {
+		if boundary, ok := strings.CutPrefix(line, "-"); ok {
+			if base == "" {
+				base = boundary
+			}
+			continue
+		}
+		distance++
+	}
+	if distance == 0 {
+		// The walk emitted nothing because head itself is advertised, so it is
+		// already its own base.
+		return head, 0, true
+	}
+	// Reaching a root without meeting a boundary means these commits share no
+	// history with head and cannot serve as a base.
+	return base, distance, base != ""
+}
+
+// advertisedRefReaching names the ref to record for a chosen base. A restore
+// fetches the recorded ref by name and expects the base in its history, so the
+// ref has to actually contain it.
+//
+// One reachability query answers for a whole set of refs at once, so this
+// halves the candidates rather than testing them one by one. Candidates stay in
+// remote preference order and the lower half is tried first, so the most
+// preferred ref that carries the base wins.
+func advertisedRefReaching(ctx context.Context, checkout, base string, refs []captureAdvertisedRef) (captureAdvertisedRef, bool) {
+	if len(refs) == 0 || !captureReaches(ctx, checkout, base, refs) {
+		return captureAdvertisedRef{}, false
+	}
+	for len(refs) > 1 {
+		half := len(refs) / 2
+		if captureReaches(ctx, checkout, base, refs[:half]) {
+			refs = refs[:half]
+		} else {
+			refs = refs[half:]
+		}
+	}
+	return refs[0], true
+}
+
+// captureReaches reports whether any of these refs already contains base.
+// Asking for base while excluding every candidate lists nothing exactly when
+// one of them contains it.
+func captureReaches(ctx context.Context, checkout, base string, refs []captureAdvertisedRef) bool {
+	var stdin bytes.Buffer
+	stdin.WriteString(base)
+	stdin.WriteString("\n")
+	for _, ref := range refs {
+		stdin.WriteString("^")
+		stdin.WriteString(ref.commit)
+		stdin.WriteString("\n")
+	}
+	out, err := runHostGitBytes(ctx, checkout, captureLocalOnlyEnv, &stdin,
+		"rev-list", "--max-count=1", "--stdin")
+	return err == nil && len(bytes.TrimSpace(out)) == 0
 }
 
 func orderedCaptureRemotes(ctx context.Context, checkout string) []string {
