@@ -152,6 +152,9 @@ func (span *Span) Call() *callpbv1.Call {
 	return span.callCache
 }
 
+// CallID rebuilds the ID of the call this span reports on. It is the DB-level
+// walk (DB.CallIDForDigest) narrowed to a span's own digest: the span is where
+// most callers start, but nothing about the rebuild needs one.
 func (span *Span) CallID() (*call.ID, error) {
 	if span.CallDigest == "" {
 		return nil, fmt.Errorf("no call for span")
@@ -307,12 +310,27 @@ type SpanSnapshot struct {
 
 	// AgentState is the agent's lifecycle state as of the most recent state
 	// record folded into this span, and AgentWaitingOn what it is parked on
-	// when that state is WAITING_INPUT. Unlike the fields above these arrive
-	// on log records rather than span attributes, because they change over
-	// the span's life and a live span's attributes are frozen at start (see
-	// the dagger.io/agent.* block in engine/telemetryattrs).
-	AgentState     string `json:",omitempty"`
-	AgentWaitingOn string `json:",omitempty"`
+	// when that state is WAITING_INPUT. AgentStopReason says who ended a
+	// STOPPED one — a caller (EXPLICIT) or session teardown (SESSION) — which
+	// is the only thing distinguishing a dismissal from a clean exit.
+	// AgentSnapshotDigest is the portable recipe digest of the agent's last
+	// conversation, the anchor a client re-hydrates the instance from.
+	//
+	// AgentPreTeardownState is the one piece of record HISTORY kept here: the
+	// last state that was not a session-teardown stop. Session close stops
+	// every surviving runtime, so latest-wins alone loses the state the user
+	// actually left the agent in — which is what a restore has to put back
+	// (DB.RestorePlan).
+	//
+	// Unlike the fields above these arrive on log records rather than span
+	// attributes, because they change over the span's life and a live span's
+	// attributes are frozen at start (see the dagger.io/agent.* block in
+	// engine/telemetryattrs).
+	AgentState            string `json:",omitempty"`
+	AgentWaitingOn        string `json:",omitempty"`
+	AgentStopReason       string `json:",omitempty"`
+	AgentSnapshotDigest   string `json:",omitempty"`
+	AgentPreTeardownState string `json:",omitempty"`
 
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
@@ -427,6 +445,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.DagBlockedAttr:
 		snapshot.Blocked = val.(bool)
+
+	case telemetryattrs.DagLeftRunningAttr:
+		snapshot.LeftRunning = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
