@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -129,6 +131,71 @@ func TestCaptureGitChoosesClosestAdvertisedAncestorAcrossRemotes(t *testing.T) {
 	require.Equal(t, "refs/heads/main", meta.GetRemoteRef())
 	require.Equal(t, other, meta.GetRemoteUrl())
 	require.Len(t, meta.GetCommits(), 1)
+}
+
+func TestCaptureGitSelectsBaseWithoutReachingForUnknownAdvertisedRefs(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, remote := initCaptureRepo(t)
+	base := gitCmd(t, home, repo, "rev-parse", "HEAD")
+
+	// Publish refs this checkout has never fetched. Base selection has to answer
+	// from what the checkout already has: asking git about an advertised commit
+	// it does not have is a network round trip, and a remote can advertise tens
+	// of thousands of refs.
+	publisher := filepath.Join(t.TempDir(), "publisher")
+	gitCmd(t, home, "", "clone", remote, publisher)
+	var unfetched []string
+	for i := range 8 {
+		branch := fmt.Sprintf("published-%02d", i)
+		gitCmd(t, home, publisher, "checkout", "-q", "-b", branch, base)
+		commitFile(t, publisher, home, branch+".txt", branch+"\n", branch)
+		unfetched = append(unfetched, gitCmd(t, home, publisher, "rev-parse", "HEAD"))
+		gitCmd(t, home, publisher, "push", "-q", "origin", branch)
+	}
+
+	commitFile(t, repo, home, "local.txt", "local\n", "local")
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+	require.Equal(t, base, meta.GetBaseSha())
+	require.Equal(t, "refs/heads/main", meta.GetRemoteRef())
+	require.Len(t, meta.GetCommits(), 1)
+
+	for _, sha := range unfetched {
+		require.Error(t, gitErr(home, repo, "cat-file", "-e", sha+"^{commit}"),
+			"capture pulled an advertised commit into the checkout it was reading")
+	}
+	require.Error(t, gitErr(home, repo, "config", "--get", "extensions.partialClone"),
+		"capture converted the checkout it was reading into a partial clone")
+}
+
+func TestCaptureGitSelectsBaseFromAdvertisedAnnotatedTag(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, _ := initCaptureRepo(t)
+	commitFile(t, repo, home, "tagged.txt", "tagged\n", "tagged")
+	tagged := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "tag", "-a", "v1", "-m", "v1")
+	gitCmd(t, home, repo, "push", "origin", "v1")
+	commitFile(t, repo, home, "tip.txt", "tip\n", "tip")
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+	// The tag names a nearer ancestor than the branch origin still advertises,
+	// and it advertises the tag object rather than the commit it points at, so
+	// selection has to peel it for history questions while recording the object
+	// a later advertisement is compared against.
+	require.Equal(t, tagged, meta.GetBaseSha())
+	require.Equal(t, "refs/tags/v1", meta.GetRemoteRef())
+	require.Len(t, meta.GetCommits(), 1)
+}
+
+// gitErr runs git for its exit status, for asserting that a lookup fails.
+func gitErr(home, dir string, args ...string) error {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = gitEnv(home)
+	return cmd.Run()
 }
 
 func TestCaptureGitSuspiciousPreflightReturnsNoBytesUntilExactApproval(t *testing.T) {
