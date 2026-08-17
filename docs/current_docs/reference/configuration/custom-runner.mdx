@@ -51,6 +51,22 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 To configure a manually started Dagger Engine, see the [Dagger Engine configuration documentation](./engine.mdx).
 
+Some engine settings are not in `engine.toml` — they are environment variables
+you pass when you start the runner container (for example
+[proxy settings](./proxy.mdx)). That is runner provisioning, not something the
+CLI picks up from your host shell: put `-e` on the container, then point the
+CLI at it with `_EXPERIMENTAL_DAGGER_RUNNER_HOST`.
+
+```shell
+docker run -d --name dagger-engine-v0.21.7 \
+  --privileged \
+  -v dagger-engine:/var/lib/dagger \
+  -e _DAGGER_ENGINE_SYSTEMENV_GOPROXY=https://goproxy.cn,direct \
+  registry.dagger.io/engine:v0.21.7
+
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=container://dagger-engine-v0.21.7
+```
+
 ## Connection interface
 
 After the runner starts up, the CLI needs to connect to it. In the default
