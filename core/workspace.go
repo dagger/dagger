@@ -163,6 +163,15 @@ type Workspace struct {
 	// that tree rather than being treated as an intentionally module-less value.
 	portableCheckpoint bool
 
+	// exportClientID and exportHostPath retain the originating live checkout as
+	// an ephemeral save destination for a freshly captured checkpoint. They are
+	// deliberately absent from persistence and the checkpoint recipe: a cold
+	// restore remains host-independent and cannot accidentally write back to the
+	// machine that produced it. Workspace.Clone carries them through edits and
+	// commits for the lifetime of the originating session.
+	exportClientID string
+	exportHostPath string
+
 	// userConfigKey is the normalized Git remote key identifying this
 	// workspace in user-level config. Empty when the workspace has no usable
 	// remote. Internal only.
@@ -840,9 +849,34 @@ func (ws *Workspace) LocalSourceHostPath() (string, bool) {
 	}
 }
 
+// SetExportTarget retains a live checkout as this workspace's ephemeral save
+// destination. The target is copied by Clone but deliberately not persisted.
+func (ws *Workspace) SetExportTarget(clientID, hostPath string) {
+	if ws == nil {
+		return
+	}
+	ws.exportClientID = clientID
+	ws.exportHostPath = hostPath
+}
+
+// ExportClientID returns the client session that should receive an explicit
+// save, including a freshly captured checkpoint's ephemeral origin.
+func (ws *Workspace) ExportClientID() string {
+	if ws == nil {
+		return ""
+	}
+	if ws.exportClientID != "" {
+		return ws.exportClientID
+	}
+	return ws.ClientID
+}
+
 func (ws *Workspace) ExportHostPath() (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
+	}
+	if ws.exportHostPath != "" {
+		return ws.exportHostPath, nil
 	}
 	switch src := ws.BaseSource().(type) {
 	case *WorkspaceSourceClientLocal:
