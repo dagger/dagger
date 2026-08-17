@@ -58,6 +58,8 @@ type GitRefID = dagql.ID[*GitRef]
 
 type GitCommitID = dagql.ID[*GitCommit]
 
+type WorkspaceCheckpointChunkID = dagql.ID[*WorkspaceCheckpointChunk]
+
 type SocketID = dagql.ID[*Socket]
 
 type LLMID = dagql.ID[*LLM]
