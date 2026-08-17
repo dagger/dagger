@@ -1352,6 +1352,9 @@ type Cache struct {
 	// currently associated with
 	resultOutputEqClasses map[sharedResultID]map[eqClassID]struct{}
 
+	// inverse of resultOutputEqClasses, keyed by canonical output eq-class root
+	outputEqClassResults map[eqClassID]map[sharedResultID]struct{}
+
 	// explicit result<->term associations. These are distinct from output eq
 	// class membership: multiple results can share an output eq class, but
 	// cache lookup for a matched term should first prefer results that were
@@ -1362,6 +1365,10 @@ type Cache struct {
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.
 	egraphResultsByDigest map[string]*set.TreeSet[sharedResultID]
+	// Exact reverse postings recorded for ordinary runtime results. Imported
+	// class-wide postings are deliberately omitted and marked broad instead.
+	resultIndexedDigests  map[sharedResultID][]string
+	broadlyIndexedResults map[sharedResultID]struct{}
 
 	// Explicit retained-root edges for persisted results.
 	persistedEdgesByResult map[sharedResultID]persistedEdge
