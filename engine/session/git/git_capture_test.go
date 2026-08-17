@@ -220,6 +220,30 @@ func TestCaptureGitSuspiciousPreflightReturnsNoBytesUntilExactApproval(t *testin
 	require.NotEmpty(t, approved.payload(CAPTURE_CHUNK_WORKTREE_DELTA))
 }
 
+func TestCaptureGitPreflightIgnoresCommittedContent(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, _ := initCaptureRepo(t)
+	secret := "-----BEGIN PRIVATE KEY-----\ncanary-committed-on-purpose\n"
+	commitFile(t, repo, home, "committed-key.pem", secret, "commit a key on purpose")
+
+	// Committing is already a decision to record content in history, so the
+	// preflight has nothing left to ask about it.
+	srv := captureGit(t, repo, &CaptureGitPolicy{})
+	require.Nil(t, srv.metadata(t).GetError())
+	require.Empty(t, srv.metadata(t).GetSuspiciousCandidates())
+	require.NotEmpty(t, srv.payload(CAPTURE_CHUNK_PREREQUISITE_BUNDLE))
+
+	// The same bytes uncommitted still need approval: that is the state a
+	// checkpoint carries off the host without anyone having committed it.
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "loose-key.pem"), []byte(secret), 0o600))
+	rejected := captureGit(t, repo, &CaptureGitPolicy{})
+	meta := rejected.metadata(t)
+	require.NotNil(t, meta.GetError())
+	require.Len(t, meta.GetSuspiciousCandidates(), 1)
+	require.Equal(t, "loose-key.pem", meta.SuspiciousCandidates[0].GetPath())
+	require.Equal(t, "credential-content", meta.SuspiciousCandidates[0].GetClassification())
+}
+
 func TestCaptureGitRejectsUnsupportedAndUnboundedState(t *testing.T) {
 	skipIfNoGit(t)
 	t.Run("non repository", func(t *testing.T) {
