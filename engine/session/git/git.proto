@@ -12,6 +12,7 @@ service Git {
   rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
   rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
   rpc PackWorktree(PackWorktreeRequest) returns (stream PackWorktreeResponse);
+  rpc CaptureGit(CaptureGitRequest) returns (stream CaptureGitResponse);
   rpc Push(stream PushRequest) returns (PushResponse);
 }
 
@@ -244,8 +245,90 @@ message ErrorInfo {
     PUSH_FAILED = 10;
     DETACHED_HEAD = 11;
     WORKTREE_UNSUPPORTED = 12;
+    CAPTURE_REJECTED = 13;
+    CAPTURE_FAILED = 14;
 }
   ErrorType type = 1;
   string message = 2;
+}
+
+// CaptureGit performs the security-sensitive host half of a portable Git
+// workspace checkpoint. It discovers a currently advertised remote ancestor,
+// validates linear local history, scans selected bytes, and only then emits a
+// prerequisite bundle and worktree patch as separate streams.
+message CaptureGitRequest {
+  string checkout_path = 1;
+  CaptureGitPolicy policy = 2;
+}
+
+// Safe tracked and untracked changes are included without confirmation.
+// Suspicious files require exact path approval; include_untracked can narrow
+// safe untracked selection. Patterns use Git path separators and path.Match.
+message CaptureGitPolicy {
+  repeated string include_untracked = 1;
+  repeated string exclude = 2;
+  repeated string approve_suspicious = 3;
+  int64 max_untracked_file_bytes = 4;
+  int64 max_untracked_total_bytes = 5;
+  int32 max_untracked_files = 6;
+  int64 max_tracked_file_bytes = 7;
+  int64 max_total_bytes = 8;
+}
+
+message CaptureGitResponse {
+  oneof msg {
+    CaptureGitMetadata metadata = 1;
+    CaptureGitChunk chunk = 2;
+  }
+}
+
+message CaptureGitChunk {
+  enum Kind {
+    CAPTURE_CHUNK_UNKNOWN = 0;
+    CAPTURE_CHUNK_PREREQUISITE_BUNDLE = 1;
+    CAPTURE_CHUNK_WORKTREE_DELTA = 2;
+  }
+  Kind kind = 1;
+  bytes data = 2;
+}
+
+message CaptureGitMetadata {
+  uint32 format_version = 1;
+  string object_format = 2;
+  string remote_url = 3;
+  string remote_ref = 4;
+  string base_sha = 5;
+  string head_sha = 6;
+  repeated CaptureGitCommit commits = 7;
+  string bundle_sha256 = 8;
+  int64 bundle_bytes = 9;
+  string worktree_sha256 = 10;
+  int64 worktree_bytes = 11;
+  int32 tracked_files = 12;
+  int32 untracked_files = 13;
+  int64 selected_bytes = 14;
+  ErrorInfo error = 15;
+  // suspicious_candidates is populated only on a fail-closed preflight. It
+  // carries path metadata for a local prompt/retry, never candidate bytes.
+  repeated CaptureGitCandidate suspicious_candidates = 16;
+}
+
+message CaptureGitCandidate {
+  string path = 1;
+  string classification = 2;
+  bool tracked = 3;
+  int64 bytes = 4;
+}
+
+message CaptureGitCommit {
+  string sha = 1;
+  string message = 2;
+  string author_name = 3;
+  string author_email = 4;
+  string author_date = 5;
+  string committer_name = 6;
+  string committer_email = 7;
+  string committer_date = 8;
+  repeated string paths = 9;
 }
 

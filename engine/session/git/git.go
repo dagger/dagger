@@ -93,6 +93,18 @@ func (p GitAttachableProxy) PackWorktree(req *PackWorktreeRequest, srv Git_PackW
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
 }
 
+func (p GitAttachableProxy) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.CaptureGit(grpcutil.IncomingToOutgoingContext(ctx), req)
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}
+
 func (p GitAttachableProxy) Push(srv Git_PushServer) error {
 	ctx, cancel := context.WithCancelCause(srv.Context())
 	defer cancel(errors.New("proxy stream closed"))
