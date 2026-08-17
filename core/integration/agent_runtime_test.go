@@ -2245,23 +2245,14 @@ func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, 
 }
 
 // rebuildDigest turns any advertised call digest into an encoded ID the way a
-// resuming client would: find the span carrying it and walk the call payloads
-// this client has ingested back into a chain. Unlike rebuild it asserts
-// nothing about which field the digest names, because the caller does.
+// resuming client would: walk the call payloads this client has ingested back
+// into a chain. The digest need not have its own span: payload-only frames are
+// exactly why the call-payload log channel exists.
 func (sink *agentTraceSink) rebuildDigest(t *testctx.T, digest string) string {
 	t.Helper()
 	var encoded string
 	sink.read(func(db *dagui.DB) {
-		var match *dagui.Span
-		for _, span := range db.Spans.Map {
-			if span.CallDigest == digest {
-				match = span
-				break
-			}
-		}
-		require.NotNil(t, match, "no span carries the advertised digest %q", digest)
-
-		callID, err := match.CallID()
+		callID, err := db.CallIDForDigest(digest)
 		require.NoError(t, err)
 		encoded, err = callID.Encode()
 		require.NoError(t, err)

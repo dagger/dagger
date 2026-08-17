@@ -12,15 +12,26 @@ type MessageNode struct {
 	Children []*MessageNode
 }
 
-// SurfacedConversation returns the whole trace's LLM conversation as a tree.
-// It is SurfacedConversationForSpan relative to the trace root.
+// SurfacedConversation returns the whole trace's LLM conversation as a tree:
+// every message span in the DB that no Boundary or Encapsulate contains.
+//
+// "The whole trace" is deliberately not "the root span's subtree". A resuming
+// client holds TWO traces in one DB (hack/designs/resume-from-trace.md §5.1) —
+// the live session's, rooted at db.RootSpan, and an imported one hanging off a
+// second parentless span — and the restored conversation has to surface
+// whichever root it hangs off. Resolving nil to db.RootSpan filed every
+// imported message as contained and dropped it, which is also how this
+// disagreed with HasConversationForSpan(nil): that one has always meant the
+// whole DB (see underSurfaceRoot). Scoped surfacing passes an explicit root
+// and is untouched, keeping the fixture containment it exists for.
 func (db *DB) SurfacedConversation() []*MessageNode {
 	return db.SurfacedConversationForSpan(nil)
 }
 
 // SurfacedConversationForSpan returns the LLM conversation beneath root as a
 // tree, independent of the `reveal` mechanism -- the message analog of
-// DB.SurfacedChecksForSpan. A nil root means the trace root.
+// DB.SurfacedChecksForSpan. A nil root means every message span in the DB, not
+// the trace root's subtree (see SurfacedConversation).
 //
 // Internal messages (the system prompt) are skipped, matching the live tree.
 //
@@ -30,9 +41,11 @@ func (db *DB) SurfacedConversation() []*MessageNode {
 // containment the reveal bubbling applies, and -- since the walk stops AT root
 // -- it also drops the transcript of the run that merely *contains* root when
 // the caller is zoomed into a subtree. A chain that is severed before reaching
-// root (an unreceived placeholder, or a reparenting seam the incremental fetch
-// never loaded) can't be proven boundary-free, so it's treated as contained
-// too -- exactly as for checks.
+// an EXPLICIT root (an unreceived placeholder, or a reparenting seam the
+// incremental fetch never loaded) can't be proven to be inside it, so it's
+// treated as contained too -- exactly as for checks. With no root there is
+// nothing for a chain to fail to reach: what remains is the containment
+// question, and a severed chain that passed no boundary is uncontained.
 //
 // Unlike checks there is no dedup: each message span is its own node, nested
 // under the nearest surfaced ancestor message (so a sub-agent's turns roll up
@@ -42,12 +55,14 @@ func (db *DB) SurfacedConversation() []*MessageNode {
 // The result is cached per DB mutation and per root, like SurfacedChecks;
 // callers must treat the returned nodes as read-only.
 func (db *DB) SurfacedConversationForSpan(root *Span) []*MessageNode {
-	r := db.surfaceRoot(root)
-	key := surfaceRootID(r)
+	// Deliberately NOT db.surfaceRoot(root): that resolves nil to the live
+	// trace root, which is right for checks/generators/services and wrong here
+	// (see SurfacedConversation).
+	key := surfaceRootID(root)
 	if db.surfacedConversationInit && db.surfacedConversationAt == db.mutations && db.surfacedConversationRoot == key {
 		return db.surfacedConversation
 	}
-	db.surfacedConversation = db.buildSurfacedConversation(r)
+	db.surfacedConversation = db.buildSurfacedConversation(root)
 	db.surfacedConversationAt = db.mutations
 	db.surfacedConversationRoot = key
 	db.surfacedConversationInit = true
