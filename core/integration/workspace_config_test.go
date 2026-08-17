@@ -178,6 +178,28 @@ func newWorkspaceModuleSettingsCtr(t *testctx.T, c *dagger.Client, configTOML st
 func (WorkspaceSuite) TestWorkspaceModuleSettingsRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	t.Run("git refs accept the same separators in sources and settings", func(ctx context.Context, t *testctx.T) {
+		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.wolfi]
+source = "https://github.com/dagger/dagger/modules/wolfi#v0.20.2"
+
+[modules.superconstructor]
+source = "defaults/superconstructor"
+entrypoint = true
+
+[modules.superconstructor.settings]
+count = 7
+greeting = "hello"
+dir = "https://github.com/dagger/dagger@v0.18.3"
+file = "/foo/hello.txt"
+password = "env://PASSWORD"
+service = "tcp://www:80"
+`)
+
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "dir", "entries"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "README.md")
+	})
+
 	t.Run("workspace module settings drive constructor help and runtime", func(ctx context.Context, t *testctx.T) {
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
 source = "defaults/superconstructor"

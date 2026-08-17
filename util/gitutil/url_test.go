@@ -39,6 +39,15 @@ func TestParseURL(t *testing.T) {
 			},
 		},
 		{
+			url: "https://github.com/moby/buildkit@v1.0.0",
+			result: GitURL{
+				Scheme:   HTTPSProtocol,
+				Host:     "github.com",
+				Path:     "/moby/buildkit",
+				Fragment: &GitURLFragment{Ref: "v1.0.0"},
+			},
+		},
+		{
 			url: "http://github.com/moby/buildkit#v1.0.0:subdir",
 			result: GitURL{
 				Scheme:   HTTPProtocol,
@@ -87,6 +96,17 @@ func TestParseURL(t *testing.T) {
 		},
 		{
 			url: "git@github.com:moby/buildkit.git#v1.0.0",
+			result: GitURL{
+				Scheme:   SSHProtocol,
+				Host:     "github.com",
+				Path:     "moby/buildkit.git",
+				Fragment: &GitURLFragment{Ref: "v1.0.0"},
+				User:     url.User("git"),
+				scpStyle: true,
+			},
+		},
+		{
+			url: "git@github.com:moby/buildkit.git@v1.0.0",
 			result: GitURL{
 				Scheme:   SSHProtocol,
 				Host:     "github.com",

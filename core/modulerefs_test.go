@@ -58,6 +58,13 @@ func TestParseRefString(t *testing.T) {
 			wantVersion:  "version",
 		},
 		{
+			urlStr:       "https://github.com/shykes/daggerverse/ci#version",
+			wantKind:     ModuleSourceKindGit,
+			wantCloneRef: "https://github.com/shykes/daggerverse",
+			wantSubdir:   "ci",
+			wantVersion:  "version",
+		},
+		{
 			// no dot in the ref string: treated as a local path
 			urlStr:     "./some/local/path",
 			wantKind:   ModuleSourceKindLocal,
