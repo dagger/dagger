@@ -78,7 +78,11 @@ func (WorkspaceSuite) TestWorkspacePushStagedCommits(ctx context.Context, t *tes
 	// that travelled through.
 	require.Equal(t, baseHead, gitOut(ctx, t, pushed, "rev-parse", "HEAD"))
 	require.Equal(t, baseHead, gitOut(ctx, t, pushed, "rev-parse", "refs/heads/"+branch))
-	require.Equal(t, " M a.txt", gitOut(ctx, t, pushed, "status", "--porcelain"))
+	// Read untrimmed: the leading blank column is the assertion — the edit is
+	// still an unstaged worktree modification, not staged by the push.
+	status, err := pushed.WithExec([]string{"git", "status", "--porcelain"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, " M a.txt\n", status)
 	require.Equal(t, "", gitOut(ctx, t, pushed, "for-each-ref", "refs/dagger"))
 }
 
