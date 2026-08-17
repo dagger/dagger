@@ -400,15 +400,29 @@ defmodule Dagger.ModuleSource do
   @doc """
   The SDK configuration of the module.
   """
-  @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
+  @spec sdk(t()) :: {:ok, Dagger.SDKConfig.t() | nil} | {:error, term()}
   def sdk(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("sdk")
+      module_source.query_builder |> QB.select("sdk") |> QB.select("id")
 
-    %Dagger.SDKConfig{
-      query_builder: query_builder,
-      client: module_source.client
-    }
+    case Client.execute(module_source.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.SDKConfig{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SDKConfig"),
+           client: module_source.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

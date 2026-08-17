@@ -148,19 +148,29 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     /**
      * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
      */
-    public function runtime(): Container
+    public function runtime(): ?Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('runtime');
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('runtime');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Container::class, new \Dagger\Id((string)$id), 'Container');
     }
 
     /**
      * The SDK config used by this module.
      */
-    public function sdk(): SDKConfig
+    public function sdk(): ?SDKConfig
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
-        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\SDKConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
     }
 
     /**
@@ -195,10 +205,15 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     /**
      * The source for the module.
      */
-    public function source(): ModuleSource
+    public function source(): ?ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('source');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('source');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ModuleSource::class, new \Dagger\Id((string)$id), 'ModuleSource');
     }
 
     /**

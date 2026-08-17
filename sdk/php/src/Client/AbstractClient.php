@@ -61,14 +61,15 @@ abstract class AbstractClient
      * @template T of object
      * @param class-string<T> $className Fully-qualified PHP class name (e.g. \Dagger\Container)
      * @param Id $id The object's ID
+     * @param ?string $graphQLTypeName GraphQL type name when it differs from the PHP class name
      * @return T
      */
-    public function loadObjectFromId(string $className, Id $id): object
+    public function loadObjectFromId(string $className, Id $id, ?string $graphQLTypeName = null): object
     {
         $shortName = (new ReflectionClass($className))->getShortName();
 
         // Reverse the PHP class name → GraphQL type name mapping
-        $graphQLTypeName = match ($shortName) {
+        $graphQLTypeName ??= match ($shortName) {
             'Function_' => 'Function',
             'Client' => 'Query',
             default => $shortName,

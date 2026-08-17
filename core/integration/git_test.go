@@ -1321,23 +1321,37 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 
 	git := ctr.Directory(".").AsGit()
 
-	ancestorStable, err := git.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	untaggedRef, err := git.Head().TargetCommit().ReleaseTag(ctx)
+	require.NoError(t, err)
+	require.Nil(t, untaggedRef)
+
+	ancestorStableRef, err := git.Head().TargetCommit().AncestorReleaseTag(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, ancestorStableRef)
+	ancestorStable, err := ancestorStableRef.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.0.0", ancestorStable)
 
-	ancestorPreRelease, err := git.Head().TargetCommit().
-		AncestorReleaseTag(dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true}).
-		Name(ctx)
+	ancestorPreReleaseRef, err := git.Head().TargetCommit().AncestorReleaseTag(ctx,
+		dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true})
+	require.NoError(t, err)
+	require.NotNil(t, ancestorPreReleaseRef)
+	ancestorPreRelease, err := ancestorPreReleaseRef.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.1.0-rc.1", ancestorPreRelease)
 
-	directStable, err := git.Commit(stableSHA).ReleaseTag().Name(ctx)
+	directStableRef, err := git.Commit(stableSHA).ReleaseTag(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, directStableRef)
+	directStable, err := directStableRef.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.0.0", directStable)
 
-	directPreRelease, err := git.Commit(rcSHA).
-		ReleaseTag(dagger.GitCommitReleaseTagOpts{IncludePreRelease: true}).
-		Name(ctx)
+	directPreReleaseRef, err := git.Commit(rcSHA).ReleaseTag(ctx,
+		dagger.GitCommitReleaseTagOpts{IncludePreRelease: true})
+	require.NoError(t, err)
+	require.NotNil(t, directPreReleaseRef)
+	directPreRelease, err := directPreReleaseRef.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.1.0-rc.1", directPreRelease)
 
@@ -1346,7 +1360,10 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	unreachable := ctr.
 		WithExec([]string{"git", "remote", "add", "origin", "https://invalid.invalid/repo.git"}).
 		Directory(".").AsGit()
-	offlineStable, err := unreachable.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	offlineStableRef, err := unreachable.Head().TargetCommit().AncestorReleaseTag(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, offlineStableRef)
+	offlineStable, err := offlineStableRef.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.0.0", offlineStable)
 }
@@ -1396,7 +1413,10 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 		commit := repo.Head().TargetCommit()
 		sha, err = commit.Sha(ctx)
 		require.NoError(t, err)
-		tag, err = commit.ReleaseTag().Name(ctx)
+		tagRef, err := commit.ReleaseTag(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, tagRef)
+		tag, err = tagRef.Name(ctx)
 		require.NoError(t, err)
 		return sha, advertised, tag
 	}

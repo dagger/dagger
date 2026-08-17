@@ -30,6 +30,8 @@ type DotnetClientDev {
   """
   pub sourcePath: String! = "sdk/dotnet/sdk"
 
+  let ws: Workspace!
+
   let originalWorkspace: Directory! = workspaceDir
 
   let baseContainer: Container! {
@@ -37,7 +39,7 @@ type DotnetClientDev {
       .from(dotnetSdkImage)
       .withWorkdir("/src")
 
-    ctr = daggerEngine.installClient(ctr)
+    ctr = daggerEngine(ws: self.ws).installClient(ctr)
   }
 
   ######################################
@@ -69,10 +71,25 @@ type DotnetClientDev {
   """
   pub test: Void @check {
     devContainer
-      .withFile("Dagger.SDK/introspection.json", daggerEngine.introspectionJson)
+      .withFile("Dagger.SDK/introspection.json", daggerEngine(ws: self.ws).introspectionJson)
       .withExec(["dotnet", "restore"])
       .withExec(["dotnet", "build", "--no-restore"])
       .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
+      .sync
+
+    null
+  }
+
+  """
+  Run source generator tests without compiling the generated SDK client.
+  """
+  pub sourceGeneratorTest: Void @check {
+    devContainer
+      .withExec([
+        "dotnet",
+        "test",
+        "Dagger.SDK.SourceGenerator.Tests/Dagger.SDK.SourceGenerator.Tests.csproj",
+      ])
       .sync
 
     null
@@ -117,7 +134,6 @@ type DotnetClientDev {
         devContainer
           .withExec(["dotnet", "tool", "restore"])
           .withExec(["dotnet", "csharpier", "."])
-          .rootfs
           .directory("/src"),
       )
 

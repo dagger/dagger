@@ -57,6 +57,7 @@ from codegen.generator import (
     format_name,
     format_output_type,
     generate,
+    supports_nullable_objects,
 )
 from codegen.generator import (
     Enum as EnumHandler,
@@ -155,7 +156,7 @@ cache_volume = Object(
         (NonNull(Scalar("FileID")), "FileID"),
         (Scalar("FileID"), "FileID | None"),
         (NonNull(cache_volume), "CacheVolume"),
-        (cache_volume, "CacheVolume"),
+        (cache_volume, "CacheVolume | None"),
         (List(NonNull(cache_volume)), "list[CacheVolume]"),
         (List(cache_volume), "list[CacheVolume | None]"),
     ],
@@ -284,6 +285,53 @@ def test_core_sync(ctx: Context):
     assert str(handler.func_body()).endswith(
         'return await self._ctx.execute_sync(self, "sync", _args)'
     )
+
+
+def test_nullable_object_field():
+    git_ref = Object("GitRef", {"id": Field(NonNull(GraphQLID))})
+    repository = Object("GitRepository", {})
+    handler = _ObjectField(
+        Context(),
+        "latestVersion",
+        Field(git_ref),
+        repository,
+    )
+
+    assert handler.func_signature() == (
+        "async def latest_version(self) -> GitRef | None:"
+    )
+    assert str(handler.func_body()).endswith("return await _ctx.execute_object(GitRef)")
+
+
+def test_nullable_object_field_older_engine():
+    git_ref = Object("GitRef", {"id": Field(NonNull(GraphQLID))})
+    repository = Object("GitRepository", {})
+    handler = _ObjectField(
+        Context(schema_version="v1.0.0-beta.9"),
+        "latestVersion",
+        Field(git_ref),
+        repository,
+    )
+
+    assert handler.func_signature() == "def latest_version(self) -> GitRef:"
+    assert str(handler.func_body()).endswith("return GitRef(_ctx)")
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("", True),
+        ("development", True),
+        ("v0.21.0-dev", False),
+        ("v1.0.0-beta.9-dev", False),
+        ("v1.0.0-beta.10", True),
+        ("v1.0.0-beta.10-dev", True),
+        ("v1.0.0-rc.1", True),
+        ("v1.0.0", True),
+    ],
+)
+def test_nullable_object_version_gate(version: str, expected: bool):
+    assert supports_nullable_objects(version) is expected
 
 
 def test_generate_modern_id_surface():

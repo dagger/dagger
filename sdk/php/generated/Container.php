@@ -107,10 +107,15 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves this container's configured docker healthcheck.
      */
-    public function dockerHealthcheck(): HealthcheckConfig
+    public function dockerHealthcheck(): ?HealthcheckConfig
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerHealthcheck');
-        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('dockerHealthcheck');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\HealthcheckConfig::class, new \Dagger\Id((string)$id), 'HealthcheckConfig');
     }
 
     /**
@@ -456,14 +461,19 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Return file status
      */
-    public function stat(string $path, ?bool $doNotFollowSymlinks = false): Stat
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): ?Stat
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
-        $innerQueryBuilder->setArgument('path', $path);
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $objectQueryBuilder->setArgument('path', $path);
         if (null !== $doNotFollowSymlinks) {
-        $innerQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        $objectQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
         }
-        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
     }
 
     /**

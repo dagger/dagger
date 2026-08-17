@@ -101,15 +101,29 @@ defmodule Dagger.Function do
   @doc """
   The location of this function declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
+  @spec source_map(t()) :: {:ok, Dagger.SourceMap.t() | nil} | {:error, term()}
   def source_map(%__MODULE__{} = function) do
     query_builder =
-      function.query_builder |> QB.select("sourceMap")
+      function.query_builder |> QB.select("sourceMap") |> QB.select("id")
 
-    %Dagger.SourceMap{
-      query_builder: query_builder,
-      client: function.client
-    }
+    case Client.execute(function.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.SourceMap{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SourceMap"),
+           client: function.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

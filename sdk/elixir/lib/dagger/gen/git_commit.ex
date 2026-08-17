@@ -19,17 +19,32 @@ defmodule Dagger.GitCommit do
   The latest semver release tag reachable from this commit.
   """
   @spec ancestor_release_tag(t(), [{:include_pre_release, boolean() | nil}]) ::
-          Dagger.GitRef.t() | nil
+          {:ok, Dagger.GitRef.t() | nil} | {:error, term()}
   def ancestor_release_tag(%__MODULE__{} = git_commit, optional_args \\ []) do
     query_builder =
       git_commit.query_builder
       |> QB.select("ancestorReleaseTag")
       |> QB.maybe_put_arg("includePreRelease", optional_args[:include_pre_release])
+      |> QB.select("id")
 
-    %Dagger.GitRef{
-      query_builder: query_builder,
-      client: git_commit.client
-    }
+    case Client.execute(git_commit.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.GitRef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("GitRef"),
+           client: git_commit.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -156,17 +171,33 @@ defmodule Dagger.GitCommit do
   @doc """
   The latest semver release tag that points directly at this commit.
   """
-  @spec release_tag(t(), [{:include_pre_release, boolean() | nil}]) :: Dagger.GitRef.t() | nil
+  @spec release_tag(t(), [{:include_pre_release, boolean() | nil}]) ::
+          {:ok, Dagger.GitRef.t() | nil} | {:error, term()}
   def release_tag(%__MODULE__{} = git_commit, optional_args \\ []) do
     query_builder =
       git_commit.query_builder
       |> QB.select("releaseTag")
       |> QB.maybe_put_arg("includePreRelease", optional_args[:include_pre_release])
+      |> QB.select("id")
 
-    %Dagger.GitRef{
-      query_builder: query_builder,
-      client: git_commit.client
-    }
+    case Client.execute(git_commit.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.GitRef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("GitRef"),
+           client: git_commit.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

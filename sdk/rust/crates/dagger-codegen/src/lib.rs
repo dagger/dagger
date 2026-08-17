@@ -44,6 +44,15 @@ mod tests {
         .unwrap()
     }
 
+    fn generate_from_json_at_version(json: &str, schema_version: &str) -> String {
+        let json = json.replacen(
+            '{',
+            &format!(r#"{{"__schemaVersion":"{schema_version}","#),
+            1,
+        );
+        generate_from_json(&json)
+    }
+
     /// Minimal schema with an interface, two implementing objects, and a
     /// Query root that returns the interface via node(id:).
     fn interface_schema() -> &'static str {
@@ -255,11 +264,25 @@ mod tests {
     #[test]
     fn interface_return_type_uses_client() {
         let code = generate_from_json(interface_schema());
-        // Query.node() should return NodeClient, not Node
+        // Query.node() should return an optional NodeClient, not Node.
         assert!(
-            code.contains("-> NodeClient"),
-            "expected node() to return NodeClient, not Node"
+            code.contains("Result<Option<NodeClient>, DaggerError>"),
+            "expected node() to return an optional NodeClient, not Node"
         );
+    }
+
+    #[test]
+    fn nullable_interface_keeps_older_engine_shape() {
+        let code = generate_from_json_at_version(interface_schema(), "v1.0.0-beta.9");
+        assert!(
+            code.contains("pub fn node(") && code.contains("-> NodeClient"),
+            "expected node() to remain chainable for older engines, got:\n{}",
+            code.lines()
+                .filter(|line| line.contains("fn node"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(!code.contains("Result<Option<NodeClient>, DaggerError>"));
     }
 
     #[test]

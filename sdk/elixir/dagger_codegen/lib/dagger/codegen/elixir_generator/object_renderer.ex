@@ -123,7 +123,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       ?\n,
       "  query_builder = ",
       ?\n,
-      render_query_builder_chain(field, module_var, required_args, optional_args),
+      render_query_builder_chain(type, field, module_var, required_args, optional_args),
       ?\n,
       render_return_value(type, field, module_var),
       ?\n,
@@ -215,6 +215,27 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         """
         case Client.execute(#{module_var}.client, query_builder) do
           {:ok, enum} -> {:ok, #{output_type}.from_string(enum)}
+          error -> error
+        end
+        """
+
+      type.supports_nullable_objects and field.type.kind in ["OBJECT", "INTERFACE"] ->
+        output_type = Formatter.format_output_type(field.type)
+        type_name = field.type.name
+
+        """
+        case Client.execute(#{module_var}.client, query_builder) do
+          {:ok, nil} -> {:ok, nil}
+          {:ok, id} ->
+            {:ok,
+             %#{output_type}{
+               query_builder:
+                 QB.query()
+                 |> QB.select("node")
+                 |> QB.put_arg("id", id)
+                 |> QB.inline_fragment("#{type_name}"),
+               client: #{module_var}.client
+             }}
           error -> error
         end
         """
@@ -336,6 +357,9 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
             Formatter.format_typespec_output_type(field.type)
           end
 
+        not type.supports_nullable_objects and field.type.kind in ["OBJECT", "INTERFACE"] ->
+          "#{Formatter.format_output_type(field.type)}.t()"
+
         true ->
           Formatter.format_typespec_output_type(field.type)
       end
@@ -420,7 +444,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     Enum.any?(fields, &(&1.name == "id"))
   end
 
-  def render_query_builder_chain(field, module_var, required_args, optional_args) do
+  def render_query_builder_chain(type, field, module_var, required_args, optional_args) do
     [
       "#{module_var}.query_builder",
       "|> QB.select(\"#{field.name}\")",
@@ -430,7 +454,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       for arg <- optional_args do
         ["|> QB.maybe_put_arg(", ?", arg.name, ?", ~c",", render_maybe_put_arg(arg), ")"]
       end,
-      if TypeRef.is_list_of?(field.type, "OBJECT") or
+      if (type.supports_nullable_objects and field.type.kind in ["OBJECT", "INTERFACE"]) or
+           TypeRef.is_list_of?(field.type, "OBJECT") or
            TypeRef.is_list_of?(field.type, "INTERFACE") do
         ["|> QB.select(\"id\")"]
       else

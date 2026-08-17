@@ -64,15 +64,29 @@ defmodule Dagger.FieldTypeDef do
   @doc """
   The location of this field declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
+  @spec source_map(t()) :: {:ok, Dagger.SourceMap.t() | nil} | {:error, term()}
   def source_map(%__MODULE__{} = field_type_def) do
     query_builder =
-      field_type_def.query_builder |> QB.select("sourceMap")
+      field_type_def.query_builder |> QB.select("sourceMap") |> QB.select("id")
 
-    %Dagger.SourceMap{
-      query_builder: query_builder,
-      client: field_type_def.client
-    }
+    case Client.execute(field_type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.SourceMap{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SourceMap"),
+           client: field_type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

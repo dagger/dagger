@@ -2961,9 +2961,11 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	t.Run("file-exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat := c.Directory().
+		stat, err := c.Directory().
 			WithNewFile("f", "data", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
-			Stat("f")
+			Stat(ctx, "f")
+		require.NoError(t, err)
+		require.NotNil(t, stat)
 
 		name, err := stat.Name(ctx)
 		require.NoError(t, err)
@@ -2983,9 +2985,11 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("file-dir-exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat := c.Directory().
+		stat, err := c.Directory().
 			WithNewDirectory("d", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
-			Stat("d")
+			Stat(ctx, "d")
+		require.NoError(t, err)
+		require.NotNil(t, stat)
 
 		name, err := stat.Name(ctx)
 		require.NoError(t, err)
@@ -3005,9 +3009,7 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("empty-path-fails", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat := c.Directory().Stat("")
-
-		_, err := stat.Name(ctx)
+		_, err := c.Directory().Stat(ctx, "")
 		require.ErrorContains(t, err, ": no such file or directory")
 	})
 }

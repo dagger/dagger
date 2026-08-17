@@ -370,18 +370,33 @@ defmodule Dagger.Directory do
   Return file status
   """
   @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
-          Dagger.Stat.t() | nil
+          {:ok, Dagger.Stat.t() | nil} | {:error, term()}
   def stat(%__MODULE__{} = directory, path, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("stat")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+      |> QB.select("id")
 
-    %Dagger.Stat{
-      query_builder: query_builder,
-      client: directory.client
-    }
+    case Client.execute(directory.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Stat{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Stat"),
+           client: directory.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

@@ -167,10 +167,15 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     /**
      * Return file status
      */
-    public function stat(): Stat
+    public function stat(): ?Stat
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
-        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
     }
 
     /**

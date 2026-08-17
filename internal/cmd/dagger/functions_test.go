@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -148,6 +149,32 @@ func TestCorePseudoModuleSelection(t *testing.T) {
 	moduleURL = "./core"
 	require.False(t, isCoreModuleSelected())
 	require.True(t, shouldLoadWorkspaceModules(false))
+}
+
+func TestHandleResponseNullableObject(t *testing.T) {
+	oldJSONOutput := jsonOutput
+	t.Cleanup(func() {
+		jsonOutput = oldJSONOutput
+	})
+
+	for _, json := range []bool{false, true} {
+		t.Run(fmt.Sprintf("json=%t", json), func(t *testing.T) {
+			jsonOutput = json
+
+			var out bytes.Buffer
+			err := handleResponse(
+				context.Background(),
+				nil,
+				testObjectTypeDef("Directory", "", ""),
+				nil,
+				&out,
+				io.Discard,
+				false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, "null\n", out.String())
+		})
+	}
 }
 
 func testStringTypeDef() *modTypeDef {

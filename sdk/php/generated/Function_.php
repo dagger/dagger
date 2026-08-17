@@ -72,10 +72,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The location of this function declaration.
      */
-    public function sourceMap(): SourceMap
+    public function sourceMap(): ?SourceMap
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
-        return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\SourceMap::class, new \Dagger\Id((string)$id), 'SourceMap');
     }
 
     /**

@@ -23,7 +23,8 @@ use Nette\PhpGenerator\Method;
 class NewCodegenVisitor extends CodeWriter
 {
     public function __construct(
-        string $targetDirectory
+        string $targetDirectory,
+        private readonly bool $supportsNullableObjects = true,
     ) {
         parent::__construct($targetDirectory);
     }
@@ -190,6 +191,8 @@ class NewCodegenVisitor extends CodeWriter
             $phpReturnType = $this->resolveReturnType($returnType, $field);
             if ($returnType->isNonNull()) {
                 $method->setReturnNullable(false);
+            } elseif ($this->supportsNullableObjects && ($returnType->isObject() || $returnType->isInterface())) {
+                $method->setReturnNullable(true);
             }
             $method->setReturnType($phpReturnType);
         }
@@ -210,6 +213,25 @@ class NewCodegenVisitor extends CodeWriter
                 [$field->name]
             );
             $method->addBody('return $this;');
+        } elseif (
+            $this->supportsNullableObjects
+            && !$returnType->isNonNull()
+            && ($returnType->isObject() || $returnType->isInterface())
+        ) {
+            $method->addBody('$objectQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
+            $this->generateMethodArgsBody($method, $sortedArgs, 'objectQueryBuilder');
+            $method->addBody('$objectQueryBuilder->selectField(?);', ['id']);
+            $method->addBody('$id = $this->queryLeaf($objectQueryBuilder, ?);', ['id']);
+            $method->addBody('if ($id === null) {');
+            $method->addBody('    return null;');
+            $method->addBody('}');
+            $returnClassName = $this->resolveReturnClassName($returnType, $field);
+            $graphQLTypeName = $this->unwrapNonNull($returnType)->leafName();
+            $method->addBody(
+                'return $this->client->loadObjectFromId(' . $returnClassName
+                . '::class, new \Dagger\Id((string)$id), ?);',
+                [$graphQLTypeName]
+            );
         } elseif ($this->isLeafReturn($returnType, $field)) {
             // Scalar/list/enum return: use queryLeaf
             $method->addBody('$leafQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
@@ -287,6 +309,8 @@ class NewCodegenVisitor extends CodeWriter
             $phpReturnType = $this->resolveReturnType($returnType, $field);
             if ($returnType->isNonNull()) {
                 $method->setReturnNullable(false);
+            } elseif ($this->supportsNullableObjects && ($returnType->isObject() || $returnType->isInterface())) {
+                $method->setReturnNullable(true);
             }
             $method->setReturnType($phpReturnType);
         }

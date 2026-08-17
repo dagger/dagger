@@ -16,55 +16,85 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
      */
-    public function asEnum(): EnumTypeDef
+    public function asEnum(): ?EnumTypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnum');
-        return new \Dagger\EnumTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asEnum');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\EnumTypeDef::class, new \Dagger\Id((string)$id), 'EnumTypeDef');
     }
 
     /**
      * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
      */
-    public function asInput(): InputTypeDef
+    public function asInput(): ?InputTypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInput');
-        return new \Dagger\InputTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asInput');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\InputTypeDef::class, new \Dagger\Id((string)$id), 'InputTypeDef');
     }
 
     /**
      * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
      */
-    public function asInterface(): InterfaceTypeDef
+    public function asInterface(): ?InterfaceTypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');
-        return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\InterfaceTypeDef::class, new \Dagger\Id((string)$id), 'InterfaceTypeDef');
     }
 
     /**
      * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
      */
-    public function asList(): ListTypeDef
+    public function asList(): ?ListTypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asList');
-        return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asList');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ListTypeDef::class, new \Dagger\Id((string)$id), 'ListTypeDef');
     }
 
     /**
      * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
      */
-    public function asObject(): ObjectTypeDef
+    public function asObject(): ?ObjectTypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asObject');
-        return new \Dagger\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asObject');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ObjectTypeDef::class, new \Dagger\Id((string)$id), 'ObjectTypeDef');
     }
 
     /**
      * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
      */
-    public function asScalar(): ScalarTypeDef
+    public function asScalar(): ?ScalarTypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asScalar');
-        return new \Dagger\ScalarTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asScalar');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ScalarTypeDef::class, new \Dagger\Id((string)$id), 'ScalarTypeDef');
     }
 
     /**

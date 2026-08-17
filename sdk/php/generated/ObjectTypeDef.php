@@ -16,10 +16,15 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The function used to construct new instances of this object, if any.
      */
-    public function constructor(): Function_
+    public function constructor(): ?Function_
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Function_::class, new \Dagger\Id((string)$id), 'Function');
     }
 
     /**
@@ -79,10 +84,15 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The location of this object declaration.
      */
-    public function sourceMap(): SourceMap
+    public function sourceMap(): ?SourceMap
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
-        return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\SourceMap::class, new \Dagger\Id((string)$id), 'SourceMap');
     }
 
     /**

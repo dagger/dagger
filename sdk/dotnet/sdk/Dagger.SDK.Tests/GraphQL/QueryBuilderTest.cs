@@ -109,8 +109,8 @@ public class QueryBuilderTest
     [TestMethod]
     public void TestNodeQueryBuilder()
     {
-        var query = global::Dagger.SDK.Object
-            .NodeQueryBuilder("some-id", "EnvVariable")
+        var query = global::Dagger
+            .SDK.Object.NodeQueryBuilder("some-id", "EnvVariable")
             .Select("name")
             .Build();
 

@@ -131,6 +131,11 @@ class Context:
         """Generate the pre-v0.21 ID/load helper source facade."""
         return legacy_sdk_compat(self.schema_version)
 
+    @property
+    def supports_nullable_objects(self) -> bool:
+        """Expose nullable object fields as values that must be resolved."""
+        return supports_nullable_objects(self.schema_version)
+
     def process_type(self, name: str):
         # This is only needed to keep track of remaining types because
         # of forward references.
@@ -366,6 +371,7 @@ def id_from_type(t: GraphQLType) -> IDName | None:
 
 
 LEGACY_SDK_COMPAT_CUTOVER = (0, 21, 0)
+NULLABLE_OBJECT_SDK_CUTOVER = (1, 0, 0, "beta", 10)
 
 
 def legacy_sdk_compat(schema_version: str) -> bool:
@@ -384,6 +390,31 @@ def parse_version(version: str) -> tuple[int, int, int] | None:
     if match is None:
         return None
     return tuple(int(part) for part in match.groups())
+
+
+def supports_nullable_objects(schema_version: str) -> bool:
+    """Whether nullable object fields use the new resolved return shape."""
+    if not schema_version:
+        return True
+
+    match = re.match(
+        r"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+)(?:\.(\d+))?)?",
+        schema_version,
+    )
+    if match is None:
+        return True
+
+    core = tuple(int(part) for part in match.groups()[:3])
+    cutover_core = NULLABLE_OBJECT_SDK_CUTOVER[:3]
+    if core != cutover_core:
+        return core > cutover_core
+
+    prerelease, number = match.groups()[3:]
+    if prerelease is None:
+        return True
+    if prerelease == "beta" and number is not None:
+        return int(number) >= NULLABLE_OBJECT_SDK_CUTOVER[4]
+    return prerelease > NULLABLE_OBJECT_SDK_CUTOVER[3]
 
 
 def legacy_id_name(type_name: TypeName) -> IDName:
@@ -512,13 +543,27 @@ def format_output_type(
     t: GraphQLOutputType,
     expected_type: TypeName | None = None,
     legacy_ids: bool = False,
+    nullable_objects: bool = True,
 ) -> str:
     """May be used as the output type of an object field."""
-    # When returning objects we're in query building mode, so don't return
-    # None even if the field's return is optional.
-    if not is_output_leaf_type(t) and not is_required_type(t):
+    # Lists of objects already execute eagerly and keep their established
+    # return shape. A directly nullable object must expose None because its
+    # accessor now executes to determine whether the object exists.
+    if (
+        (
+            not nullable_objects
+            or not isinstance(t, (GraphQLObjectType, GraphQLInterfaceType))
+        )
+        and not is_output_leaf_type(t)
+        and not is_required_type(t)
+    ):
         t = GraphQLNonNull(t)
-    return format_input_type(t, False, expected_type, legacy_ids)
+    return format_input_type(
+        cast(GraphQLInputType, t),
+        False,
+        expected_type,
+        legacy_ids,
+    )
 
 
 def output_type_description(t: GraphQLOutputType) -> str:
@@ -690,7 +735,13 @@ class _ObjectField:
 
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_list = is_list_of_objects_type(field.type)
-        self.is_exec = self.is_leaf or self.is_list
+        self.is_nullable_object = (
+            ctx.supports_nullable_objects
+            and not self.is_leaf
+            and not self.is_list
+            and not is_required_type(field.type)
+        )
+        self.is_exec = self.is_leaf or self.is_list or self.is_nullable_object
         self.is_void = self.is_leaf and self.named_type.name == "Void"
 
         # Read @expectedType directive from the field's AST node.
@@ -707,6 +758,7 @@ class _ObjectField:
             field.type,
             legacy_output_id_type,
             ctx.legacy_sdk_compat,
+            ctx.supports_nullable_objects,
         )
 
         # Any field in the API that returns an ID for its parent object should
@@ -804,6 +856,9 @@ class _ObjectField:
             # Use the concrete client class for interface types
             t = self._iface_client_name(self.type)
             yield f"return {t}(_ctx)"
+        elif self.is_nullable_object:
+            t = self._iface_client_name(self.named_type.name)
+            yield f"return await _ctx.execute_object({t})"
         elif self.is_list:
             n = self.named_type.name
             t = self._iface_client_name(n)

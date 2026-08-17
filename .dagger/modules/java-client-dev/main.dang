@@ -23,6 +23,7 @@ type JavaClientDev {
     "!sdk/java/README.md",
     "!sdk/java/pom.xml",
     "sdk/java/**/src/test",
+    "!sdk/java/dagger-codegen-maven-plugin/src/test/",
     "sdk/java/**/target",
   ])
 

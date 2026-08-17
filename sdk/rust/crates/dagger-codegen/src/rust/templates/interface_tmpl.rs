@@ -100,7 +100,12 @@ fn render_trait_method(
     // Build argument list (required args only for trait signatures)
     let args = render_trait_method_args(funcs, field);
 
-    if is_object {
+    if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<Option<$output_type>, $dagger_error>> + Send;
+        })
+    } else if is_object {
         Some(quote! {
             $(field.description.pipe(|d| format_struct_comment(d)))
             fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> $output_type;
@@ -192,7 +197,26 @@ fn render_trait_impl_method(
 
     let (arg_sig, _arg_pass) = render_trait_impl_arg_parts(funcs, field);
 
-    if is_object {
+    if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+        let graphql_name = type_ref.get_non_null().name.clone().unwrap_or_default();
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<Option<$(&output_type)>, $dagger_error>> + Send {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                let query = query.select("id");
+                let proc = self.proc.clone();
+                let graphql_client = self.graphql_client.clone();
+                async move {
+                    let id: Option<Id> = query.execute(graphql_client.clone()).await?;
+                    Ok(id.map(|id| $(&output_type) {
+                        proc,
+                        selection: query.root().select("node").arg("id", &id.0).inline_fragment($(genco::tokens::quoted(graphql_name))),
+                        graphql_client,
+                    }))
+                }
+            }
+        })
+    } else if is_object {
         Some(quote! {
             fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> $(&output_type) {
                 let mut query = self.selection.select($(genco::tokens::quoted(name)));

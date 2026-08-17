@@ -1442,9 +1442,12 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 
 		resultDir := beforeDir.WithChanges(changes)
 
-		fileType, err := resultDir.Stat("node", dagger.DirectoryStatOpts{
+		stat, err := resultDir.Stat(ctx, "node", dagger.DirectoryStatOpts{
 			DoNotFollowSymlinks: true,
-		}).FileType(ctx)
+		})
+		require.NoError(t, err)
+		require.NotNil(t, stat)
+		fileType, err := stat.FileType(ctx)
 		require.NoError(t, err)
 		require.Equal(t, dagger.FileTypeRegularType, fileType)
 
@@ -1483,9 +1486,12 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 		resultDir := beforeDir.WithChanges(afterDir.Changes(beforeDir))
 
 		assertFileType := func(p string, expected dagger.FileType) {
-			fileType, err := resultDir.Stat(p, dagger.DirectoryStatOpts{
+			stat, err := resultDir.Stat(ctx, p, dagger.DirectoryStatOpts{
 				DoNotFollowSymlinks: true,
-			}).FileType(ctx)
+			})
+			require.NoError(t, err)
+			require.NotNil(t, stat)
+			fileType, err := stat.FileType(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expected, fileType, p)
 		}

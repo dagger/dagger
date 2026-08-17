@@ -1011,13 +1011,19 @@ impl Check {
         query.execute(self.graphql_client.clone()).await
     }
     /// If the check failed, this is the error
-    pub fn error(&self) -> Error {
+    pub async fn error(&self) -> Result<Option<Error>, DaggerError> {
         let query = self.selection.select("error");
-        Error {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Error {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Error"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// A unique identifier for this Check.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -1960,13 +1966,19 @@ impl Container {
         }
     }
     /// Retrieves this container's configured docker healthcheck.
-    pub fn docker_healthcheck(&self) -> HealthcheckConfig {
+    pub async fn docker_healthcheck(&self) -> Result<Option<HealthcheckConfig>, DaggerError> {
         let query = self.selection.select("dockerHealthcheck");
-        HealthcheckConfig {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| HealthcheckConfig {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("HealthcheckConfig"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Return the container's OCI entrypoint.
     pub async fn entrypoint(&self) -> Result<Vec<String>, DaggerError> {
@@ -2474,14 +2486,20 @@ impl Container {
     ///
     /// * `path` - Path to check (e.g., "/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn stat(&self, path: impl Into<String>) -> Stat {
+    pub async fn stat(&self, path: impl Into<String>) -> Result<Option<Stat>, DaggerError> {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
-        Stat {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Stat {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Stat"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Return file status
     ///
@@ -2489,17 +2507,27 @@ impl Container {
     ///
     /// * `path` - Path to check (e.g., "/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn stat_opts(&self, path: impl Into<String>, opts: ContainerStatOpts) -> Stat {
+    pub async fn stat_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerStatOpts,
+    ) -> Result<Option<Stat>, DaggerError> {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
         if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
-        Stat {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Stat {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Stat"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The buffered standard error stream of the last executed command
     /// Returns an error if no command was executed
@@ -5512,14 +5540,20 @@ impl Directory {
     ///
     /// * `path` - Path to stat (e.g., "/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn stat(&self, path: impl Into<String>) -> Stat {
+    pub async fn stat(&self, path: impl Into<String>) -> Result<Option<Stat>, DaggerError> {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
-        Stat {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Stat {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Stat"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Return file status
     ///
@@ -5527,17 +5561,27 @@ impl Directory {
     ///
     /// * `path` - Path to stat (e.g., "/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn stat_opts(&self, path: impl Into<String>, opts: DirectoryStatOpts) -> Stat {
+    pub async fn stat_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryStatOpts,
+    ) -> Result<Option<Stat>, DaggerError> {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
         if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
-        Stat {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Stat {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Stat"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<Directory, DaggerError> {
@@ -6516,13 +6560,19 @@ impl EnumTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The location of this enum declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
@@ -6605,13 +6655,19 @@ impl EnumValueTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The location of this enum member declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The value of the enum member
     pub async fn value(&self) -> Result<String, DaggerError> {
@@ -7059,13 +7115,19 @@ impl FieldTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The location of this field declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The type of the field.
     pub fn type_def(&self) -> TypeDef {
@@ -7412,13 +7474,19 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Return file status
-    pub fn stat(&self) -> Stat {
+    pub async fn stat(&self) -> Result<Option<Stat>, DaggerError> {
         let query = self.selection.select("stat");
-        Stat {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Stat {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Stat"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<File, DaggerError> {
@@ -7665,13 +7733,19 @@ impl Function {
         }
     }
     /// The location of this function declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If this function is provided by a module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
@@ -7965,13 +8039,19 @@ impl FunctionArg {
         query.execute(self.graphql_client.clone()).await
     }
     /// The location of this arg declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The type of the argument.
     pub fn type_def(&self) -> TypeDef {
@@ -8505,29 +8585,44 @@ impl GitCommit {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn ancestor_release_tag(&self) -> GitRef {
+    pub async fn ancestor_release_tag(&self) -> Result<Option<GitRef>, DaggerError> {
         let query = self.selection.select("ancestorReleaseTag");
-        GitRef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| GitRef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("GitRef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The latest semver release tag reachable from this commit.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn ancestor_release_tag_opts(&self, opts: GitCommitAncestorReleaseTagOpts) -> GitRef {
+    pub async fn ancestor_release_tag_opts(
+        &self,
+        opts: GitCommitAncestorReleaseTagOpts,
+    ) -> Result<Option<GitRef>, DaggerError> {
         let mut query = self.selection.select("ancestorReleaseTag");
         if let Some(include_pre_release) = opts.include_pre_release {
             query = query.arg("includePreRelease", include_pre_release);
         }
-        GitRef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| GitRef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("GitRef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Git author email.
     pub async fn author_email(&self) -> Result<String, DaggerError> {
@@ -8589,29 +8684,44 @@ impl GitCommit {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn release_tag(&self) -> GitRef {
+    pub async fn release_tag(&self) -> Result<Option<GitRef>, DaggerError> {
         let query = self.selection.select("releaseTag");
-        GitRef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| GitRef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("GitRef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The latest semver release tag that points directly at this commit.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn release_tag_opts(&self, opts: GitCommitReleaseTagOpts) -> GitRef {
+    pub async fn release_tag_opts(
+        &self,
+        opts: GitCommitReleaseTagOpts,
+    ) -> Result<Option<GitRef>, DaggerError> {
         let mut query = self.selection.select("releaseTag");
         if let Some(include_pre_release) = opts.include_pre_release {
             query = query.arg("includePreRelease", include_pre_release);
         }
-        GitRef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| GitRef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("GitRef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The full commit SHA.
     pub async fn sha(&self) -> Result<String, DaggerError> {
@@ -9694,13 +9804,19 @@ impl InterfaceTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The location of this interface declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
@@ -11166,22 +11282,34 @@ impl Module {
             .collect())
     }
     /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-    pub fn runtime(&self) -> Container {
+    pub async fn runtime(&self) -> Result<Option<Container>, DaggerError> {
         let query = self.selection.select("runtime");
-        Container {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Container {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Container"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The SDK config used by this module.
-    pub fn sdk(&self) -> SdkConfig {
+    pub async fn sdk(&self) -> Result<Option<SdkConfig>, DaggerError> {
         let query = self.selection.select("sdk");
-        SdkConfig {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SdkConfig {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SDKConfig"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
@@ -11239,13 +11367,19 @@ impl Module {
         }
     }
     /// The source for the module.
-    pub fn source(&self) -> ModuleSource {
+    pub async fn source(&self) -> Result<Option<ModuleSource>, DaggerError> {
         let query = self.selection.select("source");
-        ModuleSource {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| ModuleSource {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("ModuleSource"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Forces evaluation of the module, including any loading into the engine and associated validation.
     pub async fn sync(&self) -> Result<Module, DaggerError> {
@@ -11672,13 +11806,19 @@ impl ModuleSource {
         query.execute(self.graphql_client.clone()).await
     }
     /// The SDK configuration of the module.
-    pub fn sdk(&self) -> SdkConfig {
+    pub async fn sdk(&self) -> Result<Option<SdkConfig>, DaggerError> {
         let query = self.selection.select("sdk");
-        SdkConfig {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SdkConfig {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SDKConfig"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The path, relative to the context directory, that contains the module config.
     pub async fn source_root_subpath(&self) -> Result<String, DaggerError> {
@@ -12106,13 +12246,19 @@ impl Loadable for ObjectTypeDef {
 }
 impl ObjectTypeDef {
     /// The function used to construct new instances of this object, if any.
-    pub fn constructor(&self) -> Function {
+    pub async fn constructor(&self) -> Result<Option<Function>, DaggerError> {
         let query = self.selection.select("constructor");
-        Function {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Function {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Function"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The reason this enum member is deprecated, if any.
     pub async fn deprecated(&self) -> Result<String, DaggerError> {
@@ -12169,13 +12315,19 @@ impl ObjectTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The location of this object declaration.
-    pub fn source_map(&self) -> SourceMap {
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
         let query = self.selection.select("sourceMap");
-        SourceMap {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
@@ -13008,7 +13160,7 @@ impl Query {
         }
     }
     /// Load any object by its ID.
-    pub fn node(&self, id: impl IntoID<Id>) -> NodeClient {
+    pub async fn node(&self, id: impl IntoID<Id>) -> Result<Option<NodeClient>, DaggerError> {
         let mut query = self.selection.select("node");
         query = query.arg_lazy(
             "id",
@@ -13017,11 +13169,17 @@ impl Query {
                 Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
-        NodeClient {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| NodeClient {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Node"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// Load a GraphQL introspection schema for merging.
     ///
@@ -14223,58 +14381,94 @@ impl Loadable for TypeDef {
 }
 impl TypeDef {
     /// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
-    pub fn as_enum(&self) -> EnumTypeDef {
+    pub async fn as_enum(&self) -> Result<Option<EnumTypeDef>, DaggerError> {
         let query = self.selection.select("asEnum");
-        EnumTypeDef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| EnumTypeDef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("EnumTypeDef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
-    pub fn as_input(&self) -> InputTypeDef {
+    pub async fn as_input(&self) -> Result<Option<InputTypeDef>, DaggerError> {
         let query = self.selection.select("asInput");
-        InputTypeDef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| InputTypeDef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("InputTypeDef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
-    pub fn as_interface(&self) -> InterfaceTypeDef {
+    pub async fn as_interface(&self) -> Result<Option<InterfaceTypeDef>, DaggerError> {
         let query = self.selection.select("asInterface");
-        InterfaceTypeDef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| InterfaceTypeDef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("InterfaceTypeDef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
-    pub fn as_list(&self) -> ListTypeDef {
+    pub async fn as_list(&self) -> Result<Option<ListTypeDef>, DaggerError> {
         let query = self.selection.select("asList");
-        ListTypeDef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| ListTypeDef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("ListTypeDef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
-    pub fn as_object(&self) -> ObjectTypeDef {
+    pub async fn as_object(&self) -> Result<Option<ObjectTypeDef>, DaggerError> {
         let query = self.selection.select("asObject");
-        ObjectTypeDef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| ObjectTypeDef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("ObjectTypeDef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
-    pub fn as_scalar(&self) -> ScalarTypeDef {
+    pub async fn as_scalar(&self) -> Result<Option<ScalarTypeDef>, DaggerError> {
         let query = self.selection.select("asScalar");
-        ScalarTypeDef {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| ScalarTypeDef {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("ScalarTypeDef"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// A unique identifier for this TypeDef.
     pub async fn id(&self) -> Result<Id, DaggerError> {

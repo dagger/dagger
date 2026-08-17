@@ -122,15 +122,29 @@ defmodule Dagger.Container do
   @doc """
   Retrieves this container's configured docker healthcheck.
   """
-  @spec docker_healthcheck(t()) :: Dagger.HealthcheckConfig.t() | nil
+  @spec docker_healthcheck(t()) :: {:ok, Dagger.HealthcheckConfig.t() | nil} | {:error, term()}
   def docker_healthcheck(%__MODULE__{} = container) do
     query_builder =
-      container.query_builder |> QB.select("dockerHealthcheck")
+      container.query_builder |> QB.select("dockerHealthcheck") |> QB.select("id")
 
-    %Dagger.HealthcheckConfig{
-      query_builder: query_builder,
-      client: container.client
-    }
+    case Client.execute(container.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.HealthcheckConfig{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("HealthcheckConfig"),
+           client: container.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -575,18 +589,33 @@ defmodule Dagger.Container do
   Return file status
   """
   @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
-          Dagger.Stat.t() | nil
+          {:ok, Dagger.Stat.t() | nil} | {:error, term()}
   def stat(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("stat")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+      |> QB.select("id")
 
-    %Dagger.Stat{
-      query_builder: query_builder,
-      client: container.client
-    }
+    case Client.execute(container.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Stat{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Stat"),
+           client: container.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

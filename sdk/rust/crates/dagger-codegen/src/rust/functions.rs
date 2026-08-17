@@ -38,7 +38,10 @@ pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
 pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
     let is_convert_id = CommonFunctions::convert_id(field);
     let is_async = field.type_.pipe(|t| &t.type_ref).pipe(|t| {
-        if !is_convert_id && t.is_object() {
+        if !is_convert_id
+            && t.is_object()
+            && (!t.is_optional() || !funcs.supports_nullable_objects())
+        {
             None
         } else {
             Some(quote! {
@@ -232,6 +235,12 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
     let output_type = funcs.format_output_type(type_ref);
 
     if type_ref.is_object() {
+        if funcs.supports_nullable_objects() && type_ref.is_optional() {
+            let dagger_error = rust::import("crate::errors", "DaggerError");
+            return quote! {
+                Result<Option<$output_type>, $dagger_error>
+            };
+        }
         return quote! {
             $(output_type)
         };
@@ -285,6 +294,23 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
                 selection: query.root().select("node").arg("id", &id.0).inline_fragment($(quoted(graphql_name))),
                 graphql_client: self.graphql_client.clone(),
             })
+        };
+    }
+
+    if let Some(true) = field.type_.pipe(|t| {
+        funcs.supports_nullable_objects() && t.type_ref.is_object() && t.type_ref.is_optional()
+    }) {
+        let type_ref = &field.type_.as_ref().unwrap().type_ref;
+        let output_type = funcs.format_output_type(type_ref);
+        let graphql_name = type_ref.get_non_null().name.clone().unwrap_or_default();
+        return quote! {
+            let query = query.select("id");
+            let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+            Ok(id.map(|id| $(output_type) {
+                proc: self.proc.clone(),
+                selection: query.root().select("node").arg("id", &id.0).inline_fragment($(quoted(graphql_name))),
+                graphql_client: self.graphql_client.clone(),
+            }))
         };
     }
 
