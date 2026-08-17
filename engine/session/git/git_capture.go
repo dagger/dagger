@@ -391,7 +391,8 @@ func captureCommitMetadata(ctx context.Context, checkout, base, head string) ([]
 		if err != nil {
 			return nil, errors.New("read local commit paths failed")
 		}
-		commits = append(commits, &CaptureGitCommit{Sha: fields[0], Message: fields[1], AuthorName: fields[2], AuthorEmail: fields[3], AuthorDate: fields[4], CommitterName: fields[5], CommitterEmail: fields[6], CommitterDate: fields[7], Paths: splitNullPaths(pathsOut)})
+		message := strings.TrimSuffix(fields[1], "\n")
+		commits = append(commits, &CaptureGitCommit{Sha: fields[0], Message: message, AuthorName: fields[2], AuthorEmail: fields[3], AuthorDate: fields[4], CommitterName: fields[5], CommitterEmail: fields[6], CommitterDate: fields[7], Paths: splitNullPaths(pathsOut)})
 		expectedParent = sha
 	}
 	if expectedParent != head {

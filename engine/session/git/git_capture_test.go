@@ -87,7 +87,7 @@ func TestCaptureGitSeparatesPrerequisitesAndSafeWorktree(t *testing.T) {
 	require.Equal(t, head, meta.GetHeadSha())
 	require.Equal(t, "refs/heads/main", meta.GetRemoteRef())
 	require.Len(t, meta.GetCommits(), 2)
-	require.Equal(t, []string{"local one\n", "local two\n"}, []string{meta.Commits[0].Message, meta.Commits[1].Message})
+	require.Equal(t, []string{"local one", "local two"}, []string{meta.Commits[0].Message, meta.Commits[1].Message})
 	require.Equal(t, int32(2), meta.GetUntrackedFiles(), "safe untracked files are auto-included")
 
 	bundle := srv.payload(CAPTURE_CHUNK_PREREQUISITE_BUNDLE)
