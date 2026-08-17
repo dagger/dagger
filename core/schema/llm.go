@@ -520,6 +520,13 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 // predecessor's tombstone). spawn is DoNotCache and ID-returning like every
 // imperative verb: lazy clients force the mint exactly once and re-hydrate
 // the handle from the ID, which replays the lookup, not the spawn.
+//
+// The registry entry is created HERE, not lazily on first use: spawn is
+// mint-create-pin, as rehydrate is adopt-create-pin. Since a registry miss on
+// send is an error rather than a constructor (resume-from-trace §4.2 — a miss
+// used to boot an amnesiac twin from the seed), the two verbs that create an
+// instance are the only two that create its entry, and every other verb
+// addresses one that exists.
 func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
 	Name dagql.Optional[dagql.String]
 }) (res dagql.Result[core.AgentID], _ error) {
@@ -558,6 +565,13 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 			},
 		},
 	}); err != nil {
+		return res, err
+	}
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	if _, err := agents.GetOrCreate(ctx, pinned); err != nil {
 		return res, err
 	}
 	pinnedID, err := pinned.ID()

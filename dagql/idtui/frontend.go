@@ -196,6 +196,36 @@ type TraceFrontend interface {
 // a signature drift here would otherwise silently disable them.
 var _ TraceFrontend = (*frontendPretty)(nil)
 
+// AgentRestorer is the optional interface `dagger agent --trace` drives to
+// read a restore plan out of the frontend's DB
+// (hack/designs/resume-from-trace.md §5.1, "Reading the DB back").
+//
+// Both calls are reads OF the frontend's DB, which the frontend owns
+// single-threaded while the import that filled it is still landing, so
+// neither can be a direct db access from the run goroutine. That is the whole
+// reason this is a frontend seam rather than a *dagui.DB passed around: the
+// lock is the frontend's, and only the frontend can take it.
+//
+// Only the pretty frontend implements it; a plain/dots/logs frontend holds no
+// span DB to restore from, so `--trace` fails there rather than silently
+// restoring nothing.
+type AgentRestorer interface {
+	// AgentRestorePlan projects the imported trace's agents into what the
+	// restore needs to re-hydrate them, live-session agents excluded
+	// (dagui.DB.RestorePlan).
+	AgentRestorePlan() []dagui.AgentRestore
+	// EncodedIDForCallDigest rebuilds the ID of the call with the given
+	// digest from the call payloads the frontend has ingested, and encodes
+	// it. This is how a restore anchor becomes a conversation to re-hydrate
+	// from; it fails loudly, naming the frame whose payload never arrived,
+	// which §5.3.3 turns into a failed restore.
+	EncodedIDForCallDigest(digest string) (string, error)
+}
+
+// The pretty frontend is the one that can restore -- as with the trace
+// capabilities, a signature drift here would silently disable it.
+var _ AgentRestorer = (*frontendPretty)(nil)
+
 type extendedError interface {
 	error
 	Extensions() map[string]any

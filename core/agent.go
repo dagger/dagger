@@ -660,7 +660,7 @@ func (rt *AgentRuntime) publishStateLocked() {
 }
 
 // commitLast commits next as the entry's last committed conversation and
-// publishes its recipe digest — the resume anchor of §4.3 in
+// publishes its portable recipe digest — the resume anchor of §4.3 in
 // hack/designs/resume-from-trace.md. Every advance of rt.last goes through
 // here, which is what makes the published digest a fact about the runtime
 // rather than an inference from whichever call spans happened to be emitted.
@@ -674,16 +674,22 @@ func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[
 	rt.publishSnapshotLocked(ctx)
 }
 
-// publishSnapshotLocked emits the recipe digest of the last committed
+// publishSnapshotLocked emits the portable recipe digest of the last committed
 // conversation, skipping a digest already published. Must be called with
 // rt.mu held.
 //
-// The RECIPE digest, deliberately: a post-evaluation result handle is an
-// engine-local reference that dies with its session, so it would name nothing
-// in the session that tries to resume from it (design §4.1). Derivation is
-// best-effort — an agent whose digest cannot be derived is still observable
-// and addressable, it just cannot be resumed from, which is exactly how
-// agentSpanAttrs treats the same failure.
+// The PORTABLE recipe digest, deliberately: a post-evaluation result handle is
+// an engine-local reference that dies with its session, while the runtime's raw
+// recipe retains every superseded workspace and tool binding on its receiver
+// chain. Replaying one of those stale bindings can re-run operations against
+// today's live workspace (for example an old Workspace.withCommit after that
+// commit was exported) even though the conversation no longer uses it.
+// PortableRecipe flattens the conversation to its effective bindings and data,
+// which is the same durability boundary used by saved sessions.
+//
+// Derivation is best-effort — an agent whose digest cannot be derived is still
+// observable and addressable, it just cannot be resumed from, which is exactly
+// how agentSpanAttrs treats the same failure.
 func (rt *AgentRuntime) publishSnapshotLocked(ctx context.Context) {
 	if rt.spanCtx == nil {
 		// No span to attribute the record to yet. The loop publishes the
@@ -693,7 +699,11 @@ func (rt *AgentRuntime) publishSnapshotLocked(ctx context.Context) {
 	if rt.last.Self() == nil {
 		return
 	}
-	dig, err := rt.last.RecipeDigest(ctx)
+	recipe, err := rt.last.Self().PortableRecipe(ctx)
+	if err != nil {
+		return
+	}
+	dig, err := recipe.RecipeDigest(ctx)
 	if err != nil {
 		return
 	}

@@ -1778,6 +1778,16 @@ session-independence half is what opens §4's unanswered lifetime question
 (when does an agent outlive every session that can see it?), and it still
 needs an owner.
 
+**Update: the generative half of item 13 is now closed.**
+`hack/designs/resume-from-trace.md` §4.2 (built) makes `AgentRuntimes.Send`
+use `Get` and error on a miss, so a resumed session's lookup miss no longer
+mints an amnesiac twin from the seed — it says the instance has no runtime
+here. Restoring one is now an explicit verb (`Agent.rehydrate`, §4.1), and
+entry creation belongs to the two verbs that create an instance: `spawn`
+mints and creates, `rehydrate` adopts and creates. The registry is still
+per-session, so item 13's session-independence half — and §4's lifetime
+question with it — remains open and still needs an owner.
+
 **Do not "keep the digest as a corroborating check".** It was proposed and it
 does not work: the rebuilt recipe's digest legitimately differs, which is the
 entire defect, so any check strong enough to be security-relevant also
@@ -1874,10 +1884,17 @@ bump lands base64 remains a requirement rather than a preference.
 (core/integration/callid_rebuild_test.go) is SKIPPED, and its comment carries
 the measurement and the next move; the closure walk goes through
 `ResultCall.RecipeID`, which an array-member receiver appears to defeat.
-(2) **Dedupe is session-wide but delivery is per-client**, so a NEW nested
-client created after a digest was claimed never receives it. Not a regression
-(it would not have had the span either), but if a consumer can ever attach
-fresh mid-session and rebuild IDs, the claim set has to become per-client.
+(2) ~~**Dedupe is session-wide but delivery is per-client**~~ RESOLVED: this
+bit for real — a nested `dagger agent` attaching to a long-running session
+(the tui-qa harness shape, and any CI nesting) could never rebuild worker
+IDs, because shared frames (the bare `Query.llm` root every compose selects)
+were claimed by clients whose delivery predated the new client's DB. Payload
+claims are now scoped to the emitting client's delivery domain — the client
+and its ancestors, exactly PubSub's fan-out set — via
+`Query.CallPayloadSeenKeyStore` (engine/server `callPayloadDeliveryStore`),
+so a later client's first closure walk re-publishes into its own domain. The
+session-wide SPAN dedupe is unchanged. Pinned by
+`TestCallPayloadDeliveryStore` (engine/server/session_test.go).
 (3) `DB.CallPayloads` still has no pruning path.
 
 *Tests that pin this.* `TestRosterAddressingWithSkills`
