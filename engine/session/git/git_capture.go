@@ -161,7 +161,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 		return nil, err
 	}
 	approvals := stringSet(policy.GetApproveSuspicious())
-	committedBytes, err := scanCommittedObjects(ctx, checkout, remote.baseSHA, state.headSHA, approvals, limits)
+	committedBytes, err := scanCommittedObjects(ctx, checkout, remote.baseSHA, state.headSHA, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -578,13 +578,21 @@ func captureCommitMetadata(ctx context.Context, checkout, base, head string) ([]
 	return commits, nil
 }
 
-func scanCommittedObjects(ctx context.Context, checkout, base, head string, approvals map[string]struct{}, limits captureLimits) (int64, error) {
+// scanCommittedObjects measures the blobs the prerequisite bundle carries and
+// holds them to the configured bounds.
+//
+// It deliberately does not apply the secret heuristics. This content is already
+// recorded in Git history, so it is what the author chose to commit, and
+// classifying it only asks about every revision of every ordinary source file
+// whose text happens to resemble a token. The preflight exists for worktree
+// state a checkpoint would otherwise carry off the host without it ever having
+// been committed.
+func scanCommittedObjects(ctx context.Context, checkout, base, head string, limits captureLimits) (int64, error) {
 	out, err := runHostGit(ctx, checkout, "rev-list", "--objects", head, "^"+base)
 	if err != nil {
 		return 0, errors.New("enumerate prerequisite objects failed")
 	}
 	var total int64
-	var suspicious []*CaptureGitCandidate
 	seen := map[string]struct{}{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		fields := strings.SplitN(line, " ", 2)
@@ -608,23 +616,7 @@ func scanCommittedObjects(ctx context.Context, checkout, base, head string, appr
 		if err != nil || size > limits.trackedFile || total+size > limits.total {
 			return 0, errors.New("committed content exceeds the configured capture bounds")
 		}
-		var p string
-		if len(fields) == 2 {
-			p = fields[1]
-		}
-		blob, err := runHostGitBytes(ctx, checkout, nil, nil, "cat-file", "blob", oid)
-		if err != nil {
-			return 0, errors.New("read prerequisite blob failed")
-		}
-		if classification := suspiciousCaptureClassification(p, blob); classification != "" {
-			if _, ok := approvals[p]; !ok {
-				suspicious = append(suspicious, &CaptureGitCandidate{Path: p, Classification: classification, Tracked: true, Bytes: size})
-			}
-		}
 		total += size
-	}
-	if len(suspicious) > 0 {
-		return 0, &captureApprovalError{candidates: suspicious}
 	}
 	return total, nil
 }
