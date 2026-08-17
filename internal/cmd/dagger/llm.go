@@ -238,6 +238,19 @@ func (s *LLMSession) Focus(ctx context.Context, instanceID, name, encodedID stri
 // Re-attaching to the same agent returns the existing conversation rather than
 // forking a second view of one runtime.
 func (s *LLMSession) Attach(ctx context.Context, instanceID, name, encodedID string) (*sessionAgent, error) {
+	return s.attach(ctx, instanceID, name, encodedID, false)
+}
+
+// AttachRestored adopts an agent this session RE-HYDRATED from a trace
+// (hack/designs/resume-from-trace.md §5.3). Same adoption, opposite ownership:
+// a restored agent has no other driver -- the session that published it is
+// gone -- so this session is the one whose business it is to stop it, and
+// .clear stopping the runtime is right.
+func (s *LLMSession) AttachRestored(ctx context.Context, instanceID, name, encodedID string) (*sessionAgent, error) {
+	return s.attach(ctx, instanceID, name, encodedID, true)
+}
+
+func (s *LLMSession) attach(ctx context.Context, instanceID, name, encodedID string, owned bool) (*sessionAgent, error) {
 	if existing := s.agentByInstance(instanceID); existing != nil {
 		return existing, nil
 	}
@@ -256,7 +269,7 @@ func (s *LLMSession) Attach(ctx context.Context, instanceID, name, encodedID str
 		name = "agent"
 	}
 	attached := s.newAgent(name)
-	attached.bindRuntime(rt, instanceID, encodedID, false)
+	attached.bindRuntime(rt, instanceID, encodedID, owned)
 	if err := attached.setLLM(dagger.Ref[*dagger.LLM](s.dag, snapID)); err != nil {
 		return nil, fmt.Errorf("attach to agent %q: %w", name, err)
 	}

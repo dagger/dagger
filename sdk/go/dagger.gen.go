@@ -439,6 +439,7 @@ type Agent struct {
 	interrupt  *ID
 	name       *string
 	pause      *ID
+	rehydrate  *ID
 	resume     *ID
 	send       *ID
 	start      *ID
@@ -559,6 +560,47 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 // Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
 func (r *Agent) Pause(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("pause")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AgentRehydrateOpts contains options for Agent.Rehydrate
+type AgentRehydrateOpts struct {
+	// The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED is a sealed tombstone whose snapshot stays readable, IDLE is ready to be prompted.
+	//
+	// RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
+	//
+	// Default: IDLE
+	State AgentState
+	// The loop error to restore, for state FAILED. Refused with any other state.
+	Error string
+}
+
+// Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
+//
+// The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
+//
+// The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
+//
+// Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
+func (r *Agent) Rehydrate(ctx context.Context, opts ...AgentRehydrateOpts) (*Agent, error) {
+	q := r.query.Select("rehydrate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `state` optional argument
+		if !querybuilder.IsZeroValue(opts[i].State) {
+			q = q.Arg("state", opts[i].State)
+		}
+		// `error` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Error) {
+			q = q.Arg("error", opts[i].Error)
+		}
+	}
 
 	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {

@@ -55,11 +55,12 @@ func agentSpanAttrs(ctx context.Context, name string, self dagql.ObjectResult[*A
 // state (AgentRuntime.publishStateLocked), so the record stream is the
 // agent's transition history rather than a sampling of it.
 //
-// waitingOn is the question a WAITING_INPUT agent is parked on, and is
-// emitted as an explicit empty string for every other state so a consumer
-// folding records latest-wins clears a stale one instead of showing a
-// question that has already been answered.
-func EmitAgentState(ctx context.Context, state AgentState, waitingOn string) {
+// waitingOn is the question a WAITING_INPUT agent is parked on, and stopReason
+// is what ended a STOPPED one. Both are emitted as an explicit empty string
+// for every other state, so a consumer folding records latest-wins clears a
+// stale value instead of showing a question that has already been answered —
+// or attributing an earlier stop's reason to a later transition.
+func EmitAgentState(ctx context.Context, state AgentState, waitingOn string, stopReason AgentStopReason) {
 	rec := log.Record{}
 	rec.SetTimestamp(time.Now())
 	// Explicit empty body: an unset body does not survive the OTLP
@@ -69,6 +70,28 @@ func EmitAgentState(ctx context.Context, state AgentState, waitingOn string) {
 	rec.AddAttributes(
 		log.String(telemetryattrs.AgentStateAttr, string(state)),
 		log.String(telemetryattrs.AgentWaitingOnAttr, waitingOn),
+		log.String(telemetryattrs.AgentStopReasonAttr, string(stopReason)),
 	)
 	telemetry.Logger(ctx, AgentInstrumentationScope).Emit(ctx, rec)
 }
+
+// EmitAgentSnapshot publishes the portable recipe digest of the agent's last
+// conversation, attributed to the loop span carried by ctx. Latest record
+// wins: this is the resume anchor a client re-hydrates the instance from.
+//
+// It is a record of its own rather than a field on the state record because
+// the two are triggered by different things — state records are edge-triggered
+// on the projected state, and most commits leave the state exactly where it
+// was while every commit moves the snapshot.
+func EmitAgentSnapshot(ctx context.Context, digest string) {
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	// Explicit empty body, for the same reason as EmitAgentState: this is
+	// data about the agent, never text from it.
+	rec.SetBody(log.StringValue(""))
+	rec.AddAttributes(
+		log.String(telemetryattrs.AgentSnapshotDigestAttr, digest),
+	)
+	telemetry.Logger(ctx, AgentInstrumentationScope).Emit(ctx, rec)
+}
+
