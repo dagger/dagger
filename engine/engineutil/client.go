@@ -2,6 +2,8 @@ package engineutil
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -686,6 +688,7 @@ const (
 	checkoutStateMethod = "/dagger.git.Git/CheckoutState"
 	packCheckoutMethod  = "/dagger.git.Git/PackCheckout"
 	packWorktreeMethod  = "/dagger.git.Git/PackWorktree"
+	captureGitMethod    = "/dagger.git.Git/CaptureGit"
 )
 
 // ErrGitPackUnsupported reports that the client cannot pack a checkout with
@@ -701,6 +704,20 @@ var ErrGitWorktreeUnsupported = errors.New("client cannot pack git worktrees")
 // ErrGitWorktreeHeadMismatch reports that the checkout moved away from the
 // HEAD against which the caller planned to apply its packed worktree delta.
 var ErrGitWorktreeHeadMismatch = errors.New("git worktree HEAD moved")
+
+// ErrGitCaptureUnsupported reports that the connected client predates the
+// safe portable-workspace capture RPC.
+var ErrGitCaptureUnsupported = errors.New("client cannot capture portable git workspaces")
+
+// GitCaptureApprovalError is a fail-closed preflight result. Candidates contain
+// path metadata only; the client has not sent any candidate file or Git object
+// bytes. A schema/CLI may prompt and retry with exact path approvals.
+type GitCaptureApprovalError struct {
+	Message    string
+	Candidates []*git.CaptureGitCandidate
+}
+
+func (e *GitCaptureApprovalError) Error() string { return e.Message }
 
 // GitCheckoutState asks the client for a digest of a local checkout's current
 // git state (HEAD, symbolic HEAD, branch and tag refs), resolved by the
@@ -904,6 +921,105 @@ func (c *Client) PackGitWorktree(ctx context.Context, checkoutPath, expectedHead
 	return pack, nil
 }
 
+// CaptureGit streams a client-preflighted portable Git capture. The consumer
+// should stage chunks until this method returns successfully; final size and
+// digest checks happen after the stream ends. A GitCaptureApprovalError means
+// no candidate bytes were sent and can be used to prompt before an exact-path
+// approval retry.
+func (c *Client) CaptureGit(
+	ctx context.Context,
+	checkoutPath string,
+	policy *git.CaptureGitPolicy,
+	consume func(git.CaptureGitChunk_Kind, []byte) error,
+) (*git.CaptureGitMetadata, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(captureGitMethod) {
+		return nil, ErrGitCaptureUnsupported
+	}
+	stream, err := git.NewGitClient(caller.Conn()).CaptureGit(ctx, &git.CaptureGitRequest{CheckoutPath: checkoutPath, Policy: policy})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open git capture stream: %w", err)
+	}
+
+	bundleHash, worktreeHash := sha256.New(), sha256.New()
+	var bundleBytes, worktreeBytes int64
+	var metadata *git.CaptureGitMetadata
+	seenWorktree := false
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive git capture: %w", err)
+		}
+		switch msg := response.Msg.(type) {
+		case *git.CaptureGitResponse_Metadata:
+			if metadata != nil {
+				return nil, errors.New("received more than one git capture metadata message")
+			}
+			metadata = msg.Metadata
+			if errInfo := metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.CAPTURE_REJECTED:
+					return nil, &GitCaptureApprovalError{Message: errInfo.Message, Candidates: append([]*git.CaptureGitCandidate(nil), metadata.SuspiciousCandidates...)}
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitCaptureUnsupported)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+		case *git.CaptureGitResponse_Chunk:
+			if metadata == nil {
+				return nil, errors.New("received git capture bytes before metadata")
+			}
+			chunk := msg.Chunk
+			switch chunk.GetKind() {
+			case git.CAPTURE_CHUNK_PREREQUISITE_BUNDLE:
+				if seenWorktree {
+					return nil, errors.New("received prerequisite data after worktree data")
+				}
+				bundleBytes += int64(len(chunk.Data))
+				_, _ = bundleHash.Write(chunk.Data)
+			case git.CAPTURE_CHUNK_WORKTREE_DELTA:
+				seenWorktree = true
+				worktreeBytes += int64(len(chunk.Data))
+				_, _ = worktreeHash.Write(chunk.Data)
+			default:
+				return nil, errors.New("received unknown git capture chunk kind")
+			}
+			if consume != nil {
+				if err := consume(chunk.Kind, chunk.Data); err != nil {
+					return nil, fmt.Errorf("consume git capture chunk: %w", err)
+				}
+			}
+		}
+	}
+	if metadata == nil {
+		return nil, errors.New("missing git capture metadata")
+	}
+	if metadata.FormatVersion != 1 || metadata.BaseSha == "" || metadata.HeadSha == "" || metadata.RemoteUrl == "" || metadata.RemoteRef == "" {
+		return nil, errors.New("invalid git capture manifest metadata")
+	}
+	if bundleBytes != metadata.BundleBytes || hex.EncodeToString(bundleHash.Sum(nil)) != metadata.BundleSha256 {
+		return nil, errors.New("git capture prerequisite bundle digest mismatch")
+	}
+	if worktreeBytes != metadata.WorktreeBytes || hex.EncodeToString(worktreeHash.Sum(nil)) != metadata.WorktreeSha256 {
+		return nil, errors.New("git capture worktree delta digest mismatch")
+	}
+	return metadata, nil
+}
+
+// TerminalClient represents an open terminal session.
 type TerminalClient struct {
 	Stdin    io.ReadCloser
 	Stdout   io.WriteCloser
