@@ -100,6 +100,21 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (UpSuite) TestUpListGoldenOutput(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+
+	out, err := modGen.
+		WithWorkdir("hello-with-services").
+		With(daggerExec("up", "-l")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello-with-services:infra:database\n"+
+		"hello-with-services:redis   # Returns a redis service\n"+
+		"hello-with-services:web     # Returns a web server service\n", out)
+}
+
 func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)

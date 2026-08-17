@@ -41,6 +41,7 @@ func TestStoreStreamsAndSpanQueries(t *testing.T) {
 	stats, err = store.AppendMetrics([]Metric{{Data: []byte("one")}, {Data: []byte("two")}})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), stats.LastID)
+	require.Equal(t, LastIDs{Spans: int64(len(spans)), Logs: int64(len(logs)), Metrics: 2}, store.LastIDs())
 
 	span, err := store.SelectSpan(t.Context(), SelectSpanParams{TraceID: "trace-a", SpanID: "child"})
 	require.NoError(t, err)

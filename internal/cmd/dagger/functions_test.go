@@ -3,13 +3,19 @@ package daggercmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func TestFindSiblingEntrypoint(t *testing.T) {
@@ -120,6 +126,165 @@ func TestFunctionArgNamedWorkspaceIgnoresInheritedGlobalWorkspaceFlag(t *testing
 	query, err := fc.q.Build(context.Background())
 	require.NoError(t, err)
 	require.NotContains(t, query, "workspace:")
+}
+
+func TestDetachedFinalQueryAndResponsePath(t *testing.T) {
+	oldOutputPath, oldJSONOutput := outputPath, jsonOutput
+	t.Cleanup(func() { outputPath, jsonOutput = oldOutputPath, oldJSONOutput })
+	outputPath, jsonOutput = "", false
+
+	fc := &FuncCommand{q: querybuilder.Query()}
+	cmd := &cobra.Command{Use: "call"}
+	receiver := testObjectTypeDef("Container", "", "")
+	stdout := &modFunction{Name: "stdout", ReturnType: testStringTypeDef()}
+	require.NoError(t, fc.selectFunc(&modFunction{Name: "container", ReturnType: receiver}, cmd))
+	require.NoError(t, fc.selectFunc(stdout, cmd))
+	q, leaf := handleObjectLeafWithPath(fc.q, stdout.ReturnType)
+	require.Empty(t, leaf)
+
+	presentation, err := detachedPresentation(stdout.ReturnType, fc.responsePath, q)
+	require.NoError(t, err)
+	require.Equal(t, []string{"container", "stdout"}, presentation.ResponsePath)
+	require.Equal(t, string(dagger.TypeDefKindStringKind), presentation.ReturnKind)
+
+	request, err := buildDetachedQueryRequest(context.Background(), q)
+	require.NoError(t, err)
+	var gqlRequest struct {
+		Query         string `json:"query"`
+		OperationName string `json:"operationName"`
+	}
+	require.NoError(t, json.Unmarshal(request, &gqlRequest))
+	require.Equal(t, "query Query {container{stdout}}", gqlRequest.Query)
+	require.Equal(t, "Query", gqlRequest.OperationName)
+}
+
+func TestDetachedPresentationSupportedAndRejectedResults(t *testing.T) {
+	oldOutputPath, oldJSONOutput := outputPath, jsonOutput
+	t.Cleanup(func() { outputPath, jsonOutput = oldOutputPath, oldJSONOutput })
+	outputPath, jsonOutput = "", false
+	q := querybuilder.Query().Select("value")
+
+	scalarKinds := []dagger.TypeDefKind{
+		dagger.TypeDefKindStringKind, dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind, dagger.TypeDefKindBooleanKind,
+		dagger.TypeDefKindScalarKind, dagger.TypeDefKindEnumKind,
+		dagger.TypeDefKindVoidKind,
+	}
+	for _, kind := range scalarKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			typeDef := &modTypeDef{Kind: kind}
+			presentation, err := detachedPresentation(typeDef, []string{"value"}, q)
+			require.NoError(t, err)
+			require.Equal(t, kind == dagger.TypeDefKindVoidKind, presentation.Void)
+		})
+	}
+
+	list := &modTypeDef{Kind: dagger.TypeDefKindListKind, AsList: &modList{ElementTypeDef: testStringTypeDef()}}
+	presentation, err := detachedPresentation(list, []string{"values"}, q)
+	require.NoError(t, err)
+	require.Equal(t, string(dagger.TypeDefKindStringKind), presentation.ElementKind)
+
+	object := testObjectTypeDef(Container, "", "")
+	_, err = detachedPresentation(object, []string{"container", "id"}, q)
+	require.NoError(t, err)
+
+	rejected := []struct {
+		name     string
+		typeDef  *modTypeDef
+		contains string
+	}{
+		{name: "object list", typeDef: &modTypeDef{Kind: dagger.TypeDefKindListKind, AsList: &modList{ElementTypeDef: object}}, contains: "object-list"},
+		{name: "changeset", typeDef: testObjectTypeDef(Changeset, "", ""), contains: "Changeset"},
+		{name: "changeset list", typeDef: &modTypeDef{Kind: dagger.TypeDefKindListKind, AsList: &modList{ElementTypeDef: testObjectTypeDef(Changeset, "", "")}}, contains: "Changeset"},
+		{name: "llm", typeDef: testObjectTypeDef(LLM, "", ""), contains: "LLM"},
+		{name: "terminal", typeDef: testObjectTypeDef("Terminal", "", ""), contains: "terminal"},
+		{name: "pipe", typeDef: testObjectTypeDef("Pipe", "", ""), contains: "pipe"},
+		{name: "interface", typeDef: &modTypeDef{Kind: dagger.TypeDefKindInterfaceKind, AsInterface: &modInterface{Name: "Thing"}}, contains: "interface"},
+	}
+	for _, test := range rejected {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := detachedPresentation(test.typeDef, []string{"value"}, q)
+			var usageErr *detachUsageError
+			require.ErrorAs(t, err, &usageErr)
+			require.ErrorContains(t, err, test.contains)
+		})
+	}
+
+	outputPath = "out"
+	_, err = detachedPresentation(testStringTypeDef(), []string{"value"}, q)
+	require.ErrorContains(t, err, "--output")
+}
+
+func TestDetachedResultExtractionAndFormatting(t *testing.T) {
+	oldStdoutIsTTY := stdoutIsTTY
+	t.Cleanup(func() { stdoutIsTTY = oldStdoutIsTTY })
+	stdoutIsTTY = false
+
+	presentation := engine.QueryPresentation{
+		ResponsePath: []string{"container", "stdout"},
+		ReturnKind:   string(dagger.TypeDefKindStringKind),
+	}
+	value, err := extractDetachedResult([]byte(`{"data":{"container":{"stdout":"hello"}}}`), presentation)
+	require.NoError(t, err)
+	var output bytes.Buffer
+	require.NoError(t, formatDetachedResult(&output, value, presentation))
+	require.Equal(t, "hello", output.String())
+
+	presentation.ResponsePath = []string{"values"}
+	presentation.ReturnKind = string(dagger.TypeDefKindListKind)
+	presentation.ElementKind = string(dagger.TypeDefKindStringKind)
+	value, err = extractDetachedResult([]byte(`{"data":{"values":["a","b"]}}`), presentation)
+	require.NoError(t, err)
+	output.Reset()
+	require.NoError(t, formatDetachedResult(&output, value, presentation))
+	require.Equal(t, "a\nb\n", output.String())
+
+	id := call.NewEngineResultID(42, call.NewType(&ast.Type{NamedType: "Container", NonNull: true}))
+	encodedID, err := id.Encode()
+	require.NoError(t, err)
+	presentation.ResponsePath = []string{"container", "id"}
+	presentation.ReturnKind = string(dagger.TypeDefKindObjectKind)
+	value, err = extractDetachedResult([]byte(fmt.Sprintf(`{"data":{"container":{"id":%q}}}`, encodedID)), presentation)
+	require.NoError(t, err)
+	output.Reset()
+	require.NoError(t, formatDetachedResult(&output, value, presentation))
+	require.Contains(t, output.String(), "Container@")
+
+	_, err = extractDetachedResult([]byte(`{"data":null,"errors":[{"message":"saved failure"}]}`), presentation)
+	require.ErrorContains(t, err, "saved failure")
+}
+
+func TestDetachedUpResultDecodeAndFormatting(t *testing.T) {
+	t.Parallel()
+	presentation := engine.QueryPresentation{
+		Kind: "up", ResponsePath: []string{"node", "_startDetached"},
+	}
+	const body = `{"data":{"node":{"_startDetached":"{\"services\":[{\"name\":\"web\",\"serviceId\":\"svc_web\",\"native\":true,\"portMappings\":[],\"backendPorts\":[{\"port\":8080,\"protocol\":\"TCP\"}]},{\"name\":\"db\",\"serviceId\":\"svc_db\",\"native\":false,\"portMappings\":[{\"frontend\":15432,\"backend\":5432,\"protocol\":\"TCP\"}],\"backendPorts\":[{\"port\":5432,\"protocol\":\"TCP\"}]}]}"}}}`
+	value, err := decodeDetachedResult([]byte(body), presentation)
+	require.NoError(t, err)
+	result, ok := value.(sessionwire.DetachedUpResult)
+	require.True(t, ok)
+	require.Len(t, result.Services, 2)
+	require.True(t, result.Services[0].Native)
+	require.Equal(t, 8080, result.Services[0].BackendPorts[0].Port)
+	require.Equal(t, 15432, *result.Services[1].PortMappings[0].Frontend)
+
+	var output bytes.Buffer
+	require.NoError(t, formatDetachedResult(&output, result, presentation))
+	require.Equal(t, "SERVICE   PORTS\nweb       8080/tcp\ndb        15432:5432/tcp\n", output.String())
+
+	const graphqlError = `{"data":{"node":null},"errors":[{"message":"saved startup failure"}]}`
+	_, err = decodeDetachedResult([]byte(graphqlError), presentation)
+	require.EqualError(t, err, "saved startup failure")
+}
+
+func TestDetachFlagIsCallLocal(t *testing.T) {
+	detachable := (&FuncCommand{Name: "call", EnableDetach: true}).Command()
+	require.NotNil(t, detachable.PersistentFlags().Lookup("detach"))
+	ordinary := (&FuncCommand{Name: "core"}).Command()
+	require.Nil(t, ordinary.PersistentFlags().Lookup("detach"))
+	require.Contains(t, callModCmd.Example, "call --detach")
+	require.Contains(t, apiCallCmd.Example, "api call --detach")
 }
 
 func TestCorePseudoModuleSelection(t *testing.T) {

@@ -109,6 +109,12 @@ type DB struct {
 	closeFn  func() error
 }
 
+type LastIDs struct {
+	Spans   int64
+	Logs    int64
+	Metrics int64
+}
+
 func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ *DB, rerr error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
@@ -190,6 +196,15 @@ func (s *DB) AppendMetrics(rows []Metric) (AppendStats, error) {
 // separate read pool, so selectors are bound to the same immutable streams.
 func (s *DB) Read() *DB {
 	return s
+}
+
+// LastIDs snapshots the currently committed append boundary of all three
+// streams. Each value is captured under that stream's append mutex, so a
+// bounded subscriber can never treat a later row as part of the snapshot.
+func (s *DB) LastIDs() LastIDs {
+	return LastIDs{
+		Spans: s.spans.LastID(), Logs: s.logs.LastID(), Metrics: s.metrics.LastID(),
+	}
 }
 
 func (s *DB) Close() error {

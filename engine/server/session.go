@@ -64,6 +64,23 @@ import (
 type daggerSession struct {
 	sessionID          string
 	mainClientCallerID string
+	creatorClientID    string
+	lifetime           sessionLifetime
+	createdAt          time.Time
+
+	attachmentMu      sync.Mutex
+	currentAttachment *sessionAttachment
+	nextGeneration    uint64
+	detachedAt        time.Time
+
+	queryMu             sync.RWMutex
+	primaryQuery        *detachedQuery
+	primaryQueryClaimed bool
+
+	terminating   atomic.Bool
+	terminateMu   sync.Mutex
+	terminateDone chan struct{}
+	terminateErr  error
 
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested
@@ -86,6 +103,9 @@ type daggerSession struct {
 	clientMu sync.RWMutex
 
 	attachables *sessionAttachableManager
+
+	sourceClientMu         sync.RWMutex
+	publishedSourceClients map[string]struct{}
 
 	closingCtx       context.Context
 	cancelClosing    context.CancelCauseFunc
@@ -294,6 +314,39 @@ type daggerClient struct {
 	// This field exists to "keepalive" the db while the client
 	// is around to avoid perf overhead of closing/reopening a lot
 	keepAliveTelemetryDB *clientdb.DB
+
+	attachmentClient bool
+	// attachmentGeneration binds an attach-role client to the exact attachment
+	// claim that created it. A later attachment may reuse the client ID, but it
+	// must never inherit authority from an older generation.
+	attachmentGeneration uint64
+	cleanupOnce          sync.Once
+	cleanupErr           error
+}
+
+type sessionLifetime uint8
+
+const (
+	sessionLifetimeAttached sessionLifetime = iota
+	sessionLifetimeDetachable
+)
+
+type sessionAttachment struct {
+	ID         string
+	Generation uint64
+	ClientID   string
+	Ready      bool
+	CreatedAt  time.Time
+	ctx        context.Context
+	cancel     context.CancelCauseFunc
+}
+
+func newSessionAttachment(id string, generation uint64, clientID string, createdAt time.Time) *sessionAttachment {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	return &sessionAttachment{
+		ID: id, Generation: generation, ClientID: clientID, CreatedAt: createdAt,
+		ctx: ctx, cancel: cancel,
+	}
 }
 
 func (srv *Server) getCoreSchemaBase(ctx context.Context) (*schema.CoreSchemaBase, error) {
@@ -335,6 +388,21 @@ func (client *daggerClient) closeKeepAliveTelemetryDB() error {
 	db := client.keepAliveTelemetryDB
 	client.keepAliveTelemetryDB = nil
 	return db.Close()
+}
+
+func (client *daggerClient) cleanupResources(ctx context.Context) error {
+	client.cleanupOnce.Do(func() {
+		client.cleanupErr = errors.Join(
+			client.ShutdownTelemetry(ctx),
+			client.closeKeepAliveTelemetryDB(),
+		)
+		if client.shutdownCh != nil {
+			client.closeShutdownOnce.Do(func() {
+				close(client.shutdownCh)
+			})
+		}
+	})
+	return client.cleanupErr
 }
 
 // slowDrainOp flags a shutdown-drain operation (a client's provider flush, a
@@ -422,6 +490,22 @@ func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
 	return seen
 }
 
+func (sess *daggerSession) markSourceClientPublished(clientID string) {
+	sess.sourceClientMu.Lock()
+	if sess.publishedSourceClients == nil {
+		sess.publishedSourceClients = map[string]struct{}{}
+	}
+	sess.publishedSourceClients[clientID] = struct{}{}
+	sess.sourceClientMu.Unlock()
+}
+
+func (sess *daggerSession) sourceClientPublished(clientID string) bool {
+	sess.sourceClientMu.RLock()
+	_, published := sess.publishedSourceClients[clientID]
+	sess.sourceClientMu.RUnlock()
+	return published
+}
+
 func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
 	sess.seenKeys.Store(key, struct{}{})
 }
@@ -482,6 +566,7 @@ func (srv *Server) initializeDaggerSession(
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
 	sess.attachables = newSessionAttachableManager()
+	sess.publishedSourceClients = map[string]struct{}{}
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
@@ -548,6 +633,18 @@ func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Contex
 	return ctx
 }
 
+func withAttachmentCancel(ctx, attachmentCtx context.Context) context.Context {
+	ctx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case <-attachmentCtx.Done():
+			cancel(context.Cause(attachmentCtx))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx
+}
+
 // requires that sess.lifecycleMu is held.
 //
 // removeDaggerSession does NOT remove the session from srv.daggerSessions; it
@@ -588,6 +685,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
+	srv.hitSessionHook(sessionTestEvent{Name: sessionHookResourceCleanup, SessionID: sess.sessionID, Resource: "services"})
 
 	slog.Debug("stopped services")
 
@@ -595,6 +693,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		errs = errors.Join(errs, sess.resolver.Close())
 		sess.resolver = nil
 	}
+	srv.hitSessionHook(sessionTestEvent{Name: sessionHookResourceCleanup, SessionID: sess.sessionID, Resource: "resolver"})
 
 	// Drain in-flight queries before declaring the wcprof completeness count and
 	// before shutting telemetry down below: it makes the per-trace span count EXACT
@@ -643,23 +742,15 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	for _, client := range clients {
 		releaseGroup.Go(func() error {
-			var errs error
-
-			// Flush all telemetry.
-			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
-
-			// Close the keepalive store reference; subscribers may re-open as
-			// needed with client.TelemetryDB(). Clearing the owned pointer before
-			// Close keeps repeated teardown paths from over-releasing the refcount.
-			errs = errors.Join(errs, client.closeKeepAliveTelemetryDB())
-
-			return errs
+			return client.cleanupResources(ctx)
 		})
 	}
 	errs = errors.Join(errs, releaseGroup.Wait())
+	srv.hitSessionHook(sessionTestEvent{Name: sessionHookResourceCleanup, SessionID: sess.sessionID, Resource: "containers-and-clients"})
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
+	srv.hitSessionHook(sessionTestEvent{Name: sessionHookResourceCleanup, SessionID: sess.sessionID, Resource: "analytics"})
 
 	// (queries were already drained above, before the completeness stamp + telemetry
 	// shutdown, so dagql is quiescent here for the cache release.)
@@ -670,6 +761,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
 	}
+	srv.hitSessionHook(sessionTestEvent{Name: sessionHookResourceCleanup, SessionID: sess.sessionID, Resource: "dagql-cache"})
 	afterDagqlEntries := srv.engineCache.Size()
 	afterDagqlStats := srv.engineCache.EntryStats()
 	if afterDagqlEntries != beforeDagqlEntries {
@@ -687,6 +779,12 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			"retainedCalls", afterDagqlStats.RetainedCalls,
 		)
 	}
+	if sess.lifetime == sessionLifetimeDetachable {
+		if err := srv.removeSessionResults(sess.sessionID); err != nil {
+			errs = errors.Join(errs, err)
+		}
+		srv.hitSessionHook(sessionTestEvent{Name: sessionHookResourceCleanup, SessionID: sess.sessionID, Resource: "results"})
+	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -701,11 +799,16 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 // teardown can't delete a freshly created same-id session. Call only after the
 // session's teardown is complete and lifecycleMu has been released.
 func (srv *Server) deleteSession(sess *daggerSession) {
+	deleted := false
 	srv.daggerSessionsMu.Lock()
 	if srv.daggerSessions[sess.sessionID] == sess {
 		delete(srv.daggerSessions, sess.sessionID)
+		deleted = true
 	}
 	srv.daggerSessionsMu.Unlock()
+	if deleted {
+		srv.hitSessionHook(sessionTestEvent{Name: sessionHookRegistryDelete, SessionID: sess.sessionID})
+	}
 }
 
 // stampSessionComplete declares the EXACT engine span total for the session's trace
@@ -783,6 +886,10 @@ type ClientInitOpts struct {
 
 	// If the client is running from a function in a module, this is that function call.
 	FunctionCall *core.FunctionCall
+
+	claimedAttachment *sessionAttachmentClaim
+	attachmentWork    bool
+	attachmentCtx     context.Context
 }
 
 // requires that client.stateMu is held
@@ -800,10 +907,13 @@ func (srv *Server) initializeDaggerClient(
 	slog.Info("initializing new client")
 	var callerG singleflight.Group[string, engineutil.SessionCaller]
 	client.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		if caller, ok := client.daggerSession.attachables.Lookup(id); ok {
+			return caller, nil
+		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
-			return client.daggerSession.attachables.Wait(ctx, id)
+			return client.daggerSession.waitForClientCaller(ctx, id)
 		})
 		return caller, err
 	}
@@ -1003,6 +1113,15 @@ func (srv *Server) initializeDaggerClient(
 	return nil
 }
 
+func (sess *daggerSession) waitForClientCaller(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
+	return sess.attachables.Wait(ctx, clientID, func() error {
+		if sess.lifetime == sessionLifetimeDetachable && sess.sourceClientPublished(clientID) {
+			return &engine.SourceClientUnavailableError{ClientID: clientID}
+		}
+		return nil
+	})
+}
+
 func (client *daggerClient) resolveHostServiceCaller(
 	ctx context.Context,
 	id string,
@@ -1104,6 +1223,22 @@ func (srv *Server) getOrInitClient(
 	if srv.isShuttingDown() {
 		return nil, nil, errServerShuttingDown
 	}
+	if opts.DetachableSession && opts.AttachSession {
+		return nil, nil, controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,
+			errors.New("detachable creation and session attachment roles are mutually exclusive"))
+	}
+	if opts.DetachableSession || opts.AttachSession {
+		if err := engine.ValidateSessionID(opts.SessionID); err != nil {
+			return nil, nil, malformedSessionIDError("session ID", opts.SessionID, err)
+		}
+		if err := engine.ValidateAttachmentID(opts.AttachmentID); err != nil {
+			return nil, nil, malformedSessionIDError("attachment ID", opts.AttachmentID, err)
+		}
+	}
+	if opts.DetachableSession && srv.terminalSessionIDExists(opts.SessionID) {
+		return nil, nil, controlError(http.StatusConflict, engine.SessionErrorSessionTerminated,
+			fmt.Errorf("session %s was terminated", opts.SessionID))
+	}
 
 	sessionID := opts.SessionID
 	if sessionID == "" {
@@ -1133,6 +1268,15 @@ func (srv *Server) getOrInitClient(
 	sess, sessionExists := srv.daggerSessions[sessionID]
 	createdSession := false
 	if !sessionExists {
+		if opts.AttachSession {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, sessionNotFoundError(sessionID)
+		}
+		if opts.DetachableSession && srv.terminalSessionIDExists(sessionID) {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, controlError(http.StatusConflict, engine.SessionErrorSessionTerminated,
+				fmt.Errorf("session %s was terminated", sessionID))
+		}
 		// Construct with immutable identity and a non-nil clients map, and lock
 		// the new session's lifecycleMu BEFORE publishing it, so this goroutine
 		// is guaranteed to be the session's initializer: any concurrent caller
@@ -1145,13 +1289,28 @@ func (srv *Server) getOrInitClient(
 		sess = &daggerSession{
 			sessionID:          sessionID,
 			mainClientCallerID: clientID,
+			creatorClientID:    clientID,
+			createdAt:          srv.nowTime(),
 			clients:            map[string]*daggerClient{},
+		}
+		if opts.DetachableSession {
+			sess.lifetime = sessionLifetimeDetachable
+			sess.nextGeneration = 1
+			sess.currentAttachment = newSessionAttachment(
+				opts.AttachmentID, 1, clientID, sess.createdAt,
+			)
+			opts.claimedAttachment = &sessionAttachmentClaim{
+				ID: opts.AttachmentID, Generation: 1, ClientID: clientID,
+			}
 		}
 		sess.lifecycleMu.Lock()
 		createdSession = true
 		srv.daggerSessions[sessionID] = sess
 	}
 	srv.daggerSessionsMu.Unlock()
+	if createdSession {
+		srv.hitSessionHook(sessionTestEvent{Name: sessionHookSessionPublished, SessionID: sessionID, ClientID: clientID, AttachmentID: opts.AttachmentID})
+	}
 
 	if !createdSession {
 		// Fast, lock-free check: if the session is already a removed tombstone,
@@ -1163,7 +1322,6 @@ func (srv *Server) getOrInitClient(
 		}
 		sess.lifecycleMu.Lock()
 	}
-
 	// We now hold sess.lifecycleMu. The deferred handler below manages the unlock
 	// for both success and failure. On failure of a session WE created it:
 	// publishes the removed tombstone (while still holding lifecycleMu, so a
@@ -1198,6 +1356,21 @@ func (srv *Server) getOrInitClient(
 			srv.deleteSession(sess)
 		}
 	}()
+	if opts.DetachableSession {
+		if sess.lifetime != sessionLifetimeDetachable || sess.creatorClientID != clientID {
+			return nil, nil, controlError(http.StatusConflict, engine.SessionErrorAlreadyAttached,
+				fmt.Errorf("session %s is not owned by creator client %s", sessionID, clientID))
+		}
+		if sess.terminating.Load() {
+			return nil, nil, controlError(http.StatusConflict, engine.SessionErrorSessionTerminating,
+				fmt.Errorf("session %s is terminating", sessionID))
+		}
+	}
+	if opts.AttachSession {
+		if sess.lifetime != sessionLifetimeDetachable || sess.terminating.Load() {
+			return nil, nil, sessionNotFoundError(sessionID)
+		}
+	}
 
 	switch sess.state.Load() {
 	case sessionStateUninitialized:
@@ -1210,6 +1383,38 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q removed", sessionID)}
 	}
 
+	// Attachment claims and attach-role work are serialized against detach. A
+	// claimed attachables request must still own the exact claim when it
+	// publishes its client. Every later work request must come from that ready
+	// client's exact generation. Keep ownership through activeCount++ so detach
+	// cancels either before this request starts or after it has a lifetime-bound
+	// context; there is no unauthorised gap between the check and admission.
+	attachmentHeld := false
+	if opts.claimedAttachment != nil || opts.attachmentWork {
+		sess.attachmentMu.Lock()
+		attachmentHeld = true
+		defer func() {
+			if attachmentHeld {
+				sess.attachmentMu.Unlock()
+			}
+		}()
+		attachment := sess.currentAttachment
+		claim := opts.claimedAttachment
+		if claim != nil {
+			if attachment == nil || attachment.ID != claim.ID ||
+				attachment.Generation != claim.Generation || attachment.ClientID != claim.ClientID {
+				return nil, nil, attachmentMismatchError(sessionID, opts.AttachmentID, clientID)
+			}
+		}
+		if opts.attachmentWork {
+			if attachment == nil || !attachment.Ready || attachment.ID != opts.AttachmentID ||
+				attachment.ClientID != clientID || attachment.ctx == nil || attachment.ctx.Err() != nil {
+				return nil, nil, attachmentMismatchError(sessionID, opts.AttachmentID, clientID)
+			}
+			opts.attachmentCtx = attachment.ctx
+		}
+	}
+
 	// get or initialize the client itself.
 	//
 	// A client is inserted into sess.clients only AFTER it is fully initialized,
@@ -1220,16 +1425,26 @@ func (srv *Server) getOrInitClient(
 	sess.clientMu.RLock()
 	client, clientExists := sess.clients[clientID]
 	sess.clientMu.RUnlock()
+	if opts.attachmentWork && (!clientExists || !client.attachmentClient ||
+		client.attachmentGeneration != sess.currentAttachment.Generation) {
+		return nil, nil, attachmentMismatchError(sessionID, opts.AttachmentID, clientID)
+	}
 
 	if !clientExists {
+		var attachmentGeneration uint64
+		if opts.claimedAttachment != nil {
+			attachmentGeneration = opts.claimedAttachment.Generation
+		}
 		client = &daggerClient{
-			state:          clientStateUninitialized,
-			daggerSession:  sess,
-			clientID:       clientID,
-			clientVersion:  opts.ClientVersion,
-			secretToken:    token,
-			shutdownCh:     make(chan struct{}),
-			clientMetadata: opts.ClientMetadata,
+			state:                clientStateUninitialized,
+			daggerSession:        sess,
+			clientID:             clientID,
+			clientVersion:        opts.ClientVersion,
+			secretToken:          token,
+			shutdownCh:           make(chan struct{}),
+			clientMetadata:       opts.ClientMetadata,
+			attachmentClient:     opts.AttachSession,
+			attachmentGeneration: attachmentGeneration,
 		}
 
 		// Open the store outside clientMu because replaying persisted streams can
@@ -1358,6 +1573,9 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 		"sessionID", sess.sessionID,
 		"clientID", client.clientID,
 	).Info("all client connections closed")
+	if sess.lifetime == sessionLifetimeDetachable {
+		return nil
+	}
 
 	if client.clientID != sess.mainClientCallerID {
 		return nil
@@ -1442,6 +1660,11 @@ func (srv *Server) ServeHTTPToNestedClient(
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
 		return
 	}
+	if isSessionControlPath(r.URL.Path) {
+		controlError(http.StatusForbidden, engine.SessionErrorInvalidRequest,
+			errors.New("session control routes are unavailable to nested clients")).WriteTo(w)
+		return
+	}
 	clientMetadata := nestedClientMetadataForRequest(r.Header, nestedClientMetadata)
 
 	var moduleContext dagql.ObjectResult[*core.Module]
@@ -1482,6 +1705,12 @@ func (srv *Server) ServeHTTPToNestedClient(
 
 func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.ClientMetadata) *engine.ClientMetadata {
 	clientMetadata := *nestedClientMetadata
+	// Detachable lifecycle control is top-level transport state. A nested
+	// client may share the session identity, but it may never create, claim, or
+	// close the top-level attachment.
+	clientMetadata.DetachableSession = false
+	clientMetadata.AttachSession = false
+	clientMetadata.AttachmentID = ""
 	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
 	if clientMetadata.ClientVersion == "" {
 		clientMetadata.ClientVersion = engine.Version
@@ -1539,6 +1768,9 @@ const InstrumentationLibrary = "dagger.io/engine.server"
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	if srv.isShuttingDown() {
+		if isSessionControlPath(r.URL.Path) || (r.URL.Path == engine.SessionAttachablesEndpoint && (opts.DetachableSession || opts.AttachSession)) {
+			return controlError(http.StatusServiceUnavailable, engine.SessionErrorSessionTerminating, errServerShuttingDown)
+		}
 		switch r.URL.Path {
 		case engine.QueryEndpoint:
 			return gqlErr(errServerShuttingDown, http.StatusServiceUnavailable)
@@ -1589,21 +1821,62 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
 		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
 	}).Debug("handling http request")
-
+	if isSessionControlPath(r.URL.Path) {
+		r = r.WithContext(ctx)
+		srv.serveSessionControl(w, r)
+		return nil
+	}
 	mux := http.NewServeMux()
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs", "/v1/metrics":
-		// Just get the client if it exists, don't init it.
-		client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+		var client *daggerClient
+		var cleanup func() error
+		var err error
+		if opts.AttachSession {
+			opts.attachmentWork = true
+			client, cleanup, err = srv.getOrInitClient(ctx, opts)
+		} else {
+			// Ordinary telemetry subscriptions only require an existing client.
+			client, err = srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+		}
 		if err != nil {
+			var controlErr sessionControlError
+			if errors.As(err, &controlErr) {
+				return controlErr
+			}
 			return fmt.Errorf("get client: %w", err)
+		}
+		if cleanup != nil {
+			defer func() {
+				rerr = errors.Join(rerr, cleanup())
+			}()
+			ctx = withAttachmentCancel(ctx, opts.attachmentCtx)
+			r = r.WithContext(ctx)
 		}
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, client))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, client))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, client))
 	default:
+		var attachmentClaim *sessionAttachmentClaim
+		if r.URL.Path == engine.SessionAttachablesEndpoint && opts.AttachSession {
+			var err error
+			attachmentClaim, err = srv.claimSessionAttachment(opts)
+			if err != nil {
+				return err
+			}
+		}
+		opts.attachmentWork = opts.AttachSession && r.URL.Path != engine.SessionAttachablesEndpoint
 		client, cleanup, err := srv.getOrInitClient(ctx, opts)
 		if err != nil {
+			if attachmentClaim != nil {
+				if sess, ok := srv.lookupDetachableSession(opts.SessionID); ok {
+					srv.detachAttachment(sess, attachmentClaim.ID, attachmentClaim.Generation)
+				}
+			}
+			var controlErr sessionControlError
+			if errors.As(err, &controlErr) {
+				return controlErr
+			}
 			err = fmt.Errorf("get or init client: %w", err)
 			switch r.URL.Path {
 			case engine.QueryEndpoint:
@@ -1622,10 +1895,21 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		}()
 
 		sess := client.daggerSession
+		if r.URL.Path == engine.SessionAttachablesEndpoint && opts.DetachableSession {
+			attachmentClaim, err = srv.claimCreatorAttachment(sess, opts)
+			if err != nil {
+				return err
+			}
+		}
+		if opts.attachmentWork {
+			ctx = withAttachmentCancel(ctx, opts.attachmentCtx)
+		}
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
-		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
+		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, sessionAttachablesRequest{
+			client: client, claim: attachmentClaim,
+		}))
 		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
 		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
@@ -1640,7 +1924,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	return nil
 }
 
-func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
+type sessionAttachablesRequest struct {
+	client *daggerClient
+	claim  *sessionAttachmentClaim
+}
+
+func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Request, req sessionAttachablesRequest) (rerr error) {
+	client := req.client
+	claim := req.claim
 	ctx := r.Context()
 	slog.DebugContext(ctx, "session attachables handling conn", "clientID", client.clientID)
 	defer func() {
@@ -1651,10 +1942,44 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		)
 	}()
 
-	// verify this isn't overwriting an existing active session
-	if _, ok := client.daggerSession.attachables.Lookup(client.clientID); ok {
-		err := fmt.Errorf("session attachables for client %q already exist", client.clientID)
-		return httpErr(err, http.StatusBadRequest)
+	published := false
+	if claim != nil {
+		defer func() {
+			if !published {
+				srv.detachAttachment(client.daggerSession, claim.ID, claim.Generation)
+			}
+		}()
+	}
+
+	strictPublication := client.daggerSession.lifetime == sessionLifetimeDetachable
+	if strictPublication {
+		if client.daggerSession.sourceClientPublished(client.clientID) {
+			return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+				fmt.Errorf("session attachables for client %q already published", client.clientID))
+		}
+		srv.hitSessionHook(sessionTestEvent{
+			Name: sessionHookSourcePublicationRead, SessionID: client.daggerSession.sessionID,
+			ClientID: client.clientID,
+		})
+	}
+
+	if err := client.daggerSession.attachables.Reserve(client.clientID, strictPublication); err != nil {
+		if client.daggerSession.lifetime == sessionLifetimeAttached {
+			return httpErr(fmt.Errorf("session attachables for client %q already exist", client.clientID), http.StatusBadRequest)
+		}
+		return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+			fmt.Errorf("session attachables for client %q already exist", client.clientID))
+	}
+	defer client.daggerSession.attachables.ReleaseReservation(client.clientID)
+	if strictPublication {
+		srv.hitSessionHook(sessionTestEvent{
+			Name: sessionHookSourceReservation, SessionID: client.daggerSession.sessionID,
+			ClientID: client.clientID,
+		})
+		if client.daggerSession.sourceClientPublished(client.clientID) {
+			return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+				fmt.Errorf("session attachables for client %q already published", client.clientID))
+		}
 	}
 
 	// hijack the connection so we can use it for our gRPC client
@@ -1672,7 +1997,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		panic(fmt.Errorf("failed to clear deadline: %w", err))
+		return fmt.Errorf("failed to clear deadline: %w", err)
 	}
 
 	// confirm to the client that everything went swimmingly and we're ready to become a gRPC client
@@ -1683,7 +2008,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	resp.Header.Set("Connection", "Upgrade")
 	resp.Header.Set("Upgrade", "h2c")
 	if err := resp.Write(conn); err != nil {
-		panic(fmt.Errorf("failed to write response: %w", err))
+		return fmt.Errorf("failed to write response: %w", err)
 	}
 
 	// The client confirms it has fully read the response and is ready to serve gRPC by sending
@@ -1691,7 +2016,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	// before the response has been fully read, which can mix http and gRPC traffic.
 	ack := make([]byte, 1)
 	if _, err := conn.Read(ack); err != nil {
-		panic(fmt.Errorf("failed to read ack: %w", err))
+		return fmt.Errorf("failed to read ack: %w", err)
 	}
 
 	ctx = client.daggerSession.withClosingCancel(ctx)
@@ -1700,14 +2025,66 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
 	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(nil)) //nolint:staticcheck // we have to provide a nil context...
 
-	err = client.daggerSession.attachables.Register(ctx, client.clientID, conn, r.Header.Values(engine.SessionMethodNameMetaKey))
+	err = client.daggerSession.attachables.Register(
+		ctx,
+		client.clientID,
+		conn,
+		r.Header.Values(engine.SessionMethodNameMetaKey),
+		sessionAttachableCallbacks{
+			Published: func() {
+				if strictPublication {
+					client.daggerSession.markSourceClientPublished(client.clientID)
+				}
+				if claim == nil {
+					return
+				}
+				client.daggerSession.attachmentMu.Lock()
+				attachment := client.daggerSession.currentAttachment
+				if attachment != nil && attachment.ID == claim.ID && attachment.Generation == claim.Generation {
+					attachment.Ready = true
+					published = true
+				}
+				client.daggerSession.attachmentMu.Unlock()
+				if published {
+					srv.hitSessionHook(sessionTestEvent{
+						Name: sessionHookAttachmentPublished, SessionID: client.daggerSession.sessionID,
+						ClientID: client.clientID, AttachmentID: claim.ID, Generation: claim.Generation,
+					})
+					if client.clientMetadata.DetachableSession {
+						srv.hitSessionHook(sessionTestEvent{
+							Name: sessionHookCreatorAttachablesRegistration, SessionID: client.daggerSession.sessionID,
+							ClientID: client.clientID, AttachmentID: claim.ID, Generation: claim.Generation,
+						})
+					}
+				}
+			},
+			Removed: func(cause error) {
+				if claim == nil || errors.Is(cause, errAttachableExplicitClose) {
+					return
+				}
+				srv.hitSessionHook(sessionTestEvent{
+					Name: sessionHookAttachmentDeath, SessionID: client.daggerSession.sessionID,
+					ClientID: client.clientID, AttachmentID: claim.ID, Generation: claim.Generation,
+				})
+				srv.detachAttachment(client.daggerSession, claim.ID, claim.Generation)
+			},
+		},
+	)
 	if err != nil {
-		panic(fmt.Errorf("handle session attachables: %w", err))
+		if errors.Is(err, errAttachableConnectionExists) {
+			return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+				fmt.Errorf("session attachables for client %q already exist", client.clientID))
+		}
+		return fmt.Errorf("handle session attachables: %w", err)
 	}
 	return nil
 }
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
+	return srv.executeGraphQL(client.daggerSession.withClosingCancel(r.Context()), client, w, r, true)
+}
+
+func (srv *Server) executeGraphQL(ctx context.Context, client *daggerClient, w http.ResponseWriter, r *http.Request, requireClientAttachables bool) (rerr error) {
 	sess := client.daggerSession
 
 	// Profiling is recorded for this request if the engine is recording
@@ -1734,8 +2111,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		}
 		sess.dagqlMu.Unlock()
 	}()
-
-	ctx := sess.withClosingCancel(r.Context())
 
 	// turn panics into graphql errors — must be set up before any code that
 	// could panic (including ensureExtraModulesLoaded and schema loading).
@@ -1818,7 +2193,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
-	if client.hostServiceProxyClientID == "" {
+	if requireClientAttachables && client.hostServiceProxyClientID == "" {
 		profWait := wcprof.BeginWaitIdent(ctx, "session:attachables", wcprof.WaitReasonIO)
 		_, err := client.getClientCaller(ctx, client.clientID)
 		profWait.End()
@@ -1871,6 +2246,10 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		r = r.WithContext(queryCtx)
 	}
 
+	srv.hitSessionHook(sessionTestEvent{
+		Name: sessionHookGraphQLEntered, SessionID: sess.sessionID,
+		ClientID: client.clientID, Context: ctx,
+	})
 	gqlSrv.ServeHTTP(w, r)
 	return nil
 }
@@ -1968,10 +2347,15 @@ func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *dag
 }
 
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
+	sess := client.daggerSession
+	if sess.lifetime == sessionLifetimeDetachable &&
+		(client.attachmentClient || client.clientMetadata != nil && client.clientMetadata.DetachableSession) {
+		return controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,
+			errors.New("detachable session attachments cannot shut down the session"))
+	}
 	ctx := r.Context()
 	var shutdownErr error
 
-	sess := client.daggerSession
 	slog := slog.With(
 		"isMainClient", client.clientID == sess.mainClientCallerID,
 		"sessionID", sess.sessionID,
@@ -2057,6 +2441,16 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if flushErr != nil {
 		slog.Error("failed to flush telemetry", "error", flushErr)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
+	}
+
+	if sess.lifetime == sessionLifetimeDetachable && client.clientID != sess.mainClientCallerID {
+		srv.hitSessionHook(sessionTestEvent{
+			Name: sessionHookNestedBeforeDeregister, SessionID: sess.sessionID, ClientID: client.clientID,
+		})
+		_ = drainPhase("deregister client attachables", func() error {
+			sess.attachables.Deregister(client.clientID)
+			return nil
+		})
 	}
 
 	client.closeShutdownOnce.Do(func() {
@@ -2954,6 +3348,16 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 			WithField("method", r.Method).
 			WithField("path", r.URL.Path).
 			WithError(err).Error("failed to serve request")
+
+		// Session control errors are produced only before any successful
+		// response or attachables hijack. Write them before the legacy
+		// hijack probe below, whose zero-length write commits HTTP 200 on a
+		// normal ResponseWriter.
+		var controlErr sessionControlError
+		if errors.As(err, &controlErr) {
+			controlErr.WriteTo(w)
+			return
+		}
 
 		// check whether this is a hijacked connection, if so we can't write any http errors to it
 		if _, testErr := w.Write(nil); testErr == http.ErrHijacked {

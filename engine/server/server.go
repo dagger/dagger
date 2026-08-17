@@ -80,6 +80,8 @@ type Server struct {
 	buildkitMountPoolDir  string
 	executorRootDir       string
 	clientDBDir           string
+	sessionResultsRoot    string
+	processID             string
 
 	//
 	// buildkit+containerd entities/DBs
@@ -164,6 +166,11 @@ type Server struct {
 	daggerSessionsMu sync.RWMutex
 	clientDBs        *clientdb.DBs
 
+	terminalSessionIDs   map[string]time.Time
+	terminalSessionIDsMu sync.Mutex
+	now                  func() time.Time
+	sessionTestHooks     *sessionTestHooks
+
 	locker *locker.Locker
 
 	secretSalt []byte
@@ -207,7 +214,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		daggerSessions: make(map[string]*daggerSession),
+		daggerSessions:     make(map[string]*daggerSession),
+		terminalSessionIDs: make(map[string]time.Time),
+		now:                time.Now,
 
 		locker: locker.New(),
 	}
@@ -258,6 +267,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
 
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
+		return nil, err
+	}
+	if err := srv.initializeSessionResultsRoot(); err != nil {
 		return nil, err
 	}
 
@@ -791,6 +803,17 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	for _, s := range daggerSessions {
+		if s.lifetime == sessionLifetimeDetachable {
+			done := srv.startSessionTermination(s.sessionID)
+			if done != nil {
+				select {
+				case <-done:
+				case <-ctx.Done():
+					err = errors.Join(err, ctx.Err())
+				}
+			}
+			continue
+		}
 		s.lifecycleMu.Lock()
 		// Wait out any in-flight init (lifecycleMu serializes it), then tear down
 		// only if the session actually initialized; an already-removed tombstone

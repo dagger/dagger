@@ -17,6 +17,9 @@ func (s upSchema) Install(srv *dagql.Server) {
 			Doc("Return a list of individual services and their details"),
 		dagql.Func("run", s.run).
 			Doc("Execute all selected service functions"),
+		dagql.Func("_startDetached", s.startDetached).
+			DoNotCache("Starts services and retains them for the session").
+			Doc("Internal: start all selected services with session-lifetime retention and return their identities. Used by dagger up --detach."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Up]{
@@ -55,6 +58,10 @@ func (s upSchema) list(_ context.Context, parent *core.UpGroup, args struct{}) (
 
 func (s upSchema) run(ctx context.Context, parent *core.UpGroup, args struct{}) (*core.UpGroup, error) {
 	return parent.Run(ctx)
+}
+
+func (s upSchema) startDetached(ctx context.Context, parent *core.UpGroup, args struct{}) (core.JSON, error) {
+	return parent.StartDetached(ctx)
 }
 
 func (s upSchema) runSingleUp(ctx context.Context, parent *core.Up, args struct{}) (*core.Up, error) {

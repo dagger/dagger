@@ -197,6 +197,12 @@ func (s *logStream[Row]) appendStatsLocked(capWaitDuration time.Duration) Append
 	}
 }
 
+func (s *logStream[Row]) LastID() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.nextID - 1
+}
+
 func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row, error) {
 	if limit <= 0 {
 		return nil, nil

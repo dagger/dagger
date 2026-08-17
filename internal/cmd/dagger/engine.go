@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -140,7 +141,14 @@ func withEngine(
 		if err != nil {
 			return cleanup.Run, err
 		}
-		cleanup.Add("close dagger session", sess.Close)
+		cleanup.Add("close dagger session", func() error {
+			if params.Detachable && !sess.DetachedQueryAcknowledged() {
+				terminateCtx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+				defer cancel()
+				return sess.Terminate(terminateCtx)
+			}
+			return sess.Close()
+		})
 
 		Frontend.SetClient(sess.Dagger())
 

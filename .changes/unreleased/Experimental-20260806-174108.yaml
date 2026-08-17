@@ -1,0 +1,10 @@
+kind: Experimental
+body: |
+  Add opt-in detachable sessions for `dagger call --detach` and
+  `dagger api call --detach`. The provisional `dagger sessions` commands can
+  list, inspect, attach to, and explicitly terminate those sessions after the
+  initiating CLI disconnects.
+time: 2026-08-06T17:41:08Z
+custom:
+  Author: sipsma
+  PR: 13851

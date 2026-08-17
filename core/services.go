@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,7 +43,17 @@ type Services struct {
 	starting map[ServiceKey]*startingService
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
-	l        sync.Mutex
+	retained map[ServiceKey]map[string]struct{}
+	// Services is allocated per engine session. A session ID enters this set
+	// only during that manager's terminal teardown, and the whole manager is
+	// discarded with the session; entries are therefore intentionally never
+	// removed or reused.
+	stoppingSession map[string]struct{}
+	l               sync.Mutex
+
+	// Test-only ordering seams for retention/exit races.
+	testBeforeStartWithKey func(ServiceKey)
+	testAfterHandleExit    func(*RunningService)
 }
 
 type startingService struct {
@@ -106,6 +117,16 @@ type RunningService struct {
 	// The runc container ID, if any
 	ContainerID string
 
+	// Kind records the concrete service shape at start time.
+	Kind RunningServiceKind
+
+	// TunnelUpstream is the structured key of a tunnel's backend service.
+	// It is nil for non-tunnel services.
+	TunnelUpstream *ServiceKey
+	// TunnelPortBackends is parallel to Ports for tunnel services and records
+	// each listener's exact backend port. It is empty for non-tunnel services.
+	TunnelPortBackends []int
+
 	refsMu                sync.Mutex
 	refs                  []bkcache.Ref
 	resourceSnapshotCache bkcache.SnapshotManager
@@ -131,7 +152,8 @@ type RunningService struct {
 
 	manager *Services
 
-	releaseOnce sync.Once
+	publishIfReady func(commit func()) error
+	releaseOnce    sync.Once
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -142,6 +164,14 @@ const (
 	ServiceRuntimeInteractive ServiceRuntimeKind = "interactive"
 )
 
+type RunningServiceKind string
+
+const (
+	RunningServiceKindContainer     RunningServiceKind = "container"
+	RunningServiceKindTunnel        RunningServiceKind = "tunnel"
+	RunningServiceKindReverseTunnel RunningServiceKind = "reverse-tunnel"
+)
+
 type ServiceKey struct {
 	Digest     digest.Digest
 	SessionID  string
@@ -150,13 +180,80 @@ type ServiceKey struct {
 	InstanceID string
 }
 
+// ServiceDescription is a point-in-time view of one live running service.
+// Names is populated from the authoritative retention alias set when the
+// service is a detached-up backend; unmarked services fall back to Host.
+type ServiceDescription struct {
+	Key                ServiceKey
+	Names              []string
+	Kind               RunningServiceKind
+	Host               string
+	Ports              []Port
+	OwnerClientID      string
+	TunnelUpstream     *ServiceKey
+	TunnelPortBackends []int
+	Retained           bool
+}
+
 // NewServices returns a new Services.
 func NewServices() *Services {
 	return &Services{
-		starting: map[ServiceKey]*startingService{},
-		running:  map[ServiceKey]*RunningService{},
-		bindings: map[ServiceKey]int{},
+		starting:        map[ServiceKey]*startingService{},
+		running:         map[ServiceKey]*RunningService{},
+		bindings:        map[ServiceKey]int{},
+		retained:        map[ServiceKey]map[string]struct{}{},
+		stoppingSession: map[string]struct{}{},
 	}
+}
+
+// Describe returns a deterministic live snapshot of services in a session.
+func (ss *Services) Describe(sessionID string) []ServiceDescription {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+
+	descriptions := make([]ServiceDescription, 0)
+	for key, running := range ss.running {
+		if key.SessionID != sessionID || running == nil {
+			continue
+		}
+		namesSet, retained := ss.retained[key]
+		names := make([]string, 0, len(namesSet))
+		for name := range namesSet {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		if len(names) == 0 && running.Host != "" {
+			names = []string{running.Host}
+		}
+		description := ServiceDescription{
+			Key:                key,
+			Names:              names,
+			Kind:               running.Kind,
+			Host:               running.Host,
+			Ports:              slices.Clone(running.Ports),
+			OwnerClientID:      key.ClientID,
+			TunnelPortBackends: slices.Clone(running.TunnelPortBackends),
+			Retained:           retained,
+		}
+		if running.TunnelUpstream != nil {
+			upstream := *running.TunnelUpstream
+			description.TunnelUpstream = &upstream
+		}
+		descriptions = append(descriptions, description)
+	}
+	slices.SortFunc(descriptions, func(a, b ServiceDescription) int {
+		if cmp := strings.Compare(strings.Join(a.Names, "\x00"), strings.Join(b.Names, "\x00")); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(string(a.Kind), string(b.Kind)); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Key.ClientID, b.Key.ClientID); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Key.Digest.String(), b.Key.Digest.String())
+	})
+	return descriptions
 }
 
 func compareSpanContexts(a, b trace.SpanContext) int {
@@ -418,6 +515,11 @@ type ServiceStartOpts struct {
 	// back to the API span that created the service. The first valid one
 	// also routes the service's stdio logs to its row.
 	OriginSpanContexts []trace.SpanContext
+
+	// RetainNames marks a shared service as session-owned and records the
+	// canonical +up names that resolve to its key. The mark outlives individual
+	// running generations and is cleared only by StopSessionServices.
+	RetainNames []string
 }
 
 // Start starts the given service, returning the running service. If the
@@ -532,6 +634,29 @@ func (ss *Services) startResultWithOpts(
 		opts.OriginSpanContexts = lookupServiceOriginSpanContexts(ctx, svc)
 	}
 	return ss.startWithOpts(ctx, serviceDig, svc.Self(), opts, suppressDependencyExitPropagation)
+}
+
+// StartRetainedResult starts a shared service with a session-lifetime
+// retention mark. The returned release drops only this call's transient
+// binding; the running generation remains alive at zero bindings until the
+// session is stopped.
+func (ss *Services) StartRetainedResult(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+	name string,
+) (_ *RunningService, release func(), _ error) {
+	if svc.Self() == nil {
+		return nil, nil, fmt.Errorf("service result is nil")
+	}
+	serviceDig, err := svc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("service digest: %w", err)
+	}
+	opts := ServiceStartOpts{
+		OriginSpanContexts: lookupServiceOriginSpanContexts(ctx, svc),
+		RetainNames:        []string{name},
+	}
+	return ss.startWithOpts(ctx, serviceDig, svc.Self(), opts, false)
 }
 
 // lookupServiceOriginSpanContexts returns the dagql install-span contexts for
@@ -673,6 +798,7 @@ func (ss *Services) Stop(ctx context.Context, dig digest.Digest, kill bool, clie
 // It is called when a server is closing.
 func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) error {
 	ss.l.Lock()
+	ss.stoppingSession[sessionID] = struct{}{}
 	var starts []*startingService
 	var svcs []*RunningService
 	for _, start := range ss.starting {
@@ -683,6 +809,11 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 	for _, svc := range ss.running {
 		if svc.Key.SessionID == sessionID {
 			svcs = append(svcs, svc)
+		}
+	}
+	for key := range ss.retained {
+		if key.SessionID == sessionID {
+			delete(ss.retained, key)
 		}
 	}
 	ss.l.Unlock()
@@ -722,27 +853,46 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 // a no-op. If the service is running, it is stopped if there are no other
 // clients using it.
 func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
+	if svc == nil {
+		return
+	}
 	ss.l.Lock()
 
 	slog := slog.With("service", svc.Host)
 
 	running, found := ss.running[svc.Key]
-	if !found {
+	if !found || running != svc {
 		ss.l.Unlock()
-		slog.Trace("detach: service not running")
-		// not even running; ignore
+		slog.Trace("detach: service generation not running")
 		return
 	}
 
-	ss.bindings[svc.Key]--
+	bindings := ss.bindings[svc.Key]
+	if bindings <= 0 {
+		ss.l.Unlock()
+		slog.Trace("detach: service has no bindings")
+		return
+	}
+	bindings--
+	ss.bindings[svc.Key] = bindings
 
 	// Log with the decremented value
-	slog = slog.With("bindings", ss.bindings[svc.Key])
+	slog = slog.With("bindings", bindings)
 
-	if ss.bindings[svc.Key] > 0 {
+	if bindings > 0 {
 		ss.l.Unlock()
 		slog.Debug("detach: service still has binders")
 		// detached, but other instances still active
+		return
+	}
+	if _, retained := ss.retained[svc.Key]; retained {
+		ss.l.Unlock()
+		slog.Debug("detach: service retained by session")
+		return
+	}
+	if _, stopping := ss.stoppingSession[svc.Key.SessionID]; stopping {
+		ss.l.Unlock()
+		slog.Debug("detach: session teardown owns service stop")
 		return
 	}
 
@@ -948,6 +1098,9 @@ func (ss *Services) handleExit(running *RunningService, _ error) {
 		delete(ss.bindings, running.Key)
 	}
 	ss.l.Unlock()
+	if ss.testAfterHandleExit != nil {
+		ss.testAfterHandleExit(running)
+	}
 
 	_ = running.releaseAfterExit(context.Background())
 }
@@ -960,6 +1113,15 @@ func (ss *Services) startWithKey(
 	suppressDependencyExitPropagation bool,
 ) (_ *RunningService, release func(), err error) {
 	opts.OriginSpanContexts = normalizeSpanContexts(opts.OriginSpanContexts)
+	retainNames := make(map[string]struct{}, len(opts.RetainNames))
+	for _, name := range opts.RetainNames {
+		if name != "" {
+			retainNames[name] = struct{}{}
+		}
+	}
+	if ss.testBeforeStartWithKey != nil {
+		ss.testBeforeStartWithKey(key)
+	}
 
 	var suppressedRunning *RunningService
 	resumeDependencyExitPropagation := func() {}
@@ -979,9 +1141,25 @@ func (ss *Services) startWithKey(
 
 	for {
 		ss.l.Lock()
+		if _, stopping := ss.stoppingSession[key.SessionID]; stopping {
+			ss.l.Unlock()
+			releaseSuppression()
+			return nil, nil, fmt.Errorf("session %s is stopping", key.SessionID)
+		}
+		if len(retainNames) > 0 {
+			names := ss.retained[key]
+			if names == nil {
+				names = map[string]struct{}{}
+				ss.retained[key] = names
+			}
+			for name := range retainNames {
+				names[name] = struct{}{}
+			}
+		}
 		starting, isStarting := ss.starting[key]
 		running, isRunning := ss.running[key]
-		isStopping := ss.bindings[key] == 0
+		_, retained := ss.retained[key]
+		isStopping := ss.bindings[key] == 0 && !retained
 		switch {
 		case isRunning && isStopping:
 			ss.l.Unlock()
@@ -1027,6 +1205,14 @@ func (ss *Services) startWithKey(
 				Key:     key,
 				manager: ss,
 			}
+			cleanupFailedStart := func(primary error, stopRequired bool) error {
+				var stopErr error
+				if stopRequired && running.Stop != nil {
+					stopErr = running.Stop(context.WithoutCancel(ctx), true)
+				}
+				resourceErr := running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
+				return stderrors.Join(primary, stopErr, resourceErr)
+			}
 			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			suppress(running)
 			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
@@ -1061,11 +1247,11 @@ func (ss *Services) startWithKey(
 			defer close(start.done)
 
 			if err := svc.Start(svcCtx, running, key.Digest, opts); err != nil {
+				err = cleanupFailedStart(err, false)
 				start.err = err
 				profOp.End(wcprof.OutcomeError)
 				endOTelServiceStart(startSpan, &err)
 				releaseSuppression()
-				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()
 				delete(ss.starting, key)
 				ss.l.Unlock()
@@ -1074,11 +1260,11 @@ func (ss *Services) startWithKey(
 			}
 			if running.Wait == nil {
 				err := fmt.Errorf("service %s started without Wait callback", network.HostHash(key.Digest))
+				err = cleanupFailedStart(err, true)
 				start.err = err
 				profOp.End(wcprof.OutcomeError)
 				endOTelServiceStart(startSpan, &err)
 				releaseSuppression()
-				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				ss.l.Lock()
 				delete(ss.starting, key)
 				ss.l.Unlock()
@@ -1089,16 +1275,35 @@ func (ss *Services) startWithKey(
 			ss.l.Lock()
 			delete(ss.starting, key)
 			if context.Cause(svcCtx) != nil {
+				cause := context.Cause(svcCtx)
 				ss.l.Unlock()
 				profOp.End(wcprof.OutcomeCanceled)
-				cause := context.Cause(svcCtx)
+				cause = cleanupFailedStart(cause, true)
+				start.err = cause
 				endOTelServiceStart(startSpan, &cause)
 				releaseSuppression()
-				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
-				return nil, nil, context.Cause(svcCtx)
+				return nil, nil, cause
 			}
-			ss.running[key] = running
-			ss.bindings[key] = 1
+			if running.publishIfReady != nil {
+				err := running.publishIfReady(func() {
+					ss.running[key] = running
+					ss.bindings[key] = 1
+				})
+				if err != nil {
+					delete(ss.starting, key)
+					ss.l.Unlock()
+					err = cleanupFailedStart(err, true)
+					start.err = err
+					profOp.End(wcprof.OutcomeError)
+					endOTelServiceStart(startSpan, &err)
+					releaseSuppression()
+					cancel(err)
+					return nil, nil, err
+				}
+			} else {
+				ss.running[key] = running
+				ss.bindings[key] = 1
+			}
 			ss.l.Unlock()
 			profOp.End(wcprof.OutcomeOK)
 			endOTelServiceStart(startSpan, nil)
