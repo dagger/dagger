@@ -682,37 +682,35 @@ func (s *workspaceSchema) checkpoint(
 	}
 	chunkInputs := make(dagql.ArrayInput[core.WorkspaceCheckpointChunkID], len(chunkIDs))
 	copy(chunkInputs, chunkIDs)
+	manifestDigest := digest.FromBytes(manifestJSON)
+	// The result of the pure constructor is returned verbatim, so this effectful
+	// call contributes nothing but the payload it captured: the checkpoint's
+	// recipe is the host-independent constructor, and the result keeps that
+	// call's identity. Returning a value of our own here instead would be
+	// unaddressable — this field cannot be cached, so its own results have no ID
+	// for the composed agent to bind ("result *core.Workspace is detached").
 	if err := srv.Select(clientCtx, srv.Root(), &inst, dagql.Selector{
 		Field: "_workspaceFromGitCheckpoint",
 		Args: []dagql.NamedInput{
 			{Name: "base", Value: dagql.NewID[*core.GitRef](baseID)},
-			{Name: "manifest", Value: dagql.NewDigestedSerializedString(string(manifestJSON), digest.FromBytes(manifestJSON))},
+			{Name: "manifest", Value: dagql.NewDigestedSerializedString(string(manifestJSON), manifestDigest)},
 			{Name: "chunks", Value: chunkInputs},
 		},
 	}); err != nil {
 		return inst, fmt.Errorf("construct portable workspace checkpoint: %w", err)
 	}
 
-	// Keep the pure checkpoint call as this result's recipe, but return a clone
-	// carrying an ephemeral route back to the checkout that was just captured.
-	// The private target is intentionally neither persisted nor encoded in the
-	// pure call, so cold replay stays host-independent while ctrl+s in this live
-	// session can still save subsequent engine-side commits.
-	return checkpointWithExportTarget(srv, inst, ws)
-}
-
-func checkpointWithExportTarget(
-	srv *dagql.Server,
-	checkpoint dagql.ObjectResult[*core.Workspace],
-	source *core.Workspace,
-) (dagql.ObjectResult[*core.Workspace], error) {
-	call, err := checkpoint.ResultCall()
-	if err != nil {
-		return checkpoint, err
+	// Retain the checkout just captured as this session's route back to it, keyed
+	// by the checkpoint's own identity, so ctrl+s can still save the agent's
+	// commits and edits to the checkout the agent is working on behalf of. The
+	// route is session state, not workspace state: the shared checkpoint value,
+	// its recipe and its persisted payload stay host-independent, so cold replay
+	// has no destination to write to and no other session can save through this
+	// one's client.
+	if err := core.RetainWorkspaceCheckpointOrigin(ctx, manifestDigest.String(), ws.ClientID, ws.HostPath()); err != nil {
+		return inst, fmt.Errorf("retain workspace checkpoint origin: %w", err)
 	}
-	live := checkpoint.Self().Clone()
-	live.SetExportTarget(source.ClientID, source.HostPath())
-	return dagql.NewObjectResultForCall(live, srv, call)
+	return inst, nil
 }
 
 func checkpointPatterns(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
@@ -1161,6 +1159,11 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 		GitAuthorEmail: meta.GitAuthorEmail,
 	}
 	ws.SetPortableCheckpoint()
+	// The manifest digest is this checkpoint's content identity: pure, equal on
+	// both sides of a capture/restore, and carried through every workspace
+	// derived from it. The capturing session retains its originating checkout
+	// under this key, which is how an explicit save finds it again.
+	ws.SetCheckpointID(args.Manifest.Digest.String())
 	ws.SetRootfs(worktreeRepo)
 	ws.SetSource(core.NewWorkspaceSourceOverlay(core.NewWorkspaceSourceDirectory(latestRepo), nil, nil, overlay))
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
@@ -3472,11 +3475,7 @@ func (s *workspaceSchema) export(
 			return core.Void{}, err
 		}
 		if !isEmpty {
-			hostPath, err := ws.ExportHostPath()
-			if err != nil {
-				return core.Void{}, err
-			}
-			exportCtx, err := withWorkspaceExportClientContext(ctx, ws)
+			exportCtx, hostPath, err := workspaceExportContext(ctx, ws)
 			if err != nil {
 				return core.Void{}, err
 			}
@@ -5545,12 +5544,22 @@ func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (contex
 	return withWorkspaceClientIDContext(ctx, ws.ClientID)
 }
 
-// withWorkspaceExportClientContext routes an explicit save through the live
-// checkout retained by a freshly captured checkpoint. Ordinary local
-// workspaces fall back to their owning client; cold-restored checkpoints have
-// neither and remain intentionally unexportable.
-func withWorkspaceExportClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	return withWorkspaceClientIDContext(ctx, ws.ExportClientID())
+// workspaceExportContext resolves where an explicit save of ws must write and
+// returns both the checkout path and a context routed to the client that owns
+// it. An ordinary local workspace saves to itself; a freshly captured checkpoint
+// saves to the checkout its capturing session retained for it. Anything else —
+// a remote or synthetic workspace, or a checkpoint restored elsewhere — has no
+// destination, and this fails rather than guessing one.
+func workspaceExportContext(ctx context.Context, ws *core.Workspace) (context.Context, string, error) {
+	clientID, hostPath, err := ws.ExportTarget(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	exportCtx, err := withWorkspaceClientIDContext(ctx, clientID)
+	if err != nil {
+		return nil, "", err
+	}
+	return exportCtx, hostPath, nil
 }
 
 func withWorkspaceClientIDContext(ctx context.Context, clientID string) (context.Context, error) {

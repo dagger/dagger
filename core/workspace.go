@@ -117,6 +117,57 @@ func BumpWorkspaceReadEpoch(ctx context.Context) error {
 	return workspaceReadEpochBumper(ctx)
 }
 
+// workspaceCheckpointOrigin hooks retain and resolve the live checkout a
+// portable workspace checkpoint was captured from, so an explicit save can
+// reconcile the agent's work back to it (see Workspace.ExportTarget).
+//
+// The route is deliberately session state rather than workspace state. A
+// checkpoint's Workspace is the value of a pure recipe: every session that
+// resolves that recipe shares the one cached value, and the value, its recipe
+// and its persisted payload must all stay host-independent so a cold restore
+// cannot inherit a destination and no session can save through another's
+// client. Carrying the origin on the value instead would either leak across
+// sessions with it or, if kept off the cached value by cloning it, leave the
+// clone with no result identity at all — it cannot be addressed by ID, so the
+// composed agent cannot bind it (`result *core.Workspace is detached`).
+//
+// Registered by engine/server, which owns session lifetime; nil in contexts
+// without a server, where nothing is retained and every lookup misses.
+var (
+	workspaceCheckpointOriginRetainer func(ctx context.Context, checkpointID, clientID, hostPath string) error
+	workspaceCheckpointOriginLookup   func(ctx context.Context, checkpointID string) (clientID, hostPath string, ok bool)
+)
+
+// SetWorkspaceCheckpointOriginHooks registers the retain/lookup pair used to
+// route an explicit save of a freshly captured checkpoint back to the checkout
+// it came from. Mirrors SetWorkspaceReadEpochHooks.
+func SetWorkspaceCheckpointOriginHooks(
+	retain func(ctx context.Context, checkpointID, clientID, hostPath string) error,
+	lookup func(ctx context.Context, checkpointID string) (clientID, hostPath string, ok bool),
+) {
+	workspaceCheckpointOriginRetainer = retain
+	workspaceCheckpointOriginLookup = lookup
+}
+
+// RetainWorkspaceCheckpointOrigin records the live checkout a checkpoint was
+// just captured from, for the calling session only. A no-op when no server has
+// registered the hook.
+func RetainWorkspaceCheckpointOrigin(ctx context.Context, checkpointID, clientID, hostPath string) error {
+	if workspaceCheckpointOriginRetainer == nil {
+		return nil
+	}
+	return workspaceCheckpointOriginRetainer(ctx, checkpointID, clientID, hostPath)
+}
+
+// WorkspaceCheckpointOrigin returns the checkout the identified checkpoint was
+// captured from, if the calling session is the one that captured it.
+func WorkspaceCheckpointOrigin(ctx context.Context, checkpointID string) (clientID, hostPath string, ok bool) {
+	if workspaceCheckpointOriginLookup == nil {
+		return "", "", false
+	}
+	return workspaceCheckpointOriginLookup(ctx, checkpointID)
+}
+
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
 	// source is the private backing source for workspace filesystem and git
@@ -163,14 +214,16 @@ type Workspace struct {
 	// that tree rather than being treated as an intentionally module-less value.
 	portableCheckpoint bool
 
-	// exportClientID and exportHostPath retain the originating live checkout as
-	// an ephemeral save destination for a freshly captured checkpoint. They are
-	// deliberately absent from persistence and the checkpoint recipe: a cold
-	// restore remains host-independent and cannot accidentally write back to the
-	// machine that produced it. Workspace.Clone carries them through edits and
-	// commits for the lifetime of the originating session.
-	exportClientID string
-	exportHostPath string
+	// checkpointID identifies the portable checkpoint this workspace derives
+	// from: the digest of the checkpoint manifest it was reconstructed from.
+	// It is pure and host-independent — the checkpoint's content identity, not a
+	// route to any machine — and Workspace.Clone carries it through the agent's
+	// edits and commits. The capturing session retains that checkpoint's
+	// originating checkout under this key (see workspaceCheckpointOrigin hooks),
+	// which is how an explicit save finds its way back to the checkout without
+	// the destination ever entering the value, the recipe or the payload.
+	// Empty for every workspace that is not checkpoint-derived.
+	checkpointID string
 
 	// userConfigKey is the normalized Git remote key identifying this
 	// workspace in user-level config. Empty when the workspace has no usable
@@ -829,34 +882,55 @@ func (ws *Workspace) LocalSourceHostPath() (string, bool) {
 	}
 }
 
-// SetExportTarget retains a live checkout as this workspace's ephemeral save
-// destination. The target is copied by Clone but deliberately not persisted.
-func (ws *Workspace) SetExportTarget(clientID, hostPath string) {
-	if ws == nil {
-		return
-	}
-	ws.exportClientID = clientID
-	ws.exportHostPath = hostPath
-}
-
-// ExportClientID returns the client session that should receive an explicit
-// save, including a freshly captured checkpoint's ephemeral origin.
-func (ws *Workspace) ExportClientID() string {
+// CheckpointID returns the identity of the portable checkpoint this workspace
+// derives from, or "" when it is not checkpoint-derived.
+func (ws *Workspace) CheckpointID() string {
 	if ws == nil {
 		return ""
 	}
-	if ws.exportClientID != "" {
-		return ws.exportClientID
+	return ws.checkpointID
+}
+
+// SetCheckpointID records the checkpoint identity a reconstructed workspace
+// derives from. Set once, by the pure checkpoint constructor.
+func (ws *Workspace) SetCheckpointID(checkpointID string) {
+	if ws != nil {
+		ws.checkpointID = checkpointID
 	}
-	return ws.ClientID
+}
+
+// ExportTarget resolves the client and checkout an explicit save of this
+// workspace must write to.
+//
+// An ordinary local workspace is its own destination. A portable checkpoint has
+// no checkout of its own: the checkout it was captured from is retained by the
+// capturing session, outside the recipe and the persisted payload, and is found
+// here by the checkpoint identity every workspace derived from it carries.
+// Anywhere else — a cold restore, or a later session on the same machine —
+// there is no target, and saving fails rather than guessing a destination.
+func (ws *Workspace) ExportTarget(ctx context.Context) (clientID, hostPath string, _ error) {
+	if ws == nil {
+		return "", "", fmt.Errorf("workspace is required")
+	}
+	if ws.checkpointID != "" {
+		if originClient, originCheckout, ok := WorkspaceCheckpointOrigin(ctx, ws.checkpointID); ok {
+			return originClient, originCheckout, nil
+		}
+	}
+	if ws.IsPortableCheckpoint() {
+		return "", "", fmt.Errorf("cannot export a restored workspace checkpoint: " +
+			"it has no checkout of its own, and the checkout it was captured from is not part of this session")
+	}
+	hostPath, err := ws.ExportHostPath()
+	if err != nil {
+		return "", "", err
+	}
+	return ws.ClientID, hostPath, nil
 }
 
 func (ws *Workspace) ExportHostPath() (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
-	}
-	if ws.exportHostPath != "" {
-		return ws.exportHostPath, nil
 	}
 	switch src := ws.BaseSource().(type) {
 	case *WorkspaceSourceClientLocal:
@@ -1140,6 +1214,7 @@ type persistedWorkspacePayload struct {
 	Source             *persistedWorkspaceSource      `json:"source,omitempty"`
 	CompatWorkspace    *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
 	PortableCheckpoint bool                           `json:"portableCheckpoint,omitempty"`
+	CheckpointID       string                         `json:"checkpointID,omitempty"`
 	Address            string                         `json:"address,omitempty"`
 	Cwd                string                         `json:"cwd,omitempty"`
 	ConfigFile         string                         `json:"configFile,omitempty"`
@@ -1323,6 +1398,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	payload := persistedWorkspacePayload{
 		CompatWorkspace:    ws.compatWorkspace,
 		PortableCheckpoint: ws.portableCheckpoint,
+		CheckpointID:       ws.checkpointID,
 		Address:            ws.Address,
 		Cwd:                ws.Cwd,
 		ConfigFile:         ws.ConfigFile,
@@ -1507,6 +1583,7 @@ func (*Workspace) DecodePersistedObject(
 		cacheMounts:        cacheMounts,
 		compatWorkspace:    persisted.CompatWorkspace,
 		portableCheckpoint: persisted.PortableCheckpoint,
+		checkpointID:       persisted.CheckpointID,
 		Address:            persisted.Address,
 		Cwd:                cwd,
 		ConfigFile:         configFile,

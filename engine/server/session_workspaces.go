@@ -100,6 +100,60 @@ func (srv *Server) bumpClientWorkspaceReadEpoch(ctx context.Context) error {
 	return nil
 }
 
+// retainWorkspaceCheckpointOrigin records the checkout a portable workspace
+// checkpoint was just captured from, for the calling client's session only,
+// keyed by the checkpoint's identity (its manifest digest).
+//
+// Registered as core.SetWorkspaceCheckpointOriginHooks and called from
+// Workspace.checkpoint. The checkpoint value itself stays host-independent, so
+// this session-scoped route is the only thing that lets a later explicit save
+// reconcile the agent's work with the checkout it started from; a cold restore
+// elsewhere finds nothing here and must be given a destination instead.
+func (srv *Server) retainWorkspaceCheckpointOrigin(ctx context.Context, checkpointID, clientID, hostPath string) error {
+	switch {
+	case checkpointID == "":
+		return fmt.Errorf("retain workspace checkpoint origin: checkpoint ID is required")
+	case clientID == "":
+		return fmt.Errorf("retain workspace checkpoint origin: origin client is required")
+	case hostPath == "":
+		return fmt.Errorf("retain workspace checkpoint origin: origin checkout is required")
+	}
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	sess := client.daggerSession
+	sess.checkpointOriginMu.Lock()
+	defer sess.checkpointOriginMu.Unlock()
+	if sess.checkpointOrigins == nil {
+		sess.checkpointOrigins = make(map[string]workspaceCheckpointOrigin)
+	}
+	sess.checkpointOrigins[checkpointID] = workspaceCheckpointOrigin{
+		clientID: clientID,
+		hostPath: hostPath,
+	}
+	return nil
+}
+
+// lookupWorkspaceCheckpointOrigin returns the checkout the identified
+// checkpoint was captured from, if the calling client's session is the one that
+// captured it. Any other session — including a cold restore on a fresh engine —
+// misses, and its workspace has no implicit save destination.
+func (srv *Server) lookupWorkspaceCheckpointOrigin(ctx context.Context, checkpointID string) (string, string, bool) {
+	if checkpointID == "" {
+		return "", "", false
+	}
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return "", "", false
+	}
+	sess := client.daggerSession
+	sess.checkpointOriginMu.RLock()
+	defer sess.checkpointOriginMu.RUnlock()
+	origin, ok := sess.checkpointOrigins[checkpointID]
+	return origin.clientID, origin.hostPath, ok
+}
+
 func canonicalModuleReference(src *core.ModuleSource) string {
 	sourceSubpath := src.SourceSubpath
 	if sourceSubpath == "" {
