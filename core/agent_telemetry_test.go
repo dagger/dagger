@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -22,9 +23,11 @@ import (
 // recordedState is one published agent-state record, flattened to the fields
 // the directory contract promises.
 type recordedState struct {
-	state     string
-	waitingOn string
-	body      string
+	state      string
+	waitingOn  string
+	stopReason string
+	digest     string
+	body       string
 }
 
 // stateRecorder captures agent state records emitted through a context.
@@ -41,6 +44,10 @@ func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 			got.state = kv.Value.AsString()
 		case telemetryattrs.AgentWaitingOnAttr:
 			got.waitingOn = kv.Value.AsString()
+		case telemetryattrs.AgentStopReasonAttr:
+			got.stopReason = kv.Value.AsString()
+		case telemetryattrs.AgentSnapshotDigestAttr:
+			got.digest = kv.Value.AsString()
 		}
 		return true
 	})
@@ -55,12 +62,17 @@ func (r *stateRecorder) ForceFlush(context.Context) error { return nil }
 
 func (r *stateRecorder) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
 
+// states lists the state records only: a snapshot record carries no state, and
+// the two channels are deliberately separate (a commit is not a transition).
 func (r *stateRecorder) states() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	states := make([]string, len(r.records))
-	for i, rec := range r.records {
-		states[i] = rec.state
+	var states []string
+	for _, rec := range r.records {
+		if rec.state == "" {
+			continue
+		}
+		states = append(states, rec.state)
 	}
 	return states
 }
@@ -170,8 +182,8 @@ func TestPublishStateSealedTombstone(t *testing.T) {
 func TestEmitAgentStateRecordShape(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
 
-	EmitAgentState(ctx, AgentStateWaitingInput, "ok to delete testdata/legacy?")
-	EmitAgentState(ctx, AgentStateRunning, "")
+	EmitAgentState(ctx, AgentStateWaitingInput, "ok to delete testdata/legacy?", "")
+	EmitAgentState(ctx, AgentStateRunning, "", "")
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
@@ -185,4 +197,69 @@ func TestEmitAgentStateRecordShape(t *testing.T) {
 	// folding records latest-wins drops a question that has been answered.
 	require.Equal(t, "RUNNING", rec.records[1].state)
 	require.Empty(t, rec.records[1].waitingOn)
+}
+
+// TestEmitAgentSnapshotRecordShape locks the resume anchor's wire contract:
+// the digest of the last committed conversation, on a record of its own, with
+// no state token and an explicitly empty body.
+//
+// A record of its own is forced: state records are edge-triggered on the
+// projected state, and most commits do not move the state while every commit
+// moves the snapshot — folding the digest into them would publish a resume
+// anchor stuck at whatever the conversation was when the agent last changed
+// state.
+func TestEmitAgentSnapshotRecordShape(t *testing.T) {
+	rec, ctx := stateRecorderCtx(t)
+
+	EmitAgentSnapshot(ctx, "xxh3:9e107d9d372bb682")
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	require.Len(t, rec.records, 1)
+	require.Equal(t, "xxh3:9e107d9d372bb682", rec.records[0].digest)
+	require.Empty(t, rec.records[0].state,
+		"a commit is not a transition: the snapshot record carries no state")
+	require.Empty(t, rec.records[0].body, "snapshot records must not carry log text")
+}
+
+// TestStopReasonRidesTerminalRecord covers the fact that makes a trace
+// restorable at all: a stop somebody asked for and a stop the session's
+// teardown performed are the same STOPPED projection, and only the reason
+// tells them apart. Restoring the first as live reverses a dismissal;
+// refusing to restore the second loses a cleanly closed session entirely.
+func TestStopReasonRidesTerminalRecord(t *testing.T) {
+	rec, ctx := stateRecorderCtx(t)
+	rt := testRuntime(ctx)
+
+	// A non-terminal transition carries no reason, so a consumer folding
+	// records latest-wins never attributes a stale reason to a later stop.
+	rt.testTransition(func() { rt.paused = true })
+
+	require.NoError(t, rt.Stop(context.Background(), false, nil, AgentStopExplicit))
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	require.Len(t, rec.records, 2)
+	require.Equal(t, "PAUSED", rec.records[0].state)
+	require.Empty(t, rec.records[0].stopReason)
+	require.Equal(t, "STOPPED", rec.records[1].state)
+	require.Equal(t, string(AgentStopExplicit), rec.records[1].stopReason)
+}
+
+// TestKillAllStopsWithSessionReason is the other half: session teardown stops
+// every entry it holds, and each says so — otherwise a normal exit publishes a
+// trace in which every agent looks deliberately dismissed.
+func TestKillAllStopsWithSessionReason(t *testing.T) {
+	rec, ctx := stateRecorderCtx(t)
+	rt := testRuntime(ctx)
+	rt.key = "instance-1"
+
+	ars := NewAgentRuntimes()
+	ars.entries[rt.key] = rt
+	require.NoError(t, ars.KillAll(context.Background(), errors.New("session closed")))
+
+	require.Equal(t, []string{"STOPPED"}, rec.states())
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	require.Equal(t, string(AgentStopSession), rec.records[0].stopReason)
 }
