@@ -1142,6 +1142,11 @@ func printID(w io.Writer, response any, typeDef *modTypeDef) error {
 		return nil
 	case typeDef.AsObject != nil:
 		switch v := response.(type) {
+		case nil:
+			// A nullable object field that resolved to null. "null" is both valid
+			// JSON and unambiguous in plain output.
+			_, err := fmt.Fprintln(w, "null")
+			return err
 		case string:
 			return printEncodedID(w, v)
 		case map[string]any:
