@@ -297,6 +297,267 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 	return inst, nil
 }
 
+// MaterializeGitCheckpointBundle imports a prerequisite bundle into an exact
+// remote-base checkout and moves its canonical repository to the checkpoint's
+// logical local HEAD. The bundle is permitted to omit objects reachable from
+// baseSHA, but nothing else: git bundle verify/fetch check prerequisite and
+// connectivity before the snapshot is committed.
+func MaterializeGitCheckpointBundle(
+	ctx context.Context,
+	base dagql.ObjectResult[*Directory],
+	baseSHA, headSHA, objectFormat, bundleRef string,
+	bundle []byte,
+) (inst dagql.ObjectResult[*Directory], rerr error) {
+	if baseSHA == "" || headSHA == "" {
+		return inst, fmt.Errorf("workspace checkpoint bundle requires base and head SHAs")
+	}
+	if len(bundle) == 0 {
+		return inst, fmt.Errorf("workspace checkpoint bundle is empty")
+	}
+	if bundleRef == "" {
+		return inst, fmt.Errorf("workspace checkpoint bundle ref is required")
+	}
+
+	srv := dagql.CurrentDagqlServer(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	parent, err := base.Self().Snapshot.GetOrEval(ctx, base.Result)
+	if err != nil {
+		return inst, fmt.Errorf("get checkpoint base snapshot: %w", err)
+	}
+	basePath, err := base.Self().Dir.GetOrEval(ctx, base.Result)
+	if err != nil {
+		return inst, fmt.Errorf("get checkpoint base path: %w", err)
+	}
+	bkref, err := query.SnapshotManager().New(ctx, parent,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("workspace checkpoint git bundle"))
+	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
+		worktree, err := fs.RootPath(root, basePath)
+		if err != nil {
+			return err
+		}
+		actualBase, err := runGitEnv(ctx, worktree, nil, "rev-parse", "--verify", "HEAD^{commit}")
+		if err != nil {
+			return fmt.Errorf("read checkpoint base HEAD: %w", err)
+		}
+		if strings.TrimSpace(actualBase) != baseSHA {
+			return fmt.Errorf("remote checkpoint base is %s, expected %s", strings.TrimSpace(actualBase), baseSHA)
+		}
+		actualFormat, err := runGitEnv(ctx, worktree, nil, "rev-parse", "--show-object-format")
+		if err != nil {
+			return fmt.Errorf("read checkpoint object format: %w", err)
+		}
+		if strings.TrimSpace(actualFormat) != objectFormat {
+			return fmt.Errorf("remote checkpoint object format is %s, expected %s", strings.TrimSpace(actualFormat), objectFormat)
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "check-ref-format", bundleRef); err != nil {
+			return fmt.Errorf("invalid checkpoint bundle ref %q: %w", bundleRef, err)
+		}
+
+		bundleFile, err := os.CreateTemp("", "dagger-workspace-checkpoint-bundle")
+		if err != nil {
+			return fmt.Errorf("create checkpoint bundle file: %w", err)
+		}
+		bundlePath := bundleFile.Name()
+		defer os.Remove(bundlePath)
+		if _, err := bundleFile.Write(bundle); err != nil {
+			bundleFile.Close()
+			return fmt.Errorf("write checkpoint bundle: %w", err)
+		}
+		if err := bundleFile.Close(); err != nil {
+			return err
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "bundle", "verify", bundlePath); err != nil {
+			return fmt.Errorf("verify checkpoint bundle: %w", err)
+		}
+		heads, err := runGitEnv(ctx, worktree, nil, "bundle", "list-heads", bundlePath, bundleRef)
+		if err != nil {
+			return fmt.Errorf("list checkpoint bundle heads: %w", err)
+		}
+		fields := strings.Fields(strings.TrimSpace(heads))
+		if len(fields) != 2 || fields[0] != headSHA || fields[1] != bundleRef {
+			return fmt.Errorf("checkpoint bundle ref %s does not resolve to logical HEAD %s", bundleRef, headSHA)
+		}
+
+		const importedRef = "refs/dagger/checkpoint/imported"
+		if _, err := runGitEnv(ctx, worktree, nil, "fetch", "--quiet", "--no-tags", bundlePath, "+"+bundleRef+":"+importedRef); err != nil {
+			return fmt.Errorf("import checkpoint bundle: %w", err)
+		}
+		defer runGitEnv(context.WithoutCancel(ctx), worktree, nil, "update-ref", "-d", importedRef) //nolint:errcheck
+		if _, err := runGitEnv(ctx, worktree, nil, "merge-base", "--is-ancestor", baseSHA, headSHA); err != nil {
+			return fmt.Errorf("checkpoint logical HEAD %s does not descend from base %s: %w", headSHA, baseSHA, err)
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "update-ref", "--no-deref", "HEAD", headSHA); err != nil {
+			return fmt.Errorf("set checkpoint HEAD: %w", err)
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "reset", "--hard", "--quiet", headSHA); err != nil {
+			return fmt.Errorf("check out checkpoint HEAD: %w", err)
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "update-ref", "-d", importedRef); err != nil {
+			return fmt.Errorf("remove checkpoint import ref: %w", err)
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "pack-refs", "--all"); err != nil {
+			return fmt.Errorf("normalize checkpoint refs: %w", err)
+		}
+		return normalizeCanonicalGitDir(filepath.Join(worktree, ".git"))
+	})
+	if err != nil {
+		return inst, err
+	}
+
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bkref = nil
+	dir := &Directory{
+		Platform: query.Platform(),
+		Services: slices.Clone(base.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue(basePath)
+	dir.Snapshot.setValue(snap)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		return inst, err
+	}
+	return inst, nil
+}
+
+// WorkspaceGitTreeHash computes a stable Git tree object for the effective
+// worktree, including ordinary untracked files. It uses a temporary index, so
+// the normalized checkpoint index remains exactly HEAD.
+func WorkspaceGitTreeHash(ctx context.Context, tree dagql.ObjectResult[*Directory]) (string, error) {
+	repo := &LocalGitRepository{Directory: tree}
+	var treeSHA string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		index, err := os.CreateTemp("", "dagger-workspace-checkpoint-index")
+		if err != nil {
+			return err
+		}
+		indexPath := index.Name()
+		if err := index.Close(); err != nil {
+			return err
+		}
+		if err := os.Remove(indexPath); err != nil {
+			return err
+		}
+		defer os.Remove(indexPath)
+		git = git.New(gitutil.WithIndexFile(indexPath))
+		if _, err := git.Run(ctx, "read-tree", "HEAD"); err != nil {
+			return err
+		}
+		if _, err := git.Run(ctx, "add", "-A", "-f", "--", "."); err != nil {
+			return err
+		}
+		out, err := git.Run(ctx, "write-tree")
+		if err != nil {
+			return err
+		}
+		treeSHA = strings.TrimSpace(string(out))
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("compute checkpoint worktree tree: %w", err)
+	}
+	return treeSHA, nil
+}
+
+// ValidateWorkspaceGitCheckpointHistory proves that the imported graph is the
+// linear pending stack described by the manifest and that its user-visible
+// metadata and changed-path scopes were not forged independently of the bundle.
+func ValidateWorkspaceGitCheckpointHistory(
+	ctx context.Context,
+	repo dagql.ObjectResult[*Directory],
+	manifest *WorkspaceGitCheckpointManifest,
+) error {
+	if manifest == nil {
+		return fmt.Errorf("workspace checkpoint manifest is required")
+	}
+	return (&LocalGitRepository{Directory: repo}).mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		out, err := git.Run(ctx, "rev-list", "--reverse", manifest.BaseSHA+".."+manifest.HeadSHA)
+		if err != nil {
+			return fmt.Errorf("enumerate checkpoint commits: %w", err)
+		}
+		actualSHAs := strings.Fields(string(out))
+		if len(actualSHAs) != len(manifest.Commits) {
+			return fmt.Errorf("checkpoint history contains %d commits, manifest describes %d", len(actualSHAs), len(manifest.Commits))
+		}
+		expectedParent := manifest.BaseSHA
+		for i, commit := range manifest.Commits {
+			if commit.SHA == "" || commit.SHA != actualSHAs[i] {
+				return fmt.Errorf("checkpoint commit %d is %s, expected %s", i, actualSHAs[i], commit.SHA)
+			}
+			raw, err := git.Run(ctx, "cat-file", "commit", commit.SHA)
+			if err != nil {
+				return fmt.Errorf("read checkpoint commit %d (%s): %w", i, commit.SHA, err)
+			}
+			meta, err := parseGitCommitMetadata(commit.SHA, string(raw))
+			if err != nil {
+				return fmt.Errorf("parse checkpoint commit %d (%s): %w", i, commit.SHA, err)
+			}
+			if len(meta.ParentSHAs) != 1 || meta.ParentSHAs[0] != expectedParent {
+				return fmt.Errorf("checkpoint commit %d (%s) is not the next linear child of %s", i, commit.SHA, expectedParent)
+			}
+			if meta.Message != commit.Message || meta.AuthoredDate != commit.Date || meta.AuthorName != commit.AuthorName || meta.AuthorEmail != commit.AuthorEmail {
+				return fmt.Errorf("checkpoint commit %d (%s) metadata does not match manifest", i, commit.SHA)
+			}
+			pathsOut, err := git.Run(ctx, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", expectedParent, commit.SHA)
+			if err != nil {
+				return fmt.Errorf("read checkpoint commit %d (%s) paths: %w", i, commit.SHA, err)
+			}
+			actualPaths := strings.Split(strings.TrimSuffix(string(pathsOut), "\x00"), "\x00")
+			if len(actualPaths) == 1 && actualPaths[0] == "" {
+				actualPaths = nil
+			}
+			slices.Sort(actualPaths)
+			expectedPaths := slices.Clone(commit.Paths)
+			for j, p := range expectedPaths {
+				clean := filepath.ToSlash(filepath.Clean(p))
+				if p == "" || filepath.IsAbs(p) || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != p {
+					return fmt.Errorf("checkpoint commit %d (%s) has invalid path %q", i, commit.SHA, p)
+				}
+				expectedPaths[j] = clean
+			}
+			slices.Sort(expectedPaths)
+			if !slices.Equal(actualPaths, expectedPaths) {
+				return fmt.Errorf("checkpoint commit %d (%s) paths do not match manifest", i, commit.SHA)
+			}
+			expectedParent = commit.SHA
+		}
+		if expectedParent != manifest.HeadSHA {
+			return fmt.Errorf("checkpoint pending stack ends at %s, expected logical HEAD %s", expectedParent, manifest.HeadSHA)
+		}
+		if len(manifest.Commits) == 0 && manifest.HeadSHA != manifest.BaseSHA {
+			return fmt.Errorf("checkpoint with no pending commits must have identical base and head")
+		}
+		return nil
+	})
+}
+
+func normalizeCanonicalGitDir(gitDir string) error {
+	for _, p := range []string{"logs", "hooks", "branches", "description", "FETCH_HEAD", "COMMIT_EDITMSG"} {
+		if err := os.RemoveAll(filepath.Join(gitDir, p)); err != nil {
+			return fmt.Errorf("normalize .git/%s: %w", p, err)
+		}
+	}
+	return nil
+}
+
 func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack) error {
 	initArgs := []string{"init", "-q", "--initial-branch=main"}
 	if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
@@ -366,16 +627,7 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		}
 	}
 
-	// Strip state that is mutable, host-specific, or scratch: none of it is
-	// part of "the repository at this ref state", and keeping it would make
-	// otherwise identical reconstructions diverge.
-	gitDir := filepath.Join(root, ".git")
-	for _, p := range []string{"logs", "hooks", "branches", "description", "FETCH_HEAD", "COMMIT_EDITMSG"} {
-		if err := os.RemoveAll(filepath.Join(gitDir, p)); err != nil {
-			return fmt.Errorf("normalize .git/%s: %w", p, err)
-		}
-	}
-	return nil
+	return normalizeCanonicalGitDir(filepath.Join(root, ".git"))
 }
 
 // DropRootGitPointerFile returns dir without a `.git` regular file at its

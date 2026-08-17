@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"golang.org/x/mod/semver"
 )
 
@@ -50,6 +52,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Query]{
 		currentWorkspaceField,
+		dagql.NodeFunc("_workspaceCheckpointChunk", s.workspaceCheckpointChunk).
+			Doc("(Internal-only) Construct one bounded workspace checkpoint payload chunk."),
+		dagql.NodeFunc("_workspaceFromGitCheckpoint", s.workspaceFromGitCheckpoint).
+			Doc("(Internal-only) Reconstruct a value-backed workspace from a remote Git base and checkpoint payload."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
@@ -479,6 +485,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		migrateField,
 	}.Install(srv)
 
+	dagql.Fields[*core.Directory]{
+		dagql.NodeFunc("__withWorkspaceCheckpointBundle", s.directoryWithWorkspaceCheckpointBundle).
+			IsPersistable().
+			Doc("(Internal-only) Import a validated workspace checkpoint bundle over a remote base checkout."),
+		dagql.NodeFunc("__withWorkspaceCheckpointWorktree", s.directoryWithWorkspaceCheckpointWorktree).
+			IsPersistable().
+			Doc("(Internal-only) Apply a validated workspace checkpoint worktree delta."),
+	}.Install(srv)
+
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCheckpointChunk](srv))
+	dagql.Fields[*core.WorkspaceCheckpointChunk]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceStagedCommit](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
@@ -533,6 +550,374 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceSDK]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
+}
+
+type workspaceCheckpointDataArgs struct {
+	Manifest dagql.DigestedSerializedString[string]
+	Chunks   []core.WorkspaceCheckpointChunkID
+}
+
+type workspaceFromGitCheckpointArgs struct {
+	Base     core.GitRefID
+	Manifest dagql.DigestedSerializedString[string]
+	Chunks   []core.WorkspaceCheckpointChunkID
+}
+
+func (args workspaceFromGitCheckpointArgs) checkpointData() workspaceCheckpointDataArgs {
+	return workspaceCheckpointDataArgs{Manifest: args.Manifest, Chunks: args.Chunks}
+}
+
+func (s *workspaceSchema) workspaceCheckpointChunk(
+	ctx context.Context,
+	_ dagql.ObjectResult[*core.Query],
+	args struct {
+		Data dagql.DigestedSerializedString[[]byte]
+	},
+) (dagql.ObjectResult[*core.WorkspaceCheckpointChunk], error) {
+	claimed := args.Data.Digest
+	serialized := digest.FromString(args.Data.String())
+	if claimed == serialized {
+		claimed = ""
+	}
+	chunk, err := core.NewWorkspaceCheckpointChunk(args.Data.Self, claimed)
+	if err != nil {
+		return dagql.ObjectResult[*core.WorkspaceCheckpointChunk]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.WorkspaceCheckpointChunk]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, chunk)
+}
+
+func loadWorkspaceCheckpointData(
+	ctx context.Context,
+	args workspaceCheckpointDataArgs,
+) (*core.WorkspaceGitCheckpointManifest, []byte, []byte, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if args.Manifest.Digest != "" {
+		actual := digest.FromString(args.Manifest.Self)
+		serialized := digest.FromString(args.Manifest.String())
+		if args.Manifest.Digest != actual && args.Manifest.Digest != serialized {
+			return nil, nil, nil, fmt.Errorf("workspace checkpoint manifest digest %s does not match content %s", args.Manifest.Digest, actual)
+		}
+	}
+	manifest, err := core.ParseWorkspaceGitCheckpointManifest(args.Manifest.Self)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := validateWorkspaceCheckpointManifest(manifest); err != nil {
+		return nil, nil, nil, err
+	}
+	chunks := make([]*core.WorkspaceCheckpointChunk, 0, len(args.Chunks))
+	for i, id := range args.Chunks {
+		chunk, err := id.Load(ctx, srv)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("load workspace checkpoint chunk %d: %w", i, err)
+		}
+		chunks = append(chunks, chunk.Self())
+	}
+	bundle, worktree, err := core.AssembleWorkspaceCheckpointPayloads(manifest, chunks)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return manifest, bundle, worktree, nil
+}
+
+func validateWorkspaceCheckpointManifest(manifest *core.WorkspaceGitCheckpointManifest) error {
+	if manifest == nil {
+		return fmt.Errorf("workspace checkpoint manifest is required")
+	}
+	shaBytes := 20
+	switch manifest.ObjectFormat {
+	case "sha1":
+	case "sha256":
+		shaBytes = 32
+	default:
+		return fmt.Errorf("workspace checkpoint object format %q is unsupported", manifest.ObjectFormat)
+	}
+	validObjectID := func(label, value string, optional bool) error {
+		if optional && value == "" {
+			return nil
+		}
+		decoded, err := hex.DecodeString(value)
+		if err != nil || len(decoded) != shaBytes {
+			return fmt.Errorf("workspace checkpoint %s %q is not a %s object ID", label, value, manifest.ObjectFormat)
+		}
+		return nil
+	}
+	if err := validObjectID("base", manifest.BaseSHA, false); err != nil {
+		return err
+	}
+	if err := validObjectID("head", manifest.HeadSHA, false); err != nil {
+		return err
+	}
+	if err := validObjectID("worktree tree", manifest.WorktreeTree, false); err != nil {
+		return err
+	}
+	if manifest.CapturePolicyVersion == "" {
+		return fmt.Errorf("workspace checkpoint capture policy version is required")
+	}
+	if len(manifest.Commits) == 0 {
+		if manifest.HeadSHA != manifest.BaseSHA {
+			return fmt.Errorf("workspace checkpoint with no pending commits must have identical base and head")
+		}
+		if manifest.Bundle.Size != 0 || len(manifest.Bundle.Chunks) != 0 || manifest.BundleRef != "" {
+			return fmt.Errorf("workspace checkpoint with no pending commits must not contain a bundle")
+		}
+	} else {
+		if manifest.BundleRef == "" || manifest.Bundle.Size == 0 || len(manifest.Bundle.Chunks) == 0 {
+			return fmt.Errorf("workspace checkpoint pending commits require a bundle and bundle ref")
+		}
+		if manifest.Commits[len(manifest.Commits)-1].SHA != manifest.HeadSHA {
+			return fmt.Errorf("workspace checkpoint final commit does not match logical HEAD")
+		}
+	}
+	for i, commit := range manifest.Commits {
+		if err := validObjectID(fmt.Sprintf("commit %d", i), commit.SHA, false); err != nil {
+			return err
+		}
+		if err := validObjectID(fmt.Sprintf("commit %d origin", i), commit.Origin, true); err != nil {
+			return err
+		}
+		if commit.Message == "" || commit.Date == "" || commit.AuthorName == "" || commit.AuthorEmail == "" {
+			return fmt.Errorf("workspace checkpoint commit %d has incomplete metadata", i)
+		}
+	}
+	meta := manifest.Workspace
+	cwd, err := resolveWorkspacePath(meta.Cwd, ".")
+	if err != nil {
+		return fmt.Errorf("workspace checkpoint cwd: %w", err)
+	}
+	manifest.Workspace.Cwd = cwd
+	for label, value := range map[string]string{"config file": meta.ConfigFile, "lock file": meta.LockFile} {
+		if value == "" {
+			continue
+		}
+		clean, err := resolveWorkspacePath("/"+strings.TrimPrefix(value, "/"), ".")
+		if err != nil || clean != value {
+			return fmt.Errorf("workspace checkpoint %s %q is not a canonical workspace-relative path", label, value)
+		}
+	}
+	if (meta.GitAuthorName == "") != (meta.GitAuthorEmail == "") {
+		return fmt.Errorf("workspace checkpoint git author name and email must be set together")
+	}
+	return nil
+}
+
+func checkpointDataNamedInputs(args workspaceCheckpointDataArgs) []dagql.NamedInput {
+	chunkIDs := make(dagql.ArrayInput[core.WorkspaceCheckpointChunkID], len(args.Chunks))
+	copy(chunkIDs, args.Chunks)
+	return []dagql.NamedInput{
+		{Name: "manifest", Value: args.Manifest},
+		{Name: "chunks", Value: chunkIDs},
+	}
+}
+
+func (s *workspaceSchema) directoryWithWorkspaceCheckpointBundle(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args workspaceCheckpointDataArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	manifest, bundle, _, err := loadWorkspaceCheckpointData(ctx, args)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return core.MaterializeGitCheckpointBundle(
+		ctx, parent, manifest.BaseSHA, manifest.HeadSHA, manifest.ObjectFormat, manifest.BundleRef, bundle)
+}
+
+func (s *workspaceSchema) directoryWithWorkspaceCheckpointWorktree(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args workspaceCheckpointDataArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	manifest, _, patch, err := loadWorkspaceCheckpointData(ctx, args)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return core.MaterializeGitWorktreePack(ctx, parent, &engineutil.GitWorktreePack{
+		HeadSHA: manifest.HeadSHA,
+		Patch:   patch,
+	})
+}
+
+func (s *workspaceSchema) workspaceFromGitCheckpoint(
+	ctx context.Context,
+	_ dagql.ObjectResult[*core.Query],
+	args workspaceFromGitCheckpointArgs,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	base, err := args.Base.Load(ctx, srv)
+	if err != nil {
+		return inst, fmt.Errorf("load workspace checkpoint base: %w", err)
+	}
+	checkpointData := args.checkpointData()
+	manifest, _, patch, err := loadWorkspaceCheckpointData(ctx, checkpointData)
+	if err != nil {
+		return inst, err
+	}
+	if base.Self() == nil || base.Self().Ref == nil || base.Self().Ref.SHA != manifest.BaseSHA {
+		actual := ""
+		if base.Self() != nil && base.Self().Ref != nil {
+			actual = base.Self().Ref.SHA
+		}
+		return inst, fmt.Errorf("workspace checkpoint remote base is %s, expected %s", actual, manifest.BaseSHA)
+	}
+
+	var baseRepo dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, base, &baseRepo, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(false)},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("checkout workspace checkpoint base: %w", err)
+	}
+
+	latestRepo := baseRepo
+	if len(manifest.Commits) > 0 {
+		if err := srv.Select(ctx, baseRepo, &latestRepo, dagql.Selector{
+			Field: "__withWorkspaceCheckpointBundle",
+			Args:  checkpointDataNamedInputs(checkpointData),
+		}); err != nil {
+			return inst, err
+		}
+	}
+	if err := core.ValidateWorkspaceGitCheckpointHistory(ctx, latestRepo, manifest); err != nil {
+		return inst, err
+	}
+
+	worktreeRepo := latestRepo
+	if len(patch) > 0 {
+		if err := srv.Select(ctx, latestRepo, &worktreeRepo, dagql.Selector{
+			Field: "__withWorkspaceCheckpointWorktree",
+			Args:  checkpointDataNamedInputs(checkpointData),
+		}); err != nil {
+			return inst, err
+		}
+	}
+	worktreeTree, err := core.WorkspaceGitTreeHash(ctx, worktreeRepo)
+	if err != nil {
+		return inst, err
+	}
+	if worktreeTree != manifest.WorktreeTree {
+		return inst, fmt.Errorf("workspace checkpoint worktree tree is %s, expected %s", worktreeTree, manifest.WorktreeTree)
+	}
+
+	var baseContent dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, base, &baseContent, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(false)},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("checkout workspace checkpoint base content: %w", err)
+	}
+	var gitDir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, latestRepo, &gitDir, dagql.Selector{
+		Field: "directory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".git")}},
+	}); err != nil {
+		return inst, fmt.Errorf("read workspace checkpoint git directory: %w", err)
+	}
+	gitDirID, err := gitDir.ID()
+	if err != nil {
+		return inst, err
+	}
+	var sourceBase dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, baseContent, &sourceBase, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".git")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](gitDirID)},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("compose workspace checkpoint base: %w", err)
+	}
+	sourceBaseID, err := sourceBase.ID()
+	if err != nil {
+		return inst, err
+	}
+	var overlay dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, worktreeRepo, &overlay, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](sourceBaseID)}},
+	}); err != nil {
+		return inst, fmt.Errorf("construct workspace checkpoint overlay: %w", err)
+	}
+
+	pending := make([]core.WorkspacePendingCommit, 0, len(manifest.Commits))
+	for i, bundled := range manifest.Commits {
+		var commitContent dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, latestRepo, &commitContent,
+			dagql.Selector{Field: "asGit"},
+			dagql.Selector{Field: "commit", Args: []dagql.NamedInput{{Name: "id", Value: dagql.NewString(bundled.SHA)}}},
+			dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
+		); err != nil {
+			return inst, fmt.Errorf("checkout workspace checkpoint commit %d: %w", i, err)
+		}
+		var commitTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, commitContent, &commitTree, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(".git")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](gitDirID)},
+			},
+		}); err != nil {
+			return inst, err
+		}
+		var committed dagql.ObjectResult[*core.Changeset]
+		if err := srv.Select(ctx, commitTree, &committed, dagql.Selector{
+			Field: "changes",
+			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](sourceBaseID)}},
+		}); err != nil {
+			return inst, err
+		}
+		pending = append(pending, core.WorkspacePendingCommit{
+			SHA:         bundled.SHA,
+			Origin:      bundled.Origin,
+			Message:     bundled.Message,
+			Date:        bundled.Date,
+			AuthorName:  bundled.AuthorName,
+			AuthorEmail: bundled.AuthorEmail,
+			Paths:       slices.Clone(bundled.Paths),
+			Repo:        latestRepo,
+			Committed:   committed,
+		})
+	}
+
+	meta := manifest.Workspace
+	address := meta.Address
+	if address == "" {
+		address = "git-checkpoint://" + manifest.HeadSHA
+	}
+	ws := &core.Workspace{
+		Address:        address,
+		Cwd:            meta.Cwd,
+		ConfigFile:     meta.ConfigFile,
+		LockFile:       meta.LockFile,
+		GitAuthorName:  meta.GitAuthorName,
+		GitAuthorEmail: meta.GitAuthorEmail,
+		BaseHeadSHA:    manifest.BaseSHA,
+	}
+	ws.SetPortableCheckpoint()
+	ws.SetRootfs(worktreeRepo)
+	ws.SetSource(core.NewWorkspaceSourceOverlay(core.NewWorkspaceSourceDirectory(sourceBase), nil, nil, overlay))
+	for _, commit := range pending {
+		ws = ws.WithPendingCommit(commit)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
 type workspaceArgs struct {
@@ -4552,35 +4937,49 @@ func (s *workspaceSchema) agents(
 	},
 ) (*core.AgentGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parent) && !parent.IsPortableCheckpoint() {
 		return &core.AgentGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
 
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
+	var mods []dagql.ObjectResult[*core.Module]
+	if parent.IsPortableCheckpoint() {
+		// A restored checkpoint has no owning client or served-module snapshot.
+		// Resolve every configured module from its frozen value-backed rootfs;
+		// workspaceOverlayModules treats the checkpoint marker as a config-wide
+		// invalidation and therefore includes untouched local modules too.
+		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(nil, overlayMods)
+	} else {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
 
-	// agent composition is strict: a module that can't load is a failure.
-	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
-		return nil, err
-	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
-	if err != nil {
-		return nil, err
-	}
+		// agent composition is strict: a module that can't load is a failure.
+		if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
+			return nil, err
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	// The served modules above are the workspace as it was on disk when the
-	// session started. Re-resolve whatever the workspace's pending overlay
-	// touches, so an agent recomposing itself (install/reload) sees its own
-	// staged edits to module source and to dagger.toml.
-	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
-	if err != nil {
-		return nil, err
+		// The served modules above are the workspace as it was on disk when the
+		// session started. Re-resolve whatever the workspace's pending overlay
+		// touches, so an agent recomposing itself (install/reload) sees its own
+		// staged edits to module source and to dagger.toml.
+		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(mods, overlayMods)
 	}
-	mods = mergeOverlayModules(mods, overlayMods)
 
 	var allAgents []*core.Agent
 	for _, mod := range mods {

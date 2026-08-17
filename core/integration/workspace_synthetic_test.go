@@ -2,12 +2,16 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -464,6 +468,165 @@ func (WorkspaceSuite) TestSyntheticWorkspaceFindUpValidatesNames(ctx context.Con
 			require.Error(t, err)
 		})
 	}
+}
+
+func (WorkspaceSuite) TestGitCheckpointReconstructsPendingHistoryAndWorktree(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("tracked.txt", "base\n"))
+	baseRef := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
+	baseSHA, err := baseRef.CommitSHA(ctx)
+	require.NoError(t, err)
+	baseID, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Ref(baseSHA).ID(ctx)
+	require.NoError(t, err)
+
+	const (
+		firstDate  = "2026-01-02T03:04:05Z"
+		secondDate = "2026-01-02T04:05:06Z"
+	)
+	packed := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithServiceBinding("checkpoint-git", gitDaemon).
+		WithEnvVariable("REPO_URL", repoURL).
+		WithEnvVariable("BASE_SHA", baseSHA).
+		WithEnvVariable("FIRST_DATE", firstDate).
+		WithEnvVariable("SECOND_DATE", secondDate).
+		WithExec([]string{"sh", "-ec", `
+			git clone "$REPO_URL" /repo
+			cd /repo
+			git config user.name Checkpoint
+			git config user.email checkpoint@example.com
+			printf 'one\n' > one.txt
+			git add one.txt
+			GIT_AUTHOR_DATE="$FIRST_DATE" GIT_COMMITTER_DATE="$FIRST_DATE" git commit -m 'local one'
+			printf 'two\n' > two.txt
+			git add two.txt
+			GIT_AUTHOR_DATE="$SECOND_DATE" GIT_COMMITTER_DATE="$SECOND_DATE" git commit -m 'local two'
+			git rev-list --reverse "$BASE_SHA"..HEAD > /commits
+			git update-ref refs/heads/checkpoint HEAD
+			git bundle create /bundle refs/heads/checkpoint "^$BASE_SHA"
+			printf 'dirty\n' >> tracked.txt
+			git diff --binary HEAD > /worktree.patch
+			index=$(mktemp)
+			rm -f "$index"
+			GIT_INDEX_FILE="$index" git read-tree HEAD
+			GIT_INDEX_FILE="$index" git add -A -f -- .
+			GIT_INDEX_FILE="$index" git write-tree > /worktree.tree
+			base64 /bundle | tr -d '\n' > /bundle.b64
+			base64 /worktree.patch | tr -d '\n' > /worktree.b64
+		`})
+
+	bundle64, err := packed.File("/bundle.b64").Contents(ctx)
+	require.NoError(t, err)
+	bundle, err := base64.StdEncoding.DecodeString(strings.TrimSpace(bundle64))
+	require.NoError(t, err)
+	patch64, err := packed.File("/worktree.b64").Contents(ctx)
+	require.NoError(t, err)
+	patch, err := base64.StdEncoding.DecodeString(strings.TrimSpace(patch64))
+	require.NoError(t, err)
+	commitList, err := packed.File("/commits").Contents(ctx)
+	require.NoError(t, err)
+	commits := strings.Fields(commitList)
+	require.Len(t, commits, 2)
+	worktreeTree, err := packed.File("/worktree.tree").Contents(ctx)
+	require.NoError(t, err)
+	worktreeTree = strings.TrimSpace(worktreeTree)
+
+	payload := func(data []byte) core.WorkspaceCheckpointPayload {
+		d := digest.FromBytes(data).String()
+		chunks := []core.WorkspaceCheckpointChunkDescriptor{}
+		if len(data) > 0 {
+			chunks = append(chunks, core.WorkspaceCheckpointChunkDescriptor{Size: len(data), Digest: d})
+		}
+		return core.WorkspaceCheckpointPayload{Size: int64(len(data)), Digest: d, Chunks: chunks}
+	}
+	manifest := core.WorkspaceGitCheckpointManifest{
+		Version:              core.WorkspaceCheckpointFormatVersion,
+		ObjectFormat:         "sha1",
+		BaseSHA:              baseSHA,
+		HeadSHA:              commits[1],
+		BundleRef:            "refs/heads/checkpoint",
+		Bundle:               payload(bundle),
+		Worktree:             payload(patch),
+		WorktreeTree:         worktreeTree,
+		CapturePolicyVersion: "test-v1",
+		Workspace: core.WorkspaceCheckpointWorkspace{
+			Address:        "git-checkpoint://integration",
+			Cwd:            ".",
+			GitAuthorName:  "Checkpoint",
+			GitAuthorEmail: "checkpoint@example.com",
+		},
+		Commits: []core.WorkspaceBundledCommit{
+			{SHA: commits[0], Message: "local one", Date: firstDate, AuthorName: "Checkpoint", AuthorEmail: "checkpoint@example.com", Paths: []string{"one.txt"}},
+			{SHA: commits[1], Message: "local two", Date: secondDate, AuthorName: "Checkpoint", AuthorEmail: "checkpoint@example.com", Paths: []string{"two.txt"}},
+		},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	chunkID := func(data []byte) string {
+		encoded, err := json.Marshal(data)
+		require.NoError(t, err)
+		res, err := testutil.QueryWithClient[struct {
+			Chunk struct{ ID string }
+		}](c, t, `query($data: String!) { chunk: _workspaceCheckpointChunk(data: $data) { id } }`, &testutil.QueryOptions{Variables: map[string]any{
+			"data": string(encoded),
+		}})
+		require.NoError(t, err)
+		return res.Chunk.ID
+	}
+	bundleChunk := chunkID(bundle)
+	worktreeChunk := chunkID(patch)
+	encodedManifest, err := json.Marshal(string(manifestJSON))
+	require.NoError(t, err)
+
+	res, err := testutil.QueryWithClient[struct {
+		Workspace struct {
+			Cwd  string
+			One  struct{ Contents string }
+			Two  struct{ Contents string }
+			Dirt struct{ Contents string }
+			Git  struct {
+				Head          struct{ Commit string }
+				StagedCommits []struct {
+					SHA     string
+					Message string
+				}
+				Uncommitted struct{ ModifiedPaths []string }
+			}
+		}
+	}](c, t, `query($base: ID!, $manifest: String!, $chunks: [ID!]!) {
+		workspace: _workspaceFromGitCheckpoint(base: $base, manifest: $manifest, chunks: $chunks) {
+			cwd
+			one: file(path: "one.txt") { contents }
+			two: file(path: "two.txt") { contents }
+			dirt: file(path: "tracked.txt") { contents }
+			git {
+				head { commit }
+				stagedCommits { sha message }
+				uncommitted { modifiedPaths }
+			}
+		}
+	}`, &testutil.QueryOptions{Variables: map[string]any{
+		"base":     baseID,
+		"manifest": string(encodedManifest),
+		"chunks":   []string{bundleChunk, worktreeChunk},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "/", res.Workspace.Cwd)
+	require.Equal(t, "one\n", res.Workspace.One.Contents)
+	require.Equal(t, "two\n", res.Workspace.Two.Contents)
+	require.Equal(t, "base\ndirty\n", res.Workspace.Dirt.Contents)
+	require.Equal(t, commits[1], res.Workspace.Git.Head.Commit)
+	require.Equal(t, []string{commits[0], commits[1]}, []string{
+		res.Workspace.Git.StagedCommits[0].SHA,
+		res.Workspace.Git.StagedCommits[1].SHA,
+	})
+	require.Equal(t, []string{"local one", "local two"}, []string{
+		res.Workspace.Git.StagedCommits[0].Message,
+		res.Workspace.Git.StagedCommits[1].Message,
+	})
+	require.Equal(t, []string{"tracked.txt"}, res.Workspace.Git.Uncommitted.ModifiedPaths)
 }
 
 func syntheticWorkspaceSource(c *dagger.Client) *dagger.Directory {

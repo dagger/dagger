@@ -76,7 +76,7 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	if ws == nil || ws.ConfigFile == "" {
 		return nil, nil
 	}
-	if _, ok := ws.OverlayChanges(); !ok {
+	if _, ok := ws.OverlayChanges(); !ok && !ws.IsPortableCheckpoint() {
 		return nil, nil
 	}
 
@@ -90,7 +90,7 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	}
 	// A config edit can add, remove or repoint any entry, so every entry is
 	// suspect; otherwise only the entries whose source tree was edited are.
-	configTouched := ws.OverlayPathTouched(configFile)
+	configTouched := ws.IsPortableCheckpoint() || ws.OverlayPathTouched(configFile)
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
