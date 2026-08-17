@@ -201,11 +201,11 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 	if err != nil {
 		return inst, err
 	}
-	parent, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result)
+	parent, err := tree.Self().Snapshot.PeekOrEval(ctx, tree.Result)
 	if err != nil {
 		return inst, fmt.Errorf("get canonical checkout snapshot: %w", err)
 	}
-	treePath, err := tree.Self().Dir.GetOrEval(ctx, tree.Result)
+	treePath, err := tree.Self().Dir.PeekOrEval(ctx, tree.Result)
 	if err != nil {
 		return inst, fmt.Errorf("get canonical checkout path: %w", err)
 	}
@@ -323,11 +323,11 @@ func MaterializeGitCheckpointBundle(
 	if err != nil {
 		return inst, err
 	}
-	parent, err := base.Self().Snapshot.GetOrEval(ctx, base.Result)
+	parent, err := base.Self().Snapshot.PeekOrEval(ctx, base.Result)
 	if err != nil {
 		return inst, fmt.Errorf("get checkpoint base snapshot: %w", err)
 	}
-	basePath, err := base.Self().Dir.GetOrEval(ctx, base.Result)
+	basePath, err := base.Self().Dir.PeekOrEval(ctx, base.Result)
 	if err != nil {
 		return inst, fmt.Errorf("get checkpoint base path: %w", err)
 	}
@@ -448,11 +448,11 @@ func WorkspaceGitTreeHash(ctx context.Context, tree dagql.ObjectResult[*Director
 	if err != nil {
 		return "", err
 	}
-	parent, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result)
+	parent, err := tree.Self().Snapshot.PeekOrEval(ctx, tree.Result)
 	if err != nil {
 		return "", err
 	}
-	treePath, err := tree.Self().Dir.GetOrEval(ctx, tree.Result)
+	treePath, err := tree.Self().Dir.PeekOrEval(ctx, tree.Result)
 	if err != nil {
 		return "", err
 	}
