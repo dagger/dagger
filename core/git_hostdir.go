@@ -362,8 +362,10 @@ func MaterializeGitCheckpointBundle(
 		if strings.TrimSpace(actualFormat) != objectFormat {
 			return fmt.Errorf("remote checkpoint object format is %s, expected %s", strings.TrimSpace(actualFormat), objectFormat)
 		}
-		if _, err := runGitEnv(ctx, worktree, nil, "check-ref-format", bundleRef); err != nil {
-			return fmt.Errorf("invalid checkpoint bundle ref %q: %w", bundleRef, err)
+		if bundleRef != "HEAD" {
+			if _, err := runGitEnv(ctx, worktree, nil, "check-ref-format", bundleRef); err != nil {
+				return fmt.Errorf("invalid checkpoint bundle ref %q: %w", bundleRef, err)
+			}
 		}
 
 		bundleFile, err := os.CreateTemp("", "dagger-workspace-checkpoint-bundle")
@@ -442,9 +444,32 @@ func MaterializeGitCheckpointBundle(
 // worktree, including ordinary untracked files. It uses a temporary index, so
 // the normalized checkpoint index remains exactly HEAD.
 func WorkspaceGitTreeHash(ctx context.Context, tree dagql.ObjectResult[*Directory]) (string, error) {
-	repo := &LocalGitRepository{Directory: tree}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	parent, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result)
+	if err != nil {
+		return "", err
+	}
+	treePath, err := tree.Self().Dir.GetOrEval(ctx, tree.Result)
+	if err != nil {
+		return "", err
+	}
+	bkref, err := query.SnapshotManager().New(ctx, parent,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("workspace checkpoint tree hash"))
+	if err != nil {
+		return "", err
+	}
+	defer bkref.Release(context.WithoutCancel(ctx))
+
 	var treeSHA string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
+		worktree, err := fs.RootPath(root, treePath)
+		if err != nil {
+			return err
+		}
 		index, err := os.CreateTemp("", "dagger-workspace-checkpoint-index")
 		if err != nil {
 			return err
@@ -457,18 +482,18 @@ func WorkspaceGitTreeHash(ctx context.Context, tree dagql.ObjectResult[*Director
 			return err
 		}
 		defer os.Remove(indexPath)
-		git = git.New(gitutil.WithIndexFile(indexPath))
-		if _, err := git.Run(ctx, "read-tree", "HEAD"); err != nil {
+		env := []string{"GIT_INDEX_FILE=" + indexPath}
+		if _, err := runGitEnv(ctx, worktree, env, "read-tree", "HEAD"); err != nil {
 			return err
 		}
-		if _, err := git.Run(ctx, "add", "-A", "-f", "--", "."); err != nil {
+		if _, err := runGitEnv(ctx, worktree, env, "add", "-A", "-f", "--", "."); err != nil {
 			return err
 		}
-		out, err := git.Run(ctx, "write-tree")
+		out, err := runGitEnv(ctx, worktree, env, "write-tree")
 		if err != nil {
 			return err
 		}
-		treeSHA = strings.TrimSpace(string(out))
+		treeSHA = strings.TrimSpace(out)
 		return nil
 	})
 	if err != nil {

@@ -418,6 +418,22 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 }
 
+func (c *Client) PromptBool(ctx context.Context, title, question string) (bool, error) {
+	caller, err := c.GetMainClientCaller(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get main client caller for prompt: %w", err)
+	}
+	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
+		Title:   title,
+		Prompt:  question,
+		Default: false,
+	})
+	if err != nil {
+		return false, fmt.Errorf("interactive approval is unavailable: %w", err)
+	}
+	return response.Response, nil
+}
+
 func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
 	caller, err := c.GetMainClientCaller(ctx)

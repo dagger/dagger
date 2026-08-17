@@ -286,6 +286,8 @@ func (chunk *WorkspaceCheckpointChunk) Digest() digest.Digest {
 type WorkspaceGitCheckpointManifest struct {
 	Version              int                          `json:"version"`
 	ObjectFormat         string                       `json:"objectFormat"`
+	RemoteURL            string                       `json:"remoteURL"`
+	RemoteRef            string                       `json:"remoteRef"`
 	BaseSHA              string                       `json:"baseSHA"`
 	HeadSHA              string                       `json:"headSHA"`
 	BundleRef            string                       `json:"bundleRef,omitempty"`
