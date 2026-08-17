@@ -25,13 +25,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return all agent middlewares from modules loaded in the workspace.
      */
-    public function agents(?array $include = null): AgentGroup
+    public function agents(?array $include = null, ?array $exclude = null): AgentMiddlewareGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        return new \Dagger\AgentGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\AgentMiddlewareGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -71,6 +74,23 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('onlyGenerate', $onlyGenerate);
         }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Plan which of another workspace's staged commits can be applied to this one.
+     *
+     * Both workspaces are expected to descend from the same checkout - typically this workspace and one an agent was spawned with. Each of the source's staged commits is classified against this one, oldest first, as if every pickable commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or PICKABLE.
+     *
+     * Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.
+     */
+    public function commitsFrom(Workspace $source, ?array $commits = []): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitsFrom');
+        $leafQueryBuilder->setArgument('source', $source);
+        if (null !== $commits) {
+        $leafQueryBuilder->setArgument('commits', $commits);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'commitsFrom');
     }
 
     /**
@@ -429,6 +449,23 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $authorEmail) {
         $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with another workspace's staged commits replayed on top, without mutating either source.
+     *
+     * Each commit is applied to this workspace's current content as a patch - not as a whole-file overlay - so commits still land cleanly when this workspace has moved on since the source branched off. The replayed commit keeps the original message, date and author identity, and records the original commit as its origin, so pulling the same work again is recognised as already present.
+     *
+     * Commits this workspace already has, and commits whose content is already present, are skipped. A commit that cannot be applied is an error naming the commit and the conflicting paths: plan with commitsFrom first and pass the pickable hashes.
+     */
+    public function withCommitsFrom(Workspace $source, ?array $commits = []): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommitsFrom');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $commits) {
+        $innerQueryBuilder->setArgument('commits', $commits);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

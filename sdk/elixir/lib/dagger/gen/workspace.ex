@@ -29,14 +29,16 @@ defmodule Dagger.Workspace do
   @doc """
   Return all agent middlewares from modules loaded in the workspace.
   """
-  @spec agents(t(), [{:include, [String.t()]}]) :: Dagger.AgentGroup.t()
+  @spec agents(t(), [{:include, [String.t()]}, {:exclude, [String.t()]}]) ::
+          Dagger.AgentMiddlewareGroup.t()
   def agents(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("agents")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
-    %Dagger.AgentGroup{
+    %Dagger.AgentMiddlewareGroup{
       query_builder: query_builder,
       client: workspace.client
     }
@@ -85,6 +87,38 @@ defmodule Dagger.Workspace do
       query_builder: query_builder,
       client: workspace.client
     }
+  end
+
+  @doc """
+  Plan which of another workspace's staged commits can be applied to this one.
+
+  Both workspaces are expected to descend from the same checkout - typically this workspace and one an agent was spawned with. Each of the source's staged commits is classified against this one, oldest first, as if every pickable commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or PICKABLE.
+
+  Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.
+  """
+  @spec commits_from(t(), Dagger.Workspace.t(), [{:commits, [String.t()]}]) ::
+          {:ok, [Dagger.WorkspaceCommitPick.t()]} | {:error, term()}
+  def commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("commitsFrom")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("commits", optional_args[:commits])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceCommitPick{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceCommitPick"),
+           client: workspace.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -525,6 +559,28 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("paths", optional_args[:paths])
       |> QB.maybe_put_arg("authorName", optional_args[:author_name])
       |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with another workspace's staged commits replayed on top, without mutating either source.
+
+  Each commit is applied to this workspace's current content as a patch - not as a whole-file overlay - so commits still land cleanly when this workspace has moved on since the source branched off. The replayed commit keeps the original message, date and author identity, and records the original commit as its origin, so pulling the same work again is recognised as already present.
+
+  Commits this workspace already has, and commits whose content is already present, are skipped. A commit that cannot be applied is an error naming the commit and the conflicting paths: plan with commitsFrom first and pass the pickable hashes.
+  """
+  @spec with_commits_from(t(), Dagger.Workspace.t(), [{:commits, [String.t()]}]) ::
+          Dagger.Workspace.t()
+  def with_commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommitsFrom")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("commits", optional_args[:commits])
 
     %Dagger.Workspace{
       query_builder: query_builder,

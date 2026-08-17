@@ -85,6 +85,17 @@ defmodule Dagger.WorkspaceStagedCommit do
   end
 
   @doc """
+  The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.
+  """
+  @spec origin(t()) :: {:ok, String.t()} | {:error, term()}
+  def origin(%__MODULE__{} = workspace_staged_commit) do
+    query_builder =
+      workspace_staged_commit.query_builder |> QB.select("origin")
+
+    Client.execute(workspace_staged_commit.client, query_builder)
+  end
+
+  @doc """
   The full hash of the staged commit.
   """
   @spec sha(t()) :: {:ok, String.t()} | {:error, term()}

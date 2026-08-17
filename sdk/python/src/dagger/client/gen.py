@@ -31,6 +31,41 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class AgentMessageDelivery(Enum):
+    """How a message landed in an agent's evaluation."""
+
+    QUEUED = "QUEUED"
+    """The message is queued: the agent is paused or failed, and a resume will drain it."""
+
+    STARTED = "STARTED"
+    """The message opened a new turn: the agent was idle or newly started."""
+
+    STEERED = "STEERED"
+    """The message was absorbed into the in-flight turn at a step boundary, steering it."""
+
+
+class AgentState(Enum):
+    """Computed lifecycle state of an agent."""
+
+    FAILED = "FAILED"
+    """The loop failed; snapshot holds the completed prefix. Resume retries."""
+
+    IDLE = "IDLE"
+    """Mailbox empty, turn complete; blocked in receive."""
+
+    PAUSED = "PAUSED"
+    """Mailbox accepting but not draining, until resume."""
+
+    RUNNING = "RUNNING"
+    """A model request or tool evaluation is in flight."""
+
+    STOPPED = "STOPPED"
+    """Runtime released; snapshot remains readable."""
+
+    WAITING_INPUT = "WAITING_INPUT"
+    """Blocked on input from the user (derived; see waitingOn)."""
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -338,6 +373,37 @@ class TypeDefKind(Enum):
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
     """
+
+
+class WorkspaceCommitPickReason(Enum):
+    """Why a staged commit from another workspace cannot be applied to
+    this one."""
+
+    CONTENT = "CONTENT"
+    """The commit's patch no longer applies to this workspace's content."""
+
+    DIRTY = "DIRTY"
+    """This workspace has uncommitted changes on a path the commit touches, so applying it would sweep them into someone else's commit."""
+
+    NONE = "NONE"
+    """No obstruction: the status is not CONFLICT."""
+
+
+class WorkspaceCommitPickStatus(Enum):
+    """Whether one of another workspace's staged commits can be applied to
+    this one."""
+
+    CONFLICT = "CONFLICT"
+    """The commit cannot be applied; see reason and conflictPaths."""
+
+    PICKABLE = "PICKABLE"
+    """The commit applies cleanly to this workspace and would be staged."""
+
+    PICKED = "PICKED"
+    """This workspace already has the commit: in its own staged stack, in its git history, or as a commit it already replayed from the same origin."""
+
+    REDUNDANT = "REDUNDANT"
+    """Applying the commit would change nothing: its content is already present, for instance because the same edit was made here by hand."""
 
 
 @typecheck
@@ -711,6 +777,454 @@ class Address(Type):
 
 @typecheck
 class Agent(Type):
+    """A conversation loop running as an addressable, long-lived entity
+    within the session. The conversation itself remains observable at any
+    time as an immutable LLM value."""
+
+    async def id(self) -> str:
+        """A unique identifier for this Agent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def instance_id(self) -> str:
+        """The unique instance identity minted by the spawn that created this
+        agent.
+
+        It is the same value the agent's loop span publishes as
+        dagger.io/agent.id, so a client holding a handle can match it against
+        what it discovers in the trace. Two spawns of an identical composition
+        have different instance IDs; a display name is shared freely.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("instanceID", _args)
+        return await _ctx.execute(str)
+
+    async def interrupt(self) -> Self:
+        """Preempt the in-flight step, keeping all completed steps, and pause.
+
+        The interrupted turn stays open: messages it consumed remain pending,
+        and resume continues the turn from the last committed step. To
+        redirect, follow with send — steering and interrupting are separate
+        verbs.
+
+        On an idle, never-started, or failed agent this is equivalent to
+        pause. Interrupting a stopped agent fails.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "interrupt", _args)
+
+    def message(self, id: str) -> "AgentMessage":
+        """Look up a previously sent message by its message ID, returning its
+        handle.
+
+        This is the lookup send pins its result's identity through: the
+        returned handle's ID is an honest, replayable chain, addressable from
+        any request in the session (the cancel-and-re-await contract).
+
+        Fails if the agent has no runtime entry in this session, or no record
+        of the given ID.
+
+        Parameters
+        ----------
+        id:
+            The message ID, as generated by the send that enqueued the
+            message.
+        """
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("message", _args)
+        return AgentMessage(_ctx)
+
+    async def name(self) -> str:
+        """Display label and identity discriminator — not a session-wide address.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def pause(self) -> Self:
+        """Stop draining the mailbox once the in-flight step completes.
+
+        Pause takes priority over pending work: a mid-turn pause suspends the
+        turn, which resume continues. Messages sent while paused enqueue with
+        QUEUED delivery until a resume.
+
+        Pausing a never-started agent leaves it paused for its eventual start;
+        pausing a failed agent is allowed (resume decides the retry); pausing
+        a stopped agent fails.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "pause", _args)
+
+    async def rehydrate(
+        self,
+        *,
+        state: AgentState | None = AgentState.IDLE,
+        error: str | None = "",
+    ) -> Self:
+        """Recreate this instance's runtime entry from a persisted conversation,
+        without starting its loop.
+
+        The receiver's snapshot becomes the entry's committed history, so
+        prompting it continues where it left off — the restore verb: rebuild a
+        conversation's ID from a trace, load it, and re-hydrate the instance
+        it belonged to.
+
+        The loop is deliberately not started: a restored agent spends nothing
+        until it is prompted, and any input still pending on its snapshot is
+        stepped then.
+
+        Fails if the instance already has a runtime entry in this session: re-
+        hydration must happen before anything else addresses the instance,
+        since by then it may have stepped.
+
+        Parameters
+        ----------
+        state:
+            The lifecycle state to restore into, as facts on the entry: PAUSED
+            parks it, FAILED holds an error a resume retries past, STOPPED
+            preserves a dormant snapshot that send or resume can relaunch, IDLE
+            is ready to be prompted.
+            RUNNING and WAITING_INPUT are refused: the loop died with the
+            session that published them, so restore such an agent as IDLE —
+            its interrupted turn's input is still pending on the snapshot.
+        error:
+            The loop error to restore, for state FAILED. Refused with any
+            other state.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("state", state, AgentState.IDLE),
+            Arg("error", error, ""),
+        ]
+        return await self._ctx.execute_sync(self, "rehydrate", _args)
+
+    async def resume(self) -> Self:
+        """Resume draining the mailbox: a suspended turn continues from the last
+        committed step, and queued messages drain.
+
+        Resuming a FAILED agent retries its pending step. Resuming a STOPPED
+        agent relaunches the same instance from its last committed snapshot.
+
+        No-op on a running or idle agent.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "resume", _args)
+
+    async def send(self, message: str) -> str:
+        """Enqueue a message, on the record: it is consumed at a step boundary,
+        appends to the agent's history, and steers the running turn or opens a
+        new one.
+
+        Never blocks, never drops; concurrent sends queue in order.
+
+        The returned message ID is pinned through the message lookup field, so
+        the handle it loads is re-addressable from any request in the session:
+        cancel an await and re-await freely.
+
+        Sending to a never-started agent starts it (signal-with-start).
+        Sending to a stopped agent restarts the same instance from its last
+        committed snapshot. Sending to a paused or failed agent enqueues with
+        QUEUED delivery, to be drained by a resume.
+
+        Parameters
+        ----------
+        message:
+            The message text, appended to the agent's history as a prompt when
+            a turn consumes it.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("message", message),
+        ]
+        _ctx = self._select("send", _args)
+        return await _ctx.execute(str)
+
+    def snapshot(self) -> "LLM":
+        """The conversation as of the last committed step: immutable, branchable,
+        persistable.
+
+        The seed conversation if the agent never stepped.
+
+        Branching from it does not affect the agent.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("snapshot", _args)
+        return LLM(_ctx)
+
+    async def start(self) -> Self:
+        """Start the agent's evaluation loop. No-op if it is already running.
+
+        The loop runs detached from the calling request: it steps the
+        conversation while input is pending, then idles awaiting further
+        lifecycle operations.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "start", _args)
+
+    async def state(self) -> AgentState:
+        """Computed lifecycle state; never stored.
+
+        An agent that was never started reports IDLE: its mailbox is empty and
+        no turn is open.
+
+        Returns
+        -------
+        AgentState
+            Computed lifecycle state of an agent.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("state", _args)
+        return await _ctx.execute(AgentState)
+
+    async def stop(self, *, kill: bool | None = False) -> Self:
+        """Release the agent's runtime. The tombstone (state, snapshot) stays
+        readable for the rest of the session.
+
+        Parameters
+        ----------
+        kill:
+            Cancel the loop immediately instead of letting an in-flight step
+            finish. Either way the completed steps are preserved in the
+            snapshot.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("kill", kill, False),
+        ]
+        return await self._ctx.execute_sync(self, "stop", _args)
+
+    async def wait_for(
+        self,
+        *,
+        state: AgentState | None = AgentState.IDLE,
+    ) -> Self:
+        """Block until the agent reaches the given state, returning immediately
+        if it is already there.
+
+        A stopped or failed agent may be relaunched, so waiting for a later state
+        remains valid until the caller cancels.
+
+        Parameters
+        ----------
+        state:
+            The lifecycle state to wait for.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("state", state, AgentState.IDLE),
+        ]
+        return await self._ctx.execute_sync(self, "waitFor", _args)
+
+
+@typecheck
+class AgentMessage(Type):
+    """A message delivered to an agent's mailbox."""
+
+    async def await_(self) -> str:
+        """Block until the turn that consumed this message ends, and return that
+        turn's reply.
+
+        Idempotent: cancel and re-await freely; concurrent waiters share the
+        result.
+
+        Fails if the agent stops before the message resolves. On a failed
+        agent it projects the failure — but the message stays pending, so
+        after a resume consumes it, a re-await returns the real reply.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("await", _args)
+        return await _ctx.execute(str)
+
+    async def delivery(self) -> AgentMessageDelivery:
+        """How the message landed: opened a new turn (STARTED), was absorbed into
+        the running turn at a step boundary (STEERED), or queued behind it
+        (QUEUED).
+
+        Computed once, at enqueue time.
+
+        Returns
+        -------
+        AgentMessageDelivery
+            How a message landed in an agent's evaluation.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("delivery", _args)
+        return await _ctx.execute(AgentMessageDelivery)
+
+    async def id(self) -> str:
+        """A unique identifier for this AgentMessage.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class AgentMiddleware(Type):
     async def description(self) -> str:
         """The description of the agent
 
@@ -733,7 +1247,7 @@ class Agent(Type):
         return await _ctx.execute(str)
 
     async def id(self) -> str:
-        """A unique identifier for this Agent.
+        """A unique identifier for this AgentMiddleware.
 
         Note
         ----
@@ -810,7 +1324,7 @@ class Agent(Type):
 
 
 @typecheck
-class AgentGroup(Type):
+class AgentMiddlewareGroup(Type):
     def compose(self, *, base: "LLM | None" = None) -> "LLM":
         """Compose all selected agent middlewares onto a base LLM, in
         alphabetical module:fn order, and return the composed LLM.
@@ -828,7 +1342,7 @@ class AgentGroup(Type):
         return LLM(_ctx)
 
     async def id(self) -> str:
-        """A unique identifier for this AgentGroup.
+        """A unique identifier for this AgentMiddlewareGroup.
 
         Note
         ----
@@ -855,11 +1369,11 @@ class AgentGroup(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def list_(self) -> list[Agent]:
+    async def list_(self) -> list[AgentMiddleware]:
         """Return a list of individual agents and their details"""
         _args: list[Arg] = []
         _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(Agent)
+        return await _ctx.execute_object_list(AgentMiddleware)
 
 
 @typecheck
@@ -5258,6 +5772,21 @@ class Directory(Type):
             Arg("timestamp", timestamp),
         ]
         _ctx = self._select("withTimestamps", _args)
+        return Directory(_ctx)
+
+    def without_directories(self, paths: list[str]) -> Self:
+        """Return a snapshot with subdirectories removed
+
+        Parameters
+        ----------
+        paths:
+            Paths of the subdirectories to remove. Example:
+            [".github/workflows"]
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutDirectories", _args)
         return Directory(_ctx)
 
     def without_directory(self, path: str) -> Self:
@@ -9755,6 +10284,28 @@ class LLM(Type):
     """A conversation with a large language model (LLM): queue prompts,
     expose tools, and step the model until it completes its turn."""
 
+    def agent(self, id: str, name: str) -> Agent:
+        """Rehydrate a spawned agent's handle from its instance ID.
+
+        This is the lookup spawn pins its result's identity through: the
+        returned handle's ID is an honest, replayable chain denoting the one
+        instance the spawn minted. It never creates an instance itself.
+
+        Parameters
+        ----------
+        id:
+            The agent instance ID, as minted by the spawn that created the
+            agent.
+        name:
+            The agent's display name, as recorded by the spawn.
+        """
+        _args = [
+            Arg("id", id),
+            Arg("name", name),
+        ]
+        _ctx = self._select("agent", _args)
+        return Agent(_ctx)
+
     async def context_tokens(self) -> int:
         """estimated number of tokens currently occupying the context window;
         unlike tokenUsage this is not cumulative over the session
@@ -10036,6 +10587,47 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("skills", _args)
         return await _ctx.execute_object_list(LLMSkill)
+
+    async def spawn(self, *, name: str | None = None) -> str:
+        """Spawn the conversation as an agent: a startable, addressable
+        evaluation loop seeded with this conversation's state, tools, and
+        workspace.
+
+        Every spawn mints a unique agent instance — two spawns of an identical
+        conversation are two distinct agents, like two calls to a process
+        spawn. The returned ID is pinned to the instance (via the agent lookup
+        field), so re-loading it re-addresses the same agent from any request
+        in the session.
+
+        Parameters
+        ----------
+        name:
+            Display label for the agent — telemetry and error messages;
+            carries no identity. Defaults to a short name derived from the
+            conversation.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name, None),
+        ]
+        _ctx = self._select("spawn", _args)
+        return await _ctx.execute(str)
 
     def step(self, *, max_tokens: int | None = None) -> Self:
         """Advance the conversation by a single step: send the queued prompt or
@@ -15069,19 +15661,23 @@ class Workspace(Type):
         self,
         *,
         include: list[str] | None = None,
-    ) -> AgentGroup:
+        exclude: list[str] | None = None,
+    ) -> AgentMiddlewareGroup:
         """Return all agent middlewares from modules loaded in the workspace.
 
         Parameters
         ----------
         include:
             Only include agents matching the specified patterns
+        exclude:
+            Exclude agents matching the specified patterns
         """
         _args = [
             Arg("include", include, None),
+            Arg("exclude", exclude, None),
         ]
         _ctx = self._select("agents", _args)
-        return AgentGroup(_ctx)
+        return AgentMiddlewareGroup(_ctx)
 
     def changes(self, *, from_: "Workspace | None" = None) -> Changeset:
         """Return this workspace's changes, with paths relative to its working
@@ -15133,6 +15729,41 @@ class Workspace(Type):
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
+
+    async def commits_from(
+        self,
+        source: Self,
+        *,
+        commits: list[str] | None = None,
+    ) -> list["WorkspaceCommitPick"]:
+        """Plan which of another workspace's staged commits can be applied to
+        this one.
+
+        Both workspaces are expected to descend from the same checkout -
+        typically this workspace and one an agent was spawned with. Each of
+        the source's staged commits is classified against this one, oldest
+        first, as if every pickable commit before it had already been applied:
+        PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or
+        PICKABLE.
+
+        Read-only: nothing is staged and neither workspace is modified. Pass
+        the pickable hashes to withCommitsFrom to apply them.
+
+        Parameters
+        ----------
+        source:
+            The workspace whose staged commits to consider.
+        commits:
+            Restrict the plan to these commit hashes, full or an unambiguous
+            prefix. They are always considered in the source's stack order.
+            Empty considers every staged commit.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("commits", [] if commits is None else commits, []),
+        ]
+        _ctx = self._select("commitsFrom", _args)
+        return await _ctx.execute_object_list(WorkspaceCommitPick)
 
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace cwd,
@@ -15726,6 +16357,43 @@ class Workspace(Type):
         _ctx = self._select("withCommit", _args)
         return Workspace(_ctx)
 
+    def with_commits_from(
+        self,
+        source: Self,
+        *,
+        commits: list[str] | None = None,
+    ) -> Self:
+        """Return this workspace with another workspace's staged commits replayed
+        on top, without mutating either source.
+
+        Each commit is applied to this workspace's current content as a patch
+        - not as a whole-file overlay - so commits still land cleanly when
+        this workspace has moved on since the source branched off. The
+        replayed commit keeps the original message, date and author identity,
+        and records the original commit as its origin, so pulling the same
+        work again is recognised as already present.
+
+        Commits this workspace already has, and commits whose content is
+        already present, are skipped. A commit that cannot be applied is an
+        error naming the commit and the conflicting paths: plan with
+        commitsFrom first and pass the pickable hashes.
+
+        Parameters
+        ----------
+        source:
+            The workspace whose staged commits to replay.
+        commits:
+            Restrict the replay to these commit hashes, full or an unambiguous
+            prefix. They are always applied in the source's stack order. Empty
+            replays every staged commit.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("commits", [] if commits is None else commits, []),
+        ]
+        _ctx = self._select("withCommitsFrom", _args)
+        return Workspace(_ctx)
+
     def with_config_env(
         self,
         name: str,
@@ -16257,6 +16925,238 @@ class Workspace(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class WorkspaceCommitPick(Type):
+    """One of another workspace's staged commits, classified against this
+    workspace."""
+
+    async def author_email(self) -> str:
+        """The author and committer email the commit was made with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authorEmail", _args)
+        return await _ctx.execute(str)
+
+    async def author_name(self) -> str:
+        """The author and committer name the commit was made with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authorName", _args)
+        return await _ctx.execute(str)
+
+    def changes(self) -> Changeset:
+        """The changes this commit folded in, as recorded in the source
+        workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    async def conflict_paths(self) -> list[str]:
+        """The paths that obstruct this commit: the dirty paths for DIRTY, the
+        paths the patch failed on for CONTENT. Empty unless the status is
+        CONFLICT.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("conflictPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def date(self) -> str:
+        """The RFC3339 author and committer date the commit was made with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("date", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceCommitPick.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def message(self) -> str:
+        """The full commit message, subject and body.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("message", _args)
+        return await _ctx.execute(str)
+
+    async def origin(self) -> str:
+        """The hash of the commit the source commit was itself replayed from;
+        empty when it was authored in the source workspace.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("origin", _args)
+        return await _ctx.execute(str)
+
+    async def reason(self) -> WorkspaceCommitPickReason:
+        """Why the commit conflicts, or NONE when it does not.
+
+        Returns
+        -------
+        WorkspaceCommitPickReason
+            Why a staged commit from another workspace cannot be applied to
+            this one.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reason", _args)
+        return await _ctx.execute(WorkspaceCommitPickReason)
+
+    async def sha(self) -> str:
+        """The full hash of the commit in the source workspace.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+    async def status(self) -> WorkspaceCommitPickStatus:
+        """Whether this commit can be applied to the receiving workspace.
+
+        Returns
+        -------
+        WorkspaceCommitPickStatus
+            Whether one of another workspace's staged commits can be applied
+            to this one.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("status", _args)
+        return await _ctx.execute(WorkspaceCommitPickStatus)
 
 
 @typecheck
@@ -16956,6 +17856,28 @@ class WorkspaceStagedCommit(Type):
         _ctx = self._select("message", _args)
         return await _ctx.execute(str)
 
+    async def origin(self) -> str:
+        """The hash of the commit this one was replayed from, when it was pulled
+        from another workspace; empty when it was authored here.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("origin", _args)
+        return await _ctx.execute(str)
+
     async def sha(self) -> str:
         """The full hash of the staged commit.
 
@@ -16993,7 +17915,11 @@ __all__ = [
     "LLM",
     "Address",
     "Agent",
-    "AgentGroup",
+    "AgentMessage",
+    "AgentMessageDelivery",
+    "AgentMiddleware",
+    "AgentMiddlewareGroup",
+    "AgentState",
     "BuildArg",
     "Bytes",
     "CacheSharingMode",
@@ -17093,6 +18019,9 @@ __all__ = [
     "Void",
     "Volume",
     "Workspace",
+    "WorkspaceCommitPick",
+    "WorkspaceCommitPickReason",
+    "WorkspaceCommitPickStatus",
     "WorkspaceGit",
     "WorkspaceMigration",
     "WorkspaceMigrationStep",

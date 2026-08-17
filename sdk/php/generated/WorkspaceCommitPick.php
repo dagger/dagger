@@ -9,9 +9,9 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A commit staged in a workspace but not yet saved to the local checkout.
+ * One of another workspace's staged commits, classified against this workspace.
  */
-class WorkspaceStagedCommit extends Client\AbstractObject implements Client\IdAble, Node
+class WorkspaceCommitPick extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The author and committer email the commit was made with.
@@ -32,12 +32,21 @@ class WorkspaceStagedCommit extends Client\AbstractObject implements Client\IdAb
     }
 
     /**
-     * The changes this commit folded in, relative to the state staged before it.
+     * The changes this commit folded in, as recorded in the source workspace.
      */
     public function changes(): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The paths that obstruct this commit: the dirty paths for DIRTY, the paths the patch failed on for CONTENT. Empty unless the status is CONFLICT.
+     */
+    public function conflictPaths(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('conflictPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'conflictPaths');
     }
 
     /**
@@ -50,7 +59,7 @@ class WorkspaceStagedCommit extends Client\AbstractObject implements Client\IdAb
     }
 
     /**
-     * A unique identifier for this WorkspaceStagedCommit.
+     * A unique identifier for this WorkspaceCommitPick.
      */
     public function id(): Id
     {
@@ -68,7 +77,7 @@ class WorkspaceStagedCommit extends Client\AbstractObject implements Client\IdAb
     }
 
     /**
-     * The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.
+     * The hash of the commit the source commit was itself replayed from; empty when it was authored in the source workspace.
      */
     public function origin(): string
     {
@@ -77,11 +86,29 @@ class WorkspaceStagedCommit extends Client\AbstractObject implements Client\IdAb
     }
 
     /**
-     * The full hash of the staged commit.
+     * Why the commit conflicts, or NONE when it does not.
+     */
+    public function reason(): WorkspaceCommitPickReason
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reason');
+        return \Dagger\WorkspaceCommitPickReason::from((string)$this->queryLeaf($leafQueryBuilder, 'reason'));
+    }
+
+    /**
+     * The full hash of the commit in the source workspace.
      */
     public function sha(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sha');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sha');
+    }
+
+    /**
+     * Whether this commit can be applied to the receiving workspace.
+     */
+    public function status(): WorkspaceCommitPickStatus
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('status');
+        return \Dagger\WorkspaceCommitPickStatus::from((string)$this->queryLeaf($leafQueryBuilder, 'status'));
     }
 }
