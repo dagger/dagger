@@ -191,6 +191,21 @@ func returnsCoreObject(fn *Function, name string) bool {
 		ret.AsObject.Value.Self().SourceModuleName == ""
 }
 
+// validateCheckFunction enforces the @check contract: the function must be
+// callable with no caller-supplied arguments, since `dagger check` runs checks
+// without any. Unlike @up and @generate there is no return-type constraint — a
+// check reports itself however it likes.
+func validateCheckFunction(obj *ObjectTypeDef, fn *Function) error {
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if argRequired(arg) {
+			return fmt.Errorf("object %q function %q is marked @check but declares required argument %q; @check functions must be callable with no arguments",
+				obj.OriginalName, fn.OriginalName, arg.OriginalName)
+		}
+	}
+	return nil
+}
+
 // validateUpFunction enforces the @up contract: the function must return the
 // core Service! type and must be callable with no caller-supplied arguments,
 // since `dagger up` starts services without any.
@@ -1361,6 +1376,11 @@ func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, 
 func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
 	if gqlFieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+	}
+	if fn.IsCheck {
+		if err := validateCheckFunction(obj, fn); err != nil {
+			return err
+		}
 	}
 	if fn.IsUp {
 		if err := validateUpFunction(obj, fn); err != nil {

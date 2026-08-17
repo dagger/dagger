@@ -1,0 +1,7 @@
+"""A deliberately malformed check module (@check with a required arg) for validation tests."""
+type BadcheckArg {
+  """@check with a required arg, which the contract forbids."""
+  pub verify(name: String!): Void @check {
+    null
+  }
+}

@@ -1,0 +1,9 @@
+"""A module whose @check takes the auto-injected Workspace, which the no-argument
+contract must not reject."""
+type CheckWorkspaceArg {
+  """A check that reads the workspace it runs against."""
+  pub verify(ws: Workspace!): Void @check {
+    ws.file("dagger.json").contents
+    null
+  }
+}
