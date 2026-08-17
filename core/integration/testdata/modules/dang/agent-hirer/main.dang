@@ -72,6 +72,21 @@ type Hirer {
     worker.send(message).await
   }
 
+  """
+  The ask, addressed by handle instead of name: resume + send + await on a
+  caller-provided Agent. This is how a client that rebuilt a handle from
+  the trace hands it INTO a module tool — the path that must work wherever
+  node(id:) on the same handle works.
+  """
+  askAgent(
+    agent: Agent!,
+    message: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): same as ask.
+    agent.resume
+    agent.send(message).await
+  }
+
   # Address a worker by name, with a helpful miss (mirrors staff.member).
   let member(name: String!): Agent! {
     let worker = workers[name]
