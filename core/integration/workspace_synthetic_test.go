@@ -543,6 +543,8 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsPendingHistoryAndWorktree(ctx
 	manifest := core.WorkspaceGitCheckpointManifest{
 		Version:              core.WorkspaceCheckpointFormatVersion,
 		ObjectFormat:         "sha1",
+		RemoteURL:            repoURL,
+		RemoteRef:            "refs/heads/main",
 		BaseSHA:              baseSHA,
 		HeadSHA:              commits[1],
 		BundleRef:            "refs/heads/checkpoint",
