@@ -211,8 +211,9 @@ It runs before module/tool derivation and before the agent loop starts.
 2. Exclude initially ignored, untracked paths using Git's own ignore rules,
    including `.gitignore`, `.git/info/exclude`, and configured global excludes.
    A tracked file remains tracked even if a later ignore rule matches it.
-3. Locally classify candidate tracked dirt, ordinary untracked files, and local
-   commit blobs by path, type, size, and secret heuristics.
+3. Locally classify candidate tracked dirt and ordinary untracked files by path,
+   type, size, and secret heuristics. Committed blobs are bounded by type and
+   size only; secret heuristics do not apply to them.
 4. Present a local summary and obtain policy/user approval. Noninteractive use
    must supply an explicit policy; it must not imply approval of every
    nonignored file.
@@ -253,8 +254,12 @@ to the engine or used as DagQL arguments. It must:
 - avoid following symlinks or entering ignored/nested repositories;
 - log only counts, sizes, and classifications, never candidate paths or bytes;
 - skip suspicious untracked files unless the user explicitly approves each
-  one, and fail closed for suspicious tracked or committed content unless the
-  user explicitly approves or rewrites it; and
+  one, and fail closed for suspicious tracked dirt unless the user explicitly
+  approves or rewrites it;
+- leave committed content to the author's own commit decision rather than
+  classifying it, since heuristics over ordinary source produce a prompt per
+  revision of every file whose text resembles a token, and burying the real
+  question in that noise is itself a failure of the boundary; and
 - re-hash selected content during pack creation to close the review/pack race.
 
 Approval is meaningful only before payload construction. A design that first
@@ -266,7 +271,9 @@ particular, keeping committed history and untracked worktree data in separate
 payloads prevents the commit bundle from sweeping in an untracked secret, while
 path rules, content scanning, explicit approval, size limits, opaque rendering,
 and trace access control each cover a different failure mode. Tracked dirt is
-scanned too; “tracked” does not mean “safe to upload.”
+scanned too; “tracked” does not mean “safe to upload.” Committed content is the
+exception, and only because committing is already an explicit decision to record
+content in shared history.
 
 Raw-trace readers can recover every approved source byte. Compression, Git
 object hashing, and opaque rendering are not encryption. Trace authorization,
@@ -508,8 +515,8 @@ Additional coverage:
   partial clones, and SHA-256 object format where supported;
 - binary, executable, symlink, deletion, and file/directory replacement dirt;
 - ignore sources, nested repositories, changed submodules, and special files;
-- approval race, untracked size/count limits, and tracked/committed secret
-  refusal;
+- approval race, untracked size/count limits, tracked-dirt secret refusal, and
+  committed content passing the preflight unquestioned;
 - truncated/reordered chunks, wrong digest/object format/prerequisite, and
   corrupt bundles;
 - payload-size behavior and cold restore on a representative large monorepo;
