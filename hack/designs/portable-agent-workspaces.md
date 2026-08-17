@@ -29,10 +29,11 @@ R  latest ancestor of local HEAD proven present on a remote
 ```
 
 Agent overlays and `Workspace.withCommit` calls then build on that value. The
-trace recipe must reconstruct the same effective tree and pending history from
-its own call payloads plus the remote containing `R`. Persisted result records,
-Dagger snapshots, Git mirrors, and any other state on the originating engine
-are cache accelerators only; deleting all of them must not change correctness.
+trace recipe must reconstruct the same effective tree, captured local history,
+and later engine-pending history from its own call payloads plus the remote
+containing `R`. Persisted result records, Dagger snapshots, Git mirrors, and any
+other state on the originating engine are cache accelerators only; deleting all
+of them must not change correctness.
 
 The design has the following settled constraints:
 
@@ -97,11 +98,13 @@ that repository before diffing it. `Workspace.withCommit` currently rejects a
 Directory/overlay workspace. The remote `GitRef` is an input used to rebuild the
 canonical repository, not the Workspace's final source kind.
 
-This model can represent captured local commits as the initial pending stack:
-set `BaseHeadSHA` to `R`, expose the ordered commits after it through
-`Workspace.git.stagedCommits`, make their tip the logical `HEAD`, and leave the
-approved worktree delta pending on top. Later `withCommit` calls then use the
-same machinery as they do today.
+Captured local commits are already real commits in the user's checkout. They
+therefore belong to the checkpoint's immutable source baseline: set the restored
+repository's logical `HEAD` to `L`, and make only the approved worktree delta
+pending on top. They must not appear in `Workspace.git.stagedCommits` or
+`Workspace.changes`, whose save/upload semantics describe commits and changes
+that exist only in the engine. Later `Workspace.withCommit` calls continue to use
+the ordinary pending stack from the captured `L`.
 
 ### 2.3 Recipes, persistence, and trace reconstruction
 
@@ -130,11 +133,11 @@ L  logical local HEAD, including commits not yet on the selected remote
 W  approved effective worktree relative to L
 ```
 
-For phase 1, `R..L` is restored as a linear semantic pending-commit stack.
-Preserving the exact commit graph is ideal but not required; merge commits are
-rejected until the pending-commit model either supports a graph or defines an
-explicit flattening policy. Messages, authors, dates, order, and origin matter;
-topology and SHAs may change.
+For phase 1, `R..L` is restored as linear committed local history in the
+checkpoint's source baseline. Preserving the exact commit graph is ideal but
+not required; merge commits are rejected until the checkpoint model either
+supports a graph or defines an explicit flattening policy. Messages, authors,
+dates, order, and origin matter; topology and SHAs may change.
 
 The portable state has two separately approved payloads:
 
@@ -143,7 +146,7 @@ The portable state has two separately approved payloads:
 - one selected worktree delta from `L` to `W`, containing approved tracked dirt
   and ordinary untracked files but no initially ignored content;
 - a manifest with format version, object format, sanitized remote URL, remote
-  ref hint, `R`, `L`, the ordered pending-commit metadata, and worktree-delta
+  ref hint, `R`, `L`, the ordered captured-commit metadata, and worktree-delta
   digest; and
 - Workspace metadata needed independently of Git: cwd, config and lockfile
   paths, author defaults, and capture-policy version.
@@ -152,8 +155,8 @@ Keeping committed history and the worktree delta separate is an important safety
 boundary: an untracked file cannot enter the commit bundle accidentally. The
 bundle is compact for a large repository because unchanged commits, blobs, and
 trees are supplied by `R`; it adds only local committed objects. Restore imports
-the commit bundle, reconstructs the pending stack, and applies the approved
-worktree delta once.
+the commit bundle into the frozen baseline and applies the approved worktree
+delta once.
 
 A later compaction may replace the worktree delta with a private snapshot
 commit/ref whose tree is `W` and whose parent is `L`. That can be more efficient
@@ -309,8 +312,9 @@ constructor, rather than minting a result whose recipe contains the effectful
 `checkpoint` call. This is the same identity-preserving technique used when an
 effectful Workspace operation returns an existing/pure result.
 
-Semantically, restoration should align with `Workspace.withCommitsFrom`, not
-expose arbitrary pack manipulation. The commit half is conceptually:
+Semantically, restoration imports captured committed history into the frozen
+source baseline; it does not expose arbitrary pack manipulation or stage that
+history as engine-pending commits. The commit half is conceptually:
 
 ```graphql
 input WorkspaceBundledCommit {
@@ -324,7 +328,7 @@ input WorkspaceBundledCommit {
 }
 
 extend type Workspace {
-  """Restore bundled local history as engine-staged pending commits."""
+  """Restore bundled local history into the frozen source baseline."""
   withCommitBundle(
     base: GitRef!
     manifest: String!
@@ -336,8 +340,8 @@ extend type Workspace {
 
 The initial worktree delta is then applied once with ordinary Workspace or
 Changeset semantics. The implementation may fuse both steps into one internal
-constructor, but the observable model remains “import pending commits, then
-apply selected uncommitted state.”
+constructor, but the observable model remains “import captured commits into the
+frozen baseline, then apply selected uncommitted state.”
 
 The pure side is conceptually:
 
@@ -409,8 +413,8 @@ On a cold engine the constructor:
 3. initializes a canonical scratch repository using existing snapshot APIs;
 4. imports the prerequisite commit bundle, requiring `R`, and verifies
    connectivity and logical tip `L`;
-5. constructs repository states for the ordered pending commits after `R` and
-   records their metadata, with `BaseHeadSHA = R`;
+5. validates the ordered captured commits after `R` and keeps them as ordinary
+   committed history in the source baseline;
 6. sets logical `HEAD` and a normalized index to `L`;
 7. applies the selected worktree delta once and verifies that the result is `W`;
 8. constructs a value-backed Workspace source plus overlay remainder, cwd,
@@ -470,7 +474,7 @@ Saving is a separate, explicit reconciliation with a selected target:
 
 ```text
 R   remote-backed base
-L/W captured pending history and worktree
+L/W captured committed local history and worktree
 C   current agent pending history and worktree
 H   explicitly selected destination checkout
 ```
@@ -499,8 +503,9 @@ The headline test must prove recipe-only recovery:
    content store, and Git mirrors; delete the host checkout.
 4. On a fresh engine and machine, restore only from the trace and the original
    remote.
-5. Assert `R`, pending commit order/metadata, logical `HEAD`, approved worktree,
-   agent overlays, module compilation, and continued tool use.
+5. Assert `R`, captured local commit order/metadata, logical `HEAD`, approved
+   worktree, later agent-pending commits, agent overlays, module compilation, and
+   continued tool use.
 6. Assert initial ignored content and the rejected canary are absent, the old
    host is never read, and no remote ref changed during capture or restore.
 
@@ -531,9 +536,9 @@ Additional coverage:
 2. **Safe initial capture:** add advertised-remote ancestor discovery,
    client-side approval/secret/size preflight, selected-path packing, and the
    pure Workspace constructor. Freeze before agent/tool startup.
-3. **Pending-history fidelity:** seed `R..L` into Workspace pending commits and
-   verify `git.head`, `stagedCommits`, `uncommitted`, `withCommit`, and explicit
-   export/push planning. Phase 1 rejects merges.
+3. **Local-history fidelity:** seed `R..L` into the frozen source baseline and
+   verify `git.head`, empty initial `stagedCommits`, `uncommitted`, later
+   `withCommit`, and explicit export/push planning. Phase 1 rejects merges.
 4. **Scale and compaction:** benchmark monorepos and long edit chains; add
    deliberate full/incremental compaction only where measurements require it.
 5. **Reconciliation and edge cases:** add explicit target planning, merge-graph,
