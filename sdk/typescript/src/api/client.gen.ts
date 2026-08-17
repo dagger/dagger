@@ -30,13 +30,178 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
-export type AgentGroupComposeOpts = {
+export type AgentRehydrateOpts = {
+  /**
+   * The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
+   *
+   * RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
+   */
+  state?: AgentState
+
+  /**
+   * The loop error to restore, for state FAILED. Refused with any other state.
+   */
+  error?: string
+}
+
+export type AgentStopOpts = {
+  /**
+   * Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+   */
+  kill?: boolean
+}
+
+export type AgentWaitForOpts = {
+  /**
+   * The lifecycle state to wait for.
+   */
+  state?: AgentState
+}
+
+/**
+ * How a message landed in an agent's evaluation.
+ */
+export enum AgentMessageDelivery {
+  /**
+   * The message is queued: the agent is paused or failed, and a resume will drain it.
+   */
+  Queued = "QUEUED",
+
+  /**
+   * The message opened a new turn: the agent was idle or newly started.
+   */
+  Started = "STARTED",
+
+  /**
+   * The message was absorbed into the in-flight turn at a step boundary, steering it.
+   */
+  Steered = "STEERED",
+}
+
+/**
+ * Utility function to convert a AgentMessageDelivery value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function AgentMessageDeliveryValueToName(
+  value: AgentMessageDelivery,
+): string {
+  switch (value) {
+    case AgentMessageDelivery.Queued:
+      return "QUEUED"
+    case AgentMessageDelivery.Started:
+      return "STARTED"
+    case AgentMessageDelivery.Steered:
+      return "STEERED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a AgentMessageDelivery name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function AgentMessageDeliveryNameToValue(
+  name: string,
+): AgentMessageDelivery {
+  switch (name) {
+    case "QUEUED":
+      return AgentMessageDelivery.Queued
+    case "STARTED":
+      return AgentMessageDelivery.Started
+    case "STEERED":
+      return AgentMessageDelivery.Steered
+    default:
+      return name as AgentMessageDelivery
+  }
+}
+export type AgentMiddlewareGroupComposeOpts = {
   /**
    * The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
    */
   base?: LLM
 }
 
+/**
+ * Computed lifecycle state of an agent.
+ */
+export enum AgentState {
+  /**
+   * The loop failed; snapshot holds the completed prefix. Resume retries.
+   */
+  Failed = "FAILED",
+
+  /**
+   * Mailbox empty, turn complete; blocked in receive.
+   */
+  Idle = "IDLE",
+
+  /**
+   * Mailbox accepting but not draining, until resume.
+   */
+  Paused = "PAUSED",
+
+  /**
+   * A model request or tool evaluation is in flight.
+   */
+  Running = "RUNNING",
+
+  /**
+   * Runtime released; snapshot remains readable.
+   */
+  Stopped = "STOPPED",
+
+  /**
+   * Blocked on input from the user (derived; see waitingOn).
+   */
+  WaitingInput = "WAITING_INPUT",
+}
+
+/**
+ * Utility function to convert a AgentState value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function AgentStateValueToName(value: AgentState): string {
+  switch (value) {
+    case AgentState.Failed:
+      return "FAILED"
+    case AgentState.Idle:
+      return "IDLE"
+    case AgentState.Paused:
+      return "PAUSED"
+    case AgentState.Running:
+      return "RUNNING"
+    case AgentState.Stopped:
+      return "STOPPED"
+    case AgentState.WaitingInput:
+      return "WAITING_INPUT"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a AgentState name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function AgentStateNameToValue(name: string): AgentState {
+  switch (name) {
+    case "FAILED":
+      return AgentState.Failed
+    case "IDLE":
+      return AgentState.Idle
+    case "PAUSED":
+      return AgentState.Paused
+    case "RUNNING":
+      return AgentState.Running
+    case "STOPPED":
+      return AgentState.Stopped
+    case "WAITING_INPUT":
+      return AgentState.WaitingInput
+    default:
+      return name as AgentState
+  }
+}
 export type BuildArg = {
   /**
    * The build argument name.
@@ -2040,6 +2205,13 @@ export type LLMLoopOpts = {
   maxTokens?: number
 }
 
+export type LLMSpawnOpts = {
+  /**
+   * Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+   */
+  name?: string
+}
+
 export type LLMStepOpts = {
   /**
    * Cap the model's output tokens for this step. Defaults to the model's maximum.
@@ -3103,6 +3275,11 @@ export type WorkspaceAgentsOpts = {
    * Only include agents matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * Exclude agents matching the specified patterns
+   */
+  exclude?: string[]
 }
 
 export type WorkspaceChangesOpts = {
@@ -3132,6 +3309,13 @@ export type WorkspaceChecksOpts = {
    * When true, only return generate-as-checks; exclude annotated check functions
    */
   onlyGenerate?: boolean
+}
+
+export type WorkspaceCommitsFromOpts = {
+  /**
+   * Restrict the plan to these commit hashes, full or an unambiguous prefix. They are always considered in the source's stack order. Empty considers every staged commit.
+   */
+  commits?: string[]
 }
 
 export type WorkspaceConfigReadOpts = {
@@ -3275,6 +3459,13 @@ export type WorkspaceWithCommitOpts = {
   authorEmail?: string
 }
 
+export type WorkspaceWithCommitsFromOpts = {
+  /**
+   * Restrict the replay to these commit hashes, full or an unambiguous prefix. They are always applied in the source's stack order. Empty replays every staged commit.
+   */
+  commits?: string[]
+}
+
 export type WorkspaceWithConfigEnvOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
@@ -3407,6 +3598,129 @@ export type WorkspaceWithoutSdkOpts = {
   here?: boolean
 }
 
+/**
+ * Why a staged commit from another workspace cannot be applied to this one.
+ */
+export enum WorkspaceCommitPickReason {
+  /**
+   * The commit's patch no longer applies to this workspace's content.
+   */
+  Content = "CONTENT",
+
+  /**
+   * This workspace has uncommitted changes on a path the commit touches, so applying it would sweep them into someone else's commit.
+   */
+  Dirty = "DIRTY",
+
+  /**
+   * No obstruction: the status is not CONFLICT.
+   */
+  None = "NONE",
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickReason value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function WorkspaceCommitPickReasonValueToName(
+  value: WorkspaceCommitPickReason,
+): string {
+  switch (value) {
+    case WorkspaceCommitPickReason.Content:
+      return "CONTENT"
+    case WorkspaceCommitPickReason.Dirty:
+      return "DIRTY"
+    case WorkspaceCommitPickReason.None:
+      return "NONE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickReason name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function WorkspaceCommitPickReasonNameToValue(
+  name: string,
+): WorkspaceCommitPickReason {
+  switch (name) {
+    case "CONTENT":
+      return WorkspaceCommitPickReason.Content
+    case "DIRTY":
+      return WorkspaceCommitPickReason.Dirty
+    case "NONE":
+      return WorkspaceCommitPickReason.None
+    default:
+      return name as WorkspaceCommitPickReason
+  }
+}
+/**
+ * Whether one of another workspace's staged commits can be applied to this one.
+ */
+export enum WorkspaceCommitPickStatus {
+  /**
+   * The commit cannot be applied; see reason and conflictPaths.
+   */
+  Conflict = "CONFLICT",
+
+  /**
+   * The commit applies cleanly to this workspace and would be staged.
+   */
+  Pickable = "PICKABLE",
+
+  /**
+   * This workspace already has the commit: in its own staged stack, in its git history, or as a commit it already replayed from the same origin.
+   */
+  Picked = "PICKED",
+
+  /**
+   * Applying the commit would change nothing: its content is already present, for instance because the same edit was made here by hand.
+   */
+  Redundant = "REDUNDANT",
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickStatus value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function WorkspaceCommitPickStatusValueToName(
+  value: WorkspaceCommitPickStatus,
+): string {
+  switch (value) {
+    case WorkspaceCommitPickStatus.Conflict:
+      return "CONFLICT"
+    case WorkspaceCommitPickStatus.Pickable:
+      return "PICKABLE"
+    case WorkspaceCommitPickStatus.Picked:
+      return "PICKED"
+    case WorkspaceCommitPickStatus.Redundant:
+      return "REDUNDANT"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickStatus name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function WorkspaceCommitPickStatusNameToValue(
+  name: string,
+): WorkspaceCommitPickStatus {
+  switch (name) {
+    case "CONFLICT":
+      return WorkspaceCommitPickStatus.Conflict
+    case "PICKABLE":
+      return WorkspaceCommitPickStatus.Pickable
+    case "PICKED":
+      return WorkspaceCommitPickStatus.Picked
+    case "REDUNDANT":
+      return WorkspaceCommitPickStatus.Redundant
+    default:
+      return name as WorkspaceCommitPickStatus
+  }
+}
 export type WorkspaceGitPushOpts = {
   /**
    * Remote to push to: a remote name from the checkout's configuration, or a URL.
@@ -3564,7 +3878,359 @@ export class Address extends BaseClient {
   }
 }
 
+/**
+ * A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
+ */
 export class Agent extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _instanceID?: string = undefined
+  private readonly _interrupt?: ID = undefined
+  private readonly _name?: string = undefined
+  private readonly _pause?: ID = undefined
+  private readonly _rehydrate?: ID = undefined
+  private readonly _resume?: ID = undefined
+  private readonly _send?: ID = undefined
+  private readonly _start?: ID = undefined
+  private readonly _state?: AgentState = undefined
+  private readonly _stop?: ID = undefined
+  private readonly _waitFor?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _instanceID?: string,
+    _interrupt?: ID,
+    _name?: string,
+    _pause?: ID,
+    _rehydrate?: ID,
+    _resume?: ID,
+    _send?: ID,
+    _start?: ID,
+    _state?: AgentState,
+    _stop?: ID,
+    _waitFor?: ID,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._instanceID = _instanceID
+    this._interrupt = _interrupt
+    this._name = _name
+    this._pause = _pause
+    this._rehydrate = _rehydrate
+    this._resume = _resume
+    this._send = _send
+    this._start = _start
+    this._state = _state
+    this._stop = _stop
+    this._waitFor = _waitFor
+  }
+
+  /**
+   * A unique identifier for this Agent.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The unique instance identity minted by the spawn that created this agent.
+   *
+   * It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.
+   */
+  instanceID = async (): Promise<string> => {
+    if (this._instanceID) {
+      return this._instanceID
+    }
+
+    const ctx = this._ctx.select("instanceID")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Preempt the in-flight step, keeping all completed steps, and pause.
+   *
+   * The interrupted turn stays open: messages it consumed remain pending, and resume continues the turn from the last committed step. To redirect, follow with send — steering and interrupting are separate verbs.
+   *
+   * On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
+   */
+  interrupt = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("interrupt")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Look up a previously sent message by its message ID, returning its handle.
+   *
+   * This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).
+   *
+   * Fails if the agent has no runtime entry in this session, or no record of the given ID.
+   * @param id The message ID, as generated by the send that enqueued the message.
+   */
+  message = (id: string): AgentMessage => {
+    const ctx = this._ctx.select("message", { id })
+    return new AgentMessage(ctx)
+  }
+
+  /**
+   * Display label and identity discriminator — not a session-wide address.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Stop draining the mailbox once the in-flight step completes.
+   *
+   * Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+   *
+   * Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+   */
+  pause = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("pause")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
+   *
+   * The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
+   *
+   * The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
+   *
+   * Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
+   * @param opts.state The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
+   *
+   * RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
+   * @param opts.error The loop error to restore, for state FAILED. Refused with any other state.
+   */
+  rehydrate = async (opts?: AgentRehydrateOpts): Promise<Agent> => {
+    const metadata = {
+      state: { is_enum: true, value_to_name: AgentStateValueToName },
+    }
+
+    const ctx = this._ctx.select("rehydrate", { ...opts, __metadata: metadata })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+   *
+   * Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+   *
+   * No-op on a running or idle agent.
+   */
+  resume = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("resume")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+   *
+   * Never blocks, never drops; concurrent sends queue in order.
+   *
+   * The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+   *
+   * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+   * @param message The message text, appended to the agent's history as a prompt when a turn consumes it.
+   */
+  send = async (message: string): Promise<ID> => {
+    if (this._send) {
+      return this._send
+    }
+
+    const ctx = this._ctx.select("send", { message })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The conversation as of the last committed step: immutable, branchable, persistable.
+   *
+   * The seed conversation if the agent never stepped.
+   *
+   * Branching from it does not affect the agent.
+   */
+  snapshot = (): LLM => {
+    const ctx = this._ctx.select("snapshot")
+    return new LLM(ctx)
+  }
+
+  /**
+   * Start the agent's evaluation loop. No-op if it is already running.
+   *
+   * The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
+   */
+  start = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("start")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Computed lifecycle state; never stored.
+   *
+   * An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+   */
+  state = async (): Promise<AgentState> => {
+    if (this._state) {
+      return this._state
+    }
+
+    const ctx = this._ctx.select("state")
+
+    const response: Awaited<AgentState> = await ctx.execute()
+
+    return AgentStateNameToValue(response)
+  }
+
+  /**
+   * Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+   * @param opts.kill Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+   */
+  stop = async (opts?: AgentStopOpts): Promise<Agent> => {
+    const ctx = this._ctx.select("stop", { ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Block until the agent reaches the given state, returning immediately if it is already there.
+   *
+   * A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.
+   * @param opts.state The lifecycle state to wait for.
+   */
+  waitFor = async (opts?: AgentWaitForOpts): Promise<Agent> => {
+    const metadata = {
+      state: { is_enum: true, value_to_name: AgentStateValueToName },
+    }
+
+    const ctx = this._ctx.select("waitFor", { ...opts, __metadata: metadata })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+}
+
+/**
+ * A message delivered to an agent's mailbox.
+ */
+export class AgentMessage extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _await?: string = undefined
+  private readonly _delivery?: AgentMessageDelivery = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _await?: string,
+    _delivery?: AgentMessageDelivery,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._await = _await
+    this._delivery = _delivery
+  }
+
+  /**
+   * A unique identifier for this AgentMessage.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Block until the turn that consumed this message ends, and return that turn's reply.
+   *
+   * Idempotent: cancel and re-await freely; concurrent waiters share the result.
+   *
+   * Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+   */
+  await_ = async (): Promise<string> => {
+    if (this._await) {
+      return this._await
+    }
+
+    const ctx = this._ctx.select("await")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+   *
+   * Computed once, at enqueue time.
+   */
+  delivery = async (): Promise<AgentMessageDelivery> => {
+    if (this._delivery) {
+      return this._delivery
+    }
+
+    const ctx = this._ctx.select("delivery")
+
+    const response: Awaited<AgentMessageDelivery> = await ctx.execute()
+
+    return AgentMessageDeliveryNameToValue(response)
+  }
+}
+
+export class AgentMiddleware extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -3581,7 +4247,7 @@ export class Agent extends BaseClient {
   }
 
   /**
-   * A unique identifier for this Agent.
+   * A unique identifier for this AgentMiddleware.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -3645,7 +4311,7 @@ export class Agent extends BaseClient {
   }
 }
 
-export class AgentGroup extends BaseClient {
+export class AgentMiddlewareGroup extends BaseClient {
   private readonly _id?: ID = undefined
 
   /**
@@ -3658,7 +4324,7 @@ export class AgentGroup extends BaseClient {
   }
 
   /**
-   * A unique identifier for this AgentGroup.
+   * A unique identifier for this AgentMiddlewareGroup.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -3676,7 +4342,7 @@ export class AgentGroup extends BaseClient {
    * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
    * @param opts.base The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
    */
-  compose = (opts?: AgentGroupComposeOpts): LLM => {
+  compose = (opts?: AgentMiddlewareGroupComposeOpts): LLM => {
     const ctx = this._ctx.select("compose", { ...opts })
     return new LLM(ctx)
   }
@@ -3684,7 +4350,7 @@ export class AgentGroup extends BaseClient {
   /**
    * Return a list of individual agents and their details
    */
-  list = async (): Promise<Agent[]> => {
+  list = async (): Promise<AgentMiddleware[]> => {
     type list = {
       id: ID
     }
@@ -3693,7 +4359,10 @@ export class AgentGroup extends BaseClient {
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Agent(ctx.copy().selectNode(r.id, "Agent")))
+    return response.map(
+      (r) =>
+        new AgentMiddleware(ctx.copy().selectNode(r.id, "AgentMiddleware")),
+    )
   }
 }
 
@@ -6766,6 +7435,15 @@ export class Directory extends BaseClient {
    */
   withTimestamps = (timestamp: number): Directory => {
     const ctx = this._ctx.select("withTimestamps", { timestamp })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a snapshot with subdirectories removed
+   * @param paths Paths of the subdirectories to remove. Example: [".github/workflows"]
+   */
+  withoutDirectories = (paths: string[]): Directory => {
+    const ctx = this._ctx.select("withoutDirectories", { paths })
     return new Directory(ctx)
   }
 
@@ -10594,6 +11272,7 @@ export class LLM extends BaseClient {
   private readonly _provider?: string = undefined
   private readonly _reasoningEffort?: string = undefined
   private readonly _replay?: ID = undefined
+  private readonly _spawn?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
   private readonly _transcript?: string = undefined
@@ -10613,6 +11292,7 @@ export class LLM extends BaseClient {
     _provider?: string,
     _reasoningEffort?: string,
     _replay?: ID,
+    _spawn?: ID,
     _sync?: ID,
     _tools?: string,
     _transcript?: string,
@@ -10629,6 +11309,7 @@ export class LLM extends BaseClient {
     this._provider = _provider
     this._reasoningEffort = _reasoningEffort
     this._replay = _replay
+    this._spawn = _spawn
     this._sync = _sync
     this._tools = _tools
     this._transcript = _transcript
@@ -10647,6 +11328,18 @@ export class LLM extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Rehydrate a spawned agent's handle from its instance ID.
+   *
+   * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+   * @param id The agent instance ID, as minted by the spawn that created the agent.
+   * @param name The agent's display name, as recorded by the spawn.
+   */
+  agent = (id: string, name: string): Agent => {
+    const ctx = this._ctx.select("agent", { id, name })
+    return new Agent(ctx)
   }
 
   /**
@@ -10831,6 +11524,24 @@ export class LLM extends BaseClient {
     return response.map(
       (r) => new LLMSkill(ctx.copy().selectNode(r.id, "LLMSkill")),
     )
+  }
+
+  /**
+   * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+   *
+   * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+   * @param opts.name Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+   */
+  spawn = async (opts?: LLMSpawnOpts): Promise<ID> => {
+    if (this._spawn) {
+      return this._spawn
+    }
+
+    const ctx = this._ctx.select("spawn", { ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -15127,10 +15838,11 @@ export class Workspace extends BaseClient {
   /**
    * Return all agent middlewares from modules loaded in the workspace.
    * @param opts.include Only include agents matching the specified patterns
+   * @param opts.exclude Exclude agents matching the specified patterns
    */
-  agents = (opts?: WorkspaceAgentsOpts): AgentGroup => {
+  agents = (opts?: WorkspaceAgentsOpts): AgentMiddlewareGroup => {
     const ctx = this._ctx.select("agents", { ...opts })
-    return new AgentGroup(ctx)
+    return new AgentMiddlewareGroup(ctx)
   }
 
   /**
@@ -15154,6 +15866,37 @@ export class Workspace extends BaseClient {
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })
     return new CheckGroup(ctx)
+  }
+
+  /**
+   * Plan which of another workspace's staged commits can be applied to this one.
+   *
+   * Both workspaces are expected to descend from the same checkout - typically this workspace and one an agent was spawned with. Each of the source's staged commits is classified against this one, oldest first, as if every pickable commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or PICKABLE.
+   *
+   * Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.
+   * @param source The workspace whose staged commits to consider.
+   * @param opts.commits Restrict the plan to these commit hashes, full or an unambiguous prefix. They are always considered in the source's stack order. Empty considers every staged commit.
+   */
+  commitsFrom = async (
+    source: Workspace,
+    opts?: WorkspaceCommitsFromOpts,
+  ): Promise<WorkspaceCommitPick[]> => {
+    type commitsFrom = {
+      id: ID
+    }
+
+    const ctx = this._ctx
+      .select("commitsFrom", { source, ...opts })
+      .select("id")
+
+    const response: Awaited<commitsFrom[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceCommitPick(
+          ctx.copy().selectNode(r.id, "WorkspaceCommitPick"),
+        ),
+    )
   }
 
   /**
@@ -15494,6 +16237,23 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with another workspace's staged commits replayed on top, without mutating either source.
+   *
+   * Each commit is applied to this workspace's current content as a patch - not as a whole-file overlay - so commits still land cleanly when this workspace has moved on since the source branched off. The replayed commit keeps the original message, date and author identity, and records the original commit as its origin, so pulling the same work again is recognised as already present.
+   *
+   * Commits this workspace already has, and commits whose content is already present, are skipped. A commit that cannot be applied is an error naming the commit and the conflicting paths: plan with commitsFrom first and pass the pickable hashes.
+   * @param source The workspace whose staged commits to replay.
+   * @param opts.commits Restrict the replay to these commit hashes, full or an unambiguous prefix. They are always applied in the source's stack order. Empty replays every staged commit.
+   */
+  withCommitsFrom = (
+    source: Workspace,
+    opts?: WorkspaceWithCommitsFromOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withCommitsFrom", { source, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a named config environment created.
    * @param name Environment name.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -15766,6 +16526,203 @@ export class Workspace extends BaseClient {
    */
   with = (arg: (param: Workspace) => Workspace) => {
     return arg(this)
+  }
+}
+
+/**
+ * One of another workspace's staged commits, classified against this workspace.
+ */
+export class WorkspaceCommitPick extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _authorEmail?: string = undefined
+  private readonly _authorName?: string = undefined
+  private readonly _date?: string = undefined
+  private readonly _message?: string = undefined
+  private readonly _origin?: string = undefined
+  private readonly _reason?: WorkspaceCommitPickReason = undefined
+  private readonly _sha?: string = undefined
+  private readonly _status?: WorkspaceCommitPickStatus = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _authorEmail?: string,
+    _authorName?: string,
+    _date?: string,
+    _message?: string,
+    _origin?: string,
+    _reason?: WorkspaceCommitPickReason,
+    _sha?: string,
+    _status?: WorkspaceCommitPickStatus,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._authorEmail = _authorEmail
+    this._authorName = _authorName
+    this._date = _date
+    this._message = _message
+    this._origin = _origin
+    this._reason = _reason
+    this._sha = _sha
+    this._status = _status
+  }
+
+  /**
+   * A unique identifier for this WorkspaceCommitPick.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The author and committer email the commit was made with.
+   */
+  authorEmail = async (): Promise<string> => {
+    if (this._authorEmail) {
+      return this._authorEmail
+    }
+
+    const ctx = this._ctx.select("authorEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The author and committer name the commit was made with.
+   */
+  authorName = async (): Promise<string> => {
+    if (this._authorName) {
+      return this._authorName
+    }
+
+    const ctx = this._ctx.select("authorName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The changes this commit folded in, as recorded in the source workspace.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * The paths that obstruct this commit: the dirty paths for DIRTY, the paths the patch failed on for CONTENT. Empty unless the status is CONFLICT.
+   */
+  conflictPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("conflictPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The RFC3339 author and committer date the commit was made with.
+   */
+  date = async (): Promise<string> => {
+    if (this._date) {
+      return this._date
+    }
+
+    const ctx = this._ctx.select("date")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The full commit message, subject and body.
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The hash of the commit the source commit was itself replayed from; empty when it was authored in the source workspace.
+   */
+  origin = async (): Promise<string> => {
+    if (this._origin) {
+      return this._origin
+    }
+
+    const ctx = this._ctx.select("origin")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Why the commit conflicts, or NONE when it does not.
+   */
+  reason = async (): Promise<WorkspaceCommitPickReason> => {
+    if (this._reason) {
+      return this._reason
+    }
+
+    const ctx = this._ctx.select("reason")
+
+    const response: Awaited<WorkspaceCommitPickReason> = await ctx.execute()
+
+    return WorkspaceCommitPickReasonNameToValue(response)
+  }
+
+  /**
+   * The full hash of the commit in the source workspace.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether this commit can be applied to the receiving workspace.
+   */
+  status = async (): Promise<WorkspaceCommitPickStatus> => {
+    if (this._status) {
+      return this._status
+    }
+
+    const ctx = this._ctx.select("status")
+
+    const response: Awaited<WorkspaceCommitPickStatus> = await ctx.execute()
+
+    return WorkspaceCommitPickStatusNameToValue(response)
   }
 }
 
@@ -16337,6 +17294,7 @@ export class WorkspaceStagedCommit extends BaseClient {
   private readonly _authorName?: string = undefined
   private readonly _date?: string = undefined
   private readonly _message?: string = undefined
+  private readonly _origin?: string = undefined
   private readonly _sha?: string = undefined
 
   /**
@@ -16349,6 +17307,7 @@ export class WorkspaceStagedCommit extends BaseClient {
     _authorName?: string,
     _date?: string,
     _message?: string,
+    _origin?: string,
     _sha?: string,
   ) {
     super(ctx)
@@ -16358,6 +17317,7 @@ export class WorkspaceStagedCommit extends BaseClient {
     this._authorName = _authorName
     this._date = _date
     this._message = _message
+    this._origin = _origin
     this._sha = _sha
   }
 
@@ -16438,6 +17398,21 @@ export class WorkspaceStagedCommit extends BaseClient {
     }
 
     const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.
+   */
+  origin = async (): Promise<string> => {
+    if (this._origin) {
+      return this._origin
+    }
+
+    const ctx = this._ctx.select("origin")
 
     const response: Awaited<string> = await ctx.execute()
 

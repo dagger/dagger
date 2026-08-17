@@ -428,6 +428,7 @@ type Agent struct {
 	name       *string
 	pause      *ID
 	rehydrate  *ID
+	reseed     *ID
 	resume     *ID
 	send       *ID
 	start      *ID
@@ -560,7 +561,7 @@ func (r *Agent) Pause(ctx context.Context) (*Agent, error) {
 
 // AgentRehydrateOpts contains options for Agent.Rehydrate
 type AgentRehydrateOpts struct {
-	// The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED is a sealed tombstone whose snapshot stays readable, IDLE is ready to be prompted.
+	// The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
 	//
 	// RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
 	//
@@ -599,11 +600,32 @@ func (r *Agent) Rehydrate(ctx context.Context, opts ...AgentRehydrateOpts) (*Age
 	}, nil
 }
 
+// Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.
+//
+// This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.
+//
+// The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
+//
+// Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
+	assertNotNil("conversation", conversation)
+	q := r.query.Select("reseed")
+	q = q.Arg("conversation", conversation)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
 // Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
 //
-// Resuming a FAILED agent retries: the loop relaunches from the last committed snapshot, whose still-pending input is stepped again.
+// Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
 //
-// No-op on a running or idle agent; resuming a stopped agent fails.
+// No-op on a running or idle agent.
 func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("resume")
 
@@ -622,7 +644,7 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 //
 // The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
 //
-// Sending to a never-started agent starts it (signal-with-start). Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume. Sending to a stopped agent fails: nothing would ever consume the message.
+// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
 func (r *Agent) Send(ctx context.Context, message string) (ID, error) {
 	if r.send != nil {
 		return *r.send, nil
@@ -714,7 +736,7 @@ type AgentWaitForOpts struct {
 
 // Block until the agent reaches the given state, returning immediately if it is already there.
 //
-// Fails if the state becomes unreachable: STOPPED is the only terminal state — waiting on a FAILED agent for another state blocks, since a resume may retry the loop.
+// A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.
 func (r *Agent) WaitFor(ctx context.Context, opts ...AgentWaitForOpts) (*Agent, error) {
 	q := r.query.Select("waitFor")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -5616,6 +5638,16 @@ func (r *Directory) WithSymlink(target string, linkName string) *Directory {
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.query.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Return a snapshot with subdirectories removed
+func (r *Directory) WithoutDirectories(paths []string) *Directory {
+	q := r.query.Select("withoutDirectories")
+	q = q.Arg("paths", paths)
 
 	return &Directory{
 		query: q,

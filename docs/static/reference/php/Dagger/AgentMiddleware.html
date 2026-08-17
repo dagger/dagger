@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\WorkspaceStagedCommit | API</title>
+    <title>Dagger\AgentMiddleware | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_WorkspaceStagedCommit" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_AgentMiddleware" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,26 +75,24 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceStagedCommit</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>AgentMiddleware</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>WorkspaceStagedCommit    
+        <h1>AgentMiddleware    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>WorkspaceStagedCommit</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>AgentMiddleware</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
     
         
 
-            <div class="description">
-            <p><p>A commit staged in a workspace but not yet saved to the local checkout.</p></p>                    </div>
             
         
     
@@ -146,39 +144,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_authorEmail">authorEmail</a>()
+                    <a href="#method_description">description</a>()
         
-                                            <p><p>The author and committer email the commit was made with.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_authorName">authorName</a>()
-        
-                                            <p><p>The author and committer name the commit was made with.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_changes">changes</a>()
-        
-                                            <p><p>The changes this commit folded in, relative to the state staged before it.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_date">date</a>()
-        
-                                            <p><p>The RFC3339 author and committer date the commit was made with.</p></p>                </div>
+                                            <p><p>The description of the agent</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -188,7 +156,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this WorkspaceStagedCommit.</p></p>                </div>
+                                            <p><p>A unique identifier for this AgentMiddleware.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -196,29 +164,29 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_message">message</a>()
+                    <a href="#method_name">name</a>()
         
-                                            <p><p>The full commit message, subject and body.</p></p>                </div>
+                                            <p><p>Return the fully qualified name of the agent</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_origin">origin</a>()
+                    <a href="#method_originalModule">originalModule</a>()
         
-                                            <p><p>The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.</p></p>                </div>
+                                            <p><p>The original module in which the agent has been defined</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_sha">sha</a>()
+                    <a href="#method_path">path</a>()
         
-                                            <p><p>The full hash of the staged commit.</p></p>                </div>
+                                            <p><p>The path of the agent within its module</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -317,10 +285,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_authorEmail">
-        <div class="location">at line 19</div>
+                    <h3 id="method_description">
+        <div class="location">at line 16</div>
         <code>                    string
-    <strong>authorEmail</strong>()
+    <strong>description</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -328,103 +296,7 @@
             
 
         <div class="method-description">
-                            <p><p>The author and committer email the commit was made with.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_authorName">
-        <div class="location">at line 28</div>
-        <code>                    string
-    <strong>authorName</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The author and committer name the commit was made with.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_changes">
-        <div class="location">at line 37</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>changes</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The changes this commit folded in, relative to the state staged before it.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_date">
-        <div class="location">at line 46</div>
-        <code>                    string
-    <strong>date</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The RFC3339 author and committer date the commit was made with.</p></p>                        
+                            <p><p>The description of the agent</p></p>                        
         </div>
         <div class="tags">
             
@@ -446,7 +318,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 55</div>
+        <div class="location">at line 25</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -456,7 +328,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this WorkspaceStagedCommit.</p></p>                        
+                            <p><p>A unique identifier for this AgentMiddleware.</p></p>                        
         </div>
         <div class="tags">
             
@@ -477,10 +349,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_message">
-        <div class="location">at line 64</div>
+                    <h3 id="method_name">
+        <div class="location">at line 34</div>
         <code>                    string
-    <strong>message</strong>()
+    <strong>name</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -488,7 +360,7 @@
             
 
         <div class="method-description">
-                            <p><p>The full commit message, subject and body.</p></p>                        
+                            <p><p>Return the fully qualified name of the agent</p></p>                        
         </div>
         <div class="tags">
             
@@ -509,10 +381,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_origin">
-        <div class="location">at line 73</div>
-        <code>                    string
-    <strong>origin</strong>()
+                    <h3 id="method_originalModule">
+        <div class="location">at line 43</div>
+        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+    <strong>originalModule</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -520,7 +392,7 @@
             
 
         <div class="method-description">
-                            <p><p>The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.</p></p>                        
+                            <p><p>The original module in which the agent has been defined</p></p>                        
         </div>
         <div class="tags">
             
@@ -528,7 +400,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>string</td>
+            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -541,10 +413,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_sha">
-        <div class="location">at line 82</div>
-        <code>                    string
-    <strong>sha</strong>()
+                    <h3 id="method_path">
+        <div class="location">at line 52</div>
+        <code>                    array
+    <strong>path</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -552,7 +424,7 @@
             
 
         <div class="method-description">
-                            <p><p>The full hash of the staged commit.</p></p>                        
+                            <p><p>The path of the agent within its module</p></p>                        
         </div>
         <div class="tags">
             
@@ -560,7 +432,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>string</td>
+            <td>array</td>
             <td></td>
         </tr>
     </table>

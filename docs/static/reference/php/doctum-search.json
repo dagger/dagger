@@ -30,7 +30,7 @@
 			"t": "C",
 			"n": "Dagger\\Agent",
 			"p": "Dagger/Agent.html",
-			"d": null,
+			"d": "<p>A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -40,6 +40,36 @@
 			"t": "C",
 			"n": "Dagger\\AgentGroup",
 			"p": "Dagger/AgentGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AgentMessage",
+			"p": "Dagger/AgentMessage.html",
+			"d": "<p>A message delivered to an agent's mailbox.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AgentMiddleware",
+			"p": "Dagger/AgentMiddleware.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AgentMiddlewareGroup",
+			"p": "Dagger/AgentMiddlewareGroup.html",
 			"d": null,
 			"f": {
 				"n": "Dagger",
@@ -1768,6 +1798,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\WorkspaceCommitPick",
+			"p": "Dagger/WorkspaceCommitPick.html",
+			"d": "<p>One of another workspace's staged commits, classified against this workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\WorkspaceGit",
 			"p": "Dagger/WorkspaceGit.html",
 			"d": "<p>Local git state for a workspace.</p>",
@@ -2000,33 +2040,87 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::description",
-			"p": "Dagger/Agent.html#method_description",
-			"d": "<p>The description of the agent</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Agent::id",
 			"p": "Dagger/Agent.html#method_id",
 			"d": "<p>A unique identifier for this Agent.</p>"
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Agent::instanceID",
+			"p": "Dagger/Agent.html#method_instanceID",
+			"d": "<p>The unique instance identity minted by the spawn that created this agent.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::interrupt",
+			"p": "Dagger/Agent.html#method_interrupt",
+			"d": "<p>Preempt the in-flight step, keeping all completed steps, and pause.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::message",
+			"p": "Dagger/Agent.html#method_message",
+			"d": "<p>Look up a previously sent message by its message ID, returning its handle.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Agent::name",
 			"p": "Dagger/Agent.html#method_name",
-			"d": "<p>Return the fully qualified name of the agent</p>"
+			"d": "<p>Display label and identity discriminator \u2014 not a session-wide address.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::originalModule",
-			"p": "Dagger/Agent.html#method_originalModule",
-			"d": "<p>The original module in which the agent has been defined</p>"
+			"n": "Dagger\\Agent::pause",
+			"p": "Dagger/Agent.html#method_pause",
+			"d": "<p>Stop draining the mailbox once the in-flight step completes.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::path",
-			"p": "Dagger/Agent.html#method_path",
-			"d": "<p>The path of the agent within its module</p>"
+			"n": "Dagger\\Agent::rehydrate",
+			"p": "Dagger/Agent.html#method_rehydrate",
+			"d": "<p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::resume",
+			"p": "Dagger/Agent.html#method_resume",
+			"d": "<p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::send",
+			"p": "Dagger/Agent.html#method_send",
+			"d": "<p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::snapshot",
+			"p": "Dagger/Agent.html#method_snapshot",
+			"d": "<p>The conversation as of the last committed step: immutable, branchable, persistable.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::start",
+			"p": "Dagger/Agent.html#method_start",
+			"d": "<p>Start the agent's evaluation loop. No-op if it is already running.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::state",
+			"p": "Dagger/Agent.html#method_state",
+			"d": "<p>Computed lifecycle state; never stored.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::stop",
+			"p": "Dagger/Agent.html#method_stop",
+			"d": "<p>Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::waitFor",
+			"p": "Dagger/Agent.html#method_waitFor",
+			"d": "<p>Block until the agent reaches the given state, returning immediately if it is already there.</p>"
 		},
 		{
 			"t": "M",
@@ -2044,6 +2138,72 @@
 			"t": "M",
 			"n": "Dagger\\AgentGroup::list",
 			"p": "Dagger/AgentGroup.html#method_list",
+			"d": "<p>Return a list of individual agents and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMessage::await",
+			"p": "Dagger/AgentMessage.html#method_await",
+			"d": "<p>Block until the turn that consumed this message ends, and return that turn's reply.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMessage::delivery",
+			"p": "Dagger/AgentMessage.html#method_delivery",
+			"d": "<p>How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMessage::id",
+			"p": "Dagger/AgentMessage.html#method_id",
+			"d": "<p>A unique identifier for this AgentMessage.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddleware::description",
+			"p": "Dagger/AgentMiddleware.html#method_description",
+			"d": "<p>The description of the agent</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddleware::id",
+			"p": "Dagger/AgentMiddleware.html#method_id",
+			"d": "<p>A unique identifier for this AgentMiddleware.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddleware::name",
+			"p": "Dagger/AgentMiddleware.html#method_name",
+			"d": "<p>Return the fully qualified name of the agent</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddleware::originalModule",
+			"p": "Dagger/AgentMiddleware.html#method_originalModule",
+			"d": "<p>The original module in which the agent has been defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddleware::path",
+			"p": "Dagger/AgentMiddleware.html#method_path",
+			"d": "<p>The path of the agent within its module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddlewareGroup::compose",
+			"p": "Dagger/AgentMiddlewareGroup.html#method_compose",
+			"d": "<p>Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddlewareGroup::id",
+			"p": "Dagger/AgentMiddlewareGroup.html#method_id",
+			"d": "<p>A unique identifier for this AgentMiddlewareGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMiddlewareGroup::list",
+			"p": "Dagger/AgentMiddlewareGroup.html#method_list",
 			"d": "<p>Return a list of individual agents and their details</p>"
 		},
 		{
@@ -3845,6 +4005,12 @@
 			"n": "Dagger\\Directory::withTimestamps",
 			"p": "Dagger/Directory.html#method_withTimestamps",
 			"d": "<p>Retrieves this directory with all file/dir timestamps set to the given time.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withoutDirectories",
+			"p": "Dagger/Directory.html#method_withoutDirectories",
+			"d": "<p>Return a snapshot with subdirectories removed</p>"
 		},
 		{
 			"t": "M",
@@ -5780,6 +5946,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::agent",
+			"p": "Dagger/LLM.html#method_agent",
+			"d": "<p>Rehydrate a spawned agent's handle from its instance ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::contextTokens",
 			"p": "Dagger/LLM.html#method_contextTokens",
 			"d": "<p>estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session</p>"
@@ -5861,6 +6033,12 @@
 			"n": "Dagger\\LLM::skills",
 			"p": "Dagger/LLM.html#method_skills",
 			"d": "<p>The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::spawn",
+			"p": "Dagger/LLM.html#method_spawn",
+			"d": "<p>Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -7310,6 +7488,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::commitsFrom",
+			"p": "Dagger/Workspace.html#method_commitsFrom",
+			"d": "<p>Plan which of another workspace's staged commits can be applied to this one.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::configFile",
 			"p": "Dagger/Workspace.html#method_configFile",
 			"d": "<p>Selected native workspace config file relative to the workspace cwd, if any.</p>"
@@ -7454,6 +7638,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withCommitsFrom",
+			"p": "Dagger/Workspace.html#method_withCommitsFrom",
+			"d": "<p>Return this workspace with another workspace's staged commits replayed on top, without mutating either source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withConfigEnv",
 			"p": "Dagger/Workspace.html#method_withConfigEnv",
 			"d": "<p>Return this workspace with a named config environment created.</p>"
@@ -7571,6 +7761,72 @@
 			"n": "Dagger\\Workspace::withoutSDK",
 			"p": "Dagger/Workspace.html#method_withoutSDK",
 			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::authorEmail",
+			"p": "Dagger/WorkspaceCommitPick.html#method_authorEmail",
+			"d": "<p>The author and committer email the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::authorName",
+			"p": "Dagger/WorkspaceCommitPick.html#method_authorName",
+			"d": "<p>The author and committer name the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::changes",
+			"p": "Dagger/WorkspaceCommitPick.html#method_changes",
+			"d": "<p>The changes this commit folded in, as recorded in the source workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::conflictPaths",
+			"p": "Dagger/WorkspaceCommitPick.html#method_conflictPaths",
+			"d": "<p>The paths that obstruct this commit: the dirty paths for DIRTY, the paths the patch failed on for CONTENT. Empty unless the status is CONFLICT.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::date",
+			"p": "Dagger/WorkspaceCommitPick.html#method_date",
+			"d": "<p>The RFC3339 author and committer date the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::id",
+			"p": "Dagger/WorkspaceCommitPick.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceCommitPick.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::message",
+			"p": "Dagger/WorkspaceCommitPick.html#method_message",
+			"d": "<p>The full commit message, subject and body.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::origin",
+			"p": "Dagger/WorkspaceCommitPick.html#method_origin",
+			"d": "<p>The hash of the commit the source commit was itself replayed from; empty when it was authored in the source workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::reason",
+			"p": "Dagger/WorkspaceCommitPick.html#method_reason",
+			"d": "<p>Why the commit conflicts, or NONE when it does not.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::sha",
+			"p": "Dagger/WorkspaceCommitPick.html#method_sha",
+			"d": "<p>The full hash of the commit in the source workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::status",
+			"p": "Dagger/WorkspaceCommitPick.html#method_status",
+			"d": "<p>Whether this commit can be applied to the receiving workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -7781,6 +8037,12 @@
 			"n": "Dagger\\WorkspaceStagedCommit::message",
 			"p": "Dagger/WorkspaceStagedCommit.html#method_message",
 			"d": "<p>The full commit message, subject and body.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::origin",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_origin",
+			"d": "<p>The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.</p>"
 		},
 		{
 			"t": "M",

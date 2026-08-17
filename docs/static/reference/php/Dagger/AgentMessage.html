@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\WorkspaceStagedCommit | API</title>
+    <title>Dagger\AgentMessage | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_WorkspaceStagedCommit" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_AgentMessage" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceStagedCommit</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>AgentMessage</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>WorkspaceStagedCommit    
+        <h1>AgentMessage    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>WorkspaceStagedCommit</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>AgentMessage</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A commit staged in a workspace but not yet saved to the local checkout.</p></p>                    </div>
+            <p><p>A message delivered to an agent's mailbox.</p></p>                    </div>
             
         
     
@@ -146,39 +146,19 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_authorEmail">authorEmail</a>()
+                    <a href="#method_await">await</a>()
         
-                                            <p><p>The author and committer email the commit was made with.</p></p>                </div>
+                                            <p><p>Block until the turn that consumed this message ends, and return that turn's reply.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    <abbr title="Dagger\AgentMessageDelivery">AgentMessageDelivery</abbr>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_authorName">authorName</a>()
+                    <a href="#method_delivery">delivery</a>()
         
-                                            <p><p>The author and committer name the commit was made with.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_changes">changes</a>()
-        
-                                            <p><p>The changes this commit folded in, relative to the state staged before it.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_date">date</a>()
-        
-                                            <p><p>The RFC3339 author and committer date the commit was made with.</p></p>                </div>
+                                            <p><p>How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -188,37 +168,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this WorkspaceStagedCommit.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_message">message</a>()
-        
-                                            <p><p>The full commit message, subject and body.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_origin">origin</a>()
-        
-                                            <p><p>The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_sha">sha</a>()
-        
-                                            <p><p>The full hash of the staged commit.</p></p>                </div>
+                                            <p><p>A unique identifier for this AgentMessage.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -317,10 +267,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_authorEmail">
-        <div class="location">at line 19</div>
+                    <h3 id="method_await">
+        <div class="location">at line 23</div>
         <code>                    string
-    <strong>authorEmail</strong>()
+    <strong>await</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -328,7 +278,8 @@
             
 
         <div class="method-description">
-                            <p><p>The author and committer email the commit was made with.</p></p>                        
+                            <p><p>Block until the turn that consumed this message ends, and return that turn's reply.</p></p>                <p><p>Idempotent: cancel and re-await freely; concurrent waiters share the result.</p>
+<p>Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.</p></p>        
         </div>
         <div class="tags">
             
@@ -349,10 +300,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_authorName">
-        <div class="location">at line 28</div>
-        <code>                    string
-    <strong>authorName</strong>()
+                    <h3 id="method_delivery">
+        <div class="location">at line 34</div>
+        <code>                    <abbr title="Dagger\AgentMessageDelivery">AgentMessageDelivery</abbr>
+    <strong>delivery</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -360,7 +311,7 @@
             
 
         <div class="method-description">
-                            <p><p>The author and committer name the commit was made with.</p></p>                        
+                            <p><p>How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).</p></p>                <p><p>Computed once, at enqueue time.</p></p>        
         </div>
         <div class="tags">
             
@@ -368,71 +319,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_changes">
-        <div class="location">at line 37</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>changes</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The changes this commit folded in, relative to the state staged before it.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_date">
-        <div class="location">at line 46</div>
-        <code>                    string
-    <strong>date</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The RFC3339 author and committer date the commit was made with.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
+            <td><abbr title="Dagger\AgentMessageDelivery">AgentMessageDelivery</abbr></td>
             <td></td>
         </tr>
     </table>
@@ -446,7 +333,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 55</div>
+        <div class="location">at line 43</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -456,7 +343,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this WorkspaceStagedCommit.</p></p>                        
+                            <p><p>A unique identifier for this AgentMessage.</p></p>                        
         </div>
         <div class="tags">
             
@@ -465,102 +352,6 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_message">
-        <div class="location">at line 64</div>
-        <code>                    string
-    <strong>message</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The full commit message, subject and body.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_origin">
-        <div class="location">at line 73</div>
-        <code>                    string
-    <strong>origin</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_sha">
-        <div class="location">at line 82</div>
-        <code>                    string
-    <strong>sha</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The full hash of the staged commit.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
             <td></td>
         </tr>
     </table>

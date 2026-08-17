@@ -143,6 +143,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_agent">agent</a>(string $id, string $name)
+        
+                                            <p><p>Rehydrate a spawned agent's handle from its instance ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     int
                 </div>
                 <div class="col-md-8">
@@ -279,6 +289,16 @@
                     <a href="#method_skills">skills</a>()
         
                                             <p><p>The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_spawn">spawn</a>(string|null $name = null)
+        
+                                            <p><p>Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -577,8 +597,55 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_agent">
+        <div class="location">at line 21</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>agent</strong>(string $id, string $name)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Rehydrate a spawned agent's handle from its instance ID.</p></p>                <p><p>This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_contextTokens">
-        <div class="location">at line 19</div>
+        <div class="location">at line 32</div>
         <code>                    int
     <strong>contextTokens</strong>()
         </code>
@@ -610,7 +677,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_contextWindow">
-        <div class="location">at line 28</div>
+        <div class="location">at line 41</div>
         <code>                    int
     <strong>contextWindow</strong>()
         </code>
@@ -642,7 +709,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_fork">
-        <div class="location">at line 37</div>
+        <div class="location">at line 50</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>fork</strong>(string $label)
         </code>
@@ -684,7 +751,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_hasPending">
-        <div class="location">at line 47</div>
+        <div class="location">at line 60</div>
         <code>                    bool
     <strong>hasPending</strong>()
         </code>
@@ -716,7 +783,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 56</div>
+        <div class="location">at line 69</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -748,7 +815,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_lastReply">
-        <div class="location">at line 65</div>
+        <div class="location">at line 78</div>
         <code>                    string
     <strong>lastReply</strong>()
         </code>
@@ -780,7 +847,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loop">
-        <div class="location">at line 74</div>
+        <div class="location">at line 87</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>loop</strong>(int|null $maxSteps = null, int|null $maxTokens = null)
         </code>
@@ -827,7 +894,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_messages">
-        <div class="location">at line 89</div>
+        <div class="location">at line 102</div>
         <code>                    array
     <strong>messages</strong>()
         </code>
@@ -859,7 +926,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_model">
-        <div class="location">at line 98</div>
+        <div class="location">at line 111</div>
         <code>                    string
     <strong>model</strong>()
         </code>
@@ -891,7 +958,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_portableID">
-        <div class="location">at line 107</div>
+        <div class="location">at line 120</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>portableID</strong>()
         </code>
@@ -923,7 +990,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_provider">
-        <div class="location">at line 116</div>
+        <div class="location">at line 129</div>
         <code>                    string
     <strong>provider</strong>()
         </code>
@@ -955,7 +1022,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reasoningEffort">
-        <div class="location">at line 125</div>
+        <div class="location">at line 138</div>
         <code>                    string
     <strong>reasoningEffort</strong>()
         </code>
@@ -987,7 +1054,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_replay">
-        <div class="location">at line 134</div>
+        <div class="location">at line 147</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>replay</strong>()
         </code>
@@ -1019,7 +1086,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_skills">
-        <div class="location">at line 144</div>
+        <div class="location">at line 157</div>
         <code>                    array
     <strong>skills</strong>()
         </code>
@@ -1050,8 +1117,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_spawn">
+        <div class="location">at line 168</div>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+    <strong>spawn</strong>(string|null $name = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.</p></p>                <p><p>Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_step">
-        <div class="location">at line 153</div>
+        <div class="location">at line 180</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>step</strong>(int|null $maxTokens = null)
         </code>
@@ -1093,7 +1202,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 165</div>
+        <div class="location">at line 192</div>
         <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -1125,7 +1234,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tokenUsage">
-        <div class="location">at line 175</div>
+        <div class="location">at line 202</div>
         <code>                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
     <strong>tokenUsage</strong>()
         </code>
@@ -1157,7 +1266,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tools">
-        <div class="location">at line 184</div>
+        <div class="location">at line 211</div>
         <code>                    string
     <strong>tools</strong>()
         </code>
@@ -1189,7 +1298,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_transcript">
-        <div class="location">at line 193</div>
+        <div class="location">at line 220</div>
         <code>                    string
     <strong>transcript</strong>()
         </code>
@@ -1221,7 +1330,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withMCPServer">
-        <div class="location">at line 202</div>
+        <div class="location">at line 229</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withMCPServer</strong>(string $name, <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a> $service)
         </code>
@@ -1268,7 +1377,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModel">
-        <div class="location">at line 213</div>
+        <div class="location">at line 240</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withModel</strong>(string $model, string|null $provider = null)
         </code>
@@ -1315,7 +1424,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPrompt">
-        <div class="location">at line 226</div>
+        <div class="location">at line 253</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withPrompt</strong>(string $prompt)
         </code>
@@ -1357,7 +1466,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPromptFile">
-        <div class="location">at line 236</div>
+        <div class="location">at line 263</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withPromptFile</strong>(<a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> $file)
         </code>
@@ -1399,7 +1508,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withReasoningEffort">
-        <div class="location">at line 246</div>
+        <div class="location">at line 273</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withReasoningEffort</strong>(string $effort)
         </code>
@@ -1441,7 +1550,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withResponse">
-        <div class="location">at line 256</div>
+        <div class="location">at line 283</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withResponse</strong>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         </code>
@@ -1508,7 +1617,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSkills">
-        <div class="location">at line 287</div>
+        <div class="location">at line 314</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withSkills</strong>(<a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $directory)
         </code>
@@ -1550,7 +1659,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSystemPrompt">
-        <div class="location">at line 297</div>
+        <div class="location">at line 324</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withSystemPrompt</strong>(string $prompt)
         </code>
@@ -1592,7 +1701,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withToolResult">
-        <div class="location">at line 307</div>
+        <div class="location">at line 334</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withToolResult</strong>(string $callId, string $content, bool $errored)
         </code>
@@ -1644,7 +1753,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withTools">
-        <div class="location">at line 319</div>
+        <div class="location">at line 346</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withTools</strong>(<a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a> $object, array|null $except = [])
         </code>
@@ -1691,7 +1800,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withWorkspace">
-        <div class="location">at line 332</div>
+        <div class="location">at line 359</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withWorkspace</strong>(<a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> $workspace)
         </code>
@@ -1733,7 +1842,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDefaultSystemPrompt">
-        <div class="location">at line 342</div>
+        <div class="location">at line 369</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutDefaultSystemPrompt</strong>()
         </code>
@@ -1765,7 +1874,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutMessageHistory">
-        <div class="location">at line 351</div>
+        <div class="location">at line 378</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutMessageHistory</strong>()
         </code>
@@ -1797,7 +1906,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutSystemPrompts">
-        <div class="location">at line 360</div>
+        <div class="location">at line 387</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutSystemPrompts</strong>()
         </code>
@@ -1829,7 +1938,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_workspace">
-        <div class="location">at line 369</div>
+        <div class="location">at line 396</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>workspace</strong>()
         </code>
