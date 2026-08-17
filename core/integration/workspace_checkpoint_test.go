@@ -35,6 +35,32 @@ func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client)
 		WithNewFile("/work/tracked.txt", "base\ndirty\n")
 }
 
+// A staff worker is composed from inside the staff module's nested client. That
+// client intentionally does not inherit --env metadata, so the checkpoint value
+// itself must retain the selected environment or the worker only receives agents
+// from the base workspace config.
+func (WorkspaceSuite) TestWorkspaceCheckpointPreservesEnvironmentForModuleCalls(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := checkpointCheckoutBase(ctx, t, c).
+		WithNewFile("/work/dagger.toml", `[env.dev.modules.editor]
+source = "modules/editor"
+`).
+		WithNewFile("/work/modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("/work/modules/editor/main.dang", editorSourceWithDoc("Read a file from the worker workspace.")).
+		WithNewFile("/work/modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("/work/modules/probe/main.dang", `type Probe {
+  tools(source: Workspace!): String! {
+    source.checkpoint.agents.compose.tools
+  }
+}
+`)
+
+	out, err := base.With(daggerExec("--silent", "--env=dev", "-m", "modules/probe", "call", "tools")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "## readFile")
+	require.Contains(t, out, "Read a file from the worker workspace.")
+}
+
 // TestWorkspaceCheckpointIsAddressableAndSavesToItsOrigin covers both halves of
 // a freshly captured checkpoint.
 //

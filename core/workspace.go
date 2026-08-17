@@ -214,6 +214,12 @@ type Workspace struct {
 	// that tree rather than being treated as an intentionally module-less value.
 	portableCheckpoint bool
 
+	// workspaceEnv is the config environment selected when this workspace was
+	// frozen. Portable checkpoints carry it as value state so module calls that
+	// recompose tools through the checkpoint do not depend on request-local
+	// client metadata, which nested module clients intentionally do not inherit.
+	workspaceEnv string
+
 	// checkpointID identifies the portable checkpoint this workspace derives
 	// from: the digest of the checkpoint manifest it was reconstructed from.
 	// It is pure and host-independent — the checkpoint's content identity, not a
@@ -387,6 +393,7 @@ type WorkspaceCheckpointWorkspace struct {
 	Cwd            string `json:"cwd"`
 	ConfigFile     string `json:"configFile,omitempty"`
 	LockFile       string `json:"lockFile,omitempty"`
+	Environment    string `json:"environment,omitempty"`
 	GitAuthorName  string `json:"gitAuthorName,omitempty"`
 	GitAuthorEmail string `json:"gitAuthorEmail,omitempty"`
 }
@@ -981,6 +988,22 @@ func (ws *Workspace) SetPortableCheckpoint() {
 	}
 }
 
+// WorkspaceEnv returns the config environment captured with this workspace.
+func (ws *Workspace) WorkspaceEnv() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.workspaceEnv
+}
+
+// SetWorkspaceEnv records the config environment a portable workspace must use
+// when resolving modules independently of request-local client metadata.
+func (ws *Workspace) SetWorkspaceEnv(env string) {
+	if ws != nil {
+		ws.workspaceEnv = env
+	}
+}
+
 func (ws *Workspace) IsValueWorkspace() bool {
 	if ws == nil || ws.ClientID != "" {
 		return false
@@ -1234,6 +1257,7 @@ type persistedWorkspacePayload struct {
 	Source             *persistedWorkspaceSource      `json:"source,omitempty"`
 	CompatWorkspace    *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
 	PortableCheckpoint bool                           `json:"portableCheckpoint,omitempty"`
+	WorkspaceEnv       string                         `json:"workspaceEnv,omitempty"`
 	CheckpointID       string                         `json:"checkpointID,omitempty"`
 	Address            string                         `json:"address,omitempty"`
 	Cwd                string                         `json:"cwd,omitempty"`
@@ -1420,6 +1444,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	payload := persistedWorkspacePayload{
 		CompatWorkspace:    ws.compatWorkspace,
 		PortableCheckpoint: ws.portableCheckpoint,
+		WorkspaceEnv:       ws.workspaceEnv,
 		CheckpointID:       ws.checkpointID,
 		Address:            ws.Address,
 		Cwd:                ws.Cwd,
@@ -1605,6 +1630,7 @@ func (*Workspace) DecodePersistedObject(
 		cacheMounts:        cacheMounts,
 		compatWorkspace:    persisted.CompatWorkspace,
 		portableCheckpoint: persisted.PortableCheckpoint,
+		workspaceEnv:       persisted.WorkspaceEnv,
 		checkpointID:       persisted.CheckpointID,
 		Address:            persisted.Address,
 		Cwd:                cwd,
