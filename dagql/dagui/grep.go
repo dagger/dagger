@@ -27,7 +27,7 @@ import (
 // deliberately opaque in both paths.
 func (db *DB) GrepCalls(re *regexp.Regexp, max int) []string {
 	var lines []string
-	for dig := range db.CallPayloads {
+	for dig := range db.Calls {
 		call := db.Call(dig)
 		if call == nil {
 			continue

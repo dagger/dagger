@@ -438,6 +438,10 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// dagql call payload, not log text
 			continue
 		}
+		if db.ingestAgentSnapshot(log) {
+			// agent resume anchor, not log text
+			continue
+		}
 		if log.Body().Kind() != otellog.KindString {
 			// Never log text, whatever produced it; checking the kind first
 			// also keeps AsString from reporting to the global error handler.
@@ -565,6 +569,13 @@ func (db *DB) SetPrimarySpan(span SpanID) {
 // root case. Flags (Boundary/Encapsulate) on or above the root are outside the
 // question and never contain; flags strictly below it contain exactly as they
 // always have, so a fixture check wrapped in its own boundary stays hidden.
+//
+// The CONVERSATION deliberately does not use this. A resuming client holds a
+// second, imported trace in the same DB (hack/designs/resume-from-trace.md
+// §5.1.3), whose messages hang off a second parentless span and would be
+// dropped by resolving nil to db.RootSpan — so there, nil means every message
+// span in the DB. The fixture-containment rule this exists for is unchanged
+// for checks, generators and services, which have no second trace to miss.
 func (db *DB) surfaceRoot(root *Span) *Span {
 	if root != nil {
 		return root
