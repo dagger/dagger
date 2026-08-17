@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -85,6 +87,32 @@ func TestAssembleWorkspaceCheckpointPayloads(t *testing.T) {
 		_, _, err := AssembleWorkspaceCheckpointPayloads(&bad, chunks)
 		require.ErrorContains(t, err, "payload digest")
 	})
+}
+
+func TestWorkspaceCheckpointExportTargetIsEphemeral(t *testing.T) {
+	t.Parallel()
+
+	ws := &Workspace{}
+	ws.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
+	_, err := ws.ExportHostPath()
+	require.ErrorContains(t, err, "synthetic workspace")
+
+	ws.SetExportTarget("live-client", "/checkout")
+	require.Equal(t, "live-client", ws.ExportClientID())
+	hostPath, err := ws.ExportHostPath()
+	require.NoError(t, err)
+	require.Equal(t, "/checkout", hostPath)
+
+	clone := ws.Clone()
+	require.Equal(t, "live-client", clone.ExportClientID())
+	hostPath, err = clone.ExportHostPath()
+	require.NoError(t, err)
+	require.Equal(t, "/checkout", hostPath)
+
+	encoded, err := clone.EncodePersistedObject(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded.JSON), "live-client")
+	require.NotContains(t, string(encoded.JSON), "/checkout")
 }
 
 func TestParseWorkspaceGitCheckpointManifestStrict(t *testing.T) {

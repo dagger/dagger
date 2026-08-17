@@ -467,8 +467,13 @@ Metrics contain no paths, contents, remote credentials, manifests, or chunks.
 
 ## 11. Save and publication
 
-Checkpoint construction has no remote write. The Workspace also has no host
-path, so no-argument `Workspace.export` must fail rather than guess a checkout.
+Checkpoint construction has no remote write. The pure Workspace recipe also has
+no host path. In the originating live session only, the effectful checkpoint
+operation may retain its source client and checkout as an ephemeral export target
+outside the recipe and persisted payload, so explicit save can reconcile agent
+commits back to the checkout that was just captured. A cold-restored checkpoint
+has no such target, and no-argument `Workspace.export` must fail rather than
+guess a destination.
 
 Saving is a separate, explicit reconciliation with a selected target:
 

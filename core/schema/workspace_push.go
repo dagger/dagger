@@ -96,7 +96,7 @@ func (s *workspaceSchema) workspaceGitPush(
 		targetSHA = head.String()
 	}
 
-	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	clientCtx, err := withWorkspaceExportClientContext(ctx, ws)
 	if err != nil {
 		return "", err
 	}

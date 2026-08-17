@@ -505,7 +505,7 @@ func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Wor
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
 
-	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	clientCtx, err := withWorkspaceExportClientContext(ctx, ws)
 	if err != nil {
 		return err
 	}

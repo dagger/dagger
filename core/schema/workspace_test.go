@@ -19,9 +19,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCheckpointExportTargetPreservesPureRecipe(t *testing.T) {
+	srv, err := dagql.NewServer(t.Context(), &core.Query{})
+	require.NoError(t, err)
+	srv.InstallObject(dagql.NewClass[*core.Workspace](srv))
+
+	checkpoint, err := dagql.NewObjectResultForCall(&core.Workspace{}, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "portable-checkpoint",
+		Type:        dagql.NewResultCallType((&core.Workspace{}).Type()),
+	})
+	require.NoError(t, err)
+	checkpointCall, err := checkpoint.ResultCall()
+	require.NoError(t, err)
+
+	source := &core.Workspace{ClientID: "live-client"}
+	source.SetHostPath("/checkout")
+	live, err := checkpointWithExportTarget(srv, checkpoint, source)
+	require.NoError(t, err)
+	liveCall, err := live.ResultCall()
+	require.NoError(t, err)
+	require.Equal(t, checkpointCall, liveCall, "ephemeral export routing must not enter the portable recipe")
+
+	_, err = checkpoint.Self().ExportHostPath()
+	require.ErrorContains(t, err, "local Git workspace")
+	require.Equal(t, "live-client", live.Self().ExportClientID())
+	hostPath, err := live.Self().ExportHostPath()
+	require.NoError(t, err)
+	require.Equal(t, "/checkout", hostPath)
+}
+
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
+	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "exportClientID", "exportHostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)

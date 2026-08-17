@@ -692,7 +692,27 @@ func (s *workspaceSchema) checkpoint(
 	}); err != nil {
 		return inst, fmt.Errorf("construct portable workspace checkpoint: %w", err)
 	}
-	return inst, nil
+
+	// Keep the pure checkpoint call as this result's recipe, but return a clone
+	// carrying an ephemeral route back to the checkout that was just captured.
+	// The private target is intentionally neither persisted nor encoded in the
+	// pure call, so cold replay stays host-independent while ctrl+s in this live
+	// session can still save subsequent engine-side commits.
+	return checkpointWithExportTarget(srv, inst, ws)
+}
+
+func checkpointWithExportTarget(
+	srv *dagql.Server,
+	checkpoint dagql.ObjectResult[*core.Workspace],
+	source *core.Workspace,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	call, err := checkpoint.ResultCall()
+	if err != nil {
+		return checkpoint, err
+	}
+	live := checkpoint.Self().Clone()
+	live.SetExportTarget(source.ClientID, source.HostPath())
+	return dagql.NewObjectResultForCall(live, srv, call)
 }
 
 func checkpointPatterns(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
@@ -3456,7 +3476,7 @@ func (s *workspaceSchema) export(
 			if err != nil {
 				return core.Void{}, err
 			}
-			exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
+			exportCtx, err := withWorkspaceExportClientContext(ctx, ws)
 			if err != nil {
 				return core.Void{}, err
 			}
@@ -5522,14 +5542,26 @@ func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *
 // workspace's owning client ID. This ensures host filesystem operations route
 // through the correct client session, even when called from a module context.
 func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	if ws.ClientID == "" {
+	return withWorkspaceClientIDContext(ctx, ws.ClientID)
+}
+
+// withWorkspaceExportClientContext routes an explicit save through the live
+// checkout retained by a freshly captured checkpoint. Ordinary local
+// workspaces fall back to their owning client; cold-restored checkpoints have
+// neither and remain intentionally unexportable.
+func withWorkspaceExportClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	return withWorkspaceClientIDContext(ctx, ws.ExportClientID())
+}
+
+func withWorkspaceClientIDContext(ctx context.Context, clientID string) (context.Context, error) {
+	if clientID == "" {
 		return nil, fmt.Errorf("workspace has no client ID")
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
 	}
-	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
+	clientMetadata, err := query.SpecificClientMetadata(ctx, clientID)
 	if err != nil {
 		return ctx, fmt.Errorf("get client metadata: %w", err)
 	}
