@@ -31,6 +31,7 @@ var _ SchemaResolvers = &directorySchema{}
 func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("directory", s.directory).
+			WithInput(engineDefaultPlatformInput).
 			Doc(`Creates an empty directory.`),
 	}.Install(srv)
 
@@ -240,7 +241,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerClientInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.NodeFunc("dockerBuild", s.dockerBuild).
+		dagql.NodeFuncWithDynamicInputs("dockerBuild", s.dockerBuild, s.dockerBuildDynamicInputs).
+			WithInput(engineDefaultPlatformInput).
 			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
 			Args(
 				dagql.Arg("dockerfile").Doc(`Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`),
@@ -1781,6 +1783,24 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		args.NoInit,
 		sshSocket,
 	)
+}
+
+func (s *directorySchema) dockerBuildDynamicInputs(
+	ctx context.Context,
+	_ dagql.ObjectResult[*core.Directory],
+	args dirDockerBuildArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.Platform.Valid {
+		return nil
+	}
+
+	platform, err := currentEngineDefaultPlatform(ctx)
+	if err != nil {
+		return err
+	}
+
+	return req.SetArgInput(ctx, "platform", platform, false)
 }
 
 type directoryTerminalArgs struct {
