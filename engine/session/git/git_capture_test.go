@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -263,6 +264,13 @@ func TestCaptureGitRejectsUnsupportedAndUnboundedState(t *testing.T) {
 		gitCmd(t, home, nested, "init")
 		srv := captureGit(t, repo, &CaptureGitPolicy{})
 		require.Contains(t, srv.metadata(t).GetError().GetMessage(), "nested repository")
+		require.Len(t, srv.responses, 1)
+	})
+	t.Run("committed bounds", func(t *testing.T) {
+		repo, home, _ := initCaptureRepo(t)
+		commitFile(t, repo, home, "large.txt", strings.Repeat("x", 32), "large committed file")
+		srv := captureGit(t, repo, &CaptureGitPolicy{MaxTrackedFileBytes: 16})
+		require.Contains(t, srv.metadata(t).GetError().GetMessage(), "committed content exceeds")
 		require.Len(t, srv.responses, 1)
 	})
 	t.Run("untracked bounds", func(t *testing.T) {

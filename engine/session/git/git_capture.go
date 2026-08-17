@@ -592,7 +592,7 @@ func scanCommittedObjects(ctx context.Context, checkout, base, head string, limi
 	if err != nil {
 		return 0, errors.New("enumerate prerequisite objects failed")
 	}
-	var total int64
+	var objects bytes.Buffer
 	seen := map[string]struct{}{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		fields := strings.SplitN(line, " ", 2)
@@ -604,16 +604,35 @@ func scanCommittedObjects(ctx context.Context, checkout, base, head string, limi
 			continue
 		}
 		seen[oid] = struct{}{}
-		typeOut, err := runHostGit(ctx, checkout, "cat-file", "-t", oid)
-		if err != nil || strings.TrimSpace(typeOut) != "blob" {
+		objects.WriteString(oid)
+		objects.WriteByte('\n')
+	}
+	if objects.Len() == 0 {
+		return 0, nil
+	}
+
+	// Ask one long-lived cat-file process for every object's type and size.
+	// Spawning separate `cat-file -t` and `cat-file -s` processes per object
+	// makes capture time grow with both the object count and process startup
+	// overhead, which is especially painful for a stack of local commits in a
+	// large repository. Batch mode preserves Git's normal partial-clone behavior
+	// while amortizing that work across the complete object set.
+	objectsOut, err := runHostGitBytes(ctx, checkout, nil, &objects,
+		"cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)")
+	if err != nil {
+		return 0, errors.New("inspect prerequisite objects failed")
+	}
+	var total int64
+	for _, line := range strings.Split(strings.TrimSpace(string(objectsOut)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			return 0, errors.New("inspect prerequisite object failed")
+		}
+		if fields[1] != "blob" {
 			continue
 		}
-		sizeOut, err := runHostGit(ctx, checkout, "cat-file", "-s", oid)
-		if err != nil {
-			return 0, errors.New("inspect prerequisite blob failed")
-		}
-		size, err := strconv.ParseInt(strings.TrimSpace(sizeOut), 10, 64)
-		if err != nil || size > limits.trackedFile || total+size > limits.total {
+		size, err := strconv.ParseInt(fields[2], 10, 64)
+		if err != nil || size < 0 || size > limits.trackedFile || size > limits.total-total {
 			return 0, errors.New("committed content exceeds the configured capture bounds")
 		}
 		total += size
