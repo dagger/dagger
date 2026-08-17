@@ -49,7 +49,7 @@ func (s *workspaceSchema) workspaceGitPush(
 
 	// Preconditions first, exactly like a save: nothing is transferred until
 	// the workspace is known to be backed by a local git checkout.
-	hostPath, err := ws.ExportHostPath()
+	clientCtx, hostPath, err := workspaceExportContext(ctx, ws)
 	if err != nil {
 		return "", fmt.Errorf("cannot push: %w", err)
 	}
@@ -96,10 +96,6 @@ func (s *workspaceSchema) workspaceGitPush(
 		targetSHA = head.String()
 	}
 
-	clientCtx, err := withWorkspaceExportClientContext(ctx, ws)
-	if err != nil {
-		return "", err
-	}
 	query, err := core.CurrentQuery(clientCtx)
 	if err != nil {
 		return "", err

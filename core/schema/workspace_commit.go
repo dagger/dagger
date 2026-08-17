@@ -497,7 +497,7 @@ func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Wor
 	// Preconditions first: nothing is written to the host until every check
 	// below has passed, so a rejected save leaves the checkout exactly as it
 	// was.
-	hostPath, err := ws.ExportHostPath()
+	clientCtx, hostPath, err := workspaceExportContext(ctx, ws)
 	if err != nil {
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
@@ -505,10 +505,6 @@ func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Wor
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
 
-	clientCtx, err := withWorkspaceExportClientContext(ctx, ws)
-	if err != nil {
-		return err
-	}
 	query, err := core.CurrentQuery(clientCtx)
 	if err != nil {
 		return err

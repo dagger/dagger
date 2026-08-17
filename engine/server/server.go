@@ -237,6 +237,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// (Workspace.reloaded).
 	core.SetWorkspaceReadEpochHooks(srv.currentWorkspaceReadEpoch, srv.bumpClientWorkspaceReadEpoch)
 
+	// Let core retain, per session, the live checkout each portable workspace
+	// checkpoint was captured from, so an explicit save of a frozen agent
+	// workspace can route back to it while the checkpoint value itself stays
+	// host-independent.
+	core.SetWorkspaceCheckpointOriginHooks(srv.retainWorkspaceCheckpointOrigin, srv.lookupWorkspaceCheckpointOrigin)
+
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
 	engineutil.GetGlobalNamespaceWorkerPool().Start()

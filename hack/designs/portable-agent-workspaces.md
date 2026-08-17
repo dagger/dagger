@@ -475,6 +475,17 @@ commits back to the checkout that was just captured. A cold-restored checkpoint
 has no such target, and no-argument `Workspace.export` must fail rather than
 guess a destination.
 
+That retention is session state keyed by the checkpoint's own identity — its
+manifest digest, which the reconstructed Workspace carries and every workspace
+derived from it inherits — and not a field on the Workspace value. The value is
+the value of a pure recipe: it is shared by every session that resolves that
+recipe, so a target stored on it would leak into a warm cross-session restore.
+Keeping the target off the value by cloning it after construction is worse: the
+effectful call cannot be cached, so a value it mints has no result identity, and
+the composed agent cannot bind a workspace it cannot address by ID. The pure
+constructor's result must therefore be returned verbatim, with the route to the
+live checkout held beside it for the session's lifetime.
+
 Saving is a separate, explicit reconciliation with a selected target:
 
 ```text

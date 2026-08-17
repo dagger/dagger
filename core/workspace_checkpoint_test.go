@@ -89,30 +89,62 @@ func TestAssembleWorkspaceCheckpointPayloads(t *testing.T) {
 	})
 }
 
-func TestWorkspaceCheckpointExportTargetIsEphemeral(t *testing.T) {
-	t.Parallel()
+// TestWorkspaceCheckpointExportTargetIsSessionState asserts how a checkpoint
+// finds its save destination: by its own pure identity, through session state
+// the capturing session retained, and never from anything the workspace value
+// itself carries. Outside that session the same value has no destination at all.
+func TestWorkspaceCheckpointExportTargetIsSessionState(t *testing.T) {
+	// Not parallel: registers the process-global checkpoint-origin hooks.
+	t.Cleanup(func() { SetWorkspaceCheckpointOriginHooks(nil, nil) })
 
+	const checkpointID = "sha256:checkpoint"
 	ws := &Workspace{}
 	ws.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
-	_, err := ws.ExportHostPath()
-	require.ErrorContains(t, err, "synthetic workspace")
+	ws.SetPortableCheckpoint()
+	ws.SetCheckpointID(checkpointID)
 
-	ws.SetExportTarget("live-client", "/checkout")
-	require.Equal(t, "live-client", ws.ExportClientID())
-	hostPath, err := ws.ExportHostPath()
-	require.NoError(t, err)
-	require.Equal(t, "/checkout", hostPath)
+	ctx := context.Background()
 
+	// No session retained this checkpoint's origin: saving must fail rather
+	// than fall back to a destination of its own.
+	_, _, err := ws.ExportTarget(ctx)
+	require.ErrorContains(t, err, "restored workspace checkpoint")
+
+	var lookedUp string
+	SetWorkspaceCheckpointOriginHooks(nil, func(_ context.Context, id string) (string, string, bool) {
+		lookedUp = id
+		if id != checkpointID {
+			return "", "", false
+		}
+		return "live-client", "/checkout", true
+	})
+
+	// Derived workspaces keep the identity, so the agent's edits and commits
+	// save to the same checkout the checkpoint was captured from.
 	clone := ws.Clone()
-	require.Equal(t, "live-client", clone.ExportClientID())
-	hostPath, err = clone.ExportHostPath()
+	require.Equal(t, checkpointID, clone.CheckpointID())
+	clientID, hostPath, err := clone.ExportTarget(ctx)
 	require.NoError(t, err)
+	require.Equal(t, checkpointID, lookedUp)
+	require.Equal(t, "live-client", clientID)
 	require.Equal(t, "/checkout", hostPath)
 
-	encoded, err := clone.EncodePersistedObject(context.Background(), nil)
+	// The value itself remains host-independent: it carries only the pure
+	// identity, so a persisted checkpoint cannot resurrect a destination.
+	encoded, err := clone.EncodePersistedObject(ctx, nil)
 	require.NoError(t, err)
+	require.Contains(t, string(encoded.JSON), checkpointID)
 	require.NotContains(t, string(encoded.JSON), "live-client")
 	require.NotContains(t, string(encoded.JSON), "/checkout")
+
+	// A workspace with no checkpoint identity is unaffected: it is its own
+	// destination, and never consults the retained origins.
+	local := &Workspace{ClientID: "local-client"}
+	local.SetSource(NewWorkspaceSourceClientLocal("/work"))
+	clientID, hostPath, err = local.ExportTarget(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "local-client", clientID)
+	require.Equal(t, "/work", hostPath)
 }
 
 func TestParseWorkspaceGitCheckpointManifestStrict(t *testing.T) {
