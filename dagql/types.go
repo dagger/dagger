@@ -732,7 +732,7 @@ func (DigestedSerializedString[T]) DecodeInput(val any) (Input, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewDigestedSerializedString(v, ""), nil
+		return NewDigestedSerializedString(v, digest.FromString(x)), nil
 	default:
 		return nil, fmt.Errorf("cannot create DigestedSerializedString from %T", x)
 	}

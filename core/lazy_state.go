@@ -101,6 +101,21 @@ func (a *LazyAccessor[V, T]) GetOrEval(ctx context.Context, res dagql.Result[T])
 	return a.value, nil
 }
 
+// PeekOrEval returns an already-materialized value without evaluating, and
+// otherwise evaluates as GetOrEval does.
+//
+// It exists for values built in process and consumed before dagql has seen
+// them. Such an object carries its accessors already set, but its Result stays
+// detached until a resolver returns it, and evaluating a detached Result is an
+// error. Callers holding a value that may or may not have come back through
+// dagql want the value either way.
+func (a *LazyAccessor[V, T]) PeekOrEval(ctx context.Context, res dagql.Result[T]) (V, error) {
+	if value, ok := a.Peek(); ok {
+		return value, nil
+	}
+	return a.GetOrEval(ctx, res)
+}
+
 // Peek returns the current stored value without triggering lazy evaluation.
 func (a *LazyAccessor[V, T]) Peek() (V, bool) {
 	a.mu.RLock()

@@ -41,6 +41,27 @@ defmodule Dagger.WorkspaceGit do
   end
 
   @doc """
+  Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.
+
+  The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.
+  """
+  @spec push(t(), [
+          {:remote, String.t() | nil},
+          {:branch, String.t() | nil},
+          {:force, boolean() | nil}
+        ]) :: {:ok, String.t()} | {:error, term()}
+  def push(%__MODULE__{} = workspace_git, optional_args \\ []) do
+    query_builder =
+      workspace_git.query_builder
+      |> QB.select("push")
+      |> QB.maybe_put_arg("remote", optional_args[:remote])
+      |> QB.maybe_put_arg("branch", optional_args[:branch])
+      |> QB.maybe_put_arg("force", optional_args[:force])
+
+    Client.execute(workspace_git.client, query_builder)
+  end
+
+  @doc """
   Commits staged in this workspace but not yet saved to the local checkout.
 
   Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.

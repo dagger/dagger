@@ -16618,6 +16618,18 @@ pub struct WorkspaceGit {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceGitPushOpts<'a> {
+    /// Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is.
+    #[builder(setter(into, strip_option), default)]
+    pub branch: Option<&'a str>,
+    /// Allow a non-fast-forward update of the remote ref.
+    #[builder(setter(into, strip_option), default)]
+    pub force: Option<bool>,
+    /// Remote to push to: a remote name from the checkout's configuration, or a URL.
+    #[builder(setter(into, strip_option), default)]
+    pub remote: Option<&'a str>,
+}
 impl IntoID<Id> for WorkspaceGit {
     fn into_id(
         self,
@@ -16654,6 +16666,38 @@ impl WorkspaceGit {
     /// A unique identifier for this WorkspaceGit.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.
+    /// The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn push(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("push");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.
+    /// The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn push_opts<'a>(
+        &self,
+        opts: WorkspaceGitPushOpts<'a>,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("push");
+        if let Some(remote) = opts.remote {
+            query = query.arg("remote", remote);
+        }
+        if let Some(branch) = opts.branch {
+            query = query.arg("branch", branch);
+        }
+        if let Some(force) = opts.force {
+            query = query.arg("force", force);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Commits staged in this workspace but not yet saved to the local checkout.

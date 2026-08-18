@@ -2,6 +2,8 @@ package engineutil
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -46,6 +48,7 @@ import (
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type SessionCaller interface {
@@ -415,6 +418,22 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 }
 
+func (c *Client) PromptBool(ctx context.Context, title, question string) (bool, error) {
+	caller, err := c.GetMainClientCaller(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get main client caller for prompt: %w", err)
+	}
+	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
+		Title:   title,
+		Prompt:  question,
+		Default: false,
+	})
+	if err != nil {
+		return false, fmt.Errorf("interactive approval is unavailable: %w", err)
+	}
+	return response.Response, nil
+}
+
 func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
 	caller, err := c.GetMainClientCaller(ctx)
@@ -527,8 +546,8 @@ func (c *Client) GetGitHead(ctx context.Context, checkoutPath string) (string, e
 }
 
 // ApplyGitBundle streams a git bundle to the client and has the client's own
-// git fast-forward a local checkout onto targetSHA. It returns the checkout's
-// resulting HEAD.
+// git land its staged stack on a local checkout, replaying onto an advanced
+// HEAD when necessary. It returns the checkout's actual resulting HEAD.
 func (c *Client) ApplyGitBundle(
 	ctx context.Context,
 	checkoutPath string,
@@ -596,6 +615,427 @@ func (c *Client) ApplyGitBundle(
 	}
 }
 
+// pushMethod is the RPC's fully qualified name, used to detect clients too
+// old to know about it.
+const pushMethod = "/dagger.git.Git/Push"
+
+// PushGitCommits has the client's own git push targetSHA to a remote,
+// updating destRef (or the checkout's current branch when destRef is empty).
+// Commits the checkout does not have yet travel alongside as a git bundle,
+// recorded under bundleRef; they enter the checkout's object database without
+// creating or moving any local ref. Running on the host is what makes the
+// push behave exactly like `git push` in the checkout: the checkout's
+// configured remotes, credential helpers, ssh agent and hooks all apply. It
+// returns the fully qualified remote ref that was updated.
+func (c *Client) PushGitCommits(
+	ctx context.Context,
+	checkoutPath string,
+	remote string,
+	destRef string,
+	targetSHA string,
+	force bool,
+	bundleRef string,
+	bundle []byte,
+) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(pushMethod) {
+		return "", fmt.Errorf("client does not support pushing git commits; upgrade the dagger CLI")
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).Push(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to open push stream: %w", err)
+	}
+
+	err = stream.Send(&git.PushRequest{
+		Msg: &git.PushRequest_Metadata{
+			Metadata: &git.PushMetadata{
+				CheckoutPath: checkoutPath,
+				Remote:       remote,
+				DestRef:      destRef,
+				TargetSha:    targetSHA,
+				Force:        force,
+				BundleRef:    bundleRef,
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to send push metadata: %w", err)
+	}
+	for len(bundle) > 0 {
+		chunk := bundle
+		if len(chunk) > applyBundleChunkSize {
+			chunk = chunk[:applyBundleChunkSize]
+		}
+		bundle = bundle[len(chunk):]
+		err := stream.Send(&git.PushRequest{
+			Msg: &git.PushRequest_Chunk{Chunk: chunk},
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to send bundle: %w", err)
+		}
+	}
+
+	response, err := stream.CloseAndRecv()
+	if err != nil {
+		return "", fmt.Errorf("failed to push: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *git.PushResponse_Pushed:
+		return result.Pushed.DestRef, nil
+	case *git.PushResponse_Error:
+		return "", errors.New(result.Error.Message)
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
+
+// checkoutStateMethod and packCheckoutMethod are the RPCs' fully qualified
+// names, used to detect clients too old to know about them.
+const (
+	checkoutStateMethod = "/dagger.git.Git/CheckoutState"
+	packCheckoutMethod  = "/dagger.git.Git/PackCheckout"
+	packWorktreeMethod  = "/dagger.git.Git/PackWorktree"
+	captureGitMethod    = "/dagger.git.Git/CaptureGit"
+)
+
+// ErrGitPackUnsupported reports that the client cannot pack a checkout with
+// its own git: either the client predates the PackCheckout RPC or it has no
+// git binary. Callers may degrade to whatever git state the synced tree
+// itself carries.
+var ErrGitPackUnsupported = errors.New("client cannot pack git checkouts")
+
+// ErrGitWorktreeUnsupported reports that the client cannot provide a packed
+// working-tree delta. Callers may fall back to syncing the checkout directory.
+var ErrGitWorktreeUnsupported = errors.New("client cannot pack git worktrees")
+
+// ErrGitWorktreeHeadMismatch reports that the checkout moved away from the
+// HEAD against which the caller planned to apply its packed worktree delta.
+var ErrGitWorktreeHeadMismatch = errors.New("git worktree HEAD moved")
+
+// ErrGitCaptureUnsupported reports that the connected client predates the
+// safe portable-workspace capture RPC.
+var ErrGitCaptureUnsupported = errors.New("client cannot capture portable git workspaces")
+
+// GitCaptureApprovalError is a fail-closed preflight result. Candidates contain
+// path metadata only; the client has not sent any candidate file or Git object
+// bytes. A schema/CLI may prompt and retry with exact path approvals.
+type GitCaptureApprovalError struct {
+	Message    string
+	Candidates []*git.CaptureGitCandidate
+}
+
+func (e *GitCaptureApprovalError) Error() string { return e.Message }
+
+// GitCheckoutState asks the client for a digest of a local checkout's current
+// git state (HEAD, symbolic HEAD, branch and tag refs), resolved by the
+// client's own git so every checkout layout works. The digest changes exactly
+// when the checkout's refs move, making it the cache key for PackGitCheckout.
+//
+// A checkout that is not a git repository reports gitutil.ErrGitNoRepo.
+func (c *Client) GitCheckoutState(ctx context.Context, checkoutPath string) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(checkoutStateMethod) {
+		return "", ErrGitPackUnsupported
+	}
+
+	response, err := git.NewGitClient(caller.Conn()).CheckoutState(ctx, &git.CheckoutStateRequest{
+		CheckoutPath: checkoutPath,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to query git checkout state: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *git.CheckoutStateResponse_StateDigest:
+		return result.StateDigest, nil
+	case *git.CheckoutStateResponse_Error:
+		switch result.Error.Type {
+		case git.NOT_A_REPO:
+			return "", fmt.Errorf("%s: %w", result.Error.Message, gitutil.ErrGitNoRepo)
+		case git.NOT_FOUND:
+			return "", fmt.Errorf("%s: %w", result.Error.Message, ErrGitPackUnsupported)
+		default:
+			return "", errors.New(result.Error.Message)
+		}
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
+
+// GitCheckoutPack is a client checkout's repository, packed by the client's
+// own git: a bundle of HEAD plus all branches and tags, with the metadata
+// needed to reconstruct a standalone repository from it. A repository with no
+// commits yet (unborn HEAD) has an empty HeadSHA and no Bundle.
+type GitCheckoutPack struct {
+	HeadSHA      string
+	HeadRef      string
+	ObjectFormat string
+	Bundle       []byte
+}
+
+// PackGitCheckout asks the client to pack a local checkout's repository with
+// its own git. See GitCheckoutPack. A checkout that is not a git repository
+// reports gitutil.ErrGitNoRepo.
+func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*GitCheckoutPack, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(packCheckoutMethod) {
+		return nil, ErrGitPackUnsupported
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).PackCheckout(ctx, &git.PackCheckoutRequest{
+		CheckoutPath: checkoutPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pack stream: %w", err)
+	}
+
+	var pack *GitCheckoutPack
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive checkout pack: %w", err)
+		}
+		switch msg := resp.Msg.(type) {
+		case *git.PackCheckoutResponse_Metadata:
+			if pack != nil {
+				return nil, fmt.Errorf("received more than one pack metadata message")
+			}
+			if errInfo := msg.Metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitPackUnsupported)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+			pack = &GitCheckoutPack{
+				HeadSHA:      msg.Metadata.HeadSha,
+				HeadRef:      msg.Metadata.HeadRef,
+				ObjectFormat: msg.Metadata.ObjectFormat,
+			}
+		case *git.PackCheckoutResponse_Chunk:
+			if pack == nil {
+				return nil, fmt.Errorf("received bundle data before pack metadata")
+			}
+			pack.Bundle = append(pack.Bundle, msg.Chunk...)
+		}
+	}
+	if pack == nil {
+		return nil, fmt.Errorf("missing pack metadata message")
+	}
+	if pack.HeadSHA != "" && len(pack.Bundle) == 0 {
+		return nil, fmt.Errorf("missing bundle for checkout at %s", pack.HeadSHA)
+	}
+	return pack, nil
+}
+
+// GitWorktreePack is a checkout's git-visible working-tree delta relative to
+// HeadSHA. Patch is a binary git patch. NestedRepositories are omitted from the
+// patch but retain their boundaries when it is materialized engine-side.
+type GitWorktreePack struct {
+	HeadSHA            string
+	NestedRepositories []string
+	Patch              []byte
+}
+
+// PackGitWorktree asks the client to stream the working-tree delta relative to
+// expectedHeadSHA. Older clients and checkout states without a canonical HEAD
+// report ErrGitWorktreeUnsupported so callers can retain the directory-sync
+// fallback.
+func (c *Client) PackGitWorktree(ctx context.Context, checkoutPath, expectedHeadSHA string) (*GitWorktreePack, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(packWorktreeMethod) {
+		return nil, ErrGitWorktreeUnsupported
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).PackWorktree(ctx, &git.PackWorktreeRequest{
+		CheckoutPath:    checkoutPath,
+		ExpectedHeadSha: expectedHeadSHA,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open worktree pack stream: %w", err)
+	}
+
+	var pack *GitWorktreePack
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive worktree pack: %w", err)
+		}
+		switch msg := resp.Msg.(type) {
+		case *git.PackWorktreeResponse_Metadata:
+			if pack != nil {
+				return nil, fmt.Errorf("received more than one worktree metadata message")
+			}
+			if errInfo := msg.Metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND, git.WORKTREE_UNSUPPORTED:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitWorktreeUnsupported)
+				case git.HEAD_MISMATCH:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitWorktreeHeadMismatch)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+			pack = &GitWorktreePack{
+				HeadSHA:            msg.Metadata.HeadSha,
+				NestedRepositories: append([]string(nil), msg.Metadata.NestedRepositories...),
+			}
+		case *git.PackWorktreeResponse_Chunk:
+			if pack == nil {
+				return nil, fmt.Errorf("received worktree patch before metadata")
+			}
+			pack.Patch = append(pack.Patch, msg.Chunk...)
+		}
+	}
+	if pack == nil {
+		return nil, fmt.Errorf("missing worktree pack metadata message")
+	}
+	if pack.HeadSHA != expectedHeadSHA {
+		return nil, fmt.Errorf("worktree pack HEAD %s does not match expected %s", pack.HeadSHA, expectedHeadSHA)
+	}
+	return pack, nil
+}
+
+// CaptureGit streams a client-preflighted portable Git capture. The consumer
+// should stage chunks until this method returns successfully; final size and
+// digest checks happen after the stream ends. A GitCaptureApprovalError means
+// no candidate bytes were sent and can be used to prompt before an exact-path
+// approval retry.
+func (c *Client) CaptureGit(
+	ctx context.Context,
+	checkoutPath string,
+	policy *git.CaptureGitPolicy,
+	consume func(git.CaptureGitChunk_Kind, []byte) error,
+) (*git.CaptureGitMetadata, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(captureGitMethod) {
+		return nil, ErrGitCaptureUnsupported
+	}
+	stream, err := git.NewGitClient(caller.Conn()).CaptureGit(ctx, &git.CaptureGitRequest{CheckoutPath: checkoutPath, Policy: policy})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open git capture stream: %w", err)
+	}
+
+	bundleHash, worktreeHash := sha256.New(), sha256.New()
+	var bundleBytes, worktreeBytes int64
+	var metadata *git.CaptureGitMetadata
+	seenWorktree := false
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive git capture: %w", err)
+		}
+		switch msg := response.Msg.(type) {
+		case *git.CaptureGitResponse_Metadata:
+			if metadata != nil {
+				return nil, errors.New("received more than one git capture metadata message")
+			}
+			metadata = msg.Metadata
+			if errInfo := metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.CAPTURE_REJECTED:
+					return nil, &GitCaptureApprovalError{Message: errInfo.Message, Candidates: append([]*git.CaptureGitCandidate(nil), metadata.SuspiciousCandidates...)}
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitCaptureUnsupported)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+		case *git.CaptureGitResponse_Chunk:
+			if metadata == nil {
+				return nil, errors.New("received git capture bytes before metadata")
+			}
+			chunk := msg.Chunk
+			switch chunk.GetKind() {
+			case git.CAPTURE_CHUNK_PREREQUISITE_BUNDLE:
+				if seenWorktree {
+					return nil, errors.New("received prerequisite data after worktree data")
+				}
+				bundleBytes += int64(len(chunk.Data))
+				_, _ = bundleHash.Write(chunk.Data)
+			case git.CAPTURE_CHUNK_WORKTREE_DELTA:
+				seenWorktree = true
+				worktreeBytes += int64(len(chunk.Data))
+				_, _ = worktreeHash.Write(chunk.Data)
+			default:
+				return nil, errors.New("received unknown git capture chunk kind")
+			}
+			if consume != nil {
+				if err := consume(chunk.Kind, chunk.Data); err != nil {
+					return nil, fmt.Errorf("consume git capture chunk: %w", err)
+				}
+			}
+		}
+	}
+	if metadata == nil {
+		return nil, errors.New("missing git capture metadata")
+	}
+	if metadata.FormatVersion != 1 || metadata.BaseSha == "" || metadata.HeadSha == "" || metadata.RemoteUrl == "" || metadata.RemoteRef == "" {
+		return nil, errors.New("invalid git capture manifest metadata")
+	}
+	if bundleBytes != metadata.BundleBytes || hex.EncodeToString(bundleHash.Sum(nil)) != metadata.BundleSha256 {
+		return nil, errors.New("git capture prerequisite bundle digest mismatch")
+	}
+	if worktreeBytes != metadata.WorktreeBytes || hex.EncodeToString(worktreeHash.Sum(nil)) != metadata.WorktreeSha256 {
+		return nil, errors.New("git capture worktree delta digest mismatch")
+	}
+	return metadata, nil
+}
+
+// TerminalClient represents an open terminal session.
 type TerminalClient struct {
 	Stdin    io.ReadCloser
 	Stdout   io.WriteCloser

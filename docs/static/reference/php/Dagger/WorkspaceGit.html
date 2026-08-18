@@ -163,6 +163,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_push">push</a>(string|null $remote = &#039;origin&#039;, string|null $branch = &#039;&#039;, bool|null $force = false)
+        
+                                            <p><p>Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     array
                 </div>
                 <div class="col-md-8">
@@ -351,8 +361,60 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_stagedCommits">
+                    <h3 id="method_push">
         <div class="location">at line 39</div>
+        <code>                    string
+    <strong>push</strong>(string|null $remote = &#039;origin&#039;, string|null $branch = &#039;&#039;, bool|null $force = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.</p></p>                <p><p>The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for <code>git push</code> run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$remote</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$branch</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$force</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_stagedCommits">
+        <div class="location">at line 59</div>
         <code>                    array
     <strong>stagedCommits</strong>()
         </code>
@@ -384,7 +446,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uncommitted">
-        <div class="location">at line 48</div>
+        <div class="location">at line 68</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>uncommitted</strong>()
         </code>
@@ -416,7 +478,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_unmanaged">
-        <div class="location">at line 59</div>
+        <div class="location">at line 79</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>unmanaged</strong>()
         </code>

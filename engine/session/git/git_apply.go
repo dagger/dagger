@@ -55,13 +55,13 @@ func (s GitAttachable) GetHead(ctx context.Context, req *GitHeadRequest) (*GitHe
 }
 
 // ApplyBundle receives a git bundle holding commits staged engine-side and
-// lands them on a local checkout as a fast-forward.
+// lands them on a local checkout. When the checkout still sits at the base the
+// bundle was built from, it is applied as an exact fast-forward. If the local
+// branch advanced, the staged commits are first rebased onto its current HEAD
+// in an isolated worktree, then the checkout is fast-forwarded to the rewritten
+// result.
 //
 // The stream is one metadata message followed by the bundle's bytes in chunks.
-// Nothing is written until the checkout is re-verified to still sit at the
-// commit the bundle was built on: that check is the authoritative one, taken
-// here, on the host, immediately before the fetch, so a checkout that moved
-// between the engine's earlier check and now is still refused.
 func (s GitAttachable) ApplyBundle(srv Git_ApplyBundleServer) error {
 	ctx, cancel := context.WithTimeout(srv.Context(), gitApplyBundleTimeout)
 	defer cancel()
@@ -121,20 +121,6 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 
 	checkout := meta.GetCheckoutPath()
 
-	// Last-second precondition, on the host itself: the checkout must still
-	// be exactly where the staged commits were built from, or fast-forwarding
-	// it would silently discard whatever moved it.
-	if want := meta.GetExpectedBaseSha(); want != "" {
-		out, err := runHostGit(ctx, checkout, "rev-parse", "HEAD")
-		if err != nil {
-			return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
-		}
-		if got := strings.TrimSpace(out); got != want {
-			return newApplyBundleErrorResponse(HEAD_MISMATCH, fmt.Sprintf(
-				"local branch moved from %s to %s", want, got)), nil
-		}
-	}
-
 	tmpDir, err := os.MkdirTemp("", "dagger-bundle")
 	if err != nil {
 		return nil, fmt.Errorf("create bundle temp dir: %w", err)
@@ -145,14 +131,26 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 		return nil, fmt.Errorf("write bundle: %w", err)
 	}
 
-	// Fetch brings the staged objects in (and verifies the bundle's
-	// prerequisites are present), then the fast-forward moves the checked-out
-	// ref, the reflog, the index and the work tree in one step — refusing,
-	// with git's own diagnostics, anything that is not a fast-forward or that
-	// would clobber local work.
+	// Fetch brings the staged objects in and verifies that the bundle's
+	// prerequisites are present. It does not move any local ref.
 	if _, err := runHostGit(ctx, checkout, "fetch", "--no-tags", bundlePath, meta.GetBundleRef()); err != nil {
 		return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
 	}
+
+	base := meta.GetExpectedBaseSha()
+	out, err := runHostGit(ctx, checkout, "rev-parse", "--verify", "HEAD")
+	if err != nil && base != "" {
+		return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
+	}
+	currentHead := strings.TrimSpace(out)
+	targetHead := meta.GetTargetSha()
+	if currentHead != "" && currentHead != base {
+		targetHead, err = replayBundle(ctx, checkout, tmpDir, base, targetHead, currentHead)
+		if err != nil {
+			return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
+		}
+	}
+
 	// A staged commit can fold in work the checkout was already carrying — a
 	// file the user had modified (or created) before the agent ever ran. Its
 	// work tree content is then byte-identical to what the commit holds, but
@@ -160,8 +158,8 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 	// path. Staging exactly those paths first makes the index agree with the
 	// incoming commit, which git fast-forwards without touching the work tree
 	// at all, leaving the file clean afterwards.
-	staged := stageAlreadyMatchingPaths(ctx, checkout, meta.GetTargetSha())
-	if _, err := runHostGit(ctx, checkout, "merge", "--ff-only", meta.GetTargetSha()); err != nil {
+	staged := stageAlreadyMatchingPaths(ctx, checkout, targetHead)
+	if _, err := runHostGit(ctx, checkout, "merge", "--ff-only", targetHead); err != nil {
 		// Put the index back the way it was found, so a refused save leaves
 		// the checkout untouched.
 		for _, p := range staged {
@@ -170,7 +168,7 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 		return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
 	}
 
-	out, err := runHostGit(ctx, checkout, "rev-parse", "HEAD")
+	out, err = runHostGit(ctx, checkout, "rev-parse", "HEAD")
 	if err != nil {
 		return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
 	}
@@ -179,6 +177,52 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 			Applied: &ApplyBundleResult{HeadSha: strings.TrimSpace(out)},
 		},
 	}, nil
+}
+
+// replayBundle rebases the engine-staged commit stack onto currentHead in a
+// detached temporary worktree. In particular, a conflict only dirties that
+// disposable worktree; the user's branch, index and work tree are not involved.
+func replayBundle(ctx context.Context, checkout, tmpDir, base, target, currentHead string) (string, error) {
+	if base != "" {
+		if _, err := runHostGit(ctx, checkout, "merge-base", "--is-ancestor", base, target); err != nil {
+			return "", fmt.Errorf("staged commits are not based on %s: %w", base, err)
+		}
+	}
+
+	replayDir := filepath.Join(tmpDir, "replay")
+	if _, err := runHostGit(ctx, checkout,
+		"-c", "core.hooksPath=/dev/null",
+		"worktree", "add", "--detach", replayDir, target,
+	); err != nil {
+		return "", fmt.Errorf("create replay worktree: %w", err)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), gitHeadTimeout)
+		defer cancel()
+		_, _ = runHostGit(cleanupCtx, checkout, "worktree", "remove", "--force", replayDir)
+	}()
+
+	// Do not let repository-local hooks or user rebase.updateRefs configuration
+	// turn preparation in the disposable worktree into changes elsewhere.
+	rebaseArgs := []string{
+		"-c", "core.hooksPath=/dev/null",
+		"-c", "rebase.updateRefs=false",
+		"-c", "rerere.enabled=false",
+		"rebase",
+	}
+	if base == "" {
+		rebaseArgs = append(rebaseArgs, "--root", "--onto", currentHead)
+	} else {
+		rebaseArgs = append(rebaseArgs, "--onto", currentHead, base)
+	}
+	if _, err := runHostGit(ctx, replayDir, rebaseArgs...); err != nil {
+		return "", fmt.Errorf("replay staged commits onto local HEAD: %w", err)
+	}
+	out, err := runHostGit(ctx, replayDir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("resolve replayed HEAD: %w", err)
+	}
+	return strings.TrimSpace(out), nil
 }
 
 const gitMissingMessage = "git is not installed or not in PATH"

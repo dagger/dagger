@@ -7,22 +7,35 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	gitsession "github.com/dagger/dagger/engine/session/git"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
+	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "workspaceEnv", "checkpointID", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
 	}
+}
+
+func TestSelectedWorkspaceEnvForUsesCapturedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	ws := &core.Workspace{}
+	ws.SetWorkspaceEnv("dev")
+	env, ok := selectedWorkspaceEnvFor(context.Background(), ws)
+	require.True(t, ok)
+	require.Equal(t, "dev", env)
 }
 
 // TestEffectiveWorkspaceConfigBytesAppliesUserOverlay verifies the schema-level
@@ -802,6 +815,37 @@ func TestWorkspaceMigrationDiscoveredLocalModuleConversions(t *testing.T) {
 	require.Equal(t, "tc", cfg.Name)
 	require.Equal(t, "go", cfg.SDK.Source)
 	require.Equal(t, "src", cfg.Source)
+}
+
+func TestCheckpointManifestUsesCapturedPayloadsAndMetadata(t *testing.T) {
+	bundle := [][]byte{[]byte("bundle-one"), []byte("bundle-two")}
+	worktree := [][]byte{[]byte("patch")}
+	metadata := &gitsession.CaptureGitMetadata{
+		FormatVersion: 1, ObjectFormat: "sha1", RemoteUrl: "https://example.com/repo.git", RemoteRef: "refs/heads/main",
+		BaseSha: strings.Repeat("a", 40), HeadSha: strings.Repeat("b", 40),
+		BundleBytes: 20, BundleSha256: digest.FromBytes([]byte("bundle-onebundle-two")).Encoded(),
+		WorktreeBytes: 5, WorktreeSha256: digest.FromBytes([]byte("patch")).Encoded(),
+		Commits: []*gitsession.CaptureGitCommit{{
+			Sha: strings.Repeat("b", 40), Message: "local", AuthorDate: "2026-01-02T03:04:05Z",
+			AuthorName: "A", AuthorEmail: "a@example.com", Paths: []string{"a.txt"},
+		}},
+	}
+	ws := &core.Workspace{Cwd: ".", ConfigFile: "dagger.toml", LockFile: ".dagger/lock.json", GitAuthorName: "A", GitAuthorEmail: "a@example.com"}
+
+	manifest := checkpointManifest(ws, metadata, bundle, worktree, "dev")
+	require.Equal(t, "HEAD", manifest.BundleRef)
+	require.Equal(t, digest.FromBytes([]byte("bundle-onebundle-two")).String(), manifest.Bundle.Digest)
+	require.Equal(t, []core.WorkspaceCheckpointChunkDescriptor{
+		{Size: 10, Digest: digest.FromBytes(bundle[0]).String()},
+		{Size: 10, Digest: digest.FromBytes(bundle[1]).String()},
+	}, manifest.Bundle.Chunks)
+	require.Equal(t, digest.FromBytes([]byte("patch")).String(), manifest.Worktree.Digest)
+	require.Equal(t, []core.WorkspaceBundledCommit{{
+		SHA: strings.Repeat("b", 40), Message: "local", Date: "2026-01-02T03:04:05Z",
+		AuthorName: "A", AuthorEmail: "a@example.com", Paths: []string{"a.txt"},
+	}}, manifest.Commits)
+	require.Equal(t, ".dagger/lock.json", manifest.Workspace.LockFile)
+	require.Equal(t, "dev", manifest.Workspace.Environment)
 }
 
 func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {
