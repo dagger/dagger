@@ -296,8 +296,6 @@ func (PHPSuite) TestCheck(ctx context.Context, t *testctx.T) {
 	})
 }
 
-
-
 func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))
