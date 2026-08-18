@@ -1524,7 +1524,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					CallKey:        key.callKey,
 					ConcurrencyKey: key.concurrencyKey,
 					Waiters:        call.waiters,
-					IsPersistable:  call.isPersistable,
+					IsPersistable:  call.isPersistable.Load(),
 					TTLSeconds:     call.ttlSeconds,
 					Completed:      completed,
 				}
