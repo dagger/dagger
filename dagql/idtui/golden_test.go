@@ -72,6 +72,51 @@ func TestTelemetry(t *testing.T) {
 	})
 }
 
+func TestNormalizeTelemetryNativePlatform(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		native    string
+		nonNative string
+	}{
+		{name: "amd64", native: "linux/amd64", nonNative: "linux/arm64"},
+		{name: "arm64", native: "linux/arm64", nonNative: "linux/amd64"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := fmt.Sprintf(`
+$ container(platform: %q): Container!
+$ .dockerBuild(platform: %q): Container!
+$ container(platform: %q): Container!
+$ .dockerBuild(platform: %q): Container!
+$ other(platform: %q): Other!
+`, tc.native, tc.native, tc.nonNative, tc.nonNative, tc.native)
+			expected := fmt.Sprintf(`
+$ container(platform: "linux/ARCH"): Container!
+$ .dockerBuild(platform: "linux/ARCH"): Container!
+$ container(platform: %q): Container!
+$ .dockerBuild(platform: %q): Container!
+$ other(platform: %q): Other!
+`, tc.nonNative, tc.nonNative, tc.native)
+
+			require.Equal(t, expected, normalizeTelemetryNativePlatform(input, tc.native))
+		})
+	}
+}
+
+func normalizeTelemetryNativePlatform(out, nativePlatform string) string {
+	if nativePlatform == "" {
+		return out
+	}
+
+	// Dynamic argument canonicalization makes the engine's resolved platform
+	// visible for these two calls. Normalize only their exact native value so
+	// the rendering goldens stay architecture-independent while explicit
+	// non-native platforms and other platform-bearing calls remain meaningful.
+	return strings.NewReplacer(
+		fmt.Sprintf(`container(platform: %q)`, nativePlatform), `container(platform: "linux/ARCH")`,
+		fmt.Sprintf(`dockerBuild(platform: %q)`, nativePlatform), `dockerBuild(platform: "linux/ARCH")`,
+	).Replace(out)
+}
+
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	// setup a git repo so function call tests can pick up the right metadata
 
@@ -470,7 +515,10 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		expected += "Expected stderr:\n\n" + errBuf.String()
 	}
 
-	return scrub.Stabilize(expected), db
+	return normalizeTelemetryNativePlatform(
+		scrub.Stabilize(expected),
+		os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM"),
+	), db
 }
 
 func testDB(t *testctx.T) (*dagui.DB, net.Listener) {
