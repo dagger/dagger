@@ -48,6 +48,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Attribute\\Check",
+			"p": "Dagger/Attribute/Check.html",
+			"d": null,
+			"f": {
+				"n": "Dagger\\Attribute",
+				"p": "Dagger/Attribute.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Attribute\\DaggerFunction",
 			"p": "Dagger/Attribute/DaggerFunction.html",
 			"d": null,
