@@ -523,7 +523,15 @@ func main() { //nolint:gocyclo
 		protocols.SetHTTP1(true)
 		protocols.SetUnencryptedHTTP2(true)
 		httpServer = &http.Server{
-			ReadHeaderTimeout: 30 * time.Second,
+			// NOTE: do NOT set ReadHeaderTimeout here (gosec G112). As of Go
+			// 1.26.6, net/http arms a connection-level read deadline from
+			// ReadHeaderTimeout *before* handing an unencrypted HTTP/2
+			// connection off to the HTTP/2 server, and the HTTP/2 server only
+			// disarms that deadline when ReadTimeout > 0. The result is a hard
+			// cap on connection lifetime: every client connection dies after
+			// ReadHeaderTimeout no matter how active it is, and since all of a
+			// client's streams share one h2 connection, any query outliving it
+			// fails with `Post "http://dagger/query": unexpected EOF`.
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
 					// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
