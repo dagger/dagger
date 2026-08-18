@@ -50,15 +50,19 @@ type StatusLineLive struct {
 	TotalCost    float64
 }
 
-// StatusLine renders a compact, single-line status bar showing LLM token
-// usage, cost, context window utilisation and the active model name:
+// StatusLine renders a compact, single-line status bar showing the agent roster
+// and context usage on the left, with token usage, cost, subscription and the
+// active model grouped on the right:
 //
-//	↑6.3k ↓30k R3.8M W144k $3.609 (sub) 34.1%/200k (auto)         claude-opus-4-6
+//	1 agent running  ███░░ 34.1%/200k (auto)    ↑6.3k ↓30k R3.8M W144k $3.609 (sub) claude-opus-4-6
 type StatusLine struct {
 	tuist.Compo
 
 	profile termenv.Profile
 	data    StatusLineData
+	// roster shares this line so agent state stays visible even before a model
+	// has been selected.
+	roster *AgentRoster
 	// liveStats, when set, is consulted on every render to source the token
 	// rollup and cost from live metrics (all models + sub-agents). It returns
 	// false before any metrics have arrived, falling back to data.
@@ -74,7 +78,8 @@ func (sl *StatusLine) SetData(d StatusLineData) {
 
 func (sl *StatusLine) Render(ctx tuist.Context) {
 	d := sl.data
-	if d.Model == "" {
+	rosterVisible := sl.roster != nil && sl.roster.Visible()
+	if d.Model == "" && !rosterVisible {
 		return
 	}
 
@@ -94,19 +99,19 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(sl.profile))
 
-	// -- left side: token stats + cost + context --------------------------
-	var parts []string
+	// -- right side: token stats + cost + model ----------------------------
+	var rightParts []string
 	if d.InputTokens > 0 {
-		parts = append(parts, "↑"+formatTokenCount(d.InputTokens))
+		rightParts = append(rightParts, "↑"+formatTokenCount(d.InputTokens))
 	}
 	if d.OutputTokens > 0 {
-		parts = append(parts, "↓"+formatTokenCount(d.OutputTokens))
+		rightParts = append(rightParts, "↓"+formatTokenCount(d.OutputTokens))
 	}
 	if d.CacheReads > 0 {
-		parts = append(parts, "R"+formatTokenCount(d.CacheReads))
+		rightParts = append(rightParts, "R"+formatTokenCount(d.CacheReads))
 	}
 	if d.CacheWrites > 0 {
-		parts = append(parts, "W"+formatTokenCount(d.CacheWrites))
+		rightParts = append(rightParts, "W"+formatTokenCount(d.CacheWrites))
 	}
 
 	// Cost, with optional subscription indicator.
@@ -115,64 +120,78 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 		if d.SubscriptionLabel != "" {
 			costStr += " (" + d.SubscriptionLabel + ")"
 		}
-		parts = append(parts, costStr)
+		rightParts = append(rightParts, costStr)
 	}
+	if d.Model != "" {
+		rightParts = append(rightParts, d.Model)
+	}
+	right := strings.Join(rightParts, " ")
 
-	// Context usage.
+	// -- left side: agent roster + context ---------------------------------
+	var contextPart string
 	if d.ContextWindow > 0 {
 		autoTag := ""
 		if d.AutoCompact {
 			autoTag = " (auto)"
 		}
-		var ctxPart string
 		if d.ContextPercent >= 0 {
-			ctxPart = fmt.Sprintf("%.1f%%/%s%s",
+			contextPart = fmt.Sprintf("%.1f%%/%s%s",
 				d.ContextPercent,
 				formatTokenCount(d.ContextWindow),
 				autoTag)
 		} else {
-			ctxPart = fmt.Sprintf("?/%s%s",
+			contextPart = fmt.Sprintf("?/%s%s",
 				formatTokenCount(d.ContextWindow),
 				autoTag)
 		}
 		// Colorise based on usage.
 		switch {
 		case d.ContextPercent > 90:
-			ctxPart = out.String(ctxPart).Foreground(termenv.ANSIRed).String()
+			contextPart = out.String(contextPart).Foreground(termenv.ANSIRed).String()
 		case d.ContextPercent > 70:
-			ctxPart = out.String(ctxPart).Foreground(termenv.ANSIYellow).String()
+			contextPart = out.String(contextPart).Foreground(termenv.ANSIYellow).String()
 		}
 		// Prepend a gauge when the usage is known, so it's obvious at a glance
 		// how close the conversation is to the context limit.
 		if d.ContextPercent >= 0 {
-			ctxPart = renderContextBar(out, d.ContextPercent) + " " + ctxPart
+			contextPart = renderContextBar(out, d.ContextPercent) + " " + contextPart
 		}
-		parts = append(parts, ctxPart)
 	}
 
-	left := strings.Join(parts, " ")
+	var leftParts []string
+	if rosterVisible {
+		rosterWidth := width
+		if contextPart != "" {
+			rosterWidth -= visibleLen(contextPart) + 1
+		}
+		if rosterWidth > 0 {
+			if rosterPart := sl.roster.Line(rosterWidth); rosterPart != "" {
+				leftParts = append(leftParts, rosterPart)
+			}
+		}
+	}
+	if contextPart != "" {
+		leftParts = append(leftParts, contextPart)
+	}
+	left := strings.Join(leftParts, " ")
 	leftWidth := visibleLen(left)
 
-	// -- right side: model name -------------------------------------------
-	right := d.Model
-	rightWidth := len(right)
-
-	// Assemble the line with padding between left and right.
+	// Assemble the line with padding between left and right. The right group is
+	// truncated as a unit, preserving the token/cost prefix before the model.
 	const minPad = 2
-	totalNeeded := leftWidth + minPad + rightWidth
 	var line string
-	if totalNeeded <= width {
-		pad := strings.Repeat(" ", width-leftWidth-rightWidth)
+	switch {
+	case right == "":
+		line = left
+	case leftWidth+minPad+visibleLen(right) <= width:
+		pad := strings.Repeat(" ", width-leftWidth-visibleLen(right))
 		line = left + pad + right
-	} else if leftWidth+minPad+3 < width {
-		// Truncate model name.
+	case leftWidth+minPad+3 < width:
 		avail := width - leftWidth - minPad
-		if avail > 3 {
-			right = right[:avail-3] + "..."
-		}
-		pad := strings.Repeat(" ", width-leftWidth-len(right))
+		right = ansi.Truncate(right, avail, "...")
+		pad := strings.Repeat(" ", width-leftWidth-visibleLen(right))
 		line = left + pad + right
-	} else {
+	default:
 		line = left
 	}
 

@@ -5,7 +5,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -22,7 +21,6 @@ type PromptFrame struct {
 	tuist.Compo
 	input      *tuist.TextInput
 	profile    termenv.Profile
-	roster     *AgentRoster
 	keyHandler func(tuist.Context, uv.KeyPressEvent) bool
 	// enabled gates the framed styling. When false the input is rendered bare
 	// (no rules), matching plain shell mode.
@@ -48,20 +46,10 @@ func (p *PromptFrame) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) boo
 	return p.keyHandler(ctx, ev)
 }
 
-// SetRoster embeds the agent roster in the frame's top rule. In unframed shell
-// mode it is rendered immediately above the bare input instead.
-func (p *PromptFrame) SetRoster(roster *AgentRoster) {
-	p.roster = roster
-	p.Update()
-}
-
 // ChromeHeight is the number of lines the frame adds around the text input.
 func (p *PromptFrame) ChromeHeight() int {
 	if p.enabled {
 		return 2
-	}
-	if p.roster != nil && p.roster.Visible() {
-		return 1
 	}
 	return 0
 }
@@ -83,18 +71,9 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	result := p.RenderChildResult(ctx, p.input)
 
 	if !p.enabled {
-		// Plain shell mode: keep the roster visible above the bare input and
-		// pass the input's cursor through with the corresponding offset.
-		offset := 0
-		if p.roster != nil {
-			if line := p.roster.Line(ctx.Width); line != "" {
-				ctx.Lines(line)
-				offset = 1
-			}
-		}
 		ctx.Lines(result.Lines...)
 		if result.Cursor != nil {
-			ctx.SetCursor(result.Cursor.Row+offset, result.Cursor.Col)
+			ctx.SetCursor(result.Cursor.Row, result.Cursor.Col)
 		}
 		return
 	}
@@ -108,8 +87,7 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(p.profile))
 	// The rules read as faint bright-black dashes spanning the full width,
-	// framing the flush input without any background. The live roster replaces
-	// the middle of the top rule so it conveys state without another chrome row.
+	// framing the flush input without any background.
 	styleBar := func(bar string) string {
 		return out.String(bar).
 			Foreground(termenv.ANSIBrightBlack).
@@ -117,16 +95,9 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 			String()
 	}
 	bar := styleBar(strings.Repeat(HorizBar, max(width, 0)))
-	top := bar
-	if p.roster != nil && width >= 4 {
-		if title := p.roster.Line(width - 4); title != "" {
-			remaining := width - ansi.StringWidth(title) - 3
-			top = styleBar(HorizBar+" ") + title + styleBar(" "+strings.Repeat(HorizBar, remaining))
-		}
-	}
 
 	lines := make([]string, 0, len(result.Lines)+2)
-	lines = append(lines, top)
+	lines = append(lines, bar)
 	lines = append(lines, result.Lines...)
 	lines = append(lines, bar)
 	ctx.Lines(lines...)

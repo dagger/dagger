@@ -1029,19 +1029,19 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
 	// Insert errorLabel + queuedMsg + promptFrame + statusLine before keymapBar:
-	// output → error → queued → prompt (with agent roster) → statusLine → keymap
+	// output → error → queued → prompt → statusLine (with agent roster) → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterEntries)
 	fe.statusLine = &StatusLine{
 		profile:   fe.profile,
 		data:      fe.statusLineData, // seed from the last SetStatusLine (e.g. a resumed session)
+		roster:    fe.agentRoster,
 		liveStats: fe.llmLiveStats,
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
 	fe.promptFrame.SetKeyHandler(fe.handlePromptFrameKey)
-	fe.promptFrame.SetRoster(fe.agentRoster)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -3392,9 +3392,13 @@ func (fe *frontendPretty) queuedMessageHeight() int {
 }
 
 // statusLineHeight returns the line count of the status line. It renders a
-// single line while a model is set, and nothing otherwise.
+// single line while a model or agent roster is present, and nothing otherwise.
 func (fe *frontendPretty) statusLineHeight() int {
-	if fe.statusLine == nil || fe.statusLine.data.Model == "" {
+	if fe.statusLine == nil {
+		return 0
+	}
+	if fe.statusLine.data.Model == "" &&
+		(fe.statusLine.roster == nil || !fe.statusLine.roster.Visible()) {
 		return 0
 	}
 	return 1
@@ -3410,8 +3414,7 @@ func (fe *frontendPretty) editlineHeight() int {
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
 	height := strings.Count(val, "\n") + 1
-	// PromptFrame owns the roster row: in prompt mode it shares the top border;
-	// in unframed shell mode it adds one standalone line when entries exist.
+	// PromptFrame owns the framed prompt's two rule rows.
 	if fe.promptFrame != nil {
 		height += fe.promptFrame.ChromeHeight()
 	}
@@ -4122,7 +4125,7 @@ func (fe *frontendPretty) clearPromptError() {
 	}
 }
 
-// updateAgentRoster re-renders the prompt frame when the published roster has
+// updateAgentRoster re-renders the status line when the published roster has
 // changed. Components render only when marked dirty, and the roster's content
 // comes from the trace rather than from a setter, so this is where the trace
 // pushes it: on span batches (an agent appearing) and on log records (an
@@ -4151,8 +4154,8 @@ func (fe *frontendPretty) updateAgentRoster() {
 		return
 	}
 	fe.agentRosterState = fingerprint.String()
-	if fe.promptFrame != nil {
-		fe.promptFrame.Update()
+	if fe.statusLine != nil {
+		fe.statusLine.Update()
 	}
 }
 

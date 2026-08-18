@@ -33,9 +33,9 @@ type AgentRosterEntry struct {
 //
 //	1 agent running  2 scout idle  3 docs running  4 tests needs you
 //
-// The roster is embedded in the prompt's top border when the framed prompt is
-// active. It is always visible once an agent has been published: besides being
-// a switcher, it is the prompt's state indicator.
+// The roster is embedded at the left of the prompt's status line. It is always
+// visible once an agent has been published: besides being a switcher, it is the
+// prompt's state indicator.
 // Focus moves only by a keypress (alt+1…9 or alt+l from the prompt; 1…9, `
 // or [/] in nav mode), never by an event: an agent that needs the user
 // advertises attention on its entry and waits. Nothing here may steal focus.
@@ -90,7 +90,7 @@ func (r *AgentRoster) Render(ctx tuist.Context) {
 }
 
 // Line renders the roster as a single line, truncated to width when positive.
-// The caller may place it directly above the input or inside its top border.
+// The status line places it before the context meter.
 func (r *AgentRoster) Line(width int) string {
 	if !r.Visible() {
 		return ""
