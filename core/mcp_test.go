@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -16,12 +17,43 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+func TestGenMCPToolPreservesSchema(t *testing.T) {
+	tool, err := genMcpTool(LLMTool{
+		Name:        "commit",
+		Description: "Commit changes.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"date": map[string]any{
+					"anyOf": []any{
+						map[string]any{"type": "string"},
+						map[string]any{"type": "null"},
+					},
+					"default": nil,
+				},
+			},
+			"additionalProperties": false,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "commit", tool.Name)
+	require.Equal(t, "Commit changes.", tool.Description)
+	require.JSONEq(t, `{
+		"type":"object",
+		"properties":{
+			"date":{
+				"anyOf":[{"type":"string"},{"type":"null"}],
+				"default":null
+			}
+		},
+		"additionalProperties":false
+	}`, string(tool.RawInputSchema))
+}
 
 // TestAssembleLines covers log-line assembly from raw stdio segments: log
 // records aren't guaranteed to be line-aligned, so a line that straddles two

@@ -543,6 +543,18 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 	schema := &genai.Schema{}
 	for key, param := range bbi {
 		switch key {
+		case "anyOf":
+			variants, err := toSchemaMaps(param)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert anyOf field: %w", err)
+			}
+			for i, variant := range variants {
+				variantSchema, err := bbiSchemaToGenaiSchema(variant)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert anyOf variant %d: %w", i, err)
+				}
+				schema.AnyOf = append(schema.AnyOf, variantSchema)
+			}
 		case "description":
 			if schema.Description != "" {
 				schema.Description += " "
@@ -630,6 +642,25 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 	return schema, nil
 }
 
+func toSchemaMaps(val any) ([]map[string]any, error) {
+	switch x := val.(type) {
+	case []any:
+		res := make([]map[string]any, len(x))
+		for i, v := range x {
+			var ok bool
+			res[i], ok = v.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("array element must be an object, got %T", v)
+			}
+		}
+		return res, nil
+	case []map[string]any:
+		return x, nil
+	default:
+		return nil, fmt.Errorf("value must be []map[string]any or []any, got %T", x)
+	}
+}
+
 func toStringSlice(val any) ([]string, error) {
 	var res []string
 	switch x := val.(type) {
@@ -664,6 +695,8 @@ func bbiTypeToGenaiType(bbi string) genai.Type {
 		return genai.TypeArray
 	case "object":
 		return genai.TypeObject
+	case "null":
+		return genai.TypeNULL
 	default: // should not happen
 		return genai.TypeUnspecified
 	}
