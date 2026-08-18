@@ -426,29 +426,73 @@ func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
 	sess.seenKeys.Store(key, struct{}{})
 }
 
-// inflightSessionTelemetryFlushes counts engine-wide concurrent session-level
-// telemetry flushes. Every flush fans out to every client in its session, so
-// concurrent flushes multiply pressure on the same client stores; the gauge makes
-// that amplification visible next to each flush's duration.
-var inflightSessionTelemetryFlushes atomic.Int64
+// inflightTelemetryFlushes counts engine-wide concurrent telemetry flushes,
+// whole-session and subtree-scoped alike. Overlapping flushes contend on the
+// same client stores whatever their scope, so the gauge makes that amplification
+// visible next to each flush's duration; the "scope" field logged beside it says
+// which clients a given flush actually covered.
+var inflightTelemetryFlushes atomic.Int64
 
 func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) error {
-	inflight := inflightSessionTelemetryFlushes.Add(1)
-	defer inflightSessionTelemetryFlushes.Add(-1)
+	return sess.flushTelemetry(ctx, reason, nil)
+}
 
+// telemetryFlushTargets returns the clients a flush must cover: every client in
+// the session, or -- when root is non-nil -- root plus the clients that export
+// into root's telemetry store (its descendants).
+func (sess *daggerSession) telemetryFlushTargets(root *daggerClient) []*daggerClient {
 	sess.clientMu.Lock()
+	defer sess.clientMu.Unlock()
 	clients := make([]*daggerClient, 0, len(sess.clients))
 	for _, client := range sess.clients {
+		if root != nil && client != root && !slices.Contains(client.parents, root) {
+			continue
+		}
 		clients = append(clients, client)
 	}
-	sess.clientMu.Unlock()
+	return clients
+}
+
+// flushTelemetry flushes every client in the session, or -- when root is
+// non-nil -- root and its descendants.
+//
+// A client's providers write to its own DB *and every ancestor DB*, so records
+// an ancestor's store is waiting on can sit in a still-live descendant's batch
+// processor. Hence the subtree form: a nested client drains its own store on
+// shutdown, and without sweeping its descendants it drains that tail away.
+//
+// The sweep is best-effort, not a completeness guarantee: it covers what each
+// descendant has queued at the moment its ForceFlush runs. A client published
+// after the target snapshot, or emitting after its own barrier returns, is
+// missed by design -- the main client's session-wide flush at the end of the
+// session is what catches those stragglers.
+//
+// With a chain of n nested clients each sweeping its own subtree the session
+// performs n(n+1)/2 client flushes rather than n. That is acceptable because
+// children shut down before their parents, so by the time an ancestor sweeps its
+// subtree the descendants' processors are already drained and the extra
+// ForceFlush calls are no-ops on empty queues: the amplification is in cheap
+// no-ops, not exporter work. Coalescing overlapping provider flushes through a
+// coordinator would remove even those, at the cost of new machinery on a
+// shutdown path.
+func (sess *daggerSession) flushTelemetry(ctx context.Context, reason string, root *daggerClient) error {
+	inflight := inflightTelemetryFlushes.Add(1)
+	defer inflightTelemetryFlushes.Add(-1)
+
+	clients := sess.telemetryFlushTargets(root)
+
+	scope := "session"
+	if root != nil {
+		scope = "subtree:" + root.clientID
+	}
 
 	lg := slog.With(
 		"sessionID", sess.sessionID,
 		"reason", reason,
+		"scope", scope,
 		"clients", len(clients),
-		"inflightSessionFlushes", inflight)
-	lg.Debug("flushing session telemetry")
+		"inflightFlushes", inflight)
+	lg.Debug("flushing telemetry")
 
 	start := time.Now()
 	eg := new(errgroup.Group)
@@ -461,9 +505,9 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 
 	lg = lg.With("duration", time.Since(start), "error", err)
 	if time.Since(start) > slowDrainOp {
-		lg.Warn("slow session telemetry flush")
+		lg.Warn("slow telemetry flush")
 	} else {
-		lg.Debug("session telemetry flush done")
+		lg.Debug("telemetry flush done")
 	}
 	return err
 }
@@ -2035,15 +2079,20 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		}
 	}
 
-	// Flush telemetry so nested spans land in the DBs the CLI drains. A client's
-	// own providers already export its spans to its own DB *and every ancestor
-	// DB*, so a nested client only needs to flush itself; re-flushing every
-	// sibling on each nested shutdown is redundant and, under a parallel
-	// teardown storm, self-inflicts an O(n^2) burst of concurrent whole-session
-	// flushes, multiplying exporter work and spill pressure enough to blow the
-	// client's shutdown budget. The main client (which shuts down last and whose
-	// DB the CLI ultimately drains) still does a session-wide flush to sweep up any
-	// stragglers from clients that hadn't shut down yet.
+	// Flush telemetry so nested spans land in the DBs the CLI drains. A nested
+	// client drains its own store right after this and renders its final report
+	// from it, so it sweeps the descendants whose records that store is still
+	// waiting on -- e.g. the module runtime that ran a failing exec, whose error
+	// status and stdout/stderr are otherwise still sitting in a batch processor
+	// (see core/integration TestUpPartialStartupFailure). The sweep is
+	// best-effort: it takes the tail queued by the time each descendant's
+	// ForceFlush runs, and nothing emitted after that. It also stops at this
+	// client's own subtree: re-flushing every sibling is redundant and, under a
+	// parallel teardown storm, self-inflicts an O(n^2) burst of concurrent
+	// whole-session flushes, multiplying exporter work and spill pressure enough
+	// to blow the client's shutdown budget. The main client (which shuts down
+	// last and whose DB the CLI ultimately drains) still does a session-wide
+	// flush, and that is what catches stragglers a subtree sweep missed.
 	var flushErr error
 	if client.clientID == sess.mainClientCallerID {
 		flushErr = drainPhase("flush session telemetry", func() error {
@@ -2051,7 +2100,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		})
 	} else {
 		flushErr = drainPhase("flush client telemetry", func() error {
-			return client.FlushTelemetry(ctx)
+			return sess.flushTelemetry(ctx, "nested client shutdown", client)
 		})
 	}
 	if flushErr != nil {
