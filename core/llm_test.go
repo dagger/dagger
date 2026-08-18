@@ -330,10 +330,10 @@ func TestExplicitProviderRouting(t *testing.T) {
 	assert.ErrorContains(t, err, `unknown LLM provider "bogus"`)
 }
 
-// TestOpenAIRequestOmitsToolStrict locks the provider boundary to the
-// non-strict JSON schema our GraphQL-derived tools use. Optional/defaulted
-// arguments remain properties but are intentionally absent from required.
-func TestOpenAIRequestOmitsToolStrict(t *testing.T) {
+// TestOpenAIRequestUsesNonStrictNullableToolSchema locks the provider boundary:
+// strict mode stays off, while nullable GraphQL arguments remain properties
+// that explicitly accept null without becoming required.
+func TestOpenAIRequestUsesNonStrictNullableToolSchema(t *testing.T) {
 	requestBody := make(chan []byte, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -380,7 +380,10 @@ func TestOpenAIRequestOmitsToolStrict(t *testing.T) {
 	parameters := function["parameters"].(map[string]any)
 	properties := parameters["properties"].(map[string]any)
 	require.Contains(t, properties, "offset")
-	require.Contains(t, properties, "date")
+	date := properties["date"].(map[string]any)
+	require.Equal(t, "string", requireNullableJSONSchema(t, date)["type"])
+	require.Contains(t, date, "default")
+	require.Nil(t, date["default"])
 	require.Equal(t, []any{"filePath"}, parameters["required"])
 }
 

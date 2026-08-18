@@ -32,6 +32,13 @@ type Container { id: ID! }
 type Directory { id: ID! }
 type Secret { id: ID! }
 
+enum Mode { FAST SLOW }
+input Options {
+  label: String
+  mode: Mode
+  values: [String]
+}
+
 "A coding agent."
 type Doug {
   id: ID!
@@ -100,6 +107,19 @@ func fieldByName(def *ast.Definition, name string) *ast.FieldDefinition {
 		}
 	}
 	return nil
+}
+
+func requireNullableJSONSchema(t *testing.T, schema map[string]any) map[string]any {
+	t.Helper()
+	variants, ok := schema["anyOf"].([]any)
+	require.True(t, ok, "nullable schema must use anyOf: %#v", schema)
+	require.Len(t, variants, 2)
+	nonNull, ok := variants[0].(map[string]any)
+	require.True(t, ok)
+	nullSchema, ok := variants[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "null", nullSchema["type"])
+	return nonNull
 }
 
 func TestObjectToolEligible(t *testing.T) {
@@ -172,9 +192,10 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Equal(t, "string", props["filePath"].(map[string]any)["type"])
 	require.Equal(t, "integer", props["offset"].(map[string]any)["type"])
 	require.EqualValues(t, 0, props["offset"].(map[string]any)["default"])
-	require.Equal(t, "string", props["date"].(map[string]any)["type"])
-	require.Contains(t, props["date"].(map[string]any), "default")
-	require.Nil(t, props["date"].(map[string]any)["default"])
+	date := props["date"].(map[string]any)
+	require.Equal(t, "string", requireNullableJSONSchema(t, date)["type"])
+	require.Contains(t, date, "default")
+	require.Nil(t, date["default"])
 	require.Equal(t, []string{"filePath"}, readSchema["required"])
 	require.Equal(t, false, readSchema["additionalProperties"])
 
@@ -203,18 +224,20 @@ func TestObjectMethodSchema(t *testing.T) {
 	// both.
 	debugSchema, err := objectMethodSchema(schema, fieldByName(doug, "debug"))
 	require.NoError(t, err)
-	debug := debugSchema["properties"].(map[string]any)["sandbox"].(map[string]any)
+	debugProperty := debugSchema["properties"].(map[string]any)["sandbox"].(map[string]any)
+	debug := requireNullableJSONSchema(t, debugProperty)
 	require.Equal(t, "string", debug["type"])
-	require.Equal(t, containerHint, debug["description"])
+	require.Equal(t, containerHint, debugProperty["description"])
 
 	// An optional arg of an addressable-but-not-liftable type keeps the ID
 	// convention: the model may hand back an ID from a prior tool result, but
 	// is not invited to write an address (dispatch would refuse it anyway).
 	dirSchema, err := objectMethodSchema(schema, fieldByName(doug, "withDir"))
 	require.NoError(t, err)
-	dir := dirSchema["properties"].(map[string]any)["dir"].(map[string]any)
+	dirProperty := dirSchema["properties"].(map[string]any)["dir"].(map[string]any)
+	dir := requireNullableJSONSchema(t, dirProperty)
 	require.Equal(t, "string", dir["type"])
-	require.Equal(t, "(Directory ID)", dir["description"])
+	require.Equal(t, "(Directory ID)", dirProperty["description"])
 
 	// A non-addressable object arg keeps the ID convention.
 	applySchema, err := objectMethodSchema(schema, fieldByName(doug, "apply"))
@@ -285,6 +308,35 @@ func TestArgTypeToJSONSchema(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "array", got["type"])
 	require.Equal(t, "string", got["items"].(map[string]any)["type"])
+
+	// Nullable wrappers apply at every GraphQL type boundary, including list
+	// elements, enums, and fields nested in input objects.
+	nullableList := &ast.Type{Elem: &ast.Type{NamedType: "String"}}
+	got, err = argTypeToJSONSchema(schema, nullableList)
+	require.NoError(t, err)
+	listSchema := requireNullableJSONSchema(t, got)
+	require.Equal(t, "array", listSchema["type"])
+	require.Equal(t, "string", requireNullableJSONSchema(t,
+		listSchema["items"].(map[string]any))["type"])
+
+	got, err = argTypeToJSONSchema(schema, &ast.Type{NamedType: "Mode"})
+	require.NoError(t, err)
+	enumSchema := requireNullableJSONSchema(t, got)
+	require.Equal(t, "string", enumSchema["type"])
+	require.Equal(t, []string{"FAST", "SLOW"}, enumSchema["enum"])
+
+	got, err = argTypeToJSONSchema(schema, &ast.Type{NamedType: "Options"})
+	require.NoError(t, err)
+	inputSchema := requireNullableJSONSchema(t, got)
+	require.Equal(t, "object", inputSchema["type"])
+	inputProps := inputSchema["properties"].(map[string]any)
+	require.Equal(t, "string", requireNullableJSONSchema(t,
+		inputProps["label"].(map[string]any))["type"])
+	require.Equal(t, "string", requireNullableJSONSchema(t,
+		inputProps["mode"].(map[string]any))["type"])
+	nestedList := requireNullableJSONSchema(t, inputProps["values"].(map[string]any))
+	require.Equal(t, "string", requireNullableJSONSchema(t,
+		nestedList["items"].(map[string]any))["type"])
 }
 
 // TestCombineSpanResult covers the combined result's contract: the target's
@@ -394,16 +446,22 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 		}) (*liftTestRunner, error) {
 			return r, nil
 		}),
+		dagql.Func("nullable", func(_ context.Context, _ *liftTestRunner, args struct {
+			Date dagql.Optional[dagql.String]
+		}) (dagql.String, error) {
+			if !args.Date.Valid {
+				return "null", nil
+			}
+			return args.Date.Value, nil
+		}),
 	}.Install(srv)
 	return srv
 }
 
-// TestBuildObjectMethodSelectorAddressLift covers dispatch: a model-supplied
-// string for a liftable object arg first tries the ID decode (IDs from
-// previous tool results keep working), then falls back to lifting the string
-// through Query.address(value).<addressField>. Args of addressable types
-// outside the liftableTypes allowlist only ever take the ID path.
-func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
+// TestBuildObjectMethodSelector covers argument dispatch against a real dagql
+// field: nullable scalars accept explicit null, while model-supplied strings
+// for liftable object args first try ID decoding and then address resolution.
+func TestBuildObjectMethodSelector(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
@@ -425,6 +483,18 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	typeName, ok := liftableObjectArg(execField.Arguments.ForName("sandbox"))
 	require.True(t, ok)
 	require.Equal(t, "Container", typeName)
+
+	t.Run("explicit null decodes for a nullable argument", func(t *testing.T) {
+		nullableField := fieldByName(srv.Schema().Types["LiftTestRunner"], "nullable")
+		require.NotNil(t, nullableField)
+		sel, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), nullableField, map[string]any{
+			"date": nil,
+		})
+		require.NoError(t, err)
+		var out dagql.String
+		require.NoError(t, srv.Select(ctx, runner, &out, sel))
+		require.Equal(t, "null", out.String())
+	})
 
 	t.Run("address string lifts into the object", func(t *testing.T) {
 		sel, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
