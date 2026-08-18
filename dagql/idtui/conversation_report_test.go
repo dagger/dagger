@@ -73,6 +73,43 @@ func TestConversationReportFlagsToolResultTokens(t *testing.T) {
 	}
 }
 
+func TestRunningConversationRenderIsStable(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, runningID := prettyTestSpanID(1), prettyTestSpanID(2)
+	effectID, failedID := prettyTestSpanID(3), prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
+		{ID: runningID, TraceID: prettyTestTraceID(), Name: "running_tool", LLMRole: "assistant", LLMTool: "running_tool", ParentID: rootID, StartTime: start.Add(time.Second)},
+		{ID: effectID, TraceID: prettyTestTraceID(), Name: "linked work", ParentID: rootID, StartTime: start.Add(2 * time.Second), Links: []dagui.SpanLink{causeLink(runningID)}},
+		{ID: failedID, TraceID: prettyTestTraceID(), Name: "failed_tool", LLMRole: "assistant", LLMTool: "failed_tool", ParentID: rootID, StartTime: start.Add(3 * time.Second), EndTime: start.Add(5 * time.Second), Status: sdktrace.Status{Code: codes.Error}, Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.recalculateViewLocked()
+	if !fe.flowingMode() {
+		t.Fatal("conversation frontend should render in flowing mode")
+	}
+	render := func(now time.Time) string {
+		fe.claims = newRenderClaims()
+		r := newRenderer(fe.db, 0, fe.FrontendOpts, false)
+		r.now = now
+		return strings.Join(fe.renderConversationSection(tuist.Context{Width: 120}, r), "\n")
+	}
+	first, second := render(start.Add(5*time.Second)), render(start.Add(time.Hour))
+	if first != second {
+		t.Fatalf("running conversation changed across live ticks:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+	if !strings.Contains(first, "RUNNING") || !strings.Contains(first, "2.0s ERROR") {
+		t.Fatalf("running conversation presentation changed:\n%s", first)
+	}
+	if len(fe.durationViews) != 0 || len(fe.statusSpinners) != 0 {
+		t.Fatalf("conversation mounted animated children: durations=%d spinners=%d", len(fe.durationViews), len(fe.statusSpinners))
+	}
+}
+
 // TestConversationReportNestsSubAgent verifies the final report surfaces the LLM
 // conversation under a CONVERSATION heading, in start-time order, with a
 // sub-agent's turns nested one level under the tool call that spawned them.

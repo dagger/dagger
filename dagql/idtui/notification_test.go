@@ -89,13 +89,14 @@ func renderComponentLines(t *testing.T, c tuist.Component, width int) []string {
 // they are given — turns one ctx.Line entry into a multi-row string, and the
 // framework's line accounting (and the overlay compositor) corrupt the screen.
 func TestNotificationBubbleOverlongContent(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	const bubbleWidth = 40
 
 	// A realistic "References" entry: long, and with no whitespace to wrap on.
 	longPath := "sdk/typescript/runtime/node_modules/typescript/lib/lib.es2015.symbol.wellknown.d.ts"
 
 	term := tuist.NewHeadlessTerminal(120, 40)
-	fe := newWithTerminalProfile(io.Discard, dagui.NewDB(), term, termenv.Ascii)
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), term)
 
 	var gotWidth int
 	bubble := newNotificationBubble(fe, SidebarSection{
