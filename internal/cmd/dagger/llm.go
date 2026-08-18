@@ -143,7 +143,7 @@ func NewLLMSession(
 
 	// The session always has one conversation: its own, spawned as an agent
 	// on the first prompt submit and targeted from the start.
-	own := s.newAgent(interactiveAgentName)
+	own := s.newAgent(defaultAgentName)
 	own.model = llmModel
 	s.agents = []*sessionAgent{own}
 	s.target = own
@@ -159,10 +159,10 @@ func NewLLMSession(
 	return s, nil
 }
 
-// interactiveAgentName is the display label the session's own conversation
-// spawns under. It is a label only: instance uniqueness is minted by spawn,
-// so nothing here needs to be unique.
-const interactiveAgentName = "interactive"
+// defaultAgentName is the display label the session's own conversation spawns
+// under. It is a label only: instance uniqueness is minted by spawn, so
+// nothing here needs to be unique.
+const defaultAgentName = "agent"
 
 // Target is the conversation the prompt addresses -- the single place message
 // routing resolves. It is never nil: the session's own conversation exists
