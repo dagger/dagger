@@ -937,7 +937,8 @@ func (s *moduleSourceSchema) gitModuleSource(
 }
 
 type directoryAsModuleArgs struct {
-	SourceRootPath string `default:"."`
+	SourceRootPath  string `default:"."`
+	ContextIdentity string `internal:"true" default:""`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -992,6 +993,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		DirSrc: &core.DirModuleSource{
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
+			ContextIdentity:           args.ContextIdentity,
 		},
 	}
 	if dirSrc.SourceRootSubpath == "" {

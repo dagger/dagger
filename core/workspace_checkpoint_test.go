@@ -103,6 +103,7 @@ func TestWorkspaceCheckpointExportTargetIsSessionState(t *testing.T) {
 	ws.SetPortableCheckpoint()
 	ws.SetWorkspaceEnv("dev")
 	ws.SetCheckpointID(checkpointID)
+	ws.SetGitOrigin("git@github.com:acme/repo.git")
 
 	ctx := context.Background()
 
@@ -137,6 +138,10 @@ func TestWorkspaceCheckpointExportTargetIsSessionState(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(encoded.JSON), checkpointID)
 	require.Contains(t, string(encoded.JSON), `"workspaceEnv":"dev"`)
+	require.Contains(t, string(encoded.JSON), `"gitOrigin":"github.com/acme/repo"`)
+	decoded, err := (&Workspace{}).DecodePersistedObject(ctx, nil, 0, nil, encoded.JSON)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/repo", decoded.(*Workspace).GitOrigin())
 	require.NotContains(t, string(encoded.JSON), "live-client")
 	require.NotContains(t, string(encoded.JSON), "/checkout")
 

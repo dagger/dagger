@@ -1176,6 +1176,7 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 	}
 	ws.SetPortableCheckpoint()
 	ws.SetWorkspaceEnv(meta.Environment)
+	ws.SetGitOrigin(workspace.NormalizeGitRemote(manifest.RemoteURL))
 	// The manifest digest is this checkpoint's content identity: pure, equal on
 	// both sides of a capture/restore, and carried through every workspace
 	// derived from it. The capturing session retains its originating checkout

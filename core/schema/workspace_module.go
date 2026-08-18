@@ -153,6 +153,7 @@ func (s *workspaceSchema) moduleSource(
 		Field: "asModuleSource",
 		Args: []dagql.NamedInput{
 			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+			{Name: "contextIdentity", Value: dagql.String(ws.GitOrigin())},
 		},
 	}); err != nil {
 		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)

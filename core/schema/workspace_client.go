@@ -175,6 +175,7 @@ func (s *workspaceSchema) resolveClientTargetModule(
 			Field: "asModuleSource",
 			Args: []dagql.NamedInput{
 				{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(ref))},
+				{Name: "contextIdentity", Value: dagql.String(ws.GitOrigin())},
 			},
 		}); err != nil {
 			return src, fmt.Errorf("load module source: %w", err)
