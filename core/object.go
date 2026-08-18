@@ -1313,6 +1313,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if query != nil && query.ConstructorArgs != nil {
 					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
 				}
+				ctorNamedArgs = withBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
 				var result dagql.AnyResult
 				if err := canonical.Select(ctx, canonical.Root(), &result,
 					dagql.Selector{
@@ -1357,6 +1358,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if query != nil && query.ConstructorArgs != nil {
 					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
 				}
+				ctorNamedArgs = withBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
 				var result dagql.AnyResult
 				if err := canonical.Select(ctx, canonical.Root(), &result,
 					dagql.Selector{

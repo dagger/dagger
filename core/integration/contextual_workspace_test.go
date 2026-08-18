@@ -279,8 +279,9 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Conte
 }
 
 // TestContextualWorkspaceCLIExposure covers user-visible behavior that is
-// specific to Workspace being injected from context rather than passed
-// explicitly.
+// specific to Workspace being defaulted from context rather than passed
+// explicitly. The greeter fixture's constructor declares `source: Workspace!`,
+// so it also pins that a required Workspace stays callable without a flag.
 func (ContextualWorkspaceSuite) TestContextualWorkspaceCLIExposure(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -293,10 +294,14 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceCLIExposure(ctx context.C
 		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 	})
 
-	t.Run("workspace arg is not exposed as a CLI flag", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace arg is an optional CLI flag", func(ctx context.Context, t *testctx.T) {
 		help, err := ctr.With(daggerReportCall("greeter", "--help")).Stdout(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, help, "--source")
+		// Offered, so a caller can aim the function at another workspace.
+		require.Contains(t, help, "--source")
+		// Never required, even though it's declared Workspace!: the CLI defaults
+		// it to the current workspace, which the subtest above exercises.
+		require.NotRegexp(t, `--source[^\n]*\[required\]`, help)
 	})
 }
 

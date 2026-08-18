@@ -693,7 +693,7 @@ func (h *shellCallHandler) parseArgumentValues(
 
 	// no further processing needed
 	if len(newArgs) == 0 {
-		return values, nil
+		return h.defaultWorkspaceArgs(ctx, fn, values)
 	}
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
@@ -810,6 +810,32 @@ func (h *shellCallHandler) parseArgumentValues(
 		values[val.flag] = val.value
 	}
 
+	return h.defaultWorkspaceArgs(ctx, fn, values)
+}
+
+// defaultWorkspaceArgs fills any Workspace argument the caller left unset with
+// the session's current workspace, matching what selectFunc does for
+// `dagger call`. Without it a required Workspace would be a mandatory
+// positional here (see IsCallerRequired) and the two would disagree about
+// whether a workspace is something you have to supply.
+func (h *shellCallHandler) defaultWorkspaceArgs(
+	ctx context.Context,
+	fn *modFunction,
+	values map[string]any,
+) (map[string]any, error) {
+	for _, arg := range fn.Args {
+		if !arg.IsWorkspace() || !arg.IsRequired() {
+			continue
+		}
+		if _, ok := values[arg.Name]; ok {
+			continue
+		}
+		wsID, err := h.dag.CurrentWorkspace().ID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve current workspace for %q: %w", fn.CmdName(), err)
+		}
+		values[arg.Name] = wsID
+	}
 	return values, nil
 }
 

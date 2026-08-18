@@ -63,6 +63,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &gitRepositoryValue{}
 	case GitRef:
 		return &gitRefValue{}
+	case Workspace:
+		return &workspaceValue{}
 	}
 	return nil
 }
@@ -308,6 +310,31 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 				Exclude: modArg.Ignore,
 			},
 		).Sync(ctx)
+}
+
+// workspaceValue is a pflag.Value that builds a dagger.Workspace from an
+// address. Left unset, the CLI fills the argument with the session's current
+// workspace instead (see selectFunc), so the flag only has to cover the case
+// where the caller wants a different one.
+type workspaceValue struct {
+	address string
+}
+
+func (v *workspaceValue) Type() string {
+	return Workspace
+}
+
+func (v *workspaceValue) Set(s string) error {
+	v.address = s
+	return nil
+}
+
+func (v *workspaceValue) String() string {
+	return v.address
+}
+
+func (v *workspaceValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	return dag.Address(v.address).Directory().AsWorkspace(), nil
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.

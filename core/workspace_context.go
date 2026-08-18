@@ -3,9 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type workspaceContextKey struct{}
@@ -40,6 +42,100 @@ func WorkspaceFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], 
 		return ws, true
 	}
 	return dagql.ObjectResult[*Workspace]{}, false
+}
+
+// workspaceArgValue resolves the Workspace that a framework-built call should
+// pass for a required Workspace argument: the one an enclosing group bound into
+// the context, else the session's ambient current workspace. Returns a nil
+// input when neither applies, leaving the argument off so dagql reports it as
+// missing by name.
+//
+// This mirrors [ModuleFunction.loadWorkspaceArg], which fills the same argument
+// for calls that can rely on dagql's injection hook. A required argument can't:
+// preselect rejects a missing non-null argument before the hook runs, so the
+// value has to be on the selector instead.
+func workspaceArgValue(ctx context.Context, srv *dagql.Server) (dagql.Input, error) {
+	if ws, ok := WorkspaceFromContext(ctx); ok {
+		wsID, err := ws.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get bound workspace ID: %w", err)
+		}
+		return dagql.NewID[*Workspace](wsID), nil
+	}
+	if srv == nil {
+		return nil, nil
+	}
+	// A running module function must pass a Workspace to its dependencies
+	// explicitly, so it doesn't silently inherit its caller's.
+	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
+		return nil, err
+	} else if inModuleFunction {
+		return nil, nil
+	}
+	var ws dagql.ObjectResult[*Workspace]
+	if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{
+		Field: "currentWorkspace",
+	}); err != nil {
+		return nil, fmt.Errorf("load current workspace: %w", err)
+	}
+	wsID, err := ws.ID()
+	if err != nil {
+		return nil, fmt.Errorf("get current workspace ID: %w", err)
+	}
+	return dagql.NewID[*Workspace](wsID), nil
+}
+
+// withBoundWorkspaceArgs supplies the workspace for any required Workspace
+// argument in specs that named doesn't already carry.
+//
+// Callers that assemble a selector themselves — the entrypoint proxies building
+// their inner constructor call, like ModTreeNode.DagqlValue — have to fill a
+// required Workspace before selecting, since dagql's injection hook runs after
+// the non-null check.
+func withBoundWorkspaceArgs(
+	ctx context.Context,
+	srv *dagql.Server,
+	specs []dagql.InputSpec,
+	named []dagql.NamedInput,
+) []dagql.NamedInput {
+	for _, spec := range specs {
+		if slices.ContainsFunc(named, func(n dagql.NamedInput) bool { return n.Name == spec.Name }) {
+			continue
+		}
+		if val, ok := boundWorkspaceInput(ctx, srv, spec); ok {
+			named = append(named, dagql.NamedInput{Name: spec.Name, Value: val})
+		}
+	}
+	return named
+}
+
+// inputSpecIsWorkspace reports whether spec is a Workspace-typed argument.
+//
+// A module function's object args are published as plain ID scalars — checking
+// spec.Type.Type().Name() would compare against "ID" and never match — so the
+// @expectedType directive is where the object type survives on the input spec.
+// This is the same identification [isWorkspaceArg] makes against the AST.
+func inputSpecIsWorkspace(spec dagql.InputSpec) bool {
+	d := ast.DirectiveList(spec.Directives).ForName("expectedType")
+	if d == nil {
+		return false
+	}
+	name := d.Arguments.ForName("name")
+	return name != nil && name.Value != nil && name.Value.Raw == workspaceTypeName
+}
+
+// boundWorkspaceInput returns the Workspace to pass for arg, if arg is a
+// required Workspace-typed argument the caller left unset. Optional ones are
+// left to dagql's injection hook.
+func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.InputSpec) (dagql.Input, bool) {
+	if !arg.Type.Type().NonNull || !inputSpecIsWorkspace(arg) {
+		return nil, false
+	}
+	val, err := workspaceArgValue(ctx, srv)
+	if err != nil || val == nil {
+		return nil, false
+	}
+	return val, true
 }
 
 // workspaceClientContext switches ctx to the Workspace's owning client so that

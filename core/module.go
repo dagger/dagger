@@ -159,6 +159,12 @@ func argRequired(arg *FunctionArg) bool {
 	if arg.DefaultValue != nil {
 		return false
 	}
+	// engine-supplied -> not required. A Workspace is declared required so the
+	// signature says so, but it resolves from the workspace in scope rather than
+	// from the caller — the same reason a contextual arg is exempt above.
+	if arg.IsWorkspace() {
+		return false
+	}
 	return true
 }
 
@@ -257,12 +263,16 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// functionRequiresArgsExceptAgentBase reports whether a function has required
-// arguments, except that for an @agent function it exempts a single required
-// LLM! argument — the base the compose fold supplies explicitly
-// (hack/designs/workspace-agents.md §3). Any *other* required argument still
-// disqualifies the function from no-arg enumeration.
-func functionRequiresArgsExceptAgentBase(fn *Function) bool {
+// functionRequiresCallerArgs reports whether a function has required arguments
+// the caller has to supply, which disqualifies it from no-arg enumeration.
+//
+// Engine-supplied arguments don't count, because nothing is asked of the
+// caller: an @agent function's single required LLM! is the base the compose
+// fold supplies explicitly (hack/designs/workspace-agents.md §3), and a
+// Workspace! — exempted in argRequired, alongside contextual args — resolves
+// from the workspace in scope. Both are declared required so the signature says
+// so, and both are filled in before the call.
+func functionRequiresCallerArgs(fn *Function) bool {
 	baseExempted := false
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()

@@ -764,13 +764,6 @@ func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args stru
 		}
 	}
 	arg := core.NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Deprecated)
-	if arg.IsWorkspace() {
-		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to optionalize workspace arg type: %w", err)
-		}
-		arg.TypeDef = typeDef
-	}
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -816,13 +809,6 @@ func (s *moduleSchema) internalFunctionArg(ctx context.Context, _ *core.Query, a
 		Ignore:         args.Ignore,
 		Deprecated:     args.Deprecated,
 		OriginalName:   args.Name,
-	}
-	if arg.IsWorkspace() {
-		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to optionalize workspace arg type: %w", err)
-		}
-		arg.TypeDef = typeDef
 	}
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
