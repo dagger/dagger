@@ -102,20 +102,29 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// mounts is an in-engine directory tree holding content attached read-only
-	// via Workspace.withMountedDirectory/withMountedFile, keyed by
+	// mounts is an in-engine directory tree holding content attached via
+	// Workspace.withMountedDirectory/withMountedFile/withMountedCache, keyed by
 	// workspace-root-relative mount path. Internal only — not a GraphQL field,
 	// but persisted and dependency-tracked like rootfs. Nil when the workspace
 	// has no mounts. It is intentionally kept separate from the overlay
 	// changeset so mounted content is readable through the normal workspace
-	// file tools but is never treated as a pending change or exported.
+	// file tools but is never treated as a pending change or exported to the
+	// workspace source.
 	mounts dagql.ObjectResult[*Directory]
 
 	// mountPoints lists the workspace-root-relative paths at which content is
 	// mounted, sorted and deduplicated. Reads at or under a mount point
-	// resolve from mounts (shadowing the source), and overlay edits there are
-	// rejected, keeping mounted content read-only.
+	// resolve from mounts (shadowing the source). Overlay edits there are
+	// rejected unless the mount is cache-backed (see cacheMounts), keeping
+	// mounted Directory/File content read-only.
 	mountPoints []string
+
+	// cacheMounts records which mount points are backed by a cache volume (see
+	// WorkspaceCacheMount). Cache mounts are the writable kind: edits under
+	// them land in mounts rather than the overlay changeset, so they never
+	// appear in Workspace.changes, and are committed into the volume on
+	// export. Internal only — persisted and dependency-tracked like mounts.
+	cacheMounts []WorkspaceCacheMount
 
 	// compatWorkspace stores the originating compat-workspace projection when
 	// this workspace was loaded from a legacy dagger.json instead of an explicit
@@ -160,6 +169,26 @@ type Workspace struct {
 	// generation fans out exponentially over the dependency DAG. Kept sorted
 	// and deduplicated; carried through Clone so derived workspaces keep it.
 	StagedGeneration []string
+}
+
+// WorkspaceCacheMount is a CacheVolume mounted into the workspace's mounts tree
+// at Target. It shadows base workspace content there and stays out of
+// Workspace.changes, like any other mount — but unlike a mounted Directory or
+// File it is writable: edits under Target update the mounts tree, and export
+// commits the resulting delta back into the volume.
+type WorkspaceCacheMount struct {
+	// Target is the workspace-root-relative mount path, cleaned, no leading
+	// slash (e.g. "foo", "build/cache"). It is also the key into the mounts
+	// tree, so the mount's current content is mounts.directory(Target).
+	Target string
+	// Volume is the cache volume backing this mount.
+	Volume dagql.ObjectResult[*CacheVolume]
+	// Baseline is the volume's content as of the mount — what the mounts tree
+	// held at Target before any edits. Export diffs the mount's current subtree
+	// against it, so only edits made through this workspace are written back and
+	// content another writer added to the volume meanwhile is left alone. It is
+	// a lazy Directory, so an untouched mount never materializes the volume.
+	Baseline dagql.ObjectResult[*Directory]
 }
 
 // WorkspaceSource is the private backing source for a Workspace.
@@ -489,9 +518,9 @@ func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOve
 	ws.userConfigOverlay = overlay
 }
 
-// MountsDir returns the read-only directory tree holding mounted content,
-// keyed by workspace-root-relative mount path, or false when the workspace has
-// no mounts.
+// MountsDir returns the directory tree holding mounted content, keyed by
+// workspace-root-relative mount path, or false when the workspace has no
+// mounts.
 func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	if ws == nil || ws.mounts.Self() == nil {
 		return dagql.ObjectResult[*Directory]{}, false
@@ -499,9 +528,9 @@ func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	return ws.mounts, true
 }
 
-// WithMounted returns a copy of the workspace with the given read-only
-// mounted content tree and the workspace-root-relative path recorded as a
-// mount point, keeping the mount point list sorted and deduplicated.
+// WithMounted returns a copy of the workspace with the given mounted content
+// tree and the workspace-root-relative path recorded as a mount point, keeping
+// the mount point list sorted and deduplicated.
 func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
 	cp := ws.Clone()
 	cp.mounts = newMounts
@@ -510,6 +539,100 @@ func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path 
 		cp.mountPoints = slices.Insert(cp.mountPoints, i, p)
 	}
 	return cp
+}
+
+// WithMountsDir returns a copy of the workspace with an updated mounts tree and
+// the mount points left as they are. Used to apply an edit under a cache mount,
+// which changes mounted content without mounting anything new.
+func (ws *Workspace) WithMountsDir(newMounts dagql.ObjectResult[*Directory]) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	return cp
+}
+
+// WithCacheMounted returns a copy of the workspace with the given mounted
+// content tree, the mount recorded as a cache-backed (writable) mount point,
+// and any mount previously covering the same target replaced.
+func (ws *Workspace) WithCacheMounted(newMounts dagql.ObjectResult[*Directory], mount WorkspaceCacheMount) *Workspace {
+	cp := ws.WithMounted(newMounts, mount.Target)
+	cacheMounts := make([]WorkspaceCacheMount, 0, len(cp.cacheMounts)+1)
+	for _, existing := range cp.cacheMounts {
+		if existing.Target != mount.Target {
+			cacheMounts = append(cacheMounts, existing)
+		}
+	}
+	cacheMounts = append(cacheMounts, mount)
+	slices.SortFunc(cacheMounts, func(a, b WorkspaceCacheMount) int {
+		return strings.Compare(a.Target, b.Target)
+	})
+	cp.cacheMounts = cacheMounts
+	return cp
+}
+
+// WithoutMountedAt returns a copy of the workspace with the given mounts tree
+// and every mount point at or under the workspace-root-relative path dropped —
+// unmounting a directory unmounts whatever was mounted inside it.
+func (ws *Workspace) WithoutMountedAt(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	p := filepath.ToSlash(path)
+	covered := func(target string) bool {
+		return target == p || strings.HasPrefix(target, p+"/")
+	}
+	cp.mountPoints = slices.DeleteFunc(cp.mountPoints, covered)
+	cp.cacheMounts = slices.DeleteFunc(cp.cacheMounts, func(m WorkspaceCacheMount) bool {
+		return covered(m.Target)
+	})
+	return cp
+}
+
+// CacheMounts returns the workspace's cache-backed mounts (see
+// WorkspaceCacheMount).
+func (ws *Workspace) CacheMounts() []WorkspaceCacheMount {
+	if ws == nil {
+		return nil
+	}
+	return ws.cacheMounts
+}
+
+// CacheMountForPath returns the cache mount a workspace-root-relative path may
+// be edited through: the deepest mount point covering it, when that mount is
+// cache-backed. A Directory or File mount is read-only, and one nested under a
+// cache mount keeps its own subtree read-only.
+func (ws *Workspace) CacheMountForPath(resolvedPath string) (WorkspaceCacheMount, bool) {
+	mp, ok := ws.deepestMountPoint(resolvedPath)
+	if !ok {
+		return WorkspaceCacheMount{}, false
+	}
+	for _, m := range ws.cacheMounts {
+		if m.Target == mp {
+			return m, true
+		}
+	}
+	return WorkspaceCacheMount{}, false
+}
+
+// deepestMountPoint returns the longest mount point covering a
+// workspace-root-relative path, so a nested mount shadows the one it sits in.
+func (ws *Workspace) deepestMountPoint(resolvedPath string) (string, bool) {
+	if ws == nil {
+		return "", false
+	}
+	p := filepath.ToSlash(resolvedPath)
+	var (
+		best  string
+		found bool
+	)
+	for _, mp := range ws.mountPoints {
+		if p != mp && !strings.HasPrefix(p, mp+"/") {
+			continue
+		}
+		if !found || len(mp) > len(best) {
+			best = mp
+			found = true
+		}
+	}
+	return best, found
 }
 
 // MountedPath reports whether a workspace-root-relative path is at or under
@@ -572,23 +695,34 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
-	MountsResultID  uint64                        `json:"mountsResultID,omitempty"`
-	MountPoints     []string                      `json:"mountPoints,omitempty"`
-	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
-	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
-	Address         string                        `json:"address,omitempty"`
-	Cwd             string                        `json:"cwd,omitempty"`
-	ConfigFile      string                        `json:"configFile,omitempty"`
-	LockFile        string                        `json:"lockFile,omitempty"`
-	ClientID        string                        `json:"clientID,omitempty"`
-	HostPath        string                        `json:"hostPath,omitempty"`
+	RootfsResultID  uint64                         `json:"rootfsResultID,omitempty"`
+	MountsResultID  uint64                         `json:"mountsResultID,omitempty"`
+	MountPoints     []string                       `json:"mountPoints,omitempty"`
+	CacheMounts     []persistedWorkspaceCacheMount `json:"cacheMounts,omitempty"`
+	Source          *persistedWorkspaceSource      `json:"source,omitempty"`
+	CompatWorkspace *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
+	Address         string                         `json:"address,omitempty"`
+	Cwd             string                         `json:"cwd,omitempty"`
+	ConfigFile      string                         `json:"configFile,omitempty"`
+	LockFile        string                         `json:"lockFile,omitempty"`
+	ClientID        string                         `json:"clientID,omitempty"`
+	HostPath        string                         `json:"hostPath,omitempty"`
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
+}
+
+// persistedWorkspaceCacheMount is the on-disk encoding of a WorkspaceCacheMount:
+// its Target plus references to the backing volume and the baseline export
+// diffs against. The mounted content itself lives in the mounts tree, which is
+// persisted separately.
+type persistedWorkspaceCacheMount struct {
+	Target           string `json:"target,omitempty"`
+	VolumeResultID   uint64 `json:"volumeResultID,omitempty"`
+	BaselineResultID uint64 `json:"baselineResultID,omitempty"`
 }
 
 type persistedWorkspaceSource struct {
@@ -756,6 +890,24 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		}
 		payload.Source = source
 	}
+	for _, m := range ws.cacheMounts {
+		persistedMount := persistedWorkspaceCacheMount{Target: m.Target}
+		if m.Volume.Self() != nil {
+			volumeID, err := encodePersistedObjectRef(cache, m.Volume, "workspace cache mount volume")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			persistedMount.VolumeResultID = volumeID
+		}
+		if m.Baseline.Self() != nil {
+			baselineID, err := encodePersistedObjectRef(cache, m.Baseline, "workspace cache mount baseline")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			persistedMount.BaselineResultID = baselineID
+		}
+		payload.CacheMounts = append(payload.CacheMounts, persistedMount)
+	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -794,6 +946,26 @@ func (*Workspace) DecodePersistedObject(
 		}
 	}
 
+	var cacheMounts []WorkspaceCacheMount
+	for _, persistedMount := range persisted.CacheMounts {
+		mount := WorkspaceCacheMount{Target: persistedMount.Target}
+		if persistedMount.VolumeResultID != 0 {
+			volume, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.VolumeResultID, "workspace cache mount volume")
+			if err != nil {
+				return nil, err
+			}
+			mount.Volume = volume
+		}
+		if persistedMount.BaselineResultID != 0 {
+			baseline, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persistedMount.BaselineResultID, "workspace cache mount baseline")
+			if err != nil {
+				return nil, err
+			}
+			mount.Baseline = baseline
+		}
+		cacheMounts = append(cacheMounts, mount)
+	}
+
 	cwd := persisted.Cwd
 	if cwd == "" {
 		cwd = persisted.LegacyPath
@@ -812,6 +984,7 @@ func (*Workspace) DecodePersistedObject(
 		rootfs:           rootfs,
 		mounts:           mounts,
 		mountPoints:      persisted.MountPoints,
+		cacheMounts:      cacheMounts,
 		compatWorkspace:  persisted.CompatWorkspace,
 		Address:          persisted.Address,
 		Cwd:              cwd,
@@ -875,6 +1048,33 @@ func (ws *Workspace) AttachDependencyResults(
 		}
 		ws.mounts = typed
 		deps = append(deps, typed)
+	}
+
+	for i := range ws.cacheMounts {
+		if ws.cacheMounts[i].Volume.Self() != nil {
+			attached, err := attach(ws.cacheMounts[i].Volume)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace cache mount volume: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*CacheVolume])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace cache mount volume: unexpected result %T", attached)
+			}
+			ws.cacheMounts[i].Volume = typed
+			deps = append(deps, typed)
+		}
+		if ws.cacheMounts[i].Baseline.Self() != nil {
+			attached, err := attach(ws.cacheMounts[i].Baseline)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace cache mount baseline: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace cache mount baseline: unexpected result %T", attached)
+			}
+			ws.cacheMounts[i].Baseline = typed
+			deps = append(deps, typed)
+		}
 	}
 
 	return deps, nil
@@ -947,6 +1147,7 @@ func attachWorkspaceSource(
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	cp.mountPoints = slices.Clone(ws.mountPoints)
+	cp.cacheMounts = slices.Clone(ws.cacheMounts)
 	return &cp
 }
 
