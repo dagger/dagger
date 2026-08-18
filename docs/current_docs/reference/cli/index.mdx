@@ -285,6 +285,9 @@ Initialize a generated API client
 
 Initialize a generated API client at &lt;path&gt;.
 
+&lt;path&gt; is relative to the current directory; a leading "/" means the workspace
+root.
+
 &lt;sdk&gt; is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
 to add more choices.
 
@@ -2248,10 +2251,10 @@ What the engine does (atomically, in one Changeset):
      skip this.
 
 When --path is omitted, the module is created under .dagger/modules/&lt;name&gt;
-beside the dagger.toml being edited (workspace-root-relative as
-&lt;dagger.toml dir&gt;/.dagger/modules/&lt;name&gt;). Custom paths are
-workspace-root-relative and skip the [modules.&lt;name&gt;] install (the user is
-managing workspace layout explicitly).
+beside the dagger.toml being edited. Pass --path to choose a location: it is
+relative to the current directory, and a leading "/" means the workspace
+root. A custom path skips the [modules.&lt;name&gt;] install (the user is managing
+workspace layout explicitly).
 
 ```
 dagger module init <sdk> <name> [flags]
@@ -2267,7 +2270,7 @@ dagger sdk install go && dagger module init go my-module
 
 ```
       --no-generate   Skip running the SDK's generators for the new module
-      --path string   Workspace-root-relative module path (default: <dagger.toml dir>/.dagger/modules/<name>)
+      --path string   Module path, relative to the current directory ("/" = workspace root; default: .dagger/modules/<name> beside dagger.toml)
 ```
 
 ### Options inherited from parent commands

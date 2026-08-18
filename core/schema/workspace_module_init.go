@@ -60,16 +60,19 @@ func (s *workspaceSchema) initModuleChanges(
 		return res, scope, fmt.Errorf("SDK name is required")
 	}
 
-	// --path is workspace-root-relative. Validate it before reading the config
-	// so a bad path is reported as a bad path, not as whatever else the
-	// workspace's dagger.toml turns out to be missing or malformed about.
-	relPath := filepath.Clean(args.Path)
+	// --path reads like every other workspace path a user types: relative to
+	// where they are standing, with a leading "/" meaning the workspace root
+	// (resolveWorkspacePath, the same resolver `dagger install` uses for a
+	// local ref). Everything downstream of here is workspace-root-relative.
+	// Resolved before the config is read so a bad path is reported as a bad
+	// path, not as whatever else the workspace's dagger.toml turns out to be
+	// missing or malformed about.
+	var relPath string
 	usingDefaultPath := args.Path == ""
 	if !usingDefaultPath {
-		if filepath.IsAbs(relPath) {
-			return res, scope, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
-		}
-		if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		var err error
+		relPath, err = resolveWorkspacePath(args.Path, ws.Cwd)
+		if err != nil {
 			return res, scope, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
 		}
 	}

@@ -151,10 +151,10 @@ What the engine does (atomically, in one Changeset):
      skip this.
 
 When --path is omitted, the module is created under .dagger/modules/<name>
-beside the dagger.toml being edited (workspace-root-relative as
-<dagger.toml dir>/.dagger/modules/<name>). Custom paths are
-workspace-root-relative and skip the [modules.<name>] install (the user is
-managing workspace layout explicitly).`,
+beside the dagger.toml being edited. Pass --path to choose a location: it is
+relative to the current directory, and a leading "/" means the workspace
+root. A custom path skips the [modules.<name>] install (the user is managing
+workspace layout explicitly).`,
 	Example: "dagger sdk install go && dagger module init go my-module",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -163,7 +163,7 @@ managing workspace layout explicitly).`,
 }
 
 func init() {
-	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Workspace-root-relative module path (default: <dagger.toml dir>/.dagger/modules/<name>)")
+	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path, relative to the current directory (\"/\" = workspace root; default: .dagger/modules/<name> beside dagger.toml)")
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
 	moduleCmd.AddCommand(moduleInitCmd)
 }

@@ -16788,7 +16788,7 @@ func (r *Workspace) WithInitClient(path string, sdk string, module string, opts 
 
 // WorkspaceWithInitModuleOpts contains options for Workspace.WithInitModule
 type WorkspaceWithInitModuleOpts struct {
-	// Workspace-relative path for the new module.
+	// Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
 	Path string
 	// Source subpath within the new module.
 	Source string

@@ -5917,7 +5917,10 @@ type Workspace implements Node {
   The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
   """
   withInitClient(
-    """Workspace-relative output directory for the generated client."""
+    """
+    Output directory for the generated client, relative to the workspace cwd; a
+    leading "/" is relative to the workspace root.
+    """
     path: String!
 
     """Workspace SDK name or module entry name to use."""
@@ -5950,7 +5953,11 @@ type Workspace implements Node {
     """Workspace SDK name or module entry name to use."""
     sdk: String!
 
-    """Workspace-relative path for the new module."""
+    """
+    Path for the new module, relative to the workspace cwd; a leading "/" is
+    relative to the workspace root. Defaults to .dagger/modules/<name> beside
+    the workspace config.
+    """
     path: String = ""
 
     """Source subpath within the new module."""

@@ -3291,7 +3291,7 @@ export type WorkspaceWithInitClientOpts = {
 
 export type WorkspaceWithInitModuleOpts = {
   /**
-   * Workspace-relative path for the new module.
+   * Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
    */
   path?: string
 
@@ -15456,7 +15456,7 @@ export class Workspace extends BaseClient {
    * Return this workspace with a generated API client initialized.
    *
    * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
-   * @param path Workspace-relative output directory for the generated client.
+   * @param path Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param module Workspace-relative path or canonical ref for the module the client binds to.
    * @param opts.args SDK-specific init arguments.
@@ -15484,7 +15484,7 @@ export class Workspace extends BaseClient {
    * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
    * @param name Name of the new module.
    * @param sdk Workspace SDK name or module entry name to use.
-   * @param opts.path Workspace-relative path for the new module.
+   * @param opts.path Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.
    * @param opts.args SDK-specific init arguments.

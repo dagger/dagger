@@ -15213,7 +15213,7 @@ pub struct WorkspaceWithInitModuleOpts<'a> {
     /// Skip running the SDK's generators for the new module.
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
-    /// Workspace-relative path for the new module.
+    /// Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
     /// Source subpath within the new module.
@@ -15974,7 +15974,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `path` - Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
     /// * `sdk` - Workspace SDK name or module entry name to use.
     /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -15999,7 +15999,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `path` - Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
     /// * `sdk` - Workspace SDK name or module entry name to use.
     /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use

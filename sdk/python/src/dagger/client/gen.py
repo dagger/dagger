@@ -15683,7 +15683,8 @@ class Workspace(Type):
         Parameters
         ----------
         path:
-            Workspace-relative output directory for the generated client.
+            Output directory for the generated client, relative to the
+            workspace cwd; a leading "/" is relative to the workspace root.
         sdk:
             Workspace SDK name or module entry name to use.
         module:
@@ -15731,7 +15732,9 @@ class Workspace(Type):
         sdk:
             Workspace SDK name or module entry name to use.
         path:
-            Workspace-relative path for the new module.
+            Path for the new module, relative to the workspace cwd; a leading
+            "/" is relative to the workspace root. Defaults to
+            .dagger/modules/<name> beside the workspace config.
         source:
             Source subpath within the new module.
         include:

@@ -33,6 +33,9 @@ var apiClientInitCmd = &cobra.Command{
 	Short: "Initialize a generated API client",
 	Long: `Initialize a generated API client at <path>.
 
+<path> is relative to the current directory; a leading "/" means the workspace
+root.
+
 <sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
 to add more choices.
 
