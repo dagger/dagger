@@ -28,6 +28,11 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
+	// Let core derive workspace-served schemas (WorkspaceServedSchema) through
+	// the overlay: re-resolving overlay-affected modules needs the overlay
+	// rootfs machinery that lives in this package.
+	core.SetWorkspaceOverlayModuleLoader(s.overlayModuleLoader)
+
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput, dagql.PerSessionInput).
 		NotReplayable("Resolves the calling client's workspace; the result carries that client's ID, which only resolves inside its own session.").
@@ -4417,6 +4422,16 @@ func (s *workspaceSchema) agents(
 	if err != nil {
 		return nil, err
 	}
+
+	// The served modules above are the workspace as it was on disk when the
+	// session started. Re-resolve whatever the workspace's pending overlay
+	// touches, so an agent recomposing itself (install/reload) sees its own
+	// staged edits to module source and to dagger.toml.
+	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+	mods = mergeOverlayModules(mods, overlayMods)
 
 	var allAgents []*core.Agent
 	for _, mod := range mods {

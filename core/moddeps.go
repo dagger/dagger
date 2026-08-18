@@ -112,6 +112,30 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 	return cp
 }
 
+// Replacing returns a builder in which each given mod REPLACES the same-named
+// entry — keeping that entry's install opts and position — or is appended when
+// no entry matches. Unlike With, which keeps the existing mod on a name match
+// (its callers only promote install opts), Replacing swaps the module itself:
+// it exists for serving a fresher build of an already-served module, e.g. one
+// re-resolved through a workspace overlay.
+func (b *SchemaBuilder) Replacing(mods ...Mod) *SchemaBuilder {
+	cp := b.Clone()
+	for _, mod := range mods {
+		replaced := false
+		for i, e := range cp.entries {
+			if e.mod.Name() == mod.Name() {
+				cp.entries[i].mod = mod
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			cp.entries = append(cp.entries, modDepEntry{mod: mod})
+		}
+	}
+	return cp
+}
+
 func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
 	for _, e := range b.entries {
 		if e.mod.Name() == name {
