@@ -60,16 +60,22 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 }
 
 func (r Release) MarshalJSON() ([]byte, error) {
-	var concrete struct{}
+	var concrete struct {
+		Workspace *dagger.Workspace
+	}
+	concrete.Workspace = r.Workspace
 	return json.Marshal(&concrete)
 }
 
 func (r *Release) UnmarshalJSON(bs []byte) error {
-	var concrete struct{}
+	var concrete struct {
+		Workspace *dagger.Workspace
+	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
+	r.Workspace = concrete.Workspace
 	return nil
 }
 
@@ -561,6 +567,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Release).TestLocalRelease(&parent, ctx)
+		case "":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *dagger.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return New(ws), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

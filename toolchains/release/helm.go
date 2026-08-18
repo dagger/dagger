@@ -14,7 +14,7 @@ import (
 // helm-dev module only covers chart checks, so release owns the artifact path
 // directly instead of depending on a separate toolchain for these steps.
 func (r *Release) helmChartSource() *dagger.Directory {
-	return dag.CurrentWorkspace().
+	return r.Workspace.
 		Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{"helm/dagger"}}).
 		Directory("helm/dagger")
 }
@@ -23,7 +23,7 @@ func (r *Release) helmChart() *dagger.Container {
 	return dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
-				"helm~3.18.4",
+				"helm-3~3.19.2",
 			},
 		}).
 		WithDirectory("/dagger-helm", r.helmChartSource()).
