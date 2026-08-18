@@ -37,6 +37,7 @@ type GitCLI struct {
 	config      map[string]string
 
 	snapshotBackedRepo bool
+	stallTimeouts      bool
 
 	indexFile string
 }
@@ -187,6 +188,18 @@ func WithSnapshotBackedRepo() Option {
 	}
 }
 
+// WithStallTimeouts makes a connection that stops making progress fail instead
+// of hanging forever. Git has no network deadline of its own: an HTTP transfer
+// that stalls, or an SSH connection to a host that stops answering, blocks until
+// the caller's context is cancelled -- and callers that hold a lock for the
+// duration block everyone else behind them too. Failing gives the caller
+// something it can classify and retry.
+func WithStallTimeouts() Option {
+	return func(b *GitCLI) {
+		b.stallTimeouts = true
+	}
+}
+
 // WithIndexFile sets the GIT_INDEX_FILE environment variable for the git commands.
 func WithIndexFile(indexFile string) Option {
 	return func(b *GitCLI) {
@@ -264,6 +277,13 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 			"-c", "core.trustctime=false",
 		)
 	}
+	if cli.stallTimeouts {
+		// Give up on a transfer that has moved less than 1KB/s for a minute.
+		cmd.Args = append(cmd.Args,
+			"-c", "http.lowSpeedLimit=1000",
+			"-c", "http.lowSpeedTime=60",
+		)
+	}
 	if cli.workTree != "" {
 		cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
 	}
@@ -298,7 +318,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	cmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"GIT_TERMINAL_PROMPT=0",
-		"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.sshKnownHosts),
+		"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.sshKnownHosts, cli.stallTimeouts),
 		//	"GIT_TRACE=1",
 		"GIT_ASKPASS=echo",      // Ensure git does not ask for a password (avoids cryptic error message)
 		"GIT_CONFIG_NOSYSTEM=1", // Disable reading from system gitconfig.
@@ -348,12 +368,17 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	return buf.Bytes(), nil
 }
 
-func getGitSSHCommand(knownHosts string) string {
+func getGitSSHCommand(knownHosts string, stallTimeouts bool) string {
 	gitSSHCommand := "ssh -F /dev/null"
 	if knownHosts != "" {
 		gitSSHCommand += " -o UserKnownHostsFile=" + knownHosts
 	} else {
 		gitSSHCommand += " -o StrictHostKeyChecking=no"
+	}
+	if stallTimeouts {
+		// ssh waits on the TCP stack by default, which never gives up on a host
+		// that accepted the connection and then went silent.
+		gitSSHCommand += " -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
 	}
 	return gitSSHCommand
 }

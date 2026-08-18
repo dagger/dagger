@@ -259,7 +259,10 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
-	var opts []gitutil.Option
+	// Every command built here talks to the remote while holding the engine-wide
+	// per-remote lock, so a stalled connection blocks every other caller of that
+	// remote until the whole build is cancelled.
+	opts := []gitutil.Option{gitutil.WithStallTimeouts()}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {
