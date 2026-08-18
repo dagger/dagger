@@ -1,0 +1,49 @@
+"""
+An agent that starts and stops a deliberately noisy service, for LLM
+tool-log capture tests (replay-driven, no live provider).
+"""
+type SvcAgent {
+  model: String = null
+
+  # The running service, set by start and consumed by stop. Private state:
+  # it serializes into the agent object and rehydrates on the next call.
+  let svc: Service = null
+
+  """
+  Set up the agent's LLM with its tools and assignment.
+  """
+  drive(assignment: String!): LLM! {
+    llm(model: model)
+      .withTools(currentNode, except: ["drive"])
+      .withPrompt("You are an agent that manages a service.\n" + "Use the start tool to start the service, then the stop tool to stop it.\n" + "\n" + "Assignment: " + assignment + "\n")
+  }
+
+  """
+  Start the noisy service and report readiness.
+  """
+  start: SvcAgent! {
+    # The service prints 200 deterministic noise lines BEFORE opening the
+    # exposed port, so .start's healthcheck guarantees every noise line has
+    # landed by the time SERVICE-READY prints.
+    self.svc = container
+      .from("alpine")
+      .withExposedPort(8080)
+      .asService(args: ["sh", "-c", "for i in $(seq 200); do echo SVC-NOISE-$i; done; while true; do nc -l -p 8080; done"])
+      .start
+    print("SERVICE-READY")
+    self
+  }
+
+  """
+  Stop the service.
+  """
+  stop: SvcAgent! {
+    let s = svc
+    if (s != null) {
+      s.stop
+      null
+    }
+    print("SERVICE-STOPPED")
+    self
+  }
+}

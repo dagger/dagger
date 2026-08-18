@@ -37,6 +37,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -724,6 +725,12 @@ func (svc *Service) startContainer(
 	}
 
 	attrs := []attribute.KeyValue{
+		// Mark this as a running-service span so trace consumers (service
+		// surfacing in the TUI, log tooling) can discover service instances
+		// cheaply deep within a trace. The cause links below tie it back to
+		// the API spans that installed the Service value.
+		attribute.Bool(telemetryattrs.ServiceAttr, true),
+		attribute.String(telemetryattrs.ServiceNameAttr, fullHost),
 		// Hide the synthetic service exec span from the UI; its failure
 		// status propagates up to the installing API span (e.g. .asService)
 		// via the cause link below, and its stdio logs are routed there via
