@@ -1336,6 +1336,85 @@ func (stubShellHandler) BranchFromID(context.Context, string, BranchSummary) fun
 }
 func (stubShellHandler) EditFromID(context.Context, string) func() error { return nil }
 
+type historyShellHandler struct {
+	stubShellHandler
+	saved    int
+	restored int
+}
+
+func (h *historyShellHandler) SaveBeforeHistory()   { h.saved++ }
+func (h *historyShellHandler) RestoreAfterHistory() { h.restored++ }
+
+func newHistoryTestFrontend(t *testing.T, handler ShellHandler) *frontendPretty {
+	t.Helper()
+	t.Setenv("NO_COLOR", "1")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 10))
+	fe.setupTUI()
+	fe.startShell(context.Background(), handler)
+	fe.tui.Step()
+	return fe
+}
+
+func TestPromptArrowsMoveWithinMultilineInputBeforeHistory(t *testing.T) {
+	handler := &historyShellHandler{}
+	fe := newHistoryTestFrontend(t, handler)
+	fe.inputHistory = []string{"older command", "latest command"}
+	fe.historyIndex = -1
+	fe.textInput.SetValue("first\nsecond")
+	fe.tui.Step()
+
+	fe.tui.Inject(tuist.ParseKey("up"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	require.Equal(t, "first\nsecond", fe.textInput.Value())
+	require.Zero(t, handler.saved)
+
+	// Typing after Up proves the cursor moved to the first line.
+	fe.tui.Inject(tuist.ParseKey("!"))
+	fe.tui.Step()
+	require.Equal(t, "first!\nsecond", fe.textInput.Value())
+
+	fe.tui.Inject(tuist.ParseKey("down"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	require.Zero(t, handler.saved)
+
+	// Typing after Down proves the cursor returned to the second line.
+	fe.tui.Inject(tuist.ParseKey("?"))
+	fe.tui.Step()
+	require.Equal(t, "first!\nsecond?", fe.textInput.Value())
+}
+
+func TestPromptArrowsBrowseAndRestoreHistoryAtMultilineBoundary(t *testing.T) {
+	handler := &historyShellHandler{}
+	fe := newHistoryTestFrontend(t, handler)
+	fe.inputHistory = []string{"older command", "latest command"}
+	fe.historyIndex = -1
+	fe.textInput.SetValue("draft\ncontinued")
+	fe.tui.Step()
+
+	// The first Up moves to the first line; the second bubbles at the top.
+	fe.tui.Inject(tuist.ParseKey("up"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	fe.tui.Inject(tuist.ParseKey("up"))
+	fe.tui.Step()
+	require.Equal(t, 1, fe.historyIndex)
+	require.Equal(t, "latest command", fe.textInput.Value())
+	require.Equal(t, "draft\ncontinued", fe.historySaved)
+	require.Equal(t, 1, handler.saved)
+	require.Zero(t, handler.restored)
+
+	// Down on the history entry is already at the bottom, so it restores the
+	// multiline draft and its shell mode.
+	fe.tui.Inject(tuist.ParseKey("down"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	require.Equal(t, "draft\ncontinued", fe.textInput.Value())
+	require.Equal(t, 1, handler.saved)
+	require.Equal(t, 1, handler.restored)
+}
+
 type focusedEditShellHandler struct {
 	stubShellHandler
 	target  string
