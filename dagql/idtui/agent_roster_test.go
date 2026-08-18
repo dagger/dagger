@@ -12,8 +12,12 @@ import (
 )
 
 func renderRoster(t *testing.T, width int, entries []AgentRosterEntry) string {
+	return renderRosterWithProfile(t, width, entries, termenv.Ascii)
+}
+
+func renderRosterWithProfile(t *testing.T, width int, entries []AgentRosterEntry, profile termenv.Profile) string {
 	t.Helper()
-	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry {
+	roster := NewAgentRoster(profile, func() []AgentRosterEntry {
 		return entries
 	})
 	term := tuist.NewHeadlessTerminal(width, 1)
@@ -23,36 +27,32 @@ func renderRoster(t *testing.T, width int, entries []AgentRosterEntry) string {
 	return strings.Join(tui.Frame(), "\n")
 }
 
-// TestAgentRosterHiddenBelowTwoAgents locks in the rule that keeps the
-// ordinary single-agent session exactly as it was: a roster of one is pure
-// chrome, since the status line already reports whether that agent is busy.
-func TestAgentRosterHiddenBelowTwoAgents(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		entries []AgentRosterEntry
-	}{
-		{"no agents", nil},
-		{"one agent", []AgentRosterEntry{{Name: "interactive", State: "RUNNING"}}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry {
-				return tc.entries
-			})
-			if roster.Visible() {
-				t.Fatal("roster should be hidden")
-			}
-			if got := roster.Height(); got != 0 {
-				t.Fatalf("hidden roster must reserve no height, got %d", got)
-			}
-			if line := strings.TrimSpace(renderRoster(t, 80, tc.entries)); line != "" {
-				t.Fatalf("hidden roster rendered %q", line)
-			}
-		})
+// TestAgentRosterAlwaysShowsPublishedAgents locks in the roster's dual role as
+// switcher and state indicator. A single entry renders, but is not switchable.
+func TestAgentRosterAlwaysShowsPublishedAgents(t *testing.T) {
+	empty := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry { return nil })
+	if empty.Visible() || empty.Switchable() || empty.Height() != 0 {
+		t.Fatal("an empty roster should remain hidden")
+	}
+
+	entries := []AgentRosterEntry{{Name: "interactive", State: "RUNNING"}}
+	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry { return entries })
+	if !roster.Visible() {
+		t.Fatal("a single published agent should be visible")
+	}
+	if roster.Switchable() {
+		t.Fatal("a single published agent should not enable focus shortcuts")
+	}
+	if got := roster.Height(); got != 1 {
+		t.Fatalf("visible roster height = %d, want 1", got)
+	}
+	if line := strings.TrimSpace(renderRoster(t, 80, entries)); line != "1 agent ▶" {
+		t.Fatalf("single-agent roster rendered %q", line)
 	}
 }
 
 // TestAgentRosterRendersEveryAgent covers the strip's whole job: every agent
-// present, each with a jump number and a state flag, on one line.
+// present, each with a jump number and lifecycle indicator, on one line.
 func TestAgentRosterRendersEveryAgent(t *testing.T) {
 	line := renderRoster(t, 100, []AgentRosterEntry{
 		{Name: "chief", State: "RUNNING"},
@@ -60,14 +60,16 @@ func TestAgentRosterRendersEveryAgent(t *testing.T) {
 		{Name: "docs", State: "PAUSED"},
 		{Name: "tests", State: "WAITING_INPUT", WaitingOn: "ok to delete testdata/legacy?"},
 		{Name: "bench", State: "FAILED"},
+		{Name: "archive", State: "STOPPED"},
 	})
 
 	for _, want := range []string{
-		"1:chief ●run",
-		"2:scout ○idle",
-		"3:docs ‖paused",
-		"4:tests !needs you",
-		"5:bench ✘failed",
+		"1 chief ▶",
+		"2 scout ○",
+		"3 docs ⏸",
+		"4 tests needs you",
+		"5 bench ✘",
+		"6 archive ⏹",
 	} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("expected %q in roster, got:\n%q", want, line)
@@ -78,26 +80,25 @@ func TestAgentRosterRendersEveryAgent(t *testing.T) {
 	}
 }
 
-// TestAgentRosterMarksFocusAndReachability keeps the two switcher facts
-// legible without color: which agent the prompt addresses (tmux's
-// current-window mark), and which agents can be addressed at all — an entry
-// whose handle the client could not rebuild is watch-only, and must not look
-// like one you can talk to.
-func TestAgentRosterMarksFocusAndReachability(t *testing.T) {
-	line := renderRoster(t, 100, []AgentRosterEntry{
+// TestAgentRosterStylesFocusAndMarksReachability keeps the switcher facts
+// legible with minimal punctuation: focus is styling-only, while an entry
+// whose handle the client could not rebuild retains a quiet watch-only mark.
+func TestAgentRosterStylesFocusAndMarksReachability(t *testing.T) {
+	line := renderRosterWithProfile(t, 100, []AgentRosterEntry{
 		{ID: "a", Name: "chief", State: "IDLE"},
 		{ID: "b", Name: "scout", State: "RUNNING", Focused: true},
 		{ID: "c", Name: "ghost", State: "RUNNING", ReadOnly: true},
-	})
+	}, termenv.ANSI)
+	plain := stripANSICodes(line)
 
-	if !strings.Contains(line, "2:scout*") {
-		t.Fatalf("expected the focused agent to be marked, got:\n%q", line)
+	if !strings.Contains(plain, "2 scout ▶") || strings.Contains(plain, "*") {
+		t.Fatalf("expected focus to use styling without a marker, got:\n%q", line)
 	}
-	if strings.Contains(line, "1:chief*") {
-		t.Fatalf("only the focused agent may be marked, got:\n%q", line)
-	}
-	if !strings.Contains(line, "3:ghost·") {
+	if !strings.Contains(plain, "3 ghost·") {
 		t.Fatalf("expected the unaddressable agent to be marked, got:\n%q", line)
+	}
+	if !strings.Contains(line, "\x1b[1m1") {
+		t.Fatalf("expected jump numbers to be bold, got:\n%q", line)
 	}
 }
 
@@ -112,10 +113,10 @@ func TestAgentRosterNumbersOnlyJumpableEntries(t *testing.T) {
 		entries = append(entries, AgentRosterEntry{Name: name, State: "IDLE"})
 	}
 	line := renderRoster(t, 400, entries)
-	if !strings.Contains(line, "9:a9") {
+	if !strings.Contains(line, "9 a9") {
 		t.Fatalf("expected the ninth agent to be numbered, got:\n%q", line)
 	}
-	if strings.Contains(line, "10:a10") || !strings.Contains(line, "a10 ") {
+	if strings.Contains(line, "10 a10") || !strings.Contains(line, "a10 ○") {
 		t.Fatalf("the tenth agent must be listed without a jump number, got:\n%q", line)
 	}
 }
@@ -124,17 +125,12 @@ func TestAgentRosterNumbersOnlyJumpableEntries(t *testing.T) {
 // span appearing and its first state record arriving: the agent is known to
 // exist but its state is not, and the strip must not invent one.
 func TestAgentRosterUnknownStateIsQuiet(t *testing.T) {
-	line := renderRoster(t, 80, []AgentRosterEntry{
+	line := strings.TrimSpace(renderRoster(t, 80, []AgentRosterEntry{
 		{Name: "chief", State: "RUNNING"},
 		{Name: "fresh"},
-	})
-	if !strings.Contains(line, "fresh") {
-		t.Fatalf("expected the stateless agent to still be listed, got:\n%q", line)
-	}
-	for _, unwanted := range []string{"idle", "run", "failed", "needs you"} {
-		if strings.Contains(line, "fresh "+unwanted) {
-			t.Fatalf("stateless agent must not be given state %q, got:\n%q", unwanted, line)
-		}
+	}))
+	if want := "1 chief ▶  2 fresh"; line != want {
+		t.Fatalf("stateless agent rendered with a lifecycle indicator: got %q, want %q", line, want)
 	}
 }
 

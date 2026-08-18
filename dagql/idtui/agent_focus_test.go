@@ -280,6 +280,18 @@ func rosterDB(t *testing.T) *dagui.DB {
 	return db
 }
 
+// singleAgentDB builds a visible but non-switchable roster fixture.
+func singleAgentDB(t *testing.T) *dagui.DB {
+	t.Helper()
+	db := dagui.NewDB()
+	calls, snapshots := rosterTraceFor("chief")
+	for digest, call := range calls {
+		db.Calls[digest] = call
+	}
+	db.ImportSnapshots(snapshots)
+	return db
+}
+
 // threeAgentDB is rosterDB with one more agent, so a cycle has somewhere to
 // wrap around from.
 func threeAgentDB(t *testing.T) *dagui.DB {
@@ -504,8 +516,8 @@ func TestRosterRendersWhenAgentsAppear(t *testing.T) {
 	fe.updateAgentRoster()
 
 	frame = strings.Join(fe.tui.Step(), "\n")
-	require.Contains(t, frame, "1:chief*")
-	require.Contains(t, frame, "2:scout")
+	require.Contains(t, frame, "1 chief")
+	require.Contains(t, frame, "2 scout")
 }
 
 // TestRosterStaysVisibleInNavMode is the precondition for nav mode's roster
@@ -520,8 +532,8 @@ func TestRosterStaysVisibleInNavMode(t *testing.T) {
 	fe.enterNavMode(false)
 	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
 	require.Contains(t, frame, "i input mode", "sanity: this is nav mode's frame")
-	require.Contains(t, frame, "1:chief*")
-	require.Contains(t, frame, "2:scout")
+	require.Contains(t, frame, "1 chief")
+	require.Contains(t, frame, "2 scout")
 }
 
 // TestNavDigitFocusesAndReturnsToPrompt covers the binding that always
@@ -557,8 +569,9 @@ func TestNavDigitFocusesAndReturnsToPrompt(t *testing.T) {
 // TestNavDigitWithoutAnEntryIsUnclaimed: nav mode's digits are unmodified
 // keys, so they may only speak for the roster when there is a roster on
 // screen to speak for. A digit past the end of the strip -- or any digit at
-// all in an ordinary single-agent session, where the strip is hidden -- must
-// pass through untouched rather than silently dropping the user at a prompt.
+// all in a single-agent session, where the roster is visible but cannot
+// switch -- must pass through untouched rather than silently dropping the user
+// at a prompt.
 func TestNavDigitWithoutAnEntryIsUnclaimed(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, rosterDB(t), handler)
@@ -568,10 +581,13 @@ func TestNavDigitWithoutAnEntryIsUnclaimed(t *testing.T) {
 	require.Empty(t, handler.focusedAgents())
 	require.False(t, fe.editlineFocused, "a digit naming nobody must not switch modes")
 
-	solo := focusTestFrontend(t, dagui.NewDB(), &focusShellHandler{target: "agent-chief"})
+	solo := focusTestFrontend(t, singleAgentDB(t), &focusShellHandler{target: "agent-chief"})
+	soloFrame := ansi.Strip(strings.Join(solo.tui.Step(), "\n"))
+	require.Contains(t, soloFrame, "1 chief", "single-agent roster should remain visible")
+	require.NotContains(t, soloFrame, "1…9 focus agent", "single-agent roster must not advertise switching")
 	solo.enterNavMode(false)
 	pressNavKey(t, solo, '1')
-	require.False(t, solo.editlineFocused, "no strip, no digit bindings")
+	require.False(t, solo.editlineFocused, "single-agent roster must not claim digit bindings")
 }
 
 // TestNavCycleWalksTheRoster covers [/]: one step per press, wrapping at both
@@ -638,8 +654,8 @@ func TestNavCycleCoalescesRequests(t *testing.T) {
 // nowhere to go, and must say so rather than consuming the key to mime a
 // switch that never happened.
 func TestNavCycleWithNobodyToCycleTo(t *testing.T) {
-	// One agent: the strip is hidden, so the keys are not bound at all.
-	solo := focusTestFrontend(t, dagui.NewDB(), &focusShellHandler{target: "agent-chief"})
+	// One agent: the roster is visible as state, but cycle keys are not bound.
+	solo := focusTestFrontend(t, singleAgentDB(t), &focusShellHandler{target: "agent-chief"})
 	solo.enterNavMode(false)
 	pressNavKey(t, solo, ']')
 	pressNavKey(t, solo, '[')
@@ -694,12 +710,11 @@ func TestNavToggleReturnsToLastAgent(t *testing.T) {
 }
 
 // TestNavRosterKeysAreAdvertised: the keys are only useful if the keymap bar
-// names them, and only honest if it names them exactly when they are bound --
-// the same "more than one agent" threshold the strip itself uses.
+// names them, and only honest if it names them exactly when focus can switch.
 func TestNavRosterKeysAreAdvertised(t *testing.T) {
 	out := NewOutput(io.Discard)
 
-	solo := focusTestFrontend(t, dagui.NewDB(), &focusShellHandler{target: "agent-chief"})
+	solo := focusTestFrontend(t, singleAgentDB(t), &focusShellHandler{target: "agent-chief"})
 	solo.enterNavMode(false)
 	require.NotContains(t, navKeyHelp(solo.keys(out)), "focus agent")
 
