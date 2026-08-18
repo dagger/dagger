@@ -14,7 +14,41 @@ var (
 	ErrShallowNotSupported = errors.New("shallow clone not supported")
 	// ErrSHAFetchUnsupported is a normalized signal that retry-by-named-ref may succeed.
 	ErrSHAFetchUnsupported = errors.New("sha fetch unsupported by remote")
+	// ErrTransient marks a failure that is worth retrying as-is: a network
+	// hiccup talking to the remote, or a local repository that another process
+	// mutated underneath the command.
+	ErrTransient = errors.New("transient git failure")
 )
+
+// transientStderr are stderr fragments that mean "this git command may well
+// succeed if it is simply run again". They cover two families:
+//
+//   - the remote end dropping or refusing the connection mid-transfer
+//   - a concurrent writer changing the repository underneath us, which git
+//     detects via the stat data it recorded when it read the file
+var transientStderr = []string{
+	// concurrent local writer (e.g. detached `gc --auto` from an earlier fetch)
+	"shallow file has changed since we read it",
+	"shallow file was changed during fetch",
+	// another process holds the ref lock; the deterministic failures that share
+	// the "cannot lock ref" prefix (ref/directory conflicts) are not matched
+	".lock': file exists",
+	// remote/network
+	"the remote end hung up unexpectedly",
+	"early eof",
+	"rpc failed",
+	"connection reset by peer",
+	"connection closed by",
+	"connection timed out",
+	"operation timed out",
+	"could not resolve host",
+	"failed to connect to",
+	"unexpected disconnect",
+	"remote error: internal server error",
+	// git reports HTTP status as "The requested URL returned error: 502"
+	"returned error: 5",
+	"returned error: 429",
+}
 
 func translateError(err error, stderr string) error {
 	if err == nil {
@@ -51,6 +85,12 @@ func translateError(err error, stderr string) error {
 		strings.Contains(stderr, "not our ref") ||
 		strings.Contains(stderr, "couldn't find remote ref") {
 		return ErrSHAFetchUnsupported
+	}
+
+	for _, fragment := range transientStderr {
+		if strings.Contains(stderr, fragment) {
+			return fmt.Errorf("%w: %w", ErrTransient, err)
+		}
 	}
 
 	return err

@@ -168,6 +168,50 @@ func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	return scope
 }
 
+const (
+	transientRetryAttempts = 3
+	// Every attempt runs under the engine-wide per-remote lock, so retrying
+	// stalls every other caller of that remote. Bound the retries rather than the
+	// whole loop: the first attempt keeps the caller's deadline, since a cold
+	// mirror fetch of a large repository is legitimately slow, while the retries
+	// that follow a fast-failing transient error stay cheap.
+	transientRetryBudget = 3 * time.Minute
+)
+
+// retryTransient re-runs a remote git operation that failed for a reason git
+// itself reports as transient: the remote dropping the connection, or a
+// concurrent writer changing the mirror underneath the command. Both are
+// idempotent to retry and both were regularly turning CI runs red.
+func retryTransient(ctx context.Context, what string, fn func(context.Context) error) error {
+	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	attemptCtx := ctx
+	var err error
+	for attempt := 1; ; attempt++ {
+		err = fn(attemptCtx)
+		if err == nil {
+			return nil
+		}
+		if attempt == transientRetryAttempts || !errors.Is(err, gitutil.ErrTransient) {
+			if attempt > 1 {
+				return fmt.Errorf("%s failed after %d attempts: %w", what, attempt, err)
+			}
+			return err
+		}
+		logger.Warn("retrying transient git failure", "operation", what, "attempt", attempt, "error", err)
+		if attempt == 1 {
+			var cancel context.CancelFunc
+			attemptCtx, cancel = context.WithTimeout(ctx, transientRetryBudget)
+			defer cancel()
+		}
+		select {
+		case <-time.After(time.Duration(attempt) * time.Second):
+		case <-attemptCtx.Done():
+			return errors.Join(fmt.Errorf("%s failed after %d attempts: %w", what, attempt, err), context.Cause(attemptCtx))
+		}
+	}
+}
+
 func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -189,8 +233,12 @@ func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remo
 	}
 	defer cleanup()
 
-	remote, err := git.LsRemote(ctx, repo.URL.Remote())
-	if err != nil {
+	var remote *gitutil.Remote
+	if err := retryTransient(ctx, "ls-remote "+repo.URL.Remote(), func(ctx context.Context) error {
+		var err error
+		remote, err = git.LsRemote(ctx, repo.URL.Remote())
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	return remote, nil
@@ -400,13 +448,17 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		args = append(args, "origin")
 		args = append(args, refSpecs...)
 
-		if _, err := git.Run(ctx, args...); err != nil {
+		run := func(ctx context.Context) error {
+			_, err := git.Run(ctx, args...)
+			return err
+		}
+		if err := retryTransient(ctx, "fetch "+repo.URL.Remote(), run); err != nil {
 			if errors.Is(err, gitutil.ErrShallowNotSupported) {
 				// fallback to full fetch
 				args = slices.DeleteFunc(args, func(s string) bool {
 					return strings.HasPrefix(s, "--depth")
 				})
-				_, err = git.Run(ctx, args...)
+				err = retryTransient(ctx, "fetch "+repo.URL.Remote(), run)
 			}
 			if err != nil {
 				return err
