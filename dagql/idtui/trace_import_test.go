@@ -366,15 +366,15 @@ func TestImportMergesTheAgentsLoopSpans(t *testing.T) {
 }
 
 // TestFocusedAgentTranscriptIncludesTheImportedTurns is §5.1.3, the case the
-// whole-trace surfacing fix exists for: with ONE agent on the roster the strip
-// is hidden and promotion falls back to the whole trace, which resolved its
+// whole-trace surfacing fix exists for: with ONE agent the roster is not
+// switchable and promotion falls back to the whole trace, which resolved its
 // nil root to the LIVE root — so every message span hanging off the imported
 // root was filed as contained and dropped, and the restored session opened
 // with an empty scrollback.
 func TestFocusedAgentTranscriptIncludesTheImportedTurns(t *testing.T) {
 	db := importedTraceDB(t, false)
 	require.Len(t, db.Agents(), 1,
-		"fixture: one agent, so the strip is hidden and the transcript is whole-trace")
+		"fixture: one agent, so the roster cannot switch and the transcript is whole-trace")
 
 	handler := &focusShellHandler{target: importChiefAgentID}
 	fe := focusTestFrontend(t, db, handler)
