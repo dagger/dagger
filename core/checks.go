@@ -89,7 +89,7 @@ func (r *CheckGroup) List() []*Check {
 	return r.Checks
 }
 
-// Run all the checks in the group
+// Run all the checks in the group.
 func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error) {
 	r = r.Clone()
 

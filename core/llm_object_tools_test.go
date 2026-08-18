@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -133,4 +134,53 @@ func TestArgTypeToJSONSchema(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "array", got["type"])
 	require.Equal(t, "string", got["items"].(map[string]any)["type"])
+}
+
+// TestCombineSpanResult covers the combined result's contract: the target's
+// own output and the trace report are BOTH carried, in that order, with the
+// output under its own "== OUTPUT ==" heading, the report unlabelled (its own
+// sections are already headed), no empty sections and a closing ReadLogs
+// breadcrumb. A subtree that renders to nothing yields "" so the caller falls
+// back to the flat captured logs (never an empty tool result).
+func TestCombineSpanResult(t *testing.T) {
+	const spanID = "00000000000000aa"
+
+	// Renders to nothing: dagui filters internal/passthrough/encapsulated
+	// spans, so a tool call with children can still produce a blank report.
+	require.Empty(t, combineSpanResult(spanID, "", ""))
+	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n"))
+
+	// Report only: no empty OUTPUT section for a target that printed nothing,
+	// and no heading over the report itself.
+	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK")
+	require.NotContains(t, quiet, "OUTPUT")
+	require.NotContains(t, quiet, "TRACE REPORT")
+	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
+
+	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s")
+	// The tool's own output comes first, verbatim, under its own heading...
+	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
+	// ...then the report, bare.
+	require.Contains(t, got, "LINE-02\n\n• Foo.bar")
+	require.NotContains(t, got, "TRACE REPORT")
+	require.Less(t, strings.Index(got, "== OUTPUT =="), strings.Index(got, "• Foo.bar"))
+
+	// The breadcrumb names the span, in the same vocabulary as the flat
+	// path's "... N lines omitted (use ReadLogs(span: X) to read more)".
+	require.Contains(t, got, "use ReadLogs(span: "+spanID+") to read the full logs")
+	// ...and comes last, after the report's own trailing sections.
+	lines := strings.Split(got, "\n")
+	require.Contains(t, lines[len(lines)-1], "ReadLogs")
+}
+
+// TestDirectLogs covers the OUTPUT section's source: only the lines the
+// captured span printed itself, in order, unabridged.
+func TestDirectLogs(t *testing.T) {
+	require.Empty(t, directLogs(nil))
+	require.Empty(t, directLogs([]capturedLine{{text: "nested", direct: false}}))
+	require.Equal(t, "a\nb", directLogs([]capturedLine{
+		{text: "a", direct: true},
+		{text: "nested", direct: false},
+		{text: "b", direct: true},
+	}))
 }

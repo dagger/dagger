@@ -25,7 +25,7 @@ func (fe *frontendPretty) servicesReport(_ tuist.Context, r *renderer, zoomed bo
 	if zoomed {
 		return nil
 	}
-	roots := fe.db.SurfacedServices()
+	roots := fe.reportServices()
 	if len(roots) == 0 {
 		return nil
 	}
@@ -38,7 +38,7 @@ func (fe *frontendPretty) servicesReport(_ tuist.Context, r *renderer, zoomed bo
 	body := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 
 	hdrOut := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
-	return append([]string{reportHeadingLine(hdrOut, "SERVICES")}, body...)
+	return append([]string{reportHeadingLine(hdrOut, fe.agentStyle(), "SERVICES")}, body...)
 }
 
 // renderServiceNode renders one surfaced service at the given depth: its
@@ -78,7 +78,9 @@ func (fe *frontendPretty) serviceStatusLine(out TermOutput, r *renderer, node *d
 	parts = append(parts,
 		out.String(dur).Faint().String(),
 		out.String(status).Foreground(color).String(),
-		out.String("span="+node.Span.ID.String()).Faint().String(),
 	)
+	if fe.agentStyle() {
+		parts = append(parts, out.String("span="+node.Span.ID.String()).Faint().String())
+	}
 	return strings.Join(parts, " ")
 }

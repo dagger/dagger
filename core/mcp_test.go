@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -254,6 +255,241 @@ func requireLines(t *testing.T, got, want []string) {
 			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
 		}
 	}
+}
+
+// TestGuardText covers the shared bounding helper behind guardTraceReport and
+// guardToolResult: a per-line byte clamp on a rune boundary, then a total
+// budget enforced by dropping whole lines out of the MIDDLE behind the
+// guard's own marker.
+func TestGuardText(t *testing.T) {
+	guard := textGuard{
+		maxBytes:   400,
+		maxLineLen: 10,
+		headBytes:  240,
+		marker: func(lines, bytes int) string {
+			return fmt.Sprintf("<%d lines, %d bytes dropped>", lines, bytes)
+		},
+	}
+
+	// 60 lines of exactly 10 bytes: 659 bytes joined, well over the 400-byte
+	// budget.
+	var manyLines []string
+	for i := 1; i <= 60; i++ {
+		manyLines = append(manyLines, fmt.Sprintf("line-%02dxxx", i))
+	}
+	overBudget := strings.Join(manyLines, "\n")
+
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "within both limits passes through byte-identical",
+			input: "one\ntwo\nthree\n",
+			want:  "one\ntwo\nthree\n",
+		},
+		{
+			name:  "a long line is clamped inline",
+			input: "head\n" + strings.Repeat("x", 30) + "\ntail",
+			want:  "head\n" + strings.Repeat("x", 10) + "[... 20 bytes truncated]\ntail",
+		},
+		{
+			name:  "the clamp cuts on a rune boundary",
+			input: strings.Repeat("┃", 5), // 3 bytes each, so 10 lands mid-rune
+			want:  "┃┃┃[... 6 bytes truncated]",
+		},
+		{
+			name: "over budget drops the middle behind the guard's marker",
+			// head budget 240 keeps 21 lines (231 bytes), the 128-byte marker
+			// reserve leaves 41 for the tail, which keeps 3 (33 bytes), so 36
+			// lines (395 bytes) go.
+			input: overBudget,
+			want: strings.Join(append(append([]string{}, manyLines[:21]...),
+				"<36 lines, 395 bytes dropped>",
+				manyLines[57], manyLines[58], manyLines[59]), "\n"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := guardText(tc.input, guard)
+			if got != tc.want {
+				t.Fatalf("guardText() =\n%q\nwant\n%q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGuardToolResult covers the last-resort bound on a tool's return value.
+// The motivating case: editor_read on a 6-line JSON file whose second line is
+// a ~400 KB base64 blob (a saved session's llm_id). The call's own `limit: 15`
+// counted LINES, so the module's limit never fired and the blob landed
+// verbatim in the model's context.
+func TestGuardToolResult(t *testing.T) {
+	t.Run("a result within both limits is byte-identical", func(t *testing.T) {
+		for _, res := range []string{
+			"",
+			"(done)",
+			"{\"ok\":true}",
+			strings.Repeat("a line of ordinary tool output\n", 500),
+			strings.Repeat("x", llmLogsMaxLineLen), // exactly at the line clamp
+		} {
+			if got := guardToolResult(res); got != res {
+				t.Fatalf("guardToolResult modified an in-budget result of %d bytes:\ngot  %.80q\nwant %.80q",
+					len(res), got, res)
+			}
+		}
+	})
+
+	t.Run("a single monster line is clamped, the rest survives", func(t *testing.T) {
+		blob := strings.Repeat("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=", 12000) // ~420 KB
+		res := "{\n" +
+			"  \"llm_id\": \"" + blob + "\",\n" +
+			"  \"model\": \"claude\",\n" +
+			"  \"messages\": 3,\n" +
+			"  \"tokens\": 1234\n" +
+			"}"
+
+		got := guardToolResult(res)
+		if len(got) > llmToolResultMaxBytes {
+			t.Fatalf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+		}
+		lines := strings.Split(got, "\n")
+		if len(lines) != 6 {
+			t.Fatalf("expected the 6 lines to survive as lines, got %d", len(lines))
+		}
+		for i, want := range map[int]string{
+			0: "{",
+			2: "  \"model\": \"claude\",",
+			3: "  \"messages\": 3,",
+			4: "  \"tokens\": 1234",
+			5: "}",
+		} {
+			if lines[i] != want {
+				t.Errorf("line %d = %q, want %q", i, lines[i], want)
+			}
+		}
+		if !strings.HasPrefix(lines[1], "  \"llm_id\": \""+blob[:100]) {
+			t.Errorf("clamped line lost its head: %.60q", lines[1])
+		}
+		if !strings.HasSuffix(lines[1], " bytes truncated]") {
+			t.Errorf("clamped line lacks its inline marker: %.60q", lines[1][max(0, len(lines[1])-60):])
+		}
+		if n := len(lines[1]); n > llmLogsMaxLineLen+64 {
+			t.Errorf("clamped line is %d bytes, want ~%d", n, llmLogsMaxLineLen)
+		}
+		// The whole point: the blob does not reach the model.
+		if len(got) > 4*1024 {
+			t.Errorf("guarded result is %d bytes (from %d), want the blob gone", len(got), len(res))
+		}
+	})
+
+	t.Run("a total-budget blowout drops the middle", func(t *testing.T) {
+		var lines []string
+		lines = append(lines, "FIRST LINE OF THE RESULT")
+		for i := range 20000 {
+			lines = append(lines, fmt.Sprintf("%6d: some ordinary line of file content", i))
+		}
+		lines = append(lines, "LAST LINE OF THE RESULT")
+		res := strings.Join(lines, "\n")
+
+		got := guardToolResult(res)
+		if len(got) > llmToolResultMaxBytes {
+			t.Fatalf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+		}
+		if !strings.HasPrefix(got, "FIRST LINE OF THE RESULT\n") {
+			t.Errorf("head did not survive: %.60q", got)
+		}
+		if !strings.HasSuffix(got, "\nLAST LINE OF THE RESULT") {
+			t.Errorf("tail did not survive: %.60q", got[max(0, len(got)-60):])
+		}
+
+		// Exactly one marker, and every other line is a whole input line.
+		input := map[string]bool{}
+		for _, line := range lines {
+			input[line] = true
+		}
+		var markers int
+		for _, line := range strings.Split(got, "\n") {
+			if strings.Contains(line, "omitted from the middle of this result") {
+				markers++
+				if !strings.Contains(line, "re-run the call more narrowly") {
+					t.Errorf("marker doesn't say what to do about it: %q", line)
+				}
+				continue
+			}
+			if !input[line] {
+				t.Errorf("kept line is not a whole input line: %q", line)
+			}
+		}
+		if markers != 1 {
+			t.Fatalf("expected exactly one marker, got %d", markers)
+		}
+
+		// Both ends are generous: the head keeps its two-thirds share, and the
+		// tail is not a token gesture.
+		head, tail, ok := strings.Cut(got, "... ")
+		if !ok {
+			t.Fatal("expected to find the marker")
+		}
+		if len(head) < llmToolResultMaxBytes/2 {
+			t.Errorf("head is only %d bytes of a %d-byte budget", len(head), llmToolResultMaxBytes)
+		}
+		if len(tail) < 1024 {
+			t.Errorf("tail is only %d bytes", len(tail))
+		}
+	})
+
+	t.Run("multi-byte runes are never split", func(t *testing.T) {
+		// A tree-drawing report: 3-byte runes straddling both the per-line
+		// clamp and the total budget.
+		res := strings.Repeat("┃", 5000) + "\n" +
+			strings.Repeat(strings.Repeat("◼ ┃ a nested span row\n", 1), 5000)
+
+		got := guardToolResult(res)
+		if !utf8.ValidString(got) {
+			t.Fatal("guard split a rune: result is not valid UTF-8")
+		}
+		if len(got) > llmToolResultMaxBytes {
+			t.Fatalf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+		}
+	})
+
+	t.Run("degenerate sizes", func(t *testing.T) {
+		// One line, longer than the whole budget: the per-line clamp alone
+		// brings it back inside.
+		single := strings.Repeat("y", llmToolResultMaxBytes+1)
+		got := guardToolResult(single)
+		if len(got) > llmToolResultMaxBytes {
+			t.Errorf("single-line result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+		}
+		if !strings.HasPrefix(got, strings.Repeat("y", llmLogsMaxLineLen)) {
+			t.Errorf("single-line result lost its head: %.40q", got)
+		}
+
+		// A result exactly at the budget passes through; one line more does
+		// not, and still comes back within budget.
+		line := strings.Repeat("z", 63) // 64 bytes with its newline
+		atBudget := strings.TrimSuffix(strings.Repeat(line+"\n", llmToolResultMaxBytes/64), "\n")
+		if len(atBudget) != llmToolResultMaxBytes-1 {
+			t.Fatalf("test setup: %d bytes, want %d", len(atBudget), llmToolResultMaxBytes-1)
+		}
+		if got := guardToolResult(atBudget); got != atBudget {
+			t.Errorf("a result at the budget was modified (%d -> %d bytes)", len(atBudget), len(got))
+		}
+		overBudget := atBudget + "\n" + line
+		got = guardToolResult(overBudget)
+		if got == overBudget {
+			t.Error("a result over the budget passed through untouched")
+		}
+		if len(got) > llmToolResultMaxBytes {
+			t.Errorf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+		}
+	})
 }
 
 // TestInternalSpanFilterSubtreeBounds covers beneathInternal's containment

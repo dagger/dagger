@@ -178,8 +178,11 @@ func TestTestHierarchyCountsAndSuites(t *testing.T) {
 	if parentNode == nil {
 		t.Fatal("missing parent test node")
 	}
-	if got := parentNode.Counts.Total(); got != 3 {
-		t.Fatalf("expected parent plus two subtests to count as 3 tests, got %d", got)
+	if got := parentNode.Counts.Total(); got != 2 {
+		t.Fatalf("expected only the two leaf subtests to count, got %d", got)
+	}
+	if got := parentNode.Counts.Passing; got != 2 {
+		t.Fatalf("expected two passing leaves, got %d", got)
 	}
 
 	db = NewDB()
@@ -196,8 +199,17 @@ func TestTestHierarchyCountsAndSuites(t *testing.T) {
 	failingChild := testSnapshot(2, "child", passingParent.ID, TestStatusFailure)
 	db.ImportSnapshots([]SpanSnapshot{passingParent, failingChild})
 	parentNode = db.TestView().FindCaseByName("parent")
-	if parentNode.Counts.Failing != 1 || parentNode.Counts.Passing != 1 || parentNode.Category != TestCategoryFailing {
-		t.Fatalf("expected passing parent + failing child aggregate failure, got counts=%+v category=%s", parentNode.Counts, parentNode.Category)
+	if parentNode.Counts.Failing != 1 || parentNode.Counts.Passing != 0 || parentNode.Category != TestCategoryFailing {
+		t.Fatalf("expected only the failing child to count, got counts=%+v category=%s", parentNode.Counts, parentNode.Category)
+	}
+
+	db = NewDB()
+	failedParent = testSnapshot(1, "parent", SpanID{}, TestStatusFailure)
+	failingChild = testSnapshot(2, "child", failedParent.ID, TestStatusFailure)
+	db.ImportSnapshots([]SpanSnapshot{failedParent, failingChild})
+	parentNode = db.TestView().FindCaseByName("parent")
+	if parentNode.Counts.Failing != 1 || parentNode.Counts.Total() != 1 {
+		t.Fatalf("expected a failing parent not to double-count its failing child, got counts=%+v", parentNode.Counts)
 	}
 
 	db = NewDB()

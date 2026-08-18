@@ -253,6 +253,102 @@ func TestHasDescendants(t *testing.T) {
 	}
 }
 
+// TestScopedSpanSelectors covers the index-backed queries a scoped trace
+// load is built from: latest-snapshot span reads, ancestor closures, and the
+// check/test marker index.
+func TestScopedSpanSelectors(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", 256)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	spans := []Span{
+		{TraceID: "trace-a", SpanID: "root"},
+		{TraceID: "trace-a", SpanID: "mid", ParentSpanID: validString("root")},
+		// Two snapshots: the scoped load must see only the newest.
+		{TraceID: "trace-a", SpanID: "leaf", ParentSpanID: validString("mid"), Attributes: []byte("live")},
+		{TraceID: "trace-a", SpanID: "leaf", ParentSpanID: validString("mid"), Attributes: []byte("ended")},
+		// Check/test markers are byte-scanned from the encoded attributes.
+		{
+			TraceID: "trace-a", SpanID: "check", ParentSpanID: validString("root"),
+			Attributes: []byte(`[{"key":"` + telemetry.CheckNameAttr + `","value":{"stringValue":"lint"}}]`),
+		},
+		{
+			TraceID: "trace-a", SpanID: "test", ParentSpanID: validString("root"),
+			Attributes: []byte(`[{"key":"test.case.name","value":{"stringValue":"TestFoo"}}]`),
+		},
+	}
+	_, err = store.AppendSpans(spans)
+	require.NoError(t, err)
+
+	require.True(t, store.HasSpan("leaf"))
+	require.False(t, store.HasSpan("missing"))
+
+	// Latest rows, in append order, unknown IDs skipped.
+	rows, err := store.SelectSpansLatest(t.Context(), setOf("leaf", "root", "missing"))
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 4}, spanRowIDs(rows))
+	require.Equal(t, []byte("ended"), rows[1].Attributes)
+
+	// The closure walks each member's chain to its root and dedupes.
+	closure := store.AncestorClosure(setOf("leaf", "check"))
+	require.ElementsMatch(t, []string{"leaf", "mid", "check", "root"}, keysOf(closure))
+
+	checks, tests := store.CheckTestSpanIDs()
+	require.ElementsMatch(t, []string{"check"}, keysOf(checks))
+	require.ElementsMatch(t, []string{"test"}, keysOf(tests))
+}
+
+// TestSelectLogsForSpans covers the scoped log fetch: append order across
+// spans, unknown spans skipped, and the per-span tail cap.
+func TestSelectLogsForSpans(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", 256)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	logs := []Log{
+		{SpanID: validString("a"), Body: []byte("a1")},
+		{SpanID: validString("b"), Body: []byte("b1")},
+		{SpanID: validString("a"), Body: []byte("a2")},
+		{SpanID: validString("c"), Body: []byte("c1")},
+		{SpanID: validString("a"), Body: []byte("a3")},
+	}
+	_, err = store.AppendLogs(logs)
+	require.NoError(t, err)
+
+	page, err := store.SelectLogsForSpans(t.Context(), setOf("a", "b", "missing"), 0)
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 2, 3, 5}, logIDs(page))
+
+	// The tail cap keeps each span's newest rows, in global append order.
+	page, err = store.SelectLogsForSpans(t.Context(), setOf("a", "b"), 2)
+	require.NoError(t, err)
+	require.Equal(t, []int64{2, 3, 5}, logIDs(page))
+}
+
+func setOf(ids ...string) map[string]struct{} {
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set
+}
+
+func keysOf(set map[string]struct{}) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func spanRowIDs(rows []Span) []int64 {
+	ids := make([]int64, len(rows))
+	for i, row := range rows {
+		ids[i] = row.ID
+	}
+	return ids
+}
+
 func spanLink(t *testing.T, traceID, spanID, purpose string) sdktrace.Link {
 	t.Helper()
 	tid, err := trace.TraceIDFromHex(traceID)

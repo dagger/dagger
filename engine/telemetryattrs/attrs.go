@@ -75,6 +75,19 @@ const (
 	ProgressUnitAttr = "dagger.io/progress.unit"
 )
 
+// Call payloads over OTel logs (dagger.io/dag.call.payload.*).
+//
+// Calls whose frames never receive spans still need to be reconstructable by
+// trace consumers. The engine therefore publishes their encoded call payloads
+// as log attributes, deduplicated by digest for the session.
+const (
+	// DagCallPayloadDigestAttr identifies the call frame encoded by the record.
+	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
+
+	// DagCallPayloadAttr carries one base64-encoded callpbv1.Call payload.
+	DagCallPayloadAttr = "dagger.io/dag.call.payload"
+)
+
 // wcprof × OTel vocabulary.
 //
 // These attributes let the engine emit, on its ordinary OTel spans, the
