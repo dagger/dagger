@@ -60,25 +60,39 @@ func (s *workspaceSchema) initModuleChanges(
 		return res, scope, fmt.Errorf("SDK name is required")
 	}
 
-	// Resolve the workspace-relative path for the new module. Empty = default
-	// layout; we treat that as the signal to auto-install in [modules.*].
-	relPath := args.Path
-	usingDefaultPath := relPath == ""
-	if usingDefaultPath {
-		relPath = filepath.Join(".dagger", "modules", args.Name)
-	}
-	relPath = filepath.Clean(relPath)
-	if filepath.IsAbs(relPath) {
-		return res, scope, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
-	}
-	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-		return res, scope, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
+	// --path reads like every other workspace path a user types: relative to
+	// where they are standing, with a leading "/" meaning the workspace root
+	// (resolveWorkspacePath, the same resolver `dagger install` uses for a
+	// local ref). Everything downstream of here is workspace-root-relative.
+	// Resolved before the config is read so a bad path is reported as a bad
+	// path, not as whatever else the workspace's dagger.toml turns out to be
+	// missing or malformed about.
+	var relPath string
+	usingDefaultPath := args.Path == ""
+	if !usingDefaultPath {
+		var err error
+		relPath, err = resolveWorkspacePath(args.Path, ws.Cwd)
+		if err != nil {
+			return res, scope, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
+		}
 	}
 
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return res, scope, err
 	}
+
+	// An empty --path means the default layout, which is also the signal to
+	// auto-install in [modules.*]. The default is anchored at the directory
+	// holding the dagger.toml being edited, not at the workspace root: a config
+	// in a subdirectory records module sources relative to itself, so
+	// scaffolding anywhere else would write an entry pointing outside its own
+	// project. ConfigDir is already a clean path inside the root, so the join
+	// cannot escape.
+	if usingDefaultPath {
+		relPath = filepath.Join(staged.ConfigDir, ".dagger", "modules", args.Name)
+	}
+
 	cfg := staged.Config
 	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
@@ -128,7 +142,14 @@ func (s *workspaceSchema) initModuleChanges(
 	}
 
 	if usingDefaultPath {
-		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: relPath}
+		// [modules.<name>].source is resolved against the config directory,
+		// while relPath is workspace-root-relative — same convention split
+		// `dagger install` handles when it records a local ref.
+		configSource, err := filepath.Rel(staged.ConfigDir, relPath)
+		if err != nil {
+			return res, scope, fmt.Errorf("resolve module source %q from %q: %w", relPath, staged.ConfigDir, err)
+		}
+		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: filepath.ToSlash(configSource)}
 	}
 
 	// Render new dagger.toml bytes through the format-preserving editor.
@@ -186,7 +207,11 @@ func (s *workspaceSchema) initModuleChanges(
 	if !ok {
 		return res, scope, fmt.Errorf("%q does not support module init", args.SDK)
 	}
-	sdkChanges, err := moduleInitializer.InitModule(ctx, parent, args.Name, relPath, sdkArgs)
+	sdkWorkspace, err := rootAnchoredWorkspace(ctx, parent)
+	if err != nil {
+		return res, scope, err
+	}
+	sdkChanges, err := moduleInitializer.InitModule(ctx, sdkWorkspace, args.Name, relPath, sdkArgs)
 	if err != nil {
 		return res, scope, fmt.Errorf("sdk module init: %w", err)
 	}

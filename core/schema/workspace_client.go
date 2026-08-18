@@ -47,7 +47,7 @@ func (s *workspaceSchema) initClientChanges(
 		return res, scope, fmt.Errorf("module ref is required")
 	}
 
-	clientPath, err := cleanWorkspaceClientPath(args.Path)
+	clientPath, err := resolveWorkspaceClientPath(args.Path, ws.Cwd)
 	if err != nil {
 		return res, scope, err
 	}
@@ -132,7 +132,11 @@ func (s *workspaceSchema) initClientChanges(
 	if !ok {
 		return res, scope, fmt.Errorf("%q does not support client init", args.SDK)
 	}
-	sdkChanges, err := clientInitializer.InitClient(ctx, parent, clientPath, moduleRef, sdkArgs)
+	sdkWorkspace, err := rootAnchoredWorkspace(ctx, parent)
+	if err != nil {
+		return res, scope, err
+	}
+	sdkChanges, err := clientInitializer.InitClient(ctx, sdkWorkspace, clientPath, moduleRef, sdkArgs)
 	if err != nil {
 		return res, scope, fmt.Errorf("sdk client init: %w", err)
 	}
@@ -191,18 +195,20 @@ func (s *workspaceSchema) resolveClientTargetModule(
 	return src, nil
 }
 
-func cleanWorkspaceClientPath(path string) (string, error) {
-	cleaned := filepath.Clean(path)
-	if cleaned == "." || cleaned == string(filepath.Separator) {
+// resolveWorkspaceClientPath resolves the client's output directory the way
+// module init resolves --path, and every other workspace path a user types:
+// relative to where they are standing, with a leading "/" meaning the
+// workspace root. The result is workspace-root-relative, which is what the
+// as-sdk client entry records and what generation is scoped to.
+func resolveWorkspaceClientPath(pathArg, cwd string) (string, error) {
+	resolved, err := resolveWorkspacePath(pathArg, cwd)
+	if err != nil {
+		return "", fmt.Errorf("client path %q must not escape the workspace root", pathArg)
+	}
+	if resolved == "." {
 		return "", fmt.Errorf("client path must point to a directory below the workspace root")
 	}
-	if filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("client path %q must be workspace-relative, not absolute", path)
-	}
-	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("client path %q must not escape the workspace root", path)
-	}
-	return cleaned, nil
+	return resolved, nil
 }
 
 func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref string) (configRef string, loadRef string, _ error) {

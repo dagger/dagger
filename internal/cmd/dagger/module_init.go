@@ -144,15 +144,17 @@ What the engine does (atomically, in one Changeset):
      scaffold at <path>.
   3. Records [[modules.<sdk-module>.as-sdk.modules]] authoring entry for
      <path>.
-  4. When --path is the default (.dagger/modules/<name>), also installs
-     the new module as [modules.<name>] so it's callable here.
+  4. When --path is omitted, also installs the new module as
+     [modules.<name>] so it's callable here.
   5. Runs the SDK's generators scoped to <path>, so the new module is
      loadable without a separate 'dagger generate'. Pass --no-generate to
      skip this.
 
---path defaults to .dagger/modules/<name>. Custom paths skip the
-[modules.<name>] install (the user is managing workspace layout
-explicitly).`,
+When --path is omitted, the module is created under .dagger/modules/<name>
+beside the dagger.toml being edited. Pass --path to choose a location: it is
+relative to the current directory, and a leading "/" means the workspace
+root. A custom path skips the [modules.<name>] install (the user is managing
+workspace layout explicitly).`,
 	Example: "dagger sdk install go && dagger module init go my-module",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -161,7 +163,7 @@ explicitly).`,
 }
 
 func init() {
-	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
+	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path, relative to the current directory (\"/\" = workspace root; default: .dagger/modules/<name> beside dagger.toml)")
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
 	moduleCmd.AddCommand(moduleInitCmd)
 }
@@ -187,7 +189,11 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
 		current := dag.CurrentWorkspace()
-		updated := current.WithInitModule(name, sdkName, opts)
+		// Init edits the workspace config and scaffolds beside it, both of
+		// which can sit above the caller, and it exports at the workspace
+		// root. Read the diff from the root so changes() takes them in --
+		// same reason `dagger setup` does this for migration.
+		updated := current.WithInitModule(name, sdkName, opts).WithWorkdir(".")
 		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})
