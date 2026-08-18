@@ -652,46 +652,57 @@ func argTypeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error
 			return nil, fmt.Errorf("elem type: %w", err)
 		}
 		jsonSchema["items"] = items
-		return jsonSchema, nil
-	}
-	switch t.NamedType {
-	case "Int":
-		jsonSchema["type"] = "integer"
-	case "Float":
-		jsonSchema["type"] = "number"
-	case "String", "ID":
-		jsonSchema["type"] = "string"
-	case "Boolean":
-		jsonSchema["type"] = "boolean"
-	default:
-		typeDef, found := schema.Types[t.NamedType]
-		if !found {
-			return nil, fmt.Errorf("unknown type: %q", t.NamedType)
-		}
-		switch typeDef.Kind {
-		case ast.InputObject:
-			jsonSchema["type"] = "object"
-			properties := map[string]any{}
-			for _, f := range typeDef.Fields {
-				fieldSpec, err := argTypeToJSONSchema(schema, f.Type)
-				if err != nil {
-					return nil, fmt.Errorf("field %q type: %w", f.Name, err)
-				}
-				properties[f.Name] = fieldSpec
-			}
-			jsonSchema["properties"] = properties
-		case ast.Enum:
+	} else {
+		switch t.NamedType {
+		case "Int":
+			jsonSchema["type"] = "integer"
+		case "Float":
+			jsonSchema["type"] = "number"
+		case "String", "ID":
 			jsonSchema["type"] = "string"
-			var enum []string
-			for _, val := range typeDef.EnumValues {
-				enum = append(enum, val.Name)
-			}
-			jsonSchema["enum"] = enum
-		case ast.Scalar:
-			jsonSchema["type"] = "string"
+		case "Boolean":
+			jsonSchema["type"] = "boolean"
 		default:
-			return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
+			typeDef, found := schema.Types[t.NamedType]
+			if !found {
+				return nil, fmt.Errorf("unknown type: %q", t.NamedType)
+			}
+			switch typeDef.Kind {
+			case ast.InputObject:
+				jsonSchema["type"] = "object"
+				properties := map[string]any{}
+				for _, f := range typeDef.Fields {
+					fieldSpec, err := argTypeToJSONSchema(schema, f.Type)
+					if err != nil {
+						return nil, fmt.Errorf("field %q type: %w", f.Name, err)
+					}
+					properties[f.Name] = fieldSpec
+				}
+				jsonSchema["properties"] = properties
+			case ast.Enum:
+				jsonSchema["type"] = "string"
+				var enum []string
+				for _, val := range typeDef.EnumValues {
+					enum = append(enum, val.Name)
+				}
+				jsonSchema["enum"] = enum
+			case ast.Scalar:
+				jsonSchema["type"] = "string"
+			default:
+				return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
+			}
 		}
+	}
+	// GraphQL nullability applies at every type boundary, including list
+	// elements. Keep the concrete schema intact so enums and nested objects still
+	// constrain non-null values, and add null as a separate valid alternative.
+	if !t.NonNull {
+		return map[string]any{
+			"anyOf": []any{
+				jsonSchema,
+				map[string]any{"type": "null"},
+			},
+		}, nil
 	}
 	return jsonSchema, nil
 }
