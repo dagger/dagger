@@ -33,3 +33,29 @@ func TestTranslateErrorContextPassthrough(t *testing.T) {
 	err := translateError(context.Canceled, "")
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestAnnotateWithStderr(t *testing.T) {
+	err := annotateWithStderr(errors.New("exit status 128"), "remote: Counting objects\nfatal: shallow file has changed since we read it\n")
+	require.ErrorContains(t, err, "exit status 128")
+	require.ErrorContains(t, err, "shallow file has changed since we read it")
+
+	// already-classified errors don't get their own text repeated
+	sentinel := annotateWithStderr(ErrGitAuthFailed, "fatal: Authentication failed")
+	require.ErrorIs(t, sentinel, ErrGitAuthFailed)
+}
+
+func TestAnnotateWithStderrRedactsCredentials(t *testing.T) {
+	cases := []string{
+		"fatal: Authentication failed for 'https://user:hunter2@github.com/org/repo.git/'",
+		"remote: fatal: unable to access 'https://x-access-token:ghp_hunter2@github.com/org/repo/': 403",
+		"fatal: could not read Password for 'https://hunter2@gitlab.com'",
+	}
+
+	for _, stderr := range cases {
+		t.Run(stderr, func(t *testing.T) {
+			err := annotateWithStderr(errors.New("exit status 128"), stderr)
+			require.NotContains(t, err.Error(), "hunter2")
+			require.Contains(t, err.Error(), "xxxxx@")
+		})
+	}
+}

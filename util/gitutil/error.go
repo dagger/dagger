@@ -3,6 +3,8 @@ package gitutil
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -52,4 +54,50 @@ func translateError(err error, stderr string) error {
 	}
 
 	return err
+}
+
+// credentialedURL matches the userinfo of a URL appearing anywhere in a line,
+// e.g. "fatal: Authentication failed for 'https://user:token@host/repo'".
+var credentialedURL = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@\s]*@`)
+
+// redactCredentials masks credentials embedded in URLs. Anything git prints on
+// stderr is remote-controlled and routinely echoes back the URL it was given,
+// so it must never be attached to an error verbatim.
+func redactCredentials(s string) string {
+	return credentialedURL.ReplaceAllString(s, "${1}xxxxx@")
+}
+
+// annotateWithStderr keeps git's own explanation attached to the error. Without
+// it an unclassified failure surfaces only as "exit status 128", which is what
+// made recurring CI failures unattributable.
+func annotateWithStderr(err error, stderr string) error {
+	if err == nil {
+		return nil
+	}
+	// `git fetch --progress` writes sideband progress to stderr too, so the very
+	// last line is often a progress update rather than the reason: prefer git's
+	// own diagnostic prefixes when they are there.
+	var lastLine, lastDiagnostic string
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lastLine = line
+		if strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "error:") {
+			lastDiagnostic = line
+		}
+	}
+	if lastDiagnostic != "" {
+		lastLine = lastDiagnostic
+	}
+	lastLine = redactCredentials(lastLine)
+	if lastLine == "" || strings.Contains(err.Error(), lastLine) {
+		return err
+	}
+	const maxLen = 300
+	if len(lastLine) > maxLen {
+		lastLine = lastLine[:maxLen] + "…"
+	}
+	return fmt.Errorf("%w: %s", err, lastLine)
 }

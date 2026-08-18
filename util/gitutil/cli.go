@@ -233,6 +233,16 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 
 	// Block sneaky repositories from using repos from the filesystem as submodules.
 	cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")
+	// Auto-maintenance detaches by default, so it outlives the command that
+	// spawned it: it escapes whatever lock the caller held, and for engine-managed
+	// repos it can still be rewriting refs (including .git/shallow, which the next
+	// fetch stat-checks) after the snapshot it lives in has been unmounted. Running
+	// it synchronously is enough to close that; disabling it outright would leave
+	// the long-lived shared mirrors accumulating a pack per fetch forever.
+	cmd.Args = append(cmd.Args,
+		"-c", "gc.autoDetach=false",
+		"-c", "maintenance.autoDetach=false",
+	)
 	if cli.workTree != "" {
 		cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
 	}
@@ -312,7 +322,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 			}
 		default:
 		}
-		return buf.Bytes(), fmt.Errorf("git error: %w", translateError(err, errbuf.String()))
+		return buf.Bytes(), fmt.Errorf("git error: %w", annotateWithStderr(translateError(err, errbuf.String()), errbuf.String()))
 	}
 	return buf.Bytes(), nil
 }
