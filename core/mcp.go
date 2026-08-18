@@ -49,9 +49,6 @@ type LLMTool struct {
 	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
 	Schema map[string]any `json:"schema"`
-	// Whether the tool schema is strict.
-	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
-	Strict bool `json:"-"`
 	// Whether we should hide the LLM tool call span in favor of just showing its
 	// child spans.
 	HideSelf bool `json:"-"`
@@ -2139,7 +2136,6 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{"span"},
 			"additionalProperties": false,
 		},
-		Strict: false,
 		Call:   m.readLogsTool(srv),
 	})
 	allTools.Add(LLMTool{
@@ -2168,7 +2164,6 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Strict: false,
 		Call:   m.readTraceTool(srv),
 	})
 	allTools.Add(LLMTool{
@@ -2184,7 +2179,6 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Strict: false,
 		Call:   m.listServicesTool(srv),
 	})
 }

@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -326,6 +328,60 @@ func TestExplicitProviderRouting(t *testing.T) {
 	// An unknown provider is an error, not a silent fallback.
 	_, err = r.Route("some-model", "bogus")
 	assert.ErrorContains(t, err, `unknown LLM provider "bogus"`)
+}
+
+// TestOpenAIRequestOmitsToolStrict locks the provider boundary to the
+// non-strict JSON schema our GraphQL-derived tools use. Optional/defaulted
+// arguments remain properties but are intentionally absent from required.
+func TestOpenAIRequestOmitsToolStrict(t *testing.T) {
+	requestBody := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		requestBody <- body
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id":"chatcmpl-test",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
+		}`)
+	}))
+	t.Cleanup(server.Close)
+
+	schema := objectToolsTestSchema(t)
+	toolSchema, err := objectMethodSchema(schema, fieldByName(schema.Types["Doug"], "read"))
+	require.NoError(t, err)
+
+	endpoint := &LLMEndpoint{
+		Model:    "test-model",
+		Provider: OpenAI,
+		BaseURL:  server.URL,
+	}
+	client := newOpenAIClient(endpoint, "", true)
+	_, err = client.SendQuery(t.Context(), llmTestHistory(), []LLMTool{{
+		Name:   "read",
+		Schema: toolSchema,
+	}}, &LLMCallOpts{})
+	require.NoError(t, err)
+
+	var request map[string]any
+	require.NoError(t, json.Unmarshal(<-requestBody, &request))
+	tools := request["tools"].([]any)
+	require.Len(t, tools, 1)
+	function := tools[0].(map[string]any)["function"].(map[string]any)
+	require.NotContains(t, function, "strict")
+
+	parameters := function["parameters"].(map[string]any)
+	properties := parameters["properties"].(map[string]any)
+	require.Contains(t, properties, "offset")
+	require.Contains(t, properties, "date")
+	require.Equal(t, []any{"filePath"}, parameters["required"])
 }
 
 func TestContentBlockInputRoundTrip(t *testing.T) {

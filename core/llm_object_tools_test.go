@@ -42,6 +42,7 @@ type Doug {
     source: ID! @expectedType(name: "Workspace"),
     filePath: String!,
     offset: Int! = 0,
+    date: String = null,
   ): String!
 
   "Write a file."
@@ -171,6 +172,9 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Equal(t, "string", props["filePath"].(map[string]any)["type"])
 	require.Equal(t, "integer", props["offset"].(map[string]any)["type"])
 	require.EqualValues(t, 0, props["offset"].(map[string]any)["default"])
+	require.Equal(t, "string", props["date"].(map[string]any)["type"])
+	require.Contains(t, props["date"].(map[string]any), "default")
+	require.Nil(t, props["date"].(map[string]any)["default"])
 	require.Equal(t, []string{"filePath"}, readSchema["required"])
 	require.Equal(t, false, readSchema["additionalProperties"])
 
