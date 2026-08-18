@@ -2066,7 +2066,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{"span"},
 			"additionalProperties": false,
 		},
-		Call:   m.readLogsTool(srv),
+		Call: m.readLogsTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
@@ -2094,7 +2094,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Call:   m.readTraceTool(srv),
+		Call: m.readTraceTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
@@ -2109,7 +2109,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Call:   m.listServicesTool(srv),
+		Call: m.listServicesTool(srv),
 	})
 }
 
