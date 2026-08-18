@@ -17,6 +17,21 @@ const (
 	// of being marked caused-failed.
 	DagBlockedAttr = "dagger.io/dag.blocked"
 
+	// DagLeftRunningAttr marks a span that was still running when the run that
+	// produced it ended, and was sealed on that account rather than because
+	// anything canceled it. It qualifies dagger.io/dag.canceled, which is why
+	// it is a second attribute: the UI reports "left running after the root
+	// span completed" instead of "says it is canceled".
+	//
+	// dagui derives this fact for its OWN root (DB.integrateSpan cancels
+	// everything still running when the root ends) and needs no attribute to
+	// do it. It exists for a trace IMPORTED from another session
+	// (hack/designs/resume-from-trace.md §5.1.2), whose root is not this DB's
+	// root and therefore never triggers that sweep: the importer seals the
+	// capture's unfinished spans itself, on the protobuf, and this is how it
+	// says so. (bool)
+	DagLeftRunningAttr = "dagger.io/dag.left_running"
+
 	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
 	// value is the DAG digest of the corresponding withPrompt or withResponse
 	// call, enabling the TUI to branch from that point in the conversation.
@@ -77,14 +92,45 @@ const (
 
 // Call payloads over OTel logs (dagger.io/dag.call.payload.*).
 //
-// Calls whose frames never receive spans still need to be reconstructable by
-// trace consumers. The engine therefore publishes their encoded call payloads
-// as log attributes, deduplicated by digest for the session.
+// A client rebuilds a dagql call ID by walking the chain a call references
+// and looking up a payload for EVERY frame it reaches (dagui's
+// extractIntoDAG). The span channel can only ever carry the payload of a
+// call that got its own span, and several frames structurally never do:
+// introspection / isMeta / skipped selections, digests the per-session span
+// dedupe already spent, frames buried inside an ID-literal argument (which
+// LiteralID.pb flattens to a bare digest reference), and members of an array
+// result that are only ever sub-selected. Those frames are unreachable to a
+// client, forever, however long it watches.
+//
+// So payloads also ride LOG RECORDS, exactly like agent state above and for
+// the same structural reason: the log channel is the one stream that can
+// carry data no span exists to hold. The engine publishes the transitive
+// closure of a call's ID when it emits that call's span — every frame the
+// chain references, minus the ones already sent this session — so a chain is
+// rebuildable even if only ONE of its frames was ever spanned.
+//
+// This is purely ADDITIVE to dagger.io/dag.call on the span, which is
+// unchanged: an old client keeps working against a new engine, and a new
+// client against an old engine. Consumers fold a record carrying
+// DagCallPayloadAttr into their call-payload store and must not render it as
+// log text; it may arrive before OR after the span that references the
+// digest (separate pipelines, separate batching, no ordering guarantee).
 const (
-	// DagCallPayloadDigestAttr identifies the call frame encoded by the record.
+	// DagCallPayloadDigestAttr is the call digest the payload belongs to —
+	// the same key dagger.io/dag.digest carries on a span, and the map key a
+	// consumer files the payload under without having to decode it. (string)
 	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
 
-	// DagCallPayloadAttr carries one base64-encoded callpbv1.Call payload.
+	// DagCallPayloadAttr is one protobuf-encoded callpbv1.Call (a single
+	// frame, not a DAG), base64-encoded — the identical encoding
+	// dagger.io/dag.call uses on spans, so both channels decode through
+	// Call.Decode.
+	//
+	// Base64 rather than the log data model's native Bytes value, which does
+	// NOT survive the trip: the engine persists each client's records via
+	// telemetry.LogValueToPB (engine/server/telemetry.go), whose switch has
+	// no log.KindBytes case and silently encodes such a value as the string
+	// "INVALID". (string)
 	DagCallPayloadAttr = "dagger.io/dag.call.payload"
 )
 
@@ -108,14 +154,17 @@ const (
 //     that same frozen snapshot, so an attribute written later would never
 //     reach a client.
 //
-//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr) rides LOG RECORDS
-//     attributed to the loop span, exactly like streaming progress above and
-//     for exactly the same reason. Each transition emits a fresh record;
-//     latest record wins. Records are emitted only when the PROJECTED state
-//     changes, not on every internal fact change.
+//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr, AgentStopReasonAttr,
+//     AgentSnapshotDigestAttr) rides LOG RECORDS attributed to the loop span,
+//     exactly like streaming progress above and for exactly the same reason.
+//     Each transition emits a fresh record; latest record wins. State records
+//     are emitted only when the PROJECTED state changes, not on every internal
+//     fact change; snapshot records are emitted on every commit, which is why
+//     they are a record of their own rather than a field on the state record.
 //
-// A record carrying AgentStateAttr is agent state, not log text: consumers
-// fold it into the agent's roster entry and must not render it as output.
+// A record carrying AgentStateAttr or AgentSnapshotDigestAttr is agent data,
+// not log text: consumers fold it into the agent's roster entry and must not
+// render it as output.
 const (
 	// AgentAttr marks the long-lived loop span of a started agent runtime.
 	// The span exists iff the loop actually started, runs exactly as long as
@@ -152,6 +201,35 @@ const (
 	// is WAITING_INPUT — the parked question's text. Absent otherwise, and an
 	// empty value clears a previously reported one. (string)
 	AgentWaitingOnAttr = "dagger.io/agent.waiting_on"
+
+	// AgentStopReasonAttr distinguishes a stop somebody asked for from a stop
+	// the session's teardown performed: "EXPLICIT" | "SESSION". It rides the
+	// terminal state record, and is empty on every other one.
+	//
+	// Without it every agent in a cleanly closed session looks dismissed:
+	// session close kills every runtime (AgentRuntimes.KillAll), so a
+	// deliberately stopped worker and a merely torn-down one publish
+	// identical STOPPED records — and a client restoring that trace must
+	// either resurrect the dismissals or restore nothing at all. A STOPPED
+	// record with no reason is a trace from an engine that predates this, and
+	// consumers are expected to refuse it rather than guess. (string)
+	AgentStopReasonAttr = "dagger.io/agent.stop.reason"
+
+	// AgentSnapshotDigestAttr carries the portable recipe digest of the agent's
+	// last committed conversation, emitted on every commit (each step, each
+	// drained message, and once at loop start for the seed). Latest record wins.
+	//
+	// This is the resume anchor: a client rebuilds the conversation's ID from
+	// the call payloads it has ingested (dagger.io/dag.call, or the payload
+	// log records above) and re-hydrates the instance from it. It is
+	// deliberately a PORTABLE recipe: a post-evaluation result handle dies with
+	// its session, while the raw recipe retains superseded bindings whose stale
+	// operations must not be replayed in a later one.
+	//
+	// It cannot ride the state record: state records are edge-triggered on
+	// the projected state, and most commits do not change the state while
+	// every commit changes the snapshot. (string)
+	AgentSnapshotDigestAttr = "dagger.io/agent.snapshot.digest"
 )
 
 // wcprof × OTel vocabulary.
