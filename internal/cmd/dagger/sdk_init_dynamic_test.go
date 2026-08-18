@@ -20,7 +20,7 @@ func TestInstalledSDKCommandShape(t *testing.T) {
 	}
 	cmd := newInstalledSDKCommand(sdk)
 	require.Equal(t, "go", cmd.Use)
-	require.Contains(t, cmd.Short, "dagger-go-sdk")
+	require.Equal(t, "Use the go SDK to develop and consume modules", cmd.Short)
 	require.Equal(t, "true", cmd.Annotations[dynamicSDKCommandAnnotation])
 	require.Equal(t, []string{"info"}, commandNames(cmd.Commands()))
 
