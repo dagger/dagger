@@ -8,10 +8,71 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
+
+func TestContainerDefaultPlatformCacheIdentity(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, cache.Close(context.Background()))
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "container-platform-client",
+		SessionID: "container-platform-session",
+	})
+
+	amd64 := core.Platform{OS: "linux", Architecture: "amd64"}
+	arm64 := core.Platform{OS: "linux", Architecture: "arm64"}
+	srv := &currentTypeDefsTestServer{platform: amd64}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+	srv.dag = dag
+
+	selectContainer := func(platform dagql.Input) dagql.ObjectResult[*core.Container] {
+		t.Helper()
+		selector := dagql.Selector{Field: "container"}
+		if platform != nil {
+			selector.Args = []dagql.NamedInput{{Name: "platform", Value: platform}}
+		}
+		var ctr dagql.ObjectResult[*core.Container]
+		require.NoError(t, dag.Select(ctx, dag.Root(), &ctr, selector))
+		return ctr
+	}
+	recipeDigest := func(ctr dagql.ObjectResult[*core.Container]) string {
+		t.Helper()
+		id, err := ctr.RecipeID(ctx)
+		require.NoError(t, err)
+		return id.Digest().String()
+	}
+
+	omittedAMD64 := selectContainer(nil)
+	require.Equal(t, amd64, omittedAMD64.Self().Platform)
+
+	explicitAMD64 := selectContainer(dagql.Opt(amd64))
+	require.Equal(t, recipeDigest(omittedAMD64), recipeDigest(explicitAMD64))
+
+	srv.platform = arm64
+	omittedARM64 := selectContainer(nil)
+	require.Equal(t, arm64, omittedARM64.Self().Platform)
+	require.NotEqual(t, recipeDigest(omittedAMD64), recipeDigest(omittedARM64))
+
+	explicitAMD64OnARM64 := selectContainer(dagql.Opt(amd64))
+	require.Equal(t, amd64, explicitAMD64OnARM64.Self().Platform)
+	require.Equal(t, recipeDigest(explicitAMD64), recipeDigest(explicitAMD64OnARM64))
+
+	nullOnARM64 := selectContainer(dagql.NoOpt[core.Platform]())
+	require.Equal(t, arm64, nullOnARM64.Self().Platform)
+	require.Equal(t, recipeDigest(omittedARM64), recipeDigest(nullOnARM64))
+}
 
 func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
 	t.Parallel()

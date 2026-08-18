@@ -14,7 +14,7 @@ Expected stderr:
 $ viztest: Viztest! X.Xs CACHED
 ✘ .dockerBuildFail: Container! X.Xs ERROR
 ├╴✔ withNewFile Dockerfile (contents: "FROM busybox:1.34\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n") X.Xs
-╰╴✘ .dockerBuild: Container! X.Xs ERROR
+╰╴✘ .dockerBuild(platform: "linux/ARCH"): Container! X.Xs ERROR
   ├╴✘ Directory.file(path: "Dockerfile.dockerignore"): File! X.Xs ERROR
   │ ! stat Dockerfile.dockerignore: no such file or directory
   │
