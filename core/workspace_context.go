@@ -75,9 +75,6 @@ func workspaceArgValue(ctx context.Context, srv *dagql.Server) (dagql.Input, err
 	var ws dagql.ObjectResult[*Workspace]
 	if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{
 		Field: "currentWorkspace",
-		Args: []dagql.NamedInput{
-			{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
-		},
 	}); err != nil {
 		return nil, fmt.Errorf("load current workspace: %w", err)
 	}
@@ -112,22 +109,26 @@ func withBoundWorkspaceArgs(
 	return named
 }
 
+// inputSpecIsWorkspace reports whether spec is a Workspace-typed argument.
+//
+// A module function's object args are published as plain ID scalars — checking
+// spec.Type.Type().Name() would compare against "ID" and never match — so the
+// @expectedType directive is where the object type survives on the input spec.
+// This is the same identification [isWorkspaceArg] makes against the AST.
+func inputSpecIsWorkspace(spec dagql.InputSpec) bool {
+	d := ast.DirectiveList(spec.Directives).ForName("expectedType")
+	if d == nil {
+		return false
+	}
+	name := d.Arguments.ForName("name")
+	return name != nil && name.Value != nil && name.Value.Raw == workspaceTypeName
+}
+
 // boundWorkspaceInput returns the Workspace to pass for arg, if arg is a
 // required Workspace-typed argument the caller left unset. Optional ones are
 // left to dagql's injection hook.
-//
-// A module function's object args are published as plain ID scalars, so the
-// @expectedType directive is where the object type survives on the input spec —
-// the same identification [isWorkspaceArg] makes against the AST.
 func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.InputSpec) (dagql.Input, bool) {
-	if !arg.Type.Type().NonNull {
-		return nil, false
-	}
-	d := ast.DirectiveList(arg.Directives).ForName("expectedType")
-	if d == nil {
-		return nil, false
-	}
-	if name := d.Arguments.ForName("name"); name == nil || name.Value == nil || name.Value.Raw != workspaceTypeName {
+	if !arg.Type.Type().NonNull || !inputSpecIsWorkspace(arg) {
 		return nil, false
 	}
 	val, err := workspaceArgValue(ctx, srv)

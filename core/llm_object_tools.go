@@ -241,8 +241,8 @@ func (m *MCP) bindWorkspaceModuleTools(ctx context.Context) (*MCP, error) {
 			if !arg.Type.Type().NonNull {
 				continue
 			}
-			if arg.Type.Type().Name() == workspaceTypeName {
-				// Auto-injected from the current workspace.
+			if inputSpecIsWorkspace(arg) {
+				// Supplied from the workspace in scope, not by the caller.
 				continue
 			}
 			constructible = false

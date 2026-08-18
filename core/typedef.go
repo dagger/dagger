@@ -680,9 +680,12 @@ func (arg *FunctionArg) isContextual() bool {
 }
 
 // IsWorkspace returns true if the argument is of type Workspace.
-// A Workspace argument declared optional is still auto-injected when unset; one
-// declared required must be passed by the caller, since dagql rejects a missing
-// non-null argument before the injection hook runs.
+//
+// Either way it is supplied by the engine rather than the caller (see
+// argRequired); the declaration only decides how. An optional one is filled by
+// dagql's injection hook, while a required one has to be on the selector before
+// the call, since preselect rejects a missing non-null argument before that
+// hook runs.
 func (arg *FunctionArg) IsWorkspace() bool {
 	typeDef := arg.TypeDef.Self()
 	return typeDef.Kind == TypeDefKindObject &&
