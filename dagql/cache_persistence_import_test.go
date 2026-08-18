@@ -286,6 +286,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.Equal(t, 0, initCalls)
 	assert.Assert(t, strings.Contains(err.Error(), "decode persisted hit payload"))
+	assertCacheDerivedIndexesConsistent(t, cB)
 }
 
 func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) {

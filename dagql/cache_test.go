@@ -3152,6 +3152,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		c.egraphMu.Unlock()
 
@@ -3199,6 +3200,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		c.egraphMu.Unlock()
 
@@ -4169,7 +4171,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	assert.Equal(t, 0, len(c.resultOutputEqClasses))
 }
 
-func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) {
+func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -4219,12 +4221,9 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
 	assert.Assert(t, ok)
 
-	foreignSet := c.egraphResultsByDigest[foreignDigest.String()]
-	if foreignSet == nil {
-		foreignSet = newSharedResultIDSet()
-		c.egraphResultsByDigest[foreignDigest.String()] = foreignSet
-	}
-	foreignSet.Insert(shared.id)
+	// Removal covers production-recorded exact postings and broad imported
+	// postings, not arbitrary white-box mutations that bypass bookkeeping.
+	c.addResultDigestPostingLocked(shared.id, foreignDigest.String(), resultDigestPostingExact)
 	c.egraphMu.Unlock()
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
@@ -5946,9 +5945,9 @@ func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
 		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
 		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
 	}
-	c.resultOutputEqClasses[1] = map[eqClassID]struct{}{a: {}}
-	c.resultOutputEqClasses[2] = map[eqClassID]struct{}{b: {}}
-	c.resultOutputEqClasses[3] = map[eqClassID]struct{}{c1: {}}
+	c.addResultOutputEqClassLocked(1, a)
+	c.addResultOutputEqClassLocked(2, b)
+	c.addResultOutputEqClassLocked(3, c1)
 	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
 	forced, forcedOldSlots, forcedNewSlots := c.compactEqClassesLocked(true)
 	c.egraphMu.Unlock()
@@ -6131,8 +6130,8 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 
 	rootEq := c.ensureEqClassForDigestLocked(baseCtx, "prune-structural-root")
 	provenanceEq := c.ensureEqClassForDigestLocked(baseCtx, "prune-structural-provenance-only")
-	c.resultOutputEqClasses[root.id] = map[eqClassID]struct{}{rootEq: {}}
-	c.resultOutputEqClasses[provenanceOnly.id] = map[eqClassID]struct{}{provenanceEq: {}}
+	c.addResultOutputEqClassLocked(root.id, rootEq)
+	c.addResultOutputEqClassLocked(provenanceOnly.id, provenanceEq)
 	c.persistedEdgesByResult = map[sharedResultID]persistedEdge{
 		provenanceOnly.id: {
 			resultID:          provenanceOnly.id,

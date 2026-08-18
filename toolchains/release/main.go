@@ -18,7 +18,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Release struct{}
+type Release struct {
+	Workspace *dagger.Workspace // +private
+}
+
+func New(ws *dagger.Workspace) *Release {
+	return &Release{Workspace: ws}
+}
 
 type ReleaseReport struct {
 	Ref     string

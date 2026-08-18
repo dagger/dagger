@@ -78,7 +78,13 @@
     {
       "name": "helm",
       "source": "github.com/dagger/helm@main",
-      "pin": "d0a7e172e8212b31c6061bb699495b1e8ba0958f"
+      "pin": "d0a7e172e8212b31c6061bb699495b1e8ba0958f",
+      "customizations": [
+        {
+          "argument": "version",
+          "default": "4.0.1"
+        }
+      ]
     },
     {
       "name": "java-sdk",

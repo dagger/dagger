@@ -17,6 +17,13 @@ import (
 type eqClassID uint64
 type egraphTermID uint64
 
+type resultDigestPostingKind uint8
+
+const (
+	resultDigestPostingExact resultDigestPostingKind = iota
+	resultDigestPostingBroad
+)
+
 // egraphTerm is purely symbolic: operation shape + canonicalized input/output
 // equivalence state.
 //
@@ -184,6 +191,9 @@ func (c *Cache) initEgraphLocked() {
 	if c.resultOutputEqClasses == nil {
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
 	}
+	if c.outputEqClassResults == nil {
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
+	}
 	if c.termResults == nil {
 		c.termResults = make(map[egraphTermID]map[sharedResultID]egraphResultTermAssoc)
 	}
@@ -198,6 +208,12 @@ func (c *Cache) initEgraphLocked() {
 	}
 	if c.egraphResultsByDigest == nil {
 		c.egraphResultsByDigest = make(map[string]*set.TreeSet[sharedResultID])
+	}
+	if c.resultIndexedDigests == nil {
+		c.resultIndexedDigests = make(map[sharedResultID][]string)
+	}
+	if c.broadlyIndexedResults == nil {
+		c.broadlyIndexedResults = make(map[sharedResultID]struct{})
 	}
 	if c.termInputProvenance == nil {
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
@@ -330,6 +346,25 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 			dstOutputTerms[termID] = struct{}{}
 		}
 		delete(c.outputEqClassToTerms, rb)
+	}
+
+	// Merge result/output-class associations and eagerly rewrite the moved
+	// results' forward entries to the winning canonical root.
+	dstResults := c.outputEqClassResults[ra]
+	srcResults := c.outputEqClassResults[rb]
+	if len(srcResults) > 0 {
+		if dstResults == nil {
+			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
+			c.outputEqClassResults[ra] = dstResults
+		}
+		for resID := range srcResults {
+			dstResults[resID] = struct{}{}
+			if outputEqClasses := c.resultOutputEqClasses[resID]; outputEqClasses != nil {
+				delete(outputEqClasses, rb)
+				outputEqClasses[ra] = struct{}{}
+			}
+		}
+		delete(c.outputEqClassResults, rb)
 	}
 
 	return ra
@@ -506,14 +541,15 @@ func (c *Cache) firstLiveTermInSetLocked(termSet *set.TreeSet[egraphTermID]) *eg
 	return nil
 }
 
-func (c *Cache) firstResultDeterministicallyAtLocked(
-	resultSet *set.TreeSet[sharedResultID],
+func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
+	outputEqID eqClassID,
 	nowUnix int64,
-) *sharedResult {
-	if resultSet == nil {
-		return nil
+) bool {
+	outputEqID = c.findEqClassLocked(outputEqID)
+	if outputEqID == 0 {
+		return false
 	}
-	for resID := range resultSet.Items() {
+	for resID := range c.outputEqClassResults[outputEqID] {
 		res := c.resultsByID[resID]
 		if res == nil {
 			continue
@@ -521,34 +557,9 @@ func (c *Cache) firstResultDeterministicallyAtLocked(
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
-		return res
+		return true
 	}
-	return nil
-}
-
-func (c *Cache) firstResultForOutputEqClassDeterministicallyAtLocked(
-	outputEqID eqClassID,
-	nowUnix int64,
-) *sharedResult {
-	outputEqID = c.findEqClassLocked(outputEqID)
-	if outputEqID == 0 {
-		return nil
-	}
-	digests := c.eqClassToDigests[outputEqID]
-	if len(digests) == 0 {
-		return nil
-	}
-	var bestID sharedResultID
-	for dig := range digests {
-		res := c.firstResultDeterministicallyAtLocked(c.egraphResultsByDigest[dig], nowUnix)
-		if res == nil {
-			continue
-		}
-		if bestID == 0 || res.id < bestID {
-			bestID = res.id
-		}
-	}
-	return c.resultsByID[bestID]
+	return false
 }
 
 func (c *Cache) resultExpiredAtLocked(res *sharedResult, nowUnix int64) bool {
@@ -739,18 +750,6 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 	}
 	c.initEgraphLocked()
 
-	indexDigest := func(dig digest.Digest) {
-		if dig == "" {
-			return
-		}
-		set := c.egraphResultsByDigest[dig.String()]
-		if set == nil {
-			set = newSharedResultIDSet()
-			c.egraphResultsByDigest[dig.String()] = set
-		}
-		set.Insert(res.id)
-	}
-
 	indexFrame := func(frame *ResultCall) error {
 		if frame == nil {
 			return nil
@@ -759,9 +758,9 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 		if err != nil {
 			return err
 		}
-		indexDigest(dig)
+		c.addResultDigestPostingLocked(res.id, dig.String(), resultDigestPostingExact)
 		for _, extra := range frame.ExtraDigests {
-			indexDigest(extra.Digest)
+			c.addResultDigestPostingLocked(res.id, extra.Digest.String(), resultDigestPostingExact)
 		}
 		return nil
 	}
@@ -774,27 +773,72 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 	return nil
 }
 
+// addResultDigestPostingLocked requires egraphMu and an e-graph initialized by
+// initEgraphLocked.
+func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind) {
+	if resID == 0 || dig == "" {
+		return
+	}
+	switch kind {
+	case resultDigestPostingExact, resultDigestPostingBroad:
+	default:
+		return
+	}
+	results := c.egraphResultsByDigest[dig]
+	if results == nil {
+		results = newSharedResultIDSet()
+		c.egraphResultsByDigest[dig] = results
+	}
+	inserted := results.Insert(resID)
+	if kind == resultDigestPostingExact && inserted {
+		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
+	}
+}
+
+// markResultBroadlyIndexedLocked requires egraphMu and an e-graph initialized
+// by initEgraphLocked.
+func (c *Cache) markResultBroadlyIndexedLocked(resID sharedResultID) {
+	if resID == 0 {
+		return
+	}
+	c.broadlyIndexedResults[resID] = struct{}{}
+}
+
+func (c *Cache) removeResultDigestPostingLocked(resID sharedResultID, dig string) {
+	if resID == 0 || dig == "" {
+		return
+	}
+	results := c.egraphResultsByDigest[dig]
+	if results == nil {
+		return
+	}
+	results.Remove(resID)
+	if results.Empty() {
+		delete(c.egraphResultsByDigest, dig)
+	}
+}
+
 func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses map[eqClassID]struct{}) {
-	if resID == 0 || len(outputEqClasses) == 0 {
+	if resID == 0 {
 		return
 	}
 
-	for outputEqID := range outputEqClasses {
-		outputEqID = c.findEqClassLocked(outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		for dig := range c.eqClassToDigests[outputEqID] {
-			set := c.egraphResultsByDigest[dig]
-			if set == nil {
+	for _, dig := range c.resultIndexedDigests[resID] {
+		c.removeResultDigestPostingLocked(resID, dig)
+	}
+	if _, broad := c.broadlyIndexedResults[resID]; broad {
+		for outputEqID := range outputEqClasses {
+			outputEqID = c.findEqClassLocked(outputEqID)
+			if outputEqID == 0 {
 				continue
 			}
-			set.Remove(resID)
-			if set.Empty() {
-				delete(c.egraphResultsByDigest, dig)
+			for dig := range c.eqClassToDigests[outputEqID] {
+				c.removeResultDigestPostingLocked(resID, dig)
 			}
 		}
 	}
+	delete(c.resultIndexedDigests, resID)
+	delete(c.broadlyIndexedResults, resID)
 }
 
 // lookupCacheForRequestLocked checks if the given call ID has an equivalent result in the cache.
@@ -1133,6 +1177,52 @@ func (c *Cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClass
 	return out
 }
 
+// addResultOutputEqClassLocked requires egraphMu and an e-graph initialized by
+// initEgraphLocked.
+func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eqClassID) {
+	if resID == 0 || outputEqID == 0 {
+		return
+	}
+	outputEqID = c.findEqClassLocked(outputEqID)
+	if outputEqID == 0 {
+		return
+	}
+
+	outputEqClasses := c.resultOutputEqClasses[resID]
+	if outputEqClasses == nil {
+		outputEqClasses = make(map[eqClassID]struct{})
+		c.resultOutputEqClasses[resID] = outputEqClasses
+	}
+	outputEqClasses[outputEqID] = struct{}{}
+
+	results := c.outputEqClassResults[outputEqID]
+	if results == nil {
+		results = make(map[sharedResultID]struct{})
+		c.outputEqClassResults[outputEqID] = results
+	}
+	results[resID] = struct{}{}
+}
+
+// removeResultOutputEqClassesLocked requires egraphMu and an e-graph initialized
+// by initEgraphLocked.
+func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
+	if resID == 0 {
+		return
+	}
+	for outputEqID := range c.resultOutputEqClasses[resID] {
+		outputEqID = c.findEqClassLocked(outputEqID)
+		if outputEqID == 0 {
+			continue
+		}
+		results := c.outputEqClassResults[outputEqID]
+		delete(results, resID)
+		if len(results) == 0 {
+			delete(c.outputEqClassResults, outputEqID)
+		}
+	}
+	delete(c.resultOutputEqClasses, resID)
+}
+
 func (c *Cache) termIDsForResultLocked(resID sharedResultID) map[egraphTermID]struct{} {
 	termIDs := c.resultTerms[resID]
 	if len(termIDs) == 0 {
@@ -1225,14 +1315,7 @@ func (c *Cache) associateResultWithTermLocked(
 		c.termInputProvenance[termID] = slices.Clone(inputProvenance)
 	}
 
-	resultOutputEqClasses := c.resultOutputEqClasses[res.id]
-	if resultOutputEqClasses == nil {
-		resultOutputEqClasses = make(map[eqClassID]struct{})
-		c.resultOutputEqClasses[res.id] = resultOutputEqClasses
-	}
-	if _, ok := resultOutputEqClasses[outputEqID]; !ok {
-		resultOutputEqClasses[outputEqID] = struct{}{}
-	}
+	c.addResultOutputEqClassLocked(res.id, outputEqID)
 
 	termResults := c.termResults[termID]
 	if termResults == nil {
@@ -1648,7 +1731,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	}
 	delete(c.resultTerms, res.id)
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
-	delete(c.resultOutputEqClasses, res.id)
+	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
 	depCount := len(res.deps)
 	res.storeResultCall(nil)
@@ -1657,7 +1740,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 
 	nowUnix := time.Now().Unix()
 	for outputEqID := range affectedOutputEqClasses {
-		if c.firstResultForOutputEqClassDeterministicallyAtLocked(outputEqID, nowUnix) != nil {
+		if c.hasUnexpiredResultForOutputEqClassLocked(outputEqID, nowUnix) {
 			// still some results in this eq class, nothing to clean up yet
 			continue
 		}
@@ -1713,12 +1796,15 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.inputEqClassToTerms = nil
 	c.outputEqClassToTerms = nil
 	c.resultOutputEqClasses = nil
+	c.outputEqClassResults = nil
 	c.termResults = nil
 	c.resultTerms = nil
 	c.egraphTerms = nil
 	c.termInputProvenance = nil
 	c.egraphTermsByTermDigest = nil
 	c.egraphResultsByDigest = nil
+	c.resultIndexedDigests = nil
+	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
@@ -1846,6 +1932,7 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 	}
 
 	newResultOutputEqClasses := make(map[sharedResultID]map[eqClassID]struct{}, len(c.resultOutputEqClasses))
+	newOutputEqClassResults := make(map[eqClassID]map[sharedResultID]struct{}, len(c.outputEqClassResults))
 	for resID, outputEqIDs := range c.resultOutputEqClasses {
 		newOutputEqIDs := make(map[eqClassID]struct{}, len(outputEqIDs))
 		for outputEqID := range outputEqIDs {
@@ -1857,6 +1944,14 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 		}
 		if len(newOutputEqIDs) > 0 {
 			newResultOutputEqClasses[resID] = newOutputEqIDs
+			for newOutputEqID := range newOutputEqIDs {
+				results := newOutputEqClassResults[newOutputEqID]
+				if results == nil {
+					results = make(map[sharedResultID]struct{})
+					newOutputEqClassResults[newOutputEqID] = results
+				}
+				results[resID] = struct{}{}
+			}
 		}
 	}
 
@@ -1868,6 +1963,7 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 	c.inputEqClassToTerms = newInputEqClassToTerms
 	c.outputEqClassToTerms = newOutputEqClassToTerms
 	c.resultOutputEqClasses = newResultOutputEqClasses
+	c.outputEqClassResults = newOutputEqClassResults
 	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
 	c.nextEgraphClassID = eqClassID(len(newParents))
 
