@@ -248,6 +248,10 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	// during our test suite
 	devEngine = devEngine.
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
+	devEnginePlatform, err := devEngine.Platform(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	devBinary := dag.DaggerCli(dagger.DaggerCliOpts{VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()
 	// This creates an engine.tar container file that can be used by the integration tests.
@@ -300,6 +304,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
+		WithEnvVariable("_DAGGER_TESTS_ENGINE_PLATFORM", string(devEnginePlatform)).
 		WithServiceBinding("daggerengine", devEngineSvc).
 		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
