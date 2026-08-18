@@ -72,10 +72,12 @@ func toEntries(stats []diffStat) []patchpreview.Entry {
 }
 
 // WorkspaceChanges is everything the "Changes" preview shows: the workspace's
-// pending (uncommitted) overlay edits, plus the commits staged engine-side but
+// Git-visible and unmanaged pending edits, plus commits staged engine-side but
 // not yet saved to the local checkout.
 type WorkspaceChanges struct {
-	// Uncommitted is the diffstat of Workspace.changes.
+	// Uncommitted combines WorkspaceGit.uncommitted with WorkspaceGit.unmanaged.
+	// The two views are disjoint: unmanaged is the pending overlay remainder Git
+	// cannot see, such as ignored files and edits inside nested repositories.
 	Uncommitted []patchpreview.Entry
 	// StagedCommits is WorkspaceGit.stagedCommits, oldest first (the order the
 	// API reports them in). Rendering reverses it.
@@ -88,19 +90,28 @@ func (c WorkspaceChanges) Empty() bool {
 }
 
 const previewWorkspaceQuery = `
-query PreviewWorkspaceChanges($workspace: ID!, $from: ID!) {
+query PreviewWorkspaceChanges($workspace: ID!) {
 	workspace: node(id: $workspace) {
 		... on Workspace {
-			changes(from: $from) {
-				diffStats {
-					path
-					oldPath
-					kind
-					addedLines
-					removedLines
-				}
-			}
 			git {
+				uncommitted {
+					diffStats {
+						path
+						oldPath
+						kind
+						addedLines
+						removedLines
+					}
+				}
+				unmanaged {
+					diffStats {
+						path
+						oldPath
+						kind
+						addedLines
+						removedLines
+					}
+				}
 				stagedCommits {
 					sha
 					message
@@ -120,30 +131,28 @@ query PreviewWorkspaceChanges($workspace: ID!, $from: ID!) {
 }
 `
 
-// PreviewWorkspaceChanges fetches the workspace's pending changes and its
-// staged commit stack in a single round-trip, so the "Changes" bubble can be
-// refreshed once per loop without an extra query per commit.
-//
-// from is the baseline the pending changes are measured against, so edits that
-// were already present when the session started are not reported as its own.
-func PreviewWorkspaceChanges(ctx context.Context, dag *dagger.Client, workspace, from *dagger.Workspace) (WorkspaceChanges, error) {
+// PreviewWorkspaceChanges fetches the workspace's complete pending Git state
+// and staged commit stack in a single round-trip. WorkspaceGit.uncommitted is
+// measured from the effective staged HEAD, so committed content does not leak
+// into the pending section; WorkspaceGit.unmanaged adds the pending overlay
+// edits Git cannot see.
+func PreviewWorkspaceChanges(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace) (WorkspaceChanges, error) {
 	var changes WorkspaceChanges
 
 	workspaceID, err := workspace.ID(ctx)
 	if err != nil {
 		return changes, fmt.Errorf("query workspace changes: get workspace id: %w", err)
 	}
-	fromID, err := from.ID(ctx)
-	if err != nil {
-		return changes, fmt.Errorf("query workspace changes: get baseline workspace id: %w", err)
-	}
 
 	var res struct {
 		Workspace struct {
-			Changes struct {
-				DiffStats []diffStat
-			}
 			Git struct {
+				Uncommitted struct {
+					DiffStats []diffStat
+				}
+				Unmanaged struct {
+					DiffStats []diffStat
+				}
 				StagedCommits []struct {
 					Sha     string
 					Message string
@@ -159,16 +168,15 @@ func PreviewWorkspaceChanges(ctx context.Context, dag *dagger.Client, workspace,
 		Query: previewWorkspaceQuery,
 		Variables: map[string]any{
 			"workspace": workspaceID,
-			"from":      fromID,
 		},
 	}, &dagger.Response{
 		Data: &res,
 	})
 	if err != nil {
-		// A workspace with no Git root can't report staged commits
-		// (Workspace.git errors), but its pending edits are still worth
-		// showing: fall back to the changes-only query.
-		entries, fallbackErr := PreviewPatch(ctx, dag, workspace.Changes(dagger.WorkspaceChangesOpts{From: from}))
+		// A workspace with no Git root cannot expose Workspace.git, but its
+		// pending overlay is still worth showing. Such a workspace cannot stage
+		// Git commits, so Workspace.changes is the complete fallback view.
+		entries, fallbackErr := PreviewPatch(ctx, dag, workspace.Changes())
 		if fallbackErr != nil {
 			return changes, fmt.Errorf("query workspace changes: %w", err)
 		}
@@ -176,7 +184,10 @@ func PreviewWorkspaceChanges(ctx context.Context, dag *dagger.Client, workspace,
 		return changes, nil
 	}
 
-	changes.Uncommitted = toEntries(res.Workspace.Changes.DiffStats)
+	changes.Uncommitted = append(
+		toEntries(res.Workspace.Git.Uncommitted.DiffStats),
+		toEntries(res.Workspace.Git.Unmanaged.DiffStats)...,
+	)
 	for _, c := range res.Workspace.Git.StagedCommits {
 		changes.StagedCommits = append(changes.StagedCommits, patchpreview.Commit{
 			SHA:     c.Sha,
