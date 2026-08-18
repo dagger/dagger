@@ -58,14 +58,9 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"api", "client"})
-	require.NoError(t, err)
-	require.Same(t, apiClientCmd, cmd)
-	require.False(t, cmd.Hidden)
-
 	cmd, _, err = rootCmd.Find([]string{"client"})
 	require.NoError(t, err)
-	require.NotSame(t, apiClientCmd, cmd)
+	require.NotSame(t, apiCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"call"})
 	require.NoError(t, err)
@@ -225,7 +220,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"version",
 		"api",
 		"cloud",
-		"module",
 		"sdk",
 		"workspace",
 	} {
@@ -256,7 +250,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	}
 
 	for _, leaf := range []string{"activity", "check", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update"} {
-		for _, parent := range []string{"api", "cloud", "module", "sdk", "workspace"} {
+		for _, parent := range []string{"api", "cloud", "sdk", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
 	}

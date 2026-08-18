@@ -46,11 +46,11 @@ func TestInstalledSDKSource(t *testing.T) {
 	require.Equal(t, "github.com/dagger/go-sdk@sha256:abc", source)
 
 	_, _, source, err = installedSDKSource(cfg, "plain")
-	require.EqualError(t, err, "\"plain\" is not installed as an SDK in this workspace; run `dagger sdk install plain` first")
+	require.EqualError(t, err, "\"plain\" is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`")
 	require.Empty(t, source)
 
 	_, _, source, err = installedSDKSource(cfg, "missing")
-	require.EqualError(t, err, "\"missing\" is not installed as an SDK in this workspace; run `dagger sdk install missing` first")
+	require.EqualError(t, err, "\"missing\" is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`")
 	require.Empty(t, source)
 }
 

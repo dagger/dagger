@@ -212,7 +212,7 @@ func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleE
 
 func installedSDKSource(cfg *workspace.Config, name string) (string, workspace.ModuleEntry, string, error) {
 	if cfg == nil || cfg.Modules == nil {
-		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", name, name)
+		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
 	}
 	if entry, ok := cfg.Modules[name]; ok && entry.AsSDK != nil {
 		return installedSDKSourceForModule(name, entry)
@@ -228,7 +228,7 @@ func installedSDKSource(cfg *workspace.Config, name string) (string, workspace.M
 	sort.Strings(matches)
 	switch len(matches) {
 	case 0:
-		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", name, name)
+		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
 	case 1:
 		entry := cfg.Modules[matches[0]]
 		return installedSDKSourceForModule(matches[0], entry)

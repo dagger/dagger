@@ -444,13 +444,15 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 	require.Contains(t, list, "client-generator-fixture:generate-clients")
 
 	clients, err := base.
-		With(daggerExec("api", "client", "list", "--json")).
+		With(daggerExec("sdk", "fixture", "client", "claimed")).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `[
-  {"sdk":"fixture","path":"clients/one","module":"github.com/shykes/hello","pin":"deadbeef"},
-  {"sdk":"fixture","path":"clients/two","module":".dagger/client-generator-fixture"}
-]`, clients)
+	require.Contains(t, clients, "PATH")
+	require.Contains(t, clients, "clients/one")
+	require.Contains(t, clients, "github.com/shykes/hello")
+	require.Contains(t, clients, "deadbeef")
+	require.Contains(t, clients, "clients/two")
+	require.Contains(t, clients, ".dagger/client-generator-fixture")
 
 	generated := base.With(daggerExec("generate", "-y"))
 
@@ -649,7 +651,7 @@ func relativeToCwd(cwd, target string) (string, bool) {
 `)
 }
 
-// TestModuleInitGeneratesForNewModuleOnly covers the `dagger module init` half
+// TestModuleInitGeneratesForNewModuleOnly covers `dagger sdk <SDK> module init`
 // of dagger/dagger#13714: init runs the owning SDK's generators for what it just
 // created, so the module is usable without a separate `dagger generate`, and
 // nothing else in the workspace is touched.
@@ -658,7 +660,7 @@ func (GeneratorsSuite) TestModuleInitGeneratesForNewModuleOnly(ctx context.Conte
 	base := initGeneratorFixture(t, c)
 
 	t.Run("generates the new module", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--auto-apply"))
+		initialized := base.With(daggerExec("sdk", "fixture", "module", "init", "newmod", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
@@ -684,7 +686,7 @@ func (GeneratorsSuite) TestModuleInitGeneratesForNewModuleOnly(ctx context.Conte
 	})
 
 	t.Run("--no-generate scaffolds without generating", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--no-generate", "--auto-apply"))
+		initialized := base.With(daggerExec("sdk", "fixture", "module", "init", "newmod", "--no-generate", "--auto-apply"))
 
 		scaffold, err := initialized.File(".dagger/modules/newmod/scaffold.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -696,15 +698,15 @@ func (GeneratorsSuite) TestModuleInitGeneratesForNewModuleOnly(ctx context.Conte
 	})
 }
 
-// TestAPIClientInitGeneratesForNewClientOnly covers the `dagger api client init`
-// half of dagger/dagger#13714.
+// TestAPIClientInitGeneratesForNewClientOnly covers
+// `dagger sdk <SDK> client init`, the client half of dagger/dagger#13714.
 func (GeneratorsSuite) TestAPIClientInitGeneratesForNewClientOnly(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := initGeneratorFixture(t, c)
 
 	t.Run("generates the new client", func(ctx context.Context, t *testctx.T) {
 		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "sdk/init-fixture", "--auto-apply"))
+			"sdk", "fixture", "client", "init", "clients/one", "sdk/init-fixture", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
@@ -725,7 +727,7 @@ func (GeneratorsSuite) TestAPIClientInitGeneratesForNewClientOnly(ctx context.Co
 
 	t.Run("--no-generate scaffolds without generating", func(ctx context.Context, t *testctx.T) {
 		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "sdk/init-fixture", "--no-generate", "--auto-apply"))
+			"sdk", "fixture", "client", "init", "clients/one", "sdk/init-fixture", "--no-generate", "--auto-apply"))
 
 		scaffold, err := initialized.File("clients/one/scaffold.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -734,6 +736,52 @@ func (GeneratorsSuite) TestAPIClientInitGeneratesForNewClientOnly(ctx context.Co
 		exists, err := initialized.Exists(ctx, "clients/one/generated-client.txt")
 		require.NoError(t, err)
 		require.False(t, exists)
+	})
+}
+
+func (GeneratorsSuite) TestSDKClaimAndUnclaim(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := initGeneratorFixture(t, c)
+
+	t.Run("module", func(ctx context.Context, t *testctx.T) {
+		initialized := base.With(daggerExec(
+			"sdk", "fixture", "module", "init", "claimed", "--no-generate", "--auto-apply"))
+		unclaimed := initialized.With(daggerExec(
+			"sdk", "fixture", "module", "unclaim", ".dagger/modules/claimed", "--auto-apply"))
+		config, err := unclaimed.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, config, `path = ".dagger/modules/claimed"`)
+
+		claimed := unclaimed.With(daggerExec(
+			"sdk", "fixture", "module", "claim", ".dagger/modules/claimed", "--auto-apply"))
+		config, err = claimed.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `path = ".dagger/modules/claimed"`)
+
+		list, err := claimed.With(daggerExec("sdk", "fixture", "module", "claimed")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, list, ".dagger/modules/claimed")
+	})
+
+	t.Run("client", func(ctx context.Context, t *testctx.T) {
+		initialized := base.With(daggerExec(
+			"sdk", "fixture", "client", "init", "clients/claimed", "sdk/init-fixture", "--no-generate", "--auto-apply"))
+		unclaimed := initialized.With(daggerExec(
+			"sdk", "fixture", "client", "unclaim", "clients/claimed", "--auto-apply"))
+		config, err := unclaimed.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, config, `path = "clients/claimed"`)
+
+		claimed := unclaimed.With(daggerExec(
+			"sdk", "fixture", "client", "claim", "clients/claimed", "sdk/init-fixture", "--auto-apply"))
+		config, err = claimed.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `path = "clients/claimed"`)
+
+		list, err := claimed.With(daggerExec("sdk", "fixture", "client", "claimed")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, list, "clients/claimed")
+		require.Contains(t, list, "sdk/init-fixture")
 	})
 }
 
@@ -767,7 +815,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 	})
 
 	t.Run("module init scaffolds beside its dagger.toml", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--auto-apply"))
+		initialized := base.With(daggerExec("sdk", "fixture", "module", "init", "newmod", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
@@ -802,7 +850,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 	t.Run("module init resolves an explicit --path against the caller", func(ctx context.Context, t *testctx.T) {
 		t.Run("relative to the current directory", func(ctx context.Context, t *testctx.T) {
 			initialized := base.With(daggerExec(
-				"module", "init", "fixture", "hello", "--path", "hello", "--auto-apply"))
+				"sdk", "fixture", "module", "init", "hello", "--path", "hello", "--auto-apply"))
 			out, err := initialized.CombinedOutput(ctx)
 			require.NoError(t, err, out)
 
@@ -821,7 +869,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 
 		t.Run("leading slash means the workspace root", func(ctx context.Context, t *testctx.T) {
 			initialized := base.With(daggerExec(
-				"module", "init", "fixture", "hello", "--path", "/tools/hello", "--auto-apply"))
+				"sdk", "fixture", "module", "init", "hello", "--path", "/tools/hello", "--auto-apply"))
 			out, err := initialized.CombinedOutput(ctx)
 			require.NoError(t, err, out)
 
@@ -838,7 +886,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 
 		t.Run("climbing out of the current directory", func(ctx context.Context, t *testctx.T) {
 			initialized := base.With(daggerExec(
-				"module", "init", "fixture", "hello", "--path", "../tools/hello", "--auto-apply"))
+				"sdk", "fixture", "module", "init", "hello", "--path", "../tools/hello", "--auto-apply"))
 			out, err := initialized.CombinedOutput(ctx)
 			require.NoError(t, err, out)
 
@@ -848,7 +896,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 
 		t.Run("escaping the workspace root is rejected", func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExecFail(
-				"module", "init", "fixture", "hello", "--path", "../../escape", "--auto-apply")).
+				"sdk", "fixture", "module", "init", "hello", "--path", "../../escape", "--auto-apply")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, "must not escape the workspace root")
@@ -857,7 +905,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 
 	t.Run("client init resolves its path against the caller", func(ctx context.Context, t *testctx.T) {
 		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "common/sdk/init-fixture", "--auto-apply"))
+			"sdk", "fixture", "client", "init", "clients/one", "common/sdk/init-fixture", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
@@ -892,7 +940,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryCwd(ctx context.Context, t *testc
 		WithWorkdir("/work/sub")
 
 	t.Run("module init from below the config directory", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--auto-apply"))
+		initialized := base.With(daggerExec("sdk", "fixture", "module", "init", "newmod", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
@@ -915,7 +963,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryCwd(ctx context.Context, t *testc
 
 	t.Run("client init from below the config directory", func(ctx context.Context, t *testctx.T) {
 		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "sdk/init-fixture", "--auto-apply"))
+			"sdk", "fixture", "client", "init", "clients/one", "sdk/init-fixture", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
@@ -928,7 +976,7 @@ func (GeneratorsSuite) TestInitFromSubdirectoryCwd(ctx context.Context, t *testc
 
 	t.Run("client init with a rooted path", func(ctx context.Context, t *testctx.T) {
 		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "/clients/one", "sdk/init-fixture", "--auto-apply"))
+			"sdk", "fixture", "client", "init", "/clients/one", "sdk/init-fixture", "--auto-apply"))
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 

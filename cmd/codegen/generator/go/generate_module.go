@@ -90,7 +90,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	if len(initialGoFiles) == 0 && !moduleConfig.IsInit {
 		// write an initial main.go if no main pkg exists yet
 		//
-		// Skipped at module-init time: the SDK that drives `dagger module init`
+		// Skipped at module-init time: the SDK behind `dagger sdk <SDK> module init`
 		// owns the starter source via its `initModule` Changeset, and the engine
 		// merges that with this generated context. Scaffolding a main.go here too
 		// would make both changesets add the same path and the merge would fail
@@ -349,7 +349,7 @@ func baseModuleSource(pkgInfo *PackageInfo, moduleName string) string {
 
 	return fmt.Sprintf(`// A generated module for %[1]s functions
 //
-// This module has been generated via dagger module init and serves as a reference to
+// This module has been generated via dagger sdk <SDK> module init and serves as a reference to
 // basic module structure as you get started with Dagger.
 //
 // Two functions have been pre-created. You can modify, delete, or add to them,

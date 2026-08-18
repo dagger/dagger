@@ -966,6 +966,62 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 	})
 }
 
+func TestResolvedWorkspaceSDKName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+		"dagger-go-sdk": {
+			Source: "github.com/dagger/go-sdk",
+			AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+		},
+		"typescript-sdk": {
+			Source: "github.com/dagger/typescript-sdk",
+			AsSDK:  &workspace.ModuleAsSDK{},
+		},
+	}}
+
+	require.Equal(t, "python", resolvedWorkspaceSDKName(cfg, "dagger-python-sdk"))
+	require.Equal(t, "dagger-go", resolvedWorkspaceSDKName(cfg, "dagger-go"))
+	require.Equal(t, "typescript", resolvedWorkspaceSDKName(cfg, "dagger-typescript-sdk"))
+	require.Equal(t, "help-2", resolvedWorkspaceSDKName(cfg, "help"))
+
+	cfg.Modules["custom-sdk"] = workspace.ModuleEntry{
+		Source: "github.com/acme/custom-sdk",
+		AsSDK:  &workspace.ModuleAsSDK{Name: "dagger-go"},
+	}
+	require.Equal(t, "go-2", resolvedWorkspaceSDKName(cfg, "dagger-go"))
+}
+
+func TestNormalizedSDKCapabilityName(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "initmodule", normalizedSDKCapabilityName("initModule"))
+	require.Equal(t, "initmodule", normalizedSDKCapabilityName("init_module"))
+	require.Equal(t, "initclient", normalizedSDKCapabilityName("init-client"))
+}
+
+func TestClaimedSDKOwners(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+		"go-sdk": {
+			AsSDK: &workspace.ModuleAsSDK{
+				Modules: []workspace.SDKManagedModule{{Path: "modules/demo"}},
+				Clients: []workspace.SDKManagedClient{{Path: "clients/demo"}},
+			},
+		},
+	}}
+
+	owner, ok := claimedModuleOwner(cfg, "./modules/demo")
+	require.True(t, ok)
+	require.Equal(t, "go-sdk", owner)
+	owner, ok = claimedClientOwner(cfg, "clients/other/../demo")
+	require.True(t, ok)
+	require.Equal(t, "go-sdk", owner)
+	_, ok = claimedModuleOwner(cfg, "modules/other")
+	require.False(t, ok)
+}
+
 func TestEnvScopedConfigKeyMissingEnv(t *testing.T) {
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{

@@ -323,7 +323,7 @@ func (sdk *module) AsRuntimeTarget() (core.RuntimeTarget, bool) {
 
 // TargetRuntime invokes the SDK module's `targetRuntime` field. The field
 // takes no arguments — it advertises which engine runtime the SDK's emitted
-// code targets. Called once at `dagger module init` time; the returned
+// code targets. Called once at `dagger sdk <SDK> module init` time; the returned
 // value is written into the new module's dagger-module.toml `[runtime]
 // source`.
 func (sdk *module) TargetRuntime(ctx context.Context) (string, error) {

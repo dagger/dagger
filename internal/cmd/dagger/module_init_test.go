@@ -203,7 +203,7 @@ func TestParseSDKRegistry(t *testing.T) {
 }
 
 func TestSearchSDKRegistry(t *testing.T) {
-	reg := []sdkEntry{
+	reg := []registryModule{
 		{Name: "python", Description: "Official Dagger SDK for Python", Repo: "github.com/dagger/python-sdk", Aliases: []string{"py"}},
 		{Name: "go", Description: "Official Dagger SDK for Go", Repo: "github.com/dagger/go-sdk", Aliases: []string{"golang"}},
 		{Name: "typescript", Description: "Official Dagger SDK for TypeScript", Repo: "github.com/dagger/typescript-sdk", Aliases: []string{"ts"}},
@@ -224,7 +224,7 @@ func TestSearchSDKRegistry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := searchSDKRegistry(reg, tt.query)
+			got := searchModuleRegistry(reg, tt.query)
 			var names []string
 			for _, entry := range got {
 				names = append(names, entry.Name)
@@ -235,42 +235,23 @@ func TestSearchSDKRegistry(t *testing.T) {
 }
 
 func TestPrintSDKSearchResults(t *testing.T) {
-	entries := []sdkEntry{
+	entries := []registryModule{
 		{Name: "go", Description: "Official Dagger SDK for Go", Repo: "github.com/dagger/go-sdk", Aliases: []string{"golang"}},
 		{Name: "java", Description: "Official Dagger SDK for Java", Repo: "github.com/dagger/java-sdk"},
 	}
 
 	var buf bytes.Buffer
-	require.NoError(t, printSDKSearchResults(&buf, entries))
+	require.NoError(t, printModuleSearchResults(&buf, entries))
 	out := buf.String()
 	require.Contains(t, out, "NAME")
 	require.Contains(t, out, "DESCRIPTION")
-	require.Contains(t, out, "ALIASES")
 	require.Contains(t, out, "go")
 	require.Contains(t, out, "Official Dagger SDK for Go")
-	require.Contains(t, out, "golang")
 	require.Contains(t, out, "java")
-	require.Contains(t, out, "\nRun 'dagger sdk install <NAME>' to install an SDK.\n")
+	require.Contains(t, out, "\nRun 'dagger install <REPO>' to install a module.\n")
 }
 
-func TestSDKCommandShape(t *testing.T) {
-	cmd, _, err := sdkCmd.Find([]string{"installed"})
-	require.NoError(t, err)
-	require.Same(t, sdkInstalledCmd, cmd)
-	require.Equal(t, "installed", cmd.Use)
-	require.Contains(t, cmd.Aliases, "list")
-
-	listAlias, _, err := sdkCmd.Find([]string{"list"})
-	require.NoError(t, err)
-	require.Same(t, sdkInstalledCmd, listAlias)
-
-	require.True(t, sdkModuleOptionsCmd.Hidden)
-	require.True(t, sdkClientOptionsCmd.Hidden)
-	require.NotContains(t, sdkCmd.Long, "dagger sdk install go")
-	require.NotContains(t, sdkCmd.Long, "dagger module init go")
-}
-
-func TestRunSDKListPrintsInstalledColumns(t *testing.T) {
+func TestRunSDKInfo(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, workspace.ConfigFileName), []byte(`
@@ -289,29 +270,12 @@ source = "github.com/acme/custom-sdk"
 	var buf bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&buf)
-	require.NoError(t, runSDKList(cmd, nil))
+	require.NoError(t, runSDKInfo(cmd, "go"))
 
 	out := buf.String()
-	require.Contains(t, out, "SDK NAME")
-	require.Contains(t, out, "MODULE NAME")
-	require.Contains(t, out, "SOURCE")
-	require.Contains(t, out, "go")
-	require.Contains(t, out, "dagger-go-sdk")
-	require.Contains(t, out, "github.com/dagger/go-sdk")
-	require.NotContains(t, out, "ALIAS")
-	require.NotContains(t, out, "\tM\tC")
+	require.Equal(t, "sdk-name: go\nmodule-name: dagger-go-sdk\nmodule-source: github.com/dagger/go-sdk\nclaimed-modules: 0\n", out)
 }
 
 // Conventional SDK short-name derivation is now in core/workspace as
 // ConventionalSDKShortName (shared with the engine's migration code). Tests
 // for it live there.
-
-func TestModuleInitCommandShape(t *testing.T) {
-	cmd, _, err := moduleCmd.Find([]string{"init"})
-	require.NoError(t, err)
-	require.Same(t, moduleInitCmd, cmd)
-	require.Equal(t, "init <sdk> <name>", cmd.Use)
-	require.Nil(t, cmd.Flags().Lookup("sdk"))
-	require.NotNil(t, cmd.PersistentFlags().Lookup("path"))
-	require.Contains(t, cmd.Long, "to add more choices")
-}

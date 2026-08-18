@@ -199,10 +199,11 @@ const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to m
         dagger install <module>
 
     • Install an SDK to author your own:
-        dagger sdk search
+        dagger search --sdk
+        dagger install <sdk-module>
 
     • Create a new module (after installing an SDK):
-        dagger module init <sdk> <name>
+        dagger sdk <sdk> module init <name>
 `
 
 // setupStepMigrate reports whether a migration was applied (which routes setup
@@ -334,7 +335,7 @@ func migratedConfigPaths(ctx context.Context, changes *dagger.Changeset) ([]stri
 
 // setupResolveMigratedSDKs rewrites SDK installs that migration recorded by bare
 // short name (e.g. `php`) to their real ref and canonical name from sdks.json,
-// so the SDK is loadable for authoring (`dagger module init <sdk>`) instead of
+// so the SDK is loadable for authoring (`dagger sdk <sdk> module init`) instead of
 // being treated as a local path. Runs in a post-migration session where the
 // workspace is native; a no-op when nothing was recorded by short name (and
 // when the user declined migration, leaving the legacy config in place).

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -13,6 +14,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 )
+
+var searchSDKOnly bool
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
@@ -27,12 +30,22 @@ With no query, lists all known modules.`,
 		if len(args) == 1 {
 			query = args[0]
 		}
-		mods, err := loadModuleRegistry()
+		var mods []registryModule
+		var err error
+		if searchSDKOnly {
+			mods, err = loadSDKSearchRegistry()
+		} else {
+			mods, err = loadModuleRegistry()
+		}
 		if err != nil {
 			return err
 		}
 		return printModuleSearchResults(cmd.OutOrStdout(), searchModuleRegistry(mods, query))
 	},
+}
+
+func init() {
+	searchCmd.Flags().BoolVar(&searchSDKOnly, "sdk", false, "Only show modules that provide SDK capabilities")
 }
 
 // listWorkspaceModules prints the modules installed in the current workspace.
@@ -76,14 +89,32 @@ func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client
 
 // registryModule is one entry in the searchable module registry.
 type registryModule struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Repo        string `json:"repo"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Repo        string   `json:"repo"`
+	Aliases     []string `json:"aliases,omitempty"`
 	// Recommend lists the globs (e.g. "**/go.mod") used by `dagger setup`
 	// to suggest this module based on files present in the workspace.
 	// The module is recommended when any pattern matches at least one file.
 	// An empty list means never recommended.
 	Recommend []string `json:"recommend,omitempty"`
+}
+
+func loadSDKSearchRegistry() ([]registryModule, error) {
+	entries, err := loadSDKRegistry()
+	if err != nil {
+		return nil, err
+	}
+	mods := make([]registryModule, 0, len(entries))
+	for _, entry := range entries {
+		mods = append(mods, registryModule{
+			Name:        entry.Name,
+			Description: entry.Description,
+			Repo:        entry.Repo,
+			Aliases:     entry.Aliases,
+		})
+	}
+	return mods, nil
 }
 
 // embeddedModuleRegistry is the registry baked in at build time.
@@ -112,7 +143,11 @@ func searchModuleRegistry(mods []registryModule, query string) []registryModule 
 	for _, m := range mods {
 		if q == "" ||
 			strings.Contains(strings.ToLower(m.Name), q) ||
-			strings.Contains(strings.ToLower(m.Description), q) {
+			strings.Contains(strings.ToLower(m.Description), q) ||
+			strings.Contains(strings.ToLower(m.Repo), q) ||
+			slices.ContainsFunc(m.Aliases, func(alias string) bool {
+				return strings.Contains(strings.ToLower(alias), q)
+			}) {
 			out = append(out, m)
 		}
 	}

@@ -60,8 +60,8 @@ type ModuleEntry struct {
 // and clients this SDK manages in the workspace. Serialized under
 // [modules.<name>.as-sdk] with array-of-tables sub-blocks.
 type ModuleAsSDK struct {
-	// Name is the user-facing SDK name used by `dagger module init <sdk>` and
-	// `dagger api client init <sdk>`. When empty, the module entry name is used.
+	// Name is the user-facing name used by the dynamic `dagger sdk <name>`
+	// command. When empty, the module entry name is used.
 	Name string `json:"name,omitempty" toml:"name,omitempty"`
 
 	// Modules lists the workspace-local modules this SDK authors and

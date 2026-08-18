@@ -5879,6 +5879,33 @@ type Workspace implements Node {
     changes: ID! @expectedType(name: "Changeset")
   ): Workspace!
 
+  """
+  Return this workspace with an existing generated client claimed by an installed SDK.
+  """
+  withClaimedClient(
+    """Workspace SDK name or module entry name to claim the client with."""
+    sdk: String!
+
+    """Path of the existing client, relative to the workspace cwd."""
+    path: String!
+
+    """
+    Workspace-relative path or canonical ref for the module the client binds to.
+    """
+    module: String!
+  ): Workspace!
+
+  """
+  Return this workspace with an existing module claimed by an installed SDK.
+  """
+  withClaimedModule(
+    """Workspace SDK name or module entry name to claim the module with."""
+    sdk: String!
+
+    """Path of the existing module, relative to the workspace cwd."""
+    path: String!
+  ): Workspace!
+
   """Return this workspace with a named config environment created."""
   withConfigEnv(
     """Environment name."""
@@ -6078,6 +6105,28 @@ type Workspace implements Node {
   """
   withWorkdir(
     """Workspace-relative path to use as the working directory."""
+    path: String!
+  ): Workspace!
+
+  """
+  Return this workspace with a generated client no longer claimed by an installed SDK.
+  """
+  withoutClaimedClient(
+    """Workspace SDK name or module entry name currently claiming the client."""
+    sdk: String!
+
+    """Path of the claimed client, relative to the workspace cwd."""
+    path: String!
+  ): Workspace!
+
+  """
+  Return this workspace with a module no longer claimed by an installed SDK.
+  """
+  withoutClaimedModule(
+    """Workspace SDK name or module entry name currently claiming the module."""
+    sdk: String!
+
+    """Path of the claimed module, relative to the workspace cwd."""
     path: String!
   ): Workspace!
 

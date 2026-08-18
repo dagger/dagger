@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const dynamicSDKInitCommandAnnotation = "dynamic-sdk-init"
+const dynamicSDKCommandAnnotation = "dynamic-sdk"
 const sdkInitArgAnnotation = "sdk-init-arg"
 
 type sdkInitKind string
@@ -28,52 +28,12 @@ const (
 	sdkInitKindClient sdkInitKind = "client"
 )
 
-func registerInstalledSDKInitCommands(ctx context.Context, args []string) error {
-	kind, ok := sdkInitInvocationKind(args)
-	if !ok {
-		return nil
-	}
-
+func registerInstalledSDKCommands(ctx context.Context, args []string) error {
 	cfg, cfgPath, err := readWorkspaceConfigForSDKInitRegistration()
 	if err != nil {
 		return err
 	}
-	if cfg == nil {
-		clearDynamicSDKInitCommands(moduleInitCmd)
-		clearDynamicSDKInitCommands(apiClientInitCmd)
-		// Without a workspace config nothing is installed, so there is no
-		// engine introspection to do; still offer an install hint when the
-		// requested SDK is one the registry knows about.
-		registerUninstalledSDKInitSuggestion(moduleInitCmd, apiClientInitCmd, kind, args, nil)
-		return nil
-	}
-
-	cfgDir := filepath.Dir(cfgPath)
-	// Build the dynamic subcommands under a throwaway discard frontend rather
-	// than the main one. This SDK introspection runs before the real command
-	// executes; the pretty TUI frontend is single-shot (it spawns its run
-	// function only once, guarded by fe.spawned, which is never reset), so
-	// driving Frontend.Run here would consume that one run and leave the
-	// actual command's Frontend.Run hanging without ever spawning its work.
-	return withEngineSilent(ctx, client.Params{
-		SkipWorkspaceModules:           true,
-		SuppressCompatWorkspaceWarning: true,
-	}, func(ctx context.Context, ec *client.Client) error {
-		return registerSDKInitCommandsFromConfigForKind(ctx, ec.Dagger(), moduleInitCmd, apiClientInitCmd, cfg, cfgDir, kind, args)
-	})
-}
-
-func registerSDKInitCommandsFromConfigForKind(
-	ctx context.Context,
-	dag *dagger.Client,
-	moduleParent, clientParent *cobra.Command,
-	cfg *workspace.Config,
-	cfgDir string,
-	kind sdkInitKind,
-	args []string,
-) error {
-	clearDynamicSDKInitCommands(moduleParent)
-	clearDynamicSDKInitCommands(clientParent)
+	clearDynamicSDKCommands(sdkCmd)
 	if cfg == nil {
 		return nil
 	}
@@ -82,38 +42,42 @@ func registerSDKInitCommandsFromConfigForKind(
 	if err != nil {
 		return err
 	}
-
-	registerUninstalledSDKInitSuggestion(moduleParent, clientParent, kind, args, sdks)
-
+	commands := make(map[string]*cobra.Command, len(sdks))
 	for _, sdk := range sdks {
-		sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
-		if err != nil {
-			return err
-		}
-		fn, err := inspectSDKInitFunction(ctx, dag, sdkRef, kind)
-		if errors.Is(err, errSDKInitFunctionNotFound) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-
-		switch kind {
-		case sdkInitKindModule:
-			cmd := newModuleInitSDKCommand(sdk.commandName)
-			if err := addSDKInitFunctionFlags(cmd, fn, kind); err != nil {
-				return err
-			}
-			moduleParent.AddCommand(cmd)
-		case sdkInitKindClient:
-			cmd := newAPIClientInitSDKCommand(sdk.commandName)
-			if err := addSDKInitFunctionFlags(cmd, fn, kind); err != nil {
-				return err
-			}
-			clientParent.AddCommand(cmd)
-		}
+		cmd := newInstalledSDKCommand(sdk)
+		sdkCmd.AddCommand(cmd)
+		commands[sdk.commandName] = cmd
 	}
-	return nil
+
+	selectedName, ok := sdkInvocationSDKName(args)
+	if !ok {
+		return nil
+	}
+	selected, err := resolveConfiguredSDK(cfg, selectedName)
+	if err != nil {
+		// Leave unknown names to Cobra, which can provide suggestions from the
+		// dynamic SDK command list. Only surface config ambiguity here.
+		if strings.Contains(err.Error(), "ambiguous") {
+			return err
+		}
+		return nil
+	}
+	parent := commands[selected.commandName]
+	if parent == nil || sdkInvocationIsInfo(args) {
+		return nil
+	}
+
+	// The SDK's init signatures define both capability presence and any custom
+	// flags on the init commands, so build the selected subtree from engine
+	// introspection before Cobra parses it. A discard frontend keeps this
+	// preflight session separate from the command's real progress frontend.
+	cfgDir := filepath.Dir(cfgPath)
+	return withEngineSilent(ctx, client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		return registerSDKCapabilityCommands(ctx, ec.Dagger(), parent, selected, cfgDir)
+	})
 }
 
 type configuredSDK struct {
@@ -161,7 +125,7 @@ func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
 
 func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK, error) {
 	if cfg == nil || cfg.Modules == nil {
-		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
 	}
 	if entry, ok := cfg.Modules[sdkName]; ok && entry.AsSDK != nil {
 		return configuredSDK{
@@ -185,7 +149,7 @@ func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK,
 	sort.Slice(matches, func(i, j int) bool { return matches[i].moduleName < matches[j].moduleName })
 	switch len(matches) {
 	case 0:
-		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
 	case 1:
 		return matches[0], nil
 	default:
@@ -197,11 +161,11 @@ func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK,
 	}
 }
 
-func clearDynamicSDKInitCommands(parent *cobra.Command) {
+func clearDynamicSDKCommands(parent *cobra.Command) {
 	for {
 		removed := false
 		for _, cmd := range parent.Commands() {
-			if cmd.Annotations[dynamicSDKInitCommandAnnotation] == "true" {
+			if cmd.Annotations[dynamicSDKCommandAnnotation] == "true" {
 				parent.RemoveCommand(cmd)
 				removed = true
 				break
@@ -213,84 +177,117 @@ func clearDynamicSDKInitCommands(parent *cobra.Command) {
 	}
 }
 
+func newInstalledSDKCommand(sdk configuredSDK) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   sdk.commandName,
+		Short: fmt.Sprintf("Use the %s SDK (module: %s)", sdk.commandName, sdk.moduleName),
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+		Annotations: map[string]string{dynamicSDKCommandAnnotation: "true"},
+	}
+	cmd.AddCommand(newSDKInfoCommand(sdk.commandName))
+	return cmd
+}
+
+func registerSDKCapabilityCommands(
+	ctx context.Context,
+	dag *dagger.Client,
+	parent *cobra.Command,
+	sdk configuredSDK,
+	cfgDir string,
+) error {
+	sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
+	if err != nil {
+		return err
+	}
+
+	functions, err := inspectSDKInitFunctions(ctx, dag, sdkRef)
+	if err != nil {
+		return err
+	}
+	if moduleFn := functions[sdkInitKindModule]; moduleFn != nil {
+		moduleCmd, err := newSDKModuleCommand(sdk.commandName, moduleFn)
+		if err != nil {
+			return err
+		}
+		parent.AddCommand(moduleCmd)
+	}
+
+	if clientFn := functions[sdkInitKindClient]; clientFn != nil {
+		clientCmd, err := newSDKClientCommand(sdk.commandName, clientFn)
+		if err != nil {
+			return err
+		}
+		parent.AddCommand(clientCmd)
+	}
+	return nil
+}
+
+func newSDKModuleCommand(sdkName string, fn *modFunction) (*cobra.Command, error) {
+	cmd := &cobra.Command{
+		Use:   "module",
+		Short: fmt.Sprintf("Develop Dagger modules using the %s SDK", sdkName),
+	}
+	initCmd := newModuleInitSDKCommand(sdkName)
+	if err := addSDKInitFunctionFlags(initCmd, fn, sdkInitKindModule); err != nil {
+		return nil, err
+	}
+	cmd.AddCommand(
+		initCmd,
+		newSDKModuleClaimCommand(sdkName),
+		newSDKModuleUnclaimCommand(sdkName),
+		newSDKModuleClaimedCommand(sdkName),
+	)
+	return cmd, nil
+}
+
+func newSDKClientCommand(sdkName string, fn *modFunction) (*cobra.Command, error) {
+	cmd := &cobra.Command{
+		Use:   "client",
+		Short: fmt.Sprintf("Generate API clients using the %s SDK", sdkName),
+	}
+	initCmd := newAPIClientInitSDKCommand(sdkName)
+	if err := addSDKInitFunctionFlags(initCmd, fn, sdkInitKindClient); err != nil {
+		return nil, err
+	}
+	cmd.AddCommand(
+		initCmd,
+		newSDKClientClaimCommand(sdkName),
+		newSDKClientUnclaimCommand(sdkName),
+		newSDKClientClaimedCommand(sdkName),
+	)
+	return cmd, nil
+}
+
 func newModuleInitSDKCommand(sdkName string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:                   sdkName + " <name>",
-		Short:                 fmt.Sprintf("Initialize a new module with %s", sdkName),
+		Use:                   "init <name>",
+		Short:                 "Initialize a new module",
 		Args:                  cobra.ExactArgs(1),
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runModuleInitWithSDK(cmd, sdkName, args[0])
 		},
-		Annotations: map[string]string{
-			dynamicSDKInitCommandAnnotation: "true",
-		},
 	}
+	cmd.Flags().StringVar(&moduleInitPath, "path", "", "Module path, relative to the current directory (\"/\" = workspace root; default: .dagger/modules/<name> beside dagger.toml)")
+	cmd.Flags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
 	cmd.SetGlobalNormalizationFunc(sdkInitFlagNormalizer)
 	return cmd
 }
 
-// registerUninstalledSDKInitSuggestion adds a temporary init subcommand for a
-// requested SDK that the embedded registry recognizes but that is not installed
-// in the workspace, so `dagger module init <sdk> ...` explains how to install it
-// instead of failing with a generic unknown-command error. Names the registry
-// doesn't know are left alone so cobra's usual error still applies.
-func registerUninstalledSDKInitSuggestion(moduleParent, clientParent *cobra.Command, kind sdkInitKind, args []string, sdks []configuredSDK) {
-	sdkName, ok := sdkInitInvocationSDKName(args)
-	if !ok {
-		return
-	}
-	for _, sdk := range sdks {
-		if sdk.commandName == sdkName || sdk.moduleName == sdkName {
-			return
-		}
-	}
-	if _, _, _, err := sdkResolveInstall(sdkName); err != nil {
-		return
-	}
-	parent := moduleParent
-	if kind == sdkInitKindClient {
-		parent = clientParent
-	}
-	parent.AddCommand(newUninstalledSDKInitCommand(kind, sdkName))
-}
-
-func newUninstalledSDKInitCommand(kind sdkInitKind, sdkName string) *cobra.Command {
-	use := sdkName + " <name>"
-	if kind == sdkInitKindClient {
-		use = sdkName + " <path> <module>"
-	}
-	return &cobra.Command{
-		Use:                   use,
-		Short:                 fmt.Sprintf("Initialize with the %s SDK (not installed)", sdkName),
-		DisableFlagsInUseLine: true,
-		// The SDK isn't installed, so there's no engine-backed init to run;
-		// accept any args and explain how to install it. The message must come
-		// from RunE, not Args: cobra returns help for a command that isn't
-		// Runnable (no Run/RunE) before it ever validates args.
-		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
-		},
-		Annotations: map[string]string{
-			dynamicSDKInitCommandAnnotation: "true",
-		},
-	}
-}
-
 func newAPIClientInitSDKCommand(sdkName string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:                   sdkName + " <path> <module>",
-		Short:                 fmt.Sprintf("Initialize a generated API client with %s", sdkName),
+		Use:                   "init <path> <module>",
+		Short:                 "Initialize a generated API client",
 		Args:                  cobra.ExactArgs(2),
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAPIClientInitWithSDK(cmd, sdkName, args[0], args[1])
 		},
-		Annotations: map[string]string{
-			dynamicSDKInitCommandAnnotation: "true",
-		},
 	}
+	cmd.Flags().BoolVar(&apiClientInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new client")
 	cmd.SetGlobalNormalizationFunc(sdkInitFlagNormalizer)
 	return cmd
 }
@@ -356,35 +353,22 @@ func readWorkspaceConfigForSDKInitRegistrationFrom(start string) (*workspace.Con
 	}
 }
 
-func shouldRegisterSDKInitCommands(args []string) bool {
-	_, ok := sdkInitInvocationKind(args)
-	return ok
+func shouldRegisterSDKCommands(args []string) bool {
+	tokens := sdkInitCommandTokens(args)
+	return len(tokens) > 0 && tokens[0] == "sdk"
 }
 
-func sdkInitInvocationKind(args []string) (sdkInitKind, bool) {
+func sdkInvocationSDKName(args []string) (string, bool) {
 	tokens := sdkInitCommandTokens(args)
-	for i := 0; i < len(tokens); i++ {
-		if i+1 < len(tokens) && tokens[i] == "module" && tokens[i+1] == "init" {
-			return sdkInitKindModule, true
-		}
-		if i+2 < len(tokens) && tokens[i] == "api" && tokens[i+1] == "client" && tokens[i+2] == "init" {
-			return sdkInitKindClient, true
-		}
+	if len(tokens) < 2 || tokens[0] != "sdk" {
+		return "", false
 	}
-	return "", false
+	return tokens[1], true
 }
 
-func sdkInitInvocationSDKName(args []string) (string, bool) {
+func sdkInvocationIsInfo(args []string) bool {
 	tokens := sdkInitCommandTokens(args)
-	for i := 0; i < len(tokens); i++ {
-		if i+2 < len(tokens) && tokens[i] == "module" && tokens[i+1] == "init" {
-			return tokens[i+2], true
-		}
-		if i+3 < len(tokens) && tokens[i] == "api" && tokens[i+1] == "client" && tokens[i+2] == "init" {
-			return tokens[i+3], true
-		}
-	}
-	return "", false
+	return len(tokens) >= 3 && tokens[0] == "sdk" && tokens[2] == "info"
 }
 
 func sdkInitCommandTokens(args []string) []string {
@@ -451,11 +435,22 @@ func inspectSDKInitFunction(
 	sdkRef string,
 	kind sdkInitKind,
 ) (*modFunction, error) {
-	fnName := "initModule"
-	if kind == sdkInitKindClient {
-		fnName = "initClient"
+	functions, err := inspectSDKInitFunctions(ctx, dag, sdkRef)
+	if err != nil {
+		return nil, err
 	}
+	fn := functions[kind]
+	if fn == nil {
+		return nil, errSDKInitFunctionNotFound
+	}
+	return fn, nil
+}
 
+func inspectSDKInitFunctions(
+	ctx context.Context,
+	dag *dagger.Client,
+	sdkRef string,
+) (map[sdkInitKind]*modFunction, error) {
 	modSrc := dag.ModuleSource(sdkRef)
 	// Inspect the SDK's own init contract only. Serving its dependencies would
 	// pull them into the session's shared module namespace, so two installed
@@ -468,27 +463,28 @@ func inspectSDKInitFunction(
 	}
 	constructor := mod.ModuleConstructor()
 	if constructor == nil || constructor.ReturnType == nil {
-		return nil, errSDKInitFunctionNotFound
+		return map[sdkInitKind]*modFunction{}, nil
 	}
 	provider := constructor.ReturnType.AsFunctionProvider()
 	if provider == nil {
-		return nil, errSDKInitFunctionNotFound
+		return map[sdkInitKind]*modFunction{}, nil
 	}
 
-	var fn *modFunction
+	functions := map[sdkInitKind]*modFunction{}
 	for _, candidate := range provider.GetFunctions() {
-		if candidate.Name == fnName || candidate.CmdName() == fnName {
-			fn = candidate
-			break
+		switch {
+		case candidate.Name == "initModule" || candidate.CmdName() == "initModule":
+			functions[sdkInitKindModule] = candidate
+		case candidate.Name == "initClient" || candidate.CmdName() == "initClient":
+			functions[sdkInitKindClient] = candidate
 		}
 	}
-	if fn == nil {
-		return nil, errSDKInitFunctionNotFound
+	for kind, fn := range functions {
+		if err := mod.LoadFunctionTypeDefs(fn); err != nil {
+			return nil, fmt.Errorf("inspect sdk %q init%s args: %w", sdkRef, strings.ToUpper(string(kind)[:1])+string(kind)[1:], err)
+		}
 	}
-	if err := mod.LoadFunctionTypeDefs(fn); err != nil {
-		return nil, fmt.Errorf("inspect sdk %q %s args: %w", sdkRef, fnName, err)
-	}
-	return fn, nil
+	return functions, nil
 }
 
 func addSDKInitFunctionFlags(cmd *cobra.Command, fn *modFunction, kind sdkInitKind) error {

@@ -267,6 +267,35 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 				dagql.Arg("noGenerate").Doc("Skip running the SDK's generators for the new client."),
 			),
+		dagql.NodeFunc("withClaimedModule", s.withClaimedModule).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with an existing module claimed by an installed SDK.").
+			Args(
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to claim the module with."),
+				dagql.Arg("path").Doc("Path of the existing module, relative to the workspace cwd."),
+			),
+		dagql.NodeFunc("withoutClaimedModule", s.withoutClaimedModule).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a module no longer claimed by an installed SDK.").
+			Args(
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name currently claiming the module."),
+				dagql.Arg("path").Doc("Path of the claimed module, relative to the workspace cwd."),
+			),
+		dagql.NodeFunc("withClaimedClient", s.withClaimedClient).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with an existing generated client claimed by an installed SDK.").
+			Args(
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to claim the client with."),
+				dagql.Arg("path").Doc("Path of the existing client, relative to the workspace cwd."),
+				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
+			),
+		dagql.NodeFunc("withoutClaimedClient", s.withoutClaimedClient).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a generated client no longer claimed by an installed SDK.").
+			Args(
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name currently claiming the client."),
+				dagql.Arg("path").Doc("Path of the claimed client, relative to the workspace cwd."),
+			),
 		dagql.NodeFunc("withConfigValue", s.withConfigValue).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).

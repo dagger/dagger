@@ -16695,6 +16695,29 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// Return this workspace with an existing generated client claimed by an installed SDK.
+func (r *Workspace) WithClaimedClient(sdk string, path string, module string) *Workspace {
+	q := r.query.Select("withClaimedClient")
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("path", path)
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with an existing module claimed by an installed SDK.
+func (r *Workspace) WithClaimedModule(sdk string, path string) *Workspace {
+	q := r.query.Select("withClaimedModule")
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -16982,6 +17005,28 @@ func (r *Workspace) WithUpdatedLock() *Workspace {
 // Return this workspace with its working directory pointed at the given workspace-relative path.
 func (r *Workspace) WithWorkdir(path string) *Workspace {
 	q := r.query.Select("withWorkdir")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a generated client no longer claimed by an installed SDK.
+func (r *Workspace) WithoutClaimedClient(sdk string, path string) *Workspace {
+	q := r.query.Select("withoutClaimedClient")
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a module no longer claimed by an installed SDK.
+func (r *Workspace) WithoutClaimedModule(sdk string, path string) *Workspace {
+	q := r.query.Select("withoutClaimedModule")
+	q = q.Arg("sdk", sdk)
 	q = q.Arg("path", path)
 
 	return &Workspace{
