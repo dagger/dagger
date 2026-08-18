@@ -36,6 +36,8 @@ type GitCLI struct {
 	ignoreError bool
 	config      map[string]string
 
+	snapshotBackedRepo bool
+
 	indexFile string
 }
 
@@ -172,6 +174,19 @@ func WithStreams(streams StreamFunc) Option {
 	}
 }
 
+// WithSnapshotBackedRepo marks the repository as living on a snapshot-backed
+// mount, where a file's ctime, inode and device can all change without its
+// content changing because snapshots share content via hardlinks. Left alone,
+// git treats those files as changed underneath it -- that is what
+// "fatal: shallow file has changed since we read it" reports about .git/shallow.
+// mtime + size is all that can be trusted there. See gitEphemeralConfig in
+// core/changeset.go, which disables the same stat fields for the same reason.
+func WithSnapshotBackedRepo() Option {
+	return func(b *GitCLI) {
+		b.snapshotBackedRepo = true
+	}
+}
+
 // WithIndexFile sets the GIT_INDEX_FILE environment variable for the git commands.
 func WithIndexFile(indexFile string) Option {
 	return func(b *GitCLI) {
@@ -243,6 +258,12 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 		"-c", "gc.autoDetach=false",
 		"-c", "maintenance.autoDetach=false",
 	)
+	if cli.snapshotBackedRepo {
+		cmd.Args = append(cmd.Args,
+			"-c", "core.checkStat=minimal",
+			"-c", "core.trustctime=false",
+		)
+	}
 	if cli.workTree != "" {
 		cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
 	}

@@ -335,7 +335,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 			return err
 		}
 		defer cleanup()
-		git = git.New(gitutil.WithGitDir(remote))
+		git = git.New(gitutil.WithGitDir(remote), gitutil.WithSnapshotBackedRepo())
 		gitDir, err := git.GitDir(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git dir: %w", err)
@@ -595,7 +595,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		}
 	}()
 
-	git := gitutil.NewGitCLI(gitutil.WithGitDir(dir))
+	git := gitutil.NewGitCLI(gitutil.WithGitDir(dir), gitutil.WithSnapshotBackedRepo())
 	initializeRepo := false
 	if _, err := os.Lstat(filepath.Join(dir, "HEAD")); errors.Is(err, os.ErrNotExist) {
 		initializeRepo = true
@@ -651,7 +651,11 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
 			}
-			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
+			checkoutGit := git.New(
+				gitutil.WithWorkTree(checkoutDir),
+				gitutil.WithGitDir(checkoutDirGit),
+				gitutil.WithSnapshotBackedRepo(),
+			)
 
 			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
 		})
