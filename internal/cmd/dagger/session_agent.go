@@ -196,9 +196,10 @@ type sessionAgent struct {
 	initialLLM *dagger.LLM
 
 	// lastSyncedWorkspace is the immutable workspace checkpoint this
-	// conversation last explicitly synchronized with the host. Changes previews
-	// compare against it, and explicit export/reset advances it. UI refreshes run
-	// asynchronously, so every access is guarded by lastSyncedWorkspaceL.
+	// conversation last explicitly synchronized with the host. Explicit
+	// export/reset advances it, and reset/clear/session persistence reuse it.
+	// UI refreshes run asynchronously, so every access is guarded by
+	// lastSyncedWorkspaceL.
 	lastSyncedWorkspace  *dagger.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
 
@@ -992,28 +993,24 @@ func (a *sessionAgent) updateStatusLine(llm *dagger.LLM) error {
 	return nil
 }
 
-// updateChangesPreview refreshes the "Changes" notification bubble with a summary
-// of the workspace's pending overlay edits (Workspace.changes) plus the commits
-// staged engine-side but not yet saved (WorkspaceGit.stagedCommits, newest
-// first). Pressing ctrl+s exports them to the local Git workspace (see
-// ExportChanges). When there is neither a pending edit nor a staged commit the
-// bubble is cleared (an empty body renders nothing).
+// updateChangesPreview refreshes the "Changes" notification bubble with the
+// workspace's Git-visible uncommitted changes, pending edits Git cannot see,
+// and commits staged engine-side but not yet saved (newest first). Pressing
+// ctrl+s exports all three to the local Git workspace (see ExportChanges). When
+// there is nothing to show the bubble is cleared (an empty body renders nothing).
 func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 	if !a.uiActive() || llm == nil {
 		return nil
 	}
 	workspace := llm.Workspace()
-	// Attached, trace-restored, and old saved conversations use their current
-	// portable workspace as a conservative best-effort baseline when the
-	// original checkpoint is unavailable. A genuinely unbound conversation has
-	// no meaningful changes to preview; skip it rather than issuing a query that
-	// is guaranteed to fail.
-	baseline := a.lastSynced(nil)
-	if baseline == nil {
+	// A genuinely unbound trace restore has no workspace state to preview. The
+	// synchronization checkpoint is also our established bound/unbound marker;
+	// skip the query rather than issuing one guaranteed to fail.
+	if a.lastSynced(nil) == nil {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
-	changes, err := idtui.PreviewWorkspaceChanges(a.session.plumbingCtx, a.session.dag, workspace, baseline)
+	changes, err := idtui.PreviewWorkspaceChanges(a.session.plumbingCtx, a.session.dag, workspace)
 	if err != nil {
 		return err
 	}

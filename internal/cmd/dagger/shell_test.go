@@ -61,11 +61,10 @@ func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
 	require.Equal(t, moduleURLDefault, handler.moduleURL)
 }
 
-// TestAgentWorkspaceBaseline exercises the conversation's synchronization
-// baseline end to end: a checkpoint-backed LLM previews changes without being
-// compared to currentWorkspace, saves and restores that portable baseline, and
-// advances it after both explicit synchronization actions. It also locks in the
-// compatibility fallback for metadata written before the baseline field existed.
+// TestAgentWorkspaceBaseline exercises a checkpoint-backed conversation end to
+// end: its Git state can be previewed, its portable synchronization checkpoint
+// survives save/restore, and explicit synchronization advances that checkpoint.
+// It also locks in compatibility with metadata written before the baseline field.
 func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx.T) {
 	workdir := filepath.Join(t.TempDir(), "work")
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1",
@@ -121,9 +120,70 @@ func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx
 			}
 		},
 	}
-	require.NoError(t, agent.updateChangesPreview(edited),
-		"a portable checkpoint must not be compared with client-local currentWorkspace")
+	require.NoError(t, agent.updateChangesPreview(edited))
 	require.Contains(t, changesSection.Body(80), "agent.txt")
+
+	t.Run("separates Git state from staged commits", func(ctx context.Context, t *testctx.T) {
+		workspace := baseline.
+			WithNewFile("committed.txt", "committed\n").
+			WithCommit("add committed file", "2026-08-18T00:00:00Z").
+			WithNewFile("pending.txt", "pending\n")
+
+		changes, err := idtui.PreviewWorkspaceChanges(ctx, dag, workspace)
+		require.NoError(t, err)
+		require.Len(t, changes.Uncommitted, 1)
+		require.Equal(t, "pending.txt", changes.Uncommitted[0].Path)
+		require.Len(t, changes.StagedCommits, 1)
+		require.Len(t, changes.StagedCommits[0].Entries, 1)
+		require.Equal(t, "committed.txt", changes.StagedCommits[0].Entries[0].Path)
+	})
+
+	t.Run("keeps a later edit to a staged path uncommitted", func(ctx context.Context, t *testctx.T) {
+		workspace := baseline.
+			WithNewFile("overlap.txt", "staged\n").
+			WithCommit("add overlap file", "2026-08-18T00:00:00Z").
+			WithNewFile("overlap.txt", "pending\n")
+
+		changes, err := idtui.PreviewWorkspaceChanges(ctx, dag, workspace)
+		require.NoError(t, err)
+		require.Len(t, changes.Uncommitted, 1)
+		require.Equal(t, "overlap.txt", changes.Uncommitted[0].Path)
+		require.Len(t, changes.StagedCommits, 1)
+		require.Len(t, changes.StagedCommits[0].Entries, 1)
+		require.Equal(t, "overlap.txt", changes.StagedCommits[0].Entries[0].Path)
+	})
+
+	t.Run("includes unmanaged pending edits", func(ctx context.Context, t *testctx.T) {
+		ignoredWorkdir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(ignoredWorkdir, ".gitignore"), []byte("*.previewignored\n"), 0o644))
+		git := func(args ...string) {
+			t.Helper()
+			cmd := exec.CommandContext(ctx, "git", append([]string{"-C", ignoredWorkdir}, args...)...)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+		}
+		git("init", "-q", "-b", "main")
+		git("add", ".gitignore")
+		git("-c", "user.name=Preview Test", "-c", "user.email=preview@localhost", "commit", "-qm", "initial")
+
+		ignoredDag, err := dagger.Connect(ctx, dagger.WithWorkdir(ignoredWorkdir))
+		require.NoError(t, err)
+		t.Cleanup(func() { ignoredDag.Close() })
+		workspace := ignoredDag.CurrentWorkspace().
+			WithNewFile("artifact.previewignored", "pending but ignored\n")
+
+		gitVisible, err := workspace.Git().Uncommitted().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, gitVisible, "ignored edit must not appear in git.uncommitted")
+		unmanaged, err := workspace.Git().Unmanaged().AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"artifact.previewignored"}, unmanaged)
+
+		changes, err := idtui.PreviewWorkspaceChanges(ctx, ignoredDag, workspace)
+		require.NoError(t, err)
+		require.Len(t, changes.Uncommitted, 1)
+		require.Equal(t, "artifact.previewignored", changes.Uncommitted[0].Path)
+	})
 	session.frontend = nil
 
 	// Auto-save persists a second portable recipe for the baseline. Reload it
