@@ -180,7 +180,7 @@ func clearDynamicSDKCommands(parent *cobra.Command) {
 func newInstalledSDKCommand(sdk configuredSDK) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   sdk.commandName,
-		Short: fmt.Sprintf("Use the %s SDK (module: %s)", sdk.commandName, sdk.moduleName),
+		Short: fmt.Sprintf("Use the %s SDK to develop and consume modules", sdk.commandName),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
