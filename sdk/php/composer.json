@@ -7,7 +7,7 @@
     "minimum-stability": "stable",
     "require": {
         "php": ">=8.2",
-        "carnage/php-graphql-client": "^1.14.1",
+        "carnage/php-graphql-client": "^1.15.0",
         "jms/serializer": "^3.32.5",
         "nette/php-generator": "^4.2.0",
         "psr/log": "^3.0.2",
@@ -32,7 +32,7 @@
     "require-dev": {
         "phpunit/phpunit": "^12.4",
         "phpstan/phpstan": "^2.1.31",
-        "squizlabs/php_codesniffer": "^4.0",
+        "squizlabs/php_codesniffer": "^4.0.2",
         "mikey179/vfsstream": "^1.6.12"
     }
 }
