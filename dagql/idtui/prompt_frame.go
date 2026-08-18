@@ -30,6 +30,14 @@ func NewPromptFrame(input *tuist.TextInput, profile termenv.Profile) *PromptFram
 	return &PromptFrame{input: input, profile: profile}
 }
 
+// ChromeHeight is the number of lines the frame adds around the text input.
+func (p *PromptFrame) ChromeHeight() int {
+	if p.enabled {
+		return 2
+	}
+	return 0
+}
+
 // SetEnabled toggles the framed styling on or off.
 func (p *PromptFrame) SetEnabled(enabled bool) {
 	if p.enabled == enabled {
@@ -47,7 +55,6 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	result := p.RenderChildResult(ctx, p.input)
 
 	if !p.enabled {
-		// Plain shell mode: render the input bare and pass its cursor through.
 		ctx.Lines(result.Lines...)
 		if result.Cursor != nil {
 			ctx.SetCursor(result.Cursor.Row, result.Cursor.Col)
@@ -65,10 +72,13 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(p.profile))
 	// The rules read as faint bright-black dashes spanning the full width,
 	// framing the flush input without any background.
-	bar := out.String(strings.Repeat(HorizBar, max(width, 0))).
-		Foreground(termenv.ANSIBrightBlack).
-		Faint().
-		String()
+	styleBar := func(bar string) string {
+		return out.String(bar).
+			Foreground(termenv.ANSIBrightBlack).
+			Faint().
+			String()
+	}
+	bar := styleBar(strings.Repeat(HorizBar, max(width, 0)))
 
 	lines := make([]string, 0, len(result.Lines)+2)
 	lines = append(lines, bar)
