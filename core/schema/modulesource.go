@@ -956,6 +956,7 @@ func (s *moduleSourceSchema) directoryAsModule(
 			Field: "asModuleSource",
 			Args: []dagql.NamedInput{
 				{Name: "sourceRootPath", Value: dagql.String(args.SourceRootPath)},
+				{Name: "contextIdentity", Value: dagql.String(args.ContextIdentity)},
 			},
 		},
 		dagql.Selector{
@@ -993,7 +994,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		DirSrc: &core.DirModuleSource{
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
-			ContextIdentity:           args.ContextIdentity,
+			ContextIdentity:           workspace.NormalizeGitRemote(args.ContextIdentity),
 		},
 	}
 	if dirSrc.SourceRootSubpath == "" {

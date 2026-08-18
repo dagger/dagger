@@ -540,7 +540,8 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		}
 		query = query.Select("node").Arg("id", dirIDEnc).InlineFragment("Directory")
 		query = query.Select("asModuleSource").
-			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
+			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath).
+			Arg("contextIdentity", modSrc.DirSrc.ContextIdentity)
 	}
 	query = query.Select("asModule")
 	if mod.Name() != "" && mod.Name() != modSrc.ModuleName {
