@@ -1028,9 +1028,8 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert errorLabel + queuedMsg + agentRoster + textInput + statusLine
-	// before keymapBar:
-	// output → error → queued → agents → prompt → statusLine → keymap
+	// Insert errorLabel + queuedMsg + promptFrame + statusLine before keymapBar:
+	// output → error → queued → prompt (with agent roster) → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterEntries)
@@ -1038,13 +1037,12 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 		profile:   fe.profile,
 		data:      fe.statusLineData, // seed from the last SetStatusLine (e.g. a resumed session)
 		liveStats: fe.llmLiveStats,
-		inFlight:  func() bool { return fe.turnsRunning > 0 },
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
+	fe.promptFrame.SetRoster(fe.agentRoster)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
-	fe.tui.AddChild(fe.agentRoster)
 	fe.tui.AddChild(fe.promptFrame)
 	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
@@ -1069,10 +1067,7 @@ func (fe *frontendPretty) stopShell() {
 		fe.tui.RemoveChild(fe.queuedMsgLabel)
 		fe.queuedMsgLabel = nil
 	}
-	if fe.agentRoster != nil {
-		fe.tui.RemoveChild(fe.agentRoster)
-		fe.agentRoster = nil
-	}
+	fe.agentRoster = nil
 	if fe.statusLine != nil {
 		fe.tui.RemoveChild(fe.statusLine)
 		fe.statusLine = nil
@@ -2393,9 +2388,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
 			)
 		}
-		// Roster focus, shown only once there is more than one agent to
-		// switch between -- the same threshold the strip itself uses.
-		if fe.agentRoster != nil && fe.agentRoster.Visible() {
+		// Roster focus is shown only once there is more than one agent to
+		// switch between. A single-agent roster remains a state display.
+		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
 			bnds = append(bnds,
 				key.NewBinding(key.WithKeys("alt+1"), key.WithHelp("alt+1…9", "focus agent")),
 				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
@@ -2560,10 +2555,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("N", "prev"),
 			KeyEnabled(fe.searchQuery != "")),
 	}
-	// Roster focus, on unmodified keys because nav mode is the one place
-	// they are free -- and shown only once there is more than one agent to
-	// switch between, the same threshold the strip itself uses.
-	if fe.agentRoster != nil && fe.agentRoster.Visible() {
+	// Roster focus uses unmodified keys because nav mode is the one place they
+	// are free, and is shown only once there is more than one agent to switch.
+	if fe.agentRoster != nil && fe.agentRoster.Switchable() {
 		binds = append(binds,
 			key.NewBinding(key.WithKeys("1…9", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
 				key.WithHelp("1…9", "focus agent")),
@@ -2695,7 +2689,6 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	reserved := 1 // keymap bar
 	reserved += fe.errorLabelHeight()
 	reserved += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
-	reserved += fe.agentRosterHeight()   // agentRoster is a sibling, not rendered here
 	reserved += fe.statusLineHeight()    // statusLine is a sibling, not rendered here
 	reserved += fe.editlineHeight()
 	reserved += fe.formHeight()
@@ -3416,9 +3409,10 @@ func (fe *frontendPretty) editlineHeight() int {
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
 	height := strings.Count(val, "\n") + 1
-	// The framed prompt adds a horizontal rule above and below the input.
-	if fe.promptFrame != nil && fe.promptFrame.enabled {
-		height += 2
+	// PromptFrame owns the roster row: in prompt mode it shares the top border;
+	// in unframed shell mode it adds one standalone line when entries exist.
+	if fe.promptFrame != nil {
+		height += fe.promptFrame.ChromeHeight()
 	}
 	return height
 }
@@ -3761,15 +3755,10 @@ func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
 	return false, false
 }
 
-// navRosterEntries returns the entries nav mode's roster keys may address,
-// or nil when the strip is not on screen.
-//
-// Nav mode's bindings are unmodified keys, so they are only allowed to claim
-// a keypress while the user can SEE what they are addressing -- the same
-// "more than one agent" threshold the strip itself and its help line use.
-// Digits that address an invisible strip would be a switcher operated blind.
+// navRosterEntries returns entries only when the roster can switch focus.
+// The single-agent roster stays visible as state but must not claim nav keys.
 func (fe *frontendPretty) navRosterEntries() []AgentRosterEntry {
-	if fe.agentRoster == nil || !fe.agentRoster.Visible() {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
 		return nil
 	}
 	return fe.agentRoster.Entries()
@@ -4132,16 +4121,7 @@ func (fe *frontendPretty) clearPromptError() {
 	}
 }
 
-// agentRosterHeight returns the line count of the roster strip, which
-// renders nothing for a session with fewer than two agents.
-func (fe *frontendPretty) agentRosterHeight() int {
-	if fe.agentRoster == nil {
-		return 0
-	}
-	return fe.agentRoster.Height()
-}
-
-// updateAgentRoster re-renders the strip when the published roster has
+// updateAgentRoster re-renders the prompt frame when the published roster has
 // changed. Components render only when marked dirty, and the roster's content
 // comes from the trace rather than from a setter, so this is where the trace
 // pushes it: on span batches (an agent appearing) and on log records (an
@@ -4170,7 +4150,9 @@ func (fe *frontendPretty) updateAgentRoster() {
 		return
 	}
 	fe.agentRosterState = fingerprint.String()
-	fe.agentRoster.Update()
+	if fe.promptFrame != nil {
+		fe.promptFrame.Update()
+	}
 }
 
 // notifyAgentSteps detects step boundaries in the ingested trace -- an
@@ -4342,9 +4324,9 @@ func (fe *frontendPretty) promoteConversationLocked() {
 //
 // Two cases fall back to the whole trace rather than narrowing:
 //
-//   - No roster strip on screen. A single-agent session's one agent IS the
-//     whole conversation, so scoping buys nothing and would change what every
-//     existing non-roster session renders.
+//   - The roster cannot switch focus. A single-agent session's one agent IS
+//     the whole conversation, so scoping buys nothing and would change what
+//     existing single-agent sessions render.
 //   - The focused agent has surfaced nothing yet -- freshly spawned, or its
 //     first turn has not reached this client. Promoting an empty set marks the
 //     host Passthrough with nothing revealed, i.e. a blank screen; showing the
@@ -4353,7 +4335,7 @@ func (fe *frontendPretty) conversationToPromote() (string, []*dagui.MessageNode)
 	whole := func() (string, []*dagui.MessageNode) {
 		return "", fe.db.SurfacedConversation()
 	}
-	if fe.agentRoster == nil || !fe.agentRoster.Visible() {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
 		return whole()
 	}
 	focused := fe.focusedAgentID()

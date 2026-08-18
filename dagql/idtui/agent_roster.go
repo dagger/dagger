@@ -28,17 +28,14 @@ type AgentRosterEntry struct {
 	ReadOnly bool
 }
 
-// AgentRoster renders a tmux-style strip of the session's live agents
-// directly above the prompt — a jump number, name and state flag each, on one
-// line, with the focused entry marked and inverted:
+// AgentRoster renders a compact list of the session's live agents — a bold
+// jump number, display name and textual state each, on one line:
 //
-//	1:chief* ●run   2:scout ○idle   3:docs ●run   4:tests !needs you
+//	1 agent running  2 scout idle  3 docs running  4 tests needs you
 //
-// It sits next to the prompt rather than in the sidebar because "who is
-// running, and who needs me" is a question asked while typing, and the
-// sidebar is a top-right overlay that occludes the tree it summarizes and
-// has no selection model to grow into a switcher.
-//
+// The roster is embedded in the prompt's top border when the framed prompt is
+// active. It is always visible once an agent has been published: besides being
+// a switcher, it is the prompt's state indicator.
 // Focus moves only by a keypress (alt+1…9 or alt+l from the prompt; 1…9, `
 // or [/] in nav mode), never by an event: an agent that needs the user
 // advertises attention on its entry and waits. Nothing here may steal focus.
@@ -67,15 +64,18 @@ func (r *AgentRoster) Entries() []AgentRosterEntry {
 	return r.entries()
 }
 
-// Visible reports whether the strip renders anything. A session with a
-// single agent is the ordinary case and gets no strip: the status line
-// already says whether that one agent is working, so a roster of one is
-// pure chrome.
+// Visible reports whether the roster renders anything.
 func (r *AgentRoster) Visible() bool {
+	return len(r.Entries()) > 0
+}
+
+// Switchable reports whether roster focus shortcuts should be advertised and
+// claimed. A single entry is useful as a state display, but not as a switcher.
+func (r *AgentRoster) Switchable() bool {
 	return len(r.Entries()) > 1
 }
 
-// Height is the strip's line count, for the frontend's chrome budgeting.
+// Height is the roster's standalone line count.
 func (r *AgentRoster) Height() int {
 	if !r.Visible() {
 		return 0
@@ -84,78 +84,86 @@ func (r *AgentRoster) Height() int {
 }
 
 func (r *AgentRoster) Render(ctx tuist.Context) {
+	if line := r.Line(ctx.Width); line != "" {
+		ctx.Lines(line)
+	}
+}
+
+// Line renders the roster as a single line, truncated to width when positive.
+// The caller may place it directly above the input or inside its top border.
+func (r *AgentRoster) Line(width int) string {
 	if !r.Visible() {
-		return
+		return ""
 	}
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(r.profile))
 	entries := r.Entries()
 	parts := make([]string, 0, len(entries))
 	for i, entry := range entries {
-		glyph, label, color := agentStateDisplay(entry.State)
+		label, color := agentStateDisplay(entry.State)
 
 		// Jump numbers only where a jump key exists (alt+1…9 from the
 		// prompt, 1…9 in nav mode); beyond that the entry is still listed,
 		// just not directly addressable by key -- [/] still walks onto it.
-		var prefix string
+		var number string
 		if i < 9 {
-			prefix = strconv.Itoa(i+1) + ":"
+			number = out.String(strconv.Itoa(i+1)).Bold().String() + " "
 		}
 
 		name := entry.Name
-		switch {
-		case entry.Focused:
-			// tmux's current-window marker: a textual mark, so focus is
-			// legible on a terminal (or in a test) that keeps no styling.
-			name += "*"
-		case entry.ReadOnly:
-			// Watch-only: the client holds no handle for it, so mark it
-			// rather than letting it look like something you can talk to.
+		if name == "interactive" {
+			name = "agent"
+		}
+		if entry.ReadOnly {
+			// Watch-only: the client holds no handle for it, so retain one
+			// quiet mark rather than implying it can be addressed.
 			name += "·"
 		}
 
-		nameStyle := out.String(prefix + name)
-		if entry.Focused {
+		nameStyle := out.String(name)
+		switch {
+		case entry.Focused:
 			nameStyle = nameStyle.Reverse().Bold()
-		} else if entry.ReadOnly {
+		case entry.ReadOnly:
 			nameStyle = nameStyle.Foreground(termenv.ANSIBrightBlack)
-		} else {
+		default:
 			nameStyle = nameStyle.Foreground(termenv.ANSIWhite)
 		}
-		flag := out.String(glyph + label).Foreground(color).String()
-		parts = append(parts, nameStyle.String()+" "+flag)
+		part := number + nameStyle.String()
+		if label != "" {
+			part += " " + out.String(label).Foreground(color).String()
+		}
+		parts = append(parts, part)
 	}
 
-	line := strings.Join(parts, out.String("   ").String())
-	if ctx.Width > 0 {
-		line = ansi.Truncate(line, ctx.Width, "…")
+	line := strings.Join(parts, "  ")
+	if width > 0 {
+		line = ansi.Truncate(line, width, "…")
 	}
-	ctx.Lines(line)
+	return line
 }
 
-// agentStateDisplay maps a lifecycle state to its glyph, short label and
-// color. Only two states are attention-grabbing — WAITING_INPUT and FAILED,
-// the two where the ball is in the user's court — and they are the only ones
-// that get a warm color; everything else stays quiet so the strip does not
-// compete with the trace for attention.
-func agentStateDisplay(state string) (glyph, label string, color termenv.Color) {
+// agentStateDisplay maps a lifecycle state to its short label and color. Only
+// WAITING_INPUT and FAILED are attention-grabbing; everything else stays quiet
+// so the roster does not compete with the trace for attention.
+func agentStateDisplay(state string) (label string, color termenv.Color) {
 	switch state {
 	case "WAITING_INPUT":
-		return "!", "needs you", termenv.ANSIYellow
+		return "needs you", termenv.ANSIYellow
 	case "FAILED":
-		return "✘", "failed", termenv.ANSIRed
+		return "failed", termenv.ANSIRed
 	case "RUNNING":
-		return DotFilled, "run", termenv.ANSIGreen
+		return "running", termenv.ANSIGreen
 	case "PAUSED":
-		return "‖", "paused", termenv.ANSIBrightBlack
+		return "paused", termenv.ANSIBrightBlack
 	case "STOPPED":
-		return "✔", "stopped", termenv.ANSIBrightBlack
+		return "stopped", termenv.ANSIBrightBlack
 	case "IDLE":
-		return DotEmpty, "idle", termenv.ANSIBrightBlack
+		return "idle", termenv.ANSIBrightBlack
 	default:
 		// No state record seen yet: the agent is published but its runtime
 		// has not reported in. Render it as present-but-unknown rather than
 		// guessing a state.
-		return DotTiny, "", termenv.ANSIBrightBlack
+		return "", termenv.ANSIBrightBlack
 	}
 }

@@ -69,6 +69,61 @@ func TestPromptFrameRendersFramedInput(t *testing.T) {
 	}
 }
 
+// TestPromptFrameEmbedsAgentRoster verifies the roster replaces part of the
+// top rule without increasing the framed prompt's height.
+func TestPromptFrameEmbedsAgentRoster(t *testing.T) {
+	const width = 40
+	input := tuist.NewTextInput("")
+	input.SetValue("ask something")
+	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry {
+		return []AgentRosterEntry{{Name: "interactive", State: "RUNNING"}}
+	})
+	frame := NewPromptFrame(input, termenv.Ascii)
+	frame.SetRoster(roster)
+	frame.SetEnabled(true)
+
+	term := tuist.NewHeadlessTerminal(width, 4)
+	tui := tuist.New(term)
+	tui.AddChild(frame)
+	tui.RenderOnce()
+	lines := tui.Frame()
+
+	top := strings.TrimRight(lines[0], " ")
+	if !strings.Contains(top, "1 agent running") {
+		t.Fatalf("top border missing roster: %q", top)
+	}
+	if got := len([]rune(top)); got != width {
+		t.Fatalf("top border width = %d, want %d: %q", got, width, top)
+	}
+	if frame.ChromeHeight() != 2 {
+		t.Fatalf("embedded roster must not add a separate row")
+	}
+}
+
+// TestPromptFrameKeepsRosterInShellMode verifies that disabling the prompt
+// border leaves the roster as a standalone line above the bare input.
+func TestPromptFrameKeepsRosterInShellMode(t *testing.T) {
+	input := tuist.NewTextInput("⋈ ")
+	input.SetValue("ls")
+	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry {
+		return []AgentRosterEntry{{Name: "interactive", State: "IDLE"}}
+	})
+	frame := NewPromptFrame(input, termenv.Ascii)
+	frame.SetRoster(roster)
+
+	term := tuist.NewHeadlessTerminal(40, 3)
+	tui := tuist.New(term)
+	tui.AddChild(frame)
+	tui.RenderOnce()
+	joined := strings.Join(tui.Frame(), "\n")
+	if !strings.Contains(joined, "1 agent idle") || !strings.Contains(joined, "⋈ ls") {
+		t.Fatalf("shell mode must show both roster and bare input:\n%s", joined)
+	}
+	if frame.ChromeHeight() != 1 {
+		t.Fatalf("standalone shell-mode roster should add exactly one row")
+	}
+}
+
 // TestPromptFrameDisabledRendersBare verifies that when framing is disabled
 // (plain shell mode) the input is rendered without any rules.
 func TestPromptFrameDisabledRendersBare(t *testing.T) {

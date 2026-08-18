@@ -39,6 +39,21 @@ func TestRenderContextBar(t *testing.T) {
 	}
 }
 
+// TestStatusLineOmitsWorkingIndicator keeps agent lifecycle state in the roster.
+func TestStatusLineOmitsWorkingIndicator(t *testing.T) {
+	sl := &StatusLine{profile: termenv.Ascii}
+	sl.data = StatusLineData{Model: "claude-opus-4-6", InputTokens: 100}
+
+	term := tuist.NewHeadlessTerminal(80, 1)
+	tui := tuist.New(term)
+	tui.AddChild(sl)
+	tui.RenderOnce()
+	line := strings.Join(tui.Frame(), "\n")
+	if strings.Contains(line, "working") || strings.Contains(line, DotFilled) {
+		t.Fatalf("agent state belongs in the roster, not the status line: %q", line)
+	}
+}
+
 // TestStatusLineRendersContextBar verifies the gauge is wired into the status
 // line next to the percentage text once context usage is known.
 func TestStatusLineRendersContextBar(t *testing.T) {
