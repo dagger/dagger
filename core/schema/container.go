@@ -40,7 +40,7 @@ var _ SchemaResolvers = &containerSchema{}
 
 func (s *containerSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("container", s.container).
+		dagql.FuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).
 			Doc(`Creates a scratch container, with no image or metadata.`,
 				`To pull an image, follow up with the "from" function.`).
 			Args(
@@ -945,6 +945,18 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 type containerArgs struct {
 	Platform dagql.Optional[core.Platform]
+}
+
+func (s *containerSchema) containerDynamicInputs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Query],
+	args containerArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.Platform.Valid {
+		return nil
+	}
+	return req.SetArgInput(ctx, "platform", parent.Self().Platform(), false)
 }
 
 func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
