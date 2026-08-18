@@ -1636,7 +1636,7 @@ func (*Workspace) DecodePersistedObject(
 		portableCheckpoint: persisted.PortableCheckpoint,
 		workspaceEnv:       persisted.WorkspaceEnv,
 		checkpointID:       persisted.CheckpointID,
-		gitOrigin:          persisted.GitOrigin,
+		gitOrigin:          workspacepkg.NormalizeGitRemote(persisted.GitOrigin),
 		Address:            persisted.Address,
 		Cwd:                cwd,
 		ConfigFile:         configFile,

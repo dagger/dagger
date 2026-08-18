@@ -21,7 +21,7 @@ import (
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "workspaceEnv", "checkpointID", "ClientID", "userConfigKey", "userConfigOverlay"} {
+	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "workspaceEnv", "checkpointID", "gitOrigin", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
