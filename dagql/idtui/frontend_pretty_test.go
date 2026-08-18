@@ -1,10 +1,12 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -772,6 +774,37 @@ func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
 	}
 	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
 		t.Fatalf("missing local reproduce section:\n%s", joined)
+	}
+}
+
+// TestRerunSuggestionHookReplacesRunLocally covers the injectable rerun
+// suggestion: a headless consumer of the report (e.g. an LLM tool call result)
+// has tools rather than a `dagger` CLI, so it swaps in its own vocabulary. The
+// renderer still owns the layout.
+func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var gotNames []string
+	fe := NewASCIIReporterWithDB(io.Discard, rerunReportDB(t))
+	fe.Verbosity = dagui.ShowCompletedVerbosity
+	fe.RerunSuggestion = func(names []string) (string, []string) {
+		gotNames = names
+		return "RE-RUN THIS CHECK", []string{`call the check tool with name="` + names[0] + `"`}
+	}
+
+	var buf bytes.Buffer
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	got := buf.String()
+	if !slices.Equal(gotNames, []string{"ci:bootstrap"}) {
+		t.Fatalf("hook got names %v, want [ci:bootstrap]", gotNames)
+	}
+	if !strings.Contains(got, "RE-RUN THIS CHECK") ||
+		!strings.Contains(got, `call the check tool with name="ci:bootstrap"`) {
+		t.Fatalf("final render missing injected rerun suggestion:\n%s", got)
+	}
+	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
+		t.Fatalf("final render still suggests the CLI command:\n%s", got)
 	}
 }
 
@@ -1549,6 +1582,71 @@ func TestConversationTranscriptStyling(t *testing.T) {
 
 func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
+}
+
+func TestReproMarkdownWrapIndent(t *testing.T) {
+	const width = 50
+	run := func(t *testing.T, nested bool) {
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		userID := prettyTestSpanID(2)
+		toolID := prettyTestSpanID(3)
+		asstID := prettyTestSpanID(4)
+		start := time.Unix(100, 0)
+		snaps := []dagui.SpanSnapshot{
+			{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second)},
+			{
+				ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+				Message: "received", LLMRole: "user", ParentID: rootID,
+				StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second),
+			},
+		}
+		asstParent := rootID
+		if nested {
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: toolID, TraceID: prettyTestTraceID(), Name: "spawn",
+				LLMRole: "assistant", LLMTool: "spawn", ParentID: rootID,
+				StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second),
+			})
+			asstParent = toolID
+		}
+		snaps = append(snaps, dagui.SpanSnapshot{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: asstParent,
+			StartTime: start.Add(4 * time.Second), EndTime: start.Add(5 * time.Second),
+		})
+		db.ImportSnapshots(snaps)
+		db.SetPrimarySpan(rootID)
+
+		term := tuist.NewHeadlessTerminal(width, 60)
+		fe := newWithTerminal(io.Discard, db, term)
+		fe.shell = stubShellHandler{}
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+		fe.FrontendOpts.ExpandCompleted = true
+
+		setLog := func(id dagui.SpanID, text string) {
+			logs := NewVterm(termenv.Ascii)
+			logs.SetWidth(width)
+			_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+			fe.logs.Logs[id] = logs
+		}
+		setLog(userID, "hi")
+		setLog(asstID, "Added a case to the shell-mode gutter switch that matches assistant messages (`LLMRole == assistant && LLMTool == \"\"`, i.e. replies/thinking but not tool calls) and leaves line 0 bare, since the assistant branch below re-emits the indent + cue on the content line. Tool calls (which have `LLMTool != \"\"` and render inline without a paragraph break) still fall through to `case focused:` and are unaffected.")
+
+		fe.setWindowSizeLocked(windowSize{Width: width, Height: 60})
+		fe.recalculateViewLocked()
+
+		lines := strings.Split(strings.Join(fe.tui.Frame(), "\n"), "\n")
+		for _, l := range lines {
+			p := stripANSICodes(l)
+			if w := len([]rune(strings.TrimRight(p, " "))); w > width {
+				t.Errorf("line exceeds width %d (got %d): %q", width, w, p)
+			}
+		}
+		t.Logf("nested=%v rendered:\n%s", nested, strings.Join(lines, "\n"))
+	}
+	t.Run("toplevel", func(t *testing.T) { run(t, false) })
+	t.Run("nested", func(t *testing.T) { run(t, true) })
 }
 
 // TestUserPromptLeadingGutterShaded is a regression test for the user's prompt

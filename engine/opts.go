@@ -35,6 +35,15 @@ const (
 
 	// socket session attachable keys
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
+
+	// SuppressTelemetryHeader opts a single /query request out of telemetry
+	// when set to "true": no per-request wrapper span, and no dagql call
+	// spans/logs for the request's whole selection. Intended for read-only
+	// "observer" queries (e.g. the CLI's context visualizer polling the LLM
+	// conversation) whose telemetry is pure noise and, worse, unbounded: an
+	// observer re-reading ever-growing state emits volume quadratic in that
+	// state's size, bloating the engine-side telemetry stores.
+	SuppressTelemetryHeader = "X-Dagger-Suppress-Telemetry"
 )
 
 // ExtraModule specifies a module to load at connect time in addition to
@@ -173,6 +182,23 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+}
+
+type suppressTelemetryCtxKey struct{}
+
+// ContextWithTelemetrySuppression marks the context so that HTTP requests
+// made with it carry SuppressTelemetryHeader, opting the request out of
+// engine-side telemetry. See SuppressTelemetryHeader for when this is
+// appropriate.
+func ContextWithTelemetrySuppression(ctx context.Context) context.Context {
+	return context.WithValue(ctx, suppressTelemetryCtxKey{}, true)
+}
+
+// TelemetrySuppressedFromContext reports whether the context was marked with
+// ContextWithTelemetrySuppression.
+func TelemetrySuppressedFromContext(ctx context.Context) bool {
+	val, _ := ctx.Value(suppressTelemetryCtxKey{}).(bool)
+	return val
 }
 
 type clientMetadataCtxKey struct{}

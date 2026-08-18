@@ -148,6 +148,9 @@ func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)         { ret
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }
+func (ms *mockServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return nil, nil
+}
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
 

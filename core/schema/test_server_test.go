@@ -85,6 +85,10 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, error) {
 	return s.dag, nil
 }

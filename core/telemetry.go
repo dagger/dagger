@@ -75,12 +75,21 @@ func AroundFunc(
 		return ctx, dagql.NoopDone
 	}
 	var q *Query
+	var payloadKeys dagql.TelemetrySeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
 		q = currentQuery
 		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
 			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
 				return ctx, dagql.NoopDone
 			}
+		}
+		// Payload claims are scoped to the client's delivery domain, NOT the
+		// session: the span dedupe above may be session-wide (display volume),
+		// but a payload claimed where a client never received it would leave
+		// that client's ID rebuilds permanently unservable (see
+		// core/dag_call_telemetry.go).
+		if store, payloadKeysErr := q.CallPayloadSeenKeyStore(ctx); payloadKeysErr == nil {
+			payloadKeys = store
 		}
 	}
 
@@ -154,6 +163,14 @@ func AroundFunc(
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
+
+	// The span above carries this one frame's payload as DagCallAttr. Publish
+	// the rest of the chain over the log channel, so a client can rebuild the
+	// ID even for the frames that structurally never get a span of their own
+	// (see core/dag_call_telemetry.go). Attributed to the span just started,
+	// which is always a valid span context — the per-client log store drops
+	// records that have none.
+	recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",

@@ -913,6 +913,24 @@ func (srv *Server) initializeDaggerClient(
 
 	// configure OTel providers that export to the per-client telemetry store
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
+	logs := srv.telemetryPubSub.Logs(client)
+	client.logExporter = logs
+
+	// All span/log destinations for this client: its own store plus every
+	// ancestor's (nested-client telemetry reaches Cloud via the parent DB, so
+	// each hop must receive every record, and must not drop on a burst).
+	// Fanned out below through ONE batch processor per signal rather than one
+	// processor per destination: every batch processor eagerly allocates its
+	// full bounded queue, so per-destination processors paid that fixed cost
+	// per (client, ancestor) pair — the engine's telemetry memory ceiling in a
+	// real OOM heap profile. See enginetel.NewSpanFanOutExporter.
+	spanDests := []sdktrace.SpanExporter{client.spanExporter}
+	logDests := []sdklog.Exporter{logs}
+	for _, parent := range client.parents {
+		spanDests = append(spanDests, srv.telemetryPubSub.Spans(parent))
+		logDests = append(logDests, srv.telemetryPubSub.Logs(parent))
+	}
+
 	// Raise the per-span link cap well above the SDK default of 128. The wcprof
 	// OTel profiling source emits runtime wait edges as span links attached to
 	// the *waiter*; a span that hosts many concurrent telemetry-suppressed
@@ -927,14 +945,13 @@ func (srv *Server) initializeDaggerClient(
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		// Stamp the wcprof.parent causal-parent override on lazy re-pointed work
-		// spans. Listed FIRST — before the LiveSpanProcessor
-		// below and the parent-export LiveSpanProcessors appended in the loop —
+		// spans. Listed FIRST — before the fanned-out LiveSpanProcessor below —
 		// so OnStart sets the attribute on the shared span object before any
 		// live-start snapshot is taken. There is one tracer provider per client,
 		// so this single registration covers every per-client export (this
-		// client's own DB plus every parent below): a lazy-work span never misses
-		// the override on any export path (behavioral guard: dagql
-		// TestWcprofLazyParentProcessorStampsAllExports).
+		// client's own DB plus every ancestor's via the fan-out exporter): a
+		// lazy-work span never misses the override on any export path
+		// (behavioral guard: dagql TestWcprofLazyParentProcessorStampsAllExports).
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
 		// Count + mark every engine span for the wcprof completeness checksum
 		// (leaf-drop detection). Shared across all per-client tracer
@@ -944,25 +961,31 @@ func (srv *Server) initializeDaggerClient(
 		// before the LiveSpanProcessor so the engine-span mark is set on the shared span
 		// object before any live-start snapshot is taken.
 		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
-		// save to our own client's DB. Large-queue BSP so a big burst (a cold engine
-		// build is ~15k spans, live-double-emitted ≈ 30k records) does not overflow the
-		// default 2048-slot queue and silently drop spans before they reach the DB the
-		// CLI drains toward Cloud. Emit live start snapshots uniformly: internal spans
-		// can be load-bearing parents of visible progress spans.
+		// save to our own client's DB and every ancestor's, via a single
+		// large-queue BSP over a fan-out exporter. Large-queue so a big burst
+		// (a cold engine build is ~15k spans, live-double-emitted ≈ 30k records)
+		// does not overflow the default 2048-slot queue and silently drop spans
+		// before they reach the DBs the CLI drains toward Cloud. Emit live start
+		// snapshots uniformly: internal spans can be load-bearing parents of
+		// visible progress spans. One queue serves every destination; each
+		// record is still exported once per destination, just without a
+		// per-destination queue.
 		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(
-			client.spanExporter,
+			enginetel.NewSpanFanOutExporter(spanDests...),
 		)),
 	}
 
-	logs := srv.telemetryPubSub.Logs(client)
-	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
 		// NOTE: a synchronous processor here would append every record on its
 		// emitting goroutine and propagate hard-cap backpressure directly into
 		// application work. Keep emitters decoupled with bounded batching — see
-		// enginetel.NewLogBatchProcessor.
-		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logs)),
+		// enginetel.NewLogBatchProcessor. Like the span processor above, a
+		// single processor fans out to every destination store so only one
+		// eagerly allocated record ring exists per client.
+		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(
+			enginetel.NewLogFanOutExporter(logDests...),
+		)),
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -976,18 +999,11 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	// export to parent client DBs too (same large-queue live BSP — nested-client
-	// spans reach Cloud via the parent DB, so this hop must not drop on a burst
-	// either and must emit every live start snapshot uniformly).
+	// export metrics to parent client DBs too. Metrics keep one PeriodicReader
+	// per destination: readers pull aggregated state on an interval and hold no
+	// per-record queue, so they are not part of the memory ceiling the span/log
+	// fan-out above addresses.
 	for _, parent := range client.parents {
-		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
-			enginetel.NewLargeQueueLiveSpanProcessor(
-				srv.telemetryPubSub.Spans(parent),
-			),
-		))
-		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			enginetel.NewLogBatchProcessor(srv.telemetryPubSub.Logs(parent)),
-		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
 				srv.telemetryPubSub.Metrics(parent),
@@ -1707,6 +1723,18 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
+// withRequestTelemetrySuppression applies a request's telemetry opt-out (the
+// engine.SuppressTelemetryHeader header): when opted out, the returned context
+// is marked with dagql.WithSkip so core.AroundFunc emits no spans, no
+// seen-keys, and no call payloads for the request's selection, and the
+// returned bool tells serveQuery to skip the per-request wrapper span as well.
+func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (context.Context, bool) {
+	if r.Header.Get(engine.SuppressTelemetryHeader) != "true" {
+		return ctx, false
+	}
+	return dagql.WithSkip(ctx), true
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	sess := client.daggerSession
 
@@ -1737,6 +1765,12 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	ctx := sess.withClosingCancel(r.Context())
 
+	// A request may opt out of telemetry wholesale (e.g. the CLI's context
+	// visualizer polling ever-growing read-only conversation state, whose
+	// telemetry volume would otherwise grow quadratically): mark the context
+	// so core.AroundFunc emits nothing for the whole selection.
+	ctx, telemetrySuppressed := withRequestTelemetrySuppression(ctx, r)
+
 	// turn panics into graphql errors — must be set up before any code that
 	// could panic (including ensureExtraModulesLoaded and schema loading).
 	defer func() {
@@ -1755,7 +1789,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
-	if trace.SpanContextFromContext(ctx).IsValid() {
+	// A telemetry-suppressed request skips the wrapper span too: a suppressed
+	// poll must contribute zero spans to the client's telemetry DB.
+	if !telemetrySuppressed && trace.SpanContextFromContext(ctx).IsValid() {
 		// create a span to record telemetry into the client's DB
 		//
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
@@ -2724,6 +2760,66 @@ func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySe
 		return nil, err
 	}
 	return client.daggerSession, nil
+}
+
+// CallPayloadSeenKeyStore returns the claim store for call-payload telemetry
+// (core/dag_call_telemetry.go), scoped to the current client's DELIVERY
+// domain rather than the whole session.
+//
+// Telemetry emitted in a client's context is delivered to that client's DB
+// and every ancestor's (PubSub's fan-out in engine/server/telemetry.go), so a
+// session-wide claim would let one client's emission permanently satisfy the
+// claim for clients that never received it: a client attaching to the session
+// later — a nested `dagger agent`, a sibling joining via a shared session ID —
+// could then never obtain the payloads its ID rebuilds need, and every agent
+// referenced through an already-claimed frame would be unaddressable there.
+// Claiming per delivery target instead marks a digest "seen" exactly where it
+// actually landed, so a later client's first closure walk re-publishes into
+// its own domain.
+func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	targets := make([]string, 0, len(client.parents)+1)
+	for _, parent := range client.parents {
+		targets = append(targets, parent.clientID)
+	}
+	targets = append(targets, client.clientID)
+	return &callPayloadDeliveryStore{
+		session: client.daggerSession,
+		targets: targets,
+	}, nil
+}
+
+// callPayloadDeliveryStore marks seen-keys per delivery target — the emitting
+// client and its ancestors, exactly the DBs PubSub fans this telemetry out to —
+// backed by the session's seen-key map with a per-target suffix. A key counts
+// as seen only when EVERY target has it, so an emission is skipped only when
+// nobody in the delivery domain still needs it. The NUL separator cannot occur
+// in a digest or client ID, keeping the suffixed key space disjoint from the
+// session store's other keys by construction.
+type callPayloadDeliveryStore struct {
+	session *daggerSession
+	targets []string
+}
+
+var _ dagql.TelemetrySeenKeyStore = (*callPayloadDeliveryStore)(nil)
+
+func (s *callPayloadDeliveryStore) LoadOrStoreTelemetrySeenKey(key string) bool {
+	seenEverywhere := true
+	for _, target := range s.targets {
+		if !s.session.LoadOrStoreTelemetrySeenKey(key + "\x00" + target) {
+			seenEverywhere = false
+		}
+	}
+	return seenEverywhere
+}
+
+func (s *callPayloadDeliveryStore) StoreTelemetrySeenKey(key string) {
+	for _, target := range s.targets {
+		s.session.StoreTelemetrySeenKey(key + "\x00" + target)
+	}
 }
 
 // The DagQL server for the current client's session
