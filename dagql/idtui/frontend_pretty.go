@@ -1040,6 +1040,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
+	fe.promptFrame.SetKeyHandler(fe.handlePromptFrameKey)
 	fe.promptFrame.SetRoster(fe.agentRoster)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
@@ -5053,14 +5054,10 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 			return true
 		}
 		return false
-	case "up":
-		if fe.historyUp() {
-			return true
-		}
-	case "down":
-		if fe.historyDown() {
-			return true
-		}
+	case "up", "down":
+		// Let TextInput move within multiline or wrapped input. At the visual
+		// boundary it bubbles the key to PromptFrame for history navigation.
+		return false
 	default:
 		// Roster focus: tmux's numbered jump targets and last-window toggle,
 		// aliased onto alt+ so the digits themselves keep typing. tab is
@@ -5087,6 +5084,19 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	return false // let TextInput handle it
+}
+
+// handlePromptFrameKey handles editor keys that TextInput bubbled at a visual
+// boundary. PromptFrame is the input's parent in the component tree.
+func (fe *frontendPretty) handlePromptFrameKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	switch uv.Key(ev).String() {
+	case "up":
+		return fe.historyUp()
+	case "down":
+		return fe.historyDown()
+	default:
+		return false
+	}
 }
 
 // agentLastKey toggles back to the previously focused agent (tmux's

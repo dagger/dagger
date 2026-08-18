@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
@@ -19,9 +20,10 @@ import (
 // handling stay entirely owned by the TextInput.
 type PromptFrame struct {
 	tuist.Compo
-	input   *tuist.TextInput
-	profile termenv.Profile
-	roster  *AgentRoster
+	input      *tuist.TextInput
+	profile    termenv.Profile
+	roster     *AgentRoster
+	keyHandler func(tuist.Context, uv.KeyPressEvent) bool
 	// enabled gates the framed styling. When false the input is rendered bare
 	// (no rules), matching plain shell mode.
 	enabled bool
@@ -30,6 +32,20 @@ type PromptFrame struct {
 // NewPromptFrame creates a PromptFrame wrapping the given TextInput.
 func NewPromptFrame(input *tuist.TextInput, profile termenv.Profile) *PromptFrame {
 	return &PromptFrame{input: input, profile: profile}
+}
+
+// SetKeyHandler sets the handler for keys that bubble out of the wrapped input.
+func (p *PromptFrame) SetKeyHandler(handler func(tuist.Context, uv.KeyPressEvent) bool) {
+	p.keyHandler = handler
+}
+
+// HandleKeyPress implements tuist.Interactive. The focused TextInput receives
+// each key first, so this only delegates keys that the editor did not consume.
+func (p *PromptFrame) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) bool {
+	if p.keyHandler == nil {
+		return false
+	}
+	return p.keyHandler(ctx, ev)
 }
 
 // SetRoster embeds the agent roster in the frame's top rule. In unframed shell
