@@ -3,9 +3,12 @@ package schema
 import (
 	"context"
 	"errors"
+	"path"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/opencontainers/go-digest"
 )
 
 type cacheSchema struct{}
@@ -136,19 +139,40 @@ func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
 	src := m.Source.Value
 	name := src.Self().ModuleOriginalName
 
-	var symbolic string
+	var (
+		symbolic string
+		err      error
+	)
 	switch src.Self().Kind {
 	case core.ModuleSourceKindLocal:
 		symbolic = src.Self().SourceRootSubpath
 	case core.ModuleSourceKindGit:
 		symbolic = src.Self().Git.Symbolic
 	case core.ModuleSourceKindDir:
-		sourceDigest, err := src.Self().SourceImplementationDigest(ctx)
+		symbolic, err = directoryModuleCacheSymbolic(ctx, src.Self())
 		if err != nil {
 			return "", err
 		}
-		symbolic = sourceDigest.String()
 	}
 
 	return "mod(" + name + symbolic + ")", nil
+}
+
+// directoryModuleCacheSymbolic keeps cache volumes stable for directory-backed
+// modules reconstructed from the same Git workspace. The normalized origin and
+// module subpath form the logical identity; hashing keeps remote names out of
+// cache metadata and prevents delimiter tricks. Plain synthetic directories
+// have no trustworthy logical identity, so they retain the existing
+// content-digest behavior.
+func directoryModuleCacheSymbolic(ctx context.Context, src *core.ModuleSource) (string, error) {
+	if src.DirSrc != nil && src.DirSrc.ContextIdentity != "" {
+		subpath := path.Clean(filepath.ToSlash(src.SourceRootSubpath))
+		identity := "dagger.dir-module.cache.v1\x00" + src.DirSrc.ContextIdentity + "\x00" + subpath
+		return digest.FromString(identity).String(), nil
+	}
+	implementationDigest, err := src.SourceImplementationDigest(ctx)
+	if err != nil {
+		return "", err
+	}
+	return implementationDigest.String(), nil
 }

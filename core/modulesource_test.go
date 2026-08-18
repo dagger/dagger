@@ -122,6 +122,23 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 	require.True(t, decodedSrc.SelfCallsEnabled())
 }
 
+func TestModuleSourcePersistenceRetainsDirectoryContextIdentity(t *testing.T) {
+	t.Parallel()
+
+	src := &ModuleSource{
+		Kind: ModuleSourceKindDir,
+		DirSrc: &DirModuleSource{
+			OriginalSourceRootSubpath: "tools/agent",
+			ContextIdentity:           "github.com/acme/repo",
+		},
+	}
+	encoded, err := src.EncodePersistedObject(t.Context(), nil)
+	require.NoError(t, err)
+	decoded, err := (&ModuleSource{}).DecodePersistedObject(t.Context(), nil, 0, nil, encoded.JSON)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/repo", decoded.(*ModuleSource).DirSrc.ContextIdentity)
+}
+
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
 		name        string

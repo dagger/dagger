@@ -231,6 +231,12 @@ type Workspace struct {
 	// Empty for every workspace that is not checkpoint-derived.
 	checkpointID string
 
+	// gitOrigin is the normalized Git origin identifying this workspace across
+	// clones and content changes. It contains no credentials or transport
+	// details. Checkpoint-derived workspaces preserve it so directory-backed
+	// module sources can retain stable cache-volume provenance.
+	gitOrigin string
+
 	// userConfigKey is the normalized Git remote key identifying this
 	// workspace in user-level config. Empty when the workspace has no usable
 	// remote. Internal only.
@@ -926,6 +932,24 @@ func (ws *Workspace) SetCheckpointID(checkpointID string) {
 	}
 }
 
+// SetGitOrigin records the normalized, credential-free Git origin for this
+// workspace. It is internal provenance, not a public address: callers derive it
+// from the selected remote and checkpoints preserve it across reconstruction.
+func (ws *Workspace) SetGitOrigin(origin string) {
+	if ws != nil {
+		ws.gitOrigin = workspacepkg.NormalizeGitRemote(origin)
+	}
+}
+
+// GitOrigin returns the normalized Git origin associated with this workspace,
+// or empty when the workspace has no stable Git provenance.
+func (ws *Workspace) GitOrigin() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.gitOrigin
+}
+
 // ExportTarget resolves the client and checkout an explicit save of this
 // workspace must write to.
 //
@@ -1259,6 +1283,7 @@ type persistedWorkspacePayload struct {
 	PortableCheckpoint bool                           `json:"portableCheckpoint,omitempty"`
 	WorkspaceEnv       string                         `json:"workspaceEnv,omitempty"`
 	CheckpointID       string                         `json:"checkpointID,omitempty"`
+	GitOrigin          string                         `json:"gitOrigin,omitempty"`
 	Address            string                         `json:"address,omitempty"`
 	Cwd                string                         `json:"cwd,omitempty"`
 	ConfigFile         string                         `json:"configFile,omitempty"`
@@ -1446,6 +1471,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		PortableCheckpoint: ws.portableCheckpoint,
 		WorkspaceEnv:       ws.workspaceEnv,
 		CheckpointID:       ws.checkpointID,
+		GitOrigin:          ws.gitOrigin,
 		Address:            ws.Address,
 		Cwd:                ws.Cwd,
 		ConfigFile:         ws.ConfigFile,
@@ -1632,6 +1658,7 @@ func (*Workspace) DecodePersistedObject(
 		portableCheckpoint: persisted.PortableCheckpoint,
 		workspaceEnv:       persisted.WorkspaceEnv,
 		checkpointID:       persisted.CheckpointID,
+		gitOrigin:          persisted.GitOrigin,
 		Address:            persisted.Address,
 		Cwd:                cwd,
 		ConfigFile:         configFile,
