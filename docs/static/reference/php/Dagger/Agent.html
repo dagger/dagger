@@ -93,6 +93,8 @@
     
         
 
+            <div class="description">
+            <p><p>A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.</p></p>                    </div>
             
         
     
@@ -141,16 +143,6 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_description">description</a>()
-        
-                                            <p><p>The description of the agent</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -164,29 +156,129 @@
                     string
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_instanceID">instanceID</a>()
+        
+                                            <p><p>The unique instance identity minted by the spawn that created this agent.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_interrupt">interrupt</a>()
+        
+                                            <p><p>Preempt the in-flight step, keeping all completed steps, and pause.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_message">message</a>(string $id)
+        
+                                            <p><p>Look up a previously sent message by its message ID, returning its handle.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
                     <a href="#method_name">name</a>()
         
-                                            <p><p>Return the fully qualified name of the agent</p></p>                </div>
+                                            <p><p>Display label and identity discriminator — not a session-wide address.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_originalModule">originalModule</a>()
+                    <a href="#method_pause">pause</a>()
         
-                                            <p><p>The original module in which the agent has been defined</p></p>                </div>
+                                            <p><p>Stop draining the mailbox once the in-flight step completes.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_path">path</a>()
+                    <a href="#method_rehydrate">rehydrate</a>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null, string|null $error = &#039;&#039;)
         
-                                            <p><p>The path of the agent within its module</p></p>                </div>
+                                            <p><p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_resume">resume</a>()
+        
+                                            <p><p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_send">send</a>(string $message)
+        
+                                            <p><p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_snapshot">snapshot</a>()
+        
+                                            <p><p>The conversation as of the last committed step: immutable, branchable, persistable.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_start">start</a>()
+        
+                                            <p><p>Start the agent's evaluation loop. No-op if it is already running.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <abbr title="Dagger\AgentState">AgentState</abbr>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_state">state</a>()
+        
+                                            <p><p>Computed lifecycle state; never stored.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_stop">stop</a>(bool|null $kill = false)
+        
+                                            <p><p>Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_waitFor">waitFor</a>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
+        
+                                            <p><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -285,40 +377,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_description">
-        <div class="location">at line 16</div>
-        <code>                    string
-    <strong>description</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The description of the agent</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 25</div>
+        <div class="location">at line 19</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -349,10 +409,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_name">
-        <div class="location">at line 34</div>
+                    <h3 id="method_instanceID">
+        <div class="location">at line 30</div>
         <code>                    string
-    <strong>name</strong>()
+    <strong>instanceID</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -360,7 +420,7 @@
             
 
         <div class="method-description">
-                            <p><p>Return the fully qualified name of the agent</p></p>                        
+                            <p><p>The unique instance identity minted by the spawn that created this agent.</p></p>                <p><p>It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.</p></p>        
         </div>
         <div class="tags">
             
@@ -381,10 +441,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_originalModule">
+                    <h3 id="method_interrupt">
         <div class="location">at line 43</div>
-        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>originalModule</strong>()
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>interrupt</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -392,7 +452,8 @@
             
 
         <div class="method-description">
-                            <p><p>The original module in which the agent has been defined</p></p>                        
+                            <p><p>Preempt the in-flight step, keeping all completed steps, and pause.</p></p>                <p><p>The interrupted turn stays open: messages it consumed remain pending, and resume continues the turn from the last committed step. To redirect, follow with send — steering and interrupting are separate verbs.</p>
+<p>On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.</p></p>        
         </div>
         <div class="tags">
             
@@ -400,7 +461,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -413,10 +474,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_path">
-        <div class="location">at line 52</div>
-        <code>                    array
-    <strong>path</strong>()
+                    <h3 id="method_message">
+        <div class="location">at line 57</div>
+        <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
+    <strong>message</strong>(string $id)
         </code>
     </h3>
     <div class="details">    
@@ -424,7 +485,50 @@
             
 
         <div class="method-description">
-                            <p><p>The path of the agent within its module</p></p>                        
+                            <p><p>Look up a previously sent message by its message ID, returning its handle.</p></p>                <p><p>This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).</p>
+<p>Fails if the agent has no runtime entry in this session, or no record of the given ID.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_name">
+        <div class="location">at line 67</div>
+        <code>                    string
+    <strong>name</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Display label and identity discriminator — not a session-wide address.</p></p>                        
         </div>
         <div class="tags">
             
@@ -432,7 +536,347 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_pause">
+        <div class="location">at line 80</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>pause</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Stop draining the mailbox once the in-flight step completes.</p></p>                <p><p>Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.</p>
+<p>Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_rehydrate">
+        <div class="location">at line 96</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>rehydrate</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null, string|null $error = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p></p>                <p><p>The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.</p>
+<p>The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.</p>
+<p>Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null</td>
+                <td>$state</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$error</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_resume">
+        <div class="location">at line 116</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>resume</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p></p>                <p><p>Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.</p>
+<p>No-op on a running or idle agent.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_send">
+        <div class="location">at line 132</div>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+    <strong>send</strong>(string $message)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p></p>                <p><p>Never blocks, never drops; concurrent sends queue in order.</p>
+<p>The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.</p>
+<p>Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$message</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_snapshot">
+        <div class="location">at line 146</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>snapshot</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The conversation as of the last committed step: immutable, branchable, persistable.</p></p>                <p><p>The seed conversation if the agent never stepped.</p>
+<p>Branching from it does not affect the agent.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_start">
+        <div class="location">at line 157</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>start</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Start the agent's evaluation loop. No-op if it is already running.</p></p>                <p><p>The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_state">
+        <div class="location">at line 169</div>
+        <code>                    <abbr title="Dagger\AgentState">AgentState</abbr>
+    <strong>state</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Computed lifecycle state; never stored.</p></p>                <p><p>An agent that was never started reports IDLE: its mailbox is empty and no turn is open.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><abbr title="Dagger\AgentState">AgentState</abbr></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_stop">
+        <div class="location">at line 178</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>stop</strong>(bool|null $kill = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$kill</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_waitFor">
+        <div class="location">at line 193</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>waitFor</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></p>                <p><p>A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null</td>
+                <td>$state</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
             <td></td>
         </tr>
     </table>

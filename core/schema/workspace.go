@@ -24,6 +24,7 @@ import (
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/mod/semver"
 )
@@ -483,6 +484,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
+				dagql.Arg("exclude").Doc("Exclude agents matching the specified patterns"),
 			),
 		dagql.NodeFunc("checkpoint", s.checkpoint).
 			View(AfterVersion("v1.0.0-beta.10")).
@@ -494,6 +496,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxUntrackedFileBytes").Doc("Maximum bytes allowed for one untracked file."),
 				dagql.Arg("maxUntrackedTotalBytes").Doc("Maximum aggregate bytes allowed for untracked files."),
 				dagql.Arg("maxUntrackedFiles").Doc("Maximum number of untracked files allowed."),
+			),
+		dagql.Func("addresses", s.addresses).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare \"module:function\" references.").
+			Args(
+				dagql.Arg("type").Doc(`Name of the type the function must return to be listed, e.g. "Container".`),
 			),
 		migrateField,
 	}.Install(srv)
@@ -517,6 +525,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigration](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigrationStep](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceAddress](srv).View(AfterVersion("v1.0.0-0")))
 
 	dagql.Fields[*core.WorkspaceGit]{
 		dagql.NodeFunc("__repository", s.workspaceGitRepository).
@@ -563,6 +572,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceSDK]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceAddress]{}.Install(srv)
 }
 
 type workspaceCheckpointArgs struct {
@@ -5186,14 +5196,16 @@ func (s *workspaceSchema) agents(
 	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Exclude dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
-) (*core.AgentGroup, error) {
+) (*core.AgentMiddlewareGroup, error) {
 	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) && !parent.IsPortableCheckpoint() {
-		return &core.AgentGroup{}, nil
+		return &core.AgentMiddlewareGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
+	exclude := workspaceIncludePatterns(args.Exclude)
 
 	var mods []dagql.ObjectResult[*core.Module]
 	if parent.IsPortableCheckpoint() {
@@ -5233,9 +5245,9 @@ func (s *workspaceSchema) agents(
 		mods = mergeOverlayModules(mods, overlayMods)
 	}
 
-	var allAgents []*core.Agent
+	var allAgents []*core.AgentMiddleware
 	for _, mod := range mods {
-		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
+		agentGroup, err := core.NewAgentMiddlewareGroup(ctx, mod, nil)
 		if err != nil {
 			return nil, fmt.Errorf("agents from module %q: %w", mod.Self().Name(), err)
 		}
@@ -5244,17 +5256,114 @@ func (s *workspaceSchema) agents(
 			ctx,
 			agentGroup.Agents,
 			include,
-			func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
-			func(agent *core.Agent) string { return agent.Name() },
+			func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
+			func(agent *core.AgentMiddleware) string { return agent.Name() },
 			"agent",
 		)
 		if err != nil {
 			return nil, err
 		}
+		if len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
+				func(agent *core.AgentMiddleware) string { return agent.Name() },
+				"agent",
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		allAgents = append(allAgents, filtered...)
 	}
 
-	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+	return &core.AgentMiddlewareGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+}
+
+// addresses lists module functions loadable as bare "module:function" address
+// references (hack/designs/sandboxes.md §5): top-level functions on each
+// installed module's main object — the only shape resolveModuleRef can load —
+// whose return type name matches the requested type and whose required args
+// (beyond an auto-injected Workspace) are none.
+func (s *workspaceSchema) addresses(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Type string
+	},
+) ([]*core.WorkspaceAddress, error) {
+	if isSyntheticWorkspace(parent) {
+		return []*core.WorkspaceAddress{}, nil
+	}
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort, like generators: discovery lists what is loadable, and a
+	// module that fails to load contributes no loadable addresses anyway
+	// (resolveModuleRef hard-errors on it). A broken module must not hide the
+	// rest of the workspace's addresses; its load failure surfaces as a
+	// warning from EnsureWorkspaceModules.
+	if _, err := ensureWorkspaceModulesLoaded(ctx, nil, true); err != nil {
+		return nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// An entrypoint module's functions are hoisted onto the Query root and no
+	// module field is served for it, so a "module:function" reference can never
+	// resolve (see demandLoadInstalledModule); exclude those modules here.
+	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	entrypoints := make(map[string]bool, len(cfg.Modules))
+	for name, entry := range cfg.Modules {
+		if entry.Entrypoint {
+			entrypoints[strcase.ToKebab(name)] = true
+		}
+	}
+
+	var addresses core.WorkspaceAddresses
+	for _, mod := range mods {
+		modName := mod.Self().Name()
+		if entrypoints[strcase.ToKebab(modName)] {
+			continue
+		}
+		mainObj, ok := mod.Self().MainObject()
+		if !ok {
+			continue
+		}
+		for _, fnRes := range mainObj.Functions {
+			fn := fnRes.Self()
+			retType := fn.ReturnType.Self()
+			// A list return can't be lifted into a single object; ast.Type.Name
+			// would still report the element type's name, so rule lists out first.
+			if retType.Kind == core.TypeDefKindList {
+				continue
+			}
+			if retType.ToType().Name() != args.Type {
+				continue
+			}
+			if core.FunctionRequiresArgsExceptWorkspace(fn) {
+				continue
+			}
+			// Kebab-case both segments for consistency with CLI-facing names;
+			// resolveModuleRef normalizes with ToLowerCamel, so this round-trips.
+			addresses = append(addresses, &core.WorkspaceAddress{
+				Value:       strcase.ToKebab(modName) + ":" + strcase.ToKebab(fn.Name),
+				Description: fn.Description,
+			})
+		}
+	}
+	addresses.Sort()
+	return addresses, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

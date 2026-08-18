@@ -114,6 +114,7 @@ type daggerSession struct {
 	seenKeys        sync.Map
 
 	services *core.Services
+	agents   *core.AgentRuntimes
 	resolver *serverresolver.Resolver
 
 	analytics analytics.Tracker
@@ -504,6 +505,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
+	sess.agents = core.NewAgentRuntimes()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.resolver = serverresolver.New(serverresolver.Opts{
 		Hosts: srv.registryHosts,
@@ -608,6 +610,13 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	}
 
 	slog.Debug("stopped services")
+
+	if sess.agents != nil {
+		if err := sess.agents.KillAll(ctx, errors.New("session closed")); err != nil {
+			slog.Warn("error stopping agents", "error", err)
+			errs = errors.Join(errs, fmt.Errorf("stop session agents: %w", err))
+		}
+	}
 
 	if sess.resolver != nil {
 		errs = errors.Join(errs, sess.resolver.Close())
@@ -2897,6 +2906,15 @@ func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
 		return nil, err
 	}
 	return client.daggerSession.services, nil
+}
+
+// The agent runtimes for the current client's session
+func (srv *Server) Agents(ctx context.Context) (*core.AgentRuntimes, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.agents, nil
 }
 
 // The default platform for the engine as a whole

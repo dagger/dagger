@@ -18,10 +18,10 @@ func New(
 	// +defaultPath="/"
 	// +ignore=[
 	// "*",
-	// "**/node_modules",
 	// "!docs",
 	// "!sdk/typescript",
-	// "!CONTRIBUTING.md"
+	// "!CONTRIBUTING.md",
+	// "**/node_modules"
 	// ]
 	source *dagger.Directory,
 	// +defaultPath="/docs/nginx.conf"

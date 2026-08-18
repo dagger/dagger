@@ -4,12 +4,62 @@ import (
 	"context"
 	"testing"
 
+	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/internal/points"
 )
+
+type moduleToolSet struct{}
+
+func (*moduleToolSet) Type() *ast.Type {
+	return &ast.Type{NamedType: "ModuleToolSet", NonNull: true}
+}
+
+// TestObjectTypeForIDUsesModuleProvenance covers lazy references to user-module
+// objects when the loading server only has the bootstrap schema. The object's
+// recipe deliberately names no real field: resolving its type can only succeed
+// by loading its module provenance and must never evaluate the object recipe.
+func TestObjectTypeForIDUsesModuleProvenance(t *testing.T) {
+	cache := newCache(t)
+	ctx := dagql.ContextWithCache(testContext(), cache)
+
+	bootstrap := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](bootstrap)
+	var moduleRef dagql.ObjectResult[*points.Point]
+	assert.NilError(t, bootstrap.Select(ctx, bootstrap.Root(), &moduleRef,
+		dagql.Selector{Field: "point"},
+	))
+	moduleRefID, err := moduleRef.RecipeID(ctx)
+	assert.NilError(t, err)
+
+	moduleSchema := newExternalDagqlServerForTest(t, Query{})
+	moduleSchema.InstallObject(dagql.NewClass[*moduleToolSet](moduleSchema))
+	dagql.Fields[*moduleToolSet]{
+		dagql.Func("check", func(context.Context, *moduleToolSet, struct{}) (string, error) {
+			return "ok", nil
+		}),
+	}.Install(moduleSchema)
+
+	bootstrap.SetResultServerForCall(func(_ context.Context, frame *dagql.ResultCall) (*dagql.Server, error) {
+		assert.Assert(t, frame.Module != nil)
+		assert.Assert(t, frame.Module.ResultRef != nil)
+		assert.Assert(t, frame.Module.ResultRef.ResultID != 0)
+		return moduleSchema, nil
+	})
+
+	objectID := call.New().Append((&moduleToolSet{}).Type(), "missingConstructor",
+		call.WithModule(call.NewModule(moduleRefID, "tools", "", "")),
+	)
+	objType, ok, err := bootstrap.ObjectTypeForID(ctx, objectID)
+	assert.NilError(t, err)
+	assert.Assert(t, ok)
+	assert.Equal(t, "ModuleToolSet", objType.TypeName())
+	_, ok = objType.FieldSpec("check", "")
+	assert.Assert(t, ok)
+}
 
 // TestLazyRefArgNotEvaluatedOnLoad reproduces the failure mode where
 // restoring a persisted session re-evaluated a side-effecting tool call that had

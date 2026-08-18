@@ -1,0 +1,179 @@
+# delegate: let a Dagger coding agent hand a self-contained subtask to a fresh
+# sub-agent and get back only the distilled result.
+#
+# The motivating case (from a real session retro): a noisy, context-heavy loop
+# — "build the CLI, boot the engine, run the agent, poke the TUI, report just
+# the final screen and whether it panicked" — dumps thousands of lines of build
+# and boot output into the parent's context for two useful bits of signal. A
+# sub-agent absorbs all that: it runs the loop in ITS OWN conversation (rolled
+# up under this tool call in the TUI, see the conversation nesting in
+# dagql/dagui/conversation.go) and hands back a single concise report.
+#
+# Modeled on ./modules/tui-qa (the @agent-tools shape). The sub-agent is a fresh
+# root `llm` conversation (Query.llm — inherits the session's default model and
+# auth) bound to the same Workspace as the parent (auto-filled; see
+# core/llm_object_tools.go), so it has the same tools. It runs to completion via
+# `loop` and we surface its `lastReply`.
+#
+# The sub-agent shares the parent's WORKSPACE, not its session: composing the
+# workspace's agents builds fresh module instances, so none of the
+# parent's live session state comes along — no running engine-lab engine, no
+# live tui-qa TUI session, no bound-object state (e.g. engine = null). Tools
+# that hold live state start fresh and would have to rebuild.
+#
+# Two flavors:
+#   - `delegate` reports back in text only: investigative / QA / analysis
+#     legwork. The sub-agent's own workspace edits are NOT merged into yours
+#     (the tool returns a String, not a Changeset).
+#   - `delegateEdits` returns the sub-agent's filesystem changes as a
+#     Changeset. Changeset-returning tools are the engine's parallel-writes
+#     path: CallBatch runs them concurrently against the same workspace and
+#     merges the results with a git octopus merge before applying them (see
+#     core/mcp.go CallBatch + core/changeset.go WithChangesets), so several
+#     delegated editors can safely work at once.
+"""
+Offload a self-contained subtask to a fresh sub-agent and get back only its
+final report — or, with delegateEdits, its workspace changes.
+"""
+type Delegate {
+  """
+  Compose the delegate tool onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Delegate a self-contained subtask to a fresh sub-agent and return only its
+  final answer.
+
+  The sub-agent starts a brand-new conversation bound to your workspace (so it
+  has the same tools you do), works the task autonomously to completion, and
+  hands back a single concise result — all of its intermediate tool calls and
+  chatter stay in the sub-agent's own context (rolled up under this call)
+  instead of flooding yours. Reach for it to offload noisy, context-heavy, or
+  well-scoped legwork — e.g. "build and run the agent, drive the TUI, and report
+  just the final screen and whether it panicked" — and keep your own context
+  focused. The sub-agent shares your WORKSPACE, not your session: tools that
+  hold live state (engine-lab's engine, tui-qa's TUI session) start fresh and
+  would have to rebuild — so either delegate tasks that are cheap to set up,
+  or pass any needed endpoints/details explicitly in the task text.
+  Note: this tool does NOT merge the sub-agent's workspace edits back,
+  so use it for investigation/QA/analysis; use `delegateEdits` to farm out
+  editing work.
+  """
+  delegate(
+    """
+    The subtask for the sub-agent. Be specific about what to do AND exactly what
+    to report back, since only its final reply returns to you.
+    """
+    task: String!,
+    source: Workspace!,
+  ): String! {
+    source
+      .agents(exclude: ["delegate"])
+      .compose
+      .withSystemPrompt(subAgentPrompt)
+      .withPrompt(task)
+      .loop
+      .lastReply
+  }
+
+  """
+  Delegate a self-contained EDITING subtask to a fresh sub-agent working in a
+  nested sandbox, and merge the changes it makes back into your filesystem.
+
+  The sub-agent runs in its own sandbox seeded with a copy of your workspace
+  (and the same tools you have), works the task autonomously to completion,
+  and this tool returns the changes it made to its sandbox's filesystem as a
+  changeset. That changeset is then applied to YOUR filesystem — merged safely
+  even when several delegated editors run in parallel, via a git octopus
+  merge. This makes it suitable for farming out distinct tasks and work
+  streams concurrently, at least to the extent that they don't step on each
+  other's toes TOO much: edits to unrelated files always merge cleanly, while
+  conflicting edits to the same lines fail the merge. The sub-agent's final
+  report is surfaced above the patch summary.
+
+  The sub-agent shares your WORKSPACE, not your session: tools that hold live
+  state (engine-lab's engine, tui-qa's TUI session) start fresh in its sandbox
+  and would have to rebuild — so keep delegated edits cheap to set up, or pass
+  any needed endpoints/details explicitly in the task text.
+  """
+  delegateEdits(
+    """
+    The editing subtask for the sub-agent. Be specific about what to change
+    and where, and what to report back — the sub-agent starts fresh with none
+    of your conversation context.
+    """
+    task: String!,
+    source: Workspace!,
+  ): Changeset! {
+    let worker = source
+      .agents(exclude: ["delegate"])
+      .compose
+      .withSystemPrompt(editorSubAgentPrompt)
+      .withPrompt(task)
+      .loop
+    # Surface the sub-agent's report alongside the returned changeset (tool
+    # routing prepends print output to the patch summary).
+    print(worker.lastReply)
+    # Only the sub-agent's own delta: its final workspace vs. the snapshot it
+    # was handed (which already includes your pending overlay).
+    worker.workspace.directory("/").changes(from: source.directory("/"))
+  }
+
+  # Instructions for the PARENT agent holding this tool.
+  let systemPrompt: String! = """
+    You can hand a self-contained subtask to a fresh sub-agent with the
+    `delegate` and `delegateEdits` tools. The sub-agent runs in its own
+    conversation with the same tools you have, so its intermediate work never
+    enters your context.
+
+    - `delegate` returns only the sub-agent's final report; its workspace
+      edits are discarded. Use it for investigation, QA, and analysis.
+    - `delegateEdits` runs the sub-agent in a nested sandbox and merges the
+      filesystem changes it makes back into your workspace (an octopus merge
+      keeps parallel editors safe). Use it to farm out distinct editing tasks
+      and work streams — several at once is fine, as long as the tasks don't
+      step on each other's toes too much.
+
+    The sub-agent shares your WORKSPACE, not your session: tools that hold
+    live state (engine-lab's engine, tui-qa's TUI session) start fresh and
+    would have to rebuild — so either delegate tasks that are cheap to set
+    up, or pass any needed endpoints/details explicitly in the task text.
+
+    Delegate when a subtask is noisy (dumps a lot of output), context-heavy,
+    or cleanly scoped — e.g. reproducing a bug end-to-end, exploring an
+    unfamiliar subtree, running a build/QA loop, or a well-bounded batch of
+    edits — and phrase the task so it says both what to do and exactly what to
+    report back. Keep doing the work yourself when it's small or needs your
+    accumulated context.
+  """
+
+  # Instructions for the SUB-agent spawned by `delegate`.
+  let subAgentPrompt: String! = """
+    You are a sub-agent handling one self-contained task for another agent.
+    Work autonomously to completion using the available tools — do not ask
+    follow-up questions. When done, reply with a single concise report covering
+    exactly what was asked and nothing more: the outcome, the key evidence
+    (relevant output, not raw dumps), and any errors, panics, or surprises.
+    Your reply is the ONLY thing that returns to the caller, so make it
+    self-contained.
+  """
+
+  # Instructions for the SUB-agent spawned by `delegateEdits`.
+  let editorSubAgentPrompt: String! = """
+    You are a sub-agent handling one self-contained EDITING task for another
+    agent. Work autonomously to completion using the available tools — do not
+    ask follow-up questions. Make your edits directly in your workspace: when
+    you finish, the changes you made to your filesystem are automatically
+    returned to the caller and merged into theirs, so do NOT try to export,
+    commit, or otherwise deliver them yourself. Other sub-agents may be
+    editing sibling parts of the same workspace in parallel, so stay within
+    the scope of your task and touch only the files it requires. When done,
+    reply with a single concise report: what you changed and why, anything you
+    deliberately left alone, and any errors or surprises.
+  """
+}

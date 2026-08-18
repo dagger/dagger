@@ -166,7 +166,7 @@ func argRequired(arg *FunctionArg) bool {
 // argument, used only as a fallback when the actual LLM! argument can't be
 // resolved. The base is identified by *type* — a single required LLM! arg — not
 // by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
-// compose fold (AgentGroup.Compose) fills that argument with the running
+// compose fold (AgentMiddlewareGroup.Compose) fills that argument with the running
 // accumulator explicitly.
 const agentBaseArgName = "base"
 
@@ -271,6 +271,28 @@ func functionRequiresArgsExceptAgentBase(fn *Function) bool {
 		}
 		if fn.IsAgent && !baseExempted && isCoreLLMArg(arg) {
 			baseExempted = true
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// FunctionRequiresArgsExceptWorkspace reports whether a function has required
+// arguments beyond Workspace-typed ones. A required Workspace! argument is
+// auto-injected at call time (see FunctionArg.IsWorkspace), so it does not stop
+// the function from being called with no caller-supplied arguments — the
+// contract a bare "module:function" address reference relies on
+// (Workspace.addresses, hack/designs/sandboxes.md §5). Any other required
+// argument disqualifies, including a non-agent LLM arg: only Workspace is
+// exempted here.
+func FunctionRequiresArgsExceptWorkspace(fn *Function) bool {
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if !argRequired(arg) {
+			continue
+		}
+		if arg.IsWorkspace() {
 			continue
 		}
 		return true

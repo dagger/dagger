@@ -261,8 +261,9 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		// They are automatically injected when not explicitly set. The same holds for an LLM
 		// argument on a non-@agent function: it is auto-injected with the conversation that
 		// dispatched the tool call (an @agent's `base: LLM!` stays required — it is the
-		// composition entrypoint, always passed explicitly).
-		if argSelf.IsWorkspace() || (!fn.IsAgent && argSelf.IsLLM()) {
+		// composition entrypoint, always passed explicitly). Likewise for an Agent argument:
+		// it is auto-injected with the calling agent when dispatched from an agent loop.
+		if argSelf.IsWorkspace() || (!fn.IsAgent && argSelf.IsLLM()) || argSelf.IsAgentHandle() {
 			argTypeDef.Self().Optional = true
 		}
 
@@ -704,6 +705,19 @@ func (arg *FunctionArg) IsWorkspace() bool {
 // entrypoint, always passed explicitly, and must stay required.
 func (arg *FunctionArg) IsLLM() bool {
 	return arg.isCoreObjectType("LLM")
+}
+
+// IsAgentHandle returns true if the argument is of the core Agent type. Such
+// an argument is auto-injected with the CALLING agent when the function is
+// dispatched as a tool from a running agent loop (see [AgentToContext]): the
+// child->parent channel of hack/designs/async-agents.md §3.1, letting a
+// spawned worker's tool message the agent that called it.
+//
+// Named IsAgentHandle rather than IsAgent to avoid confusion with
+// Function.IsAgent, which marks an @agent middleware *function* — an
+// unrelated concept.
+func (arg *FunctionArg) IsAgentHandle() bool {
+	return arg.isCoreObjectType("Agent")
 }
 
 func (arg *FunctionArg) isCoreObjectType(name string) bool {

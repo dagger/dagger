@@ -15,13 +15,40 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestRenderDigestedLiteralIsOpaque(t *testing.T) {
+	const canary = "CHECKPOINT-CANARY-tui-raw-only"
+	payloadDigest := digest.FromString("checkpoint-chunk")
+	lit := &callpbv1.Literal{Value: &callpbv1.Literal_DigestedString{
+		DigestedString: &callpbv1.DigestedString{
+			Value:  canary,
+			Digest: payloadDigest.String(),
+		},
+	}}
+
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	newRenderer(dagui.NewDB(), 0, dagui.FrontendOpts{}, true).renderLiteral(out, lit)
+	rendered := buf.String()
+	if strings.Contains(rendered, canary) {
+		t.Fatalf("TUI exposed digested value: %q", rendered)
+	}
+	for _, want := range []string{"digested-string", payloadDigest.String(), fmt.Sprintf("size=%dB", len(canary))} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("TUI rendering %q missing %q", rendered, want)
+		}
+	}
+}
 
 func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
@@ -1196,6 +1223,130 @@ func (stubShellHandler) SaveBeforeHistory()                {}
 func (stubShellHandler) RestoreAfterHistory()              {}
 func (stubShellHandler) BranchFromID(context.Context, string, BranchSummary) func() {
 	return nil
+}
+func (stubShellHandler) EditFromID(context.Context, string) func() error { return nil }
+
+type focusedEditShellHandler struct {
+	stubShellHandler
+	target  string
+	called  chan string
+	release chan struct{}
+	err     error
+}
+
+func (h *focusedEditShellHandler) TargetAgentID() string { return h.target }
+
+func (h *focusedEditShellHandler) EditFromID(_ context.Context, encoded string) func() error {
+	if h.called == nil {
+		return nil
+	}
+	return func() error {
+		h.called <- encoded
+		if h.release != nil {
+			<-h.release
+		}
+		return h.err
+	}
+}
+
+// TestPromptEditTarget covers the frontend half of rewind/reword/resume: the
+// post-withPrompt digest is rewound through its receiver, same-boundary prompts
+// map oldest-to-newest, reply rows edit their originating prompt, and a nested
+// worker row cannot be routed into the focused chief.
+func TestPromptEditTarget(t *testing.T) {
+	db := dagui.NewDB()
+	base := &callpbv1.Call{
+		Digest: "xxh3:edit-base",
+		Field:  "llm",
+		Type:   &callpbv1.Type{NamedType: "LLM"},
+	}
+	promptCall := func(digest, receiver, prompt string) *callpbv1.Call {
+		return &callpbv1.Call{
+			Digest:         digest,
+			Field:          "withPrompt",
+			Type:           &callpbv1.Type{NamedType: "LLM"},
+			ReceiverDigest: receiver,
+			Args: []*callpbv1.Argument{{
+				Name: "prompt",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
+					String_: prompt,
+				}},
+			}},
+		}
+	}
+	firstCall := promptCall("xxh3:edit-first", base.Digest, "first wording")
+	secondCall := promptCall("xxh3:edit-second", firstCall.Digest, "second wording")
+	for _, frame := range []*callpbv1.Call{base, firstCall, secondCall} {
+		db.Calls[frame.Digest] = frame
+	}
+
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(90)
+	firstID := prettyTestSpanID(91)
+	secondID := prettyTestSpanID(92)
+	replyID := prettyTestSpanID(93)
+	workerID := prettyTestSpanID(94)
+	workerReplyID := prettyTestSpanID(95)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: firstID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: secondCall.Digest, StartTime: start.Add(time.Second)},
+		{ID: secondID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: secondCall.Digest, StartTime: start.Add(2 * time.Second)},
+		{ID: replyID, ParentID: chiefID, LLMRole: "assistant", LLMCallDigest: secondCall.Digest, StartTime: start.Add(3 * time.Second)},
+		{ID: workerID, ParentID: chiefID, Agent: true, AgentID: "worker", StartTime: start.Add(4 * time.Second)},
+		{ID: workerReplyID, ParentID: workerID, LLMRole: "assistant", LLMCallDigest: secondCall.Digest, StartTime: start.Add(5 * time.Second)},
+	})
+	fe := &frontendPretty{
+		db:    db,
+		shell: &focusedEditShellHandler{target: "chief"},
+	}
+
+	prompt, encoded, ok := fe.promptEditTarget(db.Spans.Map[firstID])
+	require.True(t, ok)
+	require.Equal(t, "first wording", prompt)
+	require.NotEmpty(t, encoded, "the edit point is the first prompt's receiver")
+
+	prompt, encoded, ok = fe.promptEditTarget(db.Spans.Map[secondID])
+	require.True(t, ok)
+	require.Equal(t, "second wording", prompt)
+	require.NotEmpty(t, encoded)
+
+	prompt, _, ok = fe.promptEditTarget(db.Spans.Map[replyID])
+	require.True(t, ok)
+	require.Equal(t, "second wording", prompt, "reply edits its originating prompt")
+
+	_, _, ok = fe.promptEditTarget(db.Spans.Map[workerReplyID])
+	require.False(t, ok, "nested worker must not rewind the focused chief")
+
+	// The action waits for the asynchronous rewind before exposing the old text
+	// in the input, then enters insert mode with that text ready to reword.
+	db.SetPrimarySpan(chiefID)
+	handler := &focusedEditShellHandler{
+		target:  "chief",
+		called:  make(chan string, 1),
+		release: make(chan struct{}),
+	}
+	term := tuist.NewHeadlessTerminal(100, 12)
+	live := newWithTerminal(io.Discard, db, term)
+	live.setupTUI()
+	live.startShell(context.Background(), handler)
+	live.enterNavMode(false)
+	live.FocusedSpan = replyID
+	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[replyID])
+	require.True(t, ok)
+
+	live.editPrompt()
+	select {
+	case got := <-handler.called:
+		require.Equal(t, wantEncoded, got)
+	case <-time.After(time.Second):
+		t.Fatal("edit action did not start")
+	}
+	require.Empty(t, live.textInput.Value(), "text must stay hidden until rewind succeeds")
+	close(handler.release)
+	require.Eventually(t, func() bool {
+		live.tui.Step()
+		return live.editlineFocused && live.textInput.Value() == "second wording"
+	}, time.Second, 10*time.Millisecond)
 }
 
 // TestFlowingModeDoesNotCropOverflowingTree is the regression guard for the

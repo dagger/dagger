@@ -552,7 +552,7 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (string, *Provi
 		return "", nil, "", ErrAborted
 	}
 
-	providerCfg, err := ExchangeOAuthCode(authCode, verifier)
+	providerCfg, err := ExchangeOAuthCode(ctx, authCode, verifier)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("OAuth token exchange failed: %w", err)
 	}
@@ -686,7 +686,7 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Prov
 		return "", nil, "", fmt.Errorf("no authorization code received")
 	}
 
-	providerCfg, err := ExchangeOpenAIOAuthCode(code, verifier)
+	providerCfg, err := ExchangeOpenAIOAuthCode(ctx, code, verifier)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("OAuth token exchange failed: %w", err)
 	}

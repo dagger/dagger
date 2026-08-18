@@ -38,6 +38,13 @@ const workspaceTypeName = "Workspace"
 // resumes from the returned conversation (MCP.adoptLLM).
 const llmTypeName = "LLM"
 
+// agentTypeName is the object type the engine auto-injects into a module
+// function's arguments from the calling agent, when the tool call is
+// dispatched from a running agent loop (see core/agent_context.go). Like
+// Workspace and LLM, such arguments are hidden from the generated tool
+// schema — the model never sees or supplies them.
+const agentTypeName = "Agent"
+
 // boundTool is one object bound into the LLM's toolset via withTools. It carries
 // enough to build the toolset (the object's type, via objType) and to dispatch a
 // tool call (the object itself, as the receiver). The object may be held lazily
@@ -447,7 +454,9 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 // except, must not be an internal/reserved field, and every REQUIRED argument
 // must be expressible without an object handle — a required object-typed arg
 // (other than the auto-injected Workspace) disqualifies it, since the model has
-// no handle to pass.
+// no handle to pass. Exception: a required arg of a LIFTABLE type (see
+// liftableTypes) does not disqualify — the model can supply an address string,
+// lifted into the object at dispatch time via the core Address API.
 func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 	if slices.Contains(except, field.Name) {
 		return false
@@ -475,7 +484,9 @@ func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 		}
 		required := arg.Type.NonNull && arg.DefaultValue == nil
 		if required && isObjectArg(arg) {
-			return false
+			if _, ok := liftableObjectArg(arg); !ok {
+				return false
+			}
 		}
 	}
 	return true
@@ -487,13 +498,74 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 	return arg.Directives.ForName("expectedType") != nil
 }
 
+// liftableType describes an object type admitted to address lifting: how a
+// plain address string supplied for an arg of the type resolves into the
+// object, and how to document the accepted syntaxes to the model.
+type liftableType struct {
+	// addressField is the Address field that loads the type:
+	// Query.address(value: <addr>).<addressField> — the same lifting the CLI
+	// performs for object-typed flags (internal/cmd/dagger/flags.go), see
+	// core/schema/address.go.
+	addressField string
+	// hint documents the accepted address syntaxes; the tool schema renders
+	// it as "(<Type> address: <hint>)" prefixed to the arg's own docstring,
+	// so each type carries its own syntax examples.
+	hint string
+}
+
+// liftableTypes is the allowlist of object types whose tool args accept a
+// plain address string. Admission is a CAPABILITY decision, not a convenience
+// one: a CLI flag is human-typed, but a tool arg is MODEL-typed, and several
+// Address decoders resolve strings into capabilities the model doesn't
+// otherwise hold — Address.secret mints secrets from env:// / file:// /
+// op:// URIs, Address.directory/.file/.socket fall back to HOST paths, and
+// the service/git decoders reach the host's network and local repos.
+// Container has no host fallback (image refs pull from registries, bare refs
+// resolve installed modules), so it is the only entry today. Admitting
+// another of the CLI's nine addressable types is a one-line change here plus
+// that type's own capability review — see hack/designs/sandboxes.md §4, "The
+// liftable set is a capability decision".
+var liftableTypes = map[string]liftableType{
+	"Container": {
+		addressField: "container",
+		hint:         `an image ref like "golang:1.26", an installed module function like "mymod:dev", or a Container ID from a prior tool result`,
+	},
+}
+
+// liftableObjectArg returns the @expectedType name of an object-typed
+// argument when that type is liftable — resolvable from an address string via
+// the core Address API AND admitted by the liftableTypes capability
+// allowlist. Only single-object args qualify: a list of IDs ([ID!]! with
+// @expectedType) is not lifted.
+func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
+	if arg.Type == nil || arg.Type.NamedType != "ID" {
+		// Lists of object IDs (arg.Type.Elem != nil) are not liftable.
+		return "", false
+	}
+	d := arg.Directives.ForName("expectedType")
+	if d == nil {
+		return "", false
+	}
+	name := d.Arguments.ForName("name")
+	if name == nil || name.Value == nil {
+		return "", false
+	}
+	if _, ok := liftableTypes[name.Value.Raw]; !ok {
+		return "", false
+	}
+	return name.Value.Raw, true
+}
+
 // isAutoInjectedArg reports whether an argument is filled in by the engine
 // rather than by the model: the bound Workspace (@expectedType(name:
-// "Workspace")), or the conversation making the call (an `LLM!` arg — see
-// core/llm_context.go). Both are hidden from the generated tool schema and
+// "Workspace")), the conversation making the call (an `LLM!` arg — see
+// core/llm_context.go), or the calling agent (an `Agent!` arg — see
+// core/agent_context.go). All are hidden from the generated tool schema and
 // never disqualify a method from being a tool.
 func isAutoInjectedArg(arg *ast.ArgumentDefinition) bool {
-	return isExpectedTypeArg(arg, workspaceTypeName) || isExpectedTypeArg(arg, llmTypeName)
+	return isExpectedTypeArg(arg, workspaceTypeName) ||
+		isExpectedTypeArg(arg, llmTypeName) ||
+		isExpectedTypeArg(arg, agentTypeName)
 }
 
 func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
@@ -507,8 +579,9 @@ func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
 
 // objectMethodSchema builds a tool's JSON-schema parameters from a field's
 // visible arguments — its scalars, enums, lists, and input objects — omitting the
-// auto-injected Workspace and LLM arguments. Object args (when optional) render
-// as ID strings, annotated with their expected type.
+// auto-injected Workspace and LLM arguments. Object args render as ID strings
+// annotated with their expected type; liftable object args (required or
+// optional) render as address strings instead, with the type's syntax hint.
 func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
 	properties := map[string]any{}
 	var required []string
@@ -523,10 +596,17 @@ func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[str
 		desc := arg.Description
 		if d := arg.Directives.ForName("expectedType"); d != nil {
 			if name := d.Arguments.ForName("name"); name != nil && name.Value != nil {
+				// A liftable arg accepts an address string (per the type's
+				// hint — see liftableTypes) as well as an ID from a previous
+				// tool result; anything else only accepts an ID.
+				prefix := fmt.Sprintf("(%s ID)", name.Value.Raw)
+				if typeName, ok := liftableObjectArg(arg); ok {
+					prefix = fmt.Sprintf("(%s address: %s)", typeName, liftableTypes[typeName].hint)
+				}
 				if desc == "" {
-					desc = fmt.Sprintf("(%s ID)", name.Value.Raw)
+					desc = prefix
 				} else {
-					desc = fmt.Sprintf("(%s ID) %s", name.Value.Raw, desc)
+					desc = prefix + " " + desc
 				}
 			}
 		}
@@ -617,7 +697,6 @@ func argTypeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error
 // threaded into ctx by MCP.Call so Workspace-typed args auto-inject, then routes
 // the result by type.
 func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.FieldDefinition) LLMToolFunc {
-	fieldName := field.Name
 	return func(ctx context.Context, rawArgs any) (any, error) {
 		args, ok := rawArgs.(map[string]any)
 		if !ok {
@@ -630,7 +709,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if !ok {
 			return nil, fmt.Errorf("no object of type %q is bound", typeName)
 		}
-		sel, err := buildObjectMethodSelector(srv, recv.ObjectType(), fieldName, args)
+		sel, err := buildObjectMethodSelector(ctx, srv, recv.ObjectType(), field, args)
 		if err != nil {
 			return nil, err
 		}
@@ -648,7 +727,16 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 // buildObjectMethodSelector converts the model's tool arguments into a selector
 // for the method. It decodes each provided argument through the field's input
 // spec; the Workspace argument is omitted here and auto-injected downstream.
-func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fieldName string, args map[string]any) (dagql.Selector, error) {
+// An object-typed argument of a liftable type (see liftableTypes) additionally
+// accepts an address string: when the value fails to decode as an ID, it is
+// lifted into the object via the core Address API
+// (Query.address(value: <addr>).<field>) and the resulting object's ID is used
+// instead — the same lifting the CLI performs for object flags
+// (internal/cmd/dagger/flags.go). ctx and srv are the session's, so addresses
+// resolve against the workspace client schema with all installed modules
+// visible.
+func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, astField *ast.FieldDefinition, args map[string]any) (dagql.Selector, error) {
+	fieldName := astField.Name
 	sel := dagql.Selector{View: srv.View, Field: fieldName}
 	field, ok := recvType.FieldSpec(fieldName, srv.View)
 	if !ok {
@@ -666,7 +754,16 @@ func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fie
 		delete(provided, arg.Name)
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
+			// Not a valid ID: for a liftable object arg, fall back to
+			// interpreting the string as an address.
+			lifted, ok, liftErr := liftObjectArg(ctx, srv, astField, arg, val, err)
+			if liftErr != nil {
+				return sel, fmt.Errorf("arg %q: %w", arg.Name, liftErr)
+			}
+			if !ok {
+				return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
+			}
+			input = lifted
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: input})
 	}
@@ -679,6 +776,62 @@ func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fie
 		return sel, fmt.Errorf("unknown arguments: %s", strings.Join(unknown, ", "))
 	}
 	return sel, nil
+}
+
+// liftObjectArg resolves an address string supplied for a liftable
+// object-typed argument into that object's ID. It selects
+// Query.address(value: <addr>).<addressField> on the session server, then
+// re-encodes the resulting object's ID through the argument's own decoder so
+// the input matches whatever ID type the field expects (including
+// optional-wrapped IDs). Returns ok=false — without an error — when the
+// argument is not a liftable object arg or the value is not a string, so
+// the caller surfaces the original ID decode error instead. idErr is that
+// original error, folded into the message when address resolution also fails.
+func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDefinition, spec dagql.InputSpec, val any, idErr error) (dagql.Input, bool, error) {
+	astArg := astField.Arguments.ForName(spec.Name)
+	if astArg == nil {
+		return nil, false, nil
+	}
+	typeName, ok := liftableObjectArg(astArg)
+	if !ok {
+		return nil, false, nil
+	}
+	addr, ok := val.(string)
+	if !ok {
+		return nil, false, nil
+	}
+	var obj dagql.AnyObjectResult
+	// Address resolution is user-facing work of the tool call — possibly an
+	// image pull — not engine bookkeeping: run it non-internal (matching the
+	// method call's Select in callObjectMethod) so it renders in the trace as
+	// part of the tool call instead of hiding as internal spans.
+	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), srv.Root(), &obj,
+		dagql.Selector{
+			View:  srv.View,
+			Field: "address",
+			Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String(addr)}},
+		},
+		dagql.Selector{
+			View:  srv.View,
+			Field: liftableTypes[typeName].addressField,
+		},
+	); err != nil {
+		return nil, false, fmt.Errorf("%q is neither a %s ID (%s) nor a resolvable %s address: %w",
+			addr, typeName, idErr, typeName, err)
+	}
+	objID, err := obj.ID()
+	if err != nil {
+		return nil, false, fmt.Errorf("get %s ID for address %q: %w", typeName, addr, err)
+	}
+	encoded, err := objID.Encode()
+	if err != nil {
+		return nil, false, fmt.Errorf("encode %s ID for address %q: %w", typeName, addr, err)
+	}
+	input, err := spec.Type.Decoder().DecodeInput(encoded)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode lifted %s ID for address %q: %w", typeName, addr, err)
+	}
+	return input, true, nil
 }
 
 // routeObjectMethodResult renders a method's result for the model, per the

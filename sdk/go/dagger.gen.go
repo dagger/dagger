@@ -418,31 +418,29 @@ func (r *Address) AsNode() Node {
 	}
 }
 
+// A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
 type Agent struct {
 	query *querybuilder.Selection
 
-	description *string
-	id          *ID
-	name        *string
+	id         *ID
+	instanceID *string
+	interrupt  *ID
+	name       *string
+	pause      *ID
+	rehydrate  *ID
+	reseed     *ID
+	resume     *ID
+	send       *ID
+	start      *ID
+	state      *AgentState
+	stop       *ID
+	waitFor    *ID
 }
 
 func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
 	return &Agent{
 		query: q,
 	}
-}
-
-// The description of the agent
-func (r *Agent) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Agent.
@@ -485,7 +483,53 @@ func (r *Agent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the fully qualified name of the agent
+// The unique instance identity minted by the spawn that created this agent.
+//
+// It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.
+func (r *Agent) InstanceID(ctx context.Context) (string, error) {
+	if r.instanceID != nil {
+		return *r.instanceID, nil
+	}
+	q := r.query.Select("instanceID")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Preempt the in-flight step, keeping all completed steps, and pause.
+//
+// The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
+//
+// On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
+func (r *Agent) Interrupt(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("interrupt")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Look up a previously sent message by its message ID, returning its handle.
+//
+// This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).
+//
+// Fails if the agent has no runtime entry in this session, or no record of the given ID.
+func (r *Agent) Message(id string) *AgentMessage {
+	q := r.query.Select("message")
+	q = q.Arg("id", id)
+
+	return &AgentMessage{
+		query: q,
+	}
+}
+
+// Display label and identity discriminator — not a session-wide address.
 func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -498,23 +542,217 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original module in which the agent has been defined
-func (r *Agent) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
+// Stop draining the mailbox once the in-flight step completes.
+//
+// Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+//
+// Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+func (r *Agent) Pause(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("pause")
 
-	return &Module{
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AgentRehydrateOpts contains options for Agent.Rehydrate
+type AgentRehydrateOpts struct {
+	// The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
+	//
+	// RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
+	//
+	// Default: IDLE
+	State AgentState
+	// The loop error to restore, for state FAILED. Refused with any other state.
+	Error string
+}
+
+// Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
+//
+// The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
+//
+// The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
+//
+// Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
+func (r *Agent) Rehydrate(ctx context.Context, opts ...AgentRehydrateOpts) (*Agent, error) {
+	q := r.query.Select("rehydrate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `state` optional argument
+		if !querybuilder.IsZeroValue(opts[i].State) {
+			q = q.Arg("state", opts[i].State)
+		}
+		// `error` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Error) {
+			q = q.Arg("error", opts[i].Error)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.
+//
+// This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.
+//
+// The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
+//
+// Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
+	assertNotNil("conversation", conversation)
+	q := r.query.Select("reseed")
+	q = q.Arg("conversation", conversation)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+//
+// Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+//
+// No-op on a running or idle agent.
+func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("resume")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+//
+// Never blocks, never drops; concurrent sends queue in order.
+//
+// The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+//
+// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+func (r *Agent) Send(ctx context.Context, message string) (ID, error) {
+	if r.send != nil {
+		return *r.send, nil
+	}
+	q := r.query.Select("send")
+	q = q.Arg("message", message)
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The conversation as of the last committed step: immutable, branchable, persistable.
+//
+// The seed conversation if the agent never stepped.
+//
+// Branching from it does not affect the agent.
+func (r *Agent) Snapshot() *LLM {
+	q := r.query.Select("snapshot")
+
+	return &LLM{
 		query: q,
 	}
 }
 
-// The path of the agent within its module
-func (r *Agent) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
+// Start the agent's evaluation loop. No-op if it is already running.
+//
+// The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
+func (r *Agent) Start(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("start")
 
-	var response []string
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Computed lifecycle state; never stored.
+//
+// An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+func (r *Agent) State(ctx context.Context) (AgentState, error) {
+	if r.state != nil {
+		return *r.state, nil
+	}
+	q := r.query.Select("state")
+
+	var response AgentState
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AgentStopOpts contains options for Agent.Stop
+type AgentStopOpts struct {
+	// Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+	Kill bool
+}
+
+// Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error) {
+	q := r.query.Select("stop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kill` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kill) {
+			q = q.Arg("kill", opts[i].Kill)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AgentWaitForOpts contains options for Agent.WaitFor
+type AgentWaitForOpts struct {
+	// The lifecycle state to wait for.
+	//
+	// Default: IDLE
+	State AgentState
+}
+
+// Block until the agent reaches the given state, returning immediately if it is already there.
+//
+// A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.
+func (r *Agent) WaitFor(ctx context.Context, opts ...AgentWaitForOpts) (*Agent, error) {
+	q := r.query.Select("waitFor")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `state` optional argument
+		if !querybuilder.IsZeroValue(opts[i].State) {
+			q = q.Arg("state", opts[i].State)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // AsNode returns this Agent as a Node.
@@ -525,26 +763,228 @@ func (r *Agent) AsNode() Node {
 	}
 }
 
-type AgentGroup struct {
+// A message delivered to an agent's mailbox.
+type AgentMessage struct {
+	query *querybuilder.Selection
+
+	await    *string
+	delivery *AgentMessageDelivery
+	id       *ID
+}
+
+func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
+	return &AgentMessage{
+		query: q,
+	}
+}
+
+// Block until the turn that consumed this message ends, and return that turn's reply.
+//
+// Idempotent: cancel and re-await freely; concurrent waiters share the result.
+//
+// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+func (r *AgentMessage) Await(ctx context.Context) (string, error) {
+	if r.await != nil {
+		return *r.await, nil
+	}
+	q := r.query.Select("await")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+//
+// Computed once, at enqueue time.
+func (r *AgentMessage) Delivery(ctx context.Context) (AgentMessageDelivery, error) {
+	if r.delivery != nil {
+		return *r.delivery, nil
+	}
+	q := r.query.Select("delivery")
+
+	var response AgentMessageDelivery
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this AgentMessage.
+func (r *AgentMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *AgentMessage) XXX_GraphQLType() string {
+	return "AgentMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *AgentMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *AgentMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *AgentMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this AgentMessage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *AgentMessage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type AgentMiddleware struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddleware {
+	return &AgentMiddleware{
+		query: q,
+	}
+}
+
+// The description of the agent
+func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this AgentMiddleware.
+func (r *AgentMiddleware) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *AgentMiddleware) XXX_GraphQLType() string {
+	return "AgentMiddleware"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *AgentMiddleware) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *AgentMiddleware) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the fully qualified name of the agent
+func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original module in which the agent has been defined
+func (r *AgentMiddleware) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the agent within its module
+func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this AgentMiddleware as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *AgentMiddleware) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type AgentMiddlewareGroup struct {
 	query *querybuilder.Selection
 
 	id *ID
 }
 
-func (r *AgentGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentGroup {
-	return &AgentGroup{
+func (r *AgentMiddlewareGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddlewareGroup {
+	return &AgentMiddlewareGroup{
 		query: q,
 	}
 }
 
-// AgentGroupComposeOpts contains options for AgentGroup.Compose
-type AgentGroupComposeOpts struct {
+// AgentMiddlewareGroupComposeOpts contains options for AgentMiddlewareGroup.Compose
+type AgentMiddlewareGroupComposeOpts struct {
 	// The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
 	Base *LLM
 }
 
 // Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-func (r *AgentGroup) Compose(opts ...AgentGroupComposeOpts) *LLM {
+func (r *AgentMiddlewareGroup) Compose(opts ...AgentMiddlewareGroupComposeOpts) *LLM {
 	q := r.query.Select("compose")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `base` optional argument
@@ -558,8 +998,8 @@ func (r *AgentGroup) Compose(opts ...AgentGroupComposeOpts) *LLM {
 	}
 }
 
-// A unique identifier for this AgentGroup.
-func (r *AgentGroup) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this AgentMiddlewareGroup.
+func (r *AgentMiddlewareGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -572,17 +1012,17 @@ func (r *AgentGroup) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentGroup) XXX_GraphQLType() string {
-	return "AgentGroup"
+func (r *AgentMiddlewareGroup) XXX_GraphQLType() string {
+	return "AgentMiddlewareGroup"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentGroup) XXX_GraphQLIDType() string {
+func (r *AgentMiddlewareGroup) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *AgentMiddlewareGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -590,7 +1030,7 @@ func (r *AgentGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *AgentGroup) MarshalJSON() ([]byte, error) {
+func (r *AgentMiddlewareGroup) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -599,7 +1039,7 @@ func (r *AgentGroup) MarshalJSON() ([]byte, error) {
 }
 
 // Return a list of individual agents and their details
-func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
+func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, error) {
 	q := r.query.Select("list")
 
 	q = q.Select("id")
@@ -608,12 +1048,12 @@ func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
 		Id ID
 	}
 
-	convert := func(fields []list) []Agent {
-		out := []Agent{}
+	convert := func(fields []list) []AgentMiddleware {
+		out := []AgentMiddleware{}
 
 		for i := range fields {
-			val := Agent{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Agent")
+			val := AgentMiddleware{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "AgentMiddleware")
 			out = append(out, val)
 		}
 
@@ -631,9 +1071,9 @@ func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
 	return convert(response), nil
 }
 
-// AsNode returns this AgentGroup as a Node.
+// AsNode returns this AgentMiddlewareGroup as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *AgentGroup) AsNode() Node {
+func (r *AgentMiddlewareGroup) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -5198,6 +5638,16 @@ func (r *Directory) WithSymlink(target string, linkName string) *Directory {
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.query.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Return a snapshot with subdirectories removed
+func (r *Directory) WithoutDirectories(paths []string) *Directory {
+	q := r.query.Select("withoutDirectories")
+	q = q.Arg("paths", paths)
 
 	return &Directory{
 		query: q,
@@ -10207,6 +10657,7 @@ type LLM struct {
 	provider        *string
 	reasoningEffort *string
 	replay          *ID
+	spawn           *ID
 	sync            *ID
 	tools           *string
 	transcript      *string
@@ -10222,6 +10673,19 @@ func (r *LLM) With(f WithLLMFunc) *LLM {
 
 func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	return &LLM{
+		query: q,
+	}
+}
+
+// Rehydrate a spawned agent's handle from its instance ID.
+//
+// This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+func (r *LLM) Agent(id string, name string) *Agent {
+	q := r.query.Select("agent")
+	q = q.Arg("id", id)
+	q = q.Arg("name", name)
+
+	return &Agent{
 		query: q,
 	}
 }
@@ -10484,6 +10948,33 @@ func (r *LLM) Skills(ctx context.Context) ([]LLMSkill, error) {
 	}
 
 	return convert(response), nil
+}
+
+// LLMSpawnOpts contains options for LLM.Spawn
+type LLMSpawnOpts struct {
+	// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+	Name string
+}
+
+// Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+//
+// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (ID, error) {
+	if r.spawn != nil {
+		return *r.spawn, nil
+	}
+	q := r.query.Select("spawn")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // LLMStepOpts contains options for LLM.Step
@@ -16082,23 +16573,63 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare "module:function" references.
+func (r *Workspace) Addresses(ctx context.Context, type_ string) ([]WorkspaceAddress, error) {
+	q := r.query.Select("addresses")
+	q = q.Arg("type", type_)
+
+	q = q.Select("id")
+
+	type addresses struct {
+		Id ID
+	}
+
+	convert := func(fields []addresses) []WorkspaceAddress {
+		out := []WorkspaceAddress{}
+
+		for i := range fields {
+			val := WorkspaceAddress{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceAddress")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []addresses
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // WorkspaceAgentsOpts contains options for Workspace.Agents
 type WorkspaceAgentsOpts struct {
 	// Only include agents matching the specified patterns
 	Include []string
+	// Exclude agents matching the specified patterns
+	Exclude []string
 }
 
 // Return all agent middlewares from modules loaded in the workspace.
-func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentGroup {
+func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 	q := r.query.Select("agents")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
 	}
 
-	return &AgentGroup{
+	return &AgentMiddlewareGroup{
 		query: q,
 	}
 }
@@ -17262,6 +17793,95 @@ func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Wo
 // AsNode returns this Workspace as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Workspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A module function loadable as an address.
+type WorkspaceAddress struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	value       *string
+}
+
+func (r *WorkspaceAddress) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceAddress {
+	return &WorkspaceAddress{
+		query: q,
+	}
+}
+
+// The function's doc string.
+func (r *WorkspaceAddress) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceAddress.
+func (r *WorkspaceAddress) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceAddress) XXX_GraphQLType() string {
+	return "WorkspaceAddress"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceAddress) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceAddress) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceAddress) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The address value, e.g. "sandboxes:go".
+func (r *WorkspaceAddress) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceAddress as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceAddress) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -18682,6 +19302,155 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
 	}
 }
+
+// How a message landed in an agent's evaluation.
+type AgentMessageDelivery string
+
+func (AgentMessageDelivery) IsEnum() {}
+
+func (v AgentMessageDelivery) Name() string {
+	switch v {
+	case AgentMessageDeliveryStarted:
+		return "STARTED"
+	case AgentMessageDeliverySteered:
+		return "STEERED"
+	case AgentMessageDeliveryQueued:
+		return "QUEUED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentMessageDelivery) Value() string {
+	return string(v)
+}
+
+func (v *AgentMessageDelivery) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentMessageDelivery) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "QUEUED":
+		*v = AgentMessageDeliveryQueued
+	case "STARTED":
+		*v = AgentMessageDeliveryStarted
+	case "STEERED":
+		*v = AgentMessageDeliverySteered
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The message opened a new turn: the agent was idle or newly started.
+	AgentMessageDeliveryStarted AgentMessageDelivery = "STARTED"
+
+	// The message was absorbed into the in-flight turn at a step boundary, steering it.
+	AgentMessageDeliverySteered AgentMessageDelivery = "STEERED"
+
+	// The message is queued: the agent is paused or failed, and a resume will drain it.
+	AgentMessageDeliveryQueued AgentMessageDelivery = "QUEUED"
+)
+
+// Computed lifecycle state of an agent.
+type AgentState string
+
+func (AgentState) IsEnum() {}
+
+func (v AgentState) Name() string {
+	switch v {
+	case AgentStateIdle:
+		return "IDLE"
+	case AgentStateRunning:
+		return "RUNNING"
+	case AgentStateWaitingInput:
+		return "WAITING_INPUT"
+	case AgentStatePaused:
+		return "PAUSED"
+	case AgentStateStopped:
+		return "STOPPED"
+	case AgentStateFailed:
+		return "FAILED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentState) Value() string {
+	return string(v)
+}
+
+func (v *AgentState) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentState) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAILED":
+		*v = AgentStateFailed
+	case "IDLE":
+		*v = AgentStateIdle
+	case "PAUSED":
+		*v = AgentStatePaused
+	case "RUNNING":
+		*v = AgentStateRunning
+	case "STOPPED":
+		*v = AgentStateStopped
+	case "WAITING_INPUT":
+		*v = AgentStateWaitingInput
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Mailbox empty, turn complete; blocked in receive.
+	AgentStateIdle AgentState = "IDLE"
+
+	// A model request or tool evaluation is in flight.
+	AgentStateRunning AgentState = "RUNNING"
+
+	// Blocked on input from the user (derived; see waitingOn).
+	AgentStateWaitingInput AgentState = "WAITING_INPUT"
+
+	// Mailbox accepting but not draining, until resume.
+	AgentStatePaused AgentState = "PAUSED"
+
+	// Runtime released; snapshot remains readable.
+	AgentStateStopped AgentState = "STOPPED"
+
+	// The loop failed; snapshot holds the completed prefix. Resume retries.
+	AgentStateFailed AgentState = "FAILED"
+)
 
 // Sharing mode of the cache volume.
 type CacheSharingMode string

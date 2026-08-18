@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"slices"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -193,6 +195,15 @@ type DB struct {
 	surfacedConversationRoot SpanID
 	surfacedConversationInit bool
 
+	// The agent-scoped conversation gets a memo slot of its own rather than
+	// sharing the one above: both are consulted on the same render (the
+	// roster scopes the live tree while the report stays zoom-scoped), and a
+	// single slot keyed by root would make them evict each other every frame.
+	agentConversation     []*MessageNode
+	agentConversationAt   uint64
+	agentConversationID   string
+	agentConversationInit bool
+
 	surfacedGenerators     []*GeneratorNode
 	surfacedGeneratorsAt   uint64
 	surfacedGeneratorsRoot SpanID
@@ -202,6 +213,14 @@ type DB struct {
 	surfacedServicesAt   uint64
 	surfacedServicesRoot SpanID
 	surfacedServicesInit bool
+
+	// The agent roster is session-wide rather than zoom-relative (see
+	// DB.Agents: an agent born inside a module call is precisely what the
+	// roster exists to surface), so unlike the surfacing memos above it
+	// keys on db.mutations alone.
+	agents     []*AgentNode
+	agentsAt   uint64
+	agentsInit bool
 
 	testIndex *TestIndex
 }
@@ -417,6 +436,18 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// streaming progress data, not log text
 			continue
 		}
+		if db.ingestAgentState(log) {
+			// agent lifecycle state, not log text
+			continue
+		}
+		if db.ingestAgentSnapshot(log) {
+			// agent resume anchor, not log text
+			continue
+		}
+		if db.ingestCallPayload(log) {
+			// dagql call payload, not log text
+			continue
+		}
 		if log.Body().AsString() == "" {
 			// eof; ignore
 			continue
@@ -539,6 +570,13 @@ func (db *DB) SetPrimarySpan(span SpanID) {
 // root case. Flags (Boundary/Encapsulate) on or above the root are outside the
 // question and never contain; flags strictly below it contain exactly as they
 // always have, so a fixture check wrapped in its own boundary stays hidden.
+//
+// The CONVERSATION deliberately does not use this. A resuming client holds a
+// second, imported trace in the same DB (hack/designs/resume-from-trace.md
+// §5.1.3), whose messages hang off a second parentless span and would be
+// dropped by resolving nil to db.RootSpan — so there, nil means every message
+// span in the DB. The fixture-containment rule this exists for is unchanged
+// for checks, generators and services, which have no second trace to miss.
 func (db *DB) surfaceRoot(root *Span) *Span {
 	if root != nil {
 		return root
@@ -1174,6 +1212,22 @@ func (*DB) Close() error {
 }
 
 func (db *DB) Call(dig string) *callpbv1.Call {
+	return db.call(dig, nil)
+}
+
+// call resolves a digest to its call, remembering which digests the creator
+// walk has already visited.
+//
+// The walk needs that memory because CreatorSpans is keyed on a span's OUTPUT
+// digest while it answers with the span's CALL digest, and the two are
+// routinely the same value — a span that is its own creator. As long as a
+// payload is present the payload branch returns first and the question never
+// arises; when one is MISSING, which is exactly the case a resume has to
+// report (design §9's first row: "call <digest> never reached this client"),
+// the walk recurred on the digest it started from and blew the stack instead.
+// Found by the end-to-end restore test, feeding it a capture whose call
+// payloads were withheld.
+func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 	// First, check if we already have the call cached
 	if cached, ok := db.Calls[dig]; ok {
 		return cached
@@ -1196,9 +1250,16 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 
 	// Finally, try to find the call through creator spans
 	if creators, ok := db.CreatorSpans[dig]; ok {
+		if seen == nil {
+			seen = map[string]bool{}
+		}
+		seen[dig] = true
 		// Try each creator in order
 		for _, creator := range creators.Order {
-			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+			if seen[creator.CallDigest] {
+				continue
+			}
+			if creatorCall := db.call(creator.CallDigest, seen); creatorCall != nil {
 				return creatorCall
 			}
 		}
@@ -1206,6 +1267,60 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 
 	// No call found
 	return nil
+}
+
+// CallIDForDigest rebuilds the ID of the dagql call with the given digest
+// from the call payloads this client has ingested.
+//
+// It resolves through DB.Call, so it needs no SPAN carrying the digest — only
+// the payload. That distinction is the whole reason it lives here: span
+// emission dedupes per session by call digest (core.ShouldEmitTelemetry), so
+// an identical chain suppresses the second span while the payload still rides
+// the log channel (hack/designs/resume-from-trace.md §3.2, failure mode 2).
+// A rebuild keyed on spans cannot serve that case at all, and it is exactly
+// the case a resume anchor lands in.
+//
+// A gap is reported rather than papered over: the ID is not rebuildable, and
+// the caller must degrade (a read-only roster entry, a refused restore)
+// rather than act on a truncated chain.
+func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
+	if digest == "" {
+		return nil, fmt.Errorf("no call digest")
+	}
+	rootCall := db.Call(digest)
+	if rootCall == nil {
+		return nil, fmt.Errorf("cannot rebuild ID: %s",
+			missingCall{digest: digest})
+	}
+
+	recipe := &callpbv1.RecipeDAG{
+		// Not `digest`: DB.Call can answer through a creator span, in which
+		// case the chain that rebuilds is the creator's.
+		RootDigest:    rootCall.Digest,
+		CallsByDigest: map[string]*callpbv1.Call{},
+	}
+	// Report the gap here rather than letting decode trip over it below: this
+	// is the only layer that knows which frame referenced the missing call,
+	// and a chain deep enough to matter turns the decode error into a stack of
+	// "failed to decode receiver Call" with a bare digest at the bottom.
+	//
+	// A gap means some frame's payload never reached this client -- no span
+	// carried it and no closure record did -- so the ID is not rebuildable.
+	if missing := extractIntoDAG(recipe, db, rootCall.Digest); len(missing) > 0 {
+		return nil, fmt.Errorf("cannot rebuild ID for %s: %s",
+			frameLabel(rootCall), missing[0])
+	}
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipe,
+		},
+	}
+
+	var id call.ID
+	if err := id.FromProto(dag); err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {
