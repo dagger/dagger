@@ -61,6 +61,18 @@ func (n *NotificationBubble) Render(ctx tuist.Context) {
 	bgStyle := lipgloss.NewStyle().
 		Width(innerWidth)
 	for _, line := range contentLines {
+		// Clamp the line to the space between the borders before padding.
+		// lipgloss's Width WRAPS rather than truncates, so an over-long line
+		// comes back as a multi-row string — and tuist treats every ctx.Line
+		// entry as exactly one terminal row, so that desynchronizes the frame's
+		// line accounting: the diff renderer's relative cursor moves drift by
+		// the number of extra rows, duplicating and clobbering lines all over
+		// the screen, not just in this box. Sidebar content comes from producers
+		// that may ignore the width they are handed (long host paths, unbounded
+		// error text), so the box clamps rather than trusting them.
+		// See TestNotificationBubbleOverlongContent.
+		line = strings.Map(dropRowBreaks, tuist.ExpandTabs(line, 8))
+		line = tuist.Truncate(line, innerWidth-1, "…")
 		// Apply background to the full inner width
 		padded := bgStyle.Render(" " + line)
 		ctx.Line(leftBorder + padded + rightBorder)
@@ -150,6 +162,20 @@ func (n *NotificationBubble) buildTopBorder(profile termenv.Profile, borderFg te
 	}
 
 	return corner1 + innerStr + corner2
+}
+
+// dropRowBreaks removes the control characters that move the terminal cursor
+// off the row being painted: vertical tab and form feed move down a row, and a
+// bare carriage return jumps back to column 0 so the rest of the line overwrites
+// what it already painted. All of them measure as zero columns, so truncating by
+// visible width does not remove them. (Line feeds are handled by splitting the
+// content into rows before this runs.)
+func dropRowBreaks(r rune) rune {
+	switch r {
+	case '\r', '\v', '\f':
+		return -1
+	}
+	return r
 }
 
 // notificationWidth returns the width for notification bubbles.
