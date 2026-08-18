@@ -613,7 +613,7 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(args []string) {
+func parseGlobalFlags(args []string) []string {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
@@ -626,6 +626,7 @@ func parseGlobalFlags(args []string) {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
+	return flags.Args()
 }
 
 func xReleaseLogLine(msg string) string {
@@ -813,7 +814,7 @@ func Main() {
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(os.Args[1:])
+	commandArgs := parseGlobalFlags(os.Args[1:])
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -908,8 +909,8 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if shouldRegisterSDKCommands(os.Args[1:]) {
-		if err := registerInstalledSDKCommands(ctx, os.Args[1:]); err != nil {
+	if shouldRegisterSDKCommands(commandArgs) {
+		if err := registerInstalledSDKCommands(ctx, commandArgs); err != nil {
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			exitWithCode(1)
 		}

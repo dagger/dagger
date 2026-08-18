@@ -10,6 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestConventionalSDKName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		moduleName string
+		want       string
+	}{
+		{moduleName: "dagger-go-sdk", want: "go"},
+		{moduleName: "dagger-python", want: "python"},
+		{moduleName: "typescript-sdk", want: "typescript"},
+		{moduleName: "custom", want: "custom"},
+		{moduleName: "daggersdk", want: "dagger"},
+		{moduleName: "dagger-sdk", want: "dagger-sdk"},
+		{moduleName: "daggerverse", want: "daggerverse"},
+		{moduleName: "daggerhub", want: "daggerhub"},
+	} {
+		require.Equal(t, tc.want, ConventionalSDKName(tc.moduleName), tc.moduleName)
+	}
+}
+
 func TestParseConfig(t *testing.T) {
 	t.Parallel()
 

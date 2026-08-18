@@ -112,19 +112,12 @@ func (s *workspaceSchema) initModuleChanges(
 	if _, exists := cfg.Modules[args.Name]; exists {
 		return res, scope, fmt.Errorf("module %q is already installed in this workspace", args.Name)
 	}
-	for installedName, installed := range cfg.Modules {
-		if installed.AsSDK == nil {
-			continue
-		}
-		for _, m := range installed.AsSDK.Modules {
-			authored, err := workspace.ResolveSDKManagedPath(staged.ConfigDir, m.Path)
-			if err != nil {
-				return res, scope, fmt.Errorf("module managed by %q: %w", installedName, err)
-			}
-			if authored == relPath {
-				return res, scope, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
-			}
-		}
+	owner, claimed, err := claimedOwner(cfg, staged.ConfigDir, workspaceModuleClaim, relPath)
+	if err != nil {
+		return res, scope, err
+	}
+	if claimed {
+		return res, scope, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, owner)
 	}
 
 	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: configPath})

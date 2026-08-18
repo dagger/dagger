@@ -58,10 +58,6 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"client"})
-	require.NoError(t, err)
-	require.NotSame(t, apiCmd, cmd)
-
 	cmd, _, err = rootCmd.Find([]string{"call"})
 	require.NoError(t, err)
 	require.Same(t, callModCmd.Command(), cmd)
@@ -395,10 +391,11 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	workdir = "."
 	workspaceRef = ""
 
-	parseGlobalFlags([]string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
+	args := parseGlobalFlags([]string{"--org", "acme", "call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
 
 	require.Equal(t, "/work/shell", workdir)
 	require.Equal(t, "./ws", workspaceRef)
+	require.Equal(t, []string{"call", "identify"}, args)
 }
 
 func TestWorkspaceFlagPolicy(t *testing.T) {

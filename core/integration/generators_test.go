@@ -444,15 +444,10 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 	require.Contains(t, list, "client-generator-fixture:generate-clients")
 
 	clients, err := base.
-		With(daggerExec("sdk", "fixture", "client", "claimed")).
+		With(daggerExec("sdk", "fixture", "client", "list")).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, clients, "PATH")
-	require.Contains(t, clients, "clients/one")
-	require.Contains(t, clients, "github.com/shykes/hello")
-	require.Contains(t, clients, "deadbeef")
-	require.Contains(t, clients, "clients/two")
-	require.Contains(t, clients, ".dagger/client-generator-fixture")
+	require.Equal(t, "PATH         MODULE                   PIN\nclients/one  github.com/shykes/hello  deadbeef\nclients/two  .dagger/client-generator-fixture\n", clients)
 
 	generated := base.With(daggerExec("generate", "-y"))
 
@@ -758,7 +753,7 @@ func (GeneratorsSuite) TestSDKClaimAndUnclaim(ctx context.Context, t *testctx.T)
 		require.NoError(t, err)
 		require.Contains(t, config, `path = ".dagger/modules/claimed"`)
 
-		list, err := claimed.With(daggerExec("sdk", "fixture", "module", "claimed")).Stdout(ctx)
+		list, err := claimed.With(daggerExec("sdk", "fixture", "module", "list")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, list, ".dagger/modules/claimed")
 	})
@@ -778,10 +773,16 @@ func (GeneratorsSuite) TestSDKClaimAndUnclaim(ctx context.Context, t *testctx.T)
 		require.NoError(t, err)
 		require.Contains(t, config, `path = "clients/claimed"`)
 
-		list, err := claimed.With(daggerExec("sdk", "fixture", "client", "claimed")).Stdout(ctx)
+		reclaimed := claimed.With(daggerExec(
+			"sdk", "fixture", "client", "claim", "clients/claimed", "github.com/shykes/hello", "--auto-apply"))
+		config, err = reclaimed.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `module = "github.com/shykes/hello"`)
+
+		list, err := reclaimed.With(daggerExec("sdk", "fixture", "client", "list")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, list, "clients/claimed")
-		require.Contains(t, list, "sdk/init-fixture")
+		require.Contains(t, list, "github.com/shykes/hello")
 	})
 }
 

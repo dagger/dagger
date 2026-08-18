@@ -60,8 +60,8 @@ func (CommandHintsSuite) TestSDKInstallAndDynamicCommands(ctx context.Context, t
 
 	helpOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "go", "--help")
 	require.NoError(t, err, "%s", string(helpOut))
-	require.Contains(t, string(helpOut), "module")
-	require.Contains(t, string(helpOut), "client")
+	require.Contains(t, string(helpOut), "Develop Dagger modules using the go SDK")
+	require.Contains(t, string(helpOut), "Generate API clients using the go SDK")
 
 	_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "sdk", "go", "module", "init", "myapp")
 	require.NoError(t, err)

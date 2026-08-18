@@ -9,9 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var apiClientInitNoGenerate bool
-
-func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef string) error {
+func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef string, noGenerate bool) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("client init does not support --env; it scaffolds clients into the base workspace config")
 	}
@@ -25,7 +23,7 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 			return err
 		}
 		opts := dagger.WorkspaceWithInitClientOpts{
-			NoGenerate: apiClientInitNoGenerate,
+			NoGenerate: noGenerate,
 		}
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)

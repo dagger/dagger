@@ -22,20 +22,20 @@ func TestInstalledSDKCommandShape(t *testing.T) {
 	require.Equal(t, "go", cmd.Use)
 	require.Equal(t, "Use the go SDK to develop and consume modules", cmd.Short)
 	require.Equal(t, "true", cmd.Annotations[dynamicSDKCommandAnnotation])
-	require.Equal(t, []string{"info"}, commandNames(cmd.Commands()))
+	require.Equal(t, []string{"client", "info", "module"}, commandNames(cmd.Commands()))
 
-	moduleCmd, err := newSDKModuleCommand("go", &modFunction{})
-	require.NoError(t, err)
-	for _, name := range []string{"claim", "claimed", "init", "unclaim"} {
+	moduleCmd := newSDKModuleCommand("go")
+	for _, name := range []string{"claim", "list", "unclaim"} {
 		require.NotNil(t, findCommand(moduleCmd, name))
 	}
+	require.NoError(t, addSDKModuleInitCommand(moduleCmd, "go", &modFunction{}))
 	require.Equal(t, "init <name>", findCommand(moduleCmd, "init").Use)
 
-	clientCmd, err := newSDKClientCommand("go", &modFunction{})
-	require.NoError(t, err)
-	for _, name := range []string{"claim", "claimed", "init", "unclaim"} {
+	clientCmd := newSDKClientCommand("go")
+	for _, name := range []string{"claim", "list", "unclaim"} {
 		require.NotNil(t, findCommand(clientCmd, name))
 	}
+	require.NoError(t, addSDKClientInitCommand(clientCmd, "go", &modFunction{}))
 	require.Equal(t, "claim <path> <module>", findCommand(clientCmd, "claim").Use)
 	require.Equal(t, "init <path> <module>", findCommand(clientCmd, "init").Use)
 }
@@ -199,8 +199,6 @@ func TestShouldRegisterSDKCommands(t *testing.T) {
 		{name: "sdk help", args: []string{"sdk", "--help"}, want: true},
 		{name: "sdk module init", args: []string{"sdk", "go", "module", "init", "myapp"}, want: true},
 		{name: "sdk client init", args: []string{"sdk", "typescript", "client", "init", "./client", "."}, want: true},
-		{name: "global workspace flag", args: []string{"--workspace", "./ws", "sdk", "go", "info"}, want: true},
-		{name: "global workspace short flag", args: []string{"-W", "./ws", "sdk", "go", "module", "claimed"}, want: true},
 		{name: "sdk search moved", args: []string{"search", "--sdk"}, want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -210,11 +208,14 @@ func TestShouldRegisterSDKCommands(t *testing.T) {
 }
 
 func TestSDKInvocationParsing(t *testing.T) {
-	name, ok := sdkInvocationSDKName([]string{"--workspace", "./ws", "sdk", "go", "info"})
+	name, ok := sdkInvocationSDKName([]string{"sdk", "go", "info"})
 	require.True(t, ok)
 	require.Equal(t, "go", name)
-	require.True(t, sdkInvocationIsInfo([]string{"-W", "./ws", "sdk", "go", "info"}))
-	require.False(t, sdkInvocationIsInfo([]string{"sdk", "go", "module", "claimed"}))
+	require.False(t, sdkInvocationNeedsInit([]string{"sdk", "go", "info"}))
+	require.False(t, sdkInvocationNeedsInit([]string{"sdk", "go", "module", "list"}))
+	require.True(t, sdkInvocationNeedsInit([]string{"sdk", "go", "module", "init"}))
+	require.True(t, sdkInvocationNeedsInit([]string{"sdk", "go", "module"}))
+	require.True(t, sdkInvocationNeedsInit([]string{"sdk", "go"}))
 }
 
 func commandNames(commands []*cobra.Command) []string {

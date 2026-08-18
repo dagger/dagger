@@ -278,11 +278,11 @@ func (s *workspaceSchema) withModuleInstall(
 			args.AsSdk = true
 			args.AsSdkName = existing.AsSDK.Name
 		} else {
-			capabilities, err := detectWorkspaceSDKCapabilities(lookupCtx, resolved.ModuleSource)
+			isSDK, err := detectWorkspaceSDKCapabilities(lookupCtx, resolved.ModuleSource)
 			if err != nil {
 				return dagql.ObjectResult[*core.Workspace]{}, err
 			}
-			if capabilities.Any() {
+			if isSDK {
 				args.AsSdk = true
 				args.AsSdkName = resolvedWorkspaceSDKName(staged.Config, resolved.Name)
 			}

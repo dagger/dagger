@@ -563,22 +563,6 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 	return err
 }
 
-func uninstallWorkspaceSDK(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
-	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutSDK(name, dagger.WorkspaceWithoutSDKOpts{Here: here}))
-	if err != nil {
-		return err
-	}
-	configPath, err := workspaceConfigHostPath(ctx, updated)
-	if err != nil {
-		return err
-	}
-	if err := updated.Export(ctx); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(out, "Uninstalled SDK %q from %s\n", name, configPath)
-	return err
-}
-
 func workspaceConfigHostPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
 	configFile, err := ws.ConfigFile(ctx)
 	if err != nil {

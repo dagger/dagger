@@ -10,8 +10,23 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	toml "github.com/pelletier/go-toml"
 )
+
+// ConventionalSDKName derives the user-facing SDK command name from its
+// installed module name.
+func ConventionalSDKName(moduleName string) string {
+	name := strings.TrimSpace(moduleName)
+	name = strings.TrimPrefix(name, sdkmeta.InstallNamePrefix)
+	name = strings.Trim(name, "-_")
+	name = strings.TrimSuffix(name, "sdk")
+	name = strings.Trim(name, "-_")
+	if name == "" {
+		return moduleName
+	}
+	return name
+}
 
 // Config represents a parsed dagger.toml workspace configuration.
 type Config struct {

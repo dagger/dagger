@@ -983,21 +983,13 @@ func TestResolvedWorkspaceSDKName(t *testing.T) {
 	require.Equal(t, "python", resolvedWorkspaceSDKName(cfg, "dagger-python-sdk"))
 	require.Equal(t, "dagger-go", resolvedWorkspaceSDKName(cfg, "dagger-go"))
 	require.Equal(t, "typescript", resolvedWorkspaceSDKName(cfg, "dagger-typescript-sdk"))
-	require.Equal(t, "help-2", resolvedWorkspaceSDKName(cfg, "help"))
+	require.Equal(t, "help", resolvedWorkspaceSDKName(cfg, "help"))
 
 	cfg.Modules["custom-sdk"] = workspace.ModuleEntry{
 		Source: "github.com/acme/custom-sdk",
 		AsSDK:  &workspace.ModuleAsSDK{Name: "dagger-go"},
 	}
 	require.Equal(t, "go-2", resolvedWorkspaceSDKName(cfg, "dagger-go"))
-}
-
-func TestNormalizedSDKCapabilityName(t *testing.T) {
-	t.Parallel()
-
-	require.Equal(t, "initmodule", normalizedSDKCapabilityName("initModule"))
-	require.Equal(t, "initmodule", normalizedSDKCapabilityName("init_module"))
-	require.Equal(t, "initclient", normalizedSDKCapabilityName("init-client"))
 }
 
 func TestClaimedSDKOwners(t *testing.T) {
@@ -1012,13 +1004,16 @@ func TestClaimedSDKOwners(t *testing.T) {
 		},
 	}}
 
-	owner, ok := claimedModuleOwner(cfg, "./modules/demo")
+	owner, ok, err := claimedOwner(cfg, ".", workspaceModuleClaim, "./modules/demo")
+	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "go-sdk", owner)
-	owner, ok = claimedClientOwner(cfg, "clients/other/../demo")
+	owner, ok, err = claimedOwner(cfg, ".", workspaceClientClaim, "clients/other/../demo")
+	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "go-sdk", owner)
-	_, ok = claimedModuleOwner(cfg, "modules/other")
+	_, ok, err = claimedOwner(cfg, ".", workspaceModuleClaim, "modules/other")
+	require.NoError(t, err)
 	require.False(t, ok)
 }
 

@@ -27,25 +27,6 @@ func ConventionalSDKShortName(sdkRef string) string {
 	return ref
 }
 
-// ConventionalSDKName derives the user-facing command name for an SDK from
-// the name of its installed module. SDK modules conventionally wrap their
-// distinguishing name in "dagger-" and/or "-sdk" (for example,
-// "dagger-go-sdk"), neither of which helps a user choose the SDK.
-//
-// Conflict resolution is deliberately left to the caller because it depends
-// on the other SDKs installed in the workspace.
-func ConventionalSDKName(moduleName string) string {
-	name := strings.TrimSpace(moduleName)
-	name = strings.TrimPrefix(name, "dagger")
-	name = strings.Trim(name, "-_")
-	name = strings.TrimSuffix(name, "sdk")
-	name = strings.Trim(name, "-_")
-	if name == "" {
-		return moduleName
-	}
-	return name
-}
-
 // migrationSDKInstallName returns the workspace module install name to record
 // for a legacy SDK ref. A builtin runtime short name (e.g. "go", "php@v1") is
 // keyed by a "dagger-"-prefixed canonical basename ("dagger-go-sdk",
