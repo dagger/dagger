@@ -161,8 +161,8 @@ require (
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
-	github.com/vito/tuist v0.0.11-0.20260811005514-1d38ff923562
-	github.com/vito/tuist/teav1 v0.0.0-20260728151937-82e472c0ece3
+	github.com/vito/tuist v0.0.11
+	github.com/vito/tuist/teav1 v0.0.0-20260819192838-ad563377029f
 	github.com/zeebo/xxh3 v1.1.0
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
