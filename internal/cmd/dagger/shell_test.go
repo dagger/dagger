@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,148 @@ func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
 	handler := newShellCallHandler(nil, &idtui.FrontendMock{})
 	require.True(t, handler.noModule)
 	require.Equal(t, moduleURLDefault, handler.moduleURL)
+}
+
+// TestAgentWorkspaceBaseline exercises the conversation's synchronization
+// baseline end to end: a checkpoint-backed LLM previews changes without being
+// compared to currentWorkspace, saves and restores that portable baseline, and
+// advances it after both explicit synchronization actions. It also locks in the
+// compatibility fallback for metadata written before the baseline field existed.
+func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx.T) {
+	workdir := filepath.Join(t.TempDir(), "work")
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1",
+		"https://github.com/dagger/dagger-test-modules.git", workdir)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	dag, err := dagger.Connect(ctx, dagger.WithWorkdir(workdir))
+	require.NoError(t, err)
+	t.Cleanup(func() { dag.Close() })
+
+	// Trace restore starts from an intentionally unbound LLM. It keeps that
+	// composition but has no baseline until an attached snapshot supplies one,
+	// and previewing it must not issue an unbound workspace query.
+	unboundSession := &LLMSession{dag: dag, plumbingCtx: ctx}
+	unbound := unboundSession.newAgent("unbound")
+	unboundSession.agents = []*sessionAgent{unbound}
+	unboundSession.target = unbound
+	require.NoError(t, unbound.setInitialLLM(dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"})))
+	require.Nil(t, unbound.lastSynced(nil))
+	unboundSession.frontend = &idtui.FrontendMock{
+		SetSidebarContentFunc: func(idtui.SidebarSection) {},
+	}
+	require.NoError(t, unbound.updateChangesPreview(unbound.llm))
+
+	baseline, err := checkpointWorkspace(ctx, dag)
+	require.NoError(t, err)
+	starting := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).
+		WithWorkspace(baseline).
+		WithSystemPrompt("keep the original agent composition").
+		WithTools(baseline)
+
+	session := &LLMSession{dag: dag, plumbingCtx: ctx}
+	agent := session.newAgent("baseline-test")
+	session.agents = []*sessionAgent{agent}
+	session.target = agent
+	require.NoError(t, agent.setInitialLLM(starting))
+	baselineID, err := baseline.ID(ctx)
+	require.NoError(t, err)
+	storedBaselineID, err := agent.lastSynced(nil).ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baselineID, storedBaselineID,
+		"the composed checkpoint, not NewLLMSession's temporary workspace, is the initial baseline")
+
+	edited := starting.WithWorkspace(baseline.WithNewFile("agent.txt", "from agent\n"))
+	require.NoError(t, agent.updateLLM(edited))
+
+	var changesSection idtui.SidebarSection
+	session.frontend = &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Changes" {
+				changesSection = section
+			}
+		},
+	}
+	require.NoError(t, agent.updateChangesPreview(edited),
+		"a portable checkpoint must not be compared with client-local currentWorkspace")
+	require.Contains(t, changesSection.Body(80), "agent.txt")
+	session.frontend = nil
+
+	// Auto-save persists a second portable recipe for the baseline. Reload it
+	// through a different client to prove it is not an engine-local Workspace ID.
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	sessionID, err := agent.AutoSaveSession(ctx, "baseline persistence", "")
+	require.NoError(t, err)
+	sessionDir, err := getSessionDir()
+	require.NoError(t, err)
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
+	data, err := os.ReadFile(sessionFile)
+	require.NoError(t, err)
+	var metadata sessionMetadata
+	require.NoError(t, json.Unmarshal(data, &metadata))
+	require.NotEmpty(t, metadata.WorkspaceBaselineID)
+
+	dag2, err := dagger.Connect(ctx, dagger.WithWorkdir(workdir))
+	require.NoError(t, err)
+	t.Cleanup(func() { dag2.Close() })
+	session2 := &LLMSession{dag: dag2, plumbingCtx: ctx}
+	restored := session2.newAgent("restored")
+	session2.agents = []*sessionAgent{restored}
+	session2.target = restored
+	require.NoError(t, restored.LoadSession(ctx, ctx, sessionID))
+	added, err := restored.llm.Workspace().Changes(dagger.WorkspaceChangesOpts{
+		From: restored.lastSynced(nil),
+	}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"agent.txt"}, added,
+		"restored pending changes must still be measured from the saved checkpoint")
+
+	// Old metadata has no baseline. Resume conservatively compares the restored
+	// workspace with itself rather than guessing currentWorkspace and risking an
+	// unlike-host-root failure.
+	metadata.WorkspaceBaselineID = ""
+	data, err = json.MarshalIndent(metadata, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(sessionFile, data, 0o600))
+	legacy := session2.newAgent("legacy")
+	session2.agents = append(session2.agents, legacy)
+	session2.target = legacy
+	require.NoError(t, legacy.LoadSession(ctx, ctx, sessionID))
+	empty, err := legacy.llm.Workspace().Changes(dagger.WorkspaceChangesOpts{
+		From: legacy.lastSynced(nil),
+	}).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+
+	// Export and reset each install their fresh checkpoint as the new baseline.
+	// .clear reuses that latest checkpoint while retaining the starting toolset.
+	beforeExport := agent.lastSynced(nil)
+	require.NoError(t, agent.ExportChanges(ctx))
+	afterExport := agent.lastSynced(nil)
+	require.NotSame(t, beforeExport, afterExport)
+	contents, err := os.ReadFile(filepath.Join(workdir, "agent.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "from agent\n", string(contents))
+
+	wantTools, err := starting.Tools(ctx)
+	require.NoError(t, err)
+	agent.Clear()
+	gotTools, err := agent.llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Equal(t, wantTools, gotTools, ".clear must preserve the original tool composition")
+	workspaceContents, err := agent.llm.Workspace().File("agent.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from agent\n", workspaceContents, ".clear must use the latest synchronized checkpoint")
+
+	dirty := agent.llm.Workspace().WithNewFile("discard.txt", "discard me\n")
+	require.NoError(t, agent.updateLLM(agent.llm.WithWorkspace(dirty)))
+	beforeReset := agent.lastSynced(nil)
+	require.NoError(t, agent.ResetWorkspace(ctx))
+	require.NotSame(t, beforeReset, agent.lastSynced(nil))
+	entries, err := agent.llm.Workspace().Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, "discard.txt")
 }
 
 func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {

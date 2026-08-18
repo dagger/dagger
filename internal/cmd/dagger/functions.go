@@ -1114,8 +1114,7 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// clearing history returns to the initially selected agents rather than a
 	// blank LLM.
 	target := handler.llmSession.Target()
-	target.initialLLM = llm
-	if err := target.updateLLM(llm); err != nil {
+	if err := target.setInitialLLM(llm); err != nil {
 		return err
 	}
 
