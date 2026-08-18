@@ -472,7 +472,7 @@ func (s *workspaceSchema) withInitModule(
 	args workspaceInitModuleArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	changes, scope, err := s.initModuleChanges(
-		workspaceInstallContextWithLockMode(ctx, workspace.LockModeDisabled),
+		withoutWorkspaceLookupLock(ctx),
 		parent,
 		args,
 	)
@@ -495,7 +495,7 @@ func (s *workspaceSchema) withInitClient(
 	args workspaceInitClientArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	changes, scope, err := s.initClientChanges(
-		workspaceInstallContextWithLockMode(ctx, workspace.LockModeDisabled),
+		withoutWorkspaceLookupLock(ctx),
 		parent,
 		args,
 	)

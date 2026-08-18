@@ -1217,18 +1217,13 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	var lookupLock *workspaceLookupLock
-	var rawLock *workspace.Lock
-	lockMode := workspace.LockModeDisabled
 	// A ref like "registry:5000/app:latest" can point to different images
 	// depending on registryService, so disable workspace lock entries when
 	// registryService is set.
 	if len(registryServices) == 0 {
-		lockMode, lookupLock, err = lookupLockForMode(ctx, query, lockContainerFromOperation)
+		lookupLock, err = lookupLockForAPI(ctx, query, lockContainerFromOperation)
 		if err != nil {
 			return inst, err
-		}
-		if lockMode != workspace.LockModeDisabled {
-			rawLock = lookupLock.lock
 		}
 	}
 
@@ -1239,9 +1234,8 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if registryTransport.InsecureSkipTLSVerify {
 		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
 	}
-	lockResolution, err := resolveLookupFromLock(
-		lockMode,
-		rawLock,
+	lockResolution, err := resolveLookupFromLoadedLock(
+		lookupLock,
 		lockContainerFromOperation,
 		lockInputs,
 		workspace.PolicyPin,

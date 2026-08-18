@@ -1513,9 +1513,6 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 			ref := declaredWorkspace
 			workspaceRef = &ref
 		}
-		if md.LockMode != "" {
-			clientMetadata.LockMode = md.LockMode
-		}
 		if declaredEnv, ok := workspaceEnvFromClientMetadata(md); ok {
 			env := declaredEnv
 			workspaceEnv = &env

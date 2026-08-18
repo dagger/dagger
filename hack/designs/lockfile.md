@@ -1,13 +1,13 @@
 # Lockfile: Lookup Resolution
 
-## Status: Implemented; v1 mode and policy sections retained as history
+## Status: Implemented; v1 reading retained for migration
 
 This is the general design reference for Dagger lockfiles.
 
 It describes:
 
 - the current v2 lock entry format
-- v1 policy migration and internal compatibility semantics
+- v1 policy migration and API-view compatibility
 - automatic discovery and explicit update flows
 - what is implemented now
 - what remains to be built
@@ -29,7 +29,6 @@ It describes:
 | Lookup result | The concrete resolved value: digest, commit SHA, immutable ID, and so on. |
 | Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `value`. |
 | Legacy lock policy | Version 1 entry-level refresh intent: `pin` or `float`. |
-| Internal lock mode | Compatibility behavior retained in engine metadata; it is no longer CLI UX. |
 | Lockfile snapshot | Parsed `dagger.lock` state loaded into session-owned live state. |
 | Lockfile delta | Tuple upserts buffered in session-owned live state before final export. |
 
@@ -76,60 +75,24 @@ The v2 reader accepts those entries for migration:
 
 - `pin` is reused.
 - `float` is refreshed when encountered under the default pinned behavior.
-- Any write emits a four-element v2 entry.
+- Any write serializes the whole file as v2 and removes every policy.
+- Entries not encountered before that write retain their values and become pins.
 
 Unknown versions are rejected.
 
-## Legacy v1 Policy and Internal Lock Modes
+## API Version Compatibility
 
-The following sections document the version 1 semantics retained internally for
-reading old files and serving mixed-version clients. They are not current CLI UX.
+Pinned-by-default locking begins with API view `v1.0.0-beta.10`. The API view,
+not the engine binary version, controls the behavior so an older module cannot
+silently acquire new lockfile semantics when run by a newer engine.
 
-### Lock Policy
+Current API views use pinned locking by default. They may read v1 or v2 and
+write v2. Missing entries and encountered v1 `float` entries are resolved and
+recorded; existing pins are reused.
 
-Lock policy is stored per entry.
-
-| Policy | Meaning |
-| --- | --- |
-| `pin` | Prefer the recorded value when the mode allows it. |
-| `float` | Prefer live resolution when the mode allows it. |
-
-What users should memorize:
-
-- `pin`: stay on this recorded result
-- `float`: refresh this result when live resolution is allowed
-
-### Lock Mode
-
-Lock mode is chosen per run, typically with `--lock`.
-
-| Mode | Meaning |
-| --- | --- |
-| `disabled` | Ignore the lockfile completely. |
-| `live` | Resolve everything live and record the result. |
-| `pinned` | Reuse pinned entries, resolve everything else live, and record the result. |
-| `frozen` | Resolve only from the lockfile and fail on misses. |
-
-What users should memorize:
-
-- `disabled`: feature off
-- `live`: refresh while running
-- `pinned`: prefer stable pins, refresh the rest
-- `frozen`: use the lockfile only
-
-### Behavior Matrix
-
-| Mode | Existing `pin` entry | Existing `float` entry | Missing entry |
-| --- | --- | --- | --- |
-| `disabled` | resolve live, do not read or write lockfile | resolve live, do not read or write lockfile | resolve live, do not write |
-| `live` | resolve live and rewrite | resolve live and rewrite | resolve live and write |
-| `pinned` | use lockfile value | resolve live and rewrite | resolve live and write |
-| `frozen` | use lockfile value | use lockfile value | error |
-
-Important consequence:
-
-- in `frozen`, an existing `float` entry is still treated as a recorded snapshot
-- `float` only matters in modes that allow live resolution
+Older API views ignore lockfiles entirely. They neither read nor write lock
+state, regardless of which engine version serves the request. There is no lock
+mode in client metadata or the API.
 
 ## Design Delta From Current Branch
 
@@ -137,9 +100,9 @@ This section is the proposed diff from the current `lockfile` branch.
 
 It is intentionally narrow:
 
-- it only changes the ambient live lock path
+- it only changes the automatic lock path
 - it does not introduce a new public DagQL lockfile API
-- it does not redesign `currentWorkspace.update()` / `dagger lock update()` in the same
+- it does not redesign `currentWorkspace.update()` / `dagger update` in the same
   change
 
 | Area | Current branch | Proposed |
@@ -169,50 +132,6 @@ Concretely, the design change is:
 - `dagger update` explicitly refreshes supported entries already present in
   `dagger.lock`.
 - Both paths write version 2.
-
-The internal mode transport remains supported for mixed-version clients, but
-new CLI versions do not expose `--lock` or `dagger lock`.
-
-## Historical v1 Update Flows
-
-There are three real update paths:
-
-### `dagger lock update`
-
-Refresh entries already present in `dagger.lock`.
-
-Properties:
-
-- best-effort by entry type
-- uses the current environment's ambient authentication
-- does not discover new entries on its own
-- thin CLI wrapper over `currentWorkspace.update()`
-
-### `--lock=live`
-
-Run the real workload in live lock mode.
-
-Properties:
-
-- refreshes existing entries the run touches
-- discovers missing entries the run touches
-- reads `dagger.lock` at most once per bound workspace in a session
-- mutates the lockfile server-side throughout the session
-- exports the final lockfile once on graceful session shutdown
-- is the authoritative discovery path for new lock entries
-
-### `currentWorkspace.update(): Changeset!`
-
-Engine API for refreshing entries already present in `dagger.lock`.
-
-Properties:
-
-- returns a `Changeset` instead of writing directly
-- refreshes supported existing entries only
-- errors if `dagger.lock` does not exist
-
-This design update leaves explicit maintenance alone. It only changes the ambient live
-path.
 
 ## Session-State Lifecycle
 
@@ -258,7 +177,7 @@ This follows the existing server/session pattern already used elsewhere in the e
 
 ### Live Execution Path
 
-Ambient execution (`--lock=live`, plus the write-through cases of `pinned`) should:
+Pinned-by-default execution should:
 
 - read current session lockfile state
 - resolve the live lookup
@@ -297,7 +216,7 @@ The important cleanup constraint is:
 - do not add a new public DagQL lockfile API as part of this change
 - do not make hot-path lock reads/writes re-enter DagQL
 - do not keep direct per-consumer caller-host lockfile reads in schema code
-- do not redesign `currentWorkspace.update()` / `dagger lock update()` in the same
+- do not redesign `currentWorkspace.update()` / `dagger update` in the same
   change
 
 ## Lookup Coverage
@@ -333,8 +252,7 @@ Notes:
 - [x] tuple lockfile substrate in `util/lockfile`
 - [x] flat v2 lock entry format `[namespace, operation, inputs, value]`
 - [x] ordered positional tuple keys with operation-specific result values
-- [x] lock mode parsing and transport through client metadata
-- [x] nested-client and module-runtime lock mode propagation
+- [x] API-view gating for pinned-by-default locking
 - [x] local workspace lockfile read/write helpers
 - [x] serialized lockfile writes with merge against latest on-disk state
 - [x] `container.from` lookup locking
@@ -356,16 +274,16 @@ Notes:
 
 ### Implemented Semantics
 
-- [x] internal `disabled|live|pinned|frozen` compatibility modes
-- [x] default lock mode is `pinned`
-- [x] `live` writes through
-- [x] `pinned` writes through for `float` and missing entries
-- [x] `frozen` reuses both `pin` and `float` entries and fails on misses
+- [x] current API views default to writable `pinned`
+- [x] older API views default to `disabled`
+- [x] legacy `live` becomes disabled with a warning
+- [x] legacy `pinned` reads pins but warns and suppresses writes
 
 ### Current Consumer Defaults
 
 - [x] new v2 entries are pinned until `dagger update`
-- [x] v1 `float` policies are honored once during migration
+- [x] current views honor v1 `float` policies when encountered
+- [x] old views never migrate v1 to v2
 
 ## Current Implementation Constraints
 
@@ -377,11 +295,11 @@ These are current branch facts, not necessarily the final target for all future 
 - remote workspaces currently error for lock-aware mutation paths
 - hot lookup paths do not reread `dagger.lock` from the caller host after the session
   snapshot is loaded
-- live lock writes are buffered in session-owned workspace state and exported once on
+- automatic lock writes are buffered in session-owned workspace state and exported once on
   graceful shutdown
 - final export still rereads latest on-disk state and merges the session delta before
   writing
-- `dagger lock update` relies on ambient authentication for private registries and repositories
+- `dagger update` relies on ambient authentication for private registries and repositories
 
 ## Implementation Principle
 
@@ -454,8 +372,8 @@ This file should not:
 #### `container.from` lock integration
 
 ```go
-lookupLock, err := loadWorkspaceLookupLock(ctx, query)
-resolution, err := resolveLookupFromLock(lockMode, lookupLock.lock, lockContainerFromOperation, inputs, workspace.PolicyPin)
+lookupLock, err := lookupLockForAPI(ctx, query, lockContainerFromOperation)
+resolution, err := resolveLookupFromLoadedLock(lookupLock, lockContainerFromOperation, inputs, workspace.PolicyPin)
 ```
 
 After live resolution:
@@ -581,8 +499,8 @@ Important constraints:
 
 ### UX and maintenance follow-ups
 
-- [x] decide whether `disabled` should remain the long-term default
-- [ ] decide whether `dagger lock update` should gain richer output or selection flags
+- [x] make pinned locking the default for supported API views
+- [ ] decide whether `dagger update` should gain richer output or selection flags
 - [ ] decide whether lock update should prune stale entries
 - [ ] decide whether to add a public lockfile DagQL API later
 

@@ -28,16 +28,29 @@ Entries are ordered deterministically by namespace, operation, and inputs.
 
 ### Version compatibility
 
-Dagger reads both version 1 and version 2 lockfiles and writes version 2.
+Dagger reads both version 1 and version 2 lockfiles. Current API versions write
+version 2.
 
-Version 1 entries include a fifth policy value, `pin` or `float`. Dagger preserves their behavior while reading them:
+Version 1 entries include a fifth policy value, `pin` or `float`. Current API
+versions preserve that behavior while reading them:
 
 - A legacy `pin` entry is reused.
-- A legacy `float` entry is resolved again when encountered, then rewritten as a version 2 entry.
+- A legacy `float` entry is resolved again when encountered.
 
-Version 2 does not store policies. Every recorded result is pinned until explicitly updated.
+Any subsequent write serializes the whole lockfile as version 2 and removes the
+policy from every entry. Values that were not encountered remain unchanged and
+become pinned; encountered `float` entries use their newly resolved values.
 
-Unknown future lockfile versions are rejected instead of being interpreted with potentially incompatible semantics.
+Version 2 does not store policies. Every recorded result is pinned until
+explicitly updated.
+
+Clients using an API view from before pinned-by-default locking ignore the
+lockfile entirely. They neither read nor write it, even when run by a newer
+engine. This prevents an older module from silently acquiring new locking
+semantics.
+
+Unknown future lockfile versions are rejected instead of being interpreted
+with potentially incompatible semantics.
 
 ## Updating lockfiles
 

@@ -192,7 +192,6 @@ func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
 			return res, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	workspaceCtx = workspaceInstallLookupContext(workspaceCtx)
 
 	return wsSchema.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, client.Pin)
 }

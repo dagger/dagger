@@ -46,23 +46,6 @@ func LegacyLockFilePathForCanonical(lockFile string) string {
 	return filepath.Join(lockDir, LegacyLockFilePath)
 }
 
-// LockMode controls where lookup results come from for a run.
-type LockMode string
-
-const (
-	LockModeDisabled LockMode = "disabled"
-	LockModeLive     LockMode = "live"
-	LockModePinned   LockMode = "pinned"
-	LockModeFrozen   LockMode = "frozen"
-
-	// Backward-compatible aliases for the previous experimental names.
-	LockModeAuto   = LockModePinned
-	LockModeStrict = LockModeFrozen
-
-	// DefaultLockMode is used when no mode is explicitly set.
-	DefaultLockMode = LockModePinned
-)
-
 // LockPolicy controls update intent for a lock entry. It remains in the
 // in-memory model only to migrate policies read from version 1 lockfiles.
 type LockPolicy string
@@ -386,34 +369,4 @@ func parseLookupResult(value any, policy string) (LookupResult, error) {
 
 func isValidLockPolicy(policy LockPolicy) bool {
 	return policy == PolicyPin || policy == PolicyFloat
-}
-
-// ParseLockMode validates an explicitly configured lock mode.
-func ParseLockMode(mode string) (LockMode, error) {
-	switch mode {
-	case "update":
-		return LockModeLive, nil
-	case "auto":
-		return LockModePinned, nil
-	case "strict":
-		return LockModeFrozen, nil
-	}
-
-	lockMode := LockMode(mode)
-	if !isValidLockMode(lockMode) {
-		return "", fmt.Errorf("invalid lock mode %q", mode)
-	}
-	return lockMode, nil
-}
-
-// ResolveLockMode applies the branch default when the mode is unspecified.
-func ResolveLockMode(mode string) (LockMode, error) {
-	if mode == "" {
-		return DefaultLockMode, nil
-	}
-	return ParseLockMode(mode)
-}
-
-func isValidLockMode(mode LockMode) bool {
-	return mode == LockModeDisabled || mode == LockModeLive || mode == LockModePinned || mode == LockModeFrozen
 }

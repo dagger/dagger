@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type workspaceInstallArgs struct {
@@ -156,7 +155,6 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 	here bool,
 ) (workspaceInstallResolution, error) {
 	var resolved workspaceInstallResolution
-	ctx = workspaceInstallLookupContext(ctx)
 
 	configDir := workspaceConfigDirectoryForWrite(ws, here)
 	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, ws, ref, configDir)
@@ -285,18 +283,10 @@ func (s *workspaceSchema) resolveExternalWorkspaceInstallSource(
 	configDir string,
 ) (dagql.ObjectResult[*core.ModuleSource], string, error) {
 	var src dagql.ObjectResult[*core.ModuleSource]
-	lockMode := ""
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		lockMode = clientMetadata.LockMode
-	}
 	ctx, err := withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return src, "", err
 	}
-	if lockMode != "" {
-		ctx = workspaceInstallContextWithLockMode(ctx, workspace.LockMode(lockMode))
-	}
-	ctx = workspaceInstallLookupContext(ctx)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return src, "", fmt.Errorf("dagql server: %w", err)
@@ -327,34 +317,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallForOverlay(
 	name string,
 	here bool,
 ) (workspaceInstallResolution, error) {
-	return s.resolveWorkspaceInstall(
-		workspaceInstallContextWithLockMode(ctx, workspace.LockModePinned),
-		ws,
-		ref,
-		name,
-		here,
-	)
-}
-
-func workspaceInstallContextWithLockMode(ctx context.Context, mode workspace.LockMode) context.Context {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return ctx
-	}
-	updated := *clientMetadata
-	updated.LockMode = string(mode)
-	return engine.ContextWithClientMetadata(ctx, &updated)
-}
-
-func workspaceInstallLookupContext(ctx context.Context) context.Context {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil || clientMetadata.LockMode != "" {
-		return ctx
-	}
-
-	refreshed := *clientMetadata
-	refreshed.LockMode = string(workspace.LockModePinned)
-	return engine.ContextWithClientMetadata(ctx, &refreshed)
+	return s.resolveWorkspaceInstall(ctx, ws, ref, name, here)
 }
 
 func workspaceInstallModuleSourceSelector(ref string) dagql.Selector {

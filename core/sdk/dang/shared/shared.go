@@ -108,7 +108,6 @@ func NewNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *engi
 		ClientStableID:    identity.NewID(),
 		ClientVersion:     engine.Version,
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-		LockMode:          clientMetadata.LockMode,
 	}
 
 	return clientMetadata, nestedClientMetadata, nil

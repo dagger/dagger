@@ -135,11 +135,6 @@ type ClientMetadata struct {
 	// when a legacy dagger.json is projected into a compat workspace.
 	SuppressCompatWorkspaceWarning bool `json:"suppress_compat_workspace_warning,omitempty"`
 
-	// LockMode controls lockfile behavior for lookup resolution.
-	// Valid values: "live", "pinned", "frozen", "update".
-	// Legacy aliases "disabled", "auto", and "strict" are also accepted.
-	LockMode string `json:"lock_mode,omitempty"`
-
 	// Workspace explicitly declares the workspace binding for this client.
 	// When unset, the engine applies default workspace binding behavior.
 	Workspace *string `json:"workspace,omitempty"`

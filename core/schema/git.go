@@ -1017,44 +1017,40 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		if err != nil {
 			return inst, err
 		}
-		lockMode, loadedLookupLock, err := lookupLockForMode(ctx, query, args.LockOperation)
+		lookupLock, err = lookupLockForAPI(ctx, query, args.LockOperation)
 		if err != nil {
 			return inst, err
 		}
-		lookupLock = loadedLookupLock
-		if lockMode != workspace.LockModeDisabled {
-			lockInputs, err := gitLockInputs(repo, args.LockName)
+		lockInputs, err := gitLockInputs(repo, args.LockName)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock inputs: %w", args.LockOperation, err)
+		}
+		lockResolution, err = resolveLookupFromLoadedLock(
+			lookupLock,
+			args.LockOperation,
+			lockInputs,
+			workspace.LockPolicy(args.LockPolicy),
+		)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock resolution: %w", args.LockOperation, err)
+		}
+		if lockResolution.Pin != nil {
+			locked, err := workspace.ParseGitRefLockResult(lockResolution.Pin)
 			if err != nil {
-				return inst, fmt.Errorf("%s lock inputs: %w", args.LockOperation, err)
+				return inst, fmt.Errorf("invalid %s lock result: %w", args.LockOperation, err)
 			}
-			lockResolution, err = resolveLookupFromLock(
-				lockMode,
-				lookupLock.lock,
-				args.LockOperation,
-				lockInputs,
-				workspace.LockPolicy(args.LockPolicy),
-			)
-			if err != nil {
-				return inst, fmt.Errorf("%s lock resolution: %w", args.LockOperation, err)
+			if !gitutil.IsCommitSHA(locked.SHA) {
+				return inst, fmt.Errorf("invalid locked commit SHA: %q", locked.SHA)
 			}
-			if lockResolution.Pin != nil {
-				locked, err := workspace.ParseGitRefLockResult(lockResolution.Pin)
-				if err != nil {
-					return inst, fmt.Errorf("invalid %s lock result: %w", args.LockOperation, err)
-				}
-				if !gitutil.IsCommitSHA(locked.SHA) {
-					return inst, fmt.Errorf("invalid locked commit SHA: %q", locked.SHA)
-				}
-				name := locked.Ref
-				if name == "" {
-					name = locked.SHA
-				}
-				ref := &gitutil.Ref{
-					Name: name,
-					SHA:  locked.SHA,
-				}
-				return s.gitRefResult(ctx, parent, ref)
+			name := locked.Ref
+			if name == "" {
+				name = locked.SHA
 			}
+			ref := &gitutil.Ref{
+				Name: name,
+				SHA:  locked.SHA,
+			}
+			return s.gitRefResult(ctx, parent, ref)
 		}
 	}
 

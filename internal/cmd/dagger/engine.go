@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -189,12 +188,6 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.Interactive = interactive
 	params.InteractiveCommand = interactiveCommandParsed
 
-	effectiveLockMode, err := resolveLockMode(params.LockMode)
-	if err != nil {
-		return params, err
-	}
-	params.LockMode = effectiveLockMode
-
 	if hasTTY {
 		params.PromptHandler = Frontend
 	}
@@ -292,18 +285,6 @@ func applyWorkspaceClientParams(params *client.Params) error {
 		params.UserConfigPath = llmconfig.ConfigFile
 	}
 	return nil
-}
-
-func resolveLockMode(lockMode string) (string, error) {
-	if lockMode == "" {
-		return "", nil
-	}
-
-	mode, err := workspace.ParseLockMode(lockMode)
-	if err != nil {
-		return "", err
-	}
-	return string(mode), nil
 }
 
 // skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
