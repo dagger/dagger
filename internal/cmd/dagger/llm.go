@@ -148,6 +148,10 @@ func NewLLMSession(
 	s.agents = []*sessionAgent{own}
 	s.target = own
 	own.reset()
+	// This plain prompt-mode LLM is the real starting value when no composed
+	// agent replaces it. startInteractivePromptMode explicitly replaces this
+	// baseline together with the composed LLM before entering the prompt.
+	own.setLastSynced(own.llm.Workspace())
 
 	// Grab the model to check for a valid config
 	model, err := own.llm.Model(ctx)
@@ -276,7 +280,19 @@ func (s *LLMSession) attach(ctx context.Context, instanceID, name, encodedID str
 	}
 	attached := s.newAgent(name)
 	attached.bindRuntime(rt, instanceID, encodedID, owned)
-	if err := attached.setLLM(dagger.Ref[*dagger.LLM](s.dag, snapID)); err != nil {
+	snapshot := dagger.Ref[*dagger.LLM](s.dag, snapID)
+	// An attached/trace-restored conversation does not carry the checkpoint it
+	// originally synchronized from. Its current snapshot workspace is the safe
+	// best-effort baseline: it is portable with the snapshot and cannot trigger
+	// an unlike-host-root comparison. A later explicit save/reset advances it.
+	if workspace := snapshot.Workspace(); workspace != nil {
+		if _, err := workspace.ID(ctx); err != nil {
+			slog.Debug("attached agent snapshot has no workspace synchronization baseline", "error", err)
+		} else {
+			attached.setLastSynced(workspace)
+		}
+	}
+	if err := attached.setLLM(snapshot); err != nil {
 		return nil, fmt.Errorf("attach to agent %q: %w", name, err)
 	}
 	s.mu.Lock()
@@ -450,6 +466,12 @@ type sessionMetadata struct {
 	CreatedAt string `json:"created_at"`
 	LLMID     string `json:"llm_id"`
 	Branch    string `json:"branch,omitempty"`
+
+	// WorkspaceBaselineID is the portable ID of an otherwise-empty LLM bound
+	// to the conversation's last-synced workspace. Workspace.id itself is an
+	// engine-local handle and Workspace has no portableID field, so the small
+	// LLM wrapper carries the workspace recipe across engine sessions.
+	WorkspaceBaselineID string `json:"workspace_baseline_id,omitempty"`
 }
 
 // getSessionDir returns the directory where LLM sessions are stored, creating
@@ -504,6 +526,21 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, initialPrompt string
 		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
 	}
 
+	// Workspace IDs are engine-local handles, so persist the baseline through a
+	// minimal portable LLM recipe that binds it. Best-effort for attached or
+	// trace-restored conversations whose snapshot may be unbound: the
+	// conversation remains saveable, and LoadSession safely falls back to its
+	// restored workspace when this field is absent.
+	var workspaceBaselineID string
+	if baseline := a.lastSynced(nil); baseline != nil {
+		portable, err := a.session.dag.LLM().WithWorkspace(baseline).PortableID(ctx)
+		if err != nil {
+			slog.Debug("could not persist workspace synchronization baseline", "error", err)
+		} else {
+			workspaceBaselineID = string(portable)
+		}
+	}
+
 	sessionID := existingUUID
 	if sessionID == "" {
 		id, err := uuid.NewV7()
@@ -514,10 +551,11 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, initialPrompt string
 	}
 
 	metadata := sessionMetadata{
-		Name:      initialPrompt,
-		Model:     a.model,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		LLMID:     string(llmID),
+		Name:                initialPrompt,
+		Model:               a.model,
+		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
+		LLMID:               string(llmID),
+		WorkspaceBaselineID: workspaceBaselineID,
 	}
 
 	jsonData, err := json.MarshalIndent(metadata, "", "  ")
@@ -569,6 +607,26 @@ func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID str
 	}
 
 	loadedLLM := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.LLMID))
+	var baseline *dagger.Workspace
+	fallback := loadedLLM.Workspace()
+	if _, err := fallback.ID(ctx); err != nil {
+		slog.Debug("restored conversation has no workspace synchronization baseline", "error", err)
+	} else {
+		baseline = fallback
+	}
+	if metadata.WorkspaceBaselineID != "" {
+		// Workspace.id is not portable, so the metadata ID addresses the minimal
+		// LLM wrapper written by AutoSaveSession. Resolve its bound workspace now;
+		// if an old/corrupt save cannot rebuild it, retain the safe same-workspace
+		// fallback instead of failing resume or comparing unrelated host roots.
+		portable := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.WorkspaceBaselineID))
+		candidate := portable.Workspace()
+		if _, err := candidate.ID(ctx); err != nil {
+			slog.Debug("could not restore workspace synchronization baseline", "error", err)
+		} else {
+			baseline = candidate
+		}
+	}
 
 	// Replay the message history to emit telemetry spans so the TUI shows the
 	// conversation in its scrollback. Replay against replayCtx so the spans nest
@@ -583,12 +641,13 @@ func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID str
 	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
 	// describes a workspace that is now partially fiction, so tell it what
 	// needs resolving rather than letting it stumble over the markers.
-	if cue := conflictMarkerCue(ctx, loadedLLM, a.session.dag.CurrentWorkspace()); cue != "" {
+	if cue := conflictMarkerCue(ctx, loadedLLM, baseline); cue != "" {
 		loadedLLM = loadedLLM.WithSystemPrompt(cue)
 	}
 
-	// updateLLM refreshes the status line from the restored conversation's stats.
-	return a.updateLLM(loadedLLM)
+	// Restore the baseline together with the conversation so any asynchronous
+	// status refresh sees a consistent pair.
+	return a.updateSyncedLLM(loadedLLM, baseline)
 }
 
 // conflictMarkerCue reports whether restoring the session left conflict
@@ -602,6 +661,9 @@ func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID str
 // empty and nothing is searched. Best-effort throughout; a failed check must
 // not block loading the session.
 func conflictMarkerCue(ctx context.Context, llm *dagger.LLM, before *dagger.Workspace) string {
+	if llm == nil || before == nil {
+		return ""
+	}
 	changes := llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: before})
 	added, err := changes.AddedPaths(ctx)
 	if err != nil {
