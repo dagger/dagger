@@ -51,18 +51,25 @@ Examples:
 
 ```json
 ["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8"]
-["","git.branch",["https://github.com/dagger/dagger.git","main"],"495a8c8ce85670e58560a9561626297a436225c0"]
+["","git.ref",["https://github.com/dagger/dagger.git","refs/heads/main"],{"ref":"refs/heads/main","sha":"495a8c8ce85670e58560a9561626297a436225c0"}]
 ```
 
 Rules:
 
 - `namespace` is `""` for core lookups.
-- `operation` is a stable lookup key such as `container.from` or `git.branch`.
+- `operation` is a stable lookup key such as `container.from` or `git.ref`.
 - `inputs` is always an ordered positional array.
-- `value` is the resolved immutable result.
-- dictionaries, maps, and named-argument encodings are forbidden anywhere in lock entries
+- `value` is the operation-specific resolved immutable result.
+- dictionaries, maps, and named-argument encodings are forbidden in lock inputs
 - ordering is deterministic by `(namespace, operation, inputs-json)`
-- legacy object-shaped result envelopes are invalid
+- structured values use deterministic JSON object key ordering
+- legacy `{"value": ..., "policy": ...}` result envelopes are invalid
+
+Every symbolic Git lookup uses `git.ref` with inputs
+`[remoteURL, selector]`. Its result always contains `sha` and contains the
+canonical `ref` when known. The selector is `HEAD` for `git.head`, fully
+qualified for `git.branch` and `git.tag`, and preserved as supplied for the
+generic `git.ref` API.
 
 Version 1 used five-element entries with a final `pin` or `float` policy.
 The v2 reader accepts those entries for migration:
@@ -302,13 +309,16 @@ Current core operation keys:
 | Operation | Inputs | Result |
 | --- | --- | --- |
 | `container.from` | `[imageRef, platform]` | image digest |
-| `git.head` | `[remoteURL]` | commit SHA |
-| `git.branch` | `[remoteURL, branchName]` | commit SHA |
-| `git.tag` | `[remoteURL, tagName]` | commit SHA |
-| `git.ref` | `[remoteURL, refName]` | commit SHA |
+| `git.ref` | `[remoteURL, selector]` | commit SHA and optional canonical ref |
 
 Notes:
 
+- `git.head`, `git.branch`, and `git.tag` are public API operations, not
+  distinct lockfile operations
+- v1 Git entries are normalized to `git.ref` in memory; a pinned v1 HEAD
+  result has no canonical ref until an explicit update resolves it
+- reading a pinned v1 HEAD result does not contact the remote or guess its
+  default branch
 - `git.commit` is already pinned by input and does not create lock entries
 - module loading does not create a distinct lock entry; module refs are resolved
   through the underlying Git lookup locks, while declared module dependency pins
@@ -321,18 +331,17 @@ Notes:
 ### Implemented
 
 - [x] tuple lockfile substrate in `util/lockfile`
-- [x] flat lock entry format `[namespace, operation, inputs, value, policy]`
-- [x] hard cutover to ordered positional tuples only
-- [x] lock policy parsing and validation
-- [x] lock mode parsing and transport through CLI and client metadata
+- [x] flat v2 lock entry format `[namespace, operation, inputs, value]`
+- [x] ordered positional tuple keys with operation-specific result values
+- [x] lock mode parsing and transport through client metadata
 - [x] nested-client and module-runtime lock mode propagation
 - [x] local workspace lockfile read/write helpers
 - [x] serialized lockfile writes with merge against latest on-disk state
 - [x] `container.from` lookup locking
 - [x] Git lookup locking for `head`, `branch`, `tag`, and mutable `ref`
 - [x] `currentWorkspace.update(): Changeset!` temporary umbrella API
-- [x] `dagger lock update`
-- [x] execution-driven discovery via `--lock=live`
+- [x] `dagger update`
+- [x] execution-driven discovery for missing entries
 - [x] unit and integration coverage for substrate, CLI, container, Git, module, and nested execution
 - [x] session-backed live lock state on `daggerSession`
 - [x] lazy one-time lockfile load on first live lock access
@@ -347,7 +356,7 @@ Notes:
 
 ### Implemented Semantics
 
-- [x] `--lock=disabled|live|pinned|frozen`
+- [x] internal `disabled|live|pinned|frozen` compatibility modes
 - [x] default lock mode is `pinned`
 - [x] `live` writes through
 - [x] `pinned` writes through for `float` and missing entries
@@ -355,11 +364,8 @@ Notes:
 
 ### Current Consumer Defaults
 
-- [x] `container.from` defaults to `pin`
-- [x] `git.branch` defaults to `float`
-- [x] `git.head` defaults to `float`
-- [x] `git.tag` defaults to `pin`
-- [x] `git.ref` defaults to `pin` for tags and `float` for other mutable refs
+- [x] new v2 entries are pinned until `dagger update`
+- [x] v1 `float` policies are honored once during migration
 
 ## Current Implementation Constraints
 
@@ -466,11 +472,9 @@ if resolution.ShouldWrite {
 
 #### Git lookup integration
 
-Each mutable Git lookup follows the same pattern:
-
-- `git.head`
-- `git.branch`
-- mutable `git.ref`
+All symbolic Git APIs use the `git.ref` lock operation. The input selector
+preserves the lookup intent, while the result records a SHA and, when known, a
+canonical ref.
 
 Pinned Git lookups such as immutable refs do not create lock entries.
 
@@ -608,10 +612,4 @@ So the intended long-term shape is:
 
 ## Reference Commands
 
-```bash
-dagger --lock=disabled call ...
-dagger --lock=live call ...
-dagger --lock=pinned call ...
-dagger --lock=frozen call ...
-dagger lock update
-```
+`dagger update` refreshes every recorded entry.

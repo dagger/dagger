@@ -85,7 +85,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
-		require.Contains(t, string(lockBytes), `"git.tag"`)
+		require.Contains(t, string(lockBytes), `"git.ref"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
 		current = c.CurrentWorkspace()
@@ -176,7 +176,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
-		require.Contains(t, string(lockBytes), `"git.tag"`)
+		require.Contains(t, string(lockBytes), `"git.ref"`)
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {

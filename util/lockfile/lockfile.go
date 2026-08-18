@@ -321,9 +321,6 @@ func canonicalizeValue(value any) (any, error) {
 	if err := decodeJSON(data, &canonical); err != nil {
 		return nil, err
 	}
-	if err := validateNoMaps(canonical, "lock value"); err != nil {
-		return nil, err
-	}
 	return canonical, nil
 }
 

@@ -109,7 +109,7 @@ func lookupLockForMode(
 }
 
 type lookupLockResolution struct {
-	Pin         string
+	Pin         any
 	Policy      workspace.LockPolicy
 	ShouldWrite bool
 	Found       bool

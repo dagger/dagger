@@ -131,13 +131,19 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
 	})
 
-	t.Run("unordered object value", func(t *testing.T) {
-		_, err := Parse([]byte(strings.Join([]string{
-			`[["version","1"]]`,
-			`["","git.resolveRef",["main"],{"sha":"abc"},"pin"]`,
+	t.Run("structured object value", func(t *testing.T) {
+		lock, err := Parse([]byte(strings.Join([]string{
+			`[["version","2"]]`,
+			`["","git.ref",["repo","main"],{"sha":"abc","ref":"refs/heads/main"}]`,
 		}, "\n")))
-		require.Error(t, err)
-		require.ErrorContains(t, err, "unordered object/map/dict in lock value")
+		require.NoError(t, err)
+
+		data, err := lock.Marshal()
+		require.NoError(t, err)
+		require.Equal(t, strings.Join([]string{
+			`[["version","2"]]`,
+			`["","git.ref",["repo","main"],{"ref":"refs/heads/main","sha":"abc"}]`,
+		}, "\n"), string(data))
 	})
 }
 

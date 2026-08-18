@@ -1250,10 +1250,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("container.from lock resolution: %w", err)
 	}
 
-	if lockResolution.Pin != "" {
-		resolvedDigest, err := digest.Parse(lockResolution.Pin)
+	if lockResolution.Pin != nil {
+		pin, ok := lockResolution.Pin.(string)
+		if !ok || pin == "" {
+			return inst, fmt.Errorf("invalid lock digest %v for image %q", lockResolution.Pin, refName.String())
+		}
+		resolvedDigest, err := digest.Parse(pin)
 		if err != nil {
-			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", pin, refName.String(), err)
 		}
 		refName, err = reference.WithDigest(refName, resolvedDigest)
 		if err != nil {

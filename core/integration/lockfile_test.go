@@ -134,7 +134,10 @@ func (LockfileSuite) TestDefaultMigratesV1FloatGitEntry(ctx context.Context, t *
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
-	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName})
+	assertGitLockEntry(t, lockBytes, []any{
+		lockTestGitRepoURL,
+		"refs/heads/" + lockTestGitBranchName,
+	})
 }
 
 func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {
@@ -179,7 +182,10 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
-	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName})
+	assertGitLockEntry(t, lockBytes, []any{
+		lockTestGitRepoURL,
+		"refs/heads/" + lockTestGitBranchName,
+	})
 	require.NotContains(t, string(lockBytes), lockTestGitBranchCommit)
 }
 
@@ -210,8 +216,14 @@ func (LockfileSuite) TestDefaultDiscoversGitEntries(ctx context.Context, t *test
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
-	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName})
-	assertGitLockEntry(t, lockBytes, "git.tag", []any{lockTestGitRepoURL, lockTestGitTagName})
+	assertGitLockEntry(t, lockBytes, []any{
+		lockTestGitRepoURL,
+		"refs/heads/" + lockTestGitBranchName,
+	})
+	assertGitLockEntry(t, lockBytes, []any{
+		lockTestGitRepoURL,
+		"refs/tags/" + lockTestGitTagName,
+	})
 }
 
 func (LockfileSuite) TestDefaultNestedQuery(ctx context.Context, t *testctx.T) {
@@ -368,7 +380,6 @@ func mustMarshalContainerFromLock(t *testctx.T, platform, digest string, policy 
 func mustMarshalGitRefLock(t *testctx.T, operation, name, commit string, policy workspace.LockPolicy) string {
 	t.Helper()
 
-	lock := workspace.NewLock()
 	inputs := []any{lockTestGitRepoURL}
 	if name != "" {
 		inputs = append(inputs, name)
@@ -377,8 +388,31 @@ func mustMarshalGitRefLock(t *testctx.T, operation, name, commit string, policy 
 		return mustMarshalLegacyV1Lock(t, operation, inputs, commit, policy)
 	}
 
-	require.NoError(t, lock.SetLookup("", operation, inputs, workspace.LookupResult{
-		Value:  commit,
+	selector := name
+	resultRef := ""
+	switch operation {
+	case "git.head":
+		selector = "HEAD"
+	case "git.branch":
+		selector = "refs/heads/" + strings.TrimPrefix(name, "refs/heads/")
+		resultRef = selector
+	case "git.tag":
+		selector = "refs/tags/" + strings.TrimPrefix(name, "refs/tags/")
+		resultRef = selector
+	case "git.ref":
+		if strings.HasPrefix(name, "refs/") {
+			resultRef = name
+		}
+	default:
+		require.FailNow(t, "unsupported Git lock operation", operation)
+	}
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup("", "git.ref", []any{lockTestGitRepoURL, selector}, workspace.LookupResult{
+		Value: workspace.GitRefLockResult{
+			SHA: commit,
+			Ref: resultRef,
+		},
 		Policy: policy,
 	}))
 
@@ -430,7 +464,7 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
 	require.True(t, found, "expected container.from entry in lockfile")
 }
 
-func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expectedInputs []any) {
+func assertGitLockEntry(t *testctx.T, lockBytes []byte, expectedInputs []any) {
 	t.Helper()
 	require.True(t, strings.HasPrefix(string(lockBytes), `[["version","2"]]`), "lockfile: %q", string(lockBytes))
 	parsed, err := lockfile.Parse(lockBytes)
@@ -438,7 +472,7 @@ func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expect
 
 	var found bool
 	for _, entry := range parsed.Entries() {
-		if entry.Namespace != "" || entry.Operation != operation {
+		if entry.Namespace != "" || entry.Operation != "git.ref" {
 			continue
 		}
 		if !equalLockInputs(entry.Inputs, expectedInputs) {
@@ -448,12 +482,15 @@ func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expect
 		found = true
 		require.Empty(t, entry.Policy)
 
-		value, ok := entry.Value.(string)
-		require.True(t, ok)
-		require.True(t, len(value) == 40 || strings.HasPrefix(value, "sha256:"))
+		result, err := workspace.ParseGitRefLockResult(entry.Value)
+		require.NoError(t, err)
+		require.Len(t, result.SHA, 40)
+		if len(expectedInputs) == 2 {
+			require.Equal(t, expectedInputs[1], result.Ref)
+		}
 	}
 
-	require.True(t, found, "expected %s entry in lockfile", operation)
+	require.True(t, found, "expected git.ref entry in lockfile")
 }
 
 func assertNoModuleResolveLockEntry(t *testctx.T, lockBytes []byte) {
