@@ -378,3 +378,9 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 
 	return result
 }
+
+// HasInitializer reports whether a module implements either SDK initializer.
+func HasInitializer(sdkMod *core.Module) bool {
+	functions := listImplementedFunctions(sdkMod)
+	return functions["initModule"] != nil || functions["initClient"] != nil
+}

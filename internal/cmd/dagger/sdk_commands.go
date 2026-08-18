@@ -3,8 +3,8 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
-	"strings"
 	"text/tabwriter"
 
 	"dagger.io/dagger"
@@ -47,13 +47,13 @@ func newSDKModuleUnclaimCommand(sdkName string) *cobra.Command {
 	}
 }
 
-func newSDKModuleClaimedCommand(sdkName string) *cobra.Command {
+func newSDKModuleListCommand(sdkName string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "claimed",
+		Use:   "list",
 		Short: "List modules managed by this SDK",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSDKModuleClaimed(cmd, sdkName)
+			return runSDKModuleList(cmd, sdkName)
 		},
 	}
 }
@@ -82,13 +82,13 @@ func newSDKClientUnclaimCommand(sdkName string) *cobra.Command {
 	}
 }
 
-func newSDKClientClaimedCommand(sdkName string) *cobra.Command {
+func newSDKClientListCommand(sdkName string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "claimed",
+		Use:   "list",
 		Short: "List clients managed by this SDK",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSDKClientClaimed(cmd, sdkName)
+			return runSDKClientList(cmd, sdkName)
 		},
 	}
 }
@@ -101,64 +101,47 @@ func optionalPathArg(args []string) string {
 }
 
 func runSDKInfo(cmd *cobra.Command, sdkName string) error {
-	cfg, _, err := readLocalWorkspaceConfig()
+	sdk, err := localSDK(sdkName)
 	if err != nil {
 		return err
-	}
-	sdk, err := resolveConfiguredSDK(cfg, sdkName)
-	if err != nil {
-		return err
-	}
-	source := sdk.entry.Source
-	if sdk.entry.Pin != "" && !strings.Contains(source, "@") {
-		source += "@" + sdk.entry.Pin
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "sdk-name: %s\nmodule-name: %s\nmodule-source: %s\nclaimed-modules: %d\n",
 		sdk.commandName,
 		sdk.moduleName,
-		source,
+		sdkModuleEntrySource(sdk.entry),
 		len(sdk.entry.AsSDK.Modules),
 	)
 	return err
 }
 
 func runSDKModuleClaim(cmd *cobra.Command, sdkName, path string) error {
-	if workspaceEnv != "" {
-		return fmt.Errorf("module claim does not support --env; SDK claims live in the base workspace config")
-	}
-	return mutateSDKWorkspace(cmd, func(ws *dagger.Workspace) *dagger.Workspace {
+	return mutateSDKWorkspace(cmd, "module claim", func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithClaimedModule(sdkName, path)
 	})
 }
 
 func runSDKModuleUnclaim(cmd *cobra.Command, sdkName, path string) error {
-	if workspaceEnv != "" {
-		return fmt.Errorf("module unclaim does not support --env; SDK claims live in the base workspace config")
-	}
-	return mutateSDKWorkspace(cmd, func(ws *dagger.Workspace) *dagger.Workspace {
+	return mutateSDKWorkspace(cmd, "module unclaim", func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithoutClaimedModule(sdkName, path)
 	})
 }
 
 func runSDKClientClaim(cmd *cobra.Command, sdkName, path, module string) error {
-	if workspaceEnv != "" {
-		return fmt.Errorf("client claim does not support --env; SDK claims live in the base workspace config")
-	}
-	return mutateSDKWorkspace(cmd, func(ws *dagger.Workspace) *dagger.Workspace {
+	return mutateSDKWorkspace(cmd, "client claim", func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithClaimedClient(sdkName, path, module)
 	})
 }
 
 func runSDKClientUnclaim(cmd *cobra.Command, sdkName, path string) error {
-	if workspaceEnv != "" {
-		return fmt.Errorf("client unclaim does not support --env; SDK claims live in the base workspace config")
-	}
-	return mutateSDKWorkspace(cmd, func(ws *dagger.Workspace) *dagger.Workspace {
+	return mutateSDKWorkspace(cmd, "client unclaim", func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithoutClaimedClient(sdkName, path)
 	})
 }
 
-func mutateSDKWorkspace(cmd *cobra.Command, mutate func(*dagger.Workspace) *dagger.Workspace) error {
+func mutateSDKWorkspace(cmd *cobra.Command, action string, mutate func(*dagger.Workspace) *dagger.Workspace) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("%s does not support --env; SDK claims live in the base workspace config", action)
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
@@ -171,12 +154,8 @@ func mutateSDKWorkspace(cmd *cobra.Command, mutate func(*dagger.Workspace) *dagg
 	})
 }
 
-func runSDKModuleClaimed(cmd *cobra.Command, sdkName string) error {
-	cfg, _, err := readLocalWorkspaceConfig()
-	if err != nil {
-		return err
-	}
-	sdk, err := resolveConfiguredSDK(cfg, sdkName)
+func runSDKModuleList(cmd *cobra.Command, sdkName string) error {
+	sdk, err := localSDK(sdkName)
 	if err != nil {
 		return err
 	}
@@ -197,47 +176,39 @@ func runSDKModuleClaimed(cmd *cobra.Command, sdkName string) error {
 	return nil
 }
 
-func runSDKClientClaimed(cmd *cobra.Command, sdkName string) error {
-	cfg, _, err := readLocalWorkspaceConfig()
+func runSDKClientList(cmd *cobra.Command, sdkName string) error {
+	sdk, err := localSDK(sdkName)
 	if err != nil {
 		return err
 	}
-	sdk, err := resolveConfiguredSDK(cfg, sdkName)
-	if err != nil {
-		return err
-	}
-	clients := append([]workspaceClient(nil), workspaceClients(sdk)...)
+	clients := slices.Clone(sdk.entry.AsSDK.Clients)
 	if len(clients) == 0 {
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "No clients claimed by SDK %q.\n", sdk.commandName)
 		return err
 	}
-	sort.Slice(clients, func(i, j int) bool { return clients[i].path < clients[j].path })
+	sort.Slice(clients, func(i, j int) bool { return clients[i].Path < clients[j].Path })
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(w, "PATH\tMODULE\tPIN"); err != nil {
 		return err
 	}
 	for _, claimed := range clients {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", claimed.path, claimed.module, claimed.pin); err != nil {
+		var err error
+		if claimed.Pin == "" {
+			_, err = fmt.Fprintf(w, "%s\t%s\n", claimed.Path, claimed.Module)
+		} else {
+			_, err = fmt.Fprintf(w, "%s\t%s\t%s\n", claimed.Path, claimed.Module, claimed.Pin)
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return w.Flush()
 }
 
-type workspaceClient struct {
-	path   string
-	module string
-	pin    string
-}
-
-func workspaceClients(sdk configuredSDK) []workspaceClient {
-	clients := make([]workspaceClient, 0, len(sdk.entry.AsSDK.Clients))
-	for _, client := range sdk.entry.AsSDK.Clients {
-		clients = append(clients, workspaceClient{
-			path:   client.Path,
-			module: client.Module,
-			pin:    client.Pin,
-		})
+func localSDK(sdkName string) (configuredSDK, error) {
+	cfg, _, err := readLocalWorkspaceConfig()
+	if err != nil {
+		return configuredSDK{}, err
 	}
-	return clients
+	return resolveConfiguredSDK(cfg, sdkName)
 }

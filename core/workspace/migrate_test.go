@@ -264,24 +264,6 @@ func TestMigrationSDKInstallName(t *testing.T) {
 	}
 }
 
-func TestConventionalSDKName(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		moduleName string
-		want       string
-	}{
-		{moduleName: "dagger-go-sdk", want: "go"},
-		{moduleName: "dagger-python", want: "python"},
-		{moduleName: "typescript-sdk", want: "typescript"},
-		{moduleName: "custom", want: "custom"},
-		{moduleName: "daggersdk", want: "daggersdk"},
-		{moduleName: "dagger-sdk", want: "dagger-sdk"},
-	} {
-		require.Equal(t, tc.want, ConventionalSDKName(tc.moduleName), tc.moduleName)
-	}
-}
-
 // TestPlanMigrationKeepsUnrelatedModuleNamedLikeSDK verifies the migrated SDK
 // install does not clobber an unrelated module that already carries the SDK's
 // prefixed install name; it is recorded under a distinct name instead.

@@ -119,12 +119,7 @@ func sdkRegistryRepoBase(repo string) string {
 	return repo
 }
 
-var (
-	moduleInitPath       string
-	moduleInitNoGenerate bool
-)
-
-func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
+func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name, path string, noGenerate bool) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module init does not support --env; it scaffolds modules into the base workspace config")
 	}
@@ -138,8 +133,8 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			return err
 		}
 		opts := dagger.WorkspaceWithInitModuleOpts{
-			Path:       moduleInitPath,
-			NoGenerate: moduleInitNoGenerate,
+			Path:       path,
+			NoGenerate: noGenerate,
 		}
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)

@@ -42,28 +42,21 @@ func registerInstalledSDKCommands(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	commands := make(map[string]*cobra.Command, len(sdks))
+	selectedName, selectedInvocation := sdkInvocationSDKName(args)
+	selected, resolveErr := resolveConfiguredSDK(cfg, selectedName)
+	var parent *cobra.Command
 	for _, sdk := range sdks {
 		cmd := newInstalledSDKCommand(sdk)
 		sdkCmd.AddCommand(cmd)
-		commands[sdk.commandName] = cmd
+		if resolveErr == nil && sdk.moduleName == selected.moduleName {
+			parent = cmd
+		}
 	}
 
-	selectedName, ok := sdkInvocationSDKName(args)
-	if !ok {
+	if !selectedInvocation || resolveErr != nil {
 		return nil
 	}
-	selected, err := resolveConfiguredSDK(cfg, selectedName)
-	if err != nil {
-		// Leave unknown names to Cobra, which can provide suggestions from the
-		// dynamic SDK command list. Only surface config ambiguity here.
-		if strings.Contains(err.Error(), "ambiguous") {
-			return err
-		}
-		return nil
-	}
-	parent := commands[selected.commandName]
-	if parent == nil || sdkInvocationIsInfo(args) {
+	if !sdkInvocationNeedsInit(args) {
 		return nil
 	}
 
@@ -187,7 +180,11 @@ func newInstalledSDKCommand(sdk configuredSDK) *cobra.Command {
 		},
 		Annotations: map[string]string{dynamicSDKCommandAnnotation: "true"},
 	}
-	cmd.AddCommand(newSDKInfoCommand(sdk.commandName))
+	cmd.AddCommand(
+		newSDKInfoCommand(sdk.commandName),
+		newSDKModuleCommand(sdk.commandName),
+		newSDKClientCommand(sdk.commandName),
+	)
 	return cmd
 }
 
@@ -208,86 +205,101 @@ func registerSDKCapabilityCommands(
 		return err
 	}
 	if moduleFn := functions[sdkInitKindModule]; moduleFn != nil {
-		moduleCmd, err := newSDKModuleCommand(sdk.commandName, moduleFn)
+		moduleCmd, _, err := parent.Find([]string{"module"})
 		if err != nil {
 			return err
 		}
-		parent.AddCommand(moduleCmd)
+		if err := addSDKModuleInitCommand(moduleCmd, sdk.commandName, moduleFn); err != nil {
+			return err
+		}
 	}
 
 	if clientFn := functions[sdkInitKindClient]; clientFn != nil {
-		clientCmd, err := newSDKClientCommand(sdk.commandName, clientFn)
+		clientCmd, _, err := parent.Find([]string{"client"})
 		if err != nil {
 			return err
 		}
-		parent.AddCommand(clientCmd)
+		if err := addSDKClientInitCommand(clientCmd, sdk.commandName, clientFn); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func newSDKModuleCommand(sdkName string, fn *modFunction) (*cobra.Command, error) {
+func newSDKModuleCommand(sdkName string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "module",
 		Short: fmt.Sprintf("Develop Dagger modules using the %s SDK", sdkName),
 	}
-	initCmd := newModuleInitSDKCommand(sdkName)
-	if err := addSDKInitFunctionFlags(initCmd, fn, sdkInitKindModule); err != nil {
-		return nil, err
-	}
 	cmd.AddCommand(
-		initCmd,
 		newSDKModuleClaimCommand(sdkName),
 		newSDKModuleUnclaimCommand(sdkName),
-		newSDKModuleClaimedCommand(sdkName),
+		newSDKModuleListCommand(sdkName),
 	)
-	return cmd, nil
+	return cmd
 }
 
-func newSDKClientCommand(sdkName string, fn *modFunction) (*cobra.Command, error) {
+func addSDKModuleInitCommand(parent *cobra.Command, sdkName string, fn *modFunction) error {
+	initCmd := newModuleInitSDKCommand(sdkName)
+	if err := addSDKInitFunctionFlags(initCmd, fn, sdkInitKindModule); err != nil {
+		return err
+	}
+	parent.AddCommand(initCmd)
+	return nil
+}
+
+func newSDKClientCommand(sdkName string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "client",
 		Short: fmt.Sprintf("Generate API clients using the %s SDK", sdkName),
 	}
-	initCmd := newAPIClientInitSDKCommand(sdkName)
-	if err := addSDKInitFunctionFlags(initCmd, fn, sdkInitKindClient); err != nil {
-		return nil, err
-	}
 	cmd.AddCommand(
-		initCmd,
 		newSDKClientClaimCommand(sdkName),
 		newSDKClientUnclaimCommand(sdkName),
-		newSDKClientClaimedCommand(sdkName),
+		newSDKClientListCommand(sdkName),
 	)
-	return cmd, nil
+	return cmd
+}
+
+func addSDKClientInitCommand(parent *cobra.Command, sdkName string, fn *modFunction) error {
+	initCmd := newAPIClientInitSDKCommand(sdkName)
+	if err := addSDKInitFunctionFlags(initCmd, fn, sdkInitKindClient); err != nil {
+		return err
+	}
+	parent.AddCommand(initCmd)
+	return nil
 }
 
 func newModuleInitSDKCommand(sdkName string) *cobra.Command {
+	var path string
+	var noGenerate bool
 	cmd := &cobra.Command{
 		Use:                   "init <name>",
 		Short:                 "Initialize a new module",
 		Args:                  cobra.ExactArgs(1),
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runModuleInitWithSDK(cmd, sdkName, args[0])
+			return runModuleInitWithSDK(cmd, sdkName, args[0], path, noGenerate)
 		},
 	}
-	cmd.Flags().StringVar(&moduleInitPath, "path", "", "Module path, relative to the current directory (\"/\" = workspace root; default: .dagger/modules/<name> beside dagger.toml)")
-	cmd.Flags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
+	cmd.Flags().StringVar(&path, "path", "", "Module path, relative to the current directory (\"/\" = workspace root; default: .dagger/modules/<name> beside dagger.toml)")
+	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
 	cmd.SetGlobalNormalizationFunc(sdkInitFlagNormalizer)
 	return cmd
 }
 
 func newAPIClientInitSDKCommand(sdkName string) *cobra.Command {
+	var noGenerate bool
 	cmd := &cobra.Command{
 		Use:                   "init <path> <module>",
 		Short:                 "Initialize a generated API client",
 		Args:                  cobra.ExactArgs(2),
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAPIClientInitWithSDK(cmd, sdkName, args[0], args[1])
+			return runAPIClientInitWithSDK(cmd, sdkName, args[0], args[1], noGenerate)
 		},
 	}
-	cmd.Flags().BoolVar(&apiClientInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new client")
+	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Skip running the SDK's generators for the new client")
 	cmd.SetGlobalNormalizationFunc(sdkInitFlagNormalizer)
 	return cmd
 }
@@ -354,96 +366,60 @@ func readWorkspaceConfigForSDKInitRegistrationFrom(start string) (*workspace.Con
 }
 
 func shouldRegisterSDKCommands(args []string) bool {
-	tokens := sdkInitCommandTokens(args)
-	return len(tokens) > 0 && tokens[0] == "sdk"
+	return len(args) > 0 && args[0] == "sdk"
 }
 
 func sdkInvocationSDKName(args []string) (string, bool) {
-	tokens := sdkInitCommandTokens(args)
-	if len(tokens) < 2 || tokens[0] != "sdk" {
+	if len(args) < 2 || args[0] != "sdk" {
 		return "", false
 	}
-	return tokens[1], true
+	return args[1], true
 }
 
-func sdkInvocationIsInfo(args []string) bool {
-	tokens := sdkInitCommandTokens(args)
-	return len(tokens) >= 3 && tokens[0] == "sdk" && tokens[2] == "info"
-}
-
-func sdkInitCommandTokens(args []string) []string {
-	tokens := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
-			break
-		}
-		if strings.HasPrefix(arg, "--") {
-			name, _, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
-			if !hasValue && sdkInitGlobalFlagTakesValue(name) && i+1 < len(args) {
-				i++
-			}
-			continue
-		}
-		if strings.HasPrefix(arg, "-") && arg != "-" {
-			if arg == "-W" && i+1 < len(args) {
-				i++
-			}
-			continue
-		}
-		tokens = append(tokens, arg)
-	}
-	return tokens
-}
-
-func sdkInitGlobalFlagTakesValue(name string) bool {
-	switch name {
-	case "workdir",
-		"workspace",
-		"env",
-		"progress",
-		"lock",
-		"interactive-command",
-		"x-release",
-		"dot-output",
-		"dot-focus-field":
+func sdkInvocationNeedsInit(args []string) bool {
+	if len(args) < 3 {
 		return true
-	default:
+	}
+	if args[2] == "info" {
 		return false
 	}
+	if args[2] == "help" {
+		args = append([]string{args[0], args[1]}, args[3:]...)
+		if len(args) < 3 {
+			return true
+		}
+	}
+	if args[2] != "module" && args[2] != "client" {
+		return false
+	}
+	if len(args) < 4 {
+		return true
+	}
+	switch args[3] {
+	case "claim", "list", "unclaim":
+		return false
+	default:
+		return true
+	}
 }
 
-var errSDKInitFunctionNotFound = errors.New("sdk init function not found")
-
 func sdkInitModuleEntrySource(entry workspace.ModuleEntry, cfgDir string) (string, error) {
-	source := entry.Source
+	source := sdkModuleEntrySource(entry)
 	if source == "" {
 		return "", fmt.Errorf("SDK module entry has no source")
 	}
-	if workspace.IsLocalRef(source, entry.Pin) {
+	if workspace.IsLocalRef(entry.Source, entry.Pin) {
 		source = filepath.Join(cfgDir, source)
-	}
-	if entry.Pin != "" && !strings.Contains(source, "@") {
-		source += "@" + entry.Pin
 	}
 	return source, nil
 }
 
-func inspectSDKInitFunction(
-	ctx context.Context,
-	dag *dagger.Client,
-	sdkRef string,
-	kind sdkInitKind,
-) (*modFunction, error) {
-	functions, err := inspectSDKInitFunctions(ctx, dag, sdkRef)
-	if err != nil {
-		return nil, err
+func sdkModuleEntrySource(entry workspace.ModuleEntry) string {
+	source := entry.Source
+	if entry.Pin != "" && !strings.Contains(source, "@") {
+		source += "@" + entry.Pin
 	}
-	fn := functions[kind]
-	if fn == nil {
-		return nil, errSDKInitFunctionNotFound
-	}
-	return fn, nil
+	return source
 }
 
 func inspectSDKInitFunctions(
@@ -463,11 +439,11 @@ func inspectSDKInitFunctions(
 	}
 	constructor := mod.ModuleConstructor()
 	if constructor == nil || constructor.ReturnType == nil {
-		return map[sdkInitKind]*modFunction{}, nil
+		return nil, nil
 	}
 	provider := constructor.ReturnType.AsFunctionProvider()
 	if provider == nil {
-		return map[sdkInitKind]*modFunction{}, nil
+		return nil, nil
 	}
 
 	functions := map[sdkInitKind]*modFunction{}
@@ -481,7 +457,7 @@ func inspectSDKInitFunctions(
 	}
 	for kind, fn := range functions {
 		if err := mod.LoadFunctionTypeDefs(fn); err != nil {
-			return nil, fmt.Errorf("inspect sdk %q init%s args: %w", sdkRef, strings.ToUpper(string(kind)[:1])+string(kind)[1:], err)
+			return nil, fmt.Errorf("inspect sdk %q %s init args: %w", sdkRef, kind, err)
 		}
 	}
 	return functions, nil
@@ -529,7 +505,8 @@ func sdkInitFunctionFlagArgs(fn *modFunction, kind sdkInitKind) ([]*modFunctionA
 
 func sdkInitFunctionExtraArgs(fn *modFunction, kind sdkInitKind) []*modFunctionArg {
 	standard := map[string]bool{
-		"path": true,
+		"path":       true,
+		"noGenerate": true,
 	}
 	if kind == sdkInitKindModule {
 		standard["name"] = true
