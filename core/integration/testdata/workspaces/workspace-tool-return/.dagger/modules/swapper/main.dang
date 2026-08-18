@@ -1,4 +1,6 @@
-"""Tools that return a Workspace, for @agent integration tests."""
+"""
+Tools that return a Workspace, for @agent integration tests.
+"""
 type Swapper {
   """
   Return the current workspace with a marker file added.
@@ -9,6 +11,20 @@ type Swapper {
   """
   swap(ws: Workspace!): Workspace! {
     ws.withNewFile("SWAPPED.txt", "swapped by tool")
+  }
+
+  """Mount a vendored directory read-only, alongside an ordinary file edit."""
+  mountVendored(ws: Workspace!): Workspace! {
+    let deps = Dagger.directory
+      .withNewFile("vendored-one.txt", "vendored one\n")
+      .withNewFile("vendored-two.txt", "vendored two\n")
+      .withNewFile("vendored-three.txt", "vendored three\n")
+    ws.withNewFile("NOTE.txt", "vendored deps mounted\n").withMountedDirectory("mnt/vendored", deps)
+  }
+
+  """Drop the mount added by mountVendored."""
+  unmountVendored(ws: Workspace!): Workspace! {
+    ws.withoutMount("mnt/vendored")
   }
 
   addFirst(ws: Workspace!): Changeset! {
@@ -33,5 +49,24 @@ type Swapper {
     let root = ws.directory("/")
     let scaffolded = root.withNewFile("scaffold/README.md", "scaffolded")
     scaffolded.withNewDirectory("scaffold/empty-dir").changes(root)
+  }
+
+  """
+  Rewrite both lines of shared.txt one way.
+
+  Paired with clashSecond to produce two parallel changesets that rewrite the
+  same lines, i.e. a batch that cannot merge cleanly.
+  """
+  clashFirst(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("shared.txt", "line1: RED\nline2: RED\n").changes(root)
+  }
+
+  """
+  Rewrite both lines of shared.txt the other way. See clashFirst.
+  """
+  clashSecond(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("shared.txt", "line1: BLUE\nline2: BLUE\n").changes(root)
   }
 }

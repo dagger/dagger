@@ -186,7 +186,7 @@ func TestCollapseChildPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := collapseChildPaths(tt.paths)
+			got := CollapseChildPaths(tt.paths)
 			require.Equal(t, tt.want, got)
 		})
 	}

@@ -739,3 +739,84 @@ func TestRenderReadLogs(t *testing.T) {
 		}
 	})
 }
+
+// TestSummarizeMountChanges covers the compact mount-topology notice rendered
+// by rebindWorkspace in place of itemizing mounted content: one line per mount
+// point that appeared or disappeared, with cache mounts labeled writable.
+func TestSummarizeMountChanges(t *testing.T) {
+	ws := func(mountPoints []string, cacheMounts ...WorkspaceCacheMount) *Workspace {
+		return &Workspace{mountPoints: mountPoints, cacheMounts: cacheMounts}
+	}
+	for _, tc := range []struct {
+		name string
+		prev *Workspace
+		next *Workspace
+		want string
+	}{
+		{
+			name: "no mounts",
+			prev: ws(nil),
+			next: ws(nil),
+			want: "",
+		},
+		{
+			name: "unchanged mounts are not reported",
+			prev: ws([]string{"mnt/deps"}),
+			next: ws([]string{"mnt/deps"}),
+			want: "",
+		},
+		{
+			name: "new read-only mount",
+			prev: ws(nil),
+			next: ws([]string{"mnt/pi-mono"}),
+			want: "Mounted (read-only): mnt/pi-mono",
+		},
+		{
+			name: "new cache mount",
+			prev: ws(nil),
+			next: ws([]string{"node_modules"}, WorkspaceCacheMount{Target: "node_modules"}),
+			want: "Mounted (cache, writable): node_modules",
+		},
+		{
+			name: "removed mount",
+			prev: ws([]string{"mnt/other"}),
+			next: ws(nil),
+			want: "Unmounted: mnt/other",
+		},
+		{
+			name: "mixed add and remove, one line each",
+			prev: ws([]string{"mnt/old"}),
+			next: ws([]string{"mnt/new"}),
+			want: "Mounted (read-only): mnt/new\nUnmounted: mnt/old",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := summarizeMountChanges(tc.prev, tc.next); got != tc.want {
+				t.Errorf("summarizeMountChanges() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnionMountPoints covers the exclusion set used when diffing two
+// workspaces: every mount point of either side, deduplicated, so neither the
+// old nor the new mount content gets itemized in the diff.
+func TestUnionMountPoints(t *testing.T) {
+	prev := &Workspace{mountPoints: []string{"mnt/a", "mnt/shared"}}
+	next := &Workspace{mountPoints: []string{"mnt/b", "mnt/shared"}}
+	got := unionMountPoints(prev, next)
+	want := []string{"mnt/a", "mnt/b", "mnt/shared"}
+	if len(got) != len(want) {
+		t.Fatalf("unionMountPoints() = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("unionMountPoints()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// A nil workspace on either side is tolerated (accessors are nil-safe).
+	if got := unionMountPoints(&Workspace{}, next); len(got) != 2 {
+		t.Errorf("unionMountPoints(empty, next) = %v, want next's mounts", got)
+	}
+}

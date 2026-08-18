@@ -104,6 +104,7 @@ package core
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -303,6 +304,60 @@ func conflictedFiles(ctx context.Context, t *testctx.T, llm *dagger.LLM, baselin
 		files = append(files, fp)
 	}
 	return files
+}
+
+// TestResumeSkipsCommitAlreadyExported covers a saved conversation whose
+// successful Workspace.withCommit has since been exported to the live checkout.
+// On resume the scope is clean, but the exact message in reachable history makes
+// the operation an idempotent retry rather than an invalid empty commit.
+func (LLMSuite) TestResumeSkipsCommitAlreadyExported(ctx context.Context, t *testctx.T) {
+	for _, arrangement := range resumeArrangements() {
+		t.Run(arrangement.name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "a.txt"), []byte("ORIGINAL\n"), 0o644))
+			git := func(args ...string) {
+				t.Helper()
+				cmd := exec.CommandContext(ctx, "git", append([]string{"-C", workdir}, args...)...)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+			}
+			git("add", "a.txt")
+			git("commit", "-m", "base")
+
+			resumed := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
+				func(cA *dagger.Client) *dagger.LLM {
+					ws := cA.CurrentWorkspace().
+						WithNewFile("a.txt", "EDITED\n").
+						WithCommit("edit a", commitTestDate, dagger.WorkspaceWithCommitOpts{
+							Paths: []string{"a.txt"},
+						})
+					return cA.LLM().
+						WithWorkspace(ws).
+						WithPrompt("edit and commit a.txt").
+						WithResponse([]dagger.LLMContentBlockInput{{
+							Kind: dagger.LLMContentBlockKindText,
+							Text: "committed a.txt",
+						}})
+				},
+				func(llmA *dagger.LLM) {
+					require.NoError(t, llmA.Workspace().Export(ctx))
+				})
+
+			reply, err := resumed.LastReply(ctx)
+			require.NoError(t, err,
+				"a commit already exported to the live checkout must not make its recorded recipe unrestorable")
+			require.Equal(t, "committed a.txt", reply)
+
+			contents, err := resumed.Workspace().File("a.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "EDITED\n", contents)
+			commits, err := resumed.Workspace().Git().StagedCommits(ctx)
+			require.NoError(t, err)
+			require.Empty(t, commits,
+				"the replayed commit is redundant once the checkout already contains it")
+		})
+	}
 }
 
 // TestResumeKeepsPendingEdits covers the autosave shape: a session with

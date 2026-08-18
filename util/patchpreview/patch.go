@@ -31,11 +31,156 @@ func SummarizeString(entries []Entry, maxWidth int) string {
 	return buf.String()
 }
 
+// Commit is a commit staged in the workspace but not yet saved to the local
+// checkout, along with the changes it folded in.
+type Commit struct {
+	// SHA is the commit's full (or already shortened) hash.
+	SHA string
+	// Message is the commit message; only its first line is displayed.
+	Message string
+	// Entries is the diffstat of the changes this commit introduced.
+	Entries []Entry
+}
+
+// ShortSHA returns the abbreviated commit hash used in the summary.
+func (c Commit) ShortSHA() string {
+	if len(c.SHA) > shortSHALen {
+		return c.SHA[:shortSHALen]
+	}
+	return c.SHA
+}
+
+// Subject returns the first line of the commit message.
+func (c Commit) Subject() string {
+	subject, _, _ := strings.Cut(c.Message, "\n")
+	return strings.TrimSpace(subject)
+}
+
+const (
+	shortSHALen = 7
+	// maxCommits is how many staged commits are rendered before the rest are
+	// elided; the summary lives in a small bubble, not a scrollable pane.
+	maxCommits = 5
+)
+
 // Summarize writes a colored diff summary to out. Removed files under removed
 // directories are folded into a single entry. Does nothing if entries is empty.
 func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 	if len(entries) == 0 {
 		return
+	}
+
+	count, totalAdded, totalRemoved := writeEntries(out, entries, maxWidth, false)
+
+	fileWord := "files"
+	if count == 1 {
+		fileWord = "file"
+	}
+	fmt.Fprintf(out, "\n%d %s changed", count, fileWord)
+	if totalAdded+totalRemoved > 0 {
+		fmt.Fprint(out, ",")
+		if totalAdded > 0 {
+			out.WriteString(out.String(fmt.Sprintf(" +%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
+		}
+		if totalRemoved > 0 {
+			out.WriteString(out.String(fmt.Sprintf(" -%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
+		}
+		out.WriteString(" lines")
+	}
+}
+
+// SummarizeChanges writes the uncommitted diff summary followed by the staged
+// commits, newest commit first, separated by blank lines:
+//
+//	foo.txt +42
+//
+//	1 file changed, +42 lines
+//
+//	abcdef0 do thing
+//	bar.txt -32
+//
+//	deadbee another commit
+//	buzz.txt +1 -34
+//
+// commits are given oldest-first (as the API reports them) and are reversed
+// here. Writes nothing when there is nothing to show.
+func SummarizeChanges(out *termenv.Output, entries []Entry, commits []Commit, maxWidth int) {
+	if len(entries) == 0 && len(commits) == 0 {
+		return
+	}
+
+	sections := []string{}
+	if len(entries) > 0 {
+		sections = append(sections, renderSection(out, func(sub *termenv.Output) {
+			Summarize(sub, entries, maxWidth)
+		}))
+	}
+
+	// Newest commit first, so reading top-down goes from least to most settled.
+	commits = slices.Clone(commits)
+	slices.Reverse(commits)
+
+	elided := 0
+	if len(commits) > maxCommits {
+		elided = len(commits) - maxCommits
+		commits = commits[:maxCommits]
+	}
+
+	for _, commit := range commits {
+		sections = append(sections, renderSection(out, func(sub *termenv.Output) {
+			writeCommitHeader(sub, commit, maxWidth)
+			writeEntries(sub, commit.Entries, maxWidth, true)
+		}))
+	}
+
+	if elided > 0 {
+		commitWord := "commits"
+		if elided == 1 {
+			commitWord = "commit"
+		}
+		sections = append(sections, renderSection(out, func(sub *termenv.Output) {
+			sub.WriteString(sub.String(fmt.Sprintf("… %d more %s …", elided, commitWord)).
+				Foreground(termenv.ANSIBrightBlack).Faint().String())
+		}))
+	}
+
+	out.WriteString(strings.Join(sections, "\n\n"))
+}
+
+// renderSection captures the output of write into a string with trailing
+// newlines trimmed, so sections can be joined with a blank line between them.
+func renderSection(out *termenv.Output, write func(*termenv.Output)) string {
+	var buf strings.Builder
+	sub := termenv.NewOutput(&buf, termenv.WithProfile(out.Profile), termenv.WithTTY(true))
+	write(sub)
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+// writeCommitHeader writes the "<short sha> <subject>" line for a staged commit.
+func writeCommitHeader(out *termenv.Output, commit Commit, maxWidth int) {
+	sha := commit.ShortSHA()
+	out.WriteString(out.String(sha).Foreground(termenv.ANSIYellow).String())
+
+	subject := commit.Subject()
+	if subject == "" {
+		out.WriteString("\n")
+		return
+	}
+	if avail := maxWidth - len(sha) - 1; avail > 0 {
+		subject = truncateMiddleString(subject, avail)
+	}
+	out.WriteString(" ")
+	out.WriteString(out.String(subject).Bold().String())
+	out.WriteString("\n")
+}
+
+// writeEntries writes one line per diffstat entry, returning the number of
+// entries written (after folding) and the total added/removed line counts. When
+// dim is set the lines are faint, so staged commits recede behind the
+// uncommitted changes above them.
+func writeEntries(out *termenv.Output, entries []Entry, maxWidth int, dim bool) (count, totalAdded, totalRemoved int) {
+	if len(entries) == 0 {
+		return 0, 0, 0
 	}
 
 	entries = foldRemovedDirs(entries)
@@ -54,7 +199,14 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		longestFilenameLen = maxFilenameLen
 	}
 
-	var totalAdded, totalRemoved int
+	style := func(s string, color termenv.Color) string {
+		st := out.String(s).Foreground(color)
+		if dim {
+			st = st.Faint()
+		}
+		return st.String()
+	}
+
 	for _, e := range entries {
 		filename := truncateLabel(e, maxFilenameLen)
 
@@ -71,34 +223,20 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		totalAdded += e.Added
 		totalRemoved += e.Removed
 
-		out.WriteString(out.String(filename).Foreground(color).String())
+		out.WriteString(style(filename, color))
 		if len(filename) < longestFilenameLen {
 			out.WriteString(strings.Repeat(" ", longestFilenameLen-len(filename)))
 		}
 		if e.Added > 0 {
-			fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("+%d", e.Added)).Foreground(termenv.ANSIGreen))
+			fmt.Fprintf(out, " %s", style(fmt.Sprintf("+%d", e.Added), termenv.ANSIGreen))
 		}
 		if e.Removed > 0 {
-			fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("-%d", e.Removed)).Foreground(termenv.ANSIRed))
+			fmt.Fprintf(out, " %s", style(fmt.Sprintf("-%d", e.Removed), termenv.ANSIRed))
 		}
 		out.WriteString("\n")
 	}
 
-	fileWord := "files"
-	if len(entries) == 1 {
-		fileWord = "file"
-	}
-	fmt.Fprintf(out, "\n%d %s changed", len(entries), fileWord)
-	if totalAdded+totalRemoved > 0 {
-		fmt.Fprint(out, ",")
-		if totalAdded > 0 {
-			out.WriteString(out.String(fmt.Sprintf(" +%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
-		}
-		if totalRemoved > 0 {
-			out.WriteString(out.String(fmt.Sprintf(" -%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
-		}
-		out.WriteString(" lines")
-	}
+	return len(entries), totalAdded, totalRemoved
 }
 
 func entryLabel(e Entry) string {
