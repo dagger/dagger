@@ -200,6 +200,13 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 
 	choice := chatCompletion.Choices[0]
 
+	// A filtered or truncated choice can still carry partial content, so the
+	// finish reason is checked on its own rather than only when no blocks come
+	// out of it below. See anthropicStoppedCleanly.
+	if !openAIFinishedCleanly(choice.FinishReason) {
+		return nil, &ModelFinishedError{Reason: choice.FinishReason}
+	}
+
 	// Convert the OpenAI response into content blocks.
 	var contentBlocks []*LLMContentBlock
 	if choice.Message.Content != "" {
@@ -240,6 +247,18 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		DisplaySpans:     displaySpans,
 		ToolCallDisplays: toolCallDisplays,
 	}, nil
+}
+
+// openAIFinishedCleanly reports whether a chat completion finish reason means
+// the model finished its turn normally. Like the Anthropic check, it rejects
+// only the reasons known to leave the turn unusable.
+func openAIFinishedCleanly(reason string) bool {
+	switch reason {
+	case "length", "content_filter":
+		return false
+	default:
+		return true
+	}
 }
 
 func openAICompletionUsage(usage openai.CompletionUsage) LLMTokenUsage {
