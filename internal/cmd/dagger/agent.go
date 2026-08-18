@@ -158,7 +158,7 @@ func init() {
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
 		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
 	agentCmd.Flags().StringArrayVar(&agentCheckpointInclude, "checkpoint-include", nil,
-		"Explicitly include and approve an exact suspicious workspace path (repeatable)")
+		"Approve a workspace path pattern for the portable checkpoint (repeatable)")
 	agentCmd.Flags().StringArrayVar(&agentCheckpointExclude, "checkpoint-exclude", nil,
 		"Exclude a workspace path pattern from the portable checkpoint (repeatable)")
 	agentCmd.Flags().IntVar(&agentCheckpointMaxUntrackedFileBytes, "checkpoint-max-untracked-file-bytes", 0,
