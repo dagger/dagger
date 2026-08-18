@@ -75,7 +75,7 @@ func main() {
 // bare placeholder like <path> or <sdk> in a command description is otherwise
 // parsed as an unclosed JSX tag and breaks the docs build. It escapes < and >
 // to their HTML entities, but only outside inline code spans (backticks) and
-// fenced code blocks, so command-usage like `dagger sdk install <sdk>` and the
+// fenced code blocks, so command-usage like `dagger install <module-ref>` and the
 // ```...``` synopsis blocks are left verbatim.
 func escapeMDXAngles(md string) string {
 	var b strings.Builder

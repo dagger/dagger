@@ -131,7 +131,7 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 // The authoring relationship lives in workspace config. If the module
 // isn't registered under any SDK in dagger.toml, the wrapper can't tell
 // which SDK to dispatch to; that's an error the user resolves by
-// installing/registering the module via `dagger module init`.
+// initializing or claiming the module through its installed SDK.
 func currentModuleSDKName() (string, error) {
 	moduleDir, configDir, err := locateModuleAndWorkspaceRoot()
 	if err != nil {
@@ -180,7 +180,7 @@ func currentModuleSDKName() (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("module at %q is not registered under any [[modules.*.as-sdk.modules]] in %s; register it via `dagger module init` or add an entry by hand", modulePath, wsConfigPath)
+	return "", fmt.Errorf("module at %q is not registered under any [[modules.*.as-sdk.modules]] in %s; claim it with `dagger sdk <SDK> module claim %s` or add an entry by hand", modulePath, wsConfigPath, modulePath)
 }
 
 // gitRootAbove returns the nearest directory at or above dir holding a .git,

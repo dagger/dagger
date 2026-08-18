@@ -178,7 +178,6 @@ func init() {
 	settingsCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
-	moduleCmd.GroupID = "toolbox"
 	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
@@ -208,7 +207,6 @@ func init() {
 		searchCmd,
 		installedCmd,
 		activityCmd,
-		moduleCmd,
 		sdkCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
@@ -910,8 +908,8 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
+	if shouldRegisterSDKCommands(os.Args[1:]) {
+		if err := registerInstalledSDKCommands(ctx, os.Args[1:]); err != nil {
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			exitWithCode(1)
 		}

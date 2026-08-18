@@ -1,8 +1,6 @@
 package core
 
-// These tests cover the contextual next-step hints the CLI prints on the
-// success path of the authoring commands: `dagger setup` (empty workspace),
-// `dagger sdk install` (per SDK capability), and `dagger api client init`.
+// These tests cover the contextual next-step hints and SDK command layout.
 
 import (
 	"context"
@@ -33,8 +31,9 @@ func (CommandHintsSuite) TestEmptySetupHint(ctx context.Context, t *testctx.T) {
 	got := string(out)
 	require.Contains(t, got, "nothing to migrate")
 	require.Contains(t, got, "dagger install <module>")
-	require.Contains(t, got, "dagger sdk search")
-	require.Contains(t, got, "dagger module init <sdk> <name>")
+	require.Contains(t, got, "dagger search --sdk")
+	require.Contains(t, got, "dagger install <sdk-module>")
+	require.Contains(t, got, "dagger sdk <sdk> module init <name>")
 
 	_, statErr := os.Stat(filepath.Join(workdir, "dagger.toml"))
 	require.True(t, os.IsNotExist(statErr), "setup should not create dagger.toml on an empty workspace")
@@ -44,62 +43,38 @@ func (CommandHintsSuite) TestEmptySetupHint(ctx context.Context, t *testctx.T) {
 	require.NotContains(t, string(silentOut), "To get started")
 }
 
-// TestSDKInstallAndClientInitHints verifies that `dagger sdk install go` prints
-// a hint for each capability the go SDK has (it authors both modules and
-// clients), and that `dagger api client init` no longer points the user at
-// `dagger generate`: it runs the SDK's generators itself, so the bindings are
-// already there (dagger/dagger#13714).
-func (CommandHintsSuite) TestSDKInstallAndClientInitHints(ctx context.Context, t *testctx.T) {
+// TestSDKInstallAndDynamicCommands verifies that generic install auto-detects
+// an SDK, infers its concise command name, and exposes both capabilities under
+// `dagger sdk <SDK>`.
+func (CommandHintsSuite) TestSDKInstallAndDynamicCommands(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 
-	installOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "install", "go")
+	installOut, err := hostDaggerExecRaw(ctx, t, workdir, "install", "github.com/dagger/go-sdk", "--auto-apply")
 	require.NoError(t, err, "%s", string(installOut))
 
-	got := string(installOut)
-	require.Contains(t, got, "This SDK can")
-	require.Contains(t, got, "dagger module init go")
-	require.Contains(t, got, "dagger api client init go")
+	config, err := os.ReadFile(filepath.Join(workdir, "dagger.toml"))
+	require.NoError(t, err)
+	require.Contains(t, string(config), "[modules.go-sdk.as-sdk]")
+	require.Contains(t, string(config), `name = "go"`)
 
-	_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "go", "myapp")
+	helpOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "go", "--help")
+	require.NoError(t, err, "%s", string(helpOut))
+	require.Contains(t, string(helpOut), "module")
+	require.Contains(t, string(helpOut), "client")
+
+	_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "sdk", "go", "module", "init", "myapp")
 	require.NoError(t, err)
 
-	clientOut, err := hostDaggerExecRaw(ctx, t, workdir, "--auto-apply", "api", "client", "init", "go", "./myclient", ".dagger/modules/myapp")
+	clientOut, err := hostDaggerExecRaw(ctx, t, workdir, "--auto-apply", "sdk", "go", "client", "init", "./myclient", ".dagger/modules/myapp")
 	require.NoError(t, err, "%s", string(clientOut))
 	require.NotContains(t, string(clientOut), "dagger generate",
 		"client init generates the bindings, so it must not send the user to `dagger generate`")
-}
 
-// TestSDKInstallFullRefHints verifies that installing an SDK by full ref names
-// the SDK in the capability hints. The install name of a full ref is derived
-// engine-side, so the CLI only learns it back from the install.
-func (CommandHintsSuite) TestSDKInstallFullRefHints(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-
-	installOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "install", "github.com/dagger/go-sdk")
-	require.NoError(t, err, "%s", string(installOut))
-
-	got := string(installOut)
-	require.Contains(t, got, `Installed SDK "go-sdk". This SDK can`)
-	require.Contains(t, got, "dagger module init go-sdk")
-	require.Contains(t, got, "dagger api client init go-sdk")
-}
-
-// TestUninstalledSDKInitHint verifies that `dagger module init <sdk> <name>`
-// for a registry-known but uninstalled SDK, in a workspace with no dagger.toml,
-// fails with a hint to install the SDK rather than a generic unknown-command
-// error. Names the registry doesn't know keep the generic cobra error.
-func (CommandHintsSuite) TestUninstalledSDKInitHint(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-
-	out, err := hostDaggerExecRaw(ctx, t, workdir, "module", "init", "go", "myapp")
-	require.Error(t, err, "%s", string(out))
-	require.Contains(t, string(out), "dagger sdk install go")
-	require.NotContains(t, string(out), `unknown command "go"`)
-
-	unknownOut, err := hostDaggerExecRaw(ctx, t, workdir, "module", "init", "definitely-not-an-sdk", "myapp")
-	require.Error(t, err, "%s", string(unknownOut))
-	require.Contains(t, string(unknownOut), `unknown command "definitely-not-an-sdk"`)
+	infoOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "go", "info")
+	require.NoError(t, err, "%s", string(infoOut))
+	require.Contains(t, string(infoOut), "sdk-name: go")
+	require.Contains(t, string(infoOut), "module-name: go-sdk")
+	require.Contains(t, string(infoOut), "module-source: github.com/dagger/go-sdk")
+	require.Contains(t, string(infoOut), "claimed-modules: 1")
 }

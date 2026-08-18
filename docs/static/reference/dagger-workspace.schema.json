@@ -76,7 +76,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Name is the user-facing SDK name used by `dagger module init \u003csdk\u003e` and `dagger api client init \u003csdk\u003e`. When empty, the module entry name is used."
+          "description": "Name is the user-facing name used by the dynamic `dagger sdk \u003cname\u003e` command. When empty, the module entry name is used."
         },
         "modules": {
           "items": {

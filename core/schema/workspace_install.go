@@ -24,6 +24,97 @@ type workspaceInstallConfigPlan struct {
 	Added   bool
 }
 
+type workspaceSDKCapabilities struct {
+	Module bool
+	Client bool
+}
+
+func (c workspaceSDKCapabilities) Any() bool {
+	return c.Module || c.Client
+}
+
+// detectWorkspaceSDKCapabilities initializes the module schema and checks the
+// main object for the two functions that make a regular module an SDK. This is
+// intentionally based on the same function-name contract as the SDK loader:
+// an SDK may implement either capability independently.
+func detectWorkspaceSDKCapabilities(
+	ctx context.Context,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (workspaceSDKCapabilities, error) {
+	var capabilities workspaceSDKCapabilities
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return capabilities, fmt.Errorf("dagql server: %w", err)
+	}
+
+	var mod dagql.ObjectResult[*core.Module]
+	if err := srv.Select(ctx, source, &mod, dagql.Selector{
+		Field: "asModule",
+		Args: []dagql.NamedInput{
+			{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+		},
+	}); err != nil {
+		return capabilities, fmt.Errorf("inspect installed module capabilities: %w", err)
+	}
+	if mod.Self() == nil {
+		return capabilities, fmt.Errorf("inspect installed module capabilities: empty module")
+	}
+
+	main, ok := mod.Self().MainObject()
+	if !ok {
+		return capabilities, nil
+	}
+	for _, fn := range main.Functions {
+		if fn.Self() == nil {
+			continue
+		}
+		switch normalizedSDKCapabilityName(fn.Self().Name) {
+		case "initmodule":
+			capabilities.Module = true
+		case "initclient":
+			capabilities.Client = true
+		}
+	}
+	return capabilities, nil
+}
+
+func normalizedSDKCapabilityName(name string) string {
+	return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(name))
+}
+
+// resolvedWorkspaceSDKName derives a concise SDK command name and makes it
+// unique across both SDK aliases and SDK module-entry names. Module names are
+// also reserved because Workspace.sdk accepts either spelling.
+func resolvedWorkspaceSDKName(cfg *workspace.Config, moduleName string) string {
+	base := workspace.ConventionalSDKName(moduleName)
+	reserved := map[string]bool{"help": true}
+	if cfg != nil {
+		for installedName, entry := range cfg.Modules {
+			if installedName == moduleName || entry.AsSDK == nil {
+				continue
+			}
+			reserved[installedName] = true
+			name := entry.AsSDK.Name
+			if name == "" {
+				name = installedName
+			}
+			reserved[name] = true
+		}
+	}
+	if !reserved[base] {
+		return base
+	}
+	if !reserved[moduleName] {
+		return moduleName
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if !reserved[candidate] {
+			return candidate
+		}
+	}
+}
+
 func planWorkspaceInstallConfig(
 	cfg *workspace.Config,
 	args workspaceInstallArgs,

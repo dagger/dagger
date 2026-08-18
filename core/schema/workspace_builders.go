@@ -271,6 +271,23 @@ func (s *workspaceSchema) withModuleInstall(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	if !args.AsSdk {
+		if existing, ok := staged.Config.Modules[resolved.Name]; ok && existing.AsSDK != nil {
+			// A reinstall must preserve its established command name, including an
+			// intentionally empty name that falls back to the module entry name.
+			args.AsSdk = true
+			args.AsSdkName = existing.AsSDK.Name
+		} else {
+			capabilities, err := detectWorkspaceSDKCapabilities(lookupCtx, resolved.ModuleSource)
+			if err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			if capabilities.Any() {
+				args.AsSdk = true
+				args.AsSdkName = resolvedWorkspaceSDKName(staged.Config, resolved.Name)
+			}
+		}
+	}
 
 	var plan workspaceInstallConfigPlan
 	if envName, ok := selectedWorkspaceEnv(ctx); ok {

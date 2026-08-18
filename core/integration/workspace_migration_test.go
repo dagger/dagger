@@ -503,7 +503,7 @@ type Myapp {
 		require.NoError(t, err)
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
 		require.Contains(t, wsOut, `path = "libs/foo"`)
-		// The runtime is resolved to its real ref, matching `dagger sdk install`,
+		// The runtime is resolved to its real ref, matching a generic SDK-module install,
 		// not left as the bare "dang" short name.
 		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`)
 		require.NotContains(t, wsOut, `source = "dang"`)

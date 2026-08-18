@@ -39,10 +39,10 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "dang")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "github.com/dagger/dang-sdk")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "dang", "editor", "--path", "editor")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "sdk", "dang", "module", "init", "editor", "--path", "editor")
 		require.NoError(t, err)
 
 		info, err := os.Stat(filepath.Join(workdir, "editor"))
@@ -284,10 +284,10 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "go")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "github.com/dagger/go-sdk")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "go", "myapp")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "sdk", "go", "module", "init", "myapp")
 		require.NoError(t, err)
 
 		moduleDir := filepath.Join(workdir, ".dagger", "modules", "myapp")
@@ -297,7 +297,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "myapp")
-		goSDK := cfg.Modules["dagger-go-sdk"]
+		goSDK := cfg.Modules["go-sdk"]
 		require.NotNil(t, goSDK.AsSDK)
 		require.Equal(t, []workspacecfg.SDKManagedModule{{Path: ".dagger/modules/myapp"}}, goSDK.AsSDK.Modules)
 
@@ -306,7 +306,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 
 		cfg = readInstalledWorkspaceConfig(t, workdir)
 		require.NotContains(t, cfg.Modules, "myapp")
-		goSDK = cfg.Modules["dagger-go-sdk"]
+		goSDK = cfg.Modules["go-sdk"]
 		require.NotNil(t, goSDK.AsSDK)
 		require.Empty(t, goSDK.AsSDK.Modules)
 
@@ -334,10 +334,10 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleGenerate(ctx context.Context, t 
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "go")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "github.com/dagger/go-sdk")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "go", "myapp")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "sdk", "go", "module", "init", "myapp")
 		require.NoError(t, err)
 
 		moduleDir := filepath.Join(workdir, ".dagger", "modules", "myapp")
@@ -445,13 +445,10 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 // same workspace can each depend on a different source for a module of the same
 // name.
 //
-// `dagger module init` registers init commands for every installed SDK by
-// inspecting each one. Inspecting an SDK only needs that SDK's own init
-// contract, so it must not serve the SDK's dependencies into the session's
-// shared module namespace. Otherwise two SDKs that share a transitive
-// dependency name at different sources/pins (e.g. each pinning
-// sdk-sdk/polyfill to a different commit) collide during registration with
-// "module polyfill ... already exists with different source".
+// Building a selected `dagger sdk <SDK>` command only needs that SDK's own init
+// contract, so introspection must not serve its dependencies into the session's
+// shared module namespace. Otherwise SDKs that share a transitive dependency
+// name at different sources/pins can collide during registration.
 func (WorkspaceModulesSuite) TestWorkspaceMultiSDKSharedDependency(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
@@ -477,13 +474,11 @@ source = "beta"
 [modules.beta.as-sdk]
 `)
 
-	// `dagger module init` with no subcommand prints help, but only after
-	// registering init commands for every installed SDK — the step that used to
-	// fail with the cross-SDK dependency conflict.
-	out, err := hostDaggerExecRaw(ctx, t, workdir, "module", "init")
+	// Selecting one installed SDK introspects it and prints its dynamic help.
+	out, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "alpha", "--help")
 	require.NoError(t, err, string(out))
 	require.NotContains(t, string(out), "already exists with different source")
-	require.Contains(t, string(out), "Initialize a new module")
+	require.Contains(t, string(out), "Show SDK information")
 }
 
 // goModuleDep is a dependency entry for writeGoModuleSource's dagger.json.

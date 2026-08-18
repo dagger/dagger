@@ -301,7 +301,7 @@ var skipSharedTelemetryExporters bool
 // down by telemetry.Close(); a pre-command session that wired them up and then
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
-// telemetry warnings (e.g. the second session opened by `dagger module init`).
+// telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Such sessions render to a discard frontend and have no reason to export to
 // Cloud, so they simply skip the shared exporters.
 func engineTelemetryConfig(ctx context.Context) telemetry.Config {
