@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  `Workspace.reloaded` no longer appears in the call chain of the workspace it
+  returns. It invalidates cached host reads as a side effect and re-runs on
+  every call, so the workspace it minted carried a per-call nonce that every
+  workspace derived from it inherited for the rest of the session — a chain
+  nothing could be served from cache against. An agent that reloaded its own
+  tools once would re-declare every workspace module on every subsequent edit.
+time: 2026-08-09T21:30:00Z
+custom:
+  Author: vito
+  PR: ""

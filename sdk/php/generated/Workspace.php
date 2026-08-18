@@ -149,6 +149,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Write this workspace's pending changes to its local Git workspace.
+     *
+     * Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
      */
     public function export(): void
     {
@@ -403,6 +405,35 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+     *
+     * The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+     *
+     * The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+     */
+    public function withCommit(
+        string $message,
+        string $date,
+        ?array $paths = [],
+        ?string $authorName = null,
+        ?string $authorEmail = null,
+    ): Workspace {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
+        $innerQueryBuilder->setArgument('message', $message);
+        $innerQueryBuilder->setArgument('date', $date);
+        if (null !== $paths) {
+        $innerQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $authorName) {
+        $innerQueryBuilder->setArgument('authorName', $authorName);
+        }
+        if (null !== $authorEmail) {
+        $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a named config environment created.
      */
     public function withConfigEnv(string $name, ?bool $here = false): Workspace
@@ -517,6 +548,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a cache volume mounted at the given path, without mutating the source.
+     *
+     * Like a mounted directory, the cache shadows the source at the mount path and stays out of the pending changeset: it never appears in changes and is never exported to the workspace. Unlike a mounted directory it is writable, and export commits the edits made under it back into the cache volume.
+     */
+    public function withMountedCache(string $path, CacheVolume $cache): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedCache');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('cache', $cache);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -671,6 +715,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with the content mounted at the given path unmounted.
+     *
+     * Removes whatever is mounted there — a cache volume, directory or file — along with anything mounted inside it. Pending edits to a mounted cache volume are discarded rather than committed.
+     */
+    public function withoutMount(string $path): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMount');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

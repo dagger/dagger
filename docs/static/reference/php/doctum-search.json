@@ -1887,6 +1887,16 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceStagedCommit",
+			"p": "Dagger/WorkspaceStagedCommit.html",
+			"d": "<p>A commit staged in a workspace but not yet saved to the local checkout.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -2641,6 +2651,12 @@
 			"n": "Dagger\\Client::currentNode",
 			"p": "Dagger/Client.html#method_currentNode",
 			"d": "<p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentTimestamp",
+			"p": "Dagger/Client.html#method_currentTimestamp",
+			"d": "<p>The current UTC time in RFC3339 format. Never cached.</p>"
 		},
 		{
 			"t": "M",
@@ -7432,6 +7448,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withCommit",
+			"p": "Dagger/Workspace.html#method_withCommit",
+			"d": "<p>Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withConfigEnv",
 			"p": "Dagger/Workspace.html#method_withConfigEnv",
 			"d": "<p>Return this workspace with a named config environment created.</p>"
@@ -7459,6 +7481,12 @@
 			"n": "Dagger\\Workspace::withModule",
 			"p": "Dagger/Workspace.html#method_withModule",
 			"d": "<p>Return this workspace with a module installed in its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withMountedCache",
+			"p": "Dagger/Workspace.html#method_withMountedCache",
+			"d": "<p>Return this workspace with a cache volume mounted at the given path, without mutating the source.</p>"
 		},
 		{
 			"t": "M",
@@ -7534,6 +7562,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withoutMount",
+			"p": "Dagger/Workspace.html#method_withoutMount",
+			"d": "<p>Return this workspace with the content mounted at the given path unmounted.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withoutSDK",
 			"p": "Dagger/Workspace.html#method_withoutSDK",
 			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
@@ -7552,9 +7586,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceGit::stagedCommits",
+			"p": "Dagger/WorkspaceGit.html#method_stagedCommits",
+			"d": "<p>Commits staged in this workspace but not yet saved to the local checkout.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceGit::uncommitted",
 			"p": "Dagger/WorkspaceGit.html#method_uncommitted",
 			"d": "<p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::unmanaged",
+			"p": "Dagger/WorkspaceGit.html#method_unmanaged",
+			"d": "<p>Pending workspace edits git cannot see - gitignored, or inside a nested repository.</p>"
 		},
 		{
 			"t": "M",
@@ -7693,6 +7739,48 @@
 			"n": "Dagger\\WorkspaceSDK::ref",
 			"p": "Dagger/WorkspaceSDK.html#method_ref",
 			"d": "<p>The module reference this SDK was installed from.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::authorEmail",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_authorEmail",
+			"d": "<p>The author and committer email the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::authorName",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_authorName",
+			"d": "<p>The author and committer name the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::changes",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_changes",
+			"d": "<p>The changes this commit folded in, relative to the state staged before it.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::date",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_date",
+			"d": "<p>The RFC3339 author and committer date the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::id",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceStagedCommit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::message",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_message",
+			"d": "<p>The full commit message, subject and body.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::sha",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_sha",
+			"d": "<p>The full hash of the staged commit.</p>"
 		},
 		{
 			"t": "M",

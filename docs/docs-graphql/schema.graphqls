@@ -4697,6 +4697,9 @@ type Query implements Node {
   """
   currentNode: Node!
 
+  """The current UTC time in RFC3339 format. Never cached."""
+  currentTimestamp: String!
+
   """
   The TypeDef representations of the objects currently being served in the session.
   """
@@ -5623,6 +5626,29 @@ type Workspace implements Node {
   ): CheckGroup!
 
   """
+  Plan which of another workspace's staged commits can be applied to this one.
+
+  Both workspaces are expected to descend from the same checkout - typically
+  this workspace and one an agent was spawned with. Each of the source's staged
+  commits is classified against this one, oldest first, as if every pickable
+  commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see
+  reason and conflictPaths), or PICKABLE.
+
+  Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.
+  """
+  commitsFrom(
+    """The workspace whose staged commits to consider."""
+    source: ID! @expectedType(name: "Workspace")
+
+    """
+    Restrict the plan to these commit hashes, full or an unambiguous prefix.
+    They are always considered in the source's stack order. Empty considers
+    every staged commit.
+    """
+    commits: [String!] = []
+  ): [WorkspaceCommitPick!]!
+
+  """
   Selected native workspace config file relative to the workspace cwd, if any.
   """
   configFile: String!
@@ -5881,6 +5907,69 @@ type Workspace implements Node {
   withChanges(
     """Changes to apply."""
     changes: ID! @expectedType(name: "Changeset")
+  ): Workspace!
+
+  """
+  Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+
+  The commit is created engine-side, on top of the workspace's git HEAD plus any
+  previously staged commit: the local checkout is left untouched. Afterwards
+  Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted
+  holds whatever was left out of it, still pending on top.
+
+  The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+  """
+  withCommit(
+    """Commit message."""
+    message: String!
+
+    """
+    Restrict the commit to these paths, like `git commit -- <paths>`. Relative
+    paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+    """
+    paths: [String!] = []
+
+    """
+    RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+    """
+    date: String!
+
+    """
+    Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+    """
+    authorName: String
+
+    """
+    Author and committer email. Defaults to the git identity recorded when the
+    workspace was loaded, else "dagger@localhost".
+    """
+    authorEmail: String
+  ): Workspace!
+
+  """
+  Return this workspace with another workspace's staged commits replayed on top, without mutating either source.
+
+  Each commit is applied to this workspace's current content as a patch - not as
+  a whole-file overlay - so commits still land cleanly when this workspace has
+  moved on since the source branched off. The replayed commit keeps the original
+  message, date and author identity, and records the original commit as its
+  origin, so pulling the same work again is recognised as already present.
+
+  Commits this workspace already has, and commits whose content is already
+  present, are skipped. A commit that cannot be applied is an error naming the
+  commit and the conflicting paths: plan with commitsFrom first and pass the
+  pickable hashes.
+  """
+  withCommitsFrom(
+    """The workspace whose staged commits to replay."""
+    source: ID! @expectedType(name: "Workspace")
+
+    """
+    Restrict the replay to these commit hashes, full or an unambiguous prefix.
+    They are always applied in the source's stack order. Empty replays every
+    staged commit.
+    """
+    commits: [String!] = []
   ): Workspace!
 
   """Return this workspace with a named config environment created."""
@@ -6177,6 +6266,91 @@ type Workspace implements Node {
   ): Workspace!
 }
 
+"""
+One of another workspace's staged commits, classified against this workspace.
+"""
+type WorkspaceCommitPick implements Node {
+  """The author and committer email the commit was made with."""
+  authorEmail: String!
+
+  """The author and committer name the commit was made with."""
+  authorName: String!
+
+  """
+  The changes this commit folded in, as recorded in the source workspace.
+  """
+  changes: Changeset!
+
+  """
+  The paths that obstruct this commit: the dirty paths for DIRTY, the paths the
+  patch failed on for CONTENT. Empty unless the status is CONFLICT.
+  """
+  conflictPaths: [String!]!
+
+  """The RFC3339 author and committer date the commit was made with."""
+  date: String!
+
+  """A unique identifier for this WorkspaceCommitPick."""
+  id: ID!
+
+  """The full commit message, subject and body."""
+  message: String!
+
+  """
+  The hash of the commit the source commit was itself replayed from; empty when it was authored in the source workspace.
+  """
+  origin: String!
+
+  """Why the commit conflicts, or NONE when it does not."""
+  reason: WorkspaceCommitPickReason!
+
+  """The full hash of the commit in the source workspace."""
+  sha: String!
+
+  """Whether this commit can be applied to the receiving workspace."""
+  status: WorkspaceCommitPickStatus!
+}
+
+"""
+Why a staged commit from another workspace cannot be applied to this one.
+"""
+enum WorkspaceCommitPickReason {
+  """No obstruction: the status is not CONFLICT."""
+  NONE
+
+  """The commit's patch no longer applies to this workspace's content."""
+  CONTENT
+
+  """
+  This workspace has uncommitted changes on a path the commit touches, so
+  applying it would sweep them into someone else's commit.
+  """
+  DIRTY
+}
+
+"""
+Whether one of another workspace's staged commits can be applied to this one.
+"""
+enum WorkspaceCommitPickStatus {
+  """The commit applies cleanly to this workspace and would be staged."""
+  PICKABLE
+
+  """
+  This workspace already has the commit: in its own staged stack, in its git
+  history, or as a commit it already replayed from the same origin.
+  """
+  PICKED
+
+  """
+  Applying the commit would change nothing: its content is already present, for
+  instance because the same edit was made here by hand.
+  """
+  REDUNDANT
+
+  """The commit cannot be applied; see reason and conflictPaths."""
+  CONFLICT
+}
+
 """Local git state for a workspace."""
 type WorkspaceGit implements Node {
   """The checked-out HEAD of this workspace."""
@@ -6186,9 +6360,24 @@ type WorkspaceGit implements Node {
   id: ID!
 
   """
+  Commits staged in this workspace but not yet saved to the local checkout.
+
+  Ordered oldest to newest, matching the order they were staged in on top of the
+  checkout's HEAD. Empty when nothing is staged.
+  """
+  stagedCommits: [WorkspaceStagedCommit!]!
+
+  """
   Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
   """
   uncommitted: Changeset!
+
+  """
+  Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+
+  Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+  """
+  unmanaged: Changeset!
 }
 
 """A planned workspace migration."""
@@ -6279,5 +6468,39 @@ type WorkspaceSDK implements Node {
 
   """The module reference this SDK was installed from."""
   ref: String!
+}
+
+"""
+A commit staged in a workspace but not yet saved to the local checkout.
+"""
+type WorkspaceStagedCommit implements Node {
+  """The author and committer email the commit was made with."""
+  authorEmail: String!
+
+  """The author and committer name the commit was made with."""
+  authorName: String!
+
+  """
+  The changes this commit folded in, relative to the state staged before it.
+  """
+  changes: Changeset!
+
+  """The RFC3339 author and committer date the commit was made with."""
+  date: String!
+
+  """A unique identifier for this WorkspaceStagedCommit."""
+  id: ID!
+
+  """The full commit message, subject and body."""
+  message: String!
+
+  """
+  The hash of the commit this one was replayed from, when it was pulled from
+  another workspace; empty when it was authored here.
+  """
+  origin: String!
+
+  """The full hash of the staged commit."""
+  sha: String!
 }
 
