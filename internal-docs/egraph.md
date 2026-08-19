@@ -236,13 +236,12 @@ That behavior lives mainly in:
 
 ## How Call Identity Feeds The E-Graph
 
-The e-graph consumes structural identity produced upstream by `ResultCall` /
-`call.ID`.
+The e-graph consumes structural identity produced upstream by `ResultCall`.
 
-The key functions are in `dagql/call/id.go`:
+The relevant derivations are in `dagql/result_call_frame.go`:
 
-- `SelfDigestAndInputRefs`
-- `SelfDigestAndInputs`
+- `ResultCall.SelfDigestAndInputRefs` derives structural identity.
+- `ResultCall.ContentPreferredDigest` derives content-preferred identity.
 
 The shape is:
 
@@ -255,9 +254,10 @@ That distinction is why structural equivalence works: the cache can say
 "same operation over equivalent inputs" without flattening the whole call into
 one undifferentiated digest.
 
-Content-preferred digest is related but separate. In `dagql/call/id_content.go`,
-it expresses "if outputs are interchangeable by content, what digest should we
-prefer?" It is used as equivalence evidence, not as the authoritative recipe.
+Content-preferred identity is related but separate. If a `ResultCall` has an
+explicit content digest, `ContentPreferredDigest` returns it; otherwise, it
+hashes the call shape while recursively preferring content identity for
+referenced results. It does not replace the authoritative recipe digest.
 
 ## Main Entry Points Into The E-Graph
 
@@ -748,7 +748,7 @@ well:
    - `importPersistedState`
    - `ensurePersistedHitValueLoaded`
 
-4. `dagql/call/id.go` and `dagql/call/id_content.go`
+4. `dagql/result_call_frame.go`
    - structural identity
    - content-preferred digest
 
