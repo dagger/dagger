@@ -134,14 +134,13 @@ func CloneWorkspaceGitTree(
 
 // IncludeSource is what an [[include]] entry needs to be resolved: where the
 // including config sits inside its workspace, how to read files there, and how
-// to resolve a git ref. ConfigDir and the paths handed to ReadWorkspaceFile and
-// StatWorkspaceFile are workspace-relative; both readers may be nil for a caller
-// that can only resolve git includes.
+// to resolve a git ref. ConfigDir and the paths handed to ReadWorkspaceFile are
+// workspace-relative; the reader may be nil for a caller that can only resolve
+// git includes.
 type IncludeSource struct {
 	Dag               *dagql.Server
 	ConfigDir         string
 	ReadWorkspaceFile func(ctx context.Context, wsPath string) ([]byte, error)
-	StatWorkspaceFile func(ctx context.Context, wsPath string) (*Stat, error)
 }
 
 // resolveIncludePath turns an include source into a workspace-relative path,
@@ -199,21 +198,19 @@ func LoadIncludedConfig(
 	defer telemetry.EndWithCause(span, &rerr)
 
 	var (
-		cfg       *workspace.Config
-		statFS    StatFS
-		configDir string
-		err       error
+		cfg *workspace.Config
+		err error
 	)
 	if IncludeSourceIsGit(include) {
-		cfg, statFS, configDir, err = source.loadGitInclude(ctx, include)
+		cfg, err = source.loadGitInclude(ctx, include)
 	} else {
-		cfg, statFS, configDir, err = source.loadLocalInclude(ctx, include)
+		cfg, err = source.loadLocalInclude(ctx, include)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("workspace include %q: %w", include, err)
 	}
 
-	warnDroppedIncludedModules(callerCtx, include, dropLocalIncludedModules(ctx, statFS, configDir, cfg))
+	warnDroppedIncludedModules(callerCtx, include, dropLocalIncludedModules(cfg))
 
 	return cfg, nil
 }
@@ -232,61 +229,47 @@ func IncludeSourceIsGit(source string) bool {
 func (s IncludeSource) loadGitInclude(
 	ctx context.Context,
 	include string,
-) (*workspace.Config, StatFS, string, error) {
+) (*workspace.Config, error) {
 	if s.Dag == nil {
-		return nil, nil, "", fmt.Errorf("git includes cannot be resolved here")
+		return nil, fmt.Errorf("git includes cannot be resolved here")
 	}
 
 	parsedRef, err := ParseWorkspaceRemoteRef(ctx, include)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("parsing git ref: %w", err)
+		return nil, fmt.Errorf("parsing git ref: %w", err)
 	}
 
 	tree, _, err := CloneWorkspaceGitTree(ctx, s.Dag, parsedRef.CloneRef, parsedRef.Version)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, err
 	}
-	statFS := &DirectoryStatFS{Dir: tree}
 
 	configPath := includeConfigPath(parsedRef.WorkspaceSubdir)
 	data, err := DirectoryReadFile(ctx, tree, configPath)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("reading %s: %w", configPath, err)
+		return nil, fmt.Errorf("reading %s: %w", configPath, err)
 	}
-	cfg, err := workspace.ParseConfig(data)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return cfg, statFS, path.Dir(configPath), nil
+	return workspace.ParseConfig(data)
 }
 
 func (s IncludeSource) loadLocalInclude(
 	ctx context.Context,
 	include string,
-) (*workspace.Config, StatFS, string, error) {
+) (*workspace.Config, error) {
 	if s.ReadWorkspaceFile == nil {
-		return nil, nil, "", fmt.Errorf("path includes cannot be resolved here")
+		return nil, fmt.Errorf("path includes cannot be resolved here")
 	}
 
 	resolved, err := s.resolveIncludePath(include)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, err
 	}
 	configPath := includeConfigPath(resolved)
 	data, err := s.ReadWorkspaceFile(ctx, configPath)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("reading %s: %w", configPath, err)
+		return nil, fmt.Errorf("reading %s: %w", configPath, err)
 	}
-	cfg, err := workspace.ParseConfig(data)
-	if err != nil {
-		return nil, nil, "", err
-	}
-
-	var statFS StatFS
-	if s.StatWorkspaceFile != nil {
-		statFS = includeWorkspaceStatFS{stat: s.StatWorkspaceFile}
-	}
-	return cfg, statFS, path.Dir(configPath), nil
+	return workspace.ParseConfig(data)
 }
 
 // includeConfigPath appends the default config filename to a source that names
@@ -302,20 +285,6 @@ func includeConfigPath(p string) string {
 	return path.Join(p, DefaultIncludeConfigFile)
 }
 
-// includeWorkspaceStatFS adapts a caller's workspace-relative stat into the
-// StatFS the module classifier wants.
-type includeWorkspaceStatFS struct {
-	stat func(ctx context.Context, wsPath string) (*Stat, error)
-}
-
-func (fs includeWorkspaceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
-	stat, err := fs.stat(ctx, path)
-	if err != nil {
-		return "", nil, err
-	}
-	return path, stat, nil
-}
-
 // dropLocalIncludedModules removes the module entries a workspace must not load
 // through an include: the included config's own local modules. It returns the
 // dropped entries, labelled the way the config spells them — including dotted
@@ -327,17 +296,12 @@ func (fs includeWorkspaceStatFS) Stat(ctx context.Context, path string) (string,
 // (an included git config's modules are reachable as refs into its repository)
 // but is deliberately left for later; for now an include shares configuration,
 // not code.
-func dropLocalIncludedModules(
-	ctx context.Context,
-	statFS StatFS,
-	configDir string,
-	cfg *workspace.Config,
-) []string {
+func dropLocalIncludedModules(cfg *workspace.Config) []string {
 	// The labels name config paths, so they cannot be used to match ports: the
 	// module names the dropped entries denote are tracked separately.
 	var dropped, droppedModules []string
 	for name, entry := range cfg.Modules {
-		if !includedSourceIsLocal(ctx, statFS, configDir, entry.Source) {
+		if !includedSourceIsLocal(entry.Source) {
 			continue
 		}
 		delete(cfg.Modules, name)
@@ -349,7 +313,7 @@ func dropLocalIncludedModules(
 		for moduleName, overlay := range env.Modules {
 			_, installed := cfg.Modules[moduleName]
 			switch {
-			case includedSourceIsLocal(ctx, statFS, configDir, overlay.Source):
+			case includedSourceIsLocal(overlay.Source):
 				// An overlay that installs a local module is the same
 				// violation as a base entry that does.
 				delete(env.Modules, moduleName)
@@ -380,44 +344,14 @@ func dropLocalIncludedModules(
 // includedSourceIsLocal reports whether a module source in an included config
 // addresses something next to that config.
 //
-// Classification is deliberately not ParseRefString: for an ambiguous ref that
-// is not a local directory, that falls back to local when git endpoint
-// discovery fails, which would drop a perfectly good remote module whenever the
-// network is unavailable. A dot-free or dot/slash-prefixed source is
-// unambiguously local; anything else is local only if it really is a directory
-// next to the included config. The pin is deliberately ignored, because the
-// module loader classifies with an empty pin too — passing it would let
-// `source = "./ci", pin = "…"` masquerade as remote.
-func includedSourceIsLocal(ctx context.Context, statFS StatFS, configDir, source string) bool {
-	if source == "" {
-		return false
-	}
-	switch gitref.FastKindCheck(source, "") {
-	case gitref.KindLocal:
-		return true
-	case gitref.KindGit:
-		return false
-	}
-
-	// Ambiguous: local only if the included config really has a directory
-	// there. Statting where the config was written — not the consuming
-	// workspace — is the whole point: `modules/foo.bar` must be judged where it
-	// was written. Without a filesystem to ask, the ref keeps its remote
-	// reading, which is what it looks like.
-	if statFS == nil {
-		return false
-	}
-	probe := source
-	if !filepath.IsAbs(probe) {
-		probe = path.Join(configDir, probe)
-	}
-	_, stat, err := statFS.Stat(ctx, probe)
-	if err != nil {
-		// A missing path is the common case for a remote ref; a stat that fails
-		// for any other reason is still not evidence of a local module.
-		return false
-	}
-	return stat.IsDir()
+// This is workspace.IsLocalRef, the same classifier the module loader reaches
+// through ResolveModuleEntrySource, and with the same empty pin: agreeing with
+// it is the whole correctness criterion here, because anything this keeps is
+// something the loader will then resolve. Passing the entry's own pin would
+// disagree — any non-empty pin reads as git — and let `source = "./ci",
+// pin = "…"` through to be resolved against the consuming workspace.
+func includedSourceIsLocal(source string) bool {
+	return source != "" && workspace.IsLocalRef(source, "")
 }
 
 // dropPortsForDroppedModules removes included port mappings that forward to a

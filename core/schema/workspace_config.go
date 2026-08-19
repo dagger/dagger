@@ -158,43 +158,6 @@ func readWorkspaceFileBytes(ctx context.Context, ws *core.Workspace, wsPath stri
 	return data, nil
 }
 
-// statWorkspaceFile stats a workspace-relative path, so an included config's
-// module sources can be judged where they were written.
-func statWorkspaceFile(ctx context.Context, ws *core.Workspace, wsPath string) (*core.Stat, error) {
-	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
-		_, stat, err := (&core.DirectoryStatFS{Dir: rootfs}).Stat(ctx, wsPath)
-		return stat, err
-	}
-	if ws.HostPath() != "" {
-		ctx, err := withWorkspaceClientContext(ctx, ws)
-		if err != nil {
-			return nil, err
-		}
-		hostPath, err := workspaceHostPath(ws, wsPath)
-		if err != nil {
-			return nil, err
-		}
-		bk, err := workspaceBuildkit(ctx)
-		if err != nil {
-			return nil, err
-		}
-		_, stat, err := core.NewCallerStatFS(bk).Stat(ctx, hostPath)
-		return stat, err
-	}
-	rootfs := ws.Rootfs()
-	if rootfs.Self() == nil {
-		return nil, fmt.Errorf("workspace has no host path or rootfs")
-	}
-	_, stat, err := (&core.DirectoryStatFS{Dir: rootfs}).Stat(ctx, wsPath)
-	return stat, err
-}
-
-// readWorkspaceConfig returns the workspace's effective config: its own
-// dagger.toml with any included config merged underneath. Every read surface
-// goes through here, so what they report is what module loading uses.
-//
-// Writers deliberately do not: loadWorkspaceConfigForOverlay keeps parsing the
-// raw local file, because a write must land in the file the user owns.
 func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
 	cfg, _, err := readEffectiveWorkspaceConfig(ctx, ws)
 	return cfg, err
@@ -287,9 +250,6 @@ func workspaceIncludeSource(ws *core.Workspace, dag *dagql.Server) (core.Include
 		ConfigDir: filepath.Dir(configFile),
 		ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
 			return readWorkspaceFileBytes(ctx, ws, wsPath)
-		},
-		StatWorkspaceFile: func(ctx context.Context, wsPath string) (*core.Stat, error) {
-			return statWorkspaceFile(ctx, ws, wsPath)
 		},
 	}, nil
 }

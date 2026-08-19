@@ -746,10 +746,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
 				return readFile(ctx, filepath.Join(ws.Root, wsPath))
 			},
-			StatWorkspaceFile: func(ctx context.Context, wsPath string) (*core.Stat, error) {
-				_, stat, err := statFS.Stat(ctx, filepath.Join(ws.Root, wsPath))
-				return stat, err
-			},
 		}
 		included, err := core.LoadIncludedConfig(ctx, source, wsConfig.Include[0].Source)
 		if err != nil {

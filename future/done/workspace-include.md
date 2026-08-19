@@ -299,36 +299,31 @@ Two findings from that work are worth keeping:
   repository, which `GitRefString` would silently normalize to a root-level
   path.
 
-**Classification is a two-step rule against the included config's tree, not a
-string heuristic and not `ParseRefString`.** For each entry, with an **empty
-pin**:
+**Classification is `workspace.IsLocalRef`, the classifier the loader itself
+uses**, with an **empty pin**. Agreeing with the loader is the whole correctness
+criterion: anything sanitization keeps is something the loader will then
+resolve, so the two must not disagree.
 
-1. `gitref.FastKindCheck(source, "")` — `KindLocal` → drop.
-2. `KindUnknown` → stat the path next to the included config; a directory →
-   drop, otherwise keep as remote. `KindGit` → keep.
+The empty pin is the one deliberate difference from a naive call. `IsLocalRef`
+reads _any_ ref carrying a pin as git, so passing the entry's own pin would let
+`source = "./ci", pin = "…"` survive and then be resolved against the consuming
+workspace. `ResolveModuleEntrySource`, which the loader reaches for the same
+decision, passes an empty pin for the same reason.
 
-Why each part:
+This replaced an earlier two-step rule of this feature's own — `FastKindCheck`,
+then stat the path where the config was written to settle `KindUnknown`. Since
+`12d34c468` the shared classifier settles that case syntactically: only the
+segment ahead of the first separator can be a host, so `common/.dagger/mymod`
+reads as local while `vanity.example.com/acme/toolchain` reads as remote,
+neither needing a filesystem. Converging removed the stat plumbing from the
+include loader and its three callers, and closed a real gap — where no
+filesystem was available the old rule fell back to "remote", exactly the
+mis-resolution this limitation exists to prevent.
 
-- the empty pin is required — `FastKindCheck` returns `KindGit` for _any_ ref
-  that carries a pin, so classifying with the entry's own pin would let
-  `source = "./ci", pin = "…"` pass as remote, while the loader (which
-  classifies with an empty pin) would then resolve it as a local path;
-- statting where the config was written — not the consuming workspace — is what
-  resolves `KindUnknown` correctly. A dotted path such as `modules/foo.bar`
-  would otherwise be judged against the wrong tree;
-- `github.com/acme/toolchain` is also `KindUnknown` and is not a directory
-  there, so it is kept. Requiring `KindGit` outright would reject the most
-  common remote form;
-- `core.ParseRefString` looks like the natural helper and is the wrong one: for
-  an ambiguous ref that is not a local directory it attempts a git parse and
-  **falls back to `Local` on `EndpointError`**. A vanity-domain remote would
-  then be classified local whenever endpoint discovery is unavailable.
-  Classification must not depend on network reachability.
-
-A path include has no tree of its own: it is read through the consuming
-workspace's filesystem, and the classifier stats the included config's directory
-there. Where no filesystem is available at all, an ambiguous ref keeps its
-remote reading, which is what it looks like.
+`core.ParseRefString` remains the wrong helper for this: for an ambiguous ref it
+attempts a git parse and **falls back to `Local` on `EndpointError`**, so a
+vanity-domain remote would be classified local whenever endpoint discovery is
+unavailable. Classification must not depend on network reachability.
 
 The warning is emitted **inside the shared loader**, deduplicated per **client**
 and include source through the query's telemetry seen-key store (the mechanism
@@ -356,16 +351,11 @@ Dropping cascades, so no orphan state survives:
 - an env overlay in the included config that _installs_ a local module is
   dropped the same way.
 
-**Residual hole, accepted and stated rather than closed.** A source that is
-`KindUnknown`, absent where the included config lives, and present as a directory
-in the _consuming_ tree is kept by sanitization and then resolved locally
-downstream, because `moduleSource` resolution stats the caller's filesystem.
-Reaching it needs both halves: the included config declares a dotted, schemeless
-source that does not exist next to it — so that config cannot load the module
-either — and the consuming repo happens to hold a directory at exactly that
-path. Closing it properly means teaching `pendingModule` a "resolve remotely
-only" hint and threading it through `moduleSource`, a resolution-pipeline change
-well outside a config feature.
+**A residual hole the earlier rule had is now closed.** While classification
+depended on statting the tree the config came from, a dotted source that existed
+in neither tree was kept and then resolved locally downstream. The syntactic rule
+has no such gap: the same string classifies the same way for sanitization and for
+the loader, whatever either can see.
 
 ### Inherited entries cannot be removed
 

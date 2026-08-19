@@ -2,30 +2,11 @@ package core
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
-
-// statFSFunc is a StatFS over a fixed set of paths, standing in for the
-// included config's tree.
-type statFSFunc struct {
-	dirs  map[string]bool
-	files map[string]bool
-}
-
-func (fs statFSFunc) Stat(_ context.Context, path string) (string, *Stat, error) {
-	switch {
-	case fs.dirs[path]:
-		return path, &Stat{Name: path, FileType: FileTypeDirectory}, nil
-	case fs.files[path]:
-		return path, &Stat{Name: path, FileType: FileTypeRegular}, nil
-	default:
-		return "", nil, os.ErrNotExist
-	}
-}
 
 func TestParseWorkspaceRemoteRef(t *testing.T) {
 	t.Parallel()
@@ -96,13 +77,6 @@ func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
 func TestDropLocalIncludedModules(t *testing.T) {
 	t.Parallel()
 
-	// The include workspace's own tree: modules/ci and modules/foo.bar are
-	// directories there, so entries pointing at them are its local modules.
-	tree := statFSFunc{dirs: map[string]bool{
-		"modules/ci":      true,
-		"modules/foo.bar": true,
-	}}
-
 	cfg, err := workspace.ParseConfig([]byte(`[modules.ci]
 source = "modules/ci"
 
@@ -138,7 +112,7 @@ backendPort = 9090
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(context.Background(), tree, ".", cfg)
+	dropped := dropLocalIncludedModules(cfg)
 
 	require.Equal(t, []string{
 		"ci",
@@ -164,18 +138,18 @@ backendPort = 9090
 	require.Contains(t, cfg.Ports, "4000")
 }
 
-func TestDropLocalIncludedModulesKeepsRemoteWhenTreeLookupFails(t *testing.T) {
+func TestDropLocalIncludedModulesKeepsAVanityRemote(t *testing.T) {
 	t.Parallel()
 
-	// Nothing resolves in the included tree — the same shape a stat error or an
-	// unreachable git endpoint produces. An ambiguous remote ref must survive:
-	// classification cannot depend on reachability.
+	// A schemeless remote whose host carries the dot: kept, and without asking
+	// the network — classification is syntactic, so it cannot depend on
+	// reachability.
 	cfg, err := workspace.ParseConfig([]byte(`[modules.toolchain]
 source = "vanity.example.com/acme/toolchain"
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(context.Background(), statFSFunc{}, ".", cfg)
+	dropped := dropLocalIncludedModules(cfg)
 	require.Empty(t, dropped)
 	require.Contains(t, cfg.Modules, "toolchain")
 }
@@ -193,15 +167,13 @@ source = "php"
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(context.Background(), statFSFunc{}, ".", cfg)
+	dropped := dropLocalIncludedModules(cfg)
 	require.Equal(t, []string{"php"}, dropped)
 	require.NotContains(t, cfg.Modules, "php")
 }
 
 func TestDropLocalIncludedModulesCascadesToPortsOfNonCanonicalNames(t *testing.T) {
 	t.Parallel()
-
-	tree := statFSFunc{dirs: map[string]bool{"modules/my-tool": true}}
 
 	// backendService names the module CLI-cased, which is not how the config
 	// spells the key it was declared under.
@@ -214,15 +186,13 @@ backendPort = 8080
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(context.Background(), tree, ".", cfg)
+	dropped := dropLocalIncludedModules(cfg)
 	require.Equal(t, []string{"MyTool"}, dropped)
 	require.NotContains(t, cfg.Ports, "3000")
 }
 
 func TestDropLocalIncludedModulesCascadesToPortsOfEnvOnlyInstalls(t *testing.T) {
 	t.Parallel()
-
-	tree := statFSFunc{dirs: map[string]bool{"modules/ci": true}}
 
 	// The module is installed by an env overlay only, so dropping that overlay
 	// leaves nothing for the port to forward to.
@@ -239,22 +209,55 @@ backendPort = 9090
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(context.Background(), tree, ".", cfg)
+	dropped := dropLocalIncludedModules(cfg)
 	require.Equal(t, []string{"env.ci.modules.local-ci"}, dropped)
 	require.NotContains(t, cfg.Ports, "3000")
 	require.Contains(t, cfg.Ports, "4000")
 }
 
-func TestDropLocalIncludedModulesResolvesRelativeToConfigDir(t *testing.T) {
+func TestDropLocalIncludedModulesDropsADottedPath(t *testing.T) {
 	t.Parallel()
 
-	tree := statFSFunc{dirs: map[string]bool{"nested/modules/foo.bar": true}}
-
+	// The dot is in a path segment rather than the host, so this is a path.
 	cfg, err := workspace.ParseConfig([]byte(`[modules.nested]
 source = "modules/foo.bar"
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(context.Background(), tree, "nested", cfg)
+	dropped := dropLocalIncludedModules(cfg)
 	require.Equal(t, []string{"nested"}, dropped)
+}
+
+func TestIncludedSourceIsLocal(t *testing.T) {
+	t.Parallel()
+
+	// The classifier is workspace.IsLocalRef, the same one the module loader
+	// reaches through ResolveModuleEntrySource. These cases pin the agreement,
+	// including the dotted path that only reads as local because the dot is not
+	// in the host segment.
+	for _, tc := range []struct {
+		source string
+		local  bool
+	}{
+		{source: "", local: false},
+		{source: "modules/ci", local: true},
+		{source: "./ci", local: true},
+		{source: "../shared/ci", local: true},
+		{source: "common/.dagger/mymod", local: true},
+		{source: "github.com/acme/toolchain@v1", local: false},
+		{source: "https://example.com/acme/mod.git", local: false},
+		{source: "vanity.example.com/acme/toolchain", local: false},
+	} {
+		require.Equal(t, tc.local, includedSourceIsLocal(tc.source), "source %q", tc.source)
+	}
+}
+
+func TestIncludedSourceIsLocalIgnoresThePin(t *testing.T) {
+	t.Parallel()
+
+	// A pin makes the shared classifier read any ref as git, so the sanitizer
+	// deliberately never passes one: otherwise `source = "./ci", pin = "…"`
+	// would survive and then resolve against the consuming workspace.
+	require.True(t, includedSourceIsLocal("./ci"))
+	require.False(t, workspace.IsLocalRef("./ci", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 }
