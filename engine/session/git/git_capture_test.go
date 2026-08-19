@@ -152,6 +152,27 @@ func TestCaptureGitStagesApprovedBytesWithoutCleanFilters(t *testing.T) {
 	require.NotContains(t, string(srv.payload(CAPTURE_CHUNK_BUNDLE)), secret)
 }
 
+func TestCaptureGitPreservesFileToDirectoryReplacement(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, remote := initCaptureRepo(t)
+	commitFile(t, repo, home, "replaced", "old file\n", "add replaceable file")
+	gitCmd(t, home, repo, "push", "origin", "main")
+	require.NoError(t, os.Remove(filepath.Join(repo, "replaced")))
+	require.NoError(t, os.Mkdir(filepath.Join(repo, "replaced"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "replaced", "child.txt"), []byte("new child\n"), 0o600))
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{Include: []string{"replaced", "replaced/**"}})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+	bundlePath := filepath.Join(t.TempDir(), "capture.bundle")
+	require.NoError(t, os.WriteFile(bundlePath, srv.payload(CAPTURE_CHUNK_BUNDLE), 0o600))
+	clone := filepath.Join(t.TempDir(), "clone")
+	gitCmd(t, home, "", "clone", remote, clone)
+	gitCmd(t, home, clone, "fetch", bundlePath, captureWorktreeRef+":"+captureWorktreeRef)
+	gitCmd(t, home, clone, "checkout", "--detach", meta.GetWorktreeSha())
+	require.Equal(t, "new child\n", string(mustReadFile(t, filepath.Join(clone, "replaced", "child.txt"))))
+}
+
 func TestCaptureGitRemoteHeadCleanOmitsBundleDirtyRestores(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, remote := initCaptureRepo(t)

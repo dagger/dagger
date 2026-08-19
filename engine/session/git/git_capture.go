@@ -721,8 +721,14 @@ func fingerprintCapturePath(checkout, gitPath string, tracked bool) (capturedPat
 		return cp, nil, errors.New("inspect selected worktree content failed")
 	}
 	if info.IsDir() {
-		if tracked && checkoutHasGitEntry(full) {
-			return cp, nil, errors.New("capture rejected a changed submodule")
+		if tracked {
+			if checkoutHasGitEntry(full) {
+				return cp, nil, errors.New("capture rejected a changed submodule")
+			}
+			// A tracked file replaced by a directory is a deletion of the old
+			// entry plus separately enumerated untracked files beneath it.
+			cp.deleted = true
+			return cp, nil, nil
 		}
 		return cp, nil, errors.New("capture rejected a selected directory boundary")
 	}
