@@ -162,9 +162,18 @@ func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Co
 	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
 
-// WorkspaceServedSchema returns the stable served GraphQL schema for a
-// Workspace. Pending overlays are resolved only by explicit agent
-// recomposition; bound object tools retain the schema that defined them.
+// WorkspaceServedSchema returns the stable served GraphQL schema for a specific
+// Workspace. Client-local workspaces stamp their owner's metadata for host
+// routing, while runtime-backed schema operations remain authorized by the
+// caller's held ClientScope. Value workspaces have no served module snapshot
+// and therefore use the default core schema.
+//
+// Pending workspace overlays are deliberately not resolved here. An LLM's
+// bound object tools retain the schemas that defined them when the LLM was
+// composed, so ordinary tool listing and dispatch must not compile staged module
+// edits or silently adopt a new module version. Explicit Workspace.agents
+// composition is the strict boundary that resolves overlays and returns a new
+// LLM with newly bound defining schemas.
 func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*dagql.Server, error) {
 	wsCtx, err := WorkspaceServedContext(ctx, ws)
 	if err != nil {
@@ -174,24 +183,30 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 	if err != nil {
 		return nil, err
 	}
-	deps, err := query.CurrentServedDeps(wsCtx)
+	var deps *SchemaBuilder
+	if ws.Self().IsValueWorkspace() {
+		deps, err = query.DefaultDeps(wsCtx)
+	} else {
+		deps, err = query.CurrentServedDeps(wsCtx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("workspace served deps: %w", err)
 	}
 	return deps.Schema(wsCtx)
 }
 
-// WorkspaceServedContext switches ctx to the Workspace's owning client and
-// forces its served modules to load, returning the switched context. Under this
-// context the client-scoped resolvers (CurrentServedDeps, currentTypeDefs,
-// currentModule) see the workspace's OWN served schema — the same switch
-// [WorkspaceServedSchema] makes for the schema server, exposed separately so
-// callers that resolve those root fields directly (e.g. the LLM's inspect tool
-// enumerating module entrypoints) resolve them against the same workspace.
+// WorkspaceServedContext stamps client-local workspace owner metadata for host
+// routing and forces the caller's leased runtime to load its served modules.
+// It never treats owner metadata as authority to execute against another
+// runtime. Value workspaces have no owner metadata or served snapshot, so
+// their tool bindings supply module schemas captured during composition.
 func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
 	wsCtx, err := workspaceHostRoutingContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
+	}
+	if ws.Self().IsValueWorkspace() {
+		return wsCtx, nil
 	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
