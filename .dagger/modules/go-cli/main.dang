@@ -30,11 +30,14 @@ type GoCli {
       .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
       .withEnvVariable("GOCACHE", "/root/.cache/go-build")
       .withWorkdir("/workspace")
-      .withDirectory(".", ws.directory("/", gitignore: true, exclude: [".git", "tmp"]))
+      .withDirectory(".", ws.directory("/", gitignore: true, exclude: ["tmp"]))
       .withEnvVariable("CACHEBUST", UUID.v7)
     let after = before
       .withExec(["go"] + args)
       .sync
-    after.directory(".").changes(before.directory("."))
+    after
+      .directory(".")
+      .withoutDirectory(".git")
+      .changes(before.directory(".").withoutDirectory(".git"))
   }
 }
