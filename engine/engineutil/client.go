@@ -964,10 +964,9 @@ func (c *Client) CaptureGit(
 		return nil, fmt.Errorf("failed to open git capture stream: %w", err)
 	}
 
-	bundleHash, worktreeHash := sha256.New(), sha256.New()
-	var bundleBytes, worktreeBytes int64
+	bundleHash := sha256.New()
+	var bundleBytes int64
 	var metadata *git.CaptureGitMetadata
-	seenWorktree := false
 	for {
 		response, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -985,7 +984,7 @@ func (c *Client) CaptureGit(
 			if errInfo := metadata.GetError(); errInfo != nil {
 				switch errInfo.Type {
 				case git.CAPTURE_REJECTED:
-					return nil, &GitCaptureApprovalError{Message: errInfo.Message, Candidates: append([]*git.CaptureGitCandidate(nil), metadata.SuspiciousCandidates...)}
+					return nil, &GitCaptureApprovalError{Message: errInfo.Message, Candidates: append([]*git.CaptureGitCandidate(nil), metadata.ApprovalCandidates...)}
 				case git.NOT_A_REPO:
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
 				case git.NOT_FOUND:
@@ -1000,16 +999,9 @@ func (c *Client) CaptureGit(
 			}
 			chunk := msg.Chunk
 			switch chunk.GetKind() {
-			case git.CAPTURE_CHUNK_PREREQUISITE_BUNDLE:
-				if seenWorktree {
-					return nil, errors.New("received prerequisite data after worktree data")
-				}
+			case git.CAPTURE_CHUNK_BUNDLE:
 				bundleBytes += int64(len(chunk.Data))
 				_, _ = bundleHash.Write(chunk.Data)
-			case git.CAPTURE_CHUNK_WORKTREE_DELTA:
-				seenWorktree = true
-				worktreeBytes += int64(len(chunk.Data))
-				_, _ = worktreeHash.Write(chunk.Data)
 			default:
 				return nil, errors.New("received unknown git capture chunk kind")
 			}
@@ -1023,14 +1015,14 @@ func (c *Client) CaptureGit(
 	if metadata == nil {
 		return nil, errors.New("missing git capture metadata")
 	}
-	if metadata.FormatVersion != 1 || metadata.BaseSha == "" || metadata.HeadSha == "" || metadata.RemoteUrl == "" || metadata.RemoteRef == "" {
+	if metadata.FormatVersion != 2 || metadata.ObjectFormat == "" || metadata.BaseSha == "" || metadata.HeadSha == "" || metadata.RemoteUrl == "" || metadata.RemoteRef == "" {
 		return nil, errors.New("invalid git capture manifest metadata")
 	}
-	if bundleBytes != metadata.BundleBytes || hex.EncodeToString(bundleHash.Sum(nil)) != metadata.BundleSha256 {
-		return nil, errors.New("git capture prerequisite bundle digest mismatch")
+	if metadata.BundleBytes == 0 && (metadata.HeadSha != metadata.BaseSha || metadata.WorktreeSha != "") {
+		return nil, errors.New("git capture local state is missing its bundle")
 	}
-	if worktreeBytes != metadata.WorktreeBytes || hex.EncodeToString(worktreeHash.Sum(nil)) != metadata.WorktreeSha256 {
-		return nil, errors.New("git capture worktree delta digest mismatch")
+	if bundleBytes != metadata.BundleBytes || hex.EncodeToString(bundleHash.Sum(nil)) != metadata.BundleSha256 {
+		return nil, errors.New("git capture bundle digest mismatch")
 	}
 	return metadata, nil
 }

@@ -520,7 +520,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("(Internal-only) Import a validated workspace checkpoint bundle over a remote base checkout."),
 		dagql.NodeFunc("__withWorkspaceCheckpointWorktree", s.directoryWithWorkspaceCheckpointWorktree).
 			IsPersistable().
-			Doc("(Internal-only) Apply a validated workspace checkpoint worktree delta."),
+			Doc("(Internal-only) Materialize a validated synthetic checkpoint worktree commit."),
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceCheckpointChunk](srv).View(AfterVersion("v1.0.0-beta.10")))
@@ -620,16 +620,12 @@ func (s *workspaceSchema) checkpoint(
 	}
 
 	policy := &gitsession.CaptureGitPolicy{
-		IncludeUntracked:       checkpointPatterns(args.Include),
+		Include:                checkpointPatterns(args.Include),
 		Exclude:                checkpointPatterns(args.Exclude),
 		MaxUntrackedFileBytes:  checkpointOptionalInt(args.MaxUntrackedFileBytes),
 		MaxUntrackedTotalBytes: checkpointOptionalInt(args.MaxUntrackedTotalBytes),
 		MaxUntrackedFiles:      int32(checkpointOptionalInt(args.MaxUntrackedFiles)),
 		MaxTotalBytes:          256 << 20,
-	}
-	explicit := make(map[string]struct{}, len(policy.IncludeUntracked))
-	for _, included := range policy.IncludeUntracked {
-		explicit[included] = struct{}{}
 	}
 
 	var chunks []capturedCheckpointChunk
@@ -647,23 +643,19 @@ func (s *workspaceSchema) checkpoint(
 		if !errors.As(err, &approvalErr) {
 			break
 		}
+		if len(approvalErr.Candidates) == 0 {
+			return inst, fmt.Errorf("workspace checkpoint approval required without selected paths")
+		}
+		summary := checkpointApprovalSummary(approvalErr.Candidates)
+		approved, promptErr := bk.PromptBool(clientCtx, "Include workspace changes?", summary)
+		if promptErr != nil {
+			return inst, fmt.Errorf("workspace checkpoint requires approval of every selected dirty path; pass include patterns in noninteractive use: %w", promptErr)
+		}
+		if !approved {
+			return inst, fmt.Errorf("workspace checkpoint rejected selected dirty paths")
+		}
 		for _, candidate := range approvalErr.Candidates {
-			if _, ok := explicit[candidate.Path]; ok {
-				policy.ApproveSuspicious = append(policy.ApproveSuspicious, candidate.Path)
-				continue
-			}
-			approved, promptErr := bk.PromptBool(
-				clientCtx,
-				"Include suspicious workspace file?",
-				fmt.Sprintf("Include %s (%s, %d bytes) in the portable agent workspace?", candidate.Path, candidate.Classification, candidate.Bytes),
-			)
-			if promptErr != nil {
-				return inst, fmt.Errorf("workspace checkpoint found suspicious content; pass its exact path with include in noninteractive use: %w", promptErr)
-			}
-			if !approved {
-				return inst, fmt.Errorf("workspace checkpoint rejected suspicious content")
-			}
-			policy.ApproveSuspicious = append(policy.ApproveSuspicious, candidate.Path)
+			policy.ApprovePaths = append(policy.ApprovePaths, candidate.Path)
 		}
 	}
 	if err != nil {
@@ -679,15 +671,15 @@ func (s *workspaceSchema) checkpoint(
 		return inst, err
 	}
 
-	bundleChunks, worktreeChunks := checkpointChunksByKind(chunks)
+	bundleChunks := checkpointBundleChunks(chunks)
 	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx)
-	manifest := checkpointManifest(ws, metadata, bundleChunks, worktreeChunks, workspaceEnv)
-	manifest.WorktreeTree, err = checkpointWorktreeTree(clientCtx, srv, base, manifest, bundleChunks, worktreeChunks)
+	manifest := checkpointManifest(ws, metadata, bundleChunks, workspaceEnv)
+	manifest.WorktreeTree, err = checkpointWorktreeTree(clientCtx, srv, base, manifest, bundleChunks)
 	if err != nil {
 		return inst, err
 	}
 
-	chunkIDs, err := checkpointChunkIDs(clientCtx, srv, append(bundleChunks, worktreeChunks...))
+	chunkIDs, err := checkpointChunkIDs(clientCtx, srv, bundleChunks)
 	if err != nil {
 		return inst, err
 	}
@@ -732,6 +724,23 @@ func (s *workspaceSchema) checkpoint(
 	return inst, nil
 }
 
+func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) string {
+	var summary strings.Builder
+	summary.WriteString("Include all selected workspace changes in the portable agent workspace?\n")
+	for _, candidate := range candidates {
+		kind := "untracked"
+		if candidate.Tracked {
+			kind = "tracked"
+		}
+		fmt.Fprintf(&summary, "\n- %s (%s, %d bytes", candidate.Path, kind, candidate.Bytes)
+		if candidate.Classification != "" {
+			fmt.Fprintf(&summary, "; warning: %s", candidate.Classification)
+		}
+		summary.WriteString(")")
+	}
+	return summary.String()
+}
+
 func checkpointPatterns(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
 	if !arg.Valid {
 		return nil
@@ -772,24 +781,20 @@ func checkpointRemoteBase(ctx context.Context, srv *dagql.Server, metadata *gits
 	return base, nil
 }
 
-func checkpointChunksByKind(chunks []capturedCheckpointChunk) (bundle, worktree [][]byte) {
+func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {
 	const traceChunkBytes = 256 << 10
-	appendChunk := func(dst *[][]byte, data []byte) {
+	for _, chunk := range chunks {
+		if chunk.kind != gitsession.CAPTURE_CHUNK_BUNDLE {
+			continue
+		}
+		data := chunk.data
 		for len(data) > 0 {
 			n := min(len(data), traceChunkBytes)
-			*dst = append(*dst, slices.Clone(data[:n]))
+			bundle = append(bundle, slices.Clone(data[:n]))
 			data = data[n:]
 		}
 	}
-	for _, chunk := range chunks {
-		switch chunk.kind {
-		case gitsession.CAPTURE_CHUNK_PREREQUISITE_BUNDLE:
-			appendChunk(&bundle, chunk.data)
-		case gitsession.CAPTURE_CHUNK_WORKTREE_DELTA:
-			appendChunk(&worktree, chunk.data)
-		}
-	}
-	return bundle, worktree
+	return bundle
 }
 
 func checkpointPayload(parts [][]byte, size int64, hexDigest string) core.WorkspaceCheckpointPayload {
@@ -805,15 +810,16 @@ func checkpointPayload(parts [][]byte, size int64, hexDigest string) core.Worksp
 func checkpointManifest(
 	ws *core.Workspace,
 	metadata *gitsession.CaptureGitMetadata,
-	bundle, worktree [][]byte,
+	bundle [][]byte,
 	workspaceEnv string,
 ) *core.WorkspaceGitCheckpointManifest {
 	manifest := &core.WorkspaceGitCheckpointManifest{
 		Version: core.WorkspaceCheckpointFormatVersion, ObjectFormat: metadata.ObjectFormat,
 		RemoteURL: metadata.RemoteUrl, RemoteRef: metadata.RemoteRef,
 		BaseSHA: metadata.BaseSha, HeadSHA: metadata.HeadSha,
+		WorktreeSHA:          metadata.WorktreeSha,
 		Bundle:               checkpointPayload(bundle, metadata.BundleBytes, metadata.BundleSha256),
-		Worktree:             checkpointPayload(worktree, metadata.WorktreeBytes, metadata.WorktreeSha256),
+		Worktree:             checkpointPayload(nil, 0, digest.FromBytes(nil).Encoded()),
 		CapturePolicyVersion: "portable-git-v1",
 		Workspace: core.WorkspaceCheckpointWorkspace{
 			Address: "git-checkpoint://" + metadata.HeadSha, Cwd: ws.Cwd,
@@ -821,8 +827,11 @@ func checkpointManifest(
 			GitAuthorName: ws.GitAuthorName, GitAuthorEmail: ws.GitAuthorEmail,
 		},
 	}
-	if len(metadata.Commits) > 0 {
-		manifest.BundleRef = "HEAD"
+	if metadata.BundleBytes > 0 {
+		manifest.BundleRef = "refs/dagger/checkpoint/head"
+	}
+	if metadata.WorktreeSha != "" {
+		manifest.WorktreeRef = "refs/dagger/checkpoint/worktree"
 	}
 	for _, commit := range metadata.Commits {
 		manifest.Commits = append(manifest.Commits, core.WorkspaceBundledCommit{
@@ -839,7 +848,7 @@ func checkpointWorktreeTree(
 	srv *dagql.Server,
 	base dagql.ObjectResult[*core.GitRef],
 	manifest *core.WorkspaceGitCheckpointManifest,
-	bundleChunks, worktreeChunks [][]byte,
+	bundleChunks [][]byte,
 ) (string, error) {
 	var baseTree dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, base, &baseTree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
@@ -852,15 +861,16 @@ func checkpointWorktreeTree(
 	bundle := slices.Concat(bundleChunks...)
 	repo := baseTree
 	var err error
-	if len(manifest.Commits) > 0 {
-		repo, err = core.MaterializeGitCheckpointBundle(ctx, baseTree, manifest.BaseSHA, manifest.HeadSHA, manifest.ObjectFormat, manifest.BundleRef, bundle)
+	if len(bundle) > 0 {
+		repo, err = core.MaterializeGitCheckpointBundle(
+			ctx, baseTree, manifest.BaseSHA, manifest.HeadSHA, manifest.WorktreeSHA,
+			manifest.ObjectFormat, manifest.BundleRef, manifest.WorktreeRef, bundle)
 		if err != nil {
 			return "", err
 		}
 	}
-	patch := slices.Concat(worktreeChunks...)
-	if len(patch) > 0 {
-		repo, err = core.MaterializeGitWorktreePack(ctx, repo, &engineutil.GitWorktreePack{HeadSHA: manifest.HeadSHA, Patch: patch})
+	if manifest.WorktreeSHA != "" {
+		repo, err = core.MaterializeGitCheckpointWorktree(ctx, repo, manifest.HeadSHA, manifest.WorktreeSHA)
 		if err != nil {
 			return "", err
 		}
@@ -995,26 +1005,41 @@ func validateWorkspaceCheckpointManifest(manifest *core.WorkspaceGitCheckpointMa
 	if err := validObjectID("head", manifest.HeadSHA, false); err != nil {
 		return err
 	}
+	if err := validObjectID("worktree", manifest.WorktreeSHA, true); err != nil {
+		return err
+	}
 	if err := validObjectID("worktree tree", manifest.WorktreeTree, false); err != nil {
 		return err
 	}
 	if manifest.CapturePolicyVersion == "" {
 		return fmt.Errorf("workspace checkpoint capture policy version is required")
 	}
+	if manifest.Worktree.Size != 0 || len(manifest.Worktree.Chunks) != 0 {
+		return fmt.Errorf("workspace checkpoint must not contain a separate worktree payload")
+	}
+	if (manifest.WorktreeSHA == "") != (manifest.WorktreeRef == "") {
+		return fmt.Errorf("workspace checkpoint worktree SHA and ref must be set together")
+	}
+	if manifest.WorktreeRef != "" && manifest.WorktreeRef != "refs/dagger/checkpoint/worktree" {
+		return fmt.Errorf("workspace checkpoint worktree ref is invalid")
+	}
+	bundleRequired := manifest.HeadSHA != manifest.BaseSHA || manifest.WorktreeSHA != ""
+	bundlePresent := manifest.Bundle.Size > 0 || len(manifest.Bundle.Chunks) > 0 || manifest.BundleRef != ""
+	if bundleRequired != bundlePresent {
+		if bundleRequired {
+			return fmt.Errorf("workspace checkpoint local state requires one bundle")
+		}
+		return fmt.Errorf("clean remote-backed workspace checkpoint must not contain a bundle")
+	}
+	if bundlePresent && (manifest.Bundle.Size == 0 || len(manifest.Bundle.Chunks) == 0 || manifest.BundleRef != "refs/dagger/checkpoint/head") {
+		return fmt.Errorf("workspace checkpoint bundle requires the checkpoint head ref and payload")
+	}
 	if len(manifest.Commits) == 0 {
 		if manifest.HeadSHA != manifest.BaseSHA {
 			return fmt.Errorf("workspace checkpoint with no captured local commits must have identical base and head")
 		}
-		if manifest.Bundle.Size != 0 || len(manifest.Bundle.Chunks) != 0 || manifest.BundleRef != "" {
-			return fmt.Errorf("workspace checkpoint with no captured local commits must not contain a bundle")
-		}
-	} else {
-		if manifest.BundleRef == "" || manifest.Bundle.Size == 0 || len(manifest.Bundle.Chunks) == 0 {
-			return fmt.Errorf("workspace checkpoint captured local commits require a bundle and bundle ref")
-		}
-		if manifest.Commits[len(manifest.Commits)-1].SHA != manifest.HeadSHA {
-			return fmt.Errorf("workspace checkpoint final commit does not match logical HEAD")
-		}
+	} else if manifest.Commits[len(manifest.Commits)-1].SHA != manifest.HeadSHA {
+		return fmt.Errorf("workspace checkpoint final commit does not match logical HEAD")
 	}
 	for i, commit := range manifest.Commits {
 		if err := validObjectID(fmt.Sprintf("commit %d", i), commit.SHA, false); err != nil {
@@ -1067,7 +1092,8 @@ func (s *workspaceSchema) directoryWithWorkspaceCheckpointBundle(
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 	return core.MaterializeGitCheckpointBundle(
-		ctx, parent, manifest.BaseSHA, manifest.HeadSHA, manifest.ObjectFormat, manifest.BundleRef, bundle)
+		ctx, parent, manifest.BaseSHA, manifest.HeadSHA, manifest.WorktreeSHA,
+		manifest.ObjectFormat, manifest.BundleRef, manifest.WorktreeRef, bundle)
 }
 
 func (s *workspaceSchema) directoryWithWorkspaceCheckpointWorktree(
@@ -1075,14 +1101,11 @@ func (s *workspaceSchema) directoryWithWorkspaceCheckpointWorktree(
 	parent dagql.ObjectResult[*core.Directory],
 	args workspaceCheckpointDataArgs,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	manifest, _, patch, err := loadWorkspaceCheckpointData(ctx, args)
+	manifest, _, _, err := loadWorkspaceCheckpointData(ctx, args)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
-	return core.MaterializeGitWorktreePack(ctx, parent, &engineutil.GitWorktreePack{
-		HeadSHA: manifest.HeadSHA,
-		Patch:   patch,
-	})
+	return core.MaterializeGitCheckpointWorktree(ctx, parent, manifest.HeadSHA, manifest.WorktreeSHA)
 }
 
 func (s *workspaceSchema) workspaceFromGitCheckpoint(
@@ -1099,7 +1122,7 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 		return inst, fmt.Errorf("load workspace checkpoint base: %w", err)
 	}
 	checkpointData := args.checkpointData()
-	manifest, _, patch, err := loadWorkspaceCheckpointData(ctx, checkpointData)
+	manifest, _, _, err := loadWorkspaceCheckpointData(ctx, checkpointData)
 	if err != nil {
 		return inst, err
 	}
@@ -1128,7 +1151,7 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 	}
 
 	latestRepo := baseRepo
-	if len(manifest.Commits) > 0 {
+	if len(manifest.Bundle.Chunks) > 0 {
 		if err := srv.Select(ctx, baseRepo, &latestRepo, dagql.Selector{
 			Field: "__withWorkspaceCheckpointBundle",
 			Args:  checkpointDataNamedInputs(checkpointData),
@@ -1141,7 +1164,7 @@ func (s *workspaceSchema) workspaceFromGitCheckpoint(
 	}
 
 	worktreeRepo := latestRepo
-	if len(patch) > 0 {
+	if manifest.WorktreeSHA != "" {
 		if err := srv.Select(ctx, latestRepo, &worktreeRepo, dagql.Selector{
 			Field: "__withWorkspaceCheckpointWorktree",
 			Args:  checkpointDataNamedInputs(checkpointData),

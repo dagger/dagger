@@ -836,14 +836,12 @@ func TestWorkspaceMigrationDiscoveredLocalModuleConversions(t *testing.T) {
 	require.Equal(t, "src", cfg.Source)
 }
 
-func TestCheckpointManifestUsesCapturedPayloadsAndMetadata(t *testing.T) {
+func TestCheckpointManifestUsesTwoRefBundleAndMetadata(t *testing.T) {
 	bundle := [][]byte{[]byte("bundle-one"), []byte("bundle-two")}
-	worktree := [][]byte{[]byte("patch")}
 	metadata := &gitsession.CaptureGitMetadata{
-		FormatVersion: 1, ObjectFormat: "sha1", RemoteUrl: "https://example.com/repo.git", RemoteRef: "refs/heads/main",
-		BaseSha: strings.Repeat("a", 40), HeadSha: strings.Repeat("b", 40),
+		FormatVersion: 2, ObjectFormat: "sha1", RemoteUrl: "https://example.com/repo.git", RemoteRef: "refs/heads/main",
+		BaseSha: strings.Repeat("a", 40), HeadSha: strings.Repeat("b", 40), WorktreeSha: strings.Repeat("c", 40),
 		BundleBytes: 20, BundleSha256: digest.FromBytes([]byte("bundle-onebundle-two")).Encoded(),
-		WorktreeBytes: 5, WorktreeSha256: digest.FromBytes([]byte("patch")).Encoded(),
 		Commits: []*gitsession.CaptureGitCommit{{
 			Sha: strings.Repeat("b", 40), Message: "local", AuthorDate: "2026-01-02T03:04:05Z",
 			AuthorName: "A", AuthorEmail: "a@example.com", Paths: []string{"a.txt"},
@@ -851,20 +849,36 @@ func TestCheckpointManifestUsesCapturedPayloadsAndMetadata(t *testing.T) {
 	}
 	ws := &core.Workspace{Cwd: ".", ConfigFile: "dagger.toml", LockFile: ".dagger/lock.json", GitAuthorName: "A", GitAuthorEmail: "a@example.com"}
 
-	manifest := checkpointManifest(ws, metadata, bundle, worktree, "dev")
-	require.Equal(t, "HEAD", manifest.BundleRef)
+	manifest := checkpointManifest(ws, metadata, bundle, "dev")
+	require.Equal(t, "refs/dagger/checkpoint/head", manifest.BundleRef)
+	require.Equal(t, "refs/dagger/checkpoint/worktree", manifest.WorktreeRef)
+	require.Equal(t, strings.Repeat("c", 40), manifest.WorktreeSHA)
 	require.Equal(t, digest.FromBytes([]byte("bundle-onebundle-two")).String(), manifest.Bundle.Digest)
 	require.Equal(t, []core.WorkspaceCheckpointChunkDescriptor{
 		{Size: 10, Digest: digest.FromBytes(bundle[0]).String()},
 		{Size: 10, Digest: digest.FromBytes(bundle[1]).String()},
 	}, manifest.Bundle.Chunks)
-	require.Equal(t, digest.FromBytes([]byte("patch")).String(), manifest.Worktree.Digest)
+	require.Equal(t, digest.FromBytes(nil).String(), manifest.Worktree.Digest)
+	require.Empty(t, manifest.Worktree.Chunks)
 	require.Equal(t, []core.WorkspaceBundledCommit{{
 		SHA: strings.Repeat("b", 40), Message: "local", Date: "2026-01-02T03:04:05Z",
 		AuthorName: "A", AuthorEmail: "a@example.com", Paths: []string{"a.txt"},
 	}}, manifest.Commits)
 	require.Equal(t, ".dagger/lock.json", manifest.Workspace.LockFile)
 	require.Equal(t, "dev", manifest.Workspace.Environment)
+}
+
+func TestCheckpointApprovalSummaryListsCompleteDirtySet(t *testing.T) {
+	summary := checkpointApprovalSummary([]*gitsession.CaptureGitCandidate{
+		{Path: ".env", Classification: "credential-path", Bytes: 12},
+		{Path: "tracked.go", Tracked: true, Bytes: 34},
+		{Path: "safe.txt", Bytes: 56},
+	})
+	require.Equal(t, `Include all selected workspace changes in the portable agent workspace?
+
+- .env (untracked, 12 bytes; warning: credential-path)
+- tracked.go (tracked, 34 bytes)
+- safe.txt (untracked, 56 bytes)`, summary)
 }
 
 func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {

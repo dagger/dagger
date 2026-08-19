@@ -297,15 +297,106 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 	return inst, nil
 }
 
-// MaterializeGitCheckpointBundle imports a prerequisite bundle into an exact
-// remote-base checkout and moves its canonical repository to the checkpoint's
-// logical local HEAD. The bundle is permitted to omit objects reachable from
-// baseSHA, but nothing else: git bundle verify/fetch check prerequisite and
-// connectivity before the snapshot is committed.
+// MaterializeGitCheckpointWorktree checks out the synthetic snapshot commit's
+// tree without moving HEAD. S must be a direct child of L; after populating W,
+// the index is restored to L so the result is an ordinary dirty checkout.
+func MaterializeGitCheckpointWorktree(ctx context.Context, tree dagql.ObjectResult[*Directory], headSHA, worktreeSHA string) (inst dagql.ObjectResult[*Directory], rerr error) {
+	if headSHA == "" || worktreeSHA == "" {
+		return inst, fmt.Errorf("workspace checkpoint worktree requires head and snapshot SHAs")
+	}
+	srv := dagql.CurrentDagqlServer(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	parent, err := tree.Self().Snapshot.PeekOrEval(ctx, tree.Result)
+	if err != nil {
+		return inst, fmt.Errorf("get checkpoint HEAD snapshot: %w", err)
+	}
+	treePath, err := tree.Self().Dir.PeekOrEval(ctx, tree.Result)
+	if err != nil {
+		return inst, fmt.Errorf("get checkpoint HEAD path: %w", err)
+	}
+	bkref, err := query.SnapshotManager().New(ctx, parent,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("workspace checkpoint synthetic worktree"))
+	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
+		worktree, err := fs.RootPath(root, treePath)
+		if err != nil {
+			return err
+		}
+		actualHead, err := runGitEnv(ctx, worktree, nil, "rev-parse", "--verify", "HEAD^{commit}")
+		if err != nil || strings.TrimSpace(actualHead) != headSHA {
+			return fmt.Errorf("checkpoint checkout HEAD does not match %s", headSHA)
+		}
+		parents, err := runGitEnv(ctx, worktree, nil, "rev-list", "--parents", "-n", "1", worktreeSHA)
+		if err != nil {
+			return fmt.Errorf("inspect checkpoint worktree commit: %w", err)
+		}
+		fields := strings.Fields(parents)
+		if len(fields) != 2 || fields[0] != worktreeSHA || fields[1] != headSHA {
+			return fmt.Errorf("checkpoint worktree commit %s is not a direct child of HEAD %s", worktreeSHA, headSHA)
+		}
+		indexPath := filepath.Join(worktree, ".git", "index")
+		index, err := os.ReadFile(indexPath)
+		if err != nil {
+			return fmt.Errorf("read checkpoint HEAD index: %w", err)
+		}
+		indexInfo, err := os.Stat(indexPath)
+		if err != nil {
+			return fmt.Errorf("inspect checkpoint HEAD index: %w", err)
+		}
+		if _, err := runGitEnv(ctx, worktree, nil, "read-tree", "--reset", "-u", worktreeSHA); err != nil {
+			return fmt.Errorf("check out checkpoint worktree tree: %w", err)
+		}
+		if err := os.WriteFile(indexPath, index, indexInfo.Mode().Perm()); err != nil {
+			return fmt.Errorf("restore checkpoint HEAD index: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return inst, err
+	}
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bkref = nil
+	dir := &Directory{
+		Platform: query.Platform(),
+		Services: slices.Clone(tree.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue(treePath)
+	dir.Snapshot.setValue(snap)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		_ = dir.OnRelease(context.WithoutCancel(ctx))
+		return inst, err
+	}
+	return inst, nil
+}
+
+// MaterializeGitCheckpointBundle imports a two-ref checkpoint bundle into an
+// exact remote-base checkout and moves its canonical repository to the
+// checkpoint's logical local HEAD. The optional synthetic worktree commit is
+// imported but never installed as HEAD. The bundle may omit objects reachable
+// from baseSHA, but nothing else: git bundle verify/fetch check prerequisite
+// and connectivity before the snapshot is committed.
 func MaterializeGitCheckpointBundle(
 	ctx context.Context,
 	base dagql.ObjectResult[*Directory],
-	baseSHA, headSHA, objectFormat, bundleRef string,
+	baseSHA, headSHA, worktreeSHA, objectFormat, bundleRef, worktreeBundleRef string,
 	bundle []byte,
 ) (inst dagql.ObjectResult[*Directory], rerr error) {
 	if baseSHA == "" || headSHA == "" {
@@ -316,6 +407,9 @@ func MaterializeGitCheckpointBundle(
 	}
 	if bundleRef == "" {
 		return inst, fmt.Errorf("workspace checkpoint bundle ref is required")
+	}
+	if (worktreeSHA == "") != (worktreeBundleRef == "") {
+		return inst, fmt.Errorf("workspace checkpoint worktree SHA and ref must be set together")
 	}
 
 	srv := dagql.CurrentDagqlServer(ctx)
@@ -362,9 +456,13 @@ func MaterializeGitCheckpointBundle(
 		if strings.TrimSpace(actualFormat) != objectFormat {
 			return fmt.Errorf("remote checkpoint object format is %s, expected %s", strings.TrimSpace(actualFormat), objectFormat)
 		}
-		if bundleRef != "HEAD" {
-			if _, err := runGitEnv(ctx, worktree, nil, "check-ref-format", bundleRef); err != nil {
-				return fmt.Errorf("invalid checkpoint bundle ref %q: %w", bundleRef, err)
+		refs := []struct{ label, ref string }{{"head", bundleRef}, {"worktree", worktreeBundleRef}}
+		for _, named := range refs {
+			if named.ref == "" || named.ref == "HEAD" {
+				continue
+			}
+			if _, err := runGitEnv(ctx, worktree, nil, "check-ref-format", named.ref); err != nil {
+				return fmt.Errorf("invalid checkpoint bundle %s ref %q: %w", named.label, named.ref, err)
 			}
 		}
 
@@ -384,20 +482,36 @@ func MaterializeGitCheckpointBundle(
 		if err := verifyGitBundleInRepo(ctx, worktree, bundlePath); err != nil {
 			return fmt.Errorf("verify checkpoint bundle: %w", err)
 		}
-		heads, err := runGitEnv(ctx, worktree, nil, "bundle", "list-heads", bundlePath, bundleRef)
-		if err != nil {
-			return fmt.Errorf("list checkpoint bundle heads: %w", err)
+		expectedRefs := []struct {
+			bundle string
+			sha    string
+			local  string
+		}{{bundleRef, headSHA, "refs/dagger/checkpoint/imported-head"}}
+		if worktreeSHA != "" {
+			expectedRefs = append(expectedRefs, struct {
+				bundle string
+				sha    string
+				local  string
+			}{worktreeBundleRef, worktreeSHA, "refs/dagger/checkpoint/imported-worktree"})
 		}
-		fields := strings.Fields(strings.TrimSpace(heads))
-		if len(fields) != 2 || fields[0] != headSHA || fields[1] != bundleRef {
-			return fmt.Errorf("checkpoint bundle ref %s does not resolve to logical HEAD %s", bundleRef, headSHA)
+		refspecs := make([]string, 0, len(expectedRefs))
+		for _, expected := range expectedRefs {
+			heads, err := runGitEnv(ctx, worktree, nil, "bundle", "list-heads", bundlePath, expected.bundle)
+			if err != nil {
+				return fmt.Errorf("list checkpoint bundle heads: %w", err)
+			}
+			fields := strings.Fields(strings.TrimSpace(heads))
+			if len(fields) != 2 || fields[0] != expected.sha || fields[1] != expected.bundle {
+				return fmt.Errorf("checkpoint bundle ref %s does not resolve to %s", expected.bundle, expected.sha)
+			}
+			refspecs = append(refspecs, "+"+expected.bundle+":"+expected.local)
 		}
-
-		const importedRef = "refs/dagger/checkpoint/imported"
-		if err := fetchGitBundleRefspecs(ctx, worktree, bundlePath, []string{"+" + bundleRef + ":" + importedRef}); err != nil {
+		if err := fetchGitBundleRefspecs(ctx, worktree, bundlePath, refspecs); err != nil {
 			return fmt.Errorf("import checkpoint bundle: %w", err)
 		}
-		defer runGitEnv(context.WithoutCancel(ctx), worktree, nil, "update-ref", "-d", importedRef) //nolint:errcheck
+		for _, expected := range expectedRefs {
+			defer runGitEnv(context.WithoutCancel(ctx), worktree, nil, "update-ref", "-d", expected.local) //nolint:errcheck
+		}
 		if _, err := runGitEnv(ctx, worktree, nil, "merge-base", "--is-ancestor", baseSHA, headSHA); err != nil {
 			return fmt.Errorf("checkpoint logical HEAD %s does not descend from base %s: %w", headSHA, baseSHA, err)
 		}
@@ -407,8 +521,10 @@ func MaterializeGitCheckpointBundle(
 		if _, err := runGitEnv(ctx, worktree, nil, "reset", "--hard", "--quiet", headSHA); err != nil {
 			return fmt.Errorf("check out checkpoint HEAD: %w", err)
 		}
-		if _, err := runGitEnv(ctx, worktree, nil, "update-ref", "-d", importedRef); err != nil {
-			return fmt.Errorf("remove checkpoint import ref: %w", err)
+		for _, expected := range expectedRefs {
+			if _, err := runGitEnv(ctx, worktree, nil, "update-ref", "-d", expected.local); err != nil {
+				return fmt.Errorf("remove checkpoint import ref: %w", err)
+			}
 		}
 		if _, err := runGitEnv(ctx, worktree, nil, "pack-refs", "--all"); err != nil {
 			return fmt.Errorf("normalize checkpoint refs: %w", err)
