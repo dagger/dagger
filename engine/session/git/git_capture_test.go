@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
@@ -129,6 +130,44 @@ func TestCaptureGitBuildsTwoRefBundleFromTemporaryObjects(t *testing.T) {
 	require.Error(t, gitErr(home, repo, "cat-file", "-e", worktreeBlob+"^{blob}"))
 	gitCmd(t, home, repo, "diff", "--cached", "--quiet")
 	require.Empty(t, gitCmd(t, home, repo, "for-each-ref", "--format=%(refname)", "refs/dagger/checkpoint"))
+}
+
+func TestCaptureGitVerifiesThinPackWithoutCountingPrerequisiteDeltaBases(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, _ := initCaptureRepo(t)
+
+	baseContent := strings.Repeat("a long line whose prior version is an efficient delta base\n", 4096)
+	commitFile(t, repo, home, "history.txt", baseContent, "add history")
+	gitCmd(t, home, repo, "push", "origin", "main")
+
+	localContent := strings.Replace(baseContent, "prior version", "local version", 1)
+	commitFile(t, repo, home, "history.txt", localContent, "edit history locally")
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+	require.Len(t, meta.GetCommits(), 1)
+	bundle := srv.payload(CAPTURE_CHUNK_BUNDLE)
+	require.NotEmpty(t, bundle)
+
+	packOffset := bytes.Index(bundle, []byte("\n\n")) + 2
+	require.GreaterOrEqual(t, len(bundle)-packOffset, 12)
+	incomingCount := binary.BigEndian.Uint32(bundle[packOffset+8 : packOffset+12])
+	repairRepo := t.TempDir()
+	gitCmd(t, home, repairRepo, "init", "--bare")
+	sourceObjects := gitCmd(t, home, repo, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	_, err := runHostGitBytes(context.Background(), repairRepo,
+		[]string{"GIT_ALTERNATE_OBJECT_DIRECTORIES=" + sourceObjects},
+		bytes.NewReader(bundle[packOffset:]), "index-pack", "--stdin", "--fix-thin")
+	require.NoError(t, err)
+	packs, err := filepath.Glob(filepath.Join(repairRepo, "objects", "pack", "*.pack"))
+	require.NoError(t, err)
+	require.Len(t, packs, 1)
+	repairedPack := mustReadFile(t, packs[0])
+	require.GreaterOrEqual(t, len(repairedPack), 12)
+	repairedCount := binary.BigEndian.Uint32(repairedPack[8:12])
+	require.Greater(t, repairedCount, incomingCount,
+		"fixture must force Git to append at least one prerequisite delta base")
 }
 
 func TestCaptureGitStagesApprovedBytesWithoutCleanFilters(t *testing.T) {
