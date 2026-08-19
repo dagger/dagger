@@ -776,15 +776,11 @@ func buildCaptureBundle(ctx context.Context, checkout, tmpDir, objectFormat, bas
 	if _, err := runHostGitBytes(ctx, checkout, stageEnv, nil, "read-tree", head); err != nil {
 		return "", errors.New("initialize worktree staging index failed")
 	}
-	var remove, add bytes.Buffer
+	var remove bytes.Buffer
 	for _, p := range paths {
 		if p.tracked {
 			remove.WriteString(p.path)
 			remove.WriteByte(0)
-		}
-		if !p.deleted {
-			add.WriteString(p.path)
-			add.WriteByte(0)
 		}
 	}
 	if remove.Len() > 0 {
@@ -792,8 +788,28 @@ func buildCaptureBundle(ctx context.Context, checkout, tmpDir, objectFormat, bas
 			return "", errors.New("stage tracked worktree selection failed")
 		}
 	}
-	if add.Len() > 0 {
-		if _, err := runHostGitBytes(ctx, checkout, stageEnv, &add, "update-index", "--add", "--replace", "-z", "--stdin"); err != nil {
+	for _, expected := range paths {
+		if expected.deleted {
+			continue
+		}
+		got, data, err := fingerprintCapturePath(checkout, expected.path, expected.tracked)
+		if err != nil || got.deleted != expected.deleted || got.mode != expected.mode || got.size != expected.size || got.digest != expected.digest {
+			return "", errors.New("selected worktree content changed during capture; retry")
+		}
+		blobOut, err := runHostGitBytes(ctx, checkout, stageEnv, bytes.NewReader(data),
+			"hash-object", "--no-filters", "-w", "--stdin")
+		if err != nil {
+			return "", errors.New("write selected worktree content failed")
+		}
+		mode := "100644"
+		switch {
+		case got.mode&os.ModeSymlink != 0:
+			mode = "120000"
+		case got.mode.Perm()&0o111 != 0:
+			mode = "100755"
+		}
+		if _, err := runHostGitBytes(ctx, checkout, stageEnv, nil,
+			"update-index", "--add", "--replace", "--cacheinfo", mode, strings.TrimSpace(string(blobOut)), expected.path); err != nil {
 			return "", errors.New("stage selected worktree content failed")
 		}
 	}
