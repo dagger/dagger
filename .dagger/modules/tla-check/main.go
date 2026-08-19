@@ -1,11 +1,11 @@
-// TLA+ model checking for the dagql cache specs (dagql/tla).
+// TLA+ model checking for the dagql cache spec (dagql/tla).
 //
-// Runs every TLC configuration of CacheLifecycle.tla, single-tier. Green
-// configurations are regression gates: any violation fails the check. Red
-// configurations are self-verifying reproduction artifacts: each must
-// violate exactly its designated invariant — coming up green, or violating
-// a different invariant, fails the check, because either means the model
-// or a configuration drifted from the bug or finding it reproduces.
+// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
+// are regression gates: any violation fails the check. Red configurations
+// reproduce known deficiencies in the current code: each must violate
+// exactly its designated invariant — coming up clean, or violating a
+// different invariant, fails the check, because either means the model or
+// a configuration drifted from the deficiency it reproduces.
 package main
 
 import (
@@ -30,32 +30,30 @@ const (
 // "" means the run must complete with no error found; a non-empty value
 // names the one invariant that must be violated.
 var expectedOutcome = map[string]string{
-	// green: regression gates
-	"fixed":           "",
-	"asis":            "",
-	"liveness":        "",
-	"lazy_asis":       "",
-	"lazy_liveness":   "",
-	"persist_asis":    "",
+	// green: regression gates over the modeled cache behavior
+	"core":             "",
+	"release_prune":    "",
+	"liveness":         "",
+	"lazy":             "",
+	"lazy_liveness":    "",
+	"persist":          "",
 	"persist_liveness": "",
-	"flush_roundtrip": "",
-	// red: seeded/known bugs
-	"bug_canonical":   "NoResurrection",
-	"bug_persistable": "PersistableHonored",
-	"bug_once_gap":    "ReturnedOwned",
-	"bug_lost_cancel": "NoLostCancels",
-	// red: mechanism-removal checks
-	"no_barrier":           "NoHalfAttachedRead",
-	"lazy_no_singleflight": "LazyMutualExclusion",
-	// red: findings (ledger IDs F1-F6)
-	"release_inflight":          "ReturnedLive",
-	"orphan_edges":              "NoOrphanEdgesAtQuiescence",
-	"finding_rollback":          "OwnershipExact",
-	"finding_rollback_decode":   "OwnershipExact",
-	"finding_poisoned":          "NoRetainedPoisonedEntry",
-	"finding_poisoned_restart":  "NoLaunderedServe",
-	"finding_lazy_stale_cancel": "NoStaleCancelError",
-	"finding_flush_inflight":    "FlushCleanCapture",
+	"flush_roundtrip":  "",
+	// red: reproductions of known deficiencies in the current code; each
+	// config's comment describes the scenario and the mechanism
+	"lost_cancel":       "NoLostCancels",
+	"release_inflight":  "ReturnedLive",
+	"orphan_edges":      "NoOrphanEdgesAtQuiescence",
+	"release_steal":     "NoUnderflow",
+	"drain_escape":      "ReturnedLive",
+	"drain_orphan":      "NoOrphanEdgesAtQuiescence",
+	"rollback":          "OwnershipExact",
+	"rollback_decode":   "OwnershipExact",
+	"poisoned":          "NoRetainedPoisonedEntry",
+	"poisoned_restart":  "NoLaunderedServe",
+	"lazy_stale_cancel": "NoStaleCancelError",
+	"flush_inflight":    "FlushCleanCapture",
+	"flush_drained":     "FlushCleanCapture",
 }
 
 type TlaCheck struct {
@@ -113,7 +111,7 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	if len(failures) > 0 {
 		sort.Strings(failures)
 		return fmt.Errorf(
-			"TLA+ cache model check failed (%d of %d configurations):\n%s\n\nSee dagql/tla/README.md ('When this check fails') for what each outcome means and how to reproduce locally.",
+			"TLA+ cache model check failed (%d of %d configurations):\n%s\n\nEach configuration's comment in dagql/tla/ describes its scenario and expected outcome.",
 			len(failures), len(names), strings.Join(failures, "\n"))
 	}
 	return nil
