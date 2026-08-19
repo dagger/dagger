@@ -403,6 +403,29 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with an existing generated client claimed by an installed SDK.
+     */
+    public function withClaimedClient(string $sdk, string $path, string $module): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClaimedClient');
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('module', $module);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with an existing module claimed by an installed SDK.
+     */
+    public function withClaimedModule(string $sdk, string $path): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClaimedModule');
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a named config environment created.
      */
     public function withConfigEnv(string $name, ?bool $here = false): Workspace
@@ -605,6 +628,28 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     public function withWorkdir(string $path): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkdir');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a generated client no longer claimed by an installed SDK.
+     */
+    public function withoutClaimedClient(string $sdk, string $path): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutClaimedClient');
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a module no longer claimed by an installed SDK.
+     */
+    public function withoutClaimedModule(string $sdk, string $path): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutClaimedModule');
+        $innerQueryBuilder->setArgument('sdk', $sdk);
         $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

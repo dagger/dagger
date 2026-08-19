@@ -48,38 +48,6 @@ func detectWorkspaceSDKCapabilities(
 	return coresdk.HasInitializer(mod.Self()), nil
 }
 
-// resolvedWorkspaceSDKName derives a concise SDK command name and makes it
-// unique across installed SDK aliases and module-entry names.
-func resolvedWorkspaceSDKName(cfg *workspace.Config, moduleName string) string {
-	base := workspace.ConventionalSDKName(moduleName)
-	reserved := map[string]bool{}
-	if cfg != nil {
-		for installedName, entry := range cfg.Modules {
-			if installedName == moduleName || entry.AsSDK == nil {
-				continue
-			}
-			reserved[installedName] = true
-			name := entry.AsSDK.Name
-			if name == "" {
-				name = installedName
-			}
-			reserved[name] = true
-		}
-	}
-	if !reserved[base] {
-		return base
-	}
-	if !reserved[moduleName] {
-		return moduleName
-	}
-	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s-%d", base, i)
-		if !reserved[candidate] {
-			return candidate
-		}
-	}
-}
-
 func planWorkspaceInstallConfig(
 	cfg *workspace.Config,
 	args workspaceInstallArgs,
@@ -107,6 +75,9 @@ func planWorkspaceInstallConfig(
 			if args.AsSdkName != "" {
 				existing.AsSDK.Name = args.AsSdkName
 			}
+			if err := validateWorkspaceSDKEntry(cfg, name, existing); err != nil {
+				return plan, err
+			}
 			cfg.Modules[name] = existing
 			plan.Changed = true
 			return plan, nil
@@ -119,17 +90,34 @@ func planWorkspaceInstallConfig(
 				args.AsSdkName,
 			)
 		}
+		if args.AsSdk {
+			if err := workspace.ValidateSDKNames(cfg); err != nil {
+				return plan, err
+			}
+		}
 		return plan, nil
 	}
 
 	entry := workspace.ModuleEntry{Source: sourcePath}
 	if args.AsSdk {
 		entry.AsSDK = &workspace.ModuleAsSDK{Name: args.AsSdkName}
+		if err := validateWorkspaceSDKEntry(cfg, name, entry); err != nil {
+			return plan, err
+		}
 	}
 	cfg.Modules[name] = entry
 	plan.Changed = true
 	plan.Added = true
 	return plan, nil
+}
+
+func validateWorkspaceSDKEntry(cfg *workspace.Config, name string, entry workspace.ModuleEntry) error {
+	candidate := &workspace.Config{Modules: make(map[string]workspace.ModuleEntry, len(cfg.Modules)+1)}
+	for moduleName, existing := range cfg.Modules {
+		candidate.Modules[moduleName] = existing
+	}
+	candidate.Modules[name] = entry
+	return workspace.ValidateSDKNames(candidate)
 }
 
 // planWorkspaceEnvInstallConfig stages an install scoped to a workspace env:

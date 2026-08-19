@@ -17,7 +17,7 @@ import (
 // workspace filesystem for legacy dagger.json files.
 type CurrentModuleAsSDK struct {
 	// Name is the user-facing SDK name (the as-sdk `name`, falling back to the
-	// workspace install entry name).
+	// conventional name derived from the workspace install entry name).
 	Name string `field:"true" doc:"The user-facing name of this SDK in the workspace."`
 
 	// Modules lists the workspace-local modules this SDK authors and manages.

@@ -276,6 +276,4 @@ source = "github.com/acme/custom-sdk"
 	require.Equal(t, "sdk-name: go\nmodule-name: dagger-go-sdk\nmodule-source: github.com/dagger/go-sdk\nclaimed-modules: 0\n", out)
 }
 
-// Conventional SDK short-name derivation is now in core/workspace as
-// ConventionalSDKShortName (shared with the engine's migration code). Tests
-// for it live there.
+// Conventional SDK name derivation is shared with the engine in core/workspace.

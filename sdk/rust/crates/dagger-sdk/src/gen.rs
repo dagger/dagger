@@ -15237,7 +15237,7 @@ pub struct WorkspaceWithNewFileOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithSdkOpts<'a> {
-    /// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    /// Optional override for the SDK name conventionally derived from the installed module name.
     #[builder(setter(into, strip_option), default)]
     pub as_sdk_name: Option<&'a str>,
     /// Write to the workspace config directory at the workspace cwd.
@@ -15885,6 +15885,49 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with an existing generated client claimed by an installed SDK.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - Workspace SDK name or module entry name to claim the client with.
+    /// * `path` - Path of the existing client, relative to the workspace cwd.
+    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    pub fn with_claimed_client(
+        &self,
+        sdk: impl Into<String>,
+        path: impl Into<String>,
+        module: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withClaimedClient");
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("path", path.into());
+        query = query.arg("module", module.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with an existing module claimed by an installed SDK.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - Workspace SDK name or module entry name to claim the module with.
+    /// * `path` - Path of the existing module, relative to the workspace cwd.
+    pub fn with_claimed_module(
+        &self,
+        sdk: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withClaimedModule");
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a named config environment created.
     ///
     /// # Arguments
@@ -16307,6 +16350,46 @@ impl Workspace {
     /// * `path` - Workspace-relative path to use as the working directory.
     pub fn with_workdir(&self, path: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withWorkdir");
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a generated client no longer claimed by an installed SDK.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - Workspace SDK name or module entry name currently claiming the client.
+    /// * `path` - Path of the claimed client, relative to the workspace cwd.
+    pub fn without_claimed_client(
+        &self,
+        sdk: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutClaimedClient");
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a module no longer claimed by an installed SDK.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - Workspace SDK name or module entry name currently claiming the module.
+    /// * `path` - Path of the claimed module, relative to the workspace cwd.
+    pub fn without_claimed_module(
+        &self,
+        sdk: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutClaimedModule");
+        query = query.arg("sdk", sdk.into());
         query = query.arg("path", path.into());
         Workspace {
             proc: self.proc.clone(),

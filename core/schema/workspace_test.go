@@ -966,30 +966,25 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 	})
 }
 
-func TestResolvedWorkspaceSDKName(t *testing.T) {
+func TestPlanWorkspaceInstallConfigSDKNames(t *testing.T) {
 	t.Parallel()
 
 	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 		"dagger-go-sdk": {
 			Source: "github.com/dagger/go-sdk",
-			AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
-		},
-		"typescript-sdk": {
-			Source: "github.com/dagger/typescript-sdk",
 			AsSDK:  &workspace.ModuleAsSDK{},
 		},
 	}}
 
-	require.Equal(t, "python", resolvedWorkspaceSDKName(cfg, "dagger-python-sdk"))
-	require.Equal(t, "dagger-go", resolvedWorkspaceSDKName(cfg, "dagger-go"))
-	require.Equal(t, "typescript", resolvedWorkspaceSDKName(cfg, "dagger-typescript-sdk"))
-	require.Equal(t, "help", resolvedWorkspaceSDKName(cfg, "help"))
+	_, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{AsSdk: true}, "go-sdk", "github.com/acme/go-sdk")
+	require.EqualError(t, err, `SDK name "go" is ambiguous: modules.dagger-go-sdk.as-sdk and modules.go-sdk.as-sdk both resolve it; set a unique as-sdk.name`)
+	require.NotContains(t, cfg.Modules, "go-sdk")
 
-	cfg.Modules["custom-sdk"] = workspace.ModuleEntry{
-		Source: "github.com/acme/custom-sdk",
-		AsSDK:  &workspace.ModuleAsSDK{Name: "dagger-go"},
-	}
-	require.Equal(t, "go-2", resolvedWorkspaceSDKName(cfg, "dagger-go"))
+	plan, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{AsSdk: true, AsSdkName: "custom-go"}, "go-sdk", "github.com/acme/go-sdk")
+	require.NoError(t, err)
+	require.True(t, plan.Changed)
+	require.True(t, plan.Added)
+	require.Equal(t, "custom-go", cfg.Modules["go-sdk"].AsSDK.Name)
 }
 
 func TestClaimedSDKOwners(t *testing.T) {

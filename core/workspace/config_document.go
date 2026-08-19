@@ -16,6 +16,9 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if cfg == nil {
 		cfg = &Config{}
 	}
+	if err := ValidateSDKNames(cfg); err != nil {
+		return nil, err
+	}
 
 	if len(existingData) == 0 {
 		return SerializeConfig(cfg), nil

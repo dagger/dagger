@@ -16,12 +16,12 @@ func TestInstalledSDKSource(t *testing.T) {
 			"go-sdk": {
 				Source: "github.com/dagger/go-sdk",
 				Pin:    "sha256:abc",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
 			"typescript-sdk": {
 				Source: "github.com/dagger/typescript-sdk@v1.2.3",
 				Pin:    "sha256:ignored",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "typescript"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
 			"plain": {
 				Source: "github.com/dagger/plain",
@@ -59,20 +59,20 @@ func TestInstalledSDKSourceAmbiguousAlias(t *testing.T) {
 
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{
-			"go-sdk": {
+			"dagger-go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
-			"custom-go-sdk": {
+			"go-sdk": {
 				Source: "github.com/acme/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
 		},
 	}
 
 	_, _, source, err := installedSDKSource(cfg, "go")
 	require.ErrorContains(t, err, `SDK name "go" is ambiguous`)
-	require.ErrorContains(t, err, "modules.custom-go-sdk.as-sdk")
+	require.ErrorContains(t, err, "modules.dagger-go-sdk.as-sdk")
 	require.ErrorContains(t, err, "modules.go-sdk.as-sdk")
 	require.Empty(t, source)
 }

@@ -273,8 +273,8 @@ func (s *workspaceSchema) withModuleInstall(
 	}
 	if !args.AsSdk {
 		if existing, ok := staged.Config.Modules[resolved.Name]; ok && existing.AsSDK != nil {
-			// A reinstall must preserve its established command name, including an
-			// intentionally empty name that falls back to the module entry name.
+			// A reinstall must preserve its explicit command-name override. An empty
+			// name continues to use the convention derived from the module entry name.
 			args.AsSdk = true
 			args.AsSdkName = existing.AsSDK.Name
 		} else {
@@ -284,7 +284,6 @@ func (s *workspaceSchema) withModuleInstall(
 			}
 			if isSDK {
 				args.AsSdk = true
-				args.AsSdkName = resolvedWorkspaceSDKName(staged.Config, resolved.Name)
 			}
 		}
 	}
@@ -355,6 +354,9 @@ func (s *workspaceSchema) withoutModule(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+		if entry, installed := staged.Config.Modules[args.Name]; installed && entry.AsSDK != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; uninstall SDKs in the base workspace config")
+		}
 		return s.withoutEnvModule(ctx, parent, staged, envName, args.Name)
 	}
 	entry, ok := staged.Config.Modules[args.Name]

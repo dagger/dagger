@@ -503,6 +503,41 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with an existing generated client claimed by an installed SDK.
+  """
+  @spec with_claimed_client(t(), String.t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def with_claimed_client(%__MODULE__{} = workspace, sdk, path, module) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withClaimedClient")
+      |> QB.put_arg("sdk", sdk)
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("module", module)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with an existing module claimed by an installed SDK.
+  """
+  @spec with_claimed_module(t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def with_claimed_module(%__MODULE__{} = workspace, sdk, path) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withClaimedModule")
+      |> QB.put_arg("sdk", sdk)
+      |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a named config environment created.
   """
   @spec with_config_env(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
@@ -741,6 +776,40 @@ defmodule Dagger.Workspace do
   def with_workdir(%__MODULE__{} = workspace, path) do
     query_builder =
       workspace.query_builder |> QB.select("withWorkdir") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a generated client no longer claimed by an installed SDK.
+  """
+  @spec without_claimed_client(t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def without_claimed_client(%__MODULE__{} = workspace, sdk, path) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withoutClaimedClient")
+      |> QB.put_arg("sdk", sdk)
+      |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a module no longer claimed by an installed SDK.
+  """
+  @spec without_claimed_module(t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def without_claimed_module(%__MODULE__{} = workspace, sdk, path) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withoutClaimedModule")
+      |> QB.put_arg("sdk", sdk)
+      |> QB.put_arg("path", path)
 
     %Dagger.Workspace{
       query_builder: query_builder,

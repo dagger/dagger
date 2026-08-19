@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -170,12 +169,8 @@ func (s *workspaceSchema) workspaceSDK(
 }
 
 func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
-	name := entry.AsSDK.Name
-	if name == "" {
-		name = moduleName
-	}
 	sdk := &core.WorkspaceSDK{
-		Name: name,
+		Name: workspace.EffectiveSDKName(moduleName, entry),
 		Ref:  resolvedModuleEntrySourceWithPin(configDir, entry),
 	}
 	for _, mod := range entry.AsSDK.Modules {
@@ -214,27 +209,19 @@ func installedSDKSource(cfg *workspace.Config, name string) (string, workspace.M
 	if cfg == nil || cfg.Modules == nil {
 		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
 	}
+	if err := workspace.ValidateSDKNames(cfg); err != nil {
+		return "", workspace.ModuleEntry{}, "", err
+	}
 	if entry, ok := cfg.Modules[name]; ok && entry.AsSDK != nil {
 		return installedSDKSourceForModule(name, entry)
 	}
 
-	var matches []string
 	for moduleName, entry := range cfg.Modules {
-		if entry.AsSDK == nil || entry.AsSDK.Name != name {
-			continue
+		if entry.AsSDK != nil && workspace.EffectiveSDKName(moduleName, entry) == name {
+			return installedSDKSourceForModule(moduleName, entry)
 		}
-		matches = append(matches, moduleName)
 	}
-	sort.Strings(matches)
-	switch len(matches) {
-	case 0:
-		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
-	case 1:
-		entry := cfg.Modules[matches[0]]
-		return installedSDKSourceForModule(matches[0], entry)
-	default:
-		return "", workspace.ModuleEntry{}, "", fmt.Errorf("SDK name %q is ambiguous: matches modules.%s.as-sdk; choose a unique as-sdk.name", name, strings.Join(matches, ".as-sdk, modules."))
-	}
+	return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
 }
 
 func installedSDKSourceForModule(moduleName string, entry workspace.ModuleEntry) (string, workspace.ModuleEntry, string, error) {

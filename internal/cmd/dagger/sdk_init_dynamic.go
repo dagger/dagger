@@ -43,17 +43,17 @@ func registerInstalledSDKCommands(ctx context.Context, args []string) error {
 		return err
 	}
 	selectedName, selectedInvocation := sdkInvocationSDKName(args)
-	selected, resolveErr := resolveConfiguredSDK(cfg, selectedName)
+	selected, selectedOK := lookupConfiguredSDK(cfg, selectedName)
 	var parent *cobra.Command
 	for _, sdk := range sdks {
 		cmd := newInstalledSDKCommand(sdk)
 		sdkCmd.AddCommand(cmd)
-		if resolveErr == nil && sdk.moduleName == selected.moduleName {
+		if selectedOK && sdk.moduleName == selected.moduleName {
 			parent = cmd
 		}
 	}
 
-	if !selectedInvocation || resolveErr != nil {
+	if !selectedInvocation || !selectedOK {
 		return nil
 	}
 	if !sdkInvocationNeedsInit(args) {
@@ -73,6 +73,11 @@ func registerInstalledSDKCommands(ctx context.Context, args []string) error {
 	})
 }
 
+func lookupConfiguredSDK(cfg *workspace.Config, name string) (configuredSDK, bool) {
+	sdk, err := resolveConfiguredSDK(cfg, name)
+	return sdk, err == nil
+}
+
 type configuredSDK struct {
 	moduleName  string
 	commandName string
@@ -80,27 +85,22 @@ type configuredSDK struct {
 }
 
 func sdkCommandName(moduleName string, entry workspace.ModuleEntry) string {
-	if entry.AsSDK != nil && entry.AsSDK.Name != "" {
-		return entry.AsSDK.Name
-	}
-	return moduleName
+	return workspace.EffectiveSDKName(moduleName, entry)
 }
 
 func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
 	if cfg == nil || cfg.Modules == nil {
 		return nil, nil
 	}
+	if err := workspace.ValidateSDKNames(cfg); err != nil {
+		return nil, err
+	}
 	sdks := make([]configuredSDK, 0, len(cfg.Modules))
-	seen := map[string]string{}
 	for moduleName, entry := range cfg.Modules {
 		if entry.AsSDK == nil {
 			continue
 		}
 		commandName := sdkCommandName(moduleName, entry)
-		if existing, ok := seen[commandName]; ok {
-			return nil, fmt.Errorf("SDK command name %q is ambiguous: modules.%s.as-sdk and modules.%s.as-sdk both use it", commandName, existing, moduleName)
-		}
-		seen[commandName] = moduleName
 		sdks = append(sdks, configuredSDK{
 			moduleName:  moduleName,
 			commandName: commandName,
@@ -120,6 +120,9 @@ func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK,
 	if cfg == nil || cfg.Modules == nil {
 		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
 	}
+	if err := workspace.ValidateSDKNames(cfg); err != nil {
+		return configuredSDK{}, err
+	}
 	if entry, ok := cfg.Modules[sdkName]; ok && entry.AsSDK != nil {
 		return configuredSDK{
 			moduleName:  sdkName,
@@ -128,30 +131,16 @@ func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK,
 		}, nil
 	}
 
-	var matches []configuredSDK
 	for moduleName, entry := range cfg.Modules {
-		if entry.AsSDK == nil || entry.AsSDK.Name != sdkName {
-			continue
+		if entry.AsSDK != nil && sdkCommandName(moduleName, entry) == sdkName {
+			return configuredSDK{
+				moduleName:  moduleName,
+				commandName: sdkCommandName(moduleName, entry),
+				entry:       entry,
+			}, nil
 		}
-		matches = append(matches, configuredSDK{
-			moduleName:  moduleName,
-			commandName: sdkCommandName(moduleName, entry),
-			entry:       entry,
-		})
 	}
-	sort.Slice(matches, func(i, j int) bool { return matches[i].moduleName < matches[j].moduleName })
-	switch len(matches) {
-	case 0:
-		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
-	case 1:
-		return matches[0], nil
-	default:
-		names := make([]string, len(matches))
-		for i, match := range matches {
-			names[i] = match.moduleName
-		}
-		return configuredSDK{}, fmt.Errorf("SDK name %q is ambiguous: matches modules.%s.as-sdk; choose a unique as-sdk.name", sdkName, strings.Join(names, ".as-sdk, modules."))
-	}
+	return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
 }
 
 func clearDynamicSDKCommands(parent *cobra.Command) {

@@ -6092,7 +6092,7 @@ type Workspace implements Node {
     here: Boolean = false
 
     """
-    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    Optional override for the SDK name conventionally derived from the installed module name.
     """
     asSdkName: String = ""
   ): Workspace!

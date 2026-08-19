@@ -1077,13 +1077,13 @@ source = "./demo"
 func (WorkspaceAPISuite) TestSyntheticWorkspaceModuleBuildersUseWorkspaceSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	workspaceID, err := c.Directory().
-		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`).
+		WithNewFile("modules/demo/dagger.json", `{
+  "name": "demo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
+		WithNewFile("modules/demo/main.go", "package main\n\ntype Demo struct{}\n").
 		AsWorkspace().
 		ID(ctx)
 	require.NoError(t, err)
@@ -1158,13 +1158,13 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 
 	ws := c.CurrentWorkspace()
 	updated := ws.
-		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`).
+		WithNewFile("modules/demo/dagger.json", `{
+  "name": "demo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
+		WithNewFile("modules/demo/main.go", "package main\n\ntype Demo struct{}\n").
 		WithModule(filepath.Join(workdir, "modules", "demo"))
 
 	name, err := updated.Module("demo").Name(ctx)
@@ -1172,9 +1172,9 @@ source = "go"
 	require.Equal(t, "demo", name)
 	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger-module.toml"}, added)
+	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger.json", "modules/demo/main.go"}, added)
 
-	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger-module.toml"))
+	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger.json"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
@@ -1312,7 +1312,7 @@ source = "go"
 	require.NoError(t, err)
 	query := `query SDKReaders($from: ID!) {
   currentWorkspace {
-    withSDK(ref: "./sdk", name: "go-sdk", asSdkName: "go") {
+    withSDK(ref: "./sdk", name: "go-sdk") {
       changes(from: $from) {
         addedPaths
       }
@@ -1372,7 +1372,6 @@ source = "go"
 	require.Contains(t, staged.File.Contents, `[modules.go-sdk]`)
 	require.Contains(t, staged.File.Contents, `source = "sdk"`)
 	require.Contains(t, staged.File.Contents, `[modules.go-sdk.as-sdk]`)
-	require.Contains(t, staged.File.Contents, `name = "go"`)
 	require.Len(t, staged.SDKs, 1)
 	require.Equal(t, "go", staged.SDKs[0].Name)
 	require.Equal(t, "sdk", staged.SDKs[0].Ref)

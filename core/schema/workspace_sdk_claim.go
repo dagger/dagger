@@ -8,7 +8,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type workspaceClaimArgs struct {
@@ -120,10 +119,6 @@ func (s *workspaceSchema) withClaimedClient(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	if clientMetadata, metadataErr := engine.ClientMetadataFromContext(ctx); metadataErr == nil && clientMetadata.LockMode != "" {
-		workspaceCtx = workspaceInstallContextWithLockMode(workspaceCtx, workspace.LockMode(clientMetadata.LockMode))
-	}
-	workspaceCtx = workspaceInstallLookupContext(workspaceCtx)
 	targetModule, err := s.resolveClientTargetModule(workspaceCtx, claim.ws, moduleLoadRef, "")
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err

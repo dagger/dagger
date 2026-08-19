@@ -112,7 +112,7 @@ func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
 		Modules: map[string]workspace.ModuleEntry{
 			"go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
 			"custom-sdk": {
 				Source: "github.com/acme/custom-sdk",
@@ -123,7 +123,7 @@ func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
 
 	sdks, err := configuredSDKs(cfg)
 	require.NoError(t, err)
-	require.Equal(t, []string{"custom-sdk", "go"}, []string{sdks[0].commandName, sdks[1].commandName})
+	require.Equal(t, []string{"custom", "go"}, []string{sdks[0].commandName, sdks[1].commandName})
 
 	resolved, err := resolveConfiguredSDK(cfg, "go")
 	require.NoError(t, err)
@@ -139,19 +139,19 @@ func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
 func TestConfiguredSDKsRejectsDuplicateCommandName(t *testing.T) {
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{
-			"go-sdk": {
+			"dagger-go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
-			"custom-go-sdk": {
+			"go-sdk": {
 				Source: "github.com/acme/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+				AsSDK:  &workspace.ModuleAsSDK{},
 			},
 		},
 	}
 
 	_, err := configuredSDKs(cfg)
-	require.ErrorContains(t, err, `SDK command name "go" is ambiguous`)
+	require.ErrorContains(t, err, `SDK name "go" is ambiguous`)
 }
 
 func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {

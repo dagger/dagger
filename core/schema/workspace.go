@@ -231,7 +231,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("ref").Doc("SDK module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed SDK entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("asSdkName").Doc("User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`."),
+				dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
 			),
 		dagql.NodeFunc("withoutSDK", s.withoutSDK).
 			View(AfterVersion("v1.0.0-0")).
