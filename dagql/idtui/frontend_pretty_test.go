@@ -1723,7 +1723,7 @@ func TestFlowingModeScopedToLiveUnzoomedShell(t *testing.T) {
 // gutters and no "user"/"assistant"/"tool" role labels, with the subtle
 // per-role cues in their place -- a shaded background behind the user's
 // prompt, dim italic for thinking, plain indented prose for the assistant,
-// and a faint dot for tool calls.
+// red prose for a terminal failure, and a faint dot for tool calls.
 func TestConversationTranscriptStyling(t *testing.T) {
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
@@ -1731,6 +1731,7 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	thinkID := prettyTestSpanID(3)
 	asstID := prettyTestSpanID(4)
 	toolID := prettyTestSpanID(5)
+	failureID := prettyTestSpanID(6)
 	start := time.Unix(100, 0)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{
@@ -1757,6 +1758,12 @@ func TestConversationTranscriptStyling(t *testing.T) {
 			LLMRole: "assistant", LLMTool: "Find", ParentID: rootID,
 			StartTime: start.Add(7 * time.Second), EndTime: start.Add(8 * time.Second), Final: true,
 		},
+		{
+			ID: failureID, TraceID: prettyTestTraceID(), Name: "agent failure",
+			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			StartTime: start.Add(9 * time.Second), EndTime: start.Add(10 * time.Second), Final: true,
+			Status: sdktrace.Status{Code: codes.Error, Description: "context limit reached"},
+		},
 	})
 	db.SetPrimarySpan(rootID)
 
@@ -1779,6 +1786,7 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	setLog(thinkID, "let me think")
 	setLog(asstID, "here is my reply")
 	setLog(toolID, `{"pattern": "*"}`)
+	setLog(failureID, "context limit reached")
 
 	fe.recalculateViewLocked()
 
@@ -1803,6 +1811,11 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	// Thinking is dim italic bright-black (SGR 90;3).
 	if !containsStyledLine(frame, "let me think", "\x1b[90;3m") {
 		t.Fatalf("thinking is not rendered dim italic:\n%s", visibleEscapes(frame))
+	}
+	// A terminal agent failure is permanent transcript content, with the full
+	// error text (not only its status badge) rendered red (SGR 31).
+	if !containsStyledLine(frame, "context limit reached", "\x1b[31m") {
+		t.Fatalf("agent failure text is not rendered red:\n%s", visibleEscapes(frame))
 	}
 	// Tool calls keep a faint-dot cue.
 	if !strings.Contains(plain, "• Find") {

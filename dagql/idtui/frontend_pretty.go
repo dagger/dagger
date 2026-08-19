@@ -7739,8 +7739,8 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 		return false
 	}
 	// Give conversation turns their subtle content styling: the user's prompt
-	// on a shaded background, thinking as dim italic. The assistant's reply and
-	// tool output are left untouched (no chrome at all).
+	// on a shaded background, thinking as dim italic, and failures in red. Plain
+	// assistant replies and tool output are left untouched (no chrome at all).
 	if styled, ok := fe.styleLLMMessageView(out, row.Span, logPrefix, view); ok {
 		view = styled
 	}
@@ -7750,16 +7750,18 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 
 // styleLLMMessageView applies pi-style per-role content styling to a rendered
 // message Vterm view, returning the restyled view (and true) for the roles it
-// handles. The user's prompt is drawn on a shaded (ANSIBrightBlack) background
-// padded to the content width, so it reads as an inset block; thinking is drawn
-// dim and italic. Other roles -- the assistant's reply, tool calls -- are left
-// verbatim, so this returns false for them.
+// handles. Failed messages render in red so a terminal agent failure remains
+// visible in the conversation above the prompt. Otherwise the user's prompt is
+// drawn on a shaded (ANSIBrightBlack) background padded to the content width,
+// and thinking is drawn dim and italic. Other roles -- the assistant's reply,
+// tool calls -- are left verbatim, so this returns false for them.
 func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, logPrefix, view string) (string, bool) {
 	if span.LLMRole == "" || span.LLMTool != "" {
 		return "", false
 	}
+	failed := span.IsFailed() && !span.IsCanceled()
 	user := span.LLMRole == telemetry.LLMRoleUser
-	if !user && !span.LLMThinking {
+	if !failed && !user && !span.LLMThinking {
 		return "", false
 	}
 
@@ -7774,17 +7776,27 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		// Strip existing SGR so the role styling owns the line; user prompts and
-		// thinking are prose, not richly formatted output, so nothing of value is
-		// lost, and it keeps a background from being punched out by a reset.
+		// Strip existing SGR so the role styling owns the line. These messages
+		// are prose, not richly formatted output, so nothing of value is lost.
 		plain := ansi.Strip(line)
-		if user {
+		switch {
+		case failed:
+			// Like thinking, a failed message's first line renders inline on the
+			// already-indented title line. Continuations retain the plain message
+			// gutter while only the error text itself is red.
+			body := plain
+			if i > 0 {
+				body = strings.TrimPrefix(plain, ansi.Strip(logPrefix))
+				b.WriteString(logPrefix)
+			}
+			b.WriteString(out.String(body).Foreground(termenv.ANSIRed).String())
+		case user:
 			padded := plain
 			if width > 0 {
 				padded = padANSI(clipPlain(plain, width), width)
 			}
 			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
-		} else {
+		default:
 			// Thinking: dim italic foreground, no background. The first line renders
 			// inline on the already-indented title line (redraw omits the gutter on
 			// line 0), so keep it flush -- only continuation lines carry the gutter.
