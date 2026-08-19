@@ -39,28 +39,78 @@ func TestStaff(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(StaffSuite{})
 }
 
-// serveStaffModule serves ./modules/staff — a repo-root module, deliberately
-// not a testdata fixture and not registered in dagger.toml — into the
-// client's session, returning the Staff object's ID for llm.withTools and
-// the worker system prompt spawn composes into every worker (recordings that
-// replay a worker's conversation must match its text exactly).
+// serveStaffModule serves ./modules/staff and its editor dependency into the
+// client's session, returning the Staff object's ID for llm.withTools and the
+// worker system prompt spawn composes into every worker (recordings that replay
+// a worker's conversation must match its text exactly).
 func serveStaffModule(ctx context.Context, t *testctx.T, c *dagger.Client) (dagger.ID, string) {
 	t.Helper()
-	modDir := t.TempDir()
-	srcDir, err := filepath.Abs(filepath.Join("..", "..", "modules", "staff"))
-	require.NoError(t, err)
-	require.NoError(t, fscopy.Copy(ctx, srcDir, "/", modDir, "/"))
-	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+	modulesDir := t.TempDir()
+	for _, name := range []string{"staff", "editor"} {
+		dst := filepath.Join(modulesDir, name)
+		src, err := filepath.Abs(filepath.Join("..", "..", "modules", name))
+		require.NoError(t, err)
+		require.NoError(t, fscopy.Copy(ctx, src, "/", dst, "/"))
+	}
+	staffDir := filepath.Join(modulesDir, "staff")
+	require.NoError(t, c.ModuleSource(staffDir).AsModule().Serve(ctx))
 	res, err := testutil.QueryWithClient[struct {
 		Staff struct {
-			ID           string
-			WorkerPrompt string
+			ID               string
+			WorkerPrompt     string
+			RepoWorkerPrompt string
 		}
-	}](c, t, `{ staff { id workerPrompt } }`, nil)
+	}](c, t, `{ staff { id workerPrompt repoWorkerPrompt } }`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Staff.ID)
 	require.NotEmpty(t, res.Staff.WorkerPrompt)
+	require.NotEmpty(t, res.Staff.RepoWorkerPrompt)
 	return dagger.ID(res.Staff.ID), res.Staff.WorkerPrompt
+}
+
+// TestForeignRepositoryToolSchema locks in the two-phase contribution UX:
+// staff owns asynchronous foreign workers and explicit publication, while the
+// GitHub API module no longer exposes the old blocking contribute operation.
+func (StaffSuite) TestForeignRepositoryToolSchema(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	serveStaffModule(ctx, t, c)
+
+	type field struct {
+		Name string
+	}
+	staffType, err := testutil.QueryWithClient[struct {
+		Type struct {
+			Fields []field
+		} `json:"__type"`
+	}](c, t, `{ __type(name: "Staff") { fields { name } } }`, nil)
+	require.NoError(t, err)
+	staffFields := map[string]bool{}
+	for _, f := range staffType.Type.Fields {
+		staffFields[f.Name] = true
+	}
+	require.True(t, staffFields["spawnRepo"])
+	require.True(t, staffFields["submitPR"])
+
+	githubDir := filepath.Join(t.TempDir(), "github")
+	githubSrc, err := filepath.Abs(filepath.Join("..", "..", "modules", "github"))
+	require.NoError(t, err)
+	require.NoError(t, fscopy.Copy(ctx, githubSrc, "/", githubDir, "/"))
+	require.NoError(t, c.ModuleSource(githubDir).AsModule().Serve(ctx))
+
+	githubType, err := testutil.QueryWithClient[struct {
+		Type struct {
+			Fields []field
+		} `json:"__type"`
+	}](c, t, `{ __type(name: "Github") { fields { name } } }`, nil)
+	require.NoError(t, err)
+	githubFields := map[string]bool{}
+	for _, f := range githubType.Type.Fields {
+		githubFields[f.Name] = true
+	}
+	require.True(t, githubFields["ghApi"])
+	require.True(t, githubFields["reviewComments"])
+	require.True(t, githubFields["prComment"])
+	require.False(t, githubFields["contribute"])
 }
 
 // TestAskChiefAndCollect covers the whole orchestration loop: spawn starts a
