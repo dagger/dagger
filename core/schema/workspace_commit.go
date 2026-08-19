@@ -161,7 +161,7 @@ func (s *workspaceSchema) stageCommit(
 	if args.Date == "" {
 		return inst, fmt.Errorf("withCommit: date is required")
 	}
-	if _, ok := ws.SourceGitRef(); ok {
+	if _, ok := ws.SourceGitRef(); ok && !ws.IsPortableCheckpoint() {
 		return inst, fmt.Errorf("withCommit: cannot stage a commit on a remote git workspace")
 	}
 	// Before anything is written into history — including the replay path, which
@@ -469,8 +469,10 @@ func (s *workspaceSchema) stagedCommitChanges(
 	return inst, nil
 }
 
-// exportPendingCommits lands the workspace's engine-side staged commits on the
-// user's local checkout. When the checkout still sits at the workspace's base,
+// exportPendingCommits lands the source workspace's engine-side staged commits
+// on the target's local checkout. Reconciliation always uses the source's
+// BaseHeadSHA and commit stack; only the host path and client route come from
+// the target. When the checkout still sits at the source workspace's base,
 // the commits land unchanged as a fast-forward. If another save advanced the
 // branch in the meantime, the client replays this stack onto the new tip before
 // fast-forwarding, like a sequence of cherry-picks.
@@ -488,7 +490,7 @@ func (s *workspaceSchema) stagedCommitChanges(
 // tree: the fast-forward writes the committed content, and the changeset —
 // which is diffed against the staged tree — then adds exactly the uncommitted
 // remainder on top.
-func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Workspace) error {
+func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws, target *core.Workspace) error {
 	latest, ok := ws.LatestPendingCommit()
 	if !ok || latest.Repo.Self() == nil {
 		return nil
@@ -497,7 +499,7 @@ func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Wor
 	// Preconditions first: nothing is written to the host until every check
 	// below has passed, so a rejected save leaves the checkout exactly as it
 	// was.
-	clientCtx, hostPath, err := workspaceExportContext(ctx, ws)
+	clientCtx, hostPath, err := workspaceExportContext(ctx, target)
 	if err != nil {
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
@@ -743,14 +745,41 @@ func (s *workspaceSchema) scopeChangesetToPaths(
 // workspaceCommitBaseRepo returns the repository tree the next staged commit
 // builds on. Once commits are staged, that is the newest staged tree — its .git
 // already holds the whole stack. Otherwise it is the workspace's own repository
-// tree, with its .git reconstructed canonically from the client's own git pack
-// (worktree/submodule checkouts included), as Workspace.git.__repository does.
+// tree. A portable GitRef-backed checkpoint resolves that ref with its .git
+// directory intact; a host workspace reconstructs .git canonically from the
+// client's own git pack (worktree/submodule checkouts included), as
+// Workspace.git.__repository does.
 func (s *workspaceSchema) workspaceCommitBaseRepo(
 	ctx context.Context,
 	ws *core.Workspace,
 ) (dir dagql.ObjectResult[*core.Directory], err error) {
 	if latest, ok := ws.LatestPendingCommit(); ok && latest.Repo.Self() != nil {
 		return latest.Repo, nil
+	}
+	if ref, ok := ws.SourceGitRef(); ok && ws.IsPortableCheckpoint() {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return dir, err
+		}
+		refID, err := ref.ID()
+		if err != nil {
+			return dir, err
+		}
+		refResult, err := dagql.NewID[*core.GitRef](refID).Load(ctx, srv)
+		if err != nil {
+			return dir, err
+		}
+		if err := srv.Select(ctx, refResult, &dir, dagql.Selector{
+			Field: "tree",
+			Args: []dagql.NamedInput{
+				{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+				{Name: "depth", Value: dagql.NewInt(0)},
+				{Name: "includeTags", Value: dagql.NewBoolean(false)},
+			},
+		}); err != nil {
+			return dir, fmt.Errorf("workspace git directory: %w", err)
+		}
+		return dir, nil
 	}
 	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
 		return dir, err

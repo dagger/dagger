@@ -16854,14 +16854,28 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Write this workspace's pending changes to its local Git workspace.
+// WorkspaceExportOpts contains options for Workspace.Export
+type WorkspaceExportOpts struct {
+	// Client-local Git workspace whose checkout receives the exported commits and changes.
+	To *Workspace
+}
+
+// Write this workspace's pending changes to a local Git workspace.
+//
+// Client-local workspaces export to themselves when to is omitted. Value-backed workspaces require an explicit target.
 //
 // Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
-func (r *Workspace) Export(ctx context.Context) error {
+func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {
 	if r.export != nil {
 		return nil
 	}
 	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `to` optional argument
+		if !querybuilder.IsZeroValue(opts[i].To) {
+			q = q.Arg("to", opts[i].To)
+		}
+	}
 
 	return q.Execute(ctx)
 }

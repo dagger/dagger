@@ -84,7 +84,7 @@ q %s
 	out, err := ran.Stdout(ctx)
 	require.NoError(t, err)
 	require.NotContains(t, out, `"errors"`)
-	require.Contains(t, out, `"export":{}`)
+	require.Contains(t, out, `"export":null`)
 
 	// The local commit remains in history and both staged commits are replayed
 	// on top of it, in order. Both sessions' files land and the checkout is clean.

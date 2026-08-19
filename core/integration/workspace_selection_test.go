@@ -359,17 +359,17 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 			{
 				name:    "config value",
 				query:   `{currentWorkspace{withConfigValue(key:"modules.demo.source", value:"demo"){export}}}`,
-				wantErr: "cannot export a remote Git workspace",
+				wantErr: "workspace export requires an explicit target",
 			},
 			{
 				name:    "new file",
 				query:   `{currentWorkspace{withNewFile(path:"demo.txt", contents:"demo"){export}}}`,
-				wantErr: "cannot export a remote Git workspace",
+				wantErr: "workspace export requires an explicit target",
 			},
 			{
 				name:    "lock update",
 				query:   `{currentWorkspace{withUpdatedLock{export}}}`,
-				wantErr: "cannot export a remote Git workspace",
+				wantErr: "workspace export requires an explicit target",
 			},
 			{
 				name:    "migrate",

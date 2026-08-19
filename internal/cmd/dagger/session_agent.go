@@ -1121,10 +1121,11 @@ func (a *sessionAgent) busy() bool {
 	return a.turnCancel != nil
 }
 
-// ExportChanges writes the workspace's pending overlay edits to its local Git
-// workspace (Workspace.export), then refreshes the changes preview. It is the
-// ctrl+s action; export fails clearly when the workspace cannot persist (a
-// remote ref, a synthetic workspace, or a local dir with no Git root).
+// ExportChanges writes the frozen workspace's pending overlay edits to the
+// current client-local Git workspace by passing it as Workspace.export's
+// explicit target, then refreshes the changes preview. It is the ctrl+s action;
+// export fails clearly when the current workspace cannot persist (a remote ref,
+// a synthetic workspace, or a local dir with no Git root).
 func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
@@ -1132,7 +1133,9 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 	if a.busy() {
 		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before saving")
 	}
-	if err := a.llm.Workspace().Export(ctx); err != nil {
+	if err := a.llm.Workspace().Export(ctx, dagger.WorkspaceExportOpts{
+		To: a.session.dag.CurrentWorkspace(),
+	}); err != nil {
 		return err
 	}
 	// The exported edits now live on disk, so rebind a workspace freshly frozen

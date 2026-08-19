@@ -161,3 +161,96 @@ func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndCapturesLocalState(
 	require.Equal(t, localCommit, strings.TrimSpace(checkpoint.Git.Head.Commit))
 	require.Equal(t, []string{"tracked.txt"}, checkpoint.Git.Uncommitted.ModifiedPaths)
 }
+
+// TestWorkspaceCheckpointIsAddressableAndExportsToTarget covers both halves of
+// a freshly captured checkpoint.
+//
+// The frozen workspace must be an addressable value: `dagger agent` binds it
+// into the LLM it composes agents onto, which needs its ID, so the effectful
+// checkpoint call has to hand back the pure constructor's result rather than
+// mint one of its own (an uncacheable call's own results have no ID — the
+// regression this asserts against reported "result *core.Workspace is
+// detached").
+//
+// It must also be savable to an explicit client-local target. Both a pending
+// commit and a remaining overlay are exported from the frozen source; only the
+// host checkout and client route come from currentWorkspace.
+func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndExportsToTarget(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := checkpointCheckoutBase(ctx, t, c)
+
+	localCommit := gitOut(ctx, t, base, "rev-parse", "HEAD")
+
+	inspected := base.With(daggerQuery(`{
+  currentWorkspace {
+    checkpoint(include: ["tracked.txt"]) {
+      id
+      git {
+        head { commit }
+        uncommitted { modifiedPaths }
+      }
+    }
+  }
+}`))
+
+	out, err := inspected.Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			Checkpoint struct {
+				ID  string `json:"id"`
+				Git struct {
+					Head struct {
+						Commit string `json:"commit"`
+					} `json:"head"`
+					Uncommitted struct {
+						ModifiedPaths []string `json:"modifiedPaths"`
+					} `json:"uncommitted"`
+				} `json:"git"`
+			} `json:"checkpoint"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	checkpoint := got.CurrentWorkspace.Checkpoint
+
+	// Addressable: the checkpoint resolved to a value with an ID, which is what
+	// an agent's composition binds.
+	require.NotEmpty(t, checkpoint.ID)
+
+	// Frozen, and complete: the captured tree carries the commit that exists
+	// only in the local checkout, with the tracked dirt still uncommitted on
+	// top of it.
+	require.Equal(t, localCommit, strings.TrimSpace(checkpoint.Git.Head.Commit))
+	require.Equal(t, []string{"tracked.txt"}, checkpoint.Git.Uncommitted.ModifiedPaths)
+
+	// A checkpoint is a value with no checkout of its own, even in its
+	// originating session; export must not recover or guess the old route.
+	rejected, err := base.
+		With(daggerExecFail("--silent", "shell", "-c", `current-workspace | checkpoint --include=tracked.txt | export`)).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, rejected, "workspace export requires an explicit target")
+
+	// Export from the frozen value to the live checkout. The staged commit must
+	// use the frozen source's BaseHeadSHA for reconciliation, while both it and
+	// the remaining overlay must route host writes through the explicit target.
+	saved := base.With(daggerShell(`current-workspace | checkpoint --include=tracked.txt | with-new-file committed.txt "committed" | with-commit "agent commit" ` + commitTestDate + ` --paths=committed.txt | with-new-file agent.txt "from agent" | export --to $(current-workspace)`))
+	_, err = saved.Sync(ctx)
+	require.NoError(t, err)
+
+	committedFile, err := saved.File("/work/committed.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "committed", committedFile)
+
+	// The explicit target received the remaining overlay too.
+	agentFile, err := saved.File("/work/agent.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from agent", agentFile)
+
+	dirty, err := saved.File("/work/tracked.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "base\ndirty\n", dirty)
+	require.NotEqual(t, localCommit, gitOut(ctx, t, saved, "rev-parse", "HEAD"))
+	require.Equal(t, "agent commit", gitOut(ctx, t, saved, "log", "-1", "--format=%s"))
+}
