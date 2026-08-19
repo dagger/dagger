@@ -436,13 +436,13 @@ func TestNavDigitFailedFocusStaysInNav(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, db, handler)
 
-	fe.enterNavMode(false)
-	require.False(t, fe.editlineFocused)
+	fe.enterNavMode()
+	require.False(t, fe.inputFocused())
 
 	pressNavKey(t, fe, '2')
 	require.Empty(t, handler.focusedAgents(), "focus must not move")
 	require.Error(t, fe.promptErr, "the failure must be loud")
-	require.False(t, fe.editlineFocused,
+	require.False(t, fe.inputFocused(),
 		"a failed focus must not hand the prompt back: the user's fingers are on nav keys")
 }
 
@@ -472,28 +472,21 @@ func TestFocusRetriesAfterPayloadArrives(t *testing.T) {
 	require.False(t, fe.agentRosterEntries()[1].ReadOnly, "and the read-only mark with it")
 }
 
-// TestTurnEndFlipYieldsToActiveNavigation: the turn-end auto-flip to insert
-// mode is a convenience for an idle user. Under active navigation it races
-// the user's fingers — nav '2', 'i', arrow-key history recall land as
-// literal prompt text — so a recent nav keypress suppresses it.
-func TestTurnEndFlipYieldsToActiveNavigation(t *testing.T) {
+// TestTurnCompletionLeavesFocusUntouched verifies that agent lifecycle cannot
+// change the meaning of the user's next key.
+func TestTurnCompletionLeavesFocusUntouched(t *testing.T) {
 	handler := &focusShellHandler{}
 	fe := focusTestFrontend(t, dagui.NewDB(), handler)
 
-	// The submit-style flip: nav mode entered automatically.
-	fe.enterNavMode(true)
-	require.False(t, fe.editlineFocused)
-
-	// Keys are being pressed right now: the turn's end must not yank the
-	// keyboard into insert mode under them.
-	fe.navKeyAt = time.Now()
+	require.True(t, fe.inputFocused())
 	fe.handleShellDone(nil, false)
-	require.False(t, fe.editlineFocused, "flip suppressed under active navigation")
+	require.True(t, fe.inputFocused(), "completion must leave prompt focus alone")
 
-	// Quiet keyboard: the flip lands as before.
-	fe.navKeyAt = time.Now().Add(-2 * autoModeSwitchDebounce)
+	fe.enterNavMode()
+	nav := fe.tui.Focused()
+	require.False(t, fe.inputFocused())
 	fe.handleShellDone(nil, false)
-	require.True(t, fe.editlineFocused, "an idle user still gets the prompt back")
+	require.Same(t, nav, fe.tui.Focused(), "completion must not leave navigation")
 }
 
 // TestRosterRendersWhenAgentsAppear: the strip's content comes from the trace
@@ -529,7 +522,7 @@ func TestRosterStaysVisibleInNavMode(t *testing.T) {
 	fe := focusTestFrontend(t, rosterDB(t), handler)
 	fe.updateAgentRoster()
 
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
 	require.Contains(t, frame, "i input mode", "sanity: this is nav mode's frame")
 	require.Contains(t, frame, "1 chief")
@@ -546,23 +539,23 @@ func TestNavDigitFocusesAndReturnsToPrompt(t *testing.T) {
 	fe := focusTestFrontend(t, rosterDB(t), handler)
 
 	fe.textInput.SetValue("half a thought")
-	fe.enterNavMode(false)
-	require.False(t, fe.editlineFocused)
+	fe.enterNavMode()
+	require.False(t, fe.inputFocused())
 
 	pressNavKey(t, fe, '2')
 	awaitFocus(t, handler, "agent-scout")
 	fe.tui.Step()
 
-	require.True(t, fe.editlineFocused, "a roster key means 'go talk to that agent'")
+	require.True(t, fe.inputFocused(), "a roster key means 'go talk to that agent'")
 	require.Equal(t, "", fe.textInput.Value(), "the scout has no draft yet")
 
 	// The drafts follow the agents exactly as they do in prompt mode.
 	fe.textInput.SetValue("for the scout")
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 	pressNavKey(t, fe, '1')
 	awaitFocus(t, handler, "agent-scout", "agent-chief")
 	fe.tui.Step()
-	require.True(t, fe.editlineFocused)
+	require.True(t, fe.inputFocused())
 	require.Equal(t, "half a thought", fe.textInput.Value())
 }
 
@@ -575,19 +568,19 @@ func TestNavDigitFocusesAndReturnsToPrompt(t *testing.T) {
 func TestNavDigitWithoutAnEntryIsUnclaimed(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, rosterDB(t), handler)
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 
 	pressNavKey(t, fe, '3')
 	require.Empty(t, handler.focusedAgents())
-	require.False(t, fe.editlineFocused, "a digit naming nobody must not switch modes")
+	require.False(t, fe.inputFocused(), "a digit naming nobody must not switch modes")
 
 	solo := focusTestFrontend(t, singleAgentDB(t), &focusShellHandler{target: "agent-chief"})
 	soloFrame := ansi.Strip(strings.Join(solo.tui.Step(), "\n"))
 	require.Contains(t, soloFrame, "1 chief", "single-agent roster should remain visible")
 	require.NotContains(t, soloFrame, "1…9 focus agent", "single-agent roster must not advertise switching")
-	solo.enterNavMode(false)
+	solo.enterNavMode()
 	pressNavKey(t, solo, '1')
-	require.False(t, solo.editlineFocused, "single-agent roster must not claim digit bindings")
+	require.False(t, solo.inputFocused(), "single-agent roster must not claim digit bindings")
 }
 
 // TestNavCycleWalksTheRoster covers [/]: one step per press, wrapping at both
@@ -600,20 +593,20 @@ func TestNavDigitWithoutAnEntryIsUnclaimed(t *testing.T) {
 func TestNavCycleWalksTheRoster(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, threeAgentDB(t), handler)
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 
 	// Three taps in a row: chief -> scout -> docs -> back to chief.
 	for _, want := range []string{"scout", "docs", "chief"} {
 		pressNavKey(t, fe, ']')
 		require.Equal(t, want, focusedRosterName(t, fe))
-		require.False(t, fe.editlineFocused,
+		require.False(t, fe.inputFocused(),
 			"a cycle key must stay in nav mode, or its next press types itself")
 	}
 
 	// And backwards, off the front of the list.
 	pressNavKey(t, fe, '[')
 	require.Equal(t, "docs", focusedRosterName(t, fe))
-	require.False(t, fe.editlineFocused)
+	require.False(t, fe.inputFocused())
 }
 
 // TestNavCycleCoalescesRequests: only one focus request is allowed out at a
@@ -623,7 +616,7 @@ func TestNavCycleWalksTheRoster(t *testing.T) {
 func TestNavCycleCoalescesRequests(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, threeAgentDB(t), handler)
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 
 	pressNavKey(t, fe, ']')
 	pressNavKey(t, fe, ']')
@@ -656,10 +649,10 @@ func TestNavCycleCoalescesRequests(t *testing.T) {
 func TestNavCycleWithNobodyToCycleTo(t *testing.T) {
 	// One agent: the roster is visible as state, but cycle keys are not bound.
 	solo := focusTestFrontend(t, singleAgentDB(t), &focusShellHandler{target: "agent-chief"})
-	solo.enterNavMode(false)
+	solo.enterNavMode()
 	pressNavKey(t, solo, ']')
 	pressNavKey(t, solo, '[')
-	require.False(t, solo.editlineFocused, "no strip, no cycle bindings")
+	require.False(t, solo.inputFocused(), "no strip, no cycle bindings")
 	require.False(t, solo.navCycleAgent(1), "the binding reports the no-op")
 	require.False(t, solo.navCycleAgent(-1))
 
@@ -673,10 +666,10 @@ func TestNavCycleWithNobodyToCycleTo(t *testing.T) {
 	require.Error(t, fe.promptErr, "naming a read-only entry reports why")
 
 	fe.setPromptError(nil)
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 	pressNavKey(t, fe, ']')
 	require.Empty(t, handler.focusedAgents())
-	require.False(t, fe.editlineFocused)
+	require.False(t, fe.inputFocused())
 	// A cycle names nobody in particular, so it steps over the entry it
 	// cannot address instead of answering with an error about an agent the
 	// user never asked for.
@@ -690,22 +683,22 @@ func TestNavCycleWithNobodyToCycleTo(t *testing.T) {
 func TestNavToggleReturnsToLastAgent(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, rosterDB(t), handler)
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 
 	// Nothing focused before, so there is nothing to toggle back to yet.
 	pressNavKey(t, fe, '`')
 	require.Empty(t, handler.focusedAgents())
-	require.False(t, fe.editlineFocused, "an unarmed toggle must not switch modes")
+	require.False(t, fe.inputFocused(), "an unarmed toggle must not switch modes")
 
 	pressNavKey(t, fe, '2')
 	awaitFocus(t, handler, "agent-scout")
 	fe.tui.Step()
 
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 	pressNavKey(t, fe, '`')
 	awaitFocus(t, handler, "agent-scout", "agent-chief")
 	fe.tui.Step()
-	require.True(t, fe.editlineFocused, "the toggle names an agent, so it lands at the prompt")
+	require.True(t, fe.inputFocused(), "the toggle names an agent, so it lands at the prompt")
 	require.Equal(t, "chief", focusedRosterName(t, fe))
 }
 
@@ -715,12 +708,12 @@ func TestNavRosterKeysAreAdvertised(t *testing.T) {
 	out := NewOutput(io.Discard)
 
 	solo := focusTestFrontend(t, singleAgentDB(t), &focusShellHandler{target: "agent-chief"})
-	solo.enterNavMode(false)
+	solo.enterNavMode()
 	require.NotContains(t, navKeyHelp(solo.keys(out)), "focus agent")
 
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, rosterDB(t), handler)
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 	help := navKeyHelp(fe.keys(out))
 	require.Contains(t, help, "1…9 focus agent")
 	require.Contains(t, help, "[/] prev/next agent")
@@ -732,7 +725,7 @@ func TestNavRosterKeysAreAdvertised(t *testing.T) {
 	pressNavKey(t, fe, '2')
 	awaitFocus(t, handler, "agent-scout")
 	fe.tui.Step()
-	fe.enterNavMode(false)
+	fe.enterNavMode()
 	require.Contains(t, navKeyHelp(fe.keys(out)), "` last agent")
 
 	// With the second entry watch-only there is nobody to cycle to, so the
@@ -742,7 +735,7 @@ func TestNavRosterKeysAreAdvertised(t *testing.T) {
 	delete(readOnly.Calls, "sha256:scout")
 	ro := focusTestFrontend(t, readOnly, &focusShellHandler{target: "agent-chief"})
 	require.True(t, pressEditlineKey(t, ro, uv.Key{Code: '2', Mod: uv.ModAlt}))
-	ro.enterNavMode(false)
+	ro.enterNavMode()
 	help = navKeyHelp(ro.keys(out))
 	require.Contains(t, help, "1…9 focus agent")
 	require.NotContains(t, help, "prev/next agent")
