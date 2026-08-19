@@ -132,6 +132,38 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
 
+		dagql.NodeFunc("bundle", s.bundle).
+			View(AfterVersion("v1.0.0-beta.10")).
+			IsPersistable().
+			Doc(`Pack the given refs and the objects needed to reconstruct them into a Git bundle.`).
+			Args(
+				dagql.Arg("refs").Doc(`Refs to advertise in the bundle. At least one named ref is required.`),
+				dagql.Arg("base").Doc(`A Git ref whose reachable objects are omitted and recorded as a prerequisite.`),
+			),
+		dagql.NodeFunc("withBundle", s.withBundle).
+			View(AfterVersion("v1.0.0-beta.10")).
+			IsPersistable().
+			Doc(`Import a Git bundle after fetching and verifying all of its prerequisites.`).
+			Args(
+				dagql.Arg("bundle").Doc(`The Git bundle to import.`),
+				dagql.Arg("prerequisiteRef").Doc(`An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.`),
+			),
+		dagql.NodeFunc("__bundleFile", s.bundleFile).
+			View(AfterVersion("v1.0.0-beta.10")).
+			IsPersistable().
+			Doc(`(Internal-only) Materialize a Git bundle as a File.`).
+			Args(
+				dagql.Arg("refs"),
+				dagql.Arg("base"),
+			),
+		dagql.NodeFunc("__withBundleDirectory", s.withBundleDirectory).
+			View(AfterVersion("v1.0.0-beta.10")).
+			IsPersistable().
+			Doc(`(Internal-only) Materialize the canonical repository produced by importing a Git bundle.`).
+			Args(
+				dagql.Arg("bundle"),
+				dagql.Arg("prerequisiteRef"),
+			),
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
@@ -228,6 +260,18 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
 	}.Install(srv)
+
+	srv.InstallObject(dagql.NewClass[*core.GitBundle](srv).View(AfterVersion("v1.0.0-beta.10")))
+	srv.InstallObject(dagql.NewClass[*core.GitBundleRef](srv).View(AfterVersion("v1.0.0-beta.10")))
+	dagql.Fields[*core.GitBundle]{
+		dagql.NodeFunc("validate", s.validateBundle).
+			IsPersistable().
+			Doc(`Perform full structural verification of the bundle and error if it is malformed.`),
+		dagql.NodeFunc("asFile", s.bundleAsFile).
+			IsPersistable().
+			Doc(`Return the bundle bytes as a File.`),
+	}.Install(srv)
+	dagql.Fields[*core.GitBundleRef]{}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.GitCommit](srv).View(AfterVersion("v1.0.0-0")))
 
@@ -1033,6 +1077,164 @@ func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
 		}
 	}
 	return false
+}
+
+type gitBundleArgs struct {
+	Refs []string
+	Base dagql.Optional[core.GitRefID]
+}
+
+func gitBundleNamedInputs(args gitBundleArgs) []dagql.NamedInput {
+	refs := make(dagql.ArrayInput[dagql.String], len(args.Refs))
+	for i, ref := range args.Refs {
+		refs[i] = dagql.NewString(ref)
+	}
+	inputs := []dagql.NamedInput{{Name: "refs", Value: refs}}
+	if args.Base.Valid {
+		inputs = append(inputs, dagql.NamedInput{Name: "base", Value: args.Base})
+	}
+	return inputs
+}
+
+func (s *gitSchema) bundle(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args gitBundleArgs,
+) (inst dagql.ObjectResult[*core.GitBundle], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var file dagql.ObjectResult[*core.File]
+	if err := srv.Select(ctx, parent, &file, dagql.Selector{
+		Field: "__bundleFile",
+		Args:  gitBundleNamedInputs(args),
+	}); err != nil {
+		return inst, err
+	}
+	bundle, err := core.ParseGitBundle(ctx, file)
+	if err != nil {
+		return inst, fmt.Errorf("parse created git bundle: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, bundle)
+}
+
+func (s *gitSchema) bundleFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args gitBundleArgs,
+) (inst dagql.ObjectResult[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var base *core.GitRef
+	if args.Base.Valid {
+		loaded, err := args.Base.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load git bundle base: %w", err)
+		}
+		parentDigest, err := parent.RecipeDigest(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("read git bundle repository identity: %w", err)
+		}
+		baseDigest, err := loaded.Self().Repo.RecipeDigest(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("read git bundle base repository identity: %w", err)
+		}
+		if parentDigest != baseDigest {
+			return inst, fmt.Errorf("git bundle base must belong to the bundled repository")
+		}
+		base = loaded.Self()
+	}
+	file, err := core.CreateGitBundleFile(ctx, parent.Self(), args.Refs, base)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+}
+
+type gitWithBundleArgs struct {
+	Bundle          core.GitBundleID
+	PrerequisiteRef string `default:""`
+}
+
+func gitWithBundleNamedInputs(args gitWithBundleArgs) []dagql.NamedInput {
+	return []dagql.NamedInput{
+		{Name: "bundle", Value: args.Bundle},
+		{Name: "prerequisiteRef", Value: dagql.NewString(args.PrerequisiteRef)},
+	}
+}
+
+func (s *gitSchema) withBundle(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args gitWithBundleArgs,
+) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var dir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &dir, dagql.Selector{
+		Field: "__withBundleDirectory",
+		Args:  gitWithBundleNamedInputs(args),
+	}); err != nil {
+		return inst, err
+	}
+	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{Directory: dir})
+	if err != nil {
+		return inst, fmt.Errorf("open imported git bundle repository: %w", err)
+	}
+	repo.URL = parent.Self().URL
+	repo.DiscardGitDir = parent.Self().DiscardGitDir
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+}
+
+func (s *gitSchema) withBundleDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args gitWithBundleArgs,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bundle, err := args.Bundle.Load(ctx, srv)
+	if err != nil {
+		return inst, fmt.Errorf("load git bundle: %w", err)
+	}
+	dir, err := core.ImportGitBundle(ctx, parent.Self(), bundle.Self(), args.PrerequisiteRef)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+func (s *gitSchema) validateBundle(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitBundle],
+	_ struct{},
+) (inst dagql.ObjectResult[*core.GitBundle], _ error) {
+	if err := core.ValidateGitBundle(ctx, parent.Self()); err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
+}
+
+func (s *gitSchema) bundleAsFile(
+	_ context.Context,
+	parent dagql.ObjectResult[*core.GitBundle],
+	_ struct{},
+) (dagql.ObjectResult[*core.File], error) {
+	if parent.Self().File.Self() == nil {
+		return dagql.ObjectResult[*core.File]{}, fmt.Errorf("git bundle file is missing")
+	}
+	return parent.Self().File, nil
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {

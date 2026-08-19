@@ -381,7 +381,7 @@ func MaterializeGitCheckpointBundle(
 		if err := bundleFile.Close(); err != nil {
 			return err
 		}
-		if _, err := runGitEnv(ctx, worktree, nil, "bundle", "verify", bundlePath); err != nil {
+		if err := verifyGitBundleInRepo(ctx, worktree, bundlePath); err != nil {
 			return fmt.Errorf("verify checkpoint bundle: %w", err)
 		}
 		heads, err := runGitEnv(ctx, worktree, nil, "bundle", "list-heads", bundlePath, bundleRef)
@@ -394,7 +394,7 @@ func MaterializeGitCheckpointBundle(
 		}
 
 		const importedRef = "refs/dagger/checkpoint/imported"
-		if _, err := runGitEnv(ctx, worktree, nil, "fetch", "--quiet", "--no-tags", bundlePath, "+"+bundleRef+":"+importedRef); err != nil {
+		if err := fetchGitBundleRefspecs(ctx, worktree, bundlePath, []string{"+" + bundleRef + ":" + importedRef}); err != nil {
 			return fmt.Errorf("import checkpoint bundle: %w", err)
 		}
 		defer runGitEnv(context.WithoutCancel(ctx), worktree, nil, "update-ref", "-d", importedRef) //nolint:errcheck
