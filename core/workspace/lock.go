@@ -1,8 +1,10 @@
 package workspace
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/util/lockfile"
@@ -44,24 +46,8 @@ func LegacyLockFilePathForCanonical(lockFile string) string {
 	return filepath.Join(lockDir, LegacyLockFilePath)
 }
 
-// LockMode controls where lookup results come from for a run.
-type LockMode string
-
-const (
-	LockModeDisabled LockMode = "disabled"
-	LockModeLive     LockMode = "live"
-	LockModePinned   LockMode = "pinned"
-	LockModeFrozen   LockMode = "frozen"
-
-	// Backward-compatible aliases for the previous experimental names.
-	LockModeAuto   = LockModePinned
-	LockModeStrict = LockModeFrozen
-
-	// DefaultLockMode is used when no mode is explicitly set.
-	DefaultLockMode = LockModeDisabled
-)
-
-// LockPolicy controls update intent for a lock entry.
+// LockPolicy controls update intent for a lock entry. It remains in the
+// in-memory model only to migrate policies read from version 1 lockfiles.
 type LockPolicy string
 
 const (
@@ -71,8 +57,30 @@ const (
 
 // LookupResult is the stored lock result for a lookup tuple.
 type LookupResult struct {
-	Value  string     `json:"value"`
+	Value  any        `json:"value"`
 	Policy LockPolicy `json:"policy"`
+}
+
+// GitRefLockResult is the result of resolving a Git ref selector.
+type GitRefLockResult struct {
+	SHA string `json:"sha"`
+	Ref string `json:"ref,omitempty"`
+}
+
+// ParseGitRefLockResult decodes and validates a structured Git ref result.
+func ParseGitRefLockResult(value any) (GitRefLockResult, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return GitRefLockResult{}, fmt.Errorf("marshal git ref lock result: %w", err)
+	}
+	var result GitRefLockResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return GitRefLockResult{}, fmt.Errorf("decode git ref lock result: %w", err)
+	}
+	if result.SHA == "" {
+		return GitRefLockResult{}, fmt.Errorf("git ref lock result SHA is required")
+	}
+	return result, nil
 }
 
 // LookupEntry is a structured lockfile lookup tuple.
@@ -95,7 +103,101 @@ func ParseLock(data []byte) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
+	file, err = migrateLegacyGitEntries(file)
+	if err != nil {
+		return nil, err
+	}
 	return &Lock{file: file}, nil
+}
+
+func migrateLegacyGitEntries(file *lockfile.Lockfile) (*lockfile.Lockfile, error) {
+	migrated := lockfile.New()
+	for _, entry := range file.Entries() {
+		operation, inputs, value := entry.Operation, entry.Inputs, entry.Value
+		var err error
+		if entry.Namespace == "" {
+			operation, inputs, value, err = migrateLegacyGitEntry(operation, inputs, value)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("migrate %s %v: %w", entry.Operation, entry.Inputs, err)
+		}
+
+		if existing, existingPolicy, ok := migrated.Get(entry.Namespace, operation, inputs); ok {
+			existingResult, existingErr := ParseGitRefLockResult(existing)
+			incomingResult, incomingErr := ParseGitRefLockResult(value)
+			if existingErr != nil || incomingErr != nil || existingResult != incomingResult {
+				return nil, fmt.Errorf("conflicting lock entries for %s %v", operation, inputs)
+			}
+			if existingPolicy == string(PolicyFloat) || entry.Policy == "" {
+				continue
+			}
+		}
+
+		if entry.Policy != "" {
+			err = migrated.SetWithLegacyPolicy(entry.Namespace, operation, inputs, value, entry.Policy)
+		} else {
+			err = migrated.Set(entry.Namespace, operation, inputs, value)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return migrated, nil
+}
+
+func migrateLegacyGitEntry(operation string, inputs []any, value any) (string, []any, any, error) {
+	const gitRefOperation = "git.ref"
+
+	if operation == gitRefOperation {
+		if _, ok := value.(string); !ok {
+			return operation, inputs, value, nil
+		}
+	}
+
+	var selector, canonicalRef string
+	switch operation {
+	case "git.head":
+		if len(inputs) != 1 {
+			return "", nil, nil, fmt.Errorf("expected one input")
+		}
+		selector = "HEAD"
+	case "git.branch", "git.tag", gitRefOperation:
+		if len(inputs) != 2 {
+			return "", nil, nil, fmt.Errorf("expected two inputs")
+		}
+		name, ok := inputs[1].(string)
+		if !ok || name == "" {
+			return "", nil, nil, fmt.Errorf("ref name is required")
+		}
+		selector = name
+		switch operation {
+		case "git.branch":
+			selector = "refs/heads/" + strings.TrimPrefix(name, "refs/heads/")
+			canonicalRef = selector
+		case "git.tag":
+			selector = "refs/tags/" + strings.TrimPrefix(name, "refs/tags/")
+			canonicalRef = selector
+		case gitRefOperation:
+			if strings.HasPrefix(name, "refs/") {
+				canonicalRef = name
+			}
+		}
+	default:
+		return operation, inputs, value, nil
+	}
+
+	remote, ok := inputs[0].(string)
+	if !ok || remote == "" {
+		return "", nil, nil, fmt.Errorf("remote is required")
+	}
+	sha, ok := value.(string)
+	if !ok || sha == "" {
+		return "", nil, nil, fmt.Errorf("commit SHA is required")
+	}
+	return gitRefOperation, []any{remote, selector}, GitRefLockResult{
+		SHA: sha,
+		Ref: canonicalRef,
+	}, nil
 }
 
 // NewLock returns an empty workspace lock.
@@ -147,7 +249,7 @@ func (l *Lock) Merge(other *Lock) error {
 		return err
 	}
 	for _, entry := range entries {
-		if err := l.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+		if err := l.setLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result, true); err != nil {
 			return err
 		}
 	}
@@ -177,10 +279,17 @@ func (l *Lock) GetLookup(namespace, operation string, inputs []any) (LookupResul
 
 // SetLookup sets the lock result for a generic lookup tuple.
 func (l *Lock) SetLookup(namespace, operation string, inputs []any, result LookupResult) error {
+	return l.setLookup(namespace, operation, inputs, result, false)
+}
+
+func (l *Lock) setLookup(namespace, operation string, inputs []any, result LookupResult, preserveLegacyPolicy bool) error {
 	if l == nil {
 		return fmt.Errorf("nil lock")
 	}
-	if result.Value == "" {
+	if result.Value == nil {
+		return fmt.Errorf("lookup value is required")
+	}
+	if value, ok := result.Value.(string); ok && value == "" {
 		return fmt.Errorf("lookup value is required")
 	}
 	if !isValidLockPolicy(result.Policy) {
@@ -191,7 +300,10 @@ func (l *Lock) SetLookup(namespace, operation string, inputs []any, result Looku
 	if l.file == nil {
 		return fmt.Errorf("nil lock")
 	}
-	return l.file.Set(namespace, operation, inputs, result.Value, string(result.Policy))
+	if preserveLegacyPolicy {
+		return l.file.SetWithLegacyPolicy(namespace, operation, inputs, result.Value, string(result.Policy))
+	}
+	return l.file.Set(namespace, operation, inputs, result.Value)
 }
 
 // DeleteLookup removes a generic lookup tuple entry.
@@ -236,12 +348,17 @@ func (l *Lock) Entries() ([]LookupEntry, error) {
 }
 
 func parseLookupResult(value any, policy string) (LookupResult, error) {
-	resultValue, ok := value.(string)
-	if !ok || resultValue == "" {
+	if value == nil {
 		return LookupResult{}, fmt.Errorf("value is required")
 	}
+	if resultValue, ok := value.(string); ok && resultValue == "" {
+		return LookupResult{}, fmt.Errorf("value is required")
+	}
+	if policy == "" {
+		policy = string(PolicyPin)
+	}
 	result := LookupResult{
-		Value:  resultValue,
+		Value:  value,
 		Policy: LockPolicy(policy),
 	}
 	if !isValidLockPolicy(result.Policy) {
@@ -252,34 +369,4 @@ func parseLookupResult(value any, policy string) (LookupResult, error) {
 
 func isValidLockPolicy(policy LockPolicy) bool {
 	return policy == PolicyPin || policy == PolicyFloat
-}
-
-// ParseLockMode validates an explicitly configured lock mode.
-func ParseLockMode(mode string) (LockMode, error) {
-	switch mode {
-	case "update":
-		return LockModeLive, nil
-	case "auto":
-		return LockModePinned, nil
-	case "strict":
-		return LockModeFrozen, nil
-	}
-
-	lockMode := LockMode(mode)
-	if !isValidLockMode(lockMode) {
-		return "", fmt.Errorf("invalid lock mode %q", mode)
-	}
-	return lockMode, nil
-}
-
-// ResolveLockMode applies the branch default when the mode is unspecified.
-func ResolveLockMode(mode string) (LockMode, error) {
-	if mode == "" {
-		return DefaultLockMode, nil
-	}
-	return ParseLockMode(mode)
-}
-
-func isValidLockMode(mode LockMode) bool {
-	return mode == LockModeDisabled || mode == LockModeLive || mode == LockModePinned || mode == LockModeFrozen
 }

@@ -1262,7 +1262,7 @@ type Myapp {
 
 		lockOut, err := migrated.File("/work/dagger.lock").Contents(ctx)
 		require.NoError(t, err)
-		assertContainerFromLockEntry(t, []byte(lockOut), workspace.PolicyPin)
+		assertContainerFromLockEntry(t, []byte(lockOut))
 		assertNoModuleResolveLockEntry(t, []byte(lockOut))
 		_, err = migrated.WithExec([]string{"test", "!", "-e", ".dagger/lock"}).Sync(ctx)
 		require.NoError(t, err)

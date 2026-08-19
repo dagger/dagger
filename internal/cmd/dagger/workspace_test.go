@@ -22,6 +22,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
+	require.Nil(t, rootCmd.PersistentFlags().Lookup("lock"))
 
 	cmd, _, err = rootCmd.Find([]string{"update"})
 	require.NoError(t, err)
@@ -142,10 +143,10 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, installedCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"lock"})
+	cmd, args, err := rootCmd.Find([]string{"lock"})
 	require.NoError(t, err)
-	require.Same(t, lockCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.Same(t, rootCmd, cmd)
+	require.Equal(t, []string{"lock"}, args)
 
 	cmd, _, err = rootCmd.Find([]string{"cloud", "login"})
 	require.NoError(t, err)

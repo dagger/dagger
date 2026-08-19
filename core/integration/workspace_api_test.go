@@ -1262,8 +1262,8 @@ func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx 
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, got.Node.WithModule.Changes.AddedPaths)
 	require.Contains(t, got.Node.WithModule.Config.Contents, `source = "github.com/dagger/dagger/modules/wolfi@v0.20.2"`)
-	require.Contains(t, got.Node.WithModule.Lock.Contents, `[["version","1"]]`)
-	require.Contains(t, got.Node.WithModule.Lock.Contents, `"git.tag"`)
+	require.Contains(t, got.Node.WithModule.Lock.Contents, `[["version","2"]]`)
+	require.Contains(t, got.Node.WithModule.Lock.Contents, `"git.ref"`)
 }
 
 func (WorkspaceAPISuite) TestSyntheticWorkspaceDetectsExistingConfigAndLock(ctx context.Context, t *testctx.T) {

@@ -135,10 +135,6 @@ type Params struct {
 
 	SuppressCompatWorkspaceWarning bool
 
-	// LockMode controls lockfile behavior for lookup resolution.
-	// Valid values: "disabled", "strict", "auto", "update".
-	LockMode string
-
 	// Workspace explicitly declares workspace binding for this client.
 	Workspace *string
 
@@ -1457,7 +1453,6 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudAuth:                      c.CloudAuth,
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
-		LockMode:                       c.LockMode,
 		Profile:                        c.Profile,
 	}
 
@@ -1471,9 +1466,6 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	// when this client asks for it.
 	if md.LoadWorkspaceModules {
 		md.WorkspaceModuleScope = c.WorkspaceModuleScope
-	}
-	if c.LockMode != "" {
-		md.LockMode = c.LockMode
 	}
 	if c.Workspace != nil {
 		md.Workspace = c.Workspace

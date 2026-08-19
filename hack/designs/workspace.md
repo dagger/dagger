@@ -151,9 +151,10 @@ In a workspace, the lockfile is the **source of truth for dependency pins**. Unl
 
 Key workspace-specific behaviors:
 
-- **Enabled by default**: Workspaces use lockfiles by default (`--lock=pinned`). This means workspace module resolution, container base images, and git refs are all pinned on first run and reused on subsequent runs.
+- **Enabled by default**: Workspace module resolution, container base images, and Git refs are pinned on first use and reused on subsequent runs.
 - **Lock file location**: `dagger.lock`, derived from the workspace root.
-- **Update flow**: `dagger lock update` refreshes entries in the lockfile. Running with `--lock=live` refreshes entries as they are encountered during execution.
+- **Format**: Version 2 entries contain namespace, operation, inputs, and resolved value. Version 1 policies are accepted only for migration.
+- **Update flow**: `dagger update` refreshes entries already present in the lockfile. Ordinary execution discovers missing entries.
 
 `dagger.json` already carries inline version pins for module dependencies. How these interact with workspace-level lockfile pins is an open design question. Today, both mechanisms coexist independently.
 
@@ -711,7 +712,7 @@ This is distinct from workspace → module dependencies, which are project confi
 | `dagger module init --sdk=<sdk> <name>` | Create a new module |
 | `dagger module dependency add` | Add a code dependency to a module's `dagger.json` |
 | `dagger migrate` | Migrate legacy project to workspace format |
-| `dagger lock update` | Refresh lockfile entries |
+| `dagger update` | Refresh lockfile entries |
 | `-W` / `--workspace` | Select workspace (local path or remote git ref) |
 
 ### Changed Commands

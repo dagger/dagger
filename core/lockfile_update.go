@@ -15,10 +15,7 @@ import (
 const (
 	lockCoreNamespace          = ""
 	lockContainerFromOperation = "container.from"
-	lockGitHeadOperation       = "git.head"
 	lockGitRefOperation        = "git.ref"
-	lockGitBranchOperation     = "git.branch"
-	lockGitTagOperation        = "git.tag"
 )
 
 // UpdateWorkspaceLock refreshes the existing entries in a workspace lockfile in place.
@@ -45,14 +42,8 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	switch {
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromOperation:
 		return updateContainerFromLockEntry(ctx, query, entry)
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitHeadOperation:
-		return updateGitHeadLockEntry(ctx, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitRefOperation:
 		return updateGitRefLockEntry(ctx, entry)
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitBranchOperation:
-		return updateGitBranchLockEntry(ctx, entry)
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitTagOperation:
-		return updateGitTagLockEntry(ctx, entry)
 	default:
 		return workspace.LookupResult{}, fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
 	}
@@ -112,55 +103,16 @@ func resolveContainerFromDigest(ctx context.Context, query *Query, refString, pl
 	return resolvedDigest.String(), nil
 }
 
-func updateGitHeadLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	if len(entry.Inputs) != 1 {
-		return workspace.LookupResult{}, fmt.Errorf("invalid git.head inputs %v", entry.Inputs)
-	}
-	remoteURL, ok := entry.Inputs[0].(string)
-	if !ok || remoteURL == "" {
-		return workspace.LookupResult{}, fmt.Errorf("invalid git.head remote %v", entry.Inputs[0])
-	}
-	commit, err := resolveGitRefCommit(ctx, remoteURL, "head", "")
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	return workspace.LookupResult{Value: commit, Policy: entry.Result.Policy}, nil
-}
-
 func updateGitRefLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
 	remoteURL, name, err := parseGitLookupInputs("git.ref", entry.Inputs)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
-	commit, err := resolveGitRefCommit(ctx, remoteURL, "ref", name)
+	result, err := resolveGitRef(ctx, remoteURL, name)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
-	return workspace.LookupResult{Value: commit, Policy: entry.Result.Policy}, nil
-}
-
-func updateGitBranchLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	remoteURL, name, err := parseGitLookupInputs("git.branch", entry.Inputs)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	commit, err := resolveGitRefCommit(ctx, remoteURL, "branch", name)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	return workspace.LookupResult{Value: commit, Policy: entry.Result.Policy}, nil
-}
-
-func updateGitTagLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	remoteURL, name, err := parseGitLookupInputs("git.tag", entry.Inputs)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	commit, err := resolveGitRefCommit(ctx, remoteURL, "tag", name)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	return workspace.LookupResult{Value: commit, Policy: entry.Result.Policy}, nil
+	return workspace.LookupResult{Value: result, Policy: entry.Result.Policy}, nil
 }
 
 func parseGitLookupInputs(operation string, inputs []any) (string, string, error) {
@@ -178,26 +130,21 @@ func parseGitLookupInputs(operation string, inputs []any) (string, string, error
 	return remoteURL, name, nil
 }
 
-func resolveGitRefCommit(ctx context.Context, remoteURL, field, name string) (string, error) {
+func resolveGitRef(ctx context.Context, remoteURL, name string) (workspace.GitRefLockResult, error) {
 	remote, err := loadRemoteGitMetadata(ctx, remoteURL)
 	if err != nil {
-		return "", err
+		return workspace.GitRefLockResult{}, err
 	}
 
-	target := "HEAD"
-	switch field {
-	case "head":
-	case "ref", "branch", "tag":
-		target = name
-	default:
-		return "", fmt.Errorf("unsupported git lock field %q", field)
-	}
-
-	ref, err := remote.Lookup(target)
+	ref, err := remote.Lookup(name)
 	if err != nil {
-		return "", fmt.Errorf("resolve %s %q for %q: %w", field, name, remoteURL, err)
+		return workspace.GitRefLockResult{}, fmt.Errorf("resolve git ref %q for %q: %w", name, remoteURL, err)
 	}
-	return ref.SHA, nil
+	result := workspace.GitRefLockResult{SHA: ref.SHA}
+	if ref.Name != "" && !gitutil.IsCommitSHA(ref.Name) {
+		result.Ref = ref.Name
+	}
+	return result, nil
 }
 
 func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remote, error) {

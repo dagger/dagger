@@ -9,33 +9,45 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const lockCoreNamespace = ""
+const (
+	lockCoreNamespace       = ""
+	workspaceLockingVersion = "v1.0.0-beta.10"
+)
 
 type workspaceLookupLock struct {
-	ctx      context.Context
-	query    *core.Query
-	lock     *workspace.Lock
-	writable bool
+	ctx   context.Context
+	query *core.Query
+	lock  *workspace.Lock
 }
 
 type workspaceLookupLockOverrideKey struct{}
+type workspaceLookupLockDisabledKey struct{}
+
+func withoutWorkspaceLookupLock(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, workspaceLookupLockDisabledKey{}, true)
+	return dagql.WithPerClientCacheScope(ctx)
+}
+
+func workspaceLookupLockDisabled(ctx context.Context) bool {
+	disabled, _ := ctx.Value(workspaceLookupLockDisabledKey{}).(bool)
+	return disabled
+}
 
 func withWorkspaceLookupLockOverride(ctx context.Context, lock *workspace.Lock) context.Context {
 	ctx = context.WithValue(ctx, workspaceLookupLockOverrideKey{}, lock)
 	return dagql.WithPerClientCacheScope(ctx)
 }
 
-func loadWorkspaceLookupLock(ctx context.Context, query *core.Query, requireWritable bool) (*workspaceLookupLock, error) {
+func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspaceLookupLock, error) {
 	if lock, ok := ctx.Value(workspaceLookupLockOverrideKey{}).(*workspace.Lock); ok && lock != nil {
-		return &workspaceLookupLock{lock: lock, writable: requireWritable}, nil
+		return &workspaceLookupLock{lock: lock}, nil
 	}
 
-	lock, ok, err := query.CurrentWorkspaceLock(ctx, requireWritable)
+	lock, ok, err := query.CurrentWorkspaceLock(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -44,19 +56,15 @@ func loadWorkspaceLookupLock(ctx context.Context, query *core.Query, requireWrit
 	}
 
 	return &workspaceLookupLock{
-		ctx:      ctx,
-		query:    query,
-		lock:     lock,
-		writable: requireWritable,
+		ctx:   ctx,
+		query: query,
+		lock:  lock,
 	}, nil
 }
 
 func (l *workspaceLookupLock) SetLookup(namespace, operation string, inputs []any, result workspace.LookupResult) error {
 	if l == nil {
 		return fmt.Errorf("workspace lock is required")
-	}
-	if !l.writable {
-		return fmt.Errorf("workspace lock is not writable")
 	}
 	if l.query != nil {
 		if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, result); err != nil {
@@ -69,55 +77,32 @@ func (l *workspaceLookupLock) SetLookup(namespace, operation string, inputs []an
 	return nil
 }
 
-func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return "", fmt.Errorf("client metadata: %w", err)
-	}
-	return workspace.ResolveLockMode(clientMetadata.LockMode)
-}
-
-// lookupLockForMode is the policy boundary between ordinary lookups and
-// workspace lockfiles. Default/live/pinned lookups require a writable local
-// workspace lock binding; without one they resolve live and skip lock writes.
-// Frozen only reads, so it can also consume an immutable remote workspace's
-// committed lockfile. Absence of an eligible lock in frozen mode is an error.
-func lookupLockForMode(
+// lookupLockForAPI enables pinned locking only for API views that support it.
+func lookupLockForAPI(
 	ctx context.Context,
 	query *core.Query,
 	operation string,
-) (workspace.LockMode, *workspaceLookupLock, error) {
-	lockMode, err := currentLookupLockMode(ctx)
-	if err != nil {
-		return "", nil, fmt.Errorf("%s lock mode: %w", operation, err)
-	}
-	if lockMode == workspace.LockModeDisabled {
-		return lockMode, nil, nil
+) (*workspaceLookupLock, error) {
+	if !core.Supports(ctx, workspaceLockingVersion) || workspaceLookupLockDisabled(ctx) {
+		return nil, nil
 	}
 
-	lookupLock, err := loadWorkspaceLookupLock(ctx, query, lockMode != workspace.LockModeFrozen)
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
 	if err != nil {
-		return "", nil, fmt.Errorf("%s lockfile: %w", operation, err)
+		return nil, fmt.Errorf("%s lockfile: %w", operation, err)
 	}
-	if lookupLock == nil {
-		if lockMode == workspace.LockModeFrozen {
-			return "", nil, fmt.Errorf("%s lockfile: no writable workspace lockfile is available", operation)
-		}
-		return workspace.LockModeDisabled, nil, nil
-	}
-	return lockMode, lookupLock, nil
+	return lookupLock, nil
 }
 
 type lookupLockResolution struct {
-	Pin         string
+	Pin         any
 	Policy      workspace.LockPolicy
 	ShouldWrite bool
 	Found       bool
 }
 
-func resolveLookupFromLock(
-	lockMode workspace.LockMode,
-	lock *workspace.Lock,
+func resolveLookupFromLoadedLock(
+	lookupLock *workspaceLookupLock,
 	operation string,
 	inputs []any,
 	requestedPolicy workspace.LockPolicy,
@@ -125,49 +110,28 @@ func resolveLookupFromLock(
 	resolution := lookupLockResolution{
 		Policy: requestedPolicy,
 	}
-
-	if lockMode == workspace.LockModeDisabled {
+	if lookupLock == nil {
 		return resolution, nil
 	}
 
-	if lock != nil {
-		if lockResult, ok, err := lock.GetLookup(lockCoreNamespace, operation, inputs); err != nil {
-			return resolution, fmt.Errorf("invalid lock entry for %s %v: %w", operation, inputs, err)
-		} else if ok {
-			resolution.Found = true
-			resolution.Policy = lockResult.Policy
-			switch lockMode {
-			case workspace.LockModeLive:
-				resolution.ShouldWrite = true
-				return resolution, nil
-			case workspace.LockModeFrozen:
-				resolution.Pin = lockResult.Value
-				return resolution, nil
-			case workspace.LockModePinned:
-				if resolution.Policy == workspace.PolicyPin {
-					resolution.Pin = lockResult.Value
-				} else {
-					resolution.ShouldWrite = true
-				}
-				return resolution, nil
-			default:
-				return resolution, fmt.Errorf("unsupported lock mode %q", lockMode)
-			}
-		}
+	lockResult, ok, err := lookupLock.lock.GetLookup(lockCoreNamespace, operation, inputs)
+	if err != nil {
+		return resolution, fmt.Errorf("invalid lock entry for %s %v: %w", operation, inputs, err)
 	}
-
-	switch lockMode {
-	case workspace.LockModeLive:
+	if !ok {
 		resolution.ShouldWrite = true
 		return resolution, nil
-	case workspace.LockModePinned:
-		resolution.ShouldWrite = true
-		return resolution, nil
-	case workspace.LockModeFrozen:
-		return resolution, fmt.Errorf("missing lock entry for %s %v", operation, inputs)
-	default:
-		return resolution, fmt.Errorf("unsupported lock mode %q", lockMode)
 	}
+
+	resolution.Found = true
+	resolution.Policy = lockResult.Policy
+	if resolution.Policy == workspace.PolicyPin {
+		resolution.Pin = lockResult.Value
+	} else {
+		// Version 1 float entries are refreshed once before the file migrates.
+		resolution.ShouldWrite = true
+	}
+	return resolution, nil
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {

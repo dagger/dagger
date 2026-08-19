@@ -2137,7 +2137,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				ClientVersion:         engine.Version,
 				SessionID:             clientMetadata.SessionID,
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
-				LockMode:              clientMetadata.LockMode,
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
 			}
 		}

@@ -1229,18 +1229,13 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	var lookupLock *workspaceLookupLock
-	var rawLock *workspace.Lock
-	lockMode := workspace.LockModeDisabled
 	// A ref like "registry:5000/app:latest" can point to different images
 	// depending on registryService, so disable workspace lock entries when
 	// registryService is set.
 	if len(registryServices) == 0 {
-		lockMode, lookupLock, err = lookupLockForMode(ctx, query, lockContainerFromOperation)
+		lookupLock, err = lookupLockForAPI(ctx, query, lockContainerFromOperation)
 		if err != nil {
 			return inst, err
-		}
-		if lockMode != workspace.LockModeDisabled {
-			rawLock = lookupLock.lock
 		}
 	}
 
@@ -1251,9 +1246,8 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if registryTransport.InsecureSkipTLSVerify {
 		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
 	}
-	lockResolution, err := resolveLookupFromLock(
-		lockMode,
-		rawLock,
+	lockResolution, err := resolveLookupFromLoadedLock(
+		lookupLock,
 		lockContainerFromOperation,
 		lockInputs,
 		workspace.PolicyPin,
@@ -1262,10 +1256,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("container.from lock resolution: %w", err)
 	}
 
-	if lockResolution.Pin != "" {
-		resolvedDigest, err := digest.Parse(lockResolution.Pin)
+	if lockResolution.Pin != nil {
+		pin, ok := lockResolution.Pin.(string)
+		if !ok || pin == "" {
+			return inst, fmt.Errorf("invalid lock digest %v for image %q", lockResolution.Pin, refName.String())
+		}
+		resolvedDigest, err := digest.Parse(pin)
 		if err != nil {
-			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", pin, refName.String(), err)
 		}
 		refName, err = reference.WithDigest(refName, resolvedDigest)
 		if err != nil {

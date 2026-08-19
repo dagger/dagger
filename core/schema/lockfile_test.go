@@ -10,7 +10,8 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +34,10 @@ func (r fakeWorkspaceLockReader) ReadCallerHostFile(_ context.Context, path stri
 	return r.data, nil
 }
 
+func withCurrentLockView(ctx context.Context) context.Context {
+	return dagql.ContextWithCall(ctx, &dagql.ResultCall{View: call.View(workspaceLockingVersion)})
+}
+
 func TestResolveLookupFromLock(t *testing.T) {
 	t.Parallel()
 
@@ -41,6 +46,14 @@ func TestResolveLookupFromLock(t *testing.T) {
 
 	makeLock := func(t *testing.T, pin string, policy workspace.LockPolicy) *workspace.Lock {
 		t.Helper()
+		if policy == workspace.PolicyFloat {
+			data := fmt.Sprintf(`[["version","1"]]
+["","container.from",["alpine:latest","linux/amd64"],%q,%q]`, pin, policy)
+			lock, err := workspace.ParseLock([]byte(data))
+			require.NoError(t, err)
+			return lock
+		}
+
 		lock := workspace.NewLock()
 		require.NoError(t, lock.SetLookup(lockCoreNamespace, operation, inputs, workspace.LookupResult{
 			Value:  pin,
@@ -49,87 +62,46 @@ func TestResolveLookupFromLock(t *testing.T) {
 		return lock
 	}
 
-	t.Run("disabled ignores lockfile", func(t *testing.T) {
+	t.Run("disabled without a lock", func(t *testing.T) {
 		t.Parallel()
-		lock := makeLock(t, "sha256:abc123", workspace.PolicyPin)
 
-		res, err := resolveLookupFromLock(workspace.LockModeDisabled, lock, operation, inputs, workspace.PolicyFloat)
-		require.NoError(t, err)
-		require.Empty(t, res.Pin)
-		require.Equal(t, workspace.PolicyFloat, res.Policy)
-		require.False(t, res.ShouldWrite)
-	})
-
-	t.Run("live always resolves and writes", func(t *testing.T) {
-		t.Parallel()
-		lock := makeLock(t, "sha256:abc123", workspace.PolicyPin)
-
-		res, err := resolveLookupFromLock(workspace.LockModeLive, lock, operation, inputs, workspace.PolicyFloat)
+		res, err := resolveLookupFromLoadedLock(nil, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
 		require.Empty(t, res.Pin)
 		require.Equal(t, workspace.PolicyPin, res.Policy)
-		require.True(t, res.ShouldWrite)
+		require.False(t, res.ShouldWrite)
 	})
 
 	t.Run("existing pin entry", func(t *testing.T) {
 		t.Parallel()
-		lock := makeLock(t, "sha256:abc123", workspace.PolicyPin)
 
-		res, err := resolveLookupFromLock(workspace.LockModeFrozen, lock, operation, inputs, workspace.PolicyFloat)
-		require.NoError(t, err)
-		require.Equal(t, "sha256:abc123", res.Pin)
-		require.Equal(t, workspace.PolicyPin, res.Policy)
-		require.False(t, res.ShouldWrite)
-
-		res, err = resolveLookupFromLock(workspace.LockModePinned, lock, operation, inputs, workspace.PolicyFloat)
+		loaded := &workspaceLookupLock{lock: makeLock(t, "sha256:abc123", workspace.PolicyPin)}
+		res, err := resolveLookupFromLoadedLock(loaded, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
 		require.Equal(t, "sha256:abc123", res.Pin)
 		require.Equal(t, workspace.PolicyPin, res.Policy)
 		require.False(t, res.ShouldWrite)
 	})
 
-	t.Run("existing float entry", func(t *testing.T) {
+	t.Run("version 1 float entry is refreshed", func(t *testing.T) {
 		t.Parallel()
-		lock := makeLock(t, "sha256:def456", workspace.PolicyFloat)
 
-		res, err := resolveLookupFromLock(workspace.LockModeFrozen, lock, operation, inputs, workspace.PolicyPin)
-		require.NoError(t, err)
-		require.Equal(t, "sha256:def456", res.Pin)
-		require.Equal(t, workspace.PolicyFloat, res.Policy)
-		require.False(t, res.ShouldWrite)
-
-		res, err = resolveLookupFromLock(workspace.LockModePinned, lock, operation, inputs, workspace.PolicyPin)
+		loaded := &workspaceLookupLock{lock: makeLock(t, "sha256:def456", workspace.PolicyFloat)}
+		res, err := resolveLookupFromLoadedLock(loaded, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
 		require.Empty(t, res.Pin)
 		require.Equal(t, workspace.PolicyFloat, res.Policy)
 		require.True(t, res.ShouldWrite)
 	})
 
-	t.Run("missing entry with requested pin policy", func(t *testing.T) {
+	t.Run("missing entry is written", func(t *testing.T) {
 		t.Parallel()
 
-		res, err := resolveLookupFromLock(workspace.LockModeFrozen, nil, operation, inputs, workspace.PolicyPin)
-		require.ErrorContains(t, err, "missing lock entry")
-		require.Equal(t, workspace.PolicyPin, res.Policy)
-
-		res, err = resolveLookupFromLock(workspace.LockModePinned, nil, operation, inputs, workspace.PolicyPin)
-		require.NoError(t, err)
-		require.Equal(t, workspace.PolicyPin, res.Policy)
-		require.Empty(t, res.Pin)
-		require.True(t, res.ShouldWrite)
-	})
-
-	t.Run("missing entry with requested float policy", func(t *testing.T) {
-		t.Parallel()
-
-		res, err := resolveLookupFromLock(workspace.LockModeFrozen, nil, operation, inputs, workspace.PolicyFloat)
-		require.ErrorContains(t, err, "missing lock entry")
-		require.Equal(t, workspace.PolicyFloat, res.Policy)
-
-		res, err = resolveLookupFromLock(workspace.LockModePinned, nil, operation, inputs, workspace.PolicyFloat)
+		loaded := &workspaceLookupLock{lock: workspace.NewLock()}
+		res, err := resolveLookupFromLoadedLock(loaded, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
 		require.Empty(t, res.Pin)
-		require.Equal(t, workspace.PolicyFloat, res.Policy)
+		require.Equal(t, workspace.PolicyPin, res.Policy)
 		require.True(t, res.ShouldWrite)
 	})
 
@@ -143,95 +115,61 @@ func TestResolveLookupFromLock(t *testing.T) {
 		lock, err := workspace.ParseLock([]byte(data))
 		require.NoError(t, err)
 
-		_, err = resolveLookupFromLock(workspace.LockModePinned, lock, operation, inputs, workspace.PolicyFloat)
+		_, err = resolveLookupFromLoadedLock(
+			&workspaceLookupLock{lock: lock},
+			operation,
+			inputs,
+			workspace.PolicyPin,
+		)
 		require.ErrorContains(t, err, "invalid lock entry")
 	})
 }
 
-func TestCurrentLookupLockMode(t *testing.T) {
-	t.Parallel()
-
-	t.Run("defaults to disabled", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{})
-		mode, err := currentLookupLockMode(ctx)
-		require.NoError(t, err)
-		require.Equal(t, workspace.LockModeDisabled, mode)
-	})
-
-	t.Run("uses explicit mode", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			LockMode: string(workspace.LockModeLive),
-		})
-		mode, err := currentLookupLockMode(ctx)
-		require.NoError(t, err)
-		require.Equal(t, workspace.LockModeLive, mode)
-	})
-}
-
-func TestLookupLockForMode(t *testing.T) {
+func TestLookupLockForAPI(t *testing.T) {
 	t.Parallel()
 
 	const operation = "container.from"
 
-	t.Run("pinned without workspace lock resolves live without writes", func(t *testing.T) {
+	t.Run("older API view disables locking", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			LockMode: string(workspace.LockModePinned),
+		ctx := dagql.ContextWithCall(context.Background(), &dagql.ResultCall{
+			View: call.View("v1.0.0-beta.9"),
 		})
-		query := &core.Query{Server: &currentTypeDefsTestServer{}}
-
-		mode, lock, err := lookupLockForMode(ctx, query, operation)
+		lock, err := lookupLockForAPI(ctx, nil, operation)
 		require.NoError(t, err)
-		require.Equal(t, workspace.LockModeDisabled, mode)
 		require.Nil(t, lock)
 	})
 
-	t.Run("frozen without workspace lock fails", func(t *testing.T) {
+	t.Run("current API view uses available workspace lock", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			LockMode: string(workspace.LockModeFrozen),
-		})
-		query := &core.Query{Server: &currentTypeDefsTestServer{}}
-
-		_, _, err := lookupLockForMode(ctx, query, operation)
-		require.ErrorContains(t, err, "no writable workspace lockfile is available")
-	})
-
-	t.Run("uses available workspace lock", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			LockMode: string(workspace.LockModePinned),
-		})
 		query := &core.Query{Server: &currentTypeDefsTestServer{
 			workspaceLock:   workspace.NewLock(),
 			workspaceLockOK: true,
 		}}
-
-		mode, lock, err := lookupLockForMode(ctx, query, operation)
+		lock, err := lookupLockForAPI(withCurrentLockView(context.Background()), query, operation)
 		require.NoError(t, err)
-		require.Equal(t, workspace.LockModePinned, mode)
 		require.NotNil(t, lock)
+	})
+
+	t.Run("private context disables locking", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := withoutWorkspaceLookupLock(withCurrentLockView(context.Background()))
+		lock, err := lookupLockForAPI(ctx, nil, operation)
+		require.NoError(t, err)
+		require.Nil(t, lock)
 	})
 
 	t.Run("uses an in-memory overlay lock without a host binding", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			LockMode: string(workspace.LockModePinned),
-		})
 		overlay := workspace.NewLock()
-		ctx = withWorkspaceLookupLockOverride(ctx, overlay)
+		ctx := withWorkspaceLookupLockOverride(withCurrentLockView(context.Background()), overlay)
 
-		mode, lock, err := lookupLockForMode(ctx, nil, operation)
+		lock, err := lookupLockForAPI(ctx, nil, operation)
 		require.NoError(t, err)
-		require.Equal(t, workspace.LockModePinned, mode)
 		require.NotNil(t, lock)
 
 		inputs := []any{"alpine:latest", "linux/amd64"}
@@ -241,34 +179,6 @@ func TestLookupLockForMode(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.Equal(t, want, got)
-	})
-}
-
-func TestWorkspaceInstallLookupContext(t *testing.T) {
-	t.Parallel()
-
-	t.Run("defaults unspecified mode to pinned", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{})
-		ctx = workspaceInstallLookupContext(ctx)
-
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		require.NoError(t, err)
-		require.Equal(t, string(workspace.LockModePinned), clientMetadata.LockMode)
-	})
-
-	t.Run("preserves explicit mode", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			LockMode: string(workspace.LockModeDisabled),
-		})
-		ctx = workspaceInstallLookupContext(ctx)
-
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		require.NoError(t, err)
-		require.Equal(t, string(workspace.LockModeDisabled), clientMetadata.LockMode)
 	})
 }
 

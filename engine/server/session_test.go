@@ -1815,7 +1815,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			}},
 			LoadWorkspaceModules:  true,
 			EagerRuntime:          true,
-			LockMode:              string(workspace.LockModeFrozen),
 			Workspace:             stringPtr("github.com/dagger/base@main"),
 			WorkspaceEnv:          stringPtr("parent-ci"),
 			WorkspaceModuleScope:  "parent-scope",
@@ -1838,7 +1837,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Empty(t, md.Labels)
 		require.Equal(t, "/tmp/ssh.sock", md.SSHAuthSocketPath)
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
-		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
 		require.Empty(t, md.ExtraModules)
 		require.False(t, md.LoadWorkspaceModules)
 		require.False(t, md.EagerRuntime)
@@ -1875,7 +1873,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			LoadWorkspaceModules:           true,
 			EagerRuntime:                   true,
 			SuppressCompatWorkspaceWarning: true,
-			LockMode:                       string(workspace.LockModeLive),
 			Workspace:                      &workspaceRef,
 			WorkspaceEnv:                   &workspaceEnv,
 			WorkspaceModuleScope:           "good-mod",
@@ -1893,7 +1890,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
-		require.Equal(t, string(workspace.LockModeLive), md.LockMode)
 		require.True(t, md.LoadWorkspaceModules)
 		require.True(t, md.EagerRuntime)
 		require.True(t, md.SuppressCompatWorkspaceWarning)
@@ -1904,23 +1900,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Ref:        "github.com/dagger/mod",
 			Entrypoint: true,
 		}}, md.ExtraModules)
-		require.True(t, md.UseRecipeIDsByDefault)
-	})
-
-	t.Run("keeps parent lock mode when forwarded metadata omits it", func(t *testing.T) {
-		t.Parallel()
-
-		forwarded := engine.ClientMetadata{
-			ClientVersion:     "v-test",
-			AllowedLLMModules: []string{"child"},
-		}
-
-		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
-
-		require.Equal(t, "v-test", md.ClientVersion)
-		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
-		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
-		require.Nil(t, md.WorkspaceEnv)
 		require.True(t, md.UseRecipeIDsByDefault)
 	})
 

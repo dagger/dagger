@@ -10,8 +10,10 @@ import (
 )
 
 const (
-	versionKey   = "version"
-	versionValue = "1"
+	versionKey     = "version"
+	versionValueV1 = "1"
+	versionValueV2 = "2"
+	versionCurrent = versionValueV2
 )
 
 // Lockfile stores lock entries keyed by (namespace, operation, inputs).
@@ -50,12 +52,13 @@ func New() *Lockfile {
 
 // Parse decodes lockfile JSON lines.
 //
-// Non-empty files must start with a version header line: [["version","1"]].
+// Non-empty files must start with a supported version header line.
 func Parse(data []byte) (*Lockfile, error) {
 	lock := New()
 	lines := bytes.Split(data, []byte("\n"))
 
 	firstContentLine := true
+	version := ""
 	for i, rawLine := range lines {
 		line := strings.TrimSpace(string(rawLine))
 		if line == "" {
@@ -63,14 +66,16 @@ func Parse(data []byte) (*Lockfile, error) {
 		}
 
 		if firstContentLine {
-			if err := parseVersionHeader([]byte(line)); err != nil {
+			var err error
+			version, err = parseVersionHeader([]byte(line))
+			if err != nil {
 				return nil, fmt.Errorf("lockfile line %d: %w", i+1, err)
 			}
 			firstContentLine = false
 			continue
 		}
 
-		entry, err := parseEntry([]byte(line))
+		entry, err := parseEntry([]byte(line), version)
 		if err != nil {
 			return nil, fmt.Errorf("lockfile line %d: %w", i+1, err)
 		}
@@ -89,14 +94,14 @@ func (l *Lockfile) Marshal() ([]byte, error) {
 	}
 
 	lines := make([][]byte, 0, len(l.entries)+1)
-	header, err := json.Marshal([][]string{{versionKey, versionValue}})
+	header, err := json.Marshal([][]string{{versionKey, versionCurrent}})
 	if err != nil {
 		return nil, fmt.Errorf("marshal lockfile header: %w", err)
 	}
 	lines = append(lines, header)
 
 	for _, entry := range l.sortedEntries() {
-		line, err := json.Marshal([]any{entry.namespace, entry.operation, entry.inputs, entry.value, entry.policy})
+		line, err := json.Marshal([]any{entry.namespace, entry.operation, entry.inputs, entry.value})
 		if err != nil {
 			return nil, fmt.Errorf("marshal lockfile entry %q %q: %w", entry.namespace, entry.operation, err)
 		}
@@ -106,7 +111,8 @@ func (l *Lockfile) Marshal() ([]byte, error) {
 	return bytes.Join(lines, []byte("\n")), nil
 }
 
-// Get retrieves the value and policy for (namespace, operation, inputs).
+// Get retrieves the value and any legacy v1 policy for (namespace, operation,
+// inputs). Version 2 entries have no policy.
 func (l *Lockfile) Get(namespace, operation string, inputs []any) (any, string, bool) {
 	if l == nil || len(l.entries) == 0 {
 		return nil, "", false
@@ -126,8 +132,18 @@ func (l *Lockfile) Get(namespace, operation string, inputs []any) (any, string, 
 	return value, entry.policy, true
 }
 
-// Set records the value and policy for (namespace, operation, inputs).
-func (l *Lockfile) Set(namespace, operation string, inputs []any, value any, policy string) error {
+// Set records the value for (namespace, operation, inputs).
+func (l *Lockfile) Set(namespace, operation string, inputs []any, value any) error {
+	return l.set(namespace, operation, inputs, value, "")
+}
+
+// SetWithLegacyPolicy records a value while preserving a version 1 policy in
+// memory. Marshal still writes version 2 and omits the policy.
+func (l *Lockfile) SetWithLegacyPolicy(namespace, operation string, inputs []any, value any, policy string) error {
+	return l.set(namespace, operation, inputs, value, policy)
+}
+
+func (l *Lockfile) set(namespace, operation string, inputs []any, value any, policy string) error {
 	if l == nil {
 		return fmt.Errorf("nil lockfile")
 	}
@@ -199,34 +215,39 @@ func (l *Lockfile) Entries() []Entry {
 	return entries
 }
 
-func parseVersionHeader(line []byte) error {
+func parseVersionHeader(line []byte) (string, error) {
 	var header []json.RawMessage
 	if err := decodeJSON(line, &header); err != nil {
-		return fmt.Errorf("invalid version header: %w", err)
+		return "", fmt.Errorf("invalid version header: %w", err)
 	}
 	if len(header) != 1 {
-		return fmt.Errorf("missing version header")
+		return "", fmt.Errorf("missing version header")
 	}
 	var versionPair []string
 	if err := decodeJSON(header[0], &versionPair); err != nil {
-		return fmt.Errorf("missing version header")
+		return "", fmt.Errorf("missing version header")
 	}
 	if len(versionPair) != 2 || versionPair[0] != versionKey {
-		return fmt.Errorf("missing version header")
+		return "", fmt.Errorf("missing version header")
 	}
-	if versionPair[1] != versionValue {
-		return fmt.Errorf("unsupported lockfile version %q", versionPair[1])
+	version := versionPair[1]
+	if version != versionValueV1 && version != versionValueV2 {
+		return "", fmt.Errorf("unsupported lockfile version %q", version)
 	}
-	return nil
+	return version, nil
 }
 
-func parseEntry(line []byte) (lockEntry, error) {
+func parseEntry(line []byte, version string) (lockEntry, error) {
 	var tuple []json.RawMessage
 	if err := decodeJSON(line, &tuple); err != nil {
 		return lockEntry{}, fmt.Errorf("invalid tuple JSON: %w", err)
 	}
-	if len(tuple) != 5 {
-		return lockEntry{}, fmt.Errorf("invalid tuple length %d: expected 5", len(tuple))
+	expectedLen := 4
+	if version == versionValueV1 {
+		expectedLen = 5
+	}
+	if len(tuple) != expectedLen {
+		return lockEntry{}, fmt.Errorf("invalid tuple length %d: expected %d for lockfile version %s", len(tuple), expectedLen, version)
 	}
 
 	var namespace string
@@ -257,8 +278,10 @@ func parseEntry(line []byte) (lockEntry, error) {
 		return lockEntry{}, fmt.Errorf("canonicalizing value: %w", err)
 	}
 	var policy string
-	if err := decodeJSON(tuple[4], &policy); err != nil {
-		return lockEntry{}, fmt.Errorf("invalid policy: %w", err)
+	if version == versionValueV1 {
+		if err := decodeJSON(tuple[4], &policy); err != nil {
+			return lockEntry{}, fmt.Errorf("invalid policy: %w", err)
+		}
 	}
 
 	return lockEntry{
@@ -296,9 +319,6 @@ func canonicalizeValue(value any) (any, error) {
 	}
 	var canonical any
 	if err := decodeJSON(data, &canonical); err != nil {
-		return nil, err
-	}
-	if err := validateNoMaps(canonical, "lock value"); err != nil {
 		return nil, err
 	}
 	return canonical, nil

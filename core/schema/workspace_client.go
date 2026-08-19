@@ -11,7 +11,6 @@ import (
 	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type workspaceInitClientArgs struct {
@@ -33,10 +32,6 @@ func (s *workspaceSchema) initClientChanges(
 	args workspaceInitClientArgs,
 ) (res dagql.ObjectResult[*core.Changeset], scope initScope, _ error) {
 	ws := parent.Self()
-	lockMode := ""
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		lockMode = clientMetadata.LockMode
-	}
 	if args.Path == "" {
 		return res, scope, fmt.Errorf("client path is required")
 	}
@@ -73,11 +68,6 @@ func (s *workspaceSchema) initClientChanges(
 			return res, scope, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	if lockMode != "" {
-		workspaceCtx = workspaceInstallContextWithLockMode(workspaceCtx, workspace.LockMode(lockMode))
-	}
-	workspaceCtx = workspaceInstallLookupContext(workspaceCtx)
-
 	targetModule, err := s.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, "")
 	if err != nil {
 		return res, scope, err
