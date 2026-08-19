@@ -16,6 +16,7 @@ type GoCli {
     base.withTools(currentNode)
   }
 
+  @cache(policy: FunctionCachePolicy.Never)
   go(
     ws: Workspace!,
     """
@@ -29,7 +30,7 @@ type GoCli {
       .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
       .withEnvVariable("GOCACHE", "/root/.cache/go-build")
       .withWorkdir("/workspace")
-      .withDirectory(".", ws.directory("/", gitignore: true, exclude: ["tmp"]))
+      .withDirectory(".", ws.directory("/", gitignore: true, exclude: [".git", "tmp"]))
       .withEnvVariable("CACHEBUST", UUID.v7)
     let after = before
       .withExec(["go"] + args)
