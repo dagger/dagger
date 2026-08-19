@@ -729,6 +729,8 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 			val.DigestedString.GetValue(),
 			digest.Digest(val.DigestedString.GetDigest()),
 		)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_Bytes:
+		fmt.Fprint(out, out.String(call.DisplayBytes(val.Bytes)).Foreground(termenv.ANSIYellow))
 	case *callpbv1.Literal_CallDigest:
 		fmt.Fprint(out, out.String(val.CallDigest).Foreground(termenv.ANSIMagenta))
 	case *callpbv1.Literal_Enum:

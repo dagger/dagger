@@ -310,6 +310,8 @@ func displayLit(lit *callpbv1.Literal) string {
 			val.DigestedString.GetValue(),
 			digest.Digest(val.DigestedString.GetDigest()),
 		)
+	case *callpbv1.Literal_Bytes:
+		return call.DisplayBytes(val.Bytes)
 	case *callpbv1.Literal_List:
 		s := "["
 		for i, item := range val.List.GetValues() {

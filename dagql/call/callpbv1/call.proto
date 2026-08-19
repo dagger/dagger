@@ -160,6 +160,7 @@ message Literal {
     List list = 8;
     Object object = 9;
     DigestedString digestedString = 10;
+    bytes bytes = 11;
   }
 }
 

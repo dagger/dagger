@@ -10,6 +10,8 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,10 +21,13 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/testctx"
@@ -93,6 +98,112 @@ func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
 	contents, err := file.Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
+}
+
+func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to capture and replay call payloads")
+	}
+	contents := []byte{0x00, 0xff, 0xfe, 0x80, 'b', 'l', 'o', 'b', 0x00}
+	different := bytes.Clone(contents)
+	different[len(different)-2] ^= 0xff
+
+	sink := newAgentTraceSink(t)
+	creator := connect(ctx, t, sink.clientOpts()...)
+	var created struct {
+		Original struct {
+			ID string
+		} `json:"original"`
+		Same struct {
+			ID string
+		} `json:"same"`
+		Different struct {
+			ID string
+		} `json:"different"`
+	}
+	err := creator.Do(ctx, &dagger.Request{
+		Query: `query Blob($contents: Bytes!, $different: Bytes!) {
+			original: blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
+			same: blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
+			different: blob(name: "binary.dat", contents: $different, permissions: 384) { id }
+		}`,
+		Variables: map[string]any{
+			"contents":  base64.StdEncoding.EncodeToString(contents),
+			"different": base64.StdEncoding.EncodeToString(different),
+		},
+	}, &dagger.Response{Data: &created})
+	require.NoError(t, err)
+	require.NotEmpty(t, created.Original.ID)
+	require.Equal(t, created.Original.ID, created.Same.ID)
+	require.NotEqual(t, created.Original.ID, created.Different.ID)
+
+	var (
+		recipeID   string
+		rebuildErr error
+	)
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			for _, span := range db.Spans.Map {
+				if span.Name != "Query.blob" {
+					continue
+				}
+				id, err := span.CallID()
+				if err != nil {
+					rebuildErr = err
+					continue
+				}
+				arg := id.Arg("contents")
+				if arg == nil {
+					continue
+				}
+				lit, ok := arg.Value().(*call.LiteralBytes)
+				if !ok || !bytes.Equal(lit.Value(), contents) {
+					continue
+				}
+				recipeID, rebuildErr = id.Encode()
+				return
+			}
+		})
+		assert.NoError(ct, rebuildErr)
+		assert.NotEmpty(ct, recipeID, "binary blob recipe was not rebuildable from call payloads")
+	}, 120*time.Second, 100*time.Millisecond)
+
+	// Send the reconstructed public recipe through a separate client and force
+	// evaluation by mounting the reconstructed File. This exercises arbitrary
+	// binary bytes, including invalid UTF-8 and NUL, without routing them through
+	// File.contents.
+	replayer := connect(ctx, t)
+	var replayed struct {
+		Container struct {
+			From struct {
+				WithMountedFile struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}
+	}
+	err = replayer.Do(ctx, &dagger.Request{
+		Query: `query ReplayBlob($file: ID!, $image: String!) {
+			container {
+				from(address: $image) {
+					withMountedFile(path: "/blob", source: $file) {
+						withExec(args: ["sh", "-c", "sha256sum /blob; stat -c %a /blob"]) {
+							stdout
+						}
+					}
+				}
+			}
+		}`,
+		Variables: map[string]any{
+			"file":  recipeID,
+			"image": alpineImage,
+		},
+	}, &dagger.Response{Data: &replayed})
+	require.NoError(t, err)
+	wantDigest := fmt.Sprintf("%x  /blob\n", sha256.Sum256(contents))
+	require.Equal(t, wantDigest+"600\n", replayed.Container.From.WithMountedFile.WithExec.Stdout)
 }
 
 func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {

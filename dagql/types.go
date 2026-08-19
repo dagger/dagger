@@ -2,10 +2,12 @@ package dagql
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -620,6 +622,94 @@ func (s String) SetField(v reflect.Value) error {
 		return nil
 	default:
 		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), s)
+	}
+}
+
+// Bytes is a binary-safe GraphQL scalar. It is base64-encoded at GraphQL and
+// JSON boundaries and retained as raw bytes in DagQL inputs and call recipes.
+type Bytes []byte
+
+func NewBytes(val []byte) Bytes {
+	return Bytes(slices.Clone(val))
+}
+
+var _ ScalarType = Bytes(nil)
+
+func (Bytes) TypeName() string {
+	return "Bytes"
+}
+
+func (Bytes) TypeDefinition(_ call.View) *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "Bytes",
+		Description: "Arbitrary binary data, represented as a base64-encoded string.",
+	}
+}
+
+func (Bytes) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case string:
+		decoded, err := base64.StdEncoding.DecodeString(x)
+		if err != nil {
+			return nil, fmt.Errorf("cannot decode Bytes from base64: %w", err)
+		}
+		return NewBytes(decoded), nil
+	case []byte:
+		return NewBytes(x), nil
+	case Bytes:
+		return NewBytes(x), nil
+	default:
+		return nil, fmt.Errorf("cannot create Bytes from %T", x)
+	}
+}
+
+func (b Bytes) Decoder() InputDecoder {
+	return Bytes(nil)
+}
+
+func (b Bytes) ToLiteral() call.Literal {
+	return call.NewLiteralBytes(b)
+}
+
+func (Bytes) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Bytes",
+		NonNull:   true,
+	}
+}
+
+func (b Bytes) MarshalJSON() ([]byte, error) {
+	return json.Marshal(base64.StdEncoding.EncodeToString(b))
+}
+
+func (b *Bytes) UnmarshalJSON(payload []byte) error {
+	var encoded string
+	if err := json.Unmarshal(payload, &encoded); err != nil {
+		return err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("cannot decode Bytes from base64: %w", err)
+	}
+	*b = NewBytes(decoded)
+	return nil
+}
+
+func (b Bytes) Bytes() []byte {
+	return slices.Clone(b)
+}
+
+func (b Bytes) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case Bytes:
+		v.Set(reflect.ValueOf(NewBytes(b)))
+		return nil
+	case []byte:
+		v.SetBytes(slices.Clone(b))
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), b)
 	}
 }
 

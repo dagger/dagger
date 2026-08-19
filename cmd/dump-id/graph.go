@@ -242,6 +242,8 @@ func (g *graph) litDisplay(lit *callpbv1.Literal, o formatOpts) string {
 			v.DigestedString.GetValue(),
 			digest.Digest(v.DigestedString.GetDigest()),
 		)
+	case *callpbv1.Literal_Bytes:
+		return call.DisplayBytes(v.Bytes)
 	case *callpbv1.Literal_List:
 		parts := make([]string, 0, len(v.List.GetValues()))
 		for _, e := range v.List.GetValues() {

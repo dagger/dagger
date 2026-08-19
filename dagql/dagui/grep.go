@@ -100,6 +100,8 @@ func fullLiteral(lit *callpbv1.Literal) string {
 			v.DigestedString.GetValue(),
 			digest.Digest(v.DigestedString.GetDigest()),
 		)
+	case *callpbv1.Literal_Bytes:
+		return call.DisplayBytes(v.Bytes)
 	case *callpbv1.Literal_List:
 		vals := v.List.GetValues()
 		parts := make([]string, 0, len(vals))

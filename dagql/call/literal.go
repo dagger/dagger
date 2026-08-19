@@ -3,6 +3,7 @@ package call
 import (
 	"fmt"
 	"iter"
+	"slices"
 	"strconv"
 
 	"github.com/opencontainers/go-digest"
@@ -31,6 +32,8 @@ func ToLiteral(val any) (Literal, error) {
 	switch v := val.(type) {
 	case string:
 		return NewLiteralString(v), nil
+	case []byte:
+		return NewLiteralBytes(v), nil
 	case bool:
 		return NewLiteralBool(v), nil
 	case int64:
@@ -189,6 +192,55 @@ func (lit *LiteralDigestedString) pb() *callpbv1.Literal {
 }
 
 func (lit *LiteralDigestedString) gatherCalls(_ map[string]*callpbv1.Call) {}
+
+type LiteralBytes struct {
+	value []byte
+}
+
+func NewLiteralBytes(value []byte) *LiteralBytes {
+	return &LiteralBytes{value: slices.Clone(value)}
+}
+
+func (lit *LiteralBytes) Value() []byte {
+	return slices.Clone(lit.value)
+}
+
+func (lit *LiteralBytes) Inputs() ([]digest.Digest, error) {
+	return nil, nil
+}
+
+func (lit *LiteralBytes) Modules() []*Module {
+	return nil
+}
+
+// DisplayBytes renders binary data's content digest and byte size without
+// exposing the data itself.
+func DisplayBytes(value []byte) string {
+	return fmt.Sprintf("<bytes digest=%s size=%dB>", digest.FromBytes(value), len(value))
+}
+
+func (lit *LiteralBytes) Display() string {
+	return DisplayBytes(lit.value)
+}
+
+func (lit *LiteralBytes) ToInput() any {
+	return slices.Clone(lit.value)
+}
+
+func (lit *LiteralBytes) ToAST() *ast.Value {
+	return &ast.Value{
+		Raw:  strconv.Quote(lit.Display()),
+		Kind: ast.StringValue,
+	}
+}
+
+func (lit *LiteralBytes) pb() *callpbv1.Literal {
+	return &callpbv1.Literal{
+		Value: &callpbv1.Literal_Bytes{Bytes: slices.Clone(lit.value)},
+	}
+}
+
+func (lit *LiteralBytes) gatherCalls(_ map[string]*callpbv1.Call) {}
 
 type LiteralList struct {
 	values []Literal
@@ -488,6 +540,8 @@ func decodeLiteral(
 			return NewLiteralDigestedString("", ""), nil
 		}
 		return NewLiteralDigestedString(v.DigestedString.Value, digest.Digest(v.DigestedString.Digest)), nil
+	case *callpbv1.Literal_Bytes:
+		return NewLiteralBytes(v.Bytes), nil
 	case *callpbv1.Literal_List:
 		list := make([]Literal, 0, len(v.List.Values))
 		for _, val := range v.List.Values {
