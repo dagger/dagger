@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
@@ -222,6 +223,8 @@ func literalLabel(lit *callpbv1.Literal) string {
 		return strconv.Quote(truncateLiteral(v.String_))
 	case *callpbv1.Literal_DigestedString:
 		return strconv.Quote(truncateLiteral(v.DigestedString.GetValue()))
+	case *callpbv1.Literal_Bytes:
+		return call.DisplayBytes(v.Bytes)
 	case *callpbv1.Literal_List:
 		vals := v.List.GetValues()
 		parts := make([]string, 0, len(vals))

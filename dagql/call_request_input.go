@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -223,6 +224,8 @@ func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal, m
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
 	case *call.LiteralString:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralBytes:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBytes, BytesValue: v.Value()}, nil
 	case *call.LiteralEnum:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
 	case *call.LiteralDigestedString:
@@ -367,6 +370,8 @@ func resultCallLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*R
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
 	case *call.LiteralString:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralBytes:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBytes, BytesValue: v.Value()}, nil
 	case *call.LiteralEnum:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
 	case *call.LiteralDigestedString:
@@ -466,6 +471,8 @@ func inputValueFromResultCallLiteral(ctx context.Context, lit *ResultCallLiteral
 		return lit.FloatValue, nil
 	case ResultCallLiteralKindString:
 		return lit.StringValue, nil
+	case ResultCallLiteralKindBytes:
+		return slices.Clone(lit.BytesValue), nil
 	case ResultCallLiteralKindEnum:
 		return lit.EnumValue, nil
 	case ResultCallLiteralKindDigestedString:
