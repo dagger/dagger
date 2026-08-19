@@ -503,27 +503,28 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsLocalHistoryAndWorktree(ctx c
 			git add two.txt
 			GIT_AUTHOR_DATE="$SECOND_DATE" GIT_COMMITTER_DATE="$SECOND_DATE" git commit -m 'local two'
 			git rev-list --reverse "$BASE_SHA"..HEAD > /commits
-			git update-ref refs/heads/checkpoint HEAD
-			git bundle create /bundle refs/heads/checkpoint "^$BASE_SHA"
 			printf 'dirty\n' >> tracked.txt
-			git diff --binary HEAD > /worktree.patch
 			index=$(mktemp)
 			rm -f "$index"
 			GIT_INDEX_FILE="$index" git read-tree HEAD
 			GIT_INDEX_FILE="$index" git add -A -f -- .
 			GIT_INDEX_FILE="$index" git write-tree > /worktree.tree
+			GIT_AUTHOR_NAME=Checkpoint GIT_AUTHOR_EMAIL=checkpoint@example.com \
+			GIT_COMMITTER_NAME=Checkpoint GIT_COMMITTER_EMAIL=checkpoint@example.com \
+			git commit-tree "$(cat /worktree.tree)" -p HEAD -m 'workspace snapshot' > /worktree.sha
+			git update-ref refs/dagger/checkpoint/head HEAD
+			git update-ref refs/dagger/checkpoint/worktree "$(cat /worktree.sha)"
+			git bundle create --version=3 /bundle refs/dagger/checkpoint/head refs/dagger/checkpoint/worktree "^$BASE_SHA"
 			base64 /bundle | tr -d '\n' > /bundle.b64
-			base64 /worktree.patch | tr -d '\n' > /worktree.b64
 		`})
 
 	bundle64, err := packed.File("/bundle.b64").Contents(ctx)
 	require.NoError(t, err)
 	bundle, err := base64.StdEncoding.DecodeString(strings.TrimSpace(bundle64))
 	require.NoError(t, err)
-	patch64, err := packed.File("/worktree.b64").Contents(ctx)
+	worktreeSHA, err := packed.File("/worktree.sha").Contents(ctx)
 	require.NoError(t, err)
-	patch, err := base64.StdEncoding.DecodeString(strings.TrimSpace(patch64))
-	require.NoError(t, err)
+	worktreeSHA = strings.TrimSpace(worktreeSHA)
 	commitList, err := packed.File("/commits").Contents(ctx)
 	require.NoError(t, err)
 	commits := strings.Fields(commitList)
@@ -547,9 +548,11 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsLocalHistoryAndWorktree(ctx c
 		RemoteRef:            "refs/heads/main",
 		BaseSHA:              baseSHA,
 		HeadSHA:              commits[1],
-		BundleRef:            "refs/heads/checkpoint",
+		BundleRef:            "refs/dagger/checkpoint/head",
+		WorktreeSHA:          worktreeSHA,
+		WorktreeRef:          "refs/dagger/checkpoint/worktree",
 		Bundle:               payload(bundle),
-		Worktree:             payload(patch),
+		Worktree:             payload(nil),
 		WorktreeTree:         worktreeTree,
 		CapturePolicyVersion: "test-v1",
 		Workspace: core.WorkspaceCheckpointWorkspace{
@@ -578,7 +581,6 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsLocalHistoryAndWorktree(ctx c
 		return res.Chunk.ID
 	}
 	bundleChunk := chunkID(bundle)
-	worktreeChunk := chunkID(patch)
 	encodedManifest, err := json.Marshal(string(manifestJSON))
 	require.NoError(t, err)
 
@@ -631,7 +633,7 @@ func (WorkspaceSuite) TestGitCheckpointReconstructsLocalHistoryAndWorktree(ctx c
 	}`, &testutil.QueryOptions{Variables: map[string]any{
 		"base":     baseID,
 		"manifest": string(encodedManifest),
-		"chunks":   []string{bundleChunk, worktreeChunk},
+		"chunks":   []string{bundleChunk},
 	}})
 	require.NoError(t, err)
 	require.Equal(t, "/", res.Workspace.Cwd)

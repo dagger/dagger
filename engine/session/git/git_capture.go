@@ -20,9 +20,12 @@ import (
 	"unicode"
 )
 
-const captureGitFormatVersion = 1
+const captureGitFormatVersion = 2
 
 const (
+	captureHeadRef     = "refs/dagger/checkpoint/head"
+	captureWorktreeRef = "refs/dagger/checkpoint/worktree"
+
 	defaultMaxUntrackedFileBytes  = 16 << 20
 	defaultMaxUntrackedTotalBytes = 64 << 20
 	defaultMaxUntrackedFiles      = 4096
@@ -71,21 +74,19 @@ type captureApprovalError struct {
 }
 
 func (e *captureApprovalError) Error() string {
-	return fmt.Sprintf("capture rejected %d suspicious file(s) without exact path approval", len(e.candidates))
+	return fmt.Sprintf("capture requires approval for %d selected dirty file(s)", len(e.candidates))
 }
 
 type captureArtifacts struct {
 	metadata *CaptureGitMetadata
 	bundle   string
-	patch    string
 	paths    []capturedPath
 	remote   captureRemote
 }
 
 // CaptureGit performs all discovery, selection, and scanning in the client
-// process. No repository or worktree bytes are sent until both payloads have
-// been built, checked, and the checkout and selected files have been
-// revalidated.
+// process. No repository or worktree bytes are sent until the bundle has been
+// built, checked, and the checkout and selected files have been revalidated.
 func (s GitAttachable) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServer) error {
 	ctx, cancel := context.WithTimeout(srv.Context(), gitPackTimeout)
 	defer cancel()
@@ -124,7 +125,7 @@ func (s GitAttachable) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServ
 		var approvalErr *captureApprovalError
 		if errors.As(err, &approvalErr) {
 			metadata.Error.Type = CAPTURE_REJECTED
-			metadata.SuspiciousCandidates = approvalErr.candidates
+			metadata.ApprovalCandidates = approvalErr.candidates
 		}
 		return srv.Send(&CaptureGitResponse{Msg: &CaptureGitResponse_Metadata{Metadata: metadata}})
 	}
@@ -133,11 +134,8 @@ func (s GitAttachable) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServ
 	if err := srv.Send(&CaptureGitResponse{Msg: &CaptureGitResponse_Metadata{Metadata: artifacts.metadata}}); err != nil {
 		return fmt.Errorf("send capture metadata: %w", err)
 	}
-	if err := streamCaptureFile(srv, artifacts.bundle, CAPTURE_CHUNK_PREREQUISITE_BUNDLE); err != nil {
-		return fmt.Errorf("send prerequisite bundle: %w", err)
-	}
-	if err := streamCaptureFile(srv, artifacts.patch, CAPTURE_CHUNK_WORKTREE_DELTA); err != nil {
-		return fmt.Errorf("send worktree delta: %w", err)
+	if err := streamCaptureFile(srv, artifacts.bundle, CAPTURE_CHUNK_BUNDLE); err != nil {
+		return fmt.Errorf("send checkpoint bundle: %w", err)
 	}
 	return nil
 }
@@ -160,7 +158,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 	if err != nil {
 		return nil, err
 	}
-	approvals := stringSet(policy.GetApproveSuspicious())
+	approvals := stringSet(policy.GetApprovePaths())
 	committedBytes, err := scanCommittedObjects(ctx, checkout, remote.baseSHA, state.headSHA, limits)
 	if err != nil {
 		return nil, err
@@ -180,24 +178,10 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 			_ = os.RemoveAll(tmpDir)
 		}
 	}()
-	bundlePath := filepath.Join(tmpDir, "prerequisite.bundle")
-	patchPath := filepath.Join(tmpDir, "worktree.patch")
+	bundlePath := filepath.Join(tmpDir, "checkpoint.bundle")
 
-	if remote.baseSHA == state.headSHA {
-		// There are no local committed objects beyond the remote prerequisite.
-		// An empty bundle payload represents that state; restore skips import.
-		if err := os.WriteFile(bundlePath, nil, 0o600); err != nil {
-			return nil, errors.New("create empty prerequisite bundle failed")
-		}
-	} else {
-		if _, err := runHostGit(ctx, checkout, "bundle", "create", bundlePath, "HEAD", "^"+remote.baseSHA); err != nil {
-			return nil, errors.New("create prerequisite bundle failed")
-		}
-		if _, err := runHostGit(ctx, checkout, "bundle", "verify", bundlePath); err != nil {
-			return nil, errors.New("verify prerequisite bundle failed")
-		}
-	}
-	if err := buildSelectedWorktreePatch(ctx, checkout, state.headSHA, paths, patchPath); err != nil {
+	worktreeSHA, err := buildCaptureBundle(ctx, checkout, tmpDir, state.objectFormat, remote.baseSHA, state.headSHA, paths, bundlePath)
+	if err != nil {
 		return nil, err
 	}
 	if err := revalidateCapturedPaths(checkout, paths); err != nil {
@@ -213,11 +197,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 
 	bundleDigest, bundleBytes, err := digestFile(bundlePath)
 	if err != nil {
-		return nil, errors.New("read prerequisite bundle failed")
-	}
-	patchDigest, patchBytes, err := digestFile(patchPath)
-	if err != nil {
-		return nil, errors.New("read worktree delta failed")
+		return nil, errors.New("read checkpoint bundle failed")
 	}
 	metadata := &CaptureGitMetadata{
 		FormatVersion:  captureGitFormatVersion,
@@ -229,14 +209,13 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 		Commits:        commits,
 		BundleSha256:   bundleDigest,
 		BundleBytes:    bundleBytes,
-		WorktreeSha256: patchDigest,
-		WorktreeBytes:  patchBytes,
+		WorktreeSha:    worktreeSHA,
 		TrackedFiles:   int32(trackedCount),
 		UntrackedFiles: int32(untrackedCount),
 		SelectedBytes:  committedBytes + worktreeBytes,
 	}
 	cleanup = false
-	return &captureArtifacts{metadata: metadata, bundle: bundlePath, patch: patchPath, paths: paths, remote: remote}, nil
+	return &captureArtifacts{metadata: metadata, bundle: bundlePath, paths: paths, remote: remote}, nil
 }
 
 func normalizeCaptureLimits(policy *CaptureGitPolicy) (captureLimits, error) {
@@ -578,8 +557,8 @@ func captureCommitMetadata(ctx context.Context, checkout, base, head string) ([]
 	return commits, nil
 }
 
-// scanCommittedObjects measures the blobs the prerequisite bundle carries and
-// holds them to the configured bounds.
+// scanCommittedObjects measures the committed blobs the checkpoint bundle
+// carries and holds them to the configured bounds.
 //
 // It deliberately does not apply the secret heuristics. This content is already
 // recorded in Git history, so it is what the author chose to commit, and
@@ -671,10 +650,6 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		if matchesAnyCapturePattern(p, policy.GetExclude()) {
 			continue
 		}
-		includes := policy.GetIncludeUntracked()
-		if len(includes) > 0 && !matchesAnyCapturePattern(p, includes) {
-			continue
-		}
 		candidates = append(candidates, struct {
 			path    string
 			tracked bool
@@ -685,7 +660,8 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 	var selected []capturedPath
 	var worktreeBytes, untrackedBytes int64
 	trackedCount, untrackedCount := 0, 0
-	var suspicious []*CaptureGitCandidate
+	var approvalCandidates []*CaptureGitCandidate
+	missingApproval := false
 	for _, candidate := range candidates {
 		cp, data, err := fingerprintCapturePath(checkout, candidate.path, candidate.tracked)
 		if err != nil {
@@ -704,11 +680,17 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 			}
 		}
 		worktreeBytes += cp.size
-		if classification := suspiciousCaptureClassification(candidate.path, data); classification != "" {
+		classification := suspiciousCaptureClassification(candidate.path, data)
+		if classification != "" {
 			cp.suspicious = true
-			if _, ok := approvals[candidate.path]; !ok {
-				suspicious = append(suspicious, &CaptureGitCandidate{Path: candidate.path, Classification: classification, Tracked: candidate.tracked, Bytes: cp.size})
-			}
+		}
+		approvalCandidates = append(approvalCandidates, &CaptureGitCandidate{
+			Path: candidate.path, Classification: classification,
+			Tracked: candidate.tracked, Bytes: cp.size,
+		})
+		_, retriedApproval := approvals[candidate.path]
+		if !retriedApproval && !matchesAnyCapturePattern(candidate.path, policy.GetInclude()) {
+			missingApproval = true
 		}
 		selected = append(selected, cp)
 	}
@@ -718,8 +700,8 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 	if initialBytes+worktreeBytes > limits.total {
 		return nil, 0, 0, 0, errors.New("selected content exceeds the configured capture bound")
 	}
-	if len(suspicious) > 0 {
-		return nil, 0, 0, 0, &captureApprovalError{candidates: suspicious}
+	if missingApproval {
+		return nil, 0, 0, 0, &captureApprovalError{candidates: approvalCandidates}
 	}
 	return selected, trackedCount, untrackedCount, worktreeBytes, nil
 }
@@ -765,15 +747,34 @@ func fingerprintCapturePath(checkout, gitPath string, tracked bool) (capturedPat
 	return cp, data, nil
 }
 
-func buildSelectedWorktreePatch(ctx context.Context, checkout, head string, paths []capturedPath, output string) error {
-	tmpDir, err := os.MkdirTemp("", "dagger-capture-index")
-	if err != nil {
-		return errors.New("create worktree staging index failed")
+func buildCaptureBundle(ctx context.Context, checkout, tmpDir, objectFormat, base, head string, paths []capturedPath, output string) (string, error) {
+	if len(paths) == 0 && base == head {
+		if err := os.WriteFile(output, nil, 0o600); err != nil {
+			return "", errors.New("create empty checkpoint bundle failed")
+		}
+		return "", nil
 	}
-	defer os.RemoveAll(tmpDir)
-	env := []string{"GIT_INDEX_FILE=" + filepath.Join(tmpDir, "index")}
-	if _, err := runHostGitBytes(ctx, checkout, env, nil, "read-tree", head); err != nil {
-		return errors.New("initialize worktree staging index failed")
+
+	stagingRepo := filepath.Join(tmpDir, "objects.git")
+	if _, err := runHostGit(ctx, tmpDir, "init", "--bare", "--object-format="+objectFormat, stagingRepo); err != nil {
+		return "", errors.New("initialize capture object database failed")
+	}
+	sourceObjectsOut, err := runHostGit(ctx, checkout, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return "", errors.New("locate checkout object database failed")
+	}
+	sourceObjects := strings.TrimSpace(sourceObjectsOut)
+	alternatesPath := filepath.Join(stagingRepo, "objects", "info", "alternates")
+	if err := os.WriteFile(alternatesPath, []byte(sourceObjects+"\n"), 0o600); err != nil {
+		return "", errors.New("configure capture object database failed")
+	}
+
+	stageEnv := []string{
+		"GIT_OBJECT_DIRECTORY=" + filepath.Join(stagingRepo, "objects"),
+		"GIT_INDEX_FILE=" + filepath.Join(tmpDir, "index"),
+	}
+	if _, err := runHostGitBytes(ctx, checkout, stageEnv, nil, "read-tree", head); err != nil {
+		return "", errors.New("initialize worktree staging index failed")
 	}
 	var remove, add bytes.Buffer
 	for _, p := range paths {
@@ -787,23 +788,223 @@ func buildSelectedWorktreePatch(ctx context.Context, checkout, head string, path
 		}
 	}
 	if remove.Len() > 0 {
-		if _, err := runHostGitBytes(ctx, checkout, env, &remove, "update-index", "--force-remove", "-z", "--stdin"); err != nil {
-			return errors.New("stage tracked worktree selection failed")
+		if _, err := runHostGitBytes(ctx, checkout, stageEnv, &remove, "update-index", "--force-remove", "-z", "--stdin"); err != nil {
+			return "", errors.New("stage tracked worktree selection failed")
 		}
 	}
 	if add.Len() > 0 {
-		if _, err := runHostGitBytes(ctx, checkout, env, &add, "update-index", "--add", "--replace", "-z", "--stdin"); err != nil {
-			return errors.New("stage selected worktree content failed")
+		if _, err := runHostGitBytes(ctx, checkout, stageEnv, &add, "update-index", "--add", "--replace", "-z", "--stdin"); err != nil {
+			return "", errors.New("stage selected worktree content failed")
 		}
 	}
-	patch, err := runHostGitBytes(ctx, checkout, env, nil, "diff", "--cached", "--binary", "--full-index", "--no-renames", "--no-ext-diff", head, "--")
-	if err != nil {
-		return errors.New("create selected worktree delta failed")
+
+	worktreeSHA := ""
+	if len(paths) > 0 {
+		treeOut, err := runHostGitBytes(ctx, checkout, stageEnv, nil, "write-tree")
+		if err != nil {
+			return "", errors.New("write selected worktree tree failed")
+		}
+		commitEnv := append(stageEnv,
+			"GIT_AUTHOR_NAME=Dagger Workspace Capture",
+			"GIT_AUTHOR_EMAIL=workspace-capture@dagger.invalid",
+			"GIT_AUTHOR_DATE=1970-01-01T00:00:00Z",
+			"GIT_COMMITTER_NAME=Dagger Workspace Capture",
+			"GIT_COMMITTER_EMAIL=workspace-capture@dagger.invalid",
+			"GIT_COMMITTER_DATE=1970-01-01T00:00:00Z",
+		)
+		commitOut, err := runHostGitBytes(ctx, checkout, commitEnv, strings.NewReader("Dagger workspace snapshot\n"),
+			"commit-tree", strings.TrimSpace(string(treeOut)), "-p", head)
+		if err != nil {
+			return "", errors.New("create synthetic worktree commit failed")
+		}
+		worktreeSHA = strings.TrimSpace(string(commitOut))
 	}
-	if err := os.WriteFile(output, patch, 0o600); err != nil {
-		return errors.New("write selected worktree delta failed")
+
+	if _, err := runHostGit(ctx, stagingRepo, "update-ref", captureHeadRef, head); err != nil {
+		return "", errors.New("advertise checkpoint head failed")
+	}
+	bundleArgs := []string{"bundle", "create", "--version=3", output, captureHeadRef}
+	if worktreeSHA != "" {
+		if _, err := runHostGit(ctx, stagingRepo, "update-ref", captureWorktreeRef, worktreeSHA); err != nil {
+			return "", errors.New("advertise checkpoint worktree failed")
+		}
+		bundleArgs = append(bundleArgs, captureWorktreeRef)
+	}
+	bundleArgs = append(bundleArgs, "^"+base)
+	if _, err := runHostGit(ctx, stagingRepo, bundleArgs...); err != nil {
+		return "", errors.New("create checkpoint bundle failed")
+	}
+	if err := ensureCaptureHeadAdvertisement(output, base, head); err != nil {
+		return "", err
+	}
+	if err := verifyCaptureBundle(ctx, stagingRepo, sourceObjects, tmpDir, output, objectFormat, base, head, worktreeSHA); err != nil {
+		return "", err
+	}
+	return worktreeSHA, nil
+}
+
+type captureBundleHeader struct {
+	version       string
+	objectFormat  string
+	prerequisites []string
+	refs          map[string]string
+}
+
+func parseCaptureBundleHeader(data []byte) (captureBundleHeader, error) {
+	header := captureBundleHeader{refs: map[string]string{}}
+	end := bytes.Index(data, []byte("\n\n"))
+	if end < 0 || end > 1<<20 {
+		return header, errors.New("checkpoint bundle has an invalid header")
+	}
+	lines := strings.Split(string(data[:end]), "\n")
+	if len(lines) == 0 {
+		return header, errors.New("checkpoint bundle header is empty")
+	}
+	header.version = lines[0]
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		switch {
+		case strings.HasPrefix(line, "@object-format="):
+			if len(fields) != 1 || header.objectFormat != "" {
+				return header, errors.New("checkpoint bundle has invalid object-format capabilities")
+			}
+			header.objectFormat = strings.TrimPrefix(line, "@object-format=")
+		case strings.HasPrefix(line, "@"):
+			return header, fmt.Errorf("checkpoint bundle has unsupported capability %q", line)
+		case strings.HasPrefix(line, "-"):
+			if len(fields) == 0 || len(fields[0]) < 2 {
+				return header, errors.New("checkpoint bundle has an invalid prerequisite")
+			}
+			header.prerequisites = append(header.prerequisites, strings.TrimPrefix(fields[0], "-"))
+		default:
+			if len(fields) != 2 {
+				return header, errors.New("checkpoint bundle has an invalid advertised ref")
+			}
+			if _, exists := header.refs[fields[1]]; exists {
+				return header, fmt.Errorf("checkpoint bundle advertises ref %s more than once", fields[1])
+			}
+			header.refs[fields[1]] = fields[0]
+		}
+	}
+	return header, nil
+}
+
+// Git omits a positive ref when its object is also the prerequisite. A dirty
+// L == R capture still needs to advertise both design refs, so add the
+// self-verifying head line to the standard header and immediately ask stock Git
+// to verify and unbundle the result below.
+func ensureCaptureHeadAdvertisement(bundlePath, base, head string) error {
+	data, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return errors.New("read checkpoint bundle header failed")
+	}
+	header, err := parseCaptureBundleHeader(data)
+	if err != nil {
+		return err
+	}
+	if header.refs[captureHeadRef] == head {
+		return nil
+	}
+	if head != base || header.refs[captureHeadRef] != "" {
+		return errors.New("checkpoint bundle did not advertise the logical head")
+	}
+	end := bytes.Index(data, []byte("\n\n"))
+	patched := make([]byte, 0, len(data)+len(head)+len(captureHeadRef)+2)
+	patched = append(patched, data[:end]...)
+	patched = append(patched, '\n')
+	patched = append(patched, head...)
+	patched = append(patched, ' ')
+	patched = append(patched, captureHeadRef...)
+	patched = append(patched, data[end:]...)
+	if err := os.WriteFile(bundlePath, patched, 0o600); err != nil {
+		return errors.New("write checkpoint bundle header failed")
 	}
 	return nil
+}
+
+func verifyCaptureBundle(ctx context.Context, stagingRepo, sourceObjects, tmpDir, bundlePath, objectFormat, base, head, worktreeSHA string) error {
+	if _, err := runHostGit(ctx, stagingRepo, "bundle", "verify", bundlePath); err != nil {
+		return errors.New("verify checkpoint bundle failed")
+	}
+	data, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return errors.New("read checkpoint bundle failed")
+	}
+	header, err := parseCaptureBundleHeader(data)
+	if err != nil {
+		return err
+	}
+	if header.version != "# v3 git bundle" || header.objectFormat != objectFormat {
+		return errors.New("checkpoint bundle version or object format is invalid")
+	}
+	if len(header.prerequisites) != 1 || header.prerequisites[0] != base {
+		return errors.New("checkpoint bundle prerequisite is invalid")
+	}
+	expectedRefs := map[string]string{captureHeadRef: head}
+	if worktreeSHA != "" {
+		expectedRefs[captureWorktreeRef] = worktreeSHA
+	}
+	if len(header.refs) != len(expectedRefs) {
+		return errors.New("checkpoint bundle advertised an unexpected ref set")
+	}
+	for ref, oid := range expectedRefs {
+		if header.refs[ref] != oid {
+			return fmt.Errorf("checkpoint bundle ref %s does not resolve to %s", ref, oid)
+		}
+	}
+
+	tip := head
+	if worktreeSHA != "" {
+		tip = worktreeSHA
+	}
+	expected, err := captureObjectSet(ctx, stagingRepo, nil, "rev-list", "--objects", tip, "^"+base)
+	if err != nil {
+		return errors.New("enumerate selected checkpoint object closure failed")
+	}
+	verifyRepo := filepath.Join(tmpDir, "verify.git")
+	if _, err := runHostGit(ctx, tmpDir, "init", "--bare", "--object-format="+objectFormat, verifyRepo); err != nil {
+		return errors.New("initialize bundle verification database failed")
+	}
+	alternateEnv := []string{"GIT_ALTERNATE_OBJECT_DIRECTORIES=" + sourceObjects}
+	if _, err := runHostGitBytes(ctx, verifyRepo, alternateEnv, nil, "bundle", "unbundle", bundlePath); err != nil {
+		return errors.New("stock Git rejected checkpoint bundle")
+	}
+	actual, err := captureObjectSet(ctx, verifyRepo, []string{"GIT_ALTERNATE_OBJECT_DIRECTORIES="},
+		"cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+	if err != nil {
+		return errors.New("enumerate checkpoint bundle objects failed")
+	}
+	if !equalStringSets(expected, actual) {
+		return fmt.Errorf("checkpoint bundle object closure differs from selected closure (%d expected, %d packed)", len(expected), len(actual))
+	}
+	return nil
+}
+
+func captureObjectSet(ctx context.Context, repo string, env []string, args ...string) (map[string]struct{}, error) {
+	out, err := runHostGitBytes(ctx, repo, env, nil, args...)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			set[fields[0]] = struct{}{}
+		}
+	}
+	return set, nil
+}
+
+func equalStringSets(a, b map[string]struct{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for value := range a {
+		if _, ok := b[value]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func revalidateCapturedPaths(checkout string, paths []capturedPath) error {

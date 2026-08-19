@@ -355,8 +355,8 @@ func (chunk *WorkspaceCheckpointChunk) Digest() digest.Digest {
 }
 
 // WorkspaceGitCheckpointManifest is the complete, versioned contract for the
-// pure checkpoint constructor. Payload chunks are listed in bundle-then-
-// worktree order; each descriptor binds an argument position to exact bytes.
+// pure checkpoint constructor. Phase 3 carries one bundle payload; the legacy
+// worktree payload remains empty until the spike constructor is deleted.
 type WorkspaceGitCheckpointManifest struct {
 	Version              int                          `json:"version"`
 	ObjectFormat         string                       `json:"objectFormat"`
@@ -365,6 +365,8 @@ type WorkspaceGitCheckpointManifest struct {
 	BaseSHA              string                       `json:"baseSHA"`
 	HeadSHA              string                       `json:"headSHA"`
 	BundleRef            string                       `json:"bundleRef,omitempty"`
+	WorktreeSHA          string                       `json:"worktreeSHA,omitempty"`
+	WorktreeRef          string                       `json:"worktreeRef,omitempty"`
 	Bundle               WorkspaceCheckpointPayload   `json:"bundle"`
 	Worktree             WorkspaceCheckpointPayload   `json:"worktree"`
 	WorktreeTree         string                       `json:"worktreeTree"`
@@ -432,8 +434,8 @@ func ParseWorkspaceGitCheckpointManifest(raw string) (*WorkspaceGitCheckpointMan
 }
 
 // AssembleWorkspaceCheckpointPayloads verifies positional chunk descriptors,
-// per-payload digests and all aggregate bounds before returning the two byte
-// streams consumed by Git reconstruction.
+// per-payload digests and all aggregate bounds. Phase 3 returns the bundle and
+// an empty legacy worktree payload.
 func AssembleWorkspaceCheckpointPayloads(
 	manifest *WorkspaceGitCheckpointManifest,
 	chunks []*WorkspaceCheckpointChunk,

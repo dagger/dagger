@@ -254,20 +254,22 @@ message ErrorInfo {
 
 // CaptureGit performs the security-sensitive host half of a portable Git
 // workspace checkpoint. It discovers a currently advertised remote ancestor,
-// validates linear local history, scans selected bytes, and only then emits a
-// prerequisite bundle and worktree patch as separate streams.
+// validates linear local history, scans and approves the complete selected
+// dirty set, and only then emits one version-3 two-ref bundle.
 message CaptureGitRequest {
   string checkout_path = 1;
   CaptureGitPolicy policy = 2;
 }
 
-// Safe tracked and untracked changes are included without confirmation.
-// Suspicious files require exact path approval; include_untracked can narrow
-// safe untracked selection. Patterns use Git path separators and path.Match.
+// Safe tracked and untracked changes are included only after approval of the
+// complete selected dirty set. approve_paths contains exact paths approved by
+// an aggregate prompt/retry; include patterns approve matching tracked or
+// ordinary nonignored untracked paths for noninteractive use. Patterns use Git
+// path separators and path.Match.
 message CaptureGitPolicy {
-  repeated string include_untracked = 1;
+  repeated string include = 1;
   repeated string exclude = 2;
-  repeated string approve_suspicious = 3;
+  repeated string approve_paths = 3;
   int64 max_untracked_file_bytes = 4;
   int64 max_untracked_total_bytes = 5;
   int32 max_untracked_files = 6;
@@ -285,8 +287,8 @@ message CaptureGitResponse {
 message CaptureGitChunk {
   enum Kind {
     CAPTURE_CHUNK_UNKNOWN = 0;
-    CAPTURE_CHUNK_PREREQUISITE_BUNDLE = 1;
-    CAPTURE_CHUNK_WORKTREE_DELTA = 2;
+    CAPTURE_CHUNK_BUNDLE = 1;
+    reserved 2;
   }
   Kind kind = 1;
   bytes data = 2;
@@ -302,15 +304,19 @@ message CaptureGitMetadata {
   repeated CaptureGitCommit commits = 7;
   string bundle_sha256 = 8;
   int64 bundle_bytes = 9;
-  string worktree_sha256 = 10;
-  int64 worktree_bytes = 11;
+  // worktree_sha is the optional synthetic snapshot commit S. Its parent is
+  // head_sha and its tree is the complete approved dirty state.
+  string worktree_sha = 10;
+  reserved 11;
+  reserved "worktree_bytes";
   int32 tracked_files = 12;
   int32 untracked_files = 13;
   int64 selected_bytes = 14;
   ErrorInfo error = 15;
-  // suspicious_candidates is populated only on a fail-closed preflight. It
-  // carries path metadata for a local prompt/retry, never candidate bytes.
-  repeated CaptureGitCandidate suspicious_candidates = 16;
+  // approval_candidates is populated only on a fail-closed preflight. It
+  // lists the complete selected dirty set for one local aggregate prompt,
+  // retaining suspicious classifications but never candidate bytes.
+  repeated CaptureGitCandidate approval_candidates = 16;
 }
 
 message CaptureGitCandidate {
