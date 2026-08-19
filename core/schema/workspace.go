@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -601,11 +600,100 @@ func (s *workspaceSchema) checkpoint(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceCheckpointArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	if ws == nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint requires a workspace")
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	switch src := ws.Source().(type) {
+	case *core.WorkspaceSourceClientLocal:
+		return s.checkpointClientLocal(ctx, srv, parent, args)
+	case *core.WorkspaceSourceRootlessLocal:
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a rootless local workspace")
+	case *core.WorkspaceSourceDirectory:
+		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		return parent, nil
+	case *core.WorkspaceSourceGitRef:
+		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		return s.checkpointGitRef(ctx, srv, parent, src, nil)
+	case *core.WorkspaceSourceOverlay:
+		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		switch base := src.Base.(type) {
+		case *core.WorkspaceSourceDirectory:
+			return parent, nil
+		case *core.WorkspaceSourceGitRef:
+			return s.checkpointGitRef(ctx, srv, parent, base, src)
+		case *core.WorkspaceSourceClientLocal:
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace after workspace edits; checkpoint it before applying overlays")
+		case *core.WorkspaceSourceRootlessLocal:
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a rootless local workspace overlay")
+		default:
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot normalize overlay base %T", src.Base)
+		}
+	case nil:
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint has no reconstructible source")
+	default:
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint does not support source %T", src)
+	}
+}
+
+func checkpointRecipeReplayable(
+	ctx context.Context,
+	srv *dagql.Server,
+	workspaceResult dagql.ObjectResult[*core.Workspace],
+) error {
+	recipe, err := workspaceResult.RecipeID(ctx)
+	if err != nil {
+		return fmt.Errorf("workspace checkpoint source recipe: %w", err)
+	}
+	if unsafe := srv.ClassifyRecipe(recipe).NotReplayable; unsafe != nil {
+		return fmt.Errorf(
+			"workspace checkpoint source is not replayable: field %s at call %s: %s",
+			unsafe.Field,
+			unsafe.Digest,
+			unsafe.Reason,
+		)
+	}
+	return nil
+}
+
+func (s *workspaceSchema) checkpointClientLocal(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceCheckpointArgs,
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
 	ws := parent.Self()
-	if ws == nil || ws.HostPath() == "" || !ws.ClientLocalBase() {
+	if ws.HostPath() == "" {
 		return inst, fmt.Errorf("workspace checkpoint requires a local Git workspace")
 	}
+	if len(ws.PendingCommits()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace with pending commits")
+	}
+	if len(ws.MountPoints()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace with mounts")
+	}
+
+	caller, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("workspace checkpoint caller metadata: %w", err)
+	}
+	if ws.ClientID == "" || caller.ClientID != ws.ClientID {
+		return inst, fmt.Errorf("workspace checkpoint capture is only available to the workspace's owning client")
+	}
+
 	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return inst, err
@@ -665,66 +753,238 @@ func (s *workspaceSchema) checkpoint(
 		return inst, fmt.Errorf("capture workspace checkpoint: %w", err)
 	}
 
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
+	bundle := slices.Concat(checkpointBundleChunks(chunks)...)
+	if int64(len(bundle)) != metadata.BundleBytes {
+		return inst, fmt.Errorf("workspace checkpoint bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
 	}
-	base, err := checkpointRemoteBase(clientCtx, srv, metadata)
-	if err != nil {
-		return inst, err
-	}
-
-	bundleChunks := checkpointBundleChunks(chunks)
 	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx)
-	manifest := checkpointManifest(ws, metadata, bundleChunks, workspaceEnv)
-	manifest.WorktreeTree, err = checkpointWorktreeTree(clientCtx, srv, base, manifest, bundleChunks)
+	inst, err = s.checkpointCapturedGitComposition(clientCtx, srv, ws, metadata, bundle, workspaceEnv)
 	if err != nil {
-		return inst, err
-	}
-
-	chunkIDs, err := checkpointChunkIDs(clientCtx, srv, bundleChunks)
-	if err != nil {
-		return inst, err
-	}
-	manifestJSON, err := json.Marshal(manifest)
-	if err != nil {
-		return inst, fmt.Errorf("encode workspace checkpoint manifest: %w", err)
-	}
-	baseID, err := base.ID()
-	if err != nil {
-		return inst, err
-	}
-	chunkInputs := make(dagql.ArrayInput[core.WorkspaceCheckpointChunkID], len(chunkIDs))
-	copy(chunkInputs, chunkIDs)
-	manifestDigest := digest.FromBytes(manifestJSON)
-	// The result of the pure constructor is returned verbatim, so this effectful
-	// call contributes nothing but the payload it captured: the checkpoint's
-	// recipe is the host-independent constructor, and the result keeps that
-	// call's identity. Returning a value of our own here instead would be
-	// unaddressable — this field cannot be cached, so its own results have no ID
-	// for the composed agent to bind ("result *core.Workspace is detached").
-	if err := srv.Select(clientCtx, srv.Root(), &inst, dagql.Selector{
-		Field: "_workspaceFromGitCheckpoint",
-		Args: []dagql.NamedInput{
-			{Name: "base", Value: dagql.NewID[*core.GitRef](baseID)},
-			{Name: "manifest", Value: dagql.NewDigestedSerializedString(string(manifestJSON), manifestDigest)},
-			{Name: "chunks", Value: chunkInputs},
-		},
-	}); err != nil {
 		return inst, fmt.Errorf("construct portable workspace checkpoint: %w", err)
 	}
 
-	// Retain the checkout just captured as this session's route back to it, keyed
-	// by the checkpoint's own identity, so ctrl+s can still save the agent's
-	// commits and edits to the checkout the agent is working on behalf of. The
-	// route is session state, not workspace state: the shared checkpoint value,
-	// its recipe and its persisted payload stay host-independent, so cold replay
-	// has no destination to write to and no other session can save through this
-	// one's client.
-	if err := core.RetainWorkspaceCheckpointOrigin(ctx, manifestDigest.String(), ws.ClientID, ws.HostPath()); err != nil {
+	recipe, err := inst.RecipeID(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("workspace checkpoint recipe identity: %w", err)
+	}
+	if err := core.RetainWorkspaceCheckpointOrigin(ctx, recipe.Digest().String(), ws.ClientID, ws.HostPath()); err != nil {
 		return inst, fmt.Errorf("retain workspace checkpoint origin: %w", err)
 	}
 	return inst, nil
+}
+
+func (s *workspaceSchema) checkpointGitRef(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+	source *core.WorkspaceSourceGitRef,
+	overlay *core.WorkspaceSourceOverlay,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws := parent.Self()
+	if len(ws.PendingCommits()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a Git workspace with pending commits")
+	}
+	if len(ws.MountPoints()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a Git workspace with mounts")
+	}
+	ref := source.Ref.Self()
+	if ref == nil || ref.Ref == nil || ref.Ref.SHA == "" || ref.Repo.Self() == nil {
+		return inst, fmt.Errorf("workspace checkpoint Git source has no resolved commit")
+	}
+
+	var pinned dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, ref.Repo, &pinned, dagql.Selector{
+		Field: "ref",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}},
+	}); err != nil {
+		return inst, fmt.Errorf("pin workspace Git ref at %s: %w", ref.Ref.SHA, err)
+	}
+	if err := srv.Select(ctx, pinned, &inst, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(ws.Cwd)}},
+	}); err != nil {
+		return inst, fmt.Errorf("normalize pinned Git workspace: %w", err)
+	}
+
+	if overlay != nil && overlay.Changes.Self() != nil {
+		changesID, err := overlay.Changes.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint overlay identity: %w", err)
+		}
+		var withChanges dagql.ObjectResult[*core.Workspace]
+		if err := srv.Select(ctx, inst, &withChanges, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("reapply workspace Git overlay: %w", err)
+		}
+		inst = withChanges
+	}
+
+	workspaceEnv, _ := selectedWorkspaceEnvFor(ctx, ws)
+	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, ws, workspaceEnv)
+}
+
+func (s *workspaceSchema) checkpointCapturedGitComposition(
+	ctx context.Context,
+	srv *dagql.Server,
+	captured *core.Workspace,
+	metadata *gitsession.CaptureGitMetadata,
+	bundleBytes []byte,
+	workspaceEnv string,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	if metadata == nil {
+		return inst, fmt.Errorf("workspace checkpoint capture metadata is missing")
+	}
+
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{
+		Field: "git",
+		Args:  []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}},
+	}); err != nil {
+		return inst, fmt.Errorf("load workspace checkpoint remote: %w", err)
+	}
+
+	if len(bundleBytes) > 0 {
+		var file dagql.ObjectResult[*core.File]
+		if err := srv.Select(ctx, srv.Root(), &file, dagql.Selector{
+			Field: "blob",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("workspace-checkpoint.bundle")},
+				{Name: "contents", Value: dagql.Bytes(bundleBytes)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("embed workspace checkpoint bundle: %w", err)
+		}
+		var bundle dagql.ObjectResult[*core.GitBundle]
+		if err := srv.Select(ctx, file, &bundle, dagql.Selector{Field: "asGitBundle"}); err != nil {
+			return inst, fmt.Errorf("parse workspace checkpoint bundle: %w", err)
+		}
+		bundleID, err := bundle.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint bundle identity: %w", err)
+		}
+		var imported dagql.ObjectResult[*core.GitRepository]
+		if err := srv.Select(ctx, repo, &imported, dagql.Selector{
+			Field: "withBundle",
+			Args: []dagql.NamedInput{
+				{Name: "bundle", Value: dagql.NewID[*core.GitBundle](bundleID)},
+				{Name: "prerequisiteRef", Value: dagql.NewString(metadata.RemoteRef)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("import workspace checkpoint bundle: %w", err)
+		}
+		repo = imported
+	}
+
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, repo, &head, dagql.Selector{
+		Field: "ref",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(metadata.HeadSha)}},
+	}); err != nil {
+		return inst, fmt.Errorf("select workspace checkpoint HEAD %s: %w", metadata.HeadSha, err)
+	}
+	if err := srv.Select(ctx, head, &inst, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(captured.Cwd)}},
+	}); err != nil {
+		return inst, fmt.Errorf("construct workspace checkpoint from HEAD: %w", err)
+	}
+
+	if metadata.WorktreeSha != "" {
+		treeArgs := []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(false)},
+		}
+		var headTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, head, &headTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
+			return inst, fmt.Errorf("workspace checkpoint HEAD tree: %w", err)
+		}
+		var worktree dagql.ObjectResult[*core.GitRef]
+		if err := srv.Select(ctx, repo, &worktree, dagql.Selector{
+			Field: "ref",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(metadata.WorktreeSha)}},
+		}); err != nil {
+			return inst, fmt.Errorf("select workspace checkpoint worktree %s: %w", metadata.WorktreeSha, err)
+		}
+		var worktreeTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, worktree, &worktreeTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
+			return inst, fmt.Errorf("workspace checkpoint worktree tree: %w", err)
+		}
+		headTreeID, err := headTree.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint HEAD tree identity: %w", err)
+		}
+		var changes dagql.ObjectResult[*core.Changeset]
+		if err := srv.Select(ctx, worktreeTree, &changes, dagql.Selector{
+			Field: "changes",
+			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](headTreeID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("workspace checkpoint worktree changes: %w", err)
+		}
+		changesID, err := changes.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint changes identity: %w", err)
+		}
+		var withChanges dagql.ObjectResult[*core.Workspace]
+		if err := srv.Select(ctx, inst, &withChanges, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("apply workspace checkpoint worktree: %w", err)
+		}
+		inst = withChanges
+	}
+
+	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
+}
+
+func checkpointWorkspaceMetadataComposition(
+	ctx context.Context,
+	srv *dagql.Server,
+	workspaceResult dagql.ObjectResult[*core.Workspace],
+	metadata *core.Workspace,
+	workspaceEnv string,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	if err := srv.Select(ctx, workspaceResult, &inst, dagql.Selector{
+		Field: "withConfigPaths",
+		Args: []dagql.NamedInput{
+			{Name: "configFile", Value: dagql.NewString(metadata.ConfigFile)},
+			{Name: "lockFile", Value: dagql.NewString(metadata.LockFile)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	var withEnv dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, inst, &withEnv, dagql.Selector{
+		Field: "withConfigEnvironment",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(workspaceEnv)}},
+	}); err != nil {
+		return inst, err
+	}
+	var withAuthor dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, withEnv, &withAuthor, dagql.Selector{
+		Field: "withGitAuthor",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(metadata.GitAuthorName)},
+			{Name: "email", Value: dagql.NewString(metadata.GitAuthorEmail)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	// Phase 4 still routes no-argument export through the private checkpoint
+	// identity. Key that transitional state by the final public recipe digest;
+	// Phase 5 removes both the retained route and this marker in favor of an
+	// explicit export target.
+	recipe, err := withAuthor.RecipeID(ctx)
+	if err != nil {
+		return inst, err
+	}
+	withAuthor.Self().SetPortableCheckpoint()
+	withAuthor.Self().SetCheckpointID(recipe.Digest().String())
+	return withAuthor, nil
 }
 
 func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) string {
