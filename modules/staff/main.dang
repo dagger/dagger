@@ -17,8 +17,8 @@
 # module call has engine identity, which withTools needs — a locally
 # constructed Dang object does not.
 #
-# Registered in the development environment in dagger.toml; it can also be
-# loaded explicitly with `dagger -m ./modules/staff`.
+# NOT registered in dagger.toml: load explicitly, e.g.
+# `dagger -m ./modules/staff`.
 """
 Hire and direct a staff of asynchronous worker agents: spawn them by name,
 steer and observe them while they run, and collect their results.
@@ -26,22 +26,6 @@ steer and observe them while they run, and collect their results.
 type Staff {
   # Live worker handles; unique by name, by construction.
   let members: Map[Agent!]! = [:]
-
-  # Foreign-repository metadata is private module state keyed by worker name.
-  # It survives normal tool calls alongside the Agent handle, and is retained
-  # for dismissed tombstones so inspection can still explain where work belongs.
-  let repoUrls: Map[String!]! = [:]
-  let repoBases: Map[String!]! = [:]
-  let repoSourceCommits: Map[String!]! = [:]
-
-  # Optional GitHub authentication. The Secret is only passed to git fetches
-  # and secret environment variables; it is never exposed in the tool schema.
-  let githubToken: Secret = null
-
-  new(githubToken: Secret = null) {
-    self.githubToken = githubToken
-    self
-  }
 
   # Handles of workers dismissed in this session, kept so their work can still
   # be harvested: dismiss drops the name from `members`, but the Agent
@@ -54,10 +38,7 @@ type Staff {
   # Not really tools: chiefLine is spawn's plumbing, and workerPrompt is a
   # public constant (tests build worker recordings against its exact text).
   # Excluded from the chief's binding; workers never bind Staff at all.
-  let plumbing = [
-    "chiefLine", "workerPrompt", "repoWorkerPrompt",
-    "withWorker", "withRepoWorker", "withDismissed",
-  ]
+  let plumbing = ["chiefLine", "workerPrompt"]
 
   """
   Compose the staff-chief tools onto a base LLM.
@@ -122,94 +103,6 @@ type Staff {
   }
 
   """
-  Hire a worker in a foreign Git repository and start it asynchronously.
-
-  The worker participates in the normal staff lifecycle: use sendTo, ask,
-  status, read, collect, interruptWorker, and dismiss by name. Its repository
-  is isolated from your workspace. Inspect committed work with logOf/diffOf,
-  then publish it explicitly with submitPR; local pull tools are refused for
-  foreign workers.
-  """
-  spawnRepo(
-    chief: Agent!,
-    """
-    Unique name for the worker.
-    """
-    name: String!,
-    """
-    GitHub repository URL to fetch, e.g. https://github.com/dagger/otel-go.
-    """
-    repo: String!,
-    """
-    Git branch the worker should start from and the pull request will target.
-    """
-    base: String!,
-    """
-    The worker's opening task. It starts with none of your conversation
-    context, so include the problem, expected change, and how to validate it.
-    """
-    task: String!,
-  ): Dagger.Staff! @cache(policy: FunctionCachePolicy.Never) {
-    if (members.has(name)) {
-      raise `staff member "${name}" already exists — dismiss it first or pick another name`
-    }
-    if (base == "") {
-      raise "spawnRepo requires an explicit non-empty base ref"
-    }
-
-    let tok = githubToken
-    let repository = if (tok == null) {
-      git(repo)
-    } else {
-      # Basic auth keeps the token in the Secret graph edge used by the git
-      # fetch. It is never interpolated into the URL or written to a layer.
-      git(repo, httpAuthUsername: "x-access-token", httpAuthToken: tok)
-    }
-    let source = repository.branch(base).asWorkspace
-    # Force and retain the exact fetched base for later publication checks.
-    let sourceCommit = source.git.head.commit
-
-    # Foreign repositories do not inherit the chief workspace's registered
-    # editor agent. Compose any target-repo agents except orchestration/editor,
-    # then add this module's editor dependency exactly once so the worker can
-    # definitely inspect and change its checkout.
-    let baseLLM = source.agents(exclude: ["staff", "editor"]).compose
-    let worker = editor
-      .agent(base: baseLLM)
-      .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
-      .withSystemPrompt(workerPrompt)
-      .withSystemPrompt(repoWorkerPrompt)
-      .spawn(name: name)
-    worker.send(task)
-    currentNode.{{... on Dagger.Staff!}}.withRepoWorker(
-      name,
-      worker,
-      repo,
-      base,
-      sourceCommit,
-    )
-  }
-
-  """
-  An internal plumbing-only call recording a foreign worker and its immutable
-  repository source metadata after spawn.
-  """
-  withRepoWorker(
-    name: String!,
-    worker: Agent!,
-    repo: String!,
-    base: String!,
-    sourceCommit: String!,
-  ): Staff! {
-    self.tombstones = self.tombstones.without(name)
-    self.members = self.members.with(name, worker)
-    self.repoUrls = self.repoUrls.with(name, repo)
-    self.repoBases = self.repoBases.with(name, base)
-    self.repoSourceCommits = self.repoSourceCommits.with(name, sourceCommit)
-    self
-  }
-
-  """
   An internal plumbing-only call so that we can separate the act of spawning
   from the act of storing the agent reference in the toolset - otherwise
   replaying the LLM ID will re-spawn agents on every nested Staff.spawn call in
@@ -221,11 +114,6 @@ type Staff {
     # session" list.
     self.tombstones = self.tombstones.without(name)
     self.members = self.members.with(name, worker)
-    # A local worker reusing a dismissed foreign worker's name must not inherit
-    # its publication/harvest policy.
-    self.repoUrls = self.repoUrls.without(name)
-    self.repoBases = self.repoBases.without(name)
-    self.repoSourceCommits = self.repoSourceCommits.without(name)
     self
   }
 
@@ -378,27 +266,6 @@ type Staff {
     # this call's arguments — logOf(name: "scout") twice must not replay the
     # first plan.
     let theirs = workerWorkspace(name)
-    if (isRepoWorker(name)) {
-      let commits = theirs.git.stagedCommits.{{sha, date, authorName, message}}
-      if (commits.isEmpty) {
-        return `Foreign worker "${name}" has no staged commits.` + "\n\n" +
-          `It must commit clean work before submitPR(name: "${name}"). Inspect pending work with diffOf.`
-      }
-      let shown = commits.takeLast(limit)
-      let entries = shown.map { c =>
-        `${short(c.sha)}  ${c.date}  ${c.authorName}  [ready for submitPR]` + "\n" +
-          c.message.split("\n").map { line => "    " + line }.join("\n")
-      }
-      let omitted = commits.length - shown.length
-      let truncation = if (omitted > 0) {
-        "\n\n" + `(${toString(omitted)} older staged commit(s) not shown; raise limit to see them)`
-      } else {
-        ""
-      }
-      return `${toString(commits.length)} commit(s) staged by foreign worker "${name}" ` +
-        `for ${repoUrls[name] ?? "(unknown repository)"} from ${repoBases[name] ?? "(unknown base)"}:` +
-        "\n\n" + entries.join("\n\n") + truncation
-    }
     # One batched selection: the plan forces here, and a failure here is a
     # genuine error worth surfacing raw rather than rescuing into prose.
     let picks = source.commitsFrom(source: theirs).{{
@@ -564,7 +431,6 @@ type Staff {
   ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): reads the worker's live snapshot, which is not part of
     # this call's arguments.
-    refuseRepoHarvest(name)
     let theirs = workerWorkspace(name)
     let known = theirs.git.stagedCommits.{{sha}}.map { c => c.sha }
     let wanted = commits.map { given => resolveCommit(known, given, name) }
@@ -642,7 +508,6 @@ type Staff {
   ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): reads the worker's live snapshot, which is not part of
     # this call's arguments.
-    refuseRepoHarvest(name)
     let theirs = workerWorkspace(name)
     let commits = theirs.git.stagedCommits.{{
       sha, message, changes.{{ asPatch.{{ contents }} }},
@@ -721,7 +586,6 @@ type Staff {
   ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): reads the worker's live snapshot, which is not part of
     # this call's arguments.
-    refuseRepoHarvest(name)
     let theirs = workerWorkspace(name)
     let base = source.directory("/")
 
@@ -794,134 +658,6 @@ type Staff {
   }
 
   """
-  Publish a finished foreign worker's committed work as a GitHub pull request.
-
-  This is deliberately separate from spawnRepo: inspect and steer the worker
-  through the normal staff lifecycle first. Publication requires the worker to
-  be IDLE, to have at least one staged commit, and to have no uncommitted or
-  unmanaged drift. The commit stack is recreated in order with each commit's
-  message, author, and date, pushed to `branch`, then opened against `base`.
-  """
-  submitPR(
-    """
-    The foreign worker's name.
-    """
-    name: String!,
-    """
-    Branch to create or update on the repository remote.
-    """
-    branch: String!,
-    """
-    Pull request base branch. Must match the base passed to spawnRepo.
-    """
-    base: String!,
-    """
-    Pull request title.
-    """
-    title: String!,
-    """
-    Pull request body. It is used exactly as supplied; no worker report is
-    appended automatically.
-    """
-    body: String!,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
-    let tok = githubToken
-    if (tok == null) {
-      raise noGithubTokenError
-    }
-    if (branch == "" or base == "" or title == "") {
-      raise "submitPR requires explicit non-empty branch, base, and title"
-    }
-
-    let repo = repoUrls[name]
-    let recordedBase = repoBases[name]
-    let sourceCommit = repoSourceCommits[name]
-    if (repo == null or recordedBase == null or sourceCommit == null) {
-      raise `worker "${name}" is local, not a foreign repository worker — use pull/pullPending to harvest it`
-    }
-    if (base != recordedBase) {
-      raise `submitPR base "${base}" does not match worker "${name}"'s fetched base "${recordedBase}"`
-    }
-
-    let worker = member(name)
-    let state = worker.state
-    if (state != AgentState.IDLE) {
-      raise `worker "${name}" is ${toString(state)}, not IDLE — wait for or collect it before publishing`
-    }
-    let theirs = workerWorkspace(name)
-    if (!theirs.git.uncommitted.isEmpty or !theirs.git.unmanaged.isEmpty) {
-      raise `worker "${name}" has uncommitted or unmanaged changes — inspect with diffOf and ask it to commit or clean them before submitPR`
-    }
-
-    let commits = theirs.git.stagedCommits.{{
-      sha, date, authorName, authorEmail, message,
-      changes.{{asPatch.{{contents}}}},
-    }}
-    if (commits.isEmpty) {
-      raise `worker "${name}" has no staged commits to publish`
-    }
-
-    # Each field travels as a file, never interpolated into shell source.
-    # SHA-named files preserve the list's oldest-to-newest order via order.txt.
-    let payload = directory()
-    let order: [String!]! = []
-    commits.each { c =>
-      order += [c.sha]
-      payload = payload
-        .withNewFile(`patches/${c.sha}`, c.changes.asPatch.contents ?? "")
-        .withNewFile(`messages/${c.sha}`, c.message)
-        .withNewFile(`authors/${c.sha}`, c.authorName + " <" + c.authorEmail + ">")
-        .withNewFile(`dates/${c.sha}`, toString(c.date))
-    }
-    payload = payload.withNewFile("order.txt", order.join("\n") + "\n")
-
-    let script = """
-      set -eu
-      GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
-      export GH_TOKEN
-      git config --global credential.helper '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
-      git config --global user.name "Dagger Staff Agent"
-      git config --global user.email "noreply@dagger.io"
-      git clone "$REPO_URL" /work
-      cd /work
-      git fetch origin "$BASE_REF"
-      git checkout --detach "$SOURCE_COMMIT"
-      test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
-      git checkout -b "$BRANCH"
-      while IFS= read -r sha; do
-        test -n "$sha" || continue
-        patch="/tmp/contribution/patches/$sha"
-        if test -s "$patch"; then
-          git apply --index "$patch"
-        fi
-        author="$(cat "/tmp/contribution/authors/$sha")"
-        date="$(cat "/tmp/contribution/dates/$sha")"
-        GIT_COMMITTER_DATE="$date" git commit --allow-empty \
-          --author "$author" --date "$date" \
-          -F "/tmp/contribution/messages/$sha"
-      done < /tmp/contribution/order.txt
-      git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
-      gh pr create --title "$PR_TITLE" --body-file /tmp/pr-body.md \
-        --base "$BASE_REF" --head "$BRANCH"
-    """
-    let ran = publishToolbox
-      .withDirectory("/tmp/contribution", payload)
-      .withNewFile("/tmp/pr-body.md", body)
-      .withEnvVariable("REPO_URL", repo)
-      .withEnvVariable("BASE_REF", base)
-      .withEnvVariable("SOURCE_COMMIT", sourceCommit)
-      .withEnvVariable("BRANCH", branch)
-      .withEnvVariable("PR_TITLE", title)
-      .withEnvVariable("STAFF_PUBLISH_NONCE", Random.string)
-      .withSecretVariable("GH_TOKEN", tok)
-      .withExec(["sh", "-c", script], expect: ReturnType.ANY).{{exitCode, stdout, combinedOutput}}
-    if (ran.exitCode != 0) {
-      raise `publishing worker "${name}" failed (exit ${toString(ran.exitCode)}):` + "\n\n" + tail(ran.combinedOutput)
-    }
-    ran.stdout.trimSpace
-  }
-
-  """
   Preempt a worker mid-task: its in-flight step is canceled, every completed
   step is kept, and the worker parks PAUSED with its turn suspended. A later
   sendTo or ask resumes it (the suspended turn continues, with your new
@@ -942,11 +678,10 @@ type Staff {
   Stop a worker and remove it from the staff. Terminal: its runtime is
   released (in-flight work may finish its step first) and the name frees up.
 
-  HARVEST FIRST. A local worker's commits and edits live in ITS copy of the
+  HARVEST FIRST. A worker's commits and edits live in ITS copy of the
   workspace, not yours: `pull` what it committed and `pullPending` what it
-  did not, before letting it go. Publish a foreign worker with `submitPR`
-  before dismissing it. (A stopped worker's snapshot remains inspectable for
-  the rest of this session, but it can no longer be published.)
+  did not, before letting it go. (Its workspace stays readable for the rest
+  of this session, but not beyond it.)
   """
   dismiss(
     """
@@ -988,45 +723,6 @@ type Staff {
   chiefLine(boss: Agent!): ChiefLine! {
     ChiefLine(boss)
   }
-
-  # A worker belongs to a foreign repository when spawnRepo recorded source
-  # metadata for its name. Tombstones intentionally keep this classification.
-  let isRepoWorker(name: String!): Boolean! {
-    repoUrls.has(name)
-  }
-
-  # Foreign history must never be applied to the chief's unrelated checkout.
-  let refuseRepoHarvest(name: String!): Void {
-    if (isRepoWorker(name)) {
-      raise `worker "${name}" belongs to foreign repository ${repoUrls[name] ?? "(unknown)"}; ` +
-        `inspect it with logOf/diffOf and publish it with submitPR instead of pulling it into your workspace`
-    }
-    null
-  }
-
-  let publishToolbox: Container! {
-    container
-      .from("alpine:3.20")
-      .withExec(["apk", "add", "--no-cache", "git", "github-cli"])
-  }
-
-  let tail(s: String!, lines: Int! = 200): String! {
-    let all = s.split("\n")
-    if (all.length <= lines) {
-      s
-    } else {
-      `… (${toString(all.length - lines)} earlier lines truncated) …` + "\n" +
-        all.takeLast(lines).join("\n")
-    }
-  }
-
-  let noGithubTokenError: String! = """
-    No GitHub token is configured, so submitPR cannot push or open a pull
-    request. Configure staff in dagger.toml:
-
-        [env.dev.modules.staff.settings]
-        githubToken = "env://GITHUB_TOKEN"
-  """
 
   # Address a member by name, with a helpful miss.
   let member(name: String!): Agent! {
@@ -1217,12 +913,8 @@ type Staff {
     on its task while you keep working.
 
     - `spawn` hires a named worker with its own read-write copy of your
-      workspace. `spawnRepo` instead hires one against an explicit foreign Git
-      repository/base; both return immediately and use the same lifecycle.
-      Names are unique; every other tool addresses workers by name.
-    - `submitPR` is the separate publication step for a finished IDLE
-      spawnRepo worker. Inspect it first, require committed clean work, and
-      supply explicit branch/base/title/body; nothing is pushed by spawnRepo.
+      workspace and starts it on a task. Names are unique; every other tool
+      addresses workers by name.
     - `sendTo` steers a worker without blocking (returning the delivery
       evidence); `ask` sends and WAITS for the reply of the turn that
       consumes the message.
@@ -1254,11 +946,6 @@ type Staff {
     - `pullConflicted` is the recovery route for a commit `pull` refused: it
       lands that commit as uncommitted edits with conflict markers, which
       you resolve and commit yourself.
-
-    Foreign workers are intentionally different: logOf/diffOf remain their
-    review surface, but pull/pullPending/pullConflicted refuse to mix an
-    unrelated repository into your workspace. Publish those commits only
-    with submitPR after the worker is IDLE and clean.
 
     COLLECT BEFORE THE FINAL HARVEST: these tools read the worker's last
     COMMITTED conversation step, so a mid-turn worker may hold work they
@@ -1319,22 +1006,6 @@ type Staff {
     question on the chief's record — and never when the chief is likely
     blocked waiting on you, which would deadlock. Prefer working with what
     you have.
-  """
-
-  # Additional instructions composed only into spawnRepo workers. Public so
-  # schema/tests and chiefs can inspect the exact foreign-worker contract.
-  repoWorkerPrompt: String! = """
-    You are contributing inside a FOREIGN repository. Follow this target
-    repository's conventions: inspect its neighboring code, tests, commit
-    style, and contributing instructions before changing anything. Keep the
-    requested change minimal, run focused validation, and commit every
-    finished change in coherent commits.
-
-    Do NOT push branches or open a pull request yourself. The chief must first
-    inspect your commits and conversation, and will explicitly publish them
-    later with submitPR. When your committed workspace is clean, report what
-    changed, tests run, and the commits ready for review, then wait for the
-    chief to inspect, steer, or publish the work.
   """
 }
 

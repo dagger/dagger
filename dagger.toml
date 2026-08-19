@@ -160,19 +160,16 @@ source = ".dagger/modules/go-cli"
 [env.dev.modules.staff]
 source = "modules/staff"
 
-[env.dev.modules.staff.settings]
-githubToken = "cmd://gh auth token"
-
 # [env.dev.modules.delegate]
 # source = "modules/delegate"
 
 [env.dev.modules.review]
 source = "modules/review"
 
-[env.dev.modules.github]
-source = "modules/github"
+[env.dev.modules.contributor]
+source = "modules/contributor"
 
-[env.dev.modules.github.settings]
+[env.dev.modules.contributor.settings]
 githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
 
