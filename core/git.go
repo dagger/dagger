@@ -294,6 +294,7 @@ const (
 
 type persistedGitRepositoryPayload struct {
 	Form          string          `json:"form"`
+	URL           string          `json:"url,omitempty"`
 	DiscardGitDir bool            `json:"discardGitDir,omitempty"`
 	RemoteJSON    json.RawMessage `json:"remoteJson,omitempty"`
 
@@ -323,6 +324,9 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 	payload := persistedGitRepositoryPayload{
 		DiscardGitDir: repo.DiscardGitDir,
 		RemoteJSON:    remoteJSON,
+	}
+	if repo.URL.Valid {
+		payload.URL = repo.URL.Value.String()
 	}
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
@@ -370,6 +374,9 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 	repo := &GitRepository{
 		Remote:        &remote,
 		DiscardGitDir: persisted.DiscardGitDir,
+	}
+	if persisted.URL != "" {
+		repo.URL = dagql.NonNull(dagql.String(persisted.URL))
 	}
 	switch persisted.Form {
 	case persistedGitRepositoryFormLocal:

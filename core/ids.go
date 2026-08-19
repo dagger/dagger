@@ -52,6 +52,8 @@ type SourceMapID = dagql.ID[*SourceMap]
 
 type GeneratedCodeID = dagql.ID[*GeneratedCode]
 
+type GitBundleID = dagql.ID[*GitBundle]
+
 type GitRepositoryID = dagql.ID[*GitRepository]
 
 type GitRefID = dagql.ID[*GitRef]
