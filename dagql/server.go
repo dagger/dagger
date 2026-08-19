@@ -1308,6 +1308,116 @@ func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (Obj
 	return objType, resolved, ok, nil
 }
 
+// RecipeClassification describes the structural replay properties of a recipe.
+// A nil NotReplayable means every field reachable through the inputs that recipe
+// loading evaluates is replayable.
+type RecipeClassification struct {
+	NotReplayable *NotReplayableCall
+}
+
+// NotReplayableCall identifies a field that makes a recipe non-replayable.
+type NotReplayableCall struct {
+	Field  string
+	Digest digest.Digest
+	Reason string
+}
+
+// ClassifyRecipe structurally classifies id without evaluating it. The first
+// NotReplayable field is reported in recipe-loading traversal order. Lazy-ref
+// arguments are carried by reference during replay, so recipes reachable only
+// through those arguments do not affect the classification.
+//
+// Classification is best-effort. Handles, malformed recipes, and fields or
+// parent types that are not present in the current schema are not themselves
+// classified as non-replayable. Unknown fields' arguments are treated as
+// non-lazy, matching recipe loading behavior.
+func (s *Server) ClassifyRecipe(id *call.ID) RecipeClassification {
+	if c := s.canonical; c != nil {
+		return c.ClassifyRecipe(id)
+	}
+	classifier := newRecipeClassifier(s, func(_ *call.ID, fieldSpec FieldSpec) string {
+		return fieldSpec.NotReplayable
+	})
+	return RecipeClassification{NotReplayable: classifier.classify(id)}
+}
+
+type recipeClassifier struct {
+	srv   *Server
+	match func(*call.ID, FieldSpec) string
+
+	mu   sync.Mutex
+	memo map[string]*NotReplayableCall
+}
+
+func newRecipeClassifier(srv *Server, match func(*call.ID, FieldSpec) string) *recipeClassifier {
+	return &recipeClassifier{
+		srv:   srv,
+		match: match,
+		memo:  make(map[string]*NotReplayableCall),
+	}
+}
+
+func (classifier *recipeClassifier) classify(id *call.ID) *NotReplayableCall {
+	if id == nil || id.IsHandle() {
+		return nil
+	}
+	key := id.Digest().String()
+	classifier.mu.Lock()
+	if cached, ok := classifier.memo[key]; ok {
+		classifier.mu.Unlock()
+		return cached
+	}
+	// A provisional replayable entry guards against cycles in malformed recipes.
+	classifier.memo[key] = nil
+	classifier.mu.Unlock()
+
+	var first *NotReplayableCall
+	if fieldSpec, ok := classifier.srv.recipeFieldSpec(id); ok {
+		if reason := classifier.match(id, fieldSpec); reason != "" {
+			first = &NotReplayableCall{
+				Field:  id.Field(),
+				Digest: id.Digest(),
+				Reason: reason,
+			}
+		}
+	}
+
+	lazyRefs := classifier.srv.lazyRefArgNames(id)
+	for _, input := range classifier.srv.directRecipeInputIDs(id, lazyRefs) {
+		inputMatch := classifier.classify(input)
+		if first == nil && inputMatch != nil {
+			first = inputMatch
+		}
+	}
+
+	classifier.mu.Lock()
+	classifier.memo[key] = first
+	classifier.mu.Unlock()
+	return first
+}
+
+func (s *Server) recipeFieldSpec(id *call.ID) (FieldSpec, bool) {
+	if id == nil || id.IsHandle() {
+		return FieldSpec{}, false
+	}
+	parentType := "Query"
+	if receiver := id.Receiver(); receiver != nil {
+		if t := receiver.Type(); t != nil {
+			parentType = t.NamedType()
+		} else {
+			return FieldSpec{}, false
+		}
+	}
+	if parentType == "" {
+		return FieldSpec{}, false
+	}
+	objType, ok := s.ObjectType(parentType)
+	if !ok {
+		return FieldSpec{}, false
+	}
+	return objType.FieldSpec(id.Field(), id.View())
+}
+
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
 	ctx = srvToContext(ctx, s)
@@ -1424,9 +1534,8 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 		cache:     cache,
 		sessionID: clientMetadata.SessionID,
 		loads:     make(map[string]*recipeLoadFuture),
-
-		notReplayableMemo: make(map[string]bool),
 	}
+	state.notReplayable = newRecipeClassifier(s, state.notReplayableReason)
 	return state.load(id)
 }
 
@@ -1445,8 +1554,7 @@ type recipeLoadState struct {
 	mu    sync.Mutex
 	loads map[string]*recipeLoadFuture
 
-	notReplayableMu   sync.Mutex
-	notReplayableMemo map[string]bool
+	notReplayable *recipeClassifier
 }
 
 func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
@@ -1476,98 +1584,21 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 	return future.res, future.err
 }
 
-// notReplayable reports whether this recorded call must be re-executed rather
-// than resolved from the cache, because its own field is marked
-// [FieldSpec.NotReplayable] or because some recorded call it depends on is.
-//
-// The taint has to propagate upward, not just apply to the marked node: the
-// digest lookup in loadRecipeVertex happens BEFORE the call's inputs are
-// loaded, so a hit short-circuits the whole subtree beneath it. Without
-// propagation, an ancestor whose digest is still in the cache would be served
-// wholesale and the marked call underneath it would never be reached.
-//
-// Structural only — nothing is evaluated, and results are memoized per load.
-//
-// Concurrency: the provisional-false entry planted below is only observable
-// while the DFS that planted it is still running. That is safe because the
-// root vertex computes its full transitive closure here — synchronously,
-// before loadRecipeVertex fans out any concurrent input loads — so by the
-// time another goroutine consults the memo, every entry it can reach is
-// finalized. A vertex that starts a fresh traversal only does so for IDs
-// already finalized by the root's pass.
-func (state *recipeLoadState) notReplayable(id *call.ID) bool {
-	if id == nil || id.IsHandle() {
-		return false
-	}
-	key := id.Digest().String()
-	state.notReplayableMu.Lock()
-	if cached, ok := state.notReplayableMemo[key]; ok {
-		state.notReplayableMu.Unlock()
-		return cached
-	}
-	// Provisional false guards against cycles in a malformed recipe.
-	state.notReplayableMemo[key] = false
-	state.notReplayableMu.Unlock()
-
-	tainted := state.fieldNotReplayable(id)
-	if !tainted {
-		for _, input := range state.directRecipeInputIDs(id, state.lazyRefArgNames(id)) {
-			if state.notReplayable(input) {
-				tainted = true
-				break
-			}
-		}
-	}
-
-	state.notReplayableMu.Lock()
-	state.notReplayableMemo[key] = tainted
-	state.notReplayableMu.Unlock()
-	return tainted
-}
-
-// fieldNotReplayable resolves the recorded call's own field spec from the
-// schema, the same way lazyRefArgNames does, without evaluating anything.
-// Best-effort: a field that can't be resolved (e.g. a module type not
-// currently installed) is treated as replayable, preserving prior behavior.
-func (state *recipeLoadState) fieldNotReplayable(id *call.ID) bool {
-	parentType := "Query"
-	if receiver := id.Receiver(); receiver != nil {
-		if t := receiver.Type(); t != nil {
-			parentType = t.NamedType()
-		} else {
-			return false
-		}
-	}
-	if parentType == "" {
-		return false
-	}
-	objType, ok := state.srv.ObjectType(parentType)
-	if !ok {
-		return false
-	}
-	fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
-	if !ok {
-		return false
-	}
+// notReplayableReason reports whether the recorded call's own field must be
+// re-executed in this loading session. The shared recipeClassifier propagates
+// that classification through every input recipe loading evaluates.
+func (state *recipeLoadState) notReplayableReason(id *call.ID, fieldSpec FieldSpec) string {
 	if fieldSpec.NotReplayable == "" {
-		return false
+		return ""
 	}
-	// Marked, but only actually unsafe when this recorded call came from a
-	// different session. Replaying a host read or a client-bound value inside
-	// the session that produced it is fine: the client is still alive and its
-	// view of the host has not been swapped out from under the recipe. It is
-	// crossing the session boundary that turns the recorded digest into a
-	// stable key for a value that no longer means anything here.
-	//
-	// Scoping on the recorded session stamp keeps ordinary same-session recipe
-	// loads — container chains built from a host directory, and every other ID
-	// threaded through the API — on their normal cache path.
+	// A marked call is only unsafe when it came from another session.
+	// Same-session recipe loads can still use the value while its client and
+	// view of the host are alive. Without a recorded stamp, stay conservative.
 	recorded, ok := recordedSessionStamp(id)
-	if !ok {
-		// No stamp to compare: stay conservative and re-execute.
-		return true
+	if !ok || recorded != state.sessionID {
+		return fieldSpec.NotReplayable
 	}
-	return recorded != state.sessionID
+	return ""
 }
 
 // recordedSessionStamp returns the session ID baked into the recorded call by
@@ -1588,7 +1619,7 @@ func recordedSessionStamp(id *call.ID) (string, bool) {
 
 func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	callCtx := state.ctx
-	replayable := !state.notReplayable(id)
+	replayable := state.notReplayable.classify(id) == nil
 	if replayable {
 		if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
 			return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
@@ -1612,9 +1643,9 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	// Lazy-ref args (e.g. LLM.withTools(object:)) are carried by reference:
 	// not evaluated here, and reconstructed into the frame/selector as
 	// unevaluated recipe IDs. Computed once and threaded through.
-	lazyRefs := state.lazyRefArgNames(id)
+	lazyRefs := state.srv.lazyRefArgNames(id)
 
-	inputIDs := state.directRecipeInputIDs(id, lazyRefs)
+	inputIDs := state.srv.directRecipeInputIDs(id, lazyRefs)
 	loadedInputs := make(map[string]AnyResult, len(inputIDs))
 	var loadedMu sync.Mutex
 	eg, _ := errgroup.WithContext(state.ctx)
@@ -1668,7 +1699,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	return baseObj.Select(callCtx, state.srv, sel)
 }
 
-func (state *recipeLoadState) directRecipeInputIDs(id *call.ID, lazyRefs map[string]bool) []*call.ID {
+func (s *Server) directRecipeInputIDs(id *call.ID, lazyRefs map[string]bool) []*call.ID {
 	if id == nil || id.IsHandle() {
 		return nil
 	}
@@ -1707,26 +1738,11 @@ func (state *recipeLoadState) directRecipeInputIDs(id *call.ID, lazyRefs map[str
 // without evaluating anything. Best-effort: if the field or its type can't be
 // resolved from the schema (e.g. a module type not currently installed), the
 // arguments are treated as normal (evaluated), preserving prior behavior.
-func (state *recipeLoadState) lazyRefArgNames(id *call.ID) map[string]bool {
+func (s *Server) lazyRefArgNames(id *call.ID) map[string]bool {
 	if id == nil || id.IsHandle() || len(id.Args()) == 0 {
 		return nil
 	}
-	var parentType string
-	if receiver := id.Receiver(); receiver != nil {
-		if t := receiver.Type(); t != nil {
-			parentType = t.NamedType()
-		}
-	} else {
-		parentType = "Query"
-	}
-	if parentType == "" {
-		return nil
-	}
-	objType, ok := state.srv.ObjectType(parentType)
-	if !ok {
-		return nil
-	}
-	fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
+	fieldSpec, ok := s.recipeFieldSpec(id)
 	if !ok {
 		return nil
 	}
