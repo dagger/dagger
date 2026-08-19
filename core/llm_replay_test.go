@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -41,8 +42,40 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	return attribute.Value{}, false
 }
 
+func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
+	sr, ctx := replayTestRecorder(t)
+	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
+
+	emitMessageSpan(ctx, &LLMMessage{
+		Role:    LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "Please review this."}},
+	}, "", nil)
+	emitMessageSpan(ctx, &LLMMessage{
+		Role:    LLMMessageRoleAssistant,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "On it."}},
+	}, "", nil)
+
+	byName := map[string]sdktrace.ReadOnlySpan{}
+	for _, span := range sr.Ended() {
+		byName[span.Name()] = span
+	}
+	for _, name := range []string{"LLM prompt", "LLM response"} {
+		span, ok := byName[name]
+		require.True(t, ok, "missing %q span", name)
+
+		id, ok := spanAttr(span, string(semconv.GenAIAgentIDKey))
+		require.True(t, ok, "%s: missing GenAI agent ID", name)
+		require.Equal(t, "agent-123", id.AsString())
+
+		agentName, ok := spanAttr(span, string(semconv.GenAIAgentNameKey))
+		require.True(t, ok, "%s: missing GenAI agent name", name)
+		require.Equal(t, "reviewer", agentName.AsString())
+	}
+}
+
 func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
 	sr, ctx := replayTestRecorder(t)
+	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
 
 	replayer := newHistoryReplay([]*LLMMessage{
 		{
@@ -115,6 +148,14 @@ func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
 		v, ok = spanAttr(s, telemetryattrs.LLMCallDigestAttr)
 		require.True(t, ok, "%s: missing call digest attr", toolName)
 		require.Equal(t, "sha256:deadbeef", v.AsString())
+
+		v, ok = spanAttr(s, string(semconv.GenAIAgentIDKey))
+		require.True(t, ok, "%s: missing GenAI agent ID", toolName)
+		require.Equal(t, "agent-123", v.AsString())
+
+		v, ok = spanAttr(s, string(semconv.GenAIAgentNameKey))
+		require.True(t, ok, "%s: missing GenAI agent name", toolName)
+		require.Equal(t, "reviewer", v.AsString())
 
 		// Tool calls hang off the assistant text that introduced them, the
 		// same anchoring the streaming providers use.
