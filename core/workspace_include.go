@@ -133,15 +133,38 @@ func CloneWorkspaceGitTree(
 }
 
 // IncludeSource is what an [[include]] entry needs to be resolved: where the
-// including config sits, how to read files next to it, and how to resolve a git
-// ref. ReadRelative and StatRelative address paths relative to the including
-// config's directory; both may be nil for a caller that can only resolve git
-// includes.
+// including config sits inside its workspace, how to read files there, and how
+// to resolve a git ref. ConfigDir and the paths handed to ReadWorkspaceFile and
+// StatWorkspaceFile are workspace-relative; both readers may be nil for a caller
+// that can only resolve git includes.
 type IncludeSource struct {
-	Dag           *dagql.Server
-	ReadRelative  func(ctx context.Context, relPath string) ([]byte, error)
-	StatRelative  func(ctx context.Context, relPath string) (*Stat, error)
-	WorkspaceRoot string
+	Dag               *dagql.Server
+	ConfigDir         string
+	ReadWorkspaceFile func(ctx context.Context, wsPath string) ([]byte, error)
+	StatWorkspaceFile func(ctx context.Context, wsPath string) (*Stat, error)
+}
+
+// resolveIncludePath turns an include source into a workspace-relative path,
+// following the same rule as every other path a workspace resolves
+// (resolveWorkspacePath): a leading "/" means the workspace root, anything else
+// is relative — here to the directory of the config that declares the include,
+// because that is what the path sits next to.
+func (s IncludeSource) resolveIncludePath(source string) (string, error) {
+	clean := path.Clean(filepath.ToSlash(source))
+	var resolved string
+	if path.IsAbs(clean) {
+		resolved = strings.TrimPrefix(clean, "/")
+	} else {
+		resolved = path.Join(filepath.ToSlash(s.ConfigDir), clean)
+	}
+	resolved = path.Clean(resolved)
+	if resolved == "" {
+		resolved = "."
+	}
+	if resolved != "." && !filepath.IsLocal(filepath.FromSlash(resolved)) {
+		return "", fmt.Errorf("%q escapes the workspace root", source)
+	}
+	return resolved, nil
 }
 
 // DefaultIncludeConfigFile is appended to an include source that names a
@@ -241,15 +264,16 @@ func (s IncludeSource) loadLocalInclude(
 	ctx context.Context,
 	include string,
 ) (*workspace.Config, StatFS, string, error) {
-	if s.ReadRelative == nil {
-		return nil, nil, "", fmt.Errorf("local includes cannot be resolved here")
-	}
-	if filepath.IsAbs(include) {
-		return nil, nil, "", fmt.Errorf("must be relative to the including config, not an absolute path")
+	if s.ReadWorkspaceFile == nil {
+		return nil, nil, "", fmt.Errorf("path includes cannot be resolved here")
 	}
 
-	configPath := includeConfigPath(include)
-	data, err := s.ReadRelative(ctx, configPath)
+	resolved, err := s.resolveIncludePath(include)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	configPath := includeConfigPath(resolved)
+	data, err := s.ReadWorkspaceFile(ctx, configPath)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("reading %s: %w", configPath, err)
 	}
@@ -259,8 +283,8 @@ func (s IncludeSource) loadLocalInclude(
 	}
 
 	var statFS StatFS
-	if s.StatRelative != nil {
-		statFS = includeRelativeStatFS{stat: s.StatRelative}
+	if s.StatWorkspaceFile != nil {
+		statFS = includeWorkspaceStatFS{stat: s.StatWorkspaceFile}
 	}
 	return cfg, statFS, path.Dir(configPath), nil
 }
@@ -278,13 +302,13 @@ func includeConfigPath(p string) string {
 	return path.Join(p, DefaultIncludeConfigFile)
 }
 
-// includeRelativeStatFS adapts a caller's relative stat into the StatFS the
-// module classifier wants.
-type includeRelativeStatFS struct {
-	stat func(ctx context.Context, relPath string) (*Stat, error)
+// includeWorkspaceStatFS adapts a caller's workspace-relative stat into the
+// StatFS the module classifier wants.
+type includeWorkspaceStatFS struct {
+	stat func(ctx context.Context, wsPath string) (*Stat, error)
 }
 
-func (fs includeRelativeStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+func (fs includeWorkspaceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	stat, err := fs.stat(ctx, path)
 	if err != nil {
 		return "", nil, err

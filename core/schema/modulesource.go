@@ -462,14 +462,14 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 		if err != nil {
 			return inst, false, err
 		}
-		configDir := filepath.Dir(configPath)
 		source := core.IncludeSource{
-			Dag: dag,
-			ReadRelative: func(ctx context.Context, relPath string) ([]byte, error) {
-				return bk.ReadCallerHostFile(ctx, filepath.Join(configDir, relPath))
+			Dag:       dag,
+			ConfigDir: filepath.Dir(ws.ConfigFile),
+			ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+				return bk.ReadCallerHostFile(ctx, filepath.Join(ws.Root, wsPath))
 			},
-			StatRelative: func(ctx context.Context, relPath string) (*core.Stat, error) {
-				_, stat, err := statFS.Stat(ctx, filepath.Join(configDir, relPath))
+			StatWorkspaceFile: func(ctx context.Context, wsPath string) (*core.Stat, error) {
+				_, stat, err := statFS.Stat(ctx, filepath.Join(ws.Root, wsPath))
 				return stat, err
 			},
 		}

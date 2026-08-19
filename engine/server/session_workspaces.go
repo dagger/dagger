@@ -740,14 +740,14 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		if err := workspace.ValidateIncludes(wsConfig); err != nil {
 			return err
 		}
-		configDir := filepath.Dir(filepath.Join(ws.Root, ws.ConfigFile))
 		source := core.IncludeSource{
-			Dag: client.dag,
-			ReadRelative: func(ctx context.Context, relPath string) ([]byte, error) {
-				return readFile(ctx, filepath.Join(configDir, relPath))
+			Dag:       client.dag,
+			ConfigDir: filepath.Dir(ws.ConfigFile),
+			ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+				return readFile(ctx, filepath.Join(ws.Root, wsPath))
 			},
-			StatRelative: func(ctx context.Context, relPath string) (*core.Stat, error) {
-				_, stat, err := statFS.Stat(ctx, filepath.Join(configDir, relPath))
+			StatWorkspaceFile: func(ctx context.Context, wsPath string) (*core.Stat, error) {
+				_, stat, err := statFS.Stat(ctx, filepath.Join(ws.Root, wsPath))
 				return stat, err
 			},
 		}

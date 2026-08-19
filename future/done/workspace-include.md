@@ -89,9 +89,11 @@ settings.goVersion = "1.24"
 `source` addresses a config **file**, not a workspace root, and comes in two
 forms:
 
-- **a path**, relative to the including config's directory:
-  `common/base.toml`, `../../shared/dagger.toml`. A source naming a directory
-  reaches the `dagger.toml` inside it.
+- **a path**: `common/base.toml` relative to the including config's directory,
+  or `/common/base.toml` from the workspace root — the same rule
+  `resolveWorkspacePath` applies to every other path a workspace resolves, so a
+  root-anchored include reads the same from any subdirectory. A source naming a
+  directory reaches the `dagger.toml` inside it.
 - **a git ref**: `github.com/acme/base@v1`, or the fragment form that names the
   file inside the repository,
   `https://host/repo.git#main:dagger/common/app-base.toml`.
@@ -556,7 +558,8 @@ path include needs no fixture beyond a second file in the workspace.
    replaces; `entrypoint = false` downstream beats an inherited
    `entrypoint = true`.
 3. **Path include**: `source = "common/base.toml"` next to the including config
-   is merged with no git service in play.
+   is merged with no git service in play, and `source = "/common/base.toml"`
+   resolves from the workspace root.
 4. **Directory include**: `source = "common"` reaches `common/dagger.toml`.
 5. **More than one include**: two `[[include]]` blocks → error naming the count
    and the limit.

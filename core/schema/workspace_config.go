@@ -274,40 +274,21 @@ func applyWorkspaceIncludes(
 	return workspace.MergeIncludedConfig(included, cfg, explicitKeys)
 }
 
-// workspaceIncludeSource lets an include address files next to the config that
-// declares it, whichever way this workspace reads its own files.
+// workspaceIncludeSource lets an include address a config in this workspace,
+// whichever way the workspace reads its own files.
 func workspaceIncludeSource(ws *core.Workspace, dag *dagql.Server) (core.IncludeSource, error) {
 	configFile, err := workspaceConfigFile(ws)
 	if err != nil {
 		return core.IncludeSource{}, err
 	}
-	configDir := filepath.Dir(configFile)
-
-	// The include path is relative to the config's directory, and resolved
-	// inside the workspace: a path that climbs out of the root addresses
-	// something the workspace cannot read anyway.
-	resolve := func(relPath string) (string, error) {
-		joined := filepath.Clean(filepath.Join(configDir, relPath))
-		if !filepath.IsLocal(joined) {
-			return "", fmt.Errorf("%q points outside the workspace", relPath)
-		}
-		return joined, nil
-	}
 
 	return core.IncludeSource{
-		Dag: dag,
-		ReadRelative: func(ctx context.Context, relPath string) ([]byte, error) {
-			wsPath, err := resolve(relPath)
-			if err != nil {
-				return nil, err
-			}
+		Dag:       dag,
+		ConfigDir: filepath.Dir(configFile),
+		ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
 			return readWorkspaceFileBytes(ctx, ws, wsPath)
 		},
-		StatRelative: func(ctx context.Context, relPath string) (*core.Stat, error) {
-			wsPath, err := resolve(relPath)
-			if err != nil {
-				return nil, err
-			}
+		StatWorkspaceFile: func(ctx context.Context, wsPath string) (*core.Stat, error) {
 			return statWorkspaceFile(ctx, ws, wsPath)
 		},
 	}, nil

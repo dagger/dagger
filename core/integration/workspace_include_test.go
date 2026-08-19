@@ -265,6 +265,25 @@ tone = "formal"
 	require.Contains(t, out, "# included: common/base.toml")
 }
 
+func (WorkspaceIncludeSuite) TestIncludesARootRelativeConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// A leading "/" means the workspace root, the same rule every other path a
+	// workspace resolves follows — which is the spelling that works unchanged
+	// from a config in a subdirectory.
+	ctr := workspaceIncludeConsumer(t, c, `
+[[include]]
+source = "/common/base.toml"
+`).
+		WithNewFile("/work/common/base.toml", `[modules.greeter]
+source = "github.com/acme/greeter@v1"
+`)
+
+	out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `source = "github.com/acme/greeter@v1"`)
+}
+
 func (WorkspaceIncludeSuite) TestIncludesADirectoryConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

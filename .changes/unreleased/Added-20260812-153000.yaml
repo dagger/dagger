@@ -15,9 +15,10 @@ body: |
   goVersion = "1.24"
   ```
 
-  `source` addresses a config file, either as a path relative to the including
-  config (`common/base.toml`, and a directory reaches the `dagger.toml` inside
-  it) or as a Git ref (`https://host/repo.git#main:dagger/base.toml`). The
+  `source` addresses a config file, either as a path (`common/base.toml` next to
+  the including config, or `/common/base.toml` from the workspace root; a
+  directory reaches the `dagger.toml` inside it) or as a Git ref
+  (`https://host/repo.git#main:dagger/base.toml`). The
   workspace naming the include wins every conflict, and a module entry may omit
   `source` to override just the settings of a module the include installs.
 

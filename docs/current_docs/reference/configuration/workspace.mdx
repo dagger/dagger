@@ -121,7 +121,7 @@ goVersion = "1.24"
 
 `source` addresses a config **file**, either way it is written:
 
-- a path relative to the including config's directory — `common/base.toml`, `../../shared/dagger.toml`. A source naming a directory reaches the `dagger.toml` inside it.
+- a path — `common/base.toml` relative to the including config's directory, or `/common/base.toml` from the workspace root, the same rule every other path a workspace resolves follows. A source naming a directory reaches the `dagger.toml` inside it.
 - a Git ref — `github.com/acme/base@v1`, `https://host/repo.git#main:dagger/common/app-base.toml`. A Git source needs a scheme or a `#` fragment; without one there is no way to tell where the repository ends and the path to the file begins, so it reads as a path.
 
 The included config is merged **underneath** this one, so this workspace wins every conflict. The effective configuration is merged in a fixed order: the included config, then this repository's `dagger.toml`, then the matching user-level overrides, then the selected `--env` overlay.
