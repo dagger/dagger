@@ -104,11 +104,12 @@ const config: Config = {
           breadcrumbs: false,
           path: docsPath,
           routeBasePath: "/",
-          lastVersion: "0.21.4",
+          // No lastVersion: the default (served at /) is the newest snapshot,
+          // i.e. versions.json[0], which docs:version prepends on each cut.
           versions: {
+            // Keep the old-version banner suppressed; path/label are derived
+            // (non-default versions are served at /<version>/).
             "0.21.4": {
-              label: "0.21.4",
-              path: "/",
               banner: "none",
               badge: false,
             },
