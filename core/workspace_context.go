@@ -85,14 +85,14 @@ func workspaceArgValue(ctx context.Context, srv *dagql.Server) (dagql.Input, err
 	return dagql.NewID[*Workspace](wsID), nil
 }
 
-// withBoundWorkspaceArgs supplies the workspace for any required Workspace
+// WithBoundWorkspaceArgs supplies the workspace for any required Workspace
 // argument in specs that named doesn't already carry.
 //
 // Callers that assemble a selector themselves — the entrypoint proxies building
 // their inner constructor call, like ModTreeNode.DagqlValue — have to fill a
 // required Workspace before selecting, since dagql's injection hook runs after
 // the non-null check.
-func withBoundWorkspaceArgs(
+func WithBoundWorkspaceArgs(
 	ctx context.Context,
 	srv *dagql.Server,
 	specs []dagql.InputSpec,
