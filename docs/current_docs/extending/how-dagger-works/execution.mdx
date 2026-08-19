@@ -4,6 +4,8 @@ slug: /extending/how-dagger-works/execution
 description: "Learn what happens when Dagger runs a module function."
 ---
 
+import HelperPrepareWalk from "@components/HelperPrepareWalk";
+
 # Execution
 
 Now connect the pieces.
@@ -25,6 +27,10 @@ A call moves through this path:
 7. The caller asks for a result.
 8. The engine runs only the needed work.
 9. Dagger returns a value, error, trace, or check result.
+
+Steps 3 and 4 are prepare. The engine is already on. A short-lived helper fetches packages and builds the function list. Until that list exists, there is nothing to invoke.
+
+<HelperPrepareWalk />
 
 This is why clear APIs matter. The graph is built from your function names, inputs, outputs, objects, and defaults.
 
