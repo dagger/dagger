@@ -5305,6 +5305,182 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 	assert.Equal(t, 1, base.Size())
 }
 
+func TestCacheLatePersistableJoinRepairsBeforeHandoffRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		lateWaiters         int
+		canceledFinalWaiter bool
+	}{
+		{
+			name:        "successful final waiter",
+			lateWaiters: 2,
+		},
+		{
+			name:                "canceled final waiter",
+			lateWaiters:         1,
+			canceledFinalWaiter: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unwrapValue := func(res AnyResult) int {
+				t.Helper()
+				value, ok := UnwrapAs[cacheTestLeaseCheckedInt](res)
+				assert.Assert(t, ok, "expected cacheTestLeaseCheckedInt result, got %T", res)
+				return int(value.Int)
+			}
+
+			ctx := cacheTestContext(t.Context())
+			cacheIface, err := NewCache(ctx, "", nil, nil)
+			assert.NilError(t, err)
+			c := cacheIface
+
+			const (
+				sessionID      = "late-persistable-session"
+				concurrencyKey = "late-persistable-concurrency"
+			)
+			key := cacheTestIntCall("late-persistable-repair")
+			callConcKeys := callConcurrencyKeys{
+				callKey:        cacheTestCallDigest(key).String(),
+				concurrencyKey: concurrencyKey,
+			}
+
+			publicationPassedPersistCheck := make(chan struct{})
+			allowPublicationToFinish := make(chan struct{})
+			leaderResCh := make(chan AnyResult, 1)
+			leaderErrCh := make(chan error, 1)
+			go func() {
+				res, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{
+					ResultCall:     key,
+					ConcurrencyKey: concurrencyKey,
+					TTL:            60,
+				}, func(context.Context) (AnyResult, error) {
+					return cacheTestDetachedResult(key, cacheTestLeaseCheckedInt{
+						Int: NewInt(42),
+						onAttach: func(context.Context) error {
+							close(publicationPassedPersistCheck)
+							<-allowPublicationToFinish
+							return nil
+						},
+					}), nil
+				})
+				leaderResCh <- res
+				leaderErrCh <- err
+			}()
+
+			select {
+			case <-publicationPassedPersistCheck:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for publication to pass persistence check")
+			}
+
+			// Simulate requests whose e-graph lookup missed before indexing but
+			// whose callsMu admission happens after publication read false. Keep
+			// their waiter slots outstanding so the leader cannot release the
+			// publication handoff before the test selects the final waiter.
+			c.callsMu.Lock()
+			oc := c.ongoingCalls[callConcKeys]
+			assert.Assert(t, oc != nil)
+			assert.Assert(t, !oc.persistedDuringPublication)
+			oc.isPersistable.Store(true)
+			oc.waiters += tc.lateWaiters
+			expectedExpiry := time.Now().Unix() + 3600
+			oc.persistedEdgeExpiresAtUnix = expectedExpiry
+			c.callsMu.Unlock()
+
+			close(allowPublicationToFinish)
+			var leaderRes AnyResult
+			select {
+			case leaderRes = <-leaderResCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for leader result")
+			}
+			select {
+			case err := <-leaderErrCh:
+				assert.NilError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for leader error")
+			}
+			assert.Equal(t, 42, unwrapValue(leaderRes))
+
+			c.callsMu.Lock()
+			assert.Assert(t, oc.needsPersistRepair)
+			assert.Equal(t, tc.lateWaiters, oc.waiters)
+			_, ongoing := c.ongoingCalls[callConcKeys]
+			c.callsMu.Unlock()
+			assert.Assert(t, !ongoing)
+
+			if tc.canceledFinalWaiter {
+				// Leave only the handoff owner. If repair happened after the
+				// decrement, this final cancellation would collect the result.
+				assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+
+				// Publication is complete and no goroutine reads waitCh anymore.
+				// Replace the closed channel so wait deterministically selects the
+				// canceled path for the synthetic final waiter.
+				oc.waitCh = make(chan struct{})
+				canceledCtx, cancel := context.WithCancel(ctx)
+				cancel()
+				_, err := c.wait(canceledCtx, sessionID, noopTypeResolver{}, oc, &CallRequest{
+					ResultCall:     key,
+					ConcurrencyKey: concurrencyKey,
+					IsPersistable:  true,
+				})
+				assert.ErrorIs(t, err, context.Canceled)
+			} else {
+				for range tc.lateWaiters {
+					res, err := c.wait(ctx, sessionID, noopTypeResolver{}, oc, &CallRequest{
+						ResultCall:     key,
+						ConcurrencyKey: concurrencyKey,
+						IsPersistable:  true,
+					})
+					assert.NilError(t, err)
+					assert.Equal(t, 42, unwrapValue(res))
+				}
+				assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+			}
+
+			shared := leaderRes.cacheSharedResult()
+			c.egraphMu.RLock()
+			edge, found := c.persistedEdgesByResult[shared.id]
+			live := c.resultsByID[shared.id] == shared
+			ownershipCount := shared.incomingOwnershipCount
+			c.egraphMu.RUnlock()
+			assert.Assert(t, found)
+			assert.Equal(t, expectedExpiry, edge.expiresAtUnix)
+			assert.Assert(t, live)
+			assert.Equal(t, int64(1), ownershipCount)
+			assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+			assert.Equal(t, 1, c.Size())
+		})
+	}
+}
+
+func TestOngoingCallPersistableIntentConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	oc := &ongoingCall{}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for range 10_000 {
+			oc.isPersistable.Store(true)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for range 10_000 {
+			_ = oc.isPersistable.Load()
+		}
+	}()
+	close(start)
+	wg.Wait()
+	assert.Assert(t, oc.isPersistable.Load())
+}
+
 func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
