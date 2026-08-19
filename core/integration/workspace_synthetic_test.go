@@ -151,6 +151,50 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.True(t, empty)
 }
 
+func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceLoadsAgentsFromTree(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	const gitAgentDoc = "Agent loaded from the GitRef workspace tree."
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.git-agent]\nsource = \"./modules/git-agent\"\n").
+		WithNewFile("modules/git-agent/dagger.json", `{"name":"git-agent","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/git-agent/main.dang", `type GitAgent {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  """`+gitAgentDoc+`"""
+  fromGit(): String! {
+    "git"
+  }
+}
+`)
+	gitDaemon, repoURL := gitService(ctx, t, c, source)
+	ws := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Head().
+		AsWorkspace()
+
+	modules, err := ws.Modules(ctx)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+	name, err := modules[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent", name)
+
+	tools, err := ws.Agents().Compose().Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## fromGit")
+	require.Contains(t, tools, gitAgentDoc)
+
+	// The same tree wrapped by Directory.asWorkspace remains intentionally
+	// module-less; only GitRef values own and serve the modules in their tree.
+	directoryTools, err := source.AsWorkspace().Agents().Compose().Tools(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, directoryTools, "## fromGit")
+}
+
 // TestGitRefBackedSyntheticWorkspaceRoundTripsFromID asserts the simplest ID
 // contract for GitRef.asWorkspace: a workspace returned from a Git ref can be
 // saved as an ID, loaded again, and still reads files from that Git ref.

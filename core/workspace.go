@@ -1008,6 +1008,21 @@ func (ws *Workspace) IsPortableCheckpoint() bool {
 	return ws != nil && ws.portableCheckpoint
 }
 
+// IsModuleBearingValue reports whether a value-backed workspace owns the
+// module tree its schema and agent composition must load from. Portable
+// checkpoints and GitRef workspaces are complete checkout values; ordinary
+// Directory workspaces remain intentionally module-less.
+func (ws *Workspace) IsModuleBearingValue() bool {
+	if ws == nil {
+		return false
+	}
+	if ws.portableCheckpoint {
+		return true
+	}
+	_, ok := ws.BaseSource().(*WorkspaceSourceGitRef)
+	return ok
+}
+
 func (ws *Workspace) SetPortableCheckpoint() {
 	if ws != nil {
 		ws.portableCheckpoint = true
