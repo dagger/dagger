@@ -9,8 +9,8 @@ Builds on [host-git-reconstruction.md](host-git-reconstruction.md),
 [resume-from-trace.md](resume-from-trace.md).
 
 Status: **implementation in progress**. Part I describes the end state; Part II
-tracks the transition from the current implementation. Phases 1 through 3 are
-complete; phase 4 is next.
+tracks the transition from the current implementation. Phases 1 through 4 are
+complete; phase 5 is next.
 
 ---
 
@@ -764,11 +764,18 @@ leave the tree working and land as its own scoped commit(s).
   spoof-safe approval for the complete selected dirty set. Focused Git,
   engine-client, core, schema, and checkpoint reconstruction tests passed;
   `83501c4` also removed the pre-existing integration compile blocker.
-- [ ] **Phase 4 — total public checkpoint composition.** Implement the source
-  matrix and owner gate, use transitive `NotReplayable` classification, pin
-  mutable refs, return replayable values as public compositions, make
-  GitRef-backed synthetic workspaces module-bearing, and reduce the agent
-  binder to an ordinary `checkpoint()` caller.
+- [x] **Phase 4 — total public checkpoint composition.** Commits `4e80133`
+  through `5530590` add structural transitive `NotReplayable` classification,
+  owner-gate live checkout capture, dispatch the complete workspace source
+  matrix, pin GitRef-backed values, preserve typed workspace metadata through
+  public composition fields, and make GitRef values load their own modules.
+  Client-local capture now returns the public
+  `git.withBundle(blob.asGitBundle).ref.asWorkspace.withChanges` composition
+  verbatim; the agent binder already called `checkpoint()` without source-shape
+  logic and needed no further special case. Focused DagQL/core/schema tests and
+  engine integration coverage for local history/worktree reconstruction and
+  export, replayable pass-through, non-replayable diagnostics, owner rejection,
+  and GitRef module/agent loading passed.
 - [ ] **Phase 5 — explicit export target and spike deletion.** Add an optional
   `Workspace.export(to: Workspace)` target: local workspaces may still export
   to themselves, while frozen/value workspaces require a target. Make the agent
