@@ -304,10 +304,10 @@ func (fe *frontendPretty) openFocusedLogs() {
 			}
 		}
 	}
-	fe.openLogPager(span, title, titleIcon, fe.makeLogPagerReturnFocus())
+	fe.openLogPager(span, title, titleIcon)
 }
 
-func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string, restore func()) {
+func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string) {
 	if !fe.spanHasLogs(span) {
 		return
 	}
@@ -322,8 +322,8 @@ func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string
 		TitleIcon: titleIcon,
 		Logs:      logs,
 	}
-	fe.logPagerReturn = restore
-	fe.applyTuistFocus()
+	fe.logPagerFocus = fe.tui.PushFocus(fe.logPager)
+	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
@@ -335,31 +335,23 @@ func (fe *frontendPretty) closeLogPager() {
 		return
 	}
 	fe.exitLogPagerSearchMode()
-	restore := fe.logPagerReturn
+	fe.logPagerFocus.Restore()
+	fe.logPagerFocus = nil
 	fe.logPager = nil
-	fe.logPagerReturn = nil
-	if restore != nil {
-		restore()
-	} else {
-		fe.applyTuistFocus()
+	if fe.tui.Focused() == nil {
+		// Fullscreen rendering dismounts the underlying view. Restore the live
+		// target explicitly so Tuist can notify it again on its next mount.
+		if fe.testsMode {
+			fe.tui.SetFocus(fe.testsFocusTarget())
+		} else {
+			fe.focusNavigationTarget()
+		}
 	}
+	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
 	fe.Update()
-}
-
-func (fe *frontendPretty) makeLogPagerReturnFocus() func() {
-	if fe.testsMode && fe.fullscreenTests != nil {
-		return fe.fullscreenTests.makeReturnFocus(fe)
-	}
-	spanID := fe.FocusedSpan
-	return func() {
-		if spanID.IsValid() {
-			fe.FocusedSpan = spanID
-		}
-		fe.applyTuistFocus()
-	}
 }
 
 func (fe *frontendPretty) enterLogPagerSearchMode() {
@@ -377,8 +369,8 @@ func (fe *frontendPretty) enterLogPagerSearchMode() {
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.logSearchInput)
 	fe.tui.AddChild(fe.keymapBar)
-	fe.tui.SetFocus(fe.logSearchInput)
-	fe.tui.SetShowHardwareCursor(true)
+	fe.logSearchFocus = fe.tui.PushFocus(fe.logSearchInput)
+	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
@@ -389,12 +381,11 @@ func (fe *frontendPretty) exitLogPagerSearchMode() {
 	if fe.logSearchInput == nil {
 		return
 	}
+	fe.logSearchFocus.Restore()
 	fe.tui.RemoveChild(fe.logSearchInput)
 	fe.logSearchInput = nil
-	fe.tui.SetShowHardwareCursor(fe.textInput != nil && fe.editlineFocused)
-	if fe.logPager != nil {
-		fe.tui.SetFocus(fe.logPager)
-	}
+	fe.logSearchFocus = nil
+	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
