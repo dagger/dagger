@@ -38,6 +38,64 @@ func TestSelectedWorkspaceEnvForUsesCapturedEnvironment(t *testing.T) {
 	require.Equal(t, "dev", env)
 }
 
+func TestWorkspaceMetadataComposition(t *testing.T) {
+	t.Parallel()
+
+	base := &core.Workspace{Cwd: "."}
+	withPaths, err := workspaceWithConfigPaths(base, "config/dagger.toml", "config/dagger.lock")
+	require.NoError(t, err)
+	require.NotSame(t, base, withPaths)
+
+	withEnv := workspaceWithConfigEnvironment(withPaths, "dev")
+	require.NotSame(t, withPaths, withEnv)
+
+	withAuthor, err := workspaceWithGitAuthor(withEnv, "Portable Agent", "agent@example.com")
+	require.NoError(t, err)
+	require.NotSame(t, withEnv, withAuthor)
+
+	require.Empty(t, base.ConfigFile)
+	require.Empty(t, base.LockFile)
+	require.Empty(t, base.WorkspaceEnv())
+	require.Empty(t, base.GitAuthorName)
+	require.Empty(t, base.GitAuthorEmail)
+	require.Equal(t, "config/dagger.toml", withAuthor.ConfigFile)
+	require.Equal(t, "config/dagger.lock", withAuthor.LockFile)
+
+	env, ok := selectedWorkspaceEnvFor(context.Background(), withAuthor)
+	require.True(t, ok)
+	require.Equal(t, "dev", env)
+
+	commit := (workspaceWithCommitArgs{}).commitOpts(withAuthor)
+	require.Equal(t, "Portable Agent", commit.AuthorName)
+	require.Equal(t, "agent@example.com", commit.AuthorEmail)
+}
+
+func TestWorkspaceMetadataValidation(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"", "dagger.toml", "config/dagger.toml"} {
+		require.NoError(t, validateWorkspaceMetadataPath("config file", value), value)
+	}
+	for _, value := range []string{"/dagger.toml", "../dagger.toml", "config/../../dagger.toml", "./dagger.toml", "config/../dagger.toml", "config//dagger.toml", "config/"} {
+		err := validateWorkspaceMetadataPath("config file", value)
+		require.Error(t, err, value)
+	}
+
+	base := &core.Workspace{}
+	_, err := workspaceWithConfigPaths(base, "../dagger.toml", "dagger.lock")
+	require.ErrorContains(t, err, "inside the workspace root")
+	_, err = workspaceWithConfigPaths(base, "dagger.toml", "locks/../dagger.lock")
+	require.ErrorContains(t, err, "must be canonical")
+
+	_, err = workspaceWithGitAuthor(base, "Agent", "")
+	require.ErrorContains(t, err, "must be set together")
+	_, err = workspaceWithGitAuthor(base, "", "agent@example.com")
+	require.ErrorContains(t, err, "must be set together")
+	cleared, err := workspaceWithGitAuthor(base, "", "")
+	require.NoError(t, err)
+	require.NotSame(t, base, cleared)
+}
+
 // TestEffectiveWorkspaceConfigBytesAppliesUserOverlay verifies the schema-level
 // effective-config path merges in the same order as module loading: base
 // config, then the workspace's user-level overlay, then the selected env.

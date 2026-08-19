@@ -250,6 +250,26 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc("Workspace-relative path to use as the working directory."),
 			),
+		dagql.NodeFunc("withConfigPaths", s.withConfigPaths).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc("Return this workspace with its selected config and lockfile paths.").
+			Args(
+				dagql.Arg("configFile").Doc("Canonical path to the selected config file, relative to the workspace root. Empty clears the selection."),
+				dagql.Arg("lockFile").Doc("Canonical path to the selected lockfile, relative to the workspace root. Empty clears the selection."),
+			),
+		dagql.NodeFunc("withConfigEnvironment", s.withConfigEnvironment).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc("Return this workspace with the selected config environment.").
+			Args(
+				dagql.Arg("name").Doc("Config environment to select. Empty clears the selection."),
+			),
+		dagql.NodeFunc("withGitAuthor", s.withGitAuthor).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc("Return this workspace with the default Git author identity used for commits.").
+			Args(
+				dagql.Arg("name").Doc("Default Git author and committer name."),
+				dagql.Arg("email").Doc("Default Git author and committer email."),
+			),
 		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a directory mounted read-only at the given path, without mutating the source.",
@@ -3008,6 +3028,100 @@ func (s *workspaceSchema) applyChangeset(
 		})
 		return updated, err
 	}, mutate)
+}
+
+func (s *workspaceSchema) withConfigPaths(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		ConfigFile string
+		LockFile   string
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws, err := workspaceWithConfigPaths(parent.Self(), args.ConfigFile, args.LockFile)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func workspaceWithConfigPaths(parent *core.Workspace, configFile, lockFile string) (*core.Workspace, error) {
+	if err := validateWorkspaceMetadataPath("config file", configFile); err != nil {
+		return nil, err
+	}
+	if err := validateWorkspaceMetadataPath("lock file", lockFile); err != nil {
+		return nil, err
+	}
+	ws := parent.Clone()
+	ws.ConfigFile = configFile
+	ws.LockFile = lockFile
+	return ws, nil
+}
+
+func validateWorkspaceMetadataPath(label, value string) error {
+	if value == "" {
+		return nil
+	}
+	clean := path.Clean(value)
+	if path.IsAbs(value) || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("workspace %s path %q must be inside the workspace root", label, value)
+	}
+	if clean != value {
+		return fmt.Errorf("workspace %s path %q must be canonical", label, value)
+	}
+	return nil
+}
+
+func (s *workspaceSchema) withConfigEnvironment(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct{ Name string },
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := workspaceWithConfigEnvironment(parent.Self(), args.Name)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func workspaceWithConfigEnvironment(parent *core.Workspace, name string) *core.Workspace {
+	ws := parent.Clone()
+	ws.SetWorkspaceEnv(name)
+	return ws
+}
+
+func (s *workspaceSchema) withGitAuthor(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Name  string
+		Email string
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws, err := workspaceWithGitAuthor(parent.Self(), args.Name, args.Email)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func workspaceWithGitAuthor(parent *core.Workspace, name, email string) (*core.Workspace, error) {
+	if (name == "") != (email == "") {
+		return nil, fmt.Errorf("workspace Git author name and email must be set together")
+	}
+	ws := parent.Clone()
+	ws.GitAuthorName = name
+	ws.GitAuthorEmail = email
+	return ws, nil
 }
 
 func (s *workspaceSchema) withWorkdir(
