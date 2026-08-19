@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -74,17 +75,19 @@ type ModuleAsSDK struct {
 	Clients []SDKManagedClient `json:"clients,omitempty" toml:"clients,omitempty"`
 }
 
-// SDKManagedModule is a workspace-relative path to a module that an SDK
-// authors and manages here. The path is the only required field; the
-// module's own engine state lives in <path>/dagger-module.toml.
+// SDKManagedModule is a path to a module that an SDK authors and manages here,
+// resolved against the directory holding this dagger.toml, with a leading "/"
+// anchoring it at the workspace root instead. The path is the only required
+// field; the module's own engine state lives in <path>/dagger-module.toml.
 type SDKManagedModule struct {
 	Path string `json:"path" toml:"path"`
 }
 
-// SDKManagedClient is a workspace-relative path to a generated client
-// produced by an SDK, bound to one module. Module accepts a
-// workspace-relative path or canonical ref, same resolution as
-// [modules.X].source. Shape will evolve as concrete client SDKs implement.
+// SDKManagedClient is a generated client produced by an SDK and bound to one
+// module, with its path — and a Module given as a local path — resolved against
+// the directory holding this dagger.toml, a leading "/" anchoring at the
+// workspace root instead. Module also accepts a canonical ref, same resolution
+// as [modules.X].source. Shape will evolve as concrete client SDKs implement.
 type SDKManagedClient struct {
 	Path    string            `json:"path" toml:"path"`
 	Module  string            `json:"module" toml:"module"`
@@ -135,6 +138,49 @@ func ResolveModuleEntrySource(configDir, source string) string {
 		return filepath.Clean(source)
 	}
 	return filepath.Clean(filepath.Join(configDir, source))
+}
+
+// ResolveSDKManagedPath turns an as-sdk path into the workspace-relative path
+// the engine addresses modules and clients by, following the same rule as every
+// other path a workspace resolves: a leading "/" means the workspace root,
+// anything else is relative to the directory of the config that records it, and
+// escaping the root is refused. Unlike ResolveModuleEntrySource these entries
+// are always paths, never refs, so no ref classification happens here.
+func ResolveSDKManagedPath(configDir, p string) (string, error) {
+	// filepath.ToSlash is a no-op on the engine reading this, so a path spelled
+	// with Windows separators is normalized explicitly.
+	clean := path.Clean(strings.ReplaceAll(p, `\`, "/"))
+	var resolved string
+	if path.IsAbs(clean) {
+		resolved = strings.TrimPrefix(clean, "/")
+	} else {
+		resolved = path.Join(filepath.ToSlash(configDir), clean)
+	}
+	resolved = path.Clean(resolved)
+	if resolved == "" {
+		resolved = "."
+	}
+	if resolved != "." && !filepath.IsLocal(filepath.FromSlash(resolved)) {
+		return "", fmt.Errorf("%q escapes the workspace root", p)
+	}
+	return resolved, nil
+}
+
+// SDKManagedPathFor is the inverse of ResolveSDKManagedPath: it expresses a
+// workspace-relative path the way an as-sdk entry records it. A target outside
+// the config directory keeps a "../" prefix, as its install source would.
+func SDKManagedPathFor(configDir, workspacePath string) (string, error) {
+	if configDir == "" {
+		configDir = "."
+	}
+	if workspacePath == "" {
+		workspacePath = "."
+	}
+	rel, err := filepath.Rel(configDir, filepath.Clean(workspacePath))
+	if err != nil {
+		return "", fmt.Errorf("resolve %q from %q: %w", workspacePath, configDir, err)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // ParseConfig parses dagger.toml bytes into a workspace config.

@@ -345,7 +345,10 @@ func (s *workspaceSchema) withoutModule(
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is not installed in the workspace", args.Name)
 	}
 
-	managedModulePath, removeManagedModuleDir := removeSDKManagedModuleReference(staged.Config, staged.ConfigDir, entry)
+	managedModulePath, removeManagedModuleDir, err := removeSDKManagedModuleReference(staged.Config, staged.ConfigDir, entry)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	delete(staged.Config.Modules, args.Name)
 	updatedConfig, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
 	if err != nil {

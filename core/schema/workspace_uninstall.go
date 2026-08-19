@@ -1,8 +1,8 @@
 package schema
 
 import (
+	"fmt"
 	"path/filepath"
-	"slices"
 
 	"github.com/dagger/dagger/core/workspace"
 )
@@ -14,10 +14,12 @@ type workspaceUninstallArgs struct {
 
 // removeSDKManagedModuleReference removes the installed module's source path
 // from any [[modules.<sdk>.as-sdk.modules]] list. It returns a workspace-relative
-// path only when the matched source is safe to delete from the overlay.
-func removeSDKManagedModuleReference(cfg *workspace.Config, configDir string, entry workspace.ModuleEntry) (string, bool) {
+// path only when the matched source is safe to delete from the overlay. An
+// as-sdk entry that cannot be resolved is a corruption every other reader fails
+// on, so it fails here too rather than being mistaken for a miss.
+func removeSDKManagedModuleReference(cfg *workspace.Config, configDir string, entry workspace.ModuleEntry) (string, bool, error) {
 	if cfg == nil || entry.AsSDK != nil || !workspace.IsLocalRef(entry.Source, entry.Pin) {
-		return "", false
+		return "", false, nil
 	}
 
 	resolvedSource := workspace.ResolveModuleEntrySource(configDir, entry.Source)
@@ -28,28 +30,34 @@ func removeSDKManagedModuleReference(cfg *workspace.Config, configDir string, en
 			continue
 		}
 
-		sdkEntry.AsSDK.Modules = slices.DeleteFunc(sdkEntry.AsSDK.Modules, func(mod workspace.SDKManagedModule) bool {
-			if filepath.ToSlash(filepath.Clean(mod.Path)) == sourcePath {
-				removed = true
-				return true
+		kept := make([]workspace.SDKManagedModule, 0, len(sdkEntry.AsSDK.Modules))
+		for _, mod := range sdkEntry.AsSDK.Modules {
+			managed, err := workspace.ResolveSDKManagedPath(configDir, mod.Path)
+			if err != nil {
+				return "", false, fmt.Errorf("module managed by %q: %w", moduleName, err)
 			}
-			return false
-		})
+			if managed == sourcePath {
+				removed = true
+				continue
+			}
+			kept = append(kept, mod)
+		}
+		sdkEntry.AsSDK.Modules = kept
 		cfg.Modules[moduleName] = sdkEntry
 	}
 	if !removed {
-		return "", false
+		return "", false, nil
 	}
 
 	// Local installed modules can point outside the workspace (for example,
 	// "../dep"). Clean up the TOML reference above, but only delete authored
 	// SDK module directories that resolve inside the workspace.
 	if filepath.IsAbs(resolvedSource) {
-		return "", false
+		return "", false, nil
 	}
-	deletePath, err := resolveWorkspacePath(sourcePath, ".")
-	if err != nil || deletePath == "." {
-		return "", false
+	deletePath := filepath.Clean(filepath.FromSlash(sourcePath))
+	if deletePath == "." || !filepath.IsLocal(deletePath) {
+		return "", false, nil
 	}
-	return deletePath, true
+	return filepath.ToSlash(deletePath), true, nil
 }

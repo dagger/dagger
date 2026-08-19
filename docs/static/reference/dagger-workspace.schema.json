@@ -189,7 +189,7 @@
         "path",
         "module"
       ],
-      "description": "SDKManagedClient is a workspace-relative path to a generated client produced by an SDK, bound to one module."
+      "description": "SDKManagedClient is a generated client produced by an SDK and bound to one module, with its path — and a Module given as a local path — resolved against the directory holding this dagger.toml, a leading \"/\" anchoring at the workspace root instead."
     },
     "SDKManagedModule": {
       "properties": {
@@ -202,7 +202,7 @@
       "required": [
         "path"
       ],
-      "description": "SDKManagedModule is a workspace-relative path to a module that an SDK authors and manages here."
+      "description": "SDKManagedModule is a path to a module that an SDK authors and manages here, resolved against the directory holding this dagger.toml, with a leading \"/\" anchoring it at the workspace root instead."
     }
   }
 }
