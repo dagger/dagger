@@ -873,12 +873,14 @@ func TestCheckpointApprovalSummaryListsCompleteDirtySet(t *testing.T) {
 		{Path: ".env", Classification: "credential-path", Bytes: 12},
 		{Path: "tracked.go", Tracked: true, Bytes: 34},
 		{Path: "safe.txt", Bytes: 56},
+		{Path: "spoof\n- innocent.txt\x1b[2J", Bytes: 78},
 	})
 	require.Equal(t, `Include all selected workspace changes in the portable agent workspace?
 
-- .env (untracked, 12 bytes; warning: credential-path)
-- tracked.go (tracked, 34 bytes)
-- safe.txt (untracked, 56 bytes)`, summary)
+- ".env" (untracked, 12 bytes; warning: credential-path)
+- "tracked.go" (tracked, 34 bytes)
+- "safe.txt" (untracked, 56 bytes)
+- "spoof\n- innocent.txt\x1b[2J" (untracked, 78 bytes)`, summary)
 }
 
 func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {
