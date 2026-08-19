@@ -12,8 +12,8 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// Call payloads over the log channel: the side channel that lets call data
-// reach a client when no span carried it.
+// Call payloads over the log channel: the sole transport for newly emitted
+// replayable call data.
 //
 // This file is the producer half of the dagger.io/dag.call.payload.* contract
 // (engine/telemetryattrs), modelled on the agent-state producer next door for
@@ -25,10 +25,9 @@ import (
 // flattens them to a bare digest), and array members that are only ever
 // sub-selected.
 //
-// The span attribute dagger.io/dag.call is deliberately untouched: this is
-// additive, and both channels claim digests from the same claim store
-// (dagql.ShouldEmitCallPayload), so the log channel only fills the
-// gaps the span channel structurally cannot cover.
+// The legacy span attribute dagger.io/dag.call remains readable by consumers,
+// but producers no longer write it. Root and transitive frames share this one
+// log transport and claim digests from the same delivery-domain store.
 //
 // The claim store is scoped to the emitting client's DELIVERY DOMAIN — the
 // client and its ancestors, exactly the per-client DBs telemetry fans out to
@@ -47,14 +46,13 @@ const CallPayloadInstrumentationScope = "dagger.io/dag.call"
 // recordCallPayloads publishes the transitive closure of a call's ID over the
 // log channel — every frame the chain references, through receivers, modules,
 // arguments (ID literals inside lists and objects included) and implicit
-// inputs — minus the digests already claimed this session.
+// inputs — minus digests already claimed in the client's delivery domain.
 //
-// It is called where the span carrying dagger.io/dag.call is started, and
-// claims that span's own digest first: the span already carries that one
-// frame, so the claim both keeps the log channel from duplicating it and, on
-// a second selection of the same call, short-circuits the whole walk. That
-// makes this at most one closure walk per distinct call digest per claim
-// scope (the emitting client's delivery domain).
+// It is called after the call's span starts and claims the root digest before
+// rebuilding the recipe. A second selection of that root short-circuits the
+// whole walk; reachability is transitive, so the first walk already published
+// every frame in its closure. This makes the cost at most one closure walk per
+// distinct root digest in the emitting client's delivery domain.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
@@ -81,7 +79,6 @@ func recordCallPayloads(
 		// reference to a shared result, a frame the cache no longer holds)
 		// is a known shape, and this runs once per distinct call digest —
 		// warning would mean thousands of identical lines for one bad chain.
-		// The span still carries its own payload either way.
 		slog.DebugContext(ctx, "failed to rebuild recipe ID for call payloads", "digest", callDigest, "err", err)
 		return
 	}
@@ -99,18 +96,9 @@ func recordCallPayloads(
 
 	logger := telemetry.Logger(ctx, CallPayloadInstrumentationScope)
 	for dgst, callPB := range recipe.GetCallsByDigest() {
-		if dgst == callDigest {
-			// carried by this call's own span, and claimed above
-			continue
-		}
-		// Claim before encoding, not after: the frames of a chain are mostly
-		// claimed already by the time any given call walks it, and encoding
-		// each one just to discard it would make the walk cost proportional
-		// to the whole chain's size every time. The trade is that a payload
-		// whose encoding fails is claimed and therefore never published by
-		// anyone — acceptable for a proto marshal that cannot fail for a
-		// well-formed frame, and which would fail identically next time.
-		if !dagql.ShouldEmitCallPayload(store, dgst) {
+		// The root was claimed before rebuilding. Claim every other frame before
+		// encoding so repeated closure walks skip work already delivered.
+		if dgst != callDigest && !dagql.ShouldEmitCallPayload(store, dgst) {
 			continue
 		}
 		payload, err := callPB.Encode()

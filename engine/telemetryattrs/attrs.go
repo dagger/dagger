@@ -94,27 +94,16 @@ const (
 //
 // A client rebuilds a dagql call ID by walking the chain a call references
 // and looking up a payload for EVERY frame it reaches (dagui's
-// extractIntoDAG). The span channel can only ever carry the payload of a
-// call that got its own span, and several frames structurally never do:
-// introspection / isMeta / skipped selections, digests the per-session span
-// dedupe already spent, frames buried inside an ID-literal argument (which
-// LiteralID.pb flattens to a bare digest reference), and members of an array
-// result that are only ever sub-selected. Those frames are unreachable to a
-// client, forever, however long it watches.
+// extractIntoDAG). New engines therefore publish a call's root and complete
+// transitive closure as log records when they emit that call's span, minus
+// frames already sent to the same delivery domain.
 //
-// So payloads also ride LOG RECORDS, exactly like agent state above and for
-// the same structural reason: the log channel is the one stream that can
-// carry data no span exists to hold. The engine publishes the transitive
-// closure of a call's ID when it emits that call's span — every frame the
-// chain references, minus the ones already sent this session — so a chain is
-// rebuildable even if only ONE of its frames was ever spanned.
-//
-// This is purely ADDITIVE to dagger.io/dag.call on the span, which is
-// unchanged: an old client keeps working against a new engine, and a new
-// client against an old engine. Consumers fold a record carrying
-// DagCallPayloadAttr into their call-payload store and must not render it as
-// log text; it may arrive before OR after the span that references the
-// digest (separate pipelines, separate batching, no ordering guarantee).
+// Older engines carried the root frame in dagger.io/dag.call on the span and
+// used logs only for frames that structurally had no span. Consumers continue
+// to ingest that legacy attribute, but new producers use logs exclusively so
+// every call protobuf has one transport path. A payload record is call data,
+// not log text, and may arrive before or after the span that references its
+// digest because the two pipelines batch independently.
 const (
 	// DagCallPayloadDigestAttr is the call digest the payload belongs to —
 	// the same key dagger.io/dag.digest carries on a span, and the map key a
@@ -122,8 +111,8 @@ const (
 	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
 
 	// DagCallPayloadAttr is one protobuf-encoded callpbv1.Call (a single
-	// frame, not a DAG), base64-encoded — the identical encoding
-	// dagger.io/dag.call uses on spans, so both channels decode through
+	// frame, not a DAG), base64-encoded — the same encoding legacy
+	// dagger.io/dag.call span attributes used, so both decode through
 	// Call.Decode.
 	//
 	// Base64 rather than the log data model's native Bytes value, which does
@@ -220,11 +209,11 @@ const (
 	// drained message, and once at loop start for the seed). Latest record wins.
 	//
 	// This is the resume anchor: a client rebuilds the conversation's ID from
-	// the call payloads it has ingested (dagger.io/dag.call, or the payload
-	// log records above) and re-hydrates the instance from it. It is
-	// deliberately a PORTABLE recipe: a post-evaluation result handle dies with
-	// its session, while the raw recipe retains superseded bindings whose stale
-	// operations must not be replayed in a later one.
+	// the call-payload log records above (or legacy dagger.io/dag.call span
+	// attributes) and re-hydrates the instance from it. It is deliberately a
+	// PORTABLE recipe: a post-evaluation result handle dies with its session,
+	// while the raw recipe retains superseded bindings whose stale operations
+	// must not be replayed in a later one.
 	//
 	// It cannot ride the state record: state records are edge-triggered on
 	// the projected state, and most commits do not change the state while

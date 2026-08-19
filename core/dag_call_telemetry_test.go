@@ -1,11 +1,11 @@
 package core
 
-// The producer half of the call-payload side channel. What must not regress
-// silently: the closure has to reach the frames buried inside an ID-literal
-// ARGUMENT — those are the ones LiteralID.pb flattens to a bare digest, so
-// they can never ride a span attribute — and a digest must cross the wire at
-// most once per session, or an LLM loop re-sending the same chain drowns the
-// log stream.
+// The producer half of the call-payload log transport. What must not regress
+// silently: the root and complete closure have to ride logs, including frames
+// buried inside an ID-literal argument — those are the ones LiteralID.pb
+// flattens to a bare digest, so they can never ride a span attribute — and a
+// digest must cross the wire at most once per session, or an LLM loop
+// re-sending the same chain drowns the log stream.
 
 import (
 	"context"
@@ -139,9 +139,11 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rec.get(withSkillsDigest.String()))
 
-	// The call's own frame rides its span as dagger.io/dag.call, so
-	// publishing it here would be a duplicate on the wire.
-	require.Nil(t, rec.get(rootDigest.String()), "the span's own payload was duplicated")
+	// The root uses the same log transport as every transitive frame; newly
+	// emitted spans carry only its digest.
+	rootCall := rec.get(rootDigest.String())
+	require.NotNil(t, rootCall, "the root frame was not published")
+	require.Equal(t, "agent", rootCall.Field)
 }
 
 func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
@@ -161,9 +163,9 @@ func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	require.Equal(t, first, rec.len())
 
-	// A LONGER chain over the same frames publishes only what is NEW: the
-	// receiver spine below it was already spent, and its own frame rides its
-	// span.
+	// A LONGER chain over the same frames publishes only what is NEW: its own
+	// root frame and the newly referenced prompt; the receiver spine below it
+	// was already spent.
 	prompt := testResultCall("file", &Void{}, nil)
 	longer := testResultCall("withPrompt", &Void{}, agent)
 	longer.Args = []*dagql.ResultCallArg{{
@@ -176,7 +178,8 @@ func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
 	longerDigest, err := longer.RecipeDigest(ctx)
 	require.NoError(t, err)
 	recordCallPayloads(ctx, seen, longerDigest.String(), longer)
-	require.Equal(t, first+1, rec.len(), "only the newly reachable frame should be published")
+	require.Equal(t, first+2, rec.len(), "only the new root and referenced frame should be published")
+	require.NotNil(t, rec.get(longerDigest.String()), "the new root frame was not published")
 	promptDigest, err := prompt.RecipeDigest(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, rec.get(promptDigest.String()), "the new frame was not published")

@@ -120,18 +120,14 @@ func TestIngestCallPayloadIsNotLogText(t *testing.T) {
 // missing frames when only ONE of its frames ever got a span — and it does so
 // whichever way the two pipelines happen to interleave. Spans and logs are
 // separately batched, so neither order can be assumed.
-func TestCallIDRebuildsFromLogPayloads(t *testing.T) {
+func TestCallIDRebuildsFromLogOnlyRootAndClosure(t *testing.T) {
 	root, unspanned := callPayloadTestChain()
-	rootPayload, err := root.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Only the agent frame is spanned, exactly as the engine emits it today.
+	allPayloads := append([]*callpbv1.Call{root}, unspanned...)
+	// The span carries only the root digest; every payload is log-only.
 	spanned := []SpanSnapshot{{
-		ID:          spanID(1),
-		Name:        "LLM.agent",
-		CallDigest:  root.Digest,
-		CallPayload: rootPayload,
+		ID:         spanID(1),
+		Name:       "LLM.agent",
+		CallDigest: root.Digest,
 	}}
 
 	for _, tc := range []struct {
@@ -144,16 +140,19 @@ func TestCallIDRebuildsFromLogPayloads(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := NewDB()
 			if tc.payloadFirst {
-				exportCallPayloads(t, db, spanID(1), unspanned...)
+				exportCallPayloads(t, db, spanID(1), allPayloads...)
 				db.ImportSnapshots(spanned)
 			} else {
 				db.ImportSnapshots(spanned)
-				exportCallPayloads(t, db, spanID(1), unspanned...)
+				exportCallPayloads(t, db, spanID(1), allPayloads...)
 			}
 
 			span := db.Spans.Map[spanID(1)]
 			if span == nil {
 				t.Fatal("span not ingested")
+			}
+			if span.CallPayload != "" {
+				t.Fatal("fixture span unexpectedly carried a call payload")
 			}
 			id, err := span.CallID()
 			if err != nil {
@@ -169,6 +168,33 @@ func TestCallIDRebuildsFromLogPayloads(t *testing.T) {
 				t.Errorf("rebuilt ID lost the ID-literal argument's frame: %s", display)
 			}
 		})
+	}
+}
+
+func TestLegacySpanCarriedCallPayloadStillIngests(t *testing.T) {
+	_, unspanned := callPayloadTestChain()
+	legacyCall := unspanned[1]
+	payload, err := legacyCall.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{{
+		ID:          spanID(1),
+		Name:        "Query.directory",
+		CallDigest:  legacyCall.Digest,
+		CallPayload: payload,
+	}})
+	if got := db.Call(legacyCall.Digest); got == nil || got.GetField() != legacyCall.GetField() {
+		t.Fatalf("legacy span payload was not ingested: %+v", got)
+	}
+	id, err := db.Spans.Map[spanID(1)].CallID()
+	if err != nil {
+		t.Fatalf("legacy span payload did not rebuild: %v", err)
+	}
+	if id.Digest().String() != legacyCall.Digest {
+		t.Fatalf("rebuilt digest = %s, want %s", id.Digest(), legacyCall.Digest)
 	}
 }
 
@@ -222,6 +248,57 @@ func TestDigestedCallPayloadIsOpaqueButRebuildable(t *testing.T) {
 		t.Fatalf("content search exposed canary: %q", matches)
 	}
 	matches := db.GrepCalls(regexp.MustCompile(regexp.QuoteMeta(payloadDigest.String())), 10)
+	if len(matches) != 1 || strings.Contains(matches[0], canary) || !strings.Contains(matches[0], want) {
+		t.Fatalf("digest search did not return opaque call: %q", matches)
+	}
+}
+
+func TestBytesCallPayloadIsOpaqueButRebuildable(t *testing.T) {
+	const canary = "BINARY-CANARY-dagui-raw-only"
+	contents := append([]byte{0x00, 0xff, 0xfe}, []byte(canary)...)
+	recipe := call.New().Append(
+		&ast.Type{NamedType: "File", NonNull: true},
+		"blob",
+		call.WithArgs(call.NewArgument("contents", call.NewLiteralBytes(contents), false)),
+	)
+	rawCall := recipe.Call()
+	rawLiteral := rawCall.GetArgs()[0].GetValue()
+	if got := rawLiteral.GetBytes(); string(got) != string(contents) {
+		t.Fatalf("raw call payload = %x, want %x", got, contents)
+	}
+
+	db := NewDB()
+	exportCallPayloads(t, db, spanID(1), rawCall)
+	rebuilt, err := db.CallIDForDigest(recipe.Digest().String())
+	if err != nil {
+		t.Fatalf("rebuild call ID from payload: %v", err)
+	}
+	rebuiltLiteral, ok := rebuilt.Arg("contents").Value().(*call.LiteralBytes)
+	if !ok {
+		t.Fatalf("rebuilt contents literal has type %T", rebuilt.Arg("contents").Value())
+	}
+	if got := rebuiltLiteral.Value(); string(got) != string(contents) {
+		t.Fatalf("rebuilt contents literal = %x, want %x", got, contents)
+	}
+
+	want := call.DisplayBytes(contents)
+	for name, rendered := range map[string]string{
+		"error detail": frameDetail(rawCall),
+		"grep line":    renderCallLine(rawCall),
+		"dot label":    displayLit(rawLiteral),
+	} {
+		if strings.Contains(rendered, canary) {
+			t.Errorf("%s exposed bytes: %q", name, rendered)
+		}
+		if !strings.Contains(rendered, want) {
+			t.Errorf("%s = %q, want opaque label %q", name, rendered, want)
+		}
+	}
+
+	if matches := db.GrepCalls(regexp.MustCompile(regexp.QuoteMeta(canary)), 10); len(matches) != 0 {
+		t.Fatalf("content search exposed canary: %q", matches)
+	}
+	matches := db.GrepCalls(regexp.MustCompile(regexp.QuoteMeta(digest.FromBytes(contents).String())), 10)
 	if len(matches) != 1 || strings.Contains(matches[0], canary) || !strings.Contains(matches[0], want) {
 		t.Fatalf("digest search did not return opaque call: %q", matches)
 	}

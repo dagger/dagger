@@ -19,8 +19,8 @@ func (s *testSeenKeyStore) StoreTelemetrySeenKey(key string) {
 	s.keys.Store(key, struct{}{})
 }
 
-// A payload crosses the wire at most once per session, whoever asks.
-func TestShouldEmitCallPayloadIsOncePerSession(t *testing.T) {
+// A payload crosses the wire at most once per claim-store delivery domain.
+func TestShouldEmitCallPayloadIsOncePerStore(t *testing.T) {
 	store := &testSeenKeyStore{}
 	if !ShouldEmitCallPayload(store, "xxh3:a") {
 		t.Fatal("first claim of a digest must emit")
@@ -31,8 +31,8 @@ func TestShouldEmitCallPayloadIsOncePerSession(t *testing.T) {
 	if !ShouldEmitCallPayload(store, "xxh3:b") {
 		t.Fatal("a different digest must still emit")
 	}
-	// No store means no session to dedupe against; emitting unboundedly is
-	// worse than not emitting, since the span channel still carries payloads.
+	// No store means no delivery-domain dedupe. Emitting every closure on every
+	// selection would be unbounded, so the producer stays quiet.
 	if ShouldEmitCallPayload(nil, "xxh3:a") {
 		t.Fatal("emitted without a seen-key store")
 	}

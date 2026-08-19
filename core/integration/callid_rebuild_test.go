@@ -5,11 +5,9 @@ package core
 //
 // A client (the TUI, and anything else building on dagui.DB) rebuilds an ID
 // by walking the call's frames and looking each one up by digest in the
-// payloads it has ingested — dagql/dagui/extract.go, driven by
-// dagui.Span.CallID. A payload only ever reaches a client as an attribute on
-// the span emitted for that exact selection (core/telemetry.go), so a frame
-// that never got its own span is unresolvable, and the chain it sits in
-// cannot be rebuilt or loaded.
+// payloads it has ingested. New engines emit the root and transitive closure
+// through call-payload log records; dagui also accepts legacy span attributes
+// so traces from older engines remain rebuildable.
 //
 // The trace round trip is the point, so these stand up an OTLP endpoint of
 // their own (agentTraceSink, in agent_runtime_test.go) and fold what the
