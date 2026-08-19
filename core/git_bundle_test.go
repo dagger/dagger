@@ -37,6 +37,13 @@ func TestParseGitBundleHeader(t *testing.T) {
 		require.Equal(t, []*GitBundleRef{{Name: "refs/heads/main", SHA: head}}, bundle.Refs)
 	})
 
+	t.Run("unsupported capability", func(t *testing.T) {
+		sha := strings.Repeat("1", sha1.Size*2)
+		_, _, err := parseGitBundleHeader(strings.NewReader(
+			"# v3 git bundle\n@filter=blob:none\n" + sha + " refs/heads/main\n\nPACK"))
+		require.ErrorContains(t, err, `unsupported git bundle capability "filter"`)
+	})
+
 	sha := strings.Repeat("1", sha1.Size*2)
 	for name, input := range map[string]string{
 		"bad signature":        "not a bundle\n",

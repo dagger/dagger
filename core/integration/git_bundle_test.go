@@ -143,6 +143,21 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 	require.Equal(t, headSHA, imported.Node.WithBundle.Ref.CommitSHA)
 	require.Equal(t, "local\n", imported.Node.WithBundle.Ref.Tree.File.Contents)
 
+	_, err = testutil.QueryWithClient[struct{ Node struct{ CommitSHA string } }](c, t, `query($repo: ID!, $bundle: ID!) {
+		node(id: $repo) {
+			... on GitRepository {
+				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
+					ref(name: "refs/dagger/bundle/prerequisites/0") { commitSHA }
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{Variables: map[string]any{
+		"repo":   remoteID,
+		"bundle": created.Node.Bundle.ID,
+	}})
+	require.Error(t, err)
+	require.ErrorContains(t, err, `repository does not contain ref "refs/dagger/bundle/prerequisites/0"`)
+
 	stock := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
