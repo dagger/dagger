@@ -93,8 +93,9 @@ func findLocalCacheTrashDirs(rootDir string) ([]string, error) {
 }
 
 // startLocalCacheTrashSweeper scans for trash directories and, if any exist,
-// starts sweeping them in the background. Called once at startup, after the
-// local cache state (and any reset of it) is settled.
+// sweeps them. Under disk pressure it blocks startup so the engine has room to
+// operate; otherwise it sweeps in the background. Called once at startup,
+// after the local cache state (and any reset of it) is settled.
 func (srv *Server) startLocalCacheTrashSweeper() {
 	trashDirs, err := findLocalCacheTrashDirs(srv.rootDir)
 	if err != nil {
@@ -102,6 +103,11 @@ func (srv *Server) startLocalCacheTrashSweeper() {
 		return
 	}
 	if len(trashDirs) == 0 {
+		return
+	}
+	if srv.trashSweepFullSpeed() {
+		slog.Info("disk pressure detected; removing discarded local cache state before startup continues")
+		srv.sweepLocalCacheTrash(srv.shutdownCtx, trashDirs)
 		return
 	}
 	go srv.sweepLocalCacheTrash(srv.shutdownCtx, trashDirs)
@@ -115,7 +121,7 @@ func (srv *Server) sweepLocalCacheTrash(ctx context.Context, trashDirs []string)
 	}
 	for _, trashDir := range trashDirs {
 		start := time.Now()
-		slog.Info("removing discarded local cache state in background", "dir", trashDir)
+		slog.Info("removing discarded local cache state", "dir", trashDir)
 		// An uncleanly stopped engine can leave mounts behind (snapshotter
 		// overlays, cache mount binds) in the state it discarded; detach them
 		// first so the walk below removes the trash tree itself rather than
