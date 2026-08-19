@@ -724,7 +724,7 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 		if candidate.Tracked {
 			kind = "tracked"
 		}
-		fmt.Fprintf(&summary, "\n- %s (%s, %d bytes", candidate.Path, kind, candidate.Bytes)
+		fmt.Fprintf(&summary, "\n- %s (%s, %d bytes", strconv.Quote(candidate.Path), kind, candidate.Bytes)
 		if candidate.Classification != "" {
 			fmt.Fprintf(&summary, "; warning: %s", candidate.Classification)
 		}
