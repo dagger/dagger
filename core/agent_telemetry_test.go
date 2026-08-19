@@ -19,7 +19,9 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -98,6 +100,21 @@ func testRuntime(ctx context.Context) *AgentRuntime {
 		stateChanged: make(chan struct{}),
 		spanCtx:      ctx,
 	}
+}
+
+func testAgentContext(t *testing.T, ctx context.Context, id, name string) context.Context {
+	t.Helper()
+	srv, err := dagql.NewServer(ctx, &Query{})
+	require.NoError(t, err)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Agent]{Typed: &Agent{}}))
+	agent := &Agent{InstanceID: id, Name: name}
+	res, err := dagql.NewObjectResultForCall(agent, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "test_agent",
+		Type:        dagql.NewResultCallType(agent.Type()),
+	})
+	require.NoError(t, err)
+	return AgentToContext(ctx, res)
 }
 
 func (rt *AgentRuntime) testTransition(mut func()) {
@@ -230,6 +247,7 @@ func TestEmitAgentSnapshotRecordShape(t *testing.T) {
 // same text on stdio for the focused conversation to retain in scrollback.
 func TestEmitAgentFailureMessage(t *testing.T) {
 	logs, ctx := stateRecorderCtx(t)
+	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
 	spans := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
@@ -258,6 +276,8 @@ func TestEmitAgentFailureMessage(t *testing.T) {
 	}
 	require.Equal(t, telemetry.LLMRoleAssistant, attrs[telemetry.LLMRoleAttr])
 	require.Equal(t, telemetry.UIMessageReceived, attrs[telemetry.UIMessageAttr])
+	require.Equal(t, "agent-123", attrs[string(semconv.GenAIAgentIDKey)])
+	require.Equal(t, "reviewer", attrs[string(semconv.GenAIAgentNameKey)])
 
 	logs.mu.Lock()
 	defer logs.mu.Unlock()

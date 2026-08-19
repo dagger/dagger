@@ -71,9 +71,10 @@ func newDisplayPhases(parentCtx context.Context, callDigest string) *displayPhas
 	}
 }
 
-// digestAttrs appends the LLM call digest attribute when one is set, so the TUI
-// can branch a conversation from this span (matching emitMessageSpan).
-func (dp *displayPhases) digestAttrs(attrs []attribute.KeyValue) []attribute.KeyValue {
+// displayAttrs appends the enclosing agent's standard identity and the LLM
+// call digest, when present, so live display spans match emitMessageSpan.
+func (dp *displayPhases) displayAttrs(attrs []attribute.KeyValue) []attribute.KeyValue {
+	attrs = append(attrs, genAIAgentAttrsFromContext(dp.parentCtx)...)
 	if dp.callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, dp.callDigest))
 	}
@@ -89,7 +90,7 @@ func (dp *displayPhases) StartText(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "LLM response",
-		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
@@ -115,7 +116,7 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "thinking",
-		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "💭"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
@@ -149,7 +150,7 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 		parentCtx = dp.toolAnchorCtx
 	}
 	phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
-		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			attribute.String(telemetry.LLMToolAttr, toolName),

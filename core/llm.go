@@ -2147,12 +2147,14 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	if dig, digErr := self.RecipeDigest(ctx); digErr == nil {
 		selfDigest = dig.String()
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.String(telemetryattrs.LLMCallDigestAttr, selfDigest),
-	))
+	}
+	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(attrs...))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -2268,6 +2270,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 	}
+	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
 	if callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 	}
@@ -2365,12 +2368,13 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			}
 			attrs = append(attrs, extraAttrs...)
-			if callDigest != "" {
-				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
-			}
 			startCtx := ctx
 			if g.kind == LLMContentToolCall {
 				startCtx = toolAnchorCtx
+			}
+			attrs = append(attrs, genAIAgentAttrsFromContext(startCtx)...)
+			if callDigest != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 			}
 			spanCtx, span := Tracer(startCtx).Start(startCtx, name, trace.WithAttributes(attrs...))
 			if g.kind != LLMContentToolCall {
