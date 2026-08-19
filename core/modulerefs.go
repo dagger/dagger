@@ -140,7 +140,7 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	var modTag string
-	if p.HasVersion && semver.IsValid(p.ModVersion) {
+	if pinCommitRef == "" && p.HasVersion && semver.IsValid(p.ModVersion) {
 		var tags dagql.Array[dagql.String]
 		err := dag.Select(ctx, dag.Root(), &tags,
 			dagql.Selector{
@@ -186,6 +186,15 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(modTag)},
 			},
 		})
+	case pinCommitRef != "" && !pinIsSHA:
+		// A config pin is authoritative, even when the source ref also
+		// contains a floating or symbolic version such as "@main".
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(pinCommitRef)},
+			},
+		}
 	case p.HasVersion:
 		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
@@ -193,13 +202,6 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(p.ModVersion)},
 			},
 		})
-	case pinCommitRef != "" && !pinIsSHA:
-		refSelector = dagql.Selector{
-			Field: "ref",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(pinCommitRef)},
-			},
-		}
 	}
 	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef, repoSelector, refSelector)
