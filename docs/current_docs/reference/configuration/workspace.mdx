@@ -141,7 +141,7 @@ Only one `[[include]]` is resolved for now — a config with more is an error. T
 
 **Reads are effective, writes are local.** `dagger workspace config` prints the merged configuration as a standalone snapshot, with a `# included: <source>` comment in place of the `[[include]]` block (`dagger workspace config include` still reports it). Every write — `dagger install`, `dagger settings`, `dagger workspace config <key> <value>` — only ever touches this workspace's own `dagger.toml`. An inherited entry can be overridden but not deleted: uninstalling a module the include provides, or unsetting a value it supplies, tells you where the value comes from instead.
 
-**Pinning.** A Git include's ref is resolved and recorded in `dagger.lock` like any other Git reference — refreshed by `dagger update` or `--lock=live`, replayed by `--lock=frozen`. See [Lockfile](#lockfile). A path include is read from the workspace as it is on disk, so there is nothing to pin.
+**Pinning.** A Git include's ref is resolved and recorded in `dagger.lock` like any other Git reference: later runs reuse the recorded pin, and `dagger update` refreshes it. See [Lockfile](#lockfile). A path include is read from the workspace as it is on disk, so there is nothing to pin.
 
 ## User-level configuration
 

@@ -44,8 +44,8 @@ machine or to the file itself.
   "Wins" means _explicitly set_, including an explicit `false` or an explicit
   empty list — not merely "non-zero".
 - A git include is pinned in `dagger.lock` like every other git ref this repo
-  resolves, refreshes under `dagger update` / `--lock=live`, and replays from
-  the lock under `--lock=frozen`. A path include has nothing to pin.
+  resolves: later runs reuse the recorded pin, and `dagger update` refreshes it.
+  A path include has nothing to pin.
 - Only _remote_ module references survive the include. A local module reference
   in the included config must not become loadable in the workspace.
 - The merged result is what read surfaces (`dagger workspace config`, module
@@ -385,19 +385,17 @@ No new lock entry kind. The include ref is resolved through the ordinary
 `git(url).head` / `git(url).ref(name)` dagql path, which already:
 
 - writes a `git.head` / `git.ref` entry into `dagger.lock` (namespace `""`,
-  inputs `[remote, name]`, policy `pin` for tags and `float` otherwise) when the
-  lookup resolves live under `pinned` or `live`;
+  inputs `[remote, ref name]`) the first time the lookup resolves. Locking is on
+  by default, so that is an ordinary run;
 - is refreshed afterwards by `core.UpdateWorkspaceLock` — `dagger update`
   refreshes entries that are already recorded; it does not discover an include
   that has never been resolved, so the first recording comes from an ordinary
   run;
-- replays the stored pin under `--lock=frozen`, and errors when the entry is
-  missing, exactly like every other frozen lookup. Frozen means the symbolic ref
-  is not re-resolved; it does **not** mean offline — materializing the pinned
-  tree may still fetch from the remote;
-- under `--lock=pinned`, reuses the stored pin for a tag ref and re-resolves a
-  branch/HEAD ref, which is this repo's current behavior for _all_ git refs, not
-  something this feature chooses.
+- reuses the stored pin on later runs rather than re-resolving the symbolic
+  ref. Reusing a pin does **not** mean offline — materializing the pinned tree
+  may still fetch from the remote;
+- follows whatever policy the lock subsystem applies to git refs generally; this
+  feature adds no rule of its own.
 
 Round trip: fresh resolve → `git.ref` entry written on session flush → frozen
 replay reads the pin and does not re-resolve the ref.
@@ -567,13 +565,13 @@ path include needs no fixture beyond a second file in the workspace.
 11. **Writes stay local**: a setting write records only the override — no
     inherited ref, no `source = ""` — and uninstalling a module the include
     provides names the include.
-12. **Lockfile**: a git include under `--lock=pinned` records a `git.ref` entry
-    naming the included repository, and a `--lock=frozen` run reproduces the
-    same merged config from that pin.
+12. **Lockfile**: an ordinary run records a `git.ref` entry naming the included
+    repository, and a later run resolves the same merged config while leaving
+    that entry untouched.
 
 Two cases from the plan are deliberately absent:
 
-- **Lock refresh** (`dagger update` / `--lock=live` after the base branch moves)
+- **Lock refresh** (`dagger update` after the base branch moves)
   is not expressible with this fixture: the git service serves a fixed tree, and
   re-serving moves the URL, which changes the lock inputs. The entry is the
   ordinary `git.ref` entry whose refresh `core/integration/lockfile_test.go`
@@ -589,7 +587,7 @@ Error-message assertions use stable substrings.
 
 - **Workspace load grows a network round trip** when an include is declared: a
   ref resolution plus a git tree fetch, both dagql-cached and both skipped
-  entirely when no `[[include]]` block exists. Under `--lock=frozen` the ref resolution
+  entirely when no `[[include]]` block exists. Once pinned, the ref resolution
   is replaced by the stored pin, though the tree may still be fetched.
 - **A failed include can read as "module not installed".** Address resolution
   demand-loads workspace modules and deliberately discards config errors

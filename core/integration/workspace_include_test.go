@@ -422,9 +422,10 @@ entrypoint = true
 source = "`+baseRef+`"
 `)
 
-	// A first run resolves the include's ref live and records it.
+	// Locking is on by default, so an ordinary run resolves the include's ref
+	// and records it like any other git lookup.
 	resolved := ctr.WithExec(
-		[]string{"dagger", "--progress=report", "--silent", "--lock=pinned", "call", "identify"},
+		[]string{"dagger", "--progress=report", "--silent", "call", "identify"},
 		dagger.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
@@ -435,11 +436,17 @@ source = "`+baseRef+`"
 	require.Contains(t, lock, "git.ref", "the include is pinned like any other git ref")
 	require.Contains(t, lock, strings.TrimSuffix(baseRef, "@main"), "the entry names the include repository")
 
-	// A frozen run replays that pin instead of resolving the ref again.
-	out, err := resolved.WithExec(
-		[]string{"dagger", "--progress=report", "--silent", "--lock=frozen", "workspace", "config"},
+	// A later run reuses the recorded pin rather than re-resolving: the lock is
+	// left exactly as it was, and the merged config still resolves.
+	replayed := resolved.WithExec(
+		[]string{"dagger", "--progress=report", "--silent", "workspace", "config"},
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
-	).Stdout(ctx)
+	)
+	out, err := replayed.Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `source = "`+moduleRef+`"`)
+
+	after, err := replayed.File("/work/dagger.lock").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, lock, after, "a pinned include is not re-resolved on the next run")
 }

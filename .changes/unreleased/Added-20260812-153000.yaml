@@ -30,7 +30,7 @@ body: |
   Reads report the merged result (`dagger workspace config` and the module and
   env listings); writes still only touch the local `dagger.toml`. A Git
   include's resolved commit is recorded in `dagger.lock` like any other Git
-  reference, so `dagger update` refreshes it and `--lock=frozen` replays it.
+  reference, so later runs reuse the pin and `dagger update` refreshes it.
 time: 2026-08-12T15:30:00.000000000+00:00
 custom:
     Author: eunomie
