@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -185,7 +186,11 @@ type NewServerOpts struct {
 	BuildkitConfig *bkconfig.Config
 }
 
-//nolint:gocyclo // NewServer performs the engine's existing linear initialization sequence.
+const (
+	secretSaltEnvName = "DAGGER_SECRET_SALT"
+	secretSaltSize    = 32
+)
+
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
@@ -453,24 +458,47 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	go srv.gcClientDBs()
 
 	// initialize the secret salt
-	secretSaltPath := filepath.Join(srv.rootDir, "secret-salt")
-	srv.secretSalt, err = os.ReadFile(secretSaltPath)
-	if err != nil || len(srv.secretSalt) != 32 {
-		if err != nil && !os.IsNotExist(err) {
-			slog.Warn("failed to read secret salt", "error", err)
-		}
-		srv.secretSalt = make([]byte, 32)
-		_, err = rand.Read(srv.secretSalt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
-		}
-		err = os.WriteFile(secretSaltPath, srv.secretSalt, 0600)
-		if err != nil {
-			slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
-		}
+	srv.secretSalt, err = loadSecretSalt(srv.rootDir)
+	if err != nil {
+		return nil, err
 	}
 
 	return srv, nil
+}
+
+func loadSecretSalt(rootDir string) ([]byte, error) {
+	if encodedSalt, ok := os.LookupEnv(secretSaltEnvName); ok {
+		encoding := base64.StdEncoding.Strict()
+		secretSalt, err := encoding.DecodeString(encodedSalt)
+		if err != nil {
+			return nil, fmt.Errorf("decode %s: %w", secretSaltEnvName, err)
+		}
+		if len(secretSalt) != secretSaltSize {
+			return nil, fmt.Errorf("%s must decode to exactly %d bytes, got %d", secretSaltEnvName, secretSaltSize, len(secretSalt))
+		}
+		if encoding.EncodeToString(secretSalt) != encodedSalt {
+			return nil, fmt.Errorf("%s must use canonical base64 encoding", secretSaltEnvName)
+		}
+		return secretSalt, nil
+	}
+
+	secretSaltPath := filepath.Join(rootDir, "secret-salt")
+	secretSalt, err := os.ReadFile(secretSaltPath)
+	if err == nil && len(secretSalt) == secretSaltSize {
+		return secretSalt, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		slog.Warn("failed to read secret salt", "error", err)
+	}
+
+	secretSalt = make([]byte, secretSaltSize)
+	if _, err := rand.Read(secretSalt); err != nil {
+		return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
+	}
+	if err := os.WriteFile(secretSaltPath, secretSalt, 0600); err != nil {
+		slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
+	}
+	return secretSalt, nil
 }
 
 func (srv *Server) configureLocalCacheGC(gcConfig config.GCConfig, workerGCConfig bkconfig.GCConfig) error {
