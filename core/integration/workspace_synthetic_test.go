@@ -188,6 +188,42 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceLoadsAgentsFromTree(ctx 
 	require.Contains(t, tools, "## fromGit")
 	require.Contains(t, tools, gitAgentDoc)
 
+	workspaceID, err := ws.ID(ctx)
+	require.NoError(t, err)
+	var checkpointed struct {
+		Node struct {
+			Checkpoint struct {
+				Git struct {
+					Head struct {
+						CommitSHA string `json:"commitSHA"`
+					} `json:"head"`
+				} `json:"git"`
+				Agents struct {
+					Compose struct {
+						Tools string `json:"tools"`
+					} `json:"compose"`
+				} `json:"agents"`
+			} `json:"checkpoint"`
+		} `json:"node"`
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($id: ID!) {
+  node(id: $id) {
+    ... on Workspace {
+      checkpoint {
+        git { head { commitSHA } }
+        agents { compose { tools } }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{"id": workspaceID},
+	}, &dagger.Response{Data: &checkpointed}))
+	head, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, head, checkpointed.Node.Checkpoint.Git.Head.CommitSHA)
+	require.Contains(t, checkpointed.Node.Checkpoint.Agents.Compose.Tools, "## fromGit")
+
 	// The same tree wrapped by Directory.asWorkspace remains intentionally
 	// module-less; only GitRef values own and serve the modules in their tree.
 	directoryTools, err := source.AsWorkspace().Agents().Compose().Tools(ctx)

@@ -35,11 +35,56 @@ func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client)
 		WithNewFile("/work/tracked.txt", "base\ndirty\n")
 }
 
-// A staff worker is composed from inside the staff module's nested client. That
-// client intentionally does not inherit --env metadata, so the checkpoint value
-// itself must retain the selected environment or the worker only receives agents
-// from the base workspace config.
-func (WorkspaceSuite) TestWorkspaceCheckpointPreservesEnvironmentForModuleCalls(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestWorkspaceCheckpointReplayableValuePassesThrough(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	var got struct {
+		Directory struct {
+			AsWorkspace struct {
+				WithNewFile struct {
+					Original string `json:"original"`
+					Frozen   struct {
+						ID string `json:"id"`
+					} `json:"frozen"`
+				} `json:"withNewFile"`
+			} `json:"asWorkspace"`
+		} `json:"directory"`
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `{
+  directory {
+    asWorkspace {
+      withNewFile(path: "overlay.txt", contents: "portable") {
+        original: id
+        frozen: checkpoint { id }
+      }
+    }
+  }
+}`}, &dagger.Response{Data: &got}))
+	original := got.Directory.AsWorkspace.WithNewFile.Original
+	require.NotEmpty(t, original)
+	require.Equal(t, original, got.Directory.AsWorkspace.WithNewFile.Frozen.ID)
+}
+
+func (WorkspaceSuite) TestWorkspaceCheckpointRejectsNonReplayableLeaf(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	var got any
+	err := c.Do(ctx, &dagger.Request{
+		Query: `query($path: String!) {
+  host {
+    directory(path: $path) {
+      asWorkspace { checkpoint { id } }
+    }
+  }
+}`,
+		Variables: map[string]any{"path": t.TempDir()},
+	}, &dagger.Response{Data: &got})
+	require.ErrorContains(t, err, "workspace checkpoint source is not replayable: field directory at call")
+	require.ErrorContains(t, err, "Reads the live host filesystem")
+}
+
+// Checkpoint capture is an owner-only host read. A module executes through a
+// nested client, so it may checkpoint an already-portable value but must not
+// capture the calling client's live checkout.
+func (WorkspaceSuite) TestWorkspaceCheckpointRejectsNestedClientCapture(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c).
 		WithNewFile("/work/dagger.toml", `[env.dev.modules.editor]
@@ -55,10 +100,9 @@ source = "modules/editor"
 }
 `)
 
-	out, err := base.With(daggerExec("--silent", "--env=dev", "-m", "modules/probe", "call", "tools")).Stdout(ctx)
+	out, err := base.With(daggerExecFail("--silent", "--env=dev", "-m", "modules/probe", "call", "tools")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "## readFile")
-	require.Contains(t, out, "Read a file from the worker workspace.")
+	require.Contains(t, out, "workspace checkpoint capture is only available to the workspace's owning client")
 }
 
 // TestWorkspaceCheckpointIsAddressableAndSavesToItsOrigin covers both halves of
@@ -83,7 +127,7 @@ func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndSavesToItsOrigin(ct
 
 	saved := base.With(daggerQuery(`{
   currentWorkspace {
-    checkpoint {
+    checkpoint(include: ["tracked.txt"]) {
       id
       git {
         head { commit }
