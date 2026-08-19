@@ -81,6 +81,7 @@ func TestSurfacedConversationForAgentSpansRelaunch(t *testing.T) {
 		rootID byte = iota + 1
 		firstLoopID
 		beforeID
+		failureID
 		secondLoopID
 		afterID
 	)
@@ -89,6 +90,7 @@ func TestSurfacedConversationForAgentSpansRelaunch(t *testing.T) {
 		agentTestSpan(rootID, "root", SpanID{}),
 		agentLoopSnapshot(firstLoopID, "agent-retry", "retry", spanID(rootID)),
 		messageSnapshot(beforeID, "before-failure", spanID(firstLoopID), "assistant"),
+		messageSnapshot(failureID, "agent failure", spanID(firstLoopID), "assistant"),
 		// A resume relaunches the loop: same agent ID, second span.
 		agentLoopSnapshot(secondLoopID, "agent-retry", "retry", spanID(rootID)),
 		messageSnapshot(afterID, "after-resume", spanID(secondLoopID), "assistant"),
@@ -102,8 +104,8 @@ func TestSurfacedConversationForAgentSpansRelaunch(t *testing.T) {
 	for i, node := range roots {
 		got[i] = node.Span.Name
 	}
-	require.Equal(t, []string{"before-failure", "after-resume"}, got,
-		"both loop spans' turns, merged in conversation order")
+	require.Equal(t, []string{"before-failure", "agent failure", "after-resume"}, got,
+		"the failure stays in scrollback when the relaunched loop resumes the conversation")
 }
 
 // TestSurfacedConversationForAgentKeepsWholeTraceMemo guards the reason the
