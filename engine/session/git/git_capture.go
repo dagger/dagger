@@ -3,6 +3,8 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -16,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"unicode"
 )
@@ -58,6 +61,12 @@ type captureAdvertisedRef struct {
 // from the promisor remote, which is both a network round trip per advertised
 // ref and a quiet write to the checkout being captured.
 var captureLocalOnlyEnv = []string{"GIT_NO_LAZY_FETCH=1"}
+
+var (
+	captureApprovalKey     []byte
+	captureApprovalKeyErr  error
+	captureApprovalKeyOnce sync.Once
+)
 
 type capturedPath struct {
 	path       string
@@ -158,7 +167,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 	if err != nil {
 		return nil, err
 	}
-	approvals := stringSet(policy.GetApprovePaths())
+	approvals := stringSet(policy.GetApprovalTokens())
 	committedBytes, err := scanCommittedObjects(ctx, checkout, remote.baseSHA, state.headSHA, limits)
 	if err != nil {
 		return nil, err
@@ -684,11 +693,15 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		if classification != "" {
 			cp.suspicious = true
 		}
+		approvalToken, err := captureApprovalToken(cp, classification)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
 		approvalCandidates = append(approvalCandidates, &CaptureGitCandidate{
 			Path: candidate.path, Classification: classification,
-			Tracked: candidate.tracked, Bytes: cp.size,
+			Tracked: candidate.tracked, Bytes: cp.size, ApprovalToken: approvalToken,
 		})
-		_, retriedApproval := approvals[candidate.path]
+		_, retriedApproval := approvals[approvalToken]
 		if !retriedApproval && !matchesAnyCapturePattern(candidate.path, policy.GetInclude()) {
 			missingApproval = true
 		}
@@ -704,6 +717,22 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		return nil, 0, 0, 0, &captureApprovalError{candidates: approvalCandidates}
 	}
 	return selected, trackedCount, untrackedCount, worktreeBytes, nil
+}
+
+func captureApprovalToken(path capturedPath, classification string) (string, error) {
+	captureApprovalKeyOnce.Do(func() {
+		captureApprovalKey = make([]byte, sha256.Size)
+		_, captureApprovalKeyErr = rand.Read(captureApprovalKey)
+	})
+	if captureApprovalKeyErr != nil {
+		return "", errors.New("initialize capture approval state failed")
+	}
+	mac := hmac.New(sha256.New, captureApprovalKey)
+	fmt.Fprintf(mac, "%s\x00%t\x00%t\x00%d\x00%d\x00", path.path, path.tracked, path.deleted, path.mode, path.size)
+	_, _ = mac.Write(path.digest[:])
+	_, _ = mac.Write([]byte{'\x00'})
+	_, _ = io.WriteString(mac, classification)
+	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
 func fingerprintCapturePath(checkout, gitPath string, tracked bool) (capturedPath, []byte, error) {

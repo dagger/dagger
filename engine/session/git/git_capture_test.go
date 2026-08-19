@@ -82,7 +82,7 @@ func TestCaptureGitBuildsTwoRefBundleFromTemporaryObjects(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "safe.txt"), []byte("safe untracked\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "cache.ignored"), []byte("must not leave host\n"), 0o600))
 
-	srv := captureGit(t, repo, &CaptureGitPolicy{ApprovePaths: []string{".gitignore", "base.txt", "safe.txt"}})
+	srv := captureGit(t, repo, &CaptureGitPolicy{Include: []string{".gitignore", "base.txt", "safe.txt"}})
 	meta := srv.metadata(t)
 	require.Nil(t, meta.GetError())
 	require.Equal(t, uint32(captureGitFormatVersion), meta.GetFormatVersion())
@@ -321,7 +321,7 @@ func TestCaptureGitApprovalReportsCompleteSelectedDirtySet(t *testing.T) {
 		require.False(t, bytes.Contains(response.GetChunk().GetData(), secret))
 	}
 
-	approved := captureGit(t, repo, &CaptureGitPolicy{ApprovePaths: []string{".env", "base.txt", "safe.txt"}})
+	approved := captureGit(t, repo, &CaptureGitPolicy{Include: []string{".env", "base.txt", "safe.txt"}})
 	require.Nil(t, approved.metadata(t).GetError())
 	require.NotEmpty(t, approved.payload(CAPTURE_CHUNK_BUNDLE))
 
@@ -331,6 +331,30 @@ func TestCaptureGitApprovalReportsCompleteSelectedDirtySet(t *testing.T) {
 	require.Nil(t, included.metadata(t).GetError())
 	require.Equal(t, int32(1), included.metadata(t).GetTrackedFiles())
 	require.Equal(t, int32(2), included.metadata(t).GetUntrackedFiles())
+}
+
+func TestCaptureGitApprovalTokenRejectsChangedReviewedBytes(t *testing.T) {
+	skipIfNoGit(t)
+	repo, _, _ := initCaptureRepo(t)
+	const size = 64
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "reviewed.txt"), []byte(strings.Repeat("a", size)), 0o600))
+
+	first := captureGit(t, repo, &CaptureGitPolicy{})
+	firstMeta := first.metadata(t)
+	require.Equal(t, CAPTURE_REJECTED, firstMeta.GetError().GetType())
+	require.Len(t, firstMeta.GetApprovalCandidates(), 1)
+	token := firstMeta.ApprovalCandidates[0].GetApprovalToken()
+	require.NotEmpty(t, token)
+
+	secret := "-----BEGIN PRIVATE KEY-----" + strings.Repeat("x", size-len("-----BEGIN PRIVATE KEY-----"))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "reviewed.txt"), []byte(secret), 0o600))
+	retried := captureGit(t, repo, &CaptureGitPolicy{ApprovalTokens: []string{token}})
+	retriedMeta := retried.metadata(t)
+	require.Equal(t, CAPTURE_REJECTED, retriedMeta.GetError().GetType())
+	require.Len(t, retried.responses, 1, "changed reviewed bytes must not be streamed")
+	require.Len(t, retriedMeta.GetApprovalCandidates(), 1)
+	require.Equal(t, "credential-content", retriedMeta.ApprovalCandidates[0].GetClassification())
+	require.NotEqual(t, token, retriedMeta.ApprovalCandidates[0].GetApprovalToken())
 }
 
 func TestCaptureGitPreflightIgnoresCommittedContent(t *testing.T) {

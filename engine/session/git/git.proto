@@ -262,14 +262,14 @@ message CaptureGitRequest {
 }
 
 // Safe tracked and untracked changes are included only after approval of the
-// complete selected dirty set. approve_paths contains exact paths approved by
-// an aggregate prompt/retry; include patterns approve matching tracked or
-// ordinary nonignored untracked paths for noninteractive use. Patterns use Git
-// path separators and path.Match.
+// complete selected dirty set. approval_tokens are opaque fingerprints returned
+// with an aggregate prompt and bind its retry to the exact reviewed state;
+// include patterns approve matching tracked or ordinary nonignored untracked
+// paths for noninteractive use. Patterns use Git path separators and path.Match.
 message CaptureGitPolicy {
   repeated string include = 1;
   repeated string exclude = 2;
-  repeated string approve_paths = 3;
+  repeated string approval_tokens = 3;
   int64 max_untracked_file_bytes = 4;
   int64 max_untracked_total_bytes = 5;
   int32 max_untracked_files = 6;
@@ -324,6 +324,8 @@ message CaptureGitCandidate {
   string classification = 2;
   bool tracked = 3;
   int64 bytes = 4;
+  // approval_token binds approval to the path's reviewed type, mode, and bytes.
+  string approval_token = 5;
 }
 
 message CaptureGitCommit {
