@@ -14,8 +14,11 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -220,6 +223,51 @@ func TestEmitAgentSnapshotRecordShape(t *testing.T) {
 	require.Empty(t, rec.records[0].state,
 		"a commit is not a transition: the snapshot record carries no state")
 	require.Empty(t, rec.records[0].body, "snapshot records must not carry log text")
+}
+
+// TestEmitAgentFailureMessage locks the durable failure surface: the loop's
+// actual error becomes a failed assistant message beneath the loop, with the
+// same text on stdio for the focused conversation to retain in scrollback.
+func TestEmitAgentFailureMessage(t *testing.T) {
+	logs, ctx := stateRecorderCtx(t)
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(spans),
+	)
+	ctx, loop := tp.Tracer("agent-failure-test").Start(ctx, "agent loop")
+	defer loop.End()
+
+	// A clean stop is silent.
+	emitAgentFailure(ctx, nil)
+	require.Empty(t, spans.Ended())
+
+	loopErr := errors.New("context limit reached")
+	emitAgentFailure(ctx, loopErr)
+
+	require.Len(t, spans.Ended(), 1)
+	failure := spans.Ended()[0]
+	require.Equal(t, "agent failure", failure.Name())
+	require.Equal(t, loop.SpanContext().SpanID(), failure.Parent().SpanID())
+	require.Equal(t, codes.Error, failure.Status().Code)
+	require.Equal(t, loopErr.Error(), failure.Status().Description)
+
+	attrs := map[string]string{}
+	for _, attr := range failure.Attributes() {
+		attrs[string(attr.Key)] = attr.Value.AsString()
+	}
+	require.Equal(t, telemetry.LLMRoleAssistant, attrs[telemetry.LLMRoleAttr])
+	require.Equal(t, telemetry.UIMessageReceived, attrs[telemetry.UIMessageAttr])
+
+	logs.mu.Lock()
+	defer logs.mu.Unlock()
+	var bodies []string
+	for _, rec := range logs.records {
+		if rec.body != "" {
+			bodies = append(bodies, rec.body)
+		}
+	}
+	require.Equal(t, []string{loopErr.Error()}, bodies)
 }
 
 // TestStopReasonRidesTerminalRecord covers the fact that makes a trace
