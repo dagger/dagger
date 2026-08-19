@@ -268,12 +268,15 @@ func parseGitBundleHeader(input io.Reader) (*GitBundle, int64, error) {
 				return nil, 0, fmt.Errorf("invalid git bundle capability placement")
 			}
 			capability, value, ok := strings.Cut(strings.TrimPrefix(line, "@"), "=")
-			if capability == "object-format" {
+			switch capability {
+			case "object-format":
 				if !ok || seenObjectFormat {
 					return nil, 0, fmt.Errorf("invalid git bundle object-format capability")
 				}
 				bundle.ObjectFormat = value
 				seenObjectFormat = true
+			default:
+				return nil, 0, fmt.Errorf("unsupported git bundle capability %q", capability)
 			}
 			continue
 		}
@@ -686,7 +689,7 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 					return fmt.Errorf("initialize git bundle repository: %w", err)
 				}
 				for i, prerequisite := range prerequisites {
-					dst := "refs/dagger/bundle/prerequisites/" + strconv.Itoa(i)
+					dst := gitBundlePrerequisiteRef(i)
 					if _, err := runGitEnv(ctx, root, nil, "fetch", "--quiet", "--no-tags", sourceURL, prerequisite.SHA+":"+dst); err != nil {
 						return fmt.Errorf("fetch git bundle prerequisite %s: %w", prerequisite.SHA, err)
 					}
@@ -696,6 +699,11 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 				}
 				if err := fetchGitBundleRefs(ctx, root, bundlePath, header.Refs); err != nil {
 					return fmt.Errorf("import git bundle: %w", err)
+				}
+				for i := range prerequisites {
+					if _, err := runGitEnv(ctx, root, nil, "update-ref", "-d", gitBundlePrerequisiteRef(i)); err != nil {
+						return fmt.Errorf("remove temporary git bundle prerequisite ref %d: %w", i, err)
+					}
 				}
 				if _, err := runGitEnv(ctx, root, nil, "pack-refs", "--all"); err != nil {
 					return fmt.Errorf("normalize git bundle refs: %w", err)
@@ -725,6 +733,10 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 	dir.Dir.setValue("/")
 	dir.Snapshot.setValue(snapshot)
 	return dir, nil
+}
+
+func gitBundlePrerequisiteRef(index int) string {
+	return "refs/dagger/bundle/prerequisites/" + strconv.Itoa(index)
 }
 
 func verifyGitBundleInRepo(ctx context.Context, repoDir, bundlePath string) error {
