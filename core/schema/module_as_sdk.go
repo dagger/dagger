@@ -61,15 +61,35 @@ func (s *moduleSchema) currentModuleAsSDK(
 		sdkName = name
 	}
 
+	// as-sdk entries are recorded against the config directory; SDKs are
+	// handed workspace-root-relative paths, the same currency as ws.Cwd and
+	// the changesets they return.
+	configDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &core.CurrentModuleAsSDK{Name: sdkName}
 	for _, mod := range entry.AsSDK.Modules {
-		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: mod.Path})
+		modPath, err := workspace.ResolveSDKManagedPath(configDir, mod.Path)
+		if err != nil {
+			return nil, fmt.Errorf("module managed by %q: %w", name, err)
+		}
+		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: modPath})
 	}
 	result.Modules = currentModuleAsSDKModulesForCwd(result.Modules, ws.Cwd)
 	for _, client := range entry.AsSDK.Clients {
+		clientPath, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
+		if err != nil {
+			return nil, fmt.Errorf("client managed by %q: %w", name, err)
+		}
+		clientModule, err := resolveSDKManagedClientModule(configDir, client.Module)
+		if err != nil {
+			return nil, fmt.Errorf("client managed by %q: %w", name, err)
+		}
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
-			Path:           client.Path,
-			Module:         client.Module,
+			Path:           clientPath,
+			Module:         clientModule,
 			Pin:            client.Pin,
 			BoundWorkspace: wsResult,
 		})
@@ -179,7 +199,9 @@ func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
 		return res, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
 
-	_, moduleLoadRef, err := resolveWorkspaceClientModuleRef(ws, client.Module)
+	// client.Module was already resolved to workspace-root coordinates by
+	// currentModuleAsSDK, so it needs no further anchoring here.
+	moduleLoadRef, _, err := resolveWorkspaceClientModuleRef(ws, client.Module, ".")
 	if err != nil {
 		return res, err
 	}

@@ -484,13 +484,9 @@ func initGeneratorFixture(t testing.TB, c *dagger.Client) *dagger.Container {
 
 // initGeneratorFixtureAt builds the fixture with its dagger.toml under
 // configDir, so tests can exercise a workspace config that is not at the
-// workspace (git) root. [modules.X].source is config-directory-relative while
-// as-sdk paths are workspace-root-relative, hence the two path shapes below.
-//
-// The SDK module deliberately sits at a dot-free path: a client's module ref is
-// classified as local by looking for a leading "." or "/" and otherwise for the
-// absence of a dot, so "common/.dagger/init-fixture" would be mistaken for a
-// remote ref.
+// workspace (git) root. Every path in dagger.toml — [modules.X].source and the
+// as-sdk entries alike — is recorded relative to that config directory, so the
+// fixture below reads the same wherever configDir sits.
 func initGeneratorFixtureAt(t testing.TB, c *dagger.Client, configDir string) *dagger.Container {
 	inConfigDir := func(p string) string { return path.Join(configDir, p) }
 	return goGitBase(t, c).
@@ -503,11 +499,11 @@ source = "sdk/init-fixture"
 name = "fixture"
 
 [[modules.init-fixture.as-sdk.modules]]
-path = "`+inConfigDir("existing/mod")+`"
+path = "existing/mod"
 
 [[modules.init-fixture.as-sdk.clients]]
-path = "`+inConfigDir("existing/client")+`"
-module = "`+inConfigDir("sdk/init-fixture")+`"
+path = "existing/client"
+module = "sdk/init-fixture"
 `).
 		WithNewFile(inConfigDir("sdk/init-fixture/dagger.json"), `{
   "name": "init-fixture",
@@ -794,12 +790,13 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 		require.NoError(t, err)
 		require.False(t, exists, "module init must not scaffold outside the config directory")
 
-		// [modules.X].source is config-directory-relative; as-sdk paths are
-		// workspace-root-relative.
+		// Both paths dagger.toml records for the new module — its install
+		// source and the as-sdk entry — are relative to the config directory,
+		// so they read the same.
 		config, err := initialized.File("/work/common/dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, config, `source = ".dagger/modules/newmod"`)
-		require.Contains(t, config, `path = "common/.dagger/modules/newmod"`)
+		require.Contains(t, config, `path = ".dagger/modules/newmod"`)
 	})
 
 	t.Run("module init resolves an explicit --path against the caller", func(ctx context.Context, t *testctx.T) {
@@ -871,6 +868,15 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 		exists, err := initialized.Exists(ctx, "/work/clients")
 		require.NoError(t, err)
 		require.False(t, exists, "client init must not scaffold outside the requested path")
+
+		// The recorded client is anchored at the dagger.toml holding it, its
+		// local module ref included, while the SDK is handed the
+		// workspace-root-relative form above. The fixture already records one
+		// client against the same module, so the new entry is the second.
+		config, err := initialized.File("/work/common/dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `path = "clients/one"`)
+		require.Equal(t, 2, strings.Count(config, `module = "sdk/init-fixture"`), config)
 	})
 }
 

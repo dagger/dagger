@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -46,12 +45,11 @@ func (s *workspaceSchema) initClientChanges(
 	if err != nil {
 		return res, scope, err
 	}
-	moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(ws, args.Module)
+	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return res, scope, err
 	}
-
-	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, args.Here)
+	moduleLoadRef, configModuleRef, err := resolveWorkspaceClientModuleRef(ws, args.Module, staged.ConfigDir)
 	if err != nil {
 		return res, scope, err
 	}
@@ -74,11 +72,20 @@ func (s *workspaceSchema) initClientChanges(
 	}
 	modulePin := targetModule.Self().Pin()
 
-	removeClientEntryAtPath(cfg, clientPath)
+	// dagger.toml records paths relative to the directory holding it, while
+	// everything downstream of here is workspace-root-relative.
+	configClientPath, err := workspace.SDKManagedPathFor(staged.ConfigDir, clientPath)
+	if err != nil {
+		return res, scope, err
+	}
+
+	if err := removeClientEntryAtPath(cfg, staged.ConfigDir, clientPath); err != nil {
+		return res, scope, err
+	}
 	sdkEntry = cfg.Modules[sdkName]
 	sdkEntry.AsSDK.Clients = append(sdkEntry.AsSDK.Clients, workspace.SDKManagedClient{
-		Path:   clientPath,
-		Module: moduleRef,
+		Path:   configClientPath,
+		Module: configModuleRef,
 		Pin:    modulePin,
 	})
 	cfg.Modules[sdkName] = sdkEntry
@@ -126,7 +133,7 @@ func (s *workspaceSchema) initClientChanges(
 	if err != nil {
 		return res, scope, err
 	}
-	sdkChanges, err := clientInitializer.InitClient(ctx, sdkWorkspace, clientPath, moduleRef, sdkArgs)
+	sdkChanges, err := clientInitializer.InitClient(ctx, sdkWorkspace, clientPath, moduleLoadRef, sdkArgs)
 	if err != nil {
 		return res, scope, fmt.Errorf("sdk client init: %w", err)
 	}
@@ -201,7 +208,11 @@ func resolveWorkspaceClientPath(pathArg, cwd string) (string, error) {
 	return resolved, nil
 }
 
-func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref string) (configRef string, loadRef string, _ error) {
+// resolveWorkspaceClientModuleRef normalizes a client's module ref into the two
+// forms it is needed in: loadRef, workspace-root-relative, is what module
+// loading reads from, while configRef is how the entry is spelled in the
+// dagger.toml at configDir. A canonical ref has no anchor, so it is both.
+func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref, configDir string) (loadRef string, configRef string, _ error) {
 	if !workspace.IsLocalRef(ref, "") {
 		return ref, ref, nil
 	}
@@ -223,7 +234,27 @@ func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref string) (configRef 
 	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 		return "", "", fmt.Errorf("module ref %q must not escape the workspace root", ref)
 	}
-	return filepath.ToSlash(cleaned), filepath.ToSlash(cleaned), nil
+	loadRef = filepath.ToSlash(cleaned)
+	configRef, err := workspace.SDKManagedPathFor(configDir, loadRef)
+	if err != nil {
+		return "", "", err
+	}
+	// A spelling that would read back as a git ref — a dot in its first segment,
+	// like "sdk.v1/foo" — keeps an explicit local marker.
+	if !workspace.IsLocalRef(configRef, "") {
+		configRef = "./" + configRef
+	}
+	return loadRef, configRef, nil
+}
+
+// resolveSDKManagedClientModule reads back what resolveWorkspaceClientModuleRef
+// stored: a local ref anchors like every other as-sdk path, a canonical ref has
+// no anchor and stays verbatim.
+func resolveSDKManagedClientModule(configDir, ref string) (string, error) {
+	if !workspace.IsLocalRef(ref, "") {
+		return ref, nil
+	}
+	return workspace.ResolveSDKManagedPath(configDir, ref)
 }
 
 func workspaceClientModuleSourceSelector(ref string, pin string) dagql.Selector {
@@ -240,18 +271,32 @@ func workspaceClientModuleSourceSelector(ref string, pin string) dagql.Selector 
 	}
 }
 
-func removeClientEntryAtPath(cfg *workspace.Config, clientPath string) {
+// removeClientEntryAtPath drops any client recorded at clientPath, which is
+// workspace-root-relative while the entries themselves are recorded against
+// configDir. An entry that cannot be resolved is a corruption every other
+// reader fails on, so it fails here too rather than being mistaken for a miss.
+func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string) error {
 	if cfg == nil {
-		return
+		return nil
 	}
-	cleanPath := filepath.Clean(clientPath)
+	cleanPath := filepath.ToSlash(cleanWorkspaceRelPath(clientPath))
 	for moduleName, entry := range cfg.Modules {
 		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
 			continue
 		}
-		entry.AsSDK.Clients = slices.DeleteFunc(entry.AsSDK.Clients, func(client workspace.SDKManagedClient) bool {
-			return filepath.Clean(client.Path) == cleanPath
-		})
+		kept := make([]workspace.SDKManagedClient, 0, len(entry.AsSDK.Clients))
+		for _, client := range entry.AsSDK.Clients {
+			resolved, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
+			if err != nil {
+				return fmt.Errorf("client managed by %q: %w", moduleName, err)
+			}
+			if resolved == cleanPath {
+				continue
+			}
+			kept = append(kept, client)
+		}
+		entry.AsSDK.Clients = kept
 		cfg.Modules[moduleName] = entry
 	}
+	return nil
 }

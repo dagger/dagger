@@ -123,7 +123,8 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 //     dagger.json). The first match defines the module directory.
 //  2. Continue walking up to the workspace root (the nearest dagger.toml).
 //  3. Read the workspace config and scan [[modules.*.as-sdk.modules]] for
-//     a path entry matching the module's workspace-relative directory.
+//     a path entry matching the module's directory, both relative to the
+//     dagger.toml found in step 2.
 //  4. Return the parent module's short name (which is also the SDK name).
 //
 // Per the runtime/SDK split, dagger-module.toml no longer records the SDK.
@@ -132,18 +133,30 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 // which SDK to dispatch to; that's an error the user resolves by
 // installing/registering the module via `dagger module init`.
 func currentModuleSDKName() (string, error) {
-	moduleDir, workspaceRoot, err := locateModuleAndWorkspaceRoot()
+	moduleDir, configDir, err := locateModuleAndWorkspaceRoot()
 	if err != nil {
 		return "", err
 	}
 
-	modulePath, err := filepath.Rel(workspaceRoot, moduleDir)
+	// as-sdk paths are anchored two ways — relative to the config, or at the
+	// workspace root behind a leading "/" — so the comparison happens in
+	// workspace-root coordinates. Without a git root the config directory is
+	// the only boundary there is.
+	boundary := gitRootAbove(configDir)
+	if boundary == "" {
+		boundary = configDir
+	}
+	modulePath, err := filepath.Rel(boundary, moduleDir)
 	if err != nil {
 		return "", fmt.Errorf("compute workspace-relative module path: %w", err)
 	}
 	modulePath = filepath.ToSlash(filepath.Clean(modulePath))
+	configDirRel, err := filepath.Rel(boundary, configDir)
+	if err != nil {
+		return "", fmt.Errorf("compute workspace-relative config path: %w", err)
+	}
 
-	wsConfigPath := filepath.Join(workspaceRoot, workspace.ConfigFileName)
+	wsConfigPath := filepath.Join(configDir, workspace.ConfigFileName)
 	wsData, err := os.ReadFile(wsConfigPath)
 	if err != nil {
 		return "", fmt.Errorf("read workspace config %q: %w", wsConfigPath, err)
@@ -158,12 +171,32 @@ func currentModuleSDKName() (string, error) {
 			continue
 		}
 		for _, m := range installed.AsSDK.Modules {
-			if filepath.ToSlash(filepath.Clean(m.Path)) == modulePath {
+			managed, err := workspace.ResolveSDKManagedPath(configDirRel, m.Path)
+			if err != nil {
+				return "", fmt.Errorf("module managed by %q in %s: %w", installedName, wsConfigPath, err)
+			}
+			if managed == modulePath {
 				return installedName, nil
 			}
 		}
 	}
 	return "", fmt.Errorf("module at %q is not registered under any [[modules.*.as-sdk.modules]] in %s; register it via `dagger module init` or add an entry by hand", modulePath, wsConfigPath)
+}
+
+// gitRootAbove returns the nearest directory at or above dir holding a .git,
+// which is the workspace boundary paths in dagger.toml measure against, or ""
+// when the config is not in a repository.
+func gitRootAbove(dir string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 // locateModuleAndWorkspaceRoot walks upward from cwd, returning the first

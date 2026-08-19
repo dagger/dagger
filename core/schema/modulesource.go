@@ -3643,17 +3643,24 @@ func sdkOwnersByModulePath(ctx context.Context, ws *core.Workspace) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	return sdkOwnersByModulePathFromConfig(cfg)
+	configDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return nil, err
+	}
+	return sdkOwnersByModulePathFromConfig(configDir, cfg)
 }
 
-func sdkOwnersByModulePathFromConfig(cfg *workspace.Config) (map[string]string, error) {
+func sdkOwnersByModulePathFromConfig(configDir string, cfg *workspace.Config) (map[string]string, error) {
 	owners := map[string]string{}
 	for name, entry := range cfg.Modules {
 		if entry.AsSDK == nil {
 			continue
 		}
 		for _, managed := range entry.AsSDK.Modules {
-			path := cleanWorkspaceRelPath(managed.Path)
+			path, err := workspace.ResolveSDKManagedPath(configDir, managed.Path)
+			if err != nil {
+				return nil, fmt.Errorf("module managed by %q: %w", name, err)
+			}
 			if existing, ok := owners[path]; ok && existing != name {
 				sdkNames := []string{existing, name}
 				slices.Sort(sdkNames)

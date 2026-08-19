@@ -99,6 +99,13 @@ func (s *workspaceSchema) initModuleChanges(
 		return res, scope, err
 	}
 
+	// Everything in dagger.toml is written relative to the directory holding
+	// it, while relPath is workspace-root-relative like the rest of the engine.
+	configPath, err := workspace.SDKManagedPathFor(staged.ConfigDir, relPath)
+	if err != nil {
+		return res, scope, err
+	}
+
 	// Reject name conflicts in installed modules and reject path conflicts
 	// across any SDK's authored modules. Two SDKs claiming the same path is
 	// a corruption we shouldn't silently extend.
@@ -110,13 +117,17 @@ func (s *workspaceSchema) initModuleChanges(
 			continue
 		}
 		for _, m := range installed.AsSDK.Modules {
-			if filepath.Clean(m.Path) == relPath {
+			authored, err := workspace.ResolveSDKManagedPath(staged.ConfigDir, m.Path)
+			if err != nil {
+				return res, scope, fmt.Errorf("module managed by %q: %w", installedName, err)
+			}
+			if authored == relPath {
 				return res, scope, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
 			}
 		}
 	}
 
-	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: relPath})
+	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: configPath})
 	cfg.Modules[sdkName] = sdkEntry
 
 	loadedSDK, err := s.loadWorkspaceSDK(ctx, ws, staged.ConfigDir, sdkRef)
@@ -142,14 +153,7 @@ func (s *workspaceSchema) initModuleChanges(
 	}
 
 	if usingDefaultPath {
-		// [modules.<name>].source is resolved against the config directory,
-		// while relPath is workspace-root-relative — same convention split
-		// `dagger install` handles when it records a local ref.
-		configSource, err := filepath.Rel(staged.ConfigDir, relPath)
-		if err != nil {
-			return res, scope, fmt.Errorf("resolve module source %q from %q: %w", relPath, staged.ConfigDir, err)
-		}
-		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: filepath.ToSlash(configSource)}
+		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: configPath}
 	}
 
 	// Render new dagger.toml bytes through the format-preserving editor.

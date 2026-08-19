@@ -75,17 +75,19 @@ type ModuleAsSDK struct {
 	Clients []SDKManagedClient `json:"clients,omitempty" toml:"clients,omitempty"`
 }
 
-// SDKManagedModule is a workspace-relative path to a module that an SDK
-// authors and manages here. The path is the only required field; the
-// module's own engine state lives in <path>/dagger-module.toml.
+// SDKManagedModule is a path to a module that an SDK authors and manages here,
+// resolved against the directory holding this dagger.toml, with a leading "/"
+// anchoring it at the workspace root instead. The path is the only required
+// field; the module's own engine state lives in <path>/dagger-module.toml.
 type SDKManagedModule struct {
 	Path string `json:"path" toml:"path"`
 }
 
-// SDKManagedClient is a workspace-relative path to a generated client
-// produced by an SDK, bound to one module. Module accepts a
-// workspace-relative path or canonical ref, same resolution as
-// [modules.X].source. Shape will evolve as concrete client SDKs implement.
+// SDKManagedClient is a generated client produced by an SDK and bound to one
+// module, with its path — and a Module given as a local path — resolved against
+// the directory holding this dagger.toml, a leading "/" anchoring at the
+// workspace root instead. Module also accepts a canonical ref, same resolution
+// as [modules.X].source. Shape will evolve as concrete client SDKs implement.
 type SDKManagedClient struct {
 	Path    string            `json:"path" toml:"path"`
 	Module  string            `json:"module" toml:"module"`

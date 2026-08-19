@@ -265,7 +265,7 @@ func TestSDKOwnersByModulePathFromConfig(t *testing.T) {
 	t.Parallel()
 
 	t.Run("maps normalized module paths", func(t *testing.T) {
-		owners, err := sdkOwnersByModulePathFromConfig(&workspace.Config{
+		owners, err := sdkOwnersByModulePathFromConfig(".", &workspace.Config{
 			Modules: map[string]workspace.ModuleEntry{
 				"go-sdk": {
 					AsSDK: &workspace.ModuleAsSDK{
@@ -290,8 +290,28 @@ func TestSDKOwnersByModulePathFromConfig(t *testing.T) {
 		}, owners)
 	})
 
+	t.Run("resolves paths against a config directory below the root", func(t *testing.T) {
+		owners, err := sdkOwnersByModulePathFromConfig("apps/demo", &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"go-sdk": {
+					AsSDK: &workspace.ModuleAsSDK{
+						Modules: []workspace.SDKManagedModule{
+							{Path: ".dagger/modules/go"},
+							{Path: "../shared"},
+						},
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{
+			"apps/demo/.dagger/modules/go": "go-sdk",
+			"apps/shared":                  "go-sdk",
+		}, owners)
+	})
+
 	t.Run("rejects paths managed by multiple SDKs", func(t *testing.T) {
-		_, err := sdkOwnersByModulePathFromConfig(&workspace.Config{
+		_, err := sdkOwnersByModulePathFromConfig(".", &workspace.Config{
 			Modules: map[string]workspace.ModuleEntry{
 				"go-sdk": {
 					AsSDK: &workspace.ModuleAsSDK{
