@@ -647,7 +647,10 @@ func (s *workspaceSchema) checkpoint(
 			return inst, fmt.Errorf("workspace checkpoint rejected selected dirty paths")
 		}
 		for _, candidate := range approvalErr.Candidates {
-			policy.ApprovePaths = append(policy.ApprovePaths, candidate.Path)
+			if candidate.ApprovalToken == "" {
+				return inst, fmt.Errorf("workspace checkpoint approval candidate %s has no state token", strconv.Quote(candidate.Path))
+			}
+			policy.ApprovalTokens = append(policy.ApprovalTokens, candidate.ApprovalToken)
 		}
 	}
 	if err != nil {
