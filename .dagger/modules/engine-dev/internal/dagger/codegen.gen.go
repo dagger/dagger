@@ -9,15 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type Codegen
-func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../../:0:0)
-	q := r.query.Select("asCodegen")
-
-	return &Codegen{
-		query: q,
-	}
-}
-
 type Codegen struct { // codegen (../../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -103,49 +94,21 @@ func (r *Codegen) AsNode() Node {
 	}
 }
 
-// Create or update a binding of type Codegen in the environment
-func (r *Env) WithCodegenInput(name string, value *Codegen, description string) *Env { // codegen (../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withCodegenInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Codegen output to be assigned in the environment
-func (r *Env) WithCodegenOutput(name string, description string) *Env { // codegen (../../../../../:0:0)
-	q := r.query.Select("withCodegenOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // CodegenOpts contains options for Query.Codegen
 type CodegenOpts struct {
 	Source *Directory // codegen (../../../../../:0:0)
-
-	Ws *Workspace // codegen (../../../../../:0:0)
 }
 
-func (r *Query) Codegen(opts ...CodegenOpts) *Codegen { // codegen (../../../../../:0:0)
+func (r *Query) Codegen(ws *Workspace, opts ...CodegenOpts) *Codegen { // codegen (../../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("codegen")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {
 			q = q.Arg("source", opts[i].Source)
 		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &Codegen{
 		query: q,

@@ -21,7 +21,7 @@ func (r *Release) TestLocalRelease(
 	}
 
 	return &ReleaseTest{
-		Container: dag.EngineDev(dagger.EngineDevOpts{Ws: r.Workspace}).Playground(
+		Container: dag.EngineDev(r.Workspace).Playground(
 			dagger.EngineDevPlaygroundOpts{Version: bumpVersionByPatch(version)},
 		),
 	}, nil

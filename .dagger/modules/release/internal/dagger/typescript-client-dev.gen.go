@@ -9,39 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type TypescriptClientDev
-func (r *Binding) AsTypescriptClientDev() *TypescriptClientDev { // typescript-client-dev (../../../../../:0:0)
-	q := r.query.Select("asTypescriptClientDev")
-
-	return &TypescriptClientDev{
-		query: q,
-	}
-}
-
-// Create or update a binding of type TypescriptClientDev in the environment
-func (r *Env) WithTypescriptClientDevInput(name string, value *TypescriptClientDev, description string) *Env { // typescript-client-dev (../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withTypescriptClientDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired TypescriptClientDev output to be assigned in the environment
-func (r *Env) WithTypescriptClientDevOutput(name string, description string) *Env { // typescript-client-dev (../../../../../:0:0)
-	q := r.query.Select("withTypescriptClientDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // TypescriptClientDevOpts contains options for Query.TypescriptClientDev
 type TypescriptClientDevOpts struct {
 	NodeVersionPrevLts string // typescript-client-dev (../../../../../:0:0)
@@ -53,13 +20,10 @@ type TypescriptClientDevOpts struct {
 	WorkspaceDir *Directory // typescript-client-dev (../../../../../:0:0)
 
 	SourcePath string // typescript-client-dev (../../../../../:0:0)
-	//
-	// Workspace
-	//
-	Ws *Workspace // typescript-client-dev (../../../../../:0:0)
 }
 
-func (r *Query) TypescriptClientDev(opts ...TypescriptClientDevOpts) *TypescriptClientDev { // typescript-client-dev (../../../../../:0:0)
+func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOpts) *TypescriptClientDev { // typescript-client-dev (../../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("typescriptClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `nodeVersionPrevLts` optional argument
@@ -82,11 +46,8 @@ func (r *Query) TypescriptClientDev(opts ...TypescriptClientDevOpts) *Typescript
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &TypescriptClientDev{
 		query: q,

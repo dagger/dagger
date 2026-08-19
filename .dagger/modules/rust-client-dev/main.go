@@ -55,9 +55,8 @@ func New(
 		WithWorkdir("/src").
 		// FIXME: not all functions need a full engine build. Do this lazily as needed
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(dagger.DaggerEngineOpts{
+			return dag.DaggerEngine(workspace, dagger.DaggerEngineOpts{
 				ClientDockerConfig: clientDockerConfig,
-				Ws:                 workspace,
 			}).InstallClient(c)
 		})
 
@@ -163,7 +162,7 @@ func (t *RustClientDev) Changes() *dagger.Changeset {
 
 func (t *RustClientDev) WithGeneratedClient() *RustClientDev {
 	relLayer := t.DevContainer(true).
-		WithMountedFile("/introspection.json", dag.DaggerEngine(dagger.DaggerEngineOpts{Ws: t.Ws}).IntrospectionJSON()).
+		WithMountedFile("/introspection.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).

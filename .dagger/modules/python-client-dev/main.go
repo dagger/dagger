@@ -56,9 +56,8 @@ func New(
 	ws *dagger.Workspace,
 ) *PythonClientDev {
 	return &PythonClientDev{
-		DevContainer: dag.DaggerEngine(dagger.DaggerEngineOpts{
+		DevContainer: dag.DaggerEngine(ws, dagger.DaggerEngineOpts{
 			ClientDockerConfig: clientDockerConfig,
-			Ws:                 ws,
 		}).InstallClient(
 			dag.Wolfi().
 				Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
@@ -194,7 +193,7 @@ func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, er
 	// FIXME: workaround for Directory.changes() bug
 	src = dag.Directory().WithDirectory("", src)
 	genFile := devContainer.
-		WithMountedFile("/schema.json", dag.DaggerEngine(dagger.DaggerEngineOpts{Ws: t.Ws}).IntrospectionJSON()).
+		WithMountedFile("/schema.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
 		WithWorkdir("codegen").
 		WithExec(uvRun(
 			"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
