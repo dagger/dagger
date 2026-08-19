@@ -66,11 +66,13 @@ func sdkResolve(input string) (string, error) {
 //   - the workspace install name to use when the user did not pass --name: the
 //     registry repo basename with a "dagger-" prefix (e.g. "dagger-go-sdk"),
 //     reducing the chance of colliding with an unrelated module; and
-//   - the registry's canonical user-facing name to persist as as-sdk.name.
+//   - the registry's canonical user-facing name, used as an explicit
+//     as-sdk.name only when it differs from the conventional install name.
 //
 // Full refs return an empty install name so Workspace.withSDK keeps its normal
 // basename-derived behavior for third-party SDK refs. They also return an
-// empty SDK name so third-party refs can rely on the module entry name.
+// empty SDK name so third-party refs can rely on the conventional name derived
+// from the module entry name.
 func sdkResolveInstall(input string) (ref string, installName string, asSDKName string, _ error) {
 	if strings.ContainsAny(input, "/@") {
 		return input, "", "", nil

@@ -15,7 +15,8 @@ import (
 )
 
 // ConventionalSDKName derives the user-facing SDK command name from its
-// installed module name.
+// installed module name by removing the conventional "dagger-" prefix and
+// trailing "sdk" marker, along with adjacent separators.
 func ConventionalSDKName(moduleName string) string {
 	name := strings.TrimSpace(moduleName)
 	name = strings.TrimPrefix(name, sdkmeta.InstallNamePrefix)
@@ -26,6 +27,49 @@ func ConventionalSDKName(moduleName string) string {
 		return moduleName
 	}
 	return name
+}
+
+// EffectiveSDKName returns the name used to address an installed SDK. An
+// explicit as-sdk.name overrides the conventional name derived from the module
+// entry name.
+func EffectiveSDKName(moduleName string, entry ModuleEntry) string {
+	if entry.AsSDK != nil && entry.AsSDK.Name != "" {
+		return entry.AsSDK.Name
+	}
+	return ConventionalSDKName(moduleName)
+}
+
+// ValidateSDKNames ensures every installed SDK can be addressed unambiguously
+// by either its module entry name or its effective SDK name.
+func ValidateSDKNames(cfg *Config) error {
+	if cfg == nil || len(cfg.Modules) == 0 {
+		return nil
+	}
+
+	moduleNames := make([]string, 0, len(cfg.Modules))
+	for moduleName, entry := range cfg.Modules {
+		if entry.AsSDK != nil {
+			moduleNames = append(moduleNames, moduleName)
+		}
+	}
+	sort.Strings(moduleNames)
+
+	aliases := map[string]string{}
+	for _, moduleName := range moduleNames {
+		entry := cfg.Modules[moduleName]
+		for _, alias := range []string{moduleName, EffectiveSDKName(moduleName, entry)} {
+			if existing, ok := aliases[alias]; ok && existing != moduleName {
+				return fmt.Errorf(
+					"SDK name %q is ambiguous: %s and %s both resolve it; set a unique as-sdk.name",
+					alias,
+					JoinConfigPath("modules", existing, "as-sdk"),
+					JoinConfigPath("modules", moduleName, "as-sdk"),
+				)
+			}
+			aliases[alias] = moduleName
+		}
+	}
+	return nil
 }
 
 // Config represents a parsed dagger.toml workspace configuration.
@@ -76,7 +120,8 @@ type ModuleEntry struct {
 // [modules.<name>.as-sdk] with array-of-tables sub-blocks.
 type ModuleAsSDK struct {
 	// Name is the user-facing name used by the dynamic `dagger sdk <name>`
-	// command. When empty, the module entry name is used.
+	// command. When empty, it is derived conventionally from the module entry
+	// name.
 	Name string `json:"name,omitempty" toml:"name,omitempty"`
 
 	// Modules lists the workspace-local modules this SDK authors and
@@ -205,6 +250,9 @@ func ParseConfig(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
 	if err := populateClientOptions(data, &cfg); err != nil {
+		return nil, err
+	}
+	if err := ValidateSDKNames(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil

@@ -3352,7 +3352,7 @@ export type WorkspaceWithSdkOpts = {
   here?: boolean
 
   /**
-   * User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   * Optional override for the SDK name conventionally derived from the installed module name.
    */
   asSdkName?: string
 }
@@ -15422,6 +15422,35 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with an existing generated client claimed by an installed SDK.
+   * @param sdk Workspace SDK name or module entry name to claim the client with.
+   * @param path Path of the existing client, relative to the workspace cwd.
+   * @param module Workspace-relative path or canonical ref for the module the client binds to.
+   */
+  withClaimedClient = (
+    sdk: string,
+    path: string,
+    module_: string,
+  ): Workspace => {
+    const ctx = this._ctx.select("withClaimedClient", {
+      sdk,
+      path,
+      module: module_,
+    })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with an existing module claimed by an installed SDK.
+   * @param sdk Workspace SDK name or module entry name to claim the module with.
+   * @param path Path of the existing module, relative to the workspace cwd.
+   */
+  withClaimedModule = (sdk: string, path: string): Workspace => {
+    const ctx = this._ctx.select("withClaimedModule", { sdk, path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a named config environment created.
    * @param name Environment name.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -15567,7 +15596,7 @@ export class Workspace extends BaseClient {
    * @param ref SDK module reference to install.
    * @param opts.name Override name for the installed SDK entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.asSdkName User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   * @param opts.asSdkName Optional override for the SDK name conventionally derived from the installed module name.
    */
   withSDK = (ref: string, opts?: WorkspaceWithSdkOpts): Workspace => {
     const ctx = this._ctx.select("withSDK", { ref, ...opts })
@@ -15588,6 +15617,26 @@ export class Workspace extends BaseClient {
    */
   withWorkdir = (path: string): Workspace => {
     const ctx = this._ctx.select("withWorkdir", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a generated client no longer claimed by an installed SDK.
+   * @param sdk Workspace SDK name or module entry name currently claiming the client.
+   * @param path Path of the claimed client, relative to the workspace cwd.
+   */
+  withoutClaimedClient = (sdk: string, path: string): Workspace => {
+    const ctx = this._ctx.select("withoutClaimedClient", { sdk, path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a module no longer claimed by an installed SDK.
+   * @param sdk Workspace SDK name or module entry name currently claiming the module.
+   * @param path Path of the claimed module, relative to the workspace cwd.
+   */
+  withoutClaimedModule = (sdk: string, path: string): Workspace => {
+    const ctx = this._ctx.select("withoutClaimedModule", { sdk, path })
     return new Workspace(ctx)
   }
 

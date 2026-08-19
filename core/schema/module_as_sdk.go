@@ -56,10 +56,7 @@ func (s *moduleSchema) currentModuleAsSDK(
 		return nil, err
 	}
 
-	sdkName := entry.AsSDK.Name
-	if sdkName == "" {
-		sdkName = name
-	}
+	sdkName := workspace.EffectiveSDKName(name, entry)
 
 	// as-sdk entries are recorded against the config directory; SDKs are
 	// handed workspace-root-relative paths, the same currency as ws.Cwd and

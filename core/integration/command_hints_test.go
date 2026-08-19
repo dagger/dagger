@@ -56,7 +56,6 @@ func (CommandHintsSuite) TestSDKInstallAndDynamicCommands(ctx context.Context, t
 	config, err := os.ReadFile(filepath.Join(workdir, "dagger.toml"))
 	require.NoError(t, err)
 	require.Contains(t, string(config), "[modules.go-sdk.as-sdk]")
-	require.Contains(t, string(config), `name = "go"`)
 
 	helpOut, err := hostDaggerExecRaw(ctx, t, workdir, "sdk", "go", "--help")
 	require.NoError(t, err, "%s", string(helpOut))

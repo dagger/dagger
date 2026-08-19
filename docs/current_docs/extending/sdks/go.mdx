@@ -686,25 +686,7 @@ source = "../wolfi"
 
 A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, e.g. `github.com/shykes/daggerverse/hello@v0.3.0`.
 
-Manage dependencies with the CLI's `dagger module deps` commands from the module directory rather than hand-editing `dagger-module.toml`.
-
-Add a dependency by source:
-
-```shell
-dagger module deps add github.com/shykes/daggerverse/hello@v0.3.0
-```
-
-List the current dependencies:
-
-```shell
-dagger module deps list
-```
-
-Remove a dependency by name:
-
-```shell
-dagger module deps rm hello
-```
+Manage dependencies by adding, updating, or removing `[[dependencies]]` entries in `dagger-module.toml`.
 
 After changing dependencies, [regenerate bindings](#regenerate-bindings-and-generated-files) so the new module's functions appear on `dag`.
 
@@ -747,26 +729,7 @@ By default, Dagger still adds local-only files such as `.env` to `.gitignore`. S
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the CLI's `dagger module engine` commands from the module directory.
-
-Read the currently required version:
-
-```shell
-dagger module engine required
-```
-
-Pin a specific version, the current engine, or the latest stable release:
-
-```shell
-# A specific version
-dagger module engine require v1.0.0-beta.6
-
-# Whatever engine you're running now
-dagger module engine require-current
-
-# Latest stable release
-dagger module engine require-latest
-```
+Each module declares the Dagger engine version it requires in the `engineVersion` field of `dagger-module.toml`. Set it to a specific version or to `latest` while developing.
 
 Bumping the engine version usually means the generated bindings should change too, so follow with `dagger generate`.
 
@@ -979,7 +942,7 @@ A Go SDK module is distributed as a Git repository. There is no build artifact t
 
 Recommended release checklist:
 
-1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+1. **Pin the engine version.** Set `engineVersion` in `dagger-module.toml` to the oldest engine version your module supports.
 2. **Commit the generated bindings.** Run `dagger generate`, review the changes, and commit the generated files with your module.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
@@ -991,12 +954,7 @@ Consumers can install your module into a workspace with:
 dagger install github.com/you/your-module@v1.2.0
 ```
 
-To add it as a dependency of another module, run these commands from that module's directory:
-
-```shell
-dagger module deps add github.com/you/your-module@v1.2.0
-dagger generate
-```
+To add it as a dependency of another module, add a `[[dependencies]]` entry to that module's `dagger-module.toml`, then run `dagger generate`.
 
 A module reference follows `[proto://]host/repo[/subpath][@version]`; the version may be a tag, branch, or commit, and is resolved over HTTPS or SSH depending on available authentication.
 
@@ -1014,7 +972,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`; the versio
 
 **Build/import errors referencing `internal/dagger` or `dag`.** The generated client is stale or missing. Regenerate as above; if `go.mod`/`go.sum` drifted, ensure they match the regenerated code (a workspace `go.work` can help your IDE here).
 
-**Engine version mismatch.** Align the module with `dagger module engine require <version>` (or `require-current` / `require-latest`), then regenerate.
+**Engine version mismatch.** Align the module's `engineVersion` in `dagger-module.toml`, then regenerate.
 
 ## Next steps
 

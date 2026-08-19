@@ -16965,7 +16965,7 @@ type WorkspaceWithSDKOpts struct {
 	Name string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
-	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+	// Optional override for the SDK name conventionally derived from the installed module name.
 	AsSDKName string
 }
 

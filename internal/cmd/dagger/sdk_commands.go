@@ -165,8 +165,7 @@ func runSDKModuleList(cmd *cobra.Command, sdkName string) error {
 	}
 	sort.Strings(paths)
 	if len(paths) == 0 {
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "No modules claimed by SDK %q.\n", sdk.commandName)
-		return err
+		return nil
 	}
 	for _, path := range paths {
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), path); err != nil {
@@ -183,8 +182,7 @@ func runSDKClientList(cmd *cobra.Command, sdkName string) error {
 	}
 	clients := slices.Clone(sdk.entry.AsSDK.Clients)
 	if len(clients) == 0 {
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "No clients claimed by SDK %q.\n", sdk.commandName)
-		return err
+		return nil
 	}
 	sort.Slice(clients, func(i, j int) bool { return clients[i].Path < clients[j].Path })
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)

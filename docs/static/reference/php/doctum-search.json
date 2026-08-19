@@ -7442,6 +7442,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withClaimedClient",
+			"p": "Dagger/Workspace.html#method_withClaimedClient",
+			"d": "<p>Return this workspace with an existing generated client claimed by an installed SDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withClaimedModule",
+			"p": "Dagger/Workspace.html#method_withClaimedModule",
+			"d": "<p>Return this workspace with an existing module claimed by an installed SDK.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withConfigEnv",
 			"p": "Dagger/Workspace.html#method_withConfigEnv",
 			"d": "<p>Return this workspace with a named config environment created.</p>"
@@ -7511,6 +7523,18 @@
 			"n": "Dagger\\Workspace::withWorkdir",
 			"p": "Dagger/Workspace.html#method_withWorkdir",
 			"d": "<p>Return this workspace with its working directory pointed at the given workspace-relative path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutClaimedClient",
+			"p": "Dagger/Workspace.html#method_withoutClaimedClient",
+			"d": "<p>Return this workspace with a generated client no longer claimed by an installed SDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutClaimedModule",
+			"p": "Dagger/Workspace.html#method_withoutClaimedModule",
+			"d": "<p>Return this workspace with a module no longer claimed by an installed SDK.</p>"
 		},
 		{
 			"t": "M",

@@ -30,6 +30,70 @@ func TestConventionalSDKName(t *testing.T) {
 	}
 }
 
+func TestEffectiveSDKName(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "go", EffectiveSDKName("dagger-go-sdk", ModuleEntry{AsSDK: &ModuleAsSDK{}}))
+	require.Equal(t, "golang", EffectiveSDKName("dagger-go-sdk", ModuleEntry{AsSDK: &ModuleAsSDK{Name: "golang"}}))
+}
+
+func TestValidateSDKNames(t *testing.T) {
+	t.Parallel()
+
+	t.Run("distinct aliases", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk":     {AsSDK: &ModuleAsSDK{}},
+			"typescript-sdk":    {AsSDK: &ModuleAsSDK{}},
+			"custom-python-sdk": {AsSDK: &ModuleAsSDK{Name: "custom-python"}},
+		}}
+		require.NoError(t, ValidateSDKNames(cfg))
+	})
+
+	t.Run("effective names collide", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {AsSDK: &ModuleAsSDK{}},
+			"go-sdk":        {AsSDK: &ModuleAsSDK{}},
+		}}
+		err := ValidateSDKNames(cfg)
+		require.EqualError(t, err, `SDK name "go" is ambiguous: modules.dagger-go-sdk.as-sdk and modules.go-sdk.as-sdk both resolve it; set a unique as-sdk.name`)
+	})
+
+	t.Run("effective name collides with module alias", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"go":            {AsSDK: &ModuleAsSDK{Name: "golang"}},
+			"dagger-go-sdk": {AsSDK: &ModuleAsSDK{}},
+		}}
+		err := ValidateSDKNames(cfg)
+		require.EqualError(t, err, `SDK name "go" is ambiguous: modules.dagger-go-sdk.as-sdk and modules.go.as-sdk both resolve it; set a unique as-sdk.name`)
+	})
+}
+
+func TestParseConfigRejectsAmbiguousSDKNames(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseConfig([]byte(`[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[modules.dagger-go-sdk.as-sdk]
+
+[modules.go-sdk]
+source = "github.com/acme/go-sdk"
+
+[modules.go-sdk.as-sdk]
+`))
+	require.EqualError(t, err, `SDK name "go" is ambiguous: modules.dagger-go-sdk.as-sdk and modules.go-sdk.as-sdk both resolve it; set a unique as-sdk.name`)
+}
+
+func TestUpdateConfigBytesRejectsAmbiguousSDKNames(t *testing.T) {
+	t.Parallel()
+
+	_, err := UpdateConfigBytes(nil, &Config{Modules: map[string]ModuleEntry{
+		"dagger-go-sdk": {Source: "github.com/dagger/go-sdk", AsSDK: &ModuleAsSDK{}},
+		"go-sdk":        {Source: "github.com/acme/go-sdk", AsSDK: &ModuleAsSDK{}},
+	}})
+	require.EqualError(t, err, `SDK name "go" is ambiguous: modules.dagger-go-sdk.as-sdk and modules.go-sdk.as-sdk both resolve it; set a unique as-sdk.name`)
+}
+
 func TestParseConfig(t *testing.T) {
 	t.Parallel()
 

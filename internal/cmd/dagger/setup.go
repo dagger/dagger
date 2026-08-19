@@ -355,9 +355,10 @@ func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagg
 	if len(fixes) > 0 {
 		updated := ws
 		for _, fix := range fixes {
-			updated = updated.
-				WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref).
-				WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
+			updated = updated.WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref)
+			if fix.SDKName != workspace.ConventionalSDKName(fix.ModuleName) {
+				updated = updated.WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
+			}
 		}
 		if err := updated.Export(ctx); err != nil {
 			return err
@@ -408,7 +409,9 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 		if entry.AsSDK == nil {
 			entry.AsSDK = &workspace.ModuleAsSDK{}
 		}
-		entry.AsSDK.Name = fix.SDKName
+		if fix.SDKName != workspace.ConventionalSDKName(fix.ModuleName) {
+			entry.AsSDK.Name = fix.SDKName
+		}
 		cfg.Modules[fix.ModuleName] = entry
 	}
 	updated, err := workspace.UpdateConfigBytes(data, cfg)
