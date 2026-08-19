@@ -935,6 +935,61 @@ func TestResolveModuleEntrySource(t *testing.T) {
 	})
 }
 
+func TestSDKManagedPaths(t *testing.T) {
+	t.Parallel()
+
+	mustResolve := func(t *testing.T, configDir, p string) string {
+		t.Helper()
+		resolved, err := ResolveSDKManagedPath(configDir, p)
+		require.NoError(t, err)
+		return resolved
+	}
+
+	t.Run("resolves against the config directory", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "apps/demo/.dagger/modules/greeter", mustResolve(t, "apps/demo", ".dagger/modules/greeter"))
+		require.Equal(t, "apps/demo", mustResolve(t, "apps/demo", "."))
+		require.Equal(t, "apps/shared", mustResolve(t, "apps/demo", "../shared"))
+		require.Equal(t, ".dagger/modules/greeter", mustResolve(t, ".", ".dagger/modules/greeter"))
+	})
+
+	t.Run("a leading slash anchors at the workspace root", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "tools/greeter", mustResolve(t, "apps/demo", "/tools/greeter"))
+		require.Equal(t, ".", mustResolve(t, "apps/demo", "/"))
+	})
+
+	t.Run("refuses to escape the workspace root", func(t *testing.T) {
+		t.Parallel()
+		_, err := ResolveSDKManagedPath("apps/demo", "../../../outside")
+		require.ErrorContains(t, err, "escapes the workspace root")
+	})
+
+	t.Run("treats every entry as a path, never a ref", func(t *testing.T) {
+		t.Parallel()
+		// ResolveModuleEntrySource would hand this back untouched, reading the
+		// dot as a domain; as-sdk entries are always paths.
+		require.Equal(t, "apps/demo/modules/v1.2", mustResolve(t, "apps/demo", "modules/v1.2"))
+	})
+
+	t.Run("records workspace paths relative to the config directory", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct{ configDir, workspacePath, want string }{
+			{"apps/demo", "apps/demo/.dagger/modules/greeter", ".dagger/modules/greeter"},
+			{"apps/demo", "apps/demo", "."},
+			{"apps/demo", "apps/shared", "../shared"},
+			{".", "modules/greeter", "modules/greeter"},
+			{"", "modules/greeter", "modules/greeter"},
+		} {
+			got, err := SDKManagedPathFor(tc.configDir, tc.workspacePath)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+			require.Equal(t, cleanRelPath(tc.workspacePath), mustResolve(t, tc.configDir, got),
+				"round trip through %q", tc.configDir)
+		}
+	})
+}
+
 func TestDeleteConfigValue(t *testing.T) {
 	t.Parallel()
 

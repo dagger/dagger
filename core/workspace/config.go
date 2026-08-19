@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -135,6 +136,47 @@ func ResolveModuleEntrySource(configDir, source string) string {
 		return filepath.Clean(source)
 	}
 	return filepath.Clean(filepath.Join(configDir, source))
+}
+
+// ResolveSDKManagedPath turns an as-sdk path into the workspace-relative path
+// the engine addresses modules and clients by, following the same rule as every
+// other path a workspace resolves: a leading "/" means the workspace root,
+// anything else is relative to the directory of the config that records it, and
+// escaping the root is refused. Unlike ResolveModuleEntrySource these entries
+// are always paths, never refs, so no ref classification happens here.
+func ResolveSDKManagedPath(configDir, p string) (string, error) {
+	clean := path.Clean(filepath.ToSlash(p))
+	var resolved string
+	if path.IsAbs(clean) {
+		resolved = strings.TrimPrefix(clean, "/")
+	} else {
+		resolved = path.Join(filepath.ToSlash(configDir), clean)
+	}
+	resolved = path.Clean(resolved)
+	if resolved == "" {
+		resolved = "."
+	}
+	if resolved != "." && !filepath.IsLocal(filepath.FromSlash(resolved)) {
+		return "", fmt.Errorf("%q escapes the workspace root", p)
+	}
+	return resolved, nil
+}
+
+// SDKManagedPathFor is the inverse of ResolveSDKManagedPath: it expresses a
+// workspace-relative path the way an as-sdk entry records it. A target outside
+// the config directory keeps a "../" prefix, as its install source would.
+func SDKManagedPathFor(configDir, workspacePath string) (string, error) {
+	if configDir == "" {
+		configDir = "."
+	}
+	if workspacePath == "" {
+		workspacePath = "."
+	}
+	rel, err := filepath.Rel(configDir, filepath.Clean(workspacePath))
+	if err != nil {
+		return "", fmt.Errorf("resolve %q from %q: %w", workspacePath, configDir, err)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // ParseConfig parses dagger.toml bytes into a workspace config.
