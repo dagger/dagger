@@ -278,7 +278,7 @@ settings.base = "container-provider:image"
 		// proving it received the caller's workspace and not just any one.
 		ctr := modGen.
 			WithWorkdir("app").
-			WithNewFile("marker.txt", "app-workspace\n")
+			WithNewFile("marker.txt", "app-workspace")
 		for _, fn := range []string{"image", "image-for"} {
 			t.Run(fn, func(ctx context.Context, t *testctx.T) {
 				out, err := ctr.
