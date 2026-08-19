@@ -525,28 +525,6 @@ func (tv *TestView) CurrentActionTitle() (string, dagui.TestCategory, bool) {
 	return testNodeTitleName(node), node.Category, true
 }
 
-func (tv *TestView) makeReturnFocus(fe *frontendPretty) func() {
-	area := tv.focusArea
-	rowID := tv.focusedRow
-	children := tv.focusedChildren
-	var childSpan dagui.SpanID
-	if children != nil {
-		childSpan = children.focusedSpan
-	}
-	return func() {
-		tv.focusedRow = rowID
-		if area == testFocusChildren {
-			if children != nil && childSpan.IsValid() && children.FocusSpan(fe, childSpan) {
-				tv.focusArea = testFocusChildren
-				tv.focusedChildren = children
-				tv.Update()
-				return
-			}
-		}
-		tv.focusSidebar(fe)
-	}
-}
-
 func (tv *TestView) childViewForSpan(span *dagui.Span) *TestSpanChildrenView {
 	if span == nil || tv.SpanChildren == nil {
 		return nil
@@ -1511,7 +1489,8 @@ func (fe *frontendPretty) toggleTestsMode() {
 	fe.testsReturnSpan = fe.FocusedSpan
 	fe.testsMode = true
 	tv.ensureFocusedTest(tv.currentView())
-	fe.applyTuistFocus()
+	fe.testsFocus = fe.tui.PushFocus(tv)
+	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
@@ -1612,6 +1591,8 @@ func (fe *frontendPretty) updateTestViews() {
 }
 
 func (fe *frontendPretty) closeTestsMode() {
+	fe.testsFocus.Restore()
+	fe.testsFocus = nil
 	fe.testsMode = false
 	fe.fullscreenTests = nil
 	if fe.testsReturnSpan.IsValid() {
@@ -1619,6 +1600,12 @@ func (fe *frontendPretty) closeTestsMode() {
 	}
 	fe.testsReturnSpan = dagui.SpanID{}
 	fe.recalculateViewLocked()
+	if fe.tui.Focused() == nil {
+		// The prior SpanTreeView is render-dismounted while tests are fullscreen.
+		// If it is still part of navigation, target it again for the next mount.
+		fe.focusNavigationTarget()
+	}
+	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}

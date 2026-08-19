@@ -107,31 +107,24 @@ type frontendPretty struct {
 	backgroundReq chan backgroundRequest
 
 	// updated by Shell
-	shell           ShellHandler
-	shellCtx        context.Context
-	shellInterrupt  context.CancelCauseFunc
-	promptFg        termenv.Color
-	promptErr       error
-	promptErrLabel  *ErrorLabel
-	queuedMsgLabel  *QueuedMessageLabel
-	agentRoster     *AgentRoster
-	statusLine      *StatusLine
-	statusLineData  StatusLineData
-	llmCostFn       LLMCostFunc
-	textInput       *tuist.TextInput
-	promptFrame     *PromptFrame
-	completionMenu  *tuist.CompletionMenu
-	keymapBar       *KeymapBar
-	editlineFocused bool
-	inputHistory    []string // raw encoded history entries (with mode prefix)
-	historyIndex    int      // -1 = not browsing history
-	historySaved    string   // saved input when browsing history
-	autoModeSwitch  bool
-	// navKeyAt is when the last NAV-mode key was pressed, feeding the
-	// turn-end auto-flip debounce in handleShellDone: a flip to insert mode
-	// under a user's actively navigating fingers turns their next nav keys
-	// into literal prompt text.
-	navKeyAt time.Time
+	shell          ShellHandler
+	shellCtx       context.Context
+	shellInterrupt context.CancelCauseFunc
+	promptFg       termenv.Color
+	promptErr      error
+	promptErrLabel *ErrorLabel
+	queuedMsgLabel *QueuedMessageLabel
+	agentRoster    *AgentRoster
+	statusLine     *StatusLine
+	statusLineData StatusLineData
+	llmCostFn      LLMCostFunc
+	textInput      *tuist.TextInput
+	promptFrame    *PromptFrame
+	completionMenu *tuist.CompletionMenu
+	keymapBar      *KeymapBar
+	inputHistory   []string // raw encoded history entries (with mode prefix)
+	historyIndex   int      // -1 = not browsing history
+	historySaved   string   // saved input when browsing history
 	// turnsRunning counts the handler turns in flight. Prompt turns are no
 	// longer serialized -- each runs server-side in its own agent runtime --
 	// so several can overlap, and "is anything running" is a count, not a
@@ -305,10 +298,11 @@ type frontendPretty struct {
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
 
-	// Add prompt field
-	formWrap   *teav1.Wrap // bubbletea v1 adapter for huh.Form
-	formModel  *huh.Form   // direct reference for KeyBinds()
-	formSpacer *blankLine  // spacer beneath the form, removed alongside it
+	// Prompt forms are serialized through one active request and a FIFO. Each
+	// mounted form owns a scoped Tuist focus handle so teardown can restore the
+	// exact component that was focused before it was presented.
+	activeForm   *activePromptForm
+	pendingForms []*promptFormRequest
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -336,9 +330,9 @@ type frontendPretty struct {
 	viewDirty bool
 
 	// search state (Vim-style "/" search)
-	searchActive         bool                  // search input bar is shown
-	searchQuery          string                // confirmed search string
-	searchInput          *tuist.TextInput      // the "/" prompt input (non-nil while searchActive)
+	searchQuery          string           // confirmed search string
+	searchInput          *tuist.TextInput // the "/" prompt input while search is active
+	searchFocus          *tuist.FocusHandle
 	searchMatches        []searchMatch         // ordered list of all matches
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
@@ -347,6 +341,7 @@ type frontendPretty struct {
 	// test view state
 	testsMode        bool
 	testsReturnSpan  dagui.SpanID
+	testsFocus       *tuist.FocusHandle
 	fullscreenTests  *TestView
 	testViews        map[dagui.SpanID]*TestView
 	orphanTests      *TestView
@@ -355,8 +350,9 @@ type frontendPretty struct {
 
 	// fullscreen log pager state
 	logPager       *LogPagerView
-	logPagerReturn func()
+	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
+	logSearchFocus *tuist.FocusHandle
 }
 
 // Verify interface compliance at compile time.
@@ -1047,12 +1043,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.tui.AddChild(fe.promptFrame)
 	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
-	fe.tui.SetShowHardwareCursor(true)
 
 	// put the bowtie on
 	fe.syncPrompt()
 	fe.tui.SetFocus(fe.textInput)
-	fe.editlineFocused = true
+	fe.syncHardwareCursor()
 	fe.keymapBar.Update()
 }
 
@@ -1087,8 +1082,7 @@ func (fe *frontendPretty) stopShell() {
 	fe.shell = nil
 	fe.shellCtx = nil
 	fe.completionMenu = nil
-	fe.editlineFocused = false
-	fe.tui.SetShowHardwareCursor(false)
+	fe.syncHardwareCursor()
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -1326,46 +1320,176 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 		return ErrNonInteractive
 	}
 
-	done := make(chan struct{}, 1)
-	wrapCh := make(chan *teav1.Wrap, 1)
-
+	req := fe.newPromptFormRequest(ctx, form, nil)
 	fe.dispatch(func() {
-		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
-			close(done)
-		})
+		fe.enqueuePromptForm(req)
 		fe.Update()
 	})
 
 	select {
 	case <-ctx.Done():
-		// The caller gave up on the form (e.g. an OAuth browser callback
-		// delivered the code first). Dismiss it so it doesn't linger in the TUI.
-		wrap := <-wrapCh
 		fe.dispatch(func() {
-			fe.removeForm(wrap)
+			fe.cancelPromptForm(req)
 		})
 		return ctx.Err()
-	case <-done:
-		return nil
+	case <-req.done:
+		return req.err
 	}
 }
 
-// removeForm tears the given prompt form out of the TUI. It no-ops unless wrap
-// is still the active form, so a late dismissal (e.g. from a cancelled context)
-// can't remove a form that has since been replaced. Must run on the UI goroutine.
-func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
-	if fe.formWrap == nil || fe.formWrap != wrap {
+type promptFormRequest struct {
+	ctx      context.Context
+	model    *huh.Form
+	result   func(*huh.Form)
+	done     chan struct{}
+	err      error
+	finished bool
+}
+
+type activePromptForm struct {
+	request *promptFormRequest
+	model   *huh.Form
+	wrap    *teav1.Wrap
+	spacer  *blankLine
+	focus   *tuist.FocusHandle
+}
+
+func (fe *frontendPretty) newPromptFormRequest(ctx context.Context, form *huh.Form, result func(*huh.Form)) *promptFormRequest {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &promptFormRequest{
+		ctx:    ctx,
+		model:  form,
+		result: result,
+		done:   make(chan struct{}),
+	}
+}
+
+// handlePromptForm queues an internal form. External callers should use
+// HandleForm so cancellation participates in the same lifecycle.
+func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *promptFormRequest {
+	req := fe.newPromptFormRequest(context.Background(), form, result)
+	fe.enqueuePromptForm(req)
+	return req
+}
+
+// enqueuePromptForm serializes prompt forms in FIFO order. Must run on the UI
+// goroutine.
+func (fe *frontendPretty) enqueuePromptForm(req *promptFormRequest) {
+	if req == nil || req.finished {
 		return
 	}
-	fe.tui.RemoveChild(fe.formWrap)
-	if fe.formSpacer != nil {
-		fe.tui.RemoveChild(fe.formSpacer)
-		fe.formSpacer = nil
+	fe.pendingForms = append(fe.pendingForms, req)
+	fe.activateNextPromptForm()
+}
+
+func (fe *frontendPretty) activateNextPromptForm() {
+	if fe.activeForm != nil {
+		return
 	}
-	fe.formWrap = nil
-	fe.formModel = nil
-	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+	for len(fe.pendingForms) > 0 {
+		req := fe.pendingForms[0]
+		fe.pendingForms = fe.pendingForms[1:]
+		if req == nil || req.finished {
+			continue
+		}
+		if req.ctx.Err() != nil {
+			fe.finishPromptFormRequest(req, req.ctx.Err())
+			continue
+		}
+		fe.presentPromptForm(req)
+		return
+	}
+}
+
+func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
+	req.model.SubmitCmd = tea.Quit
+	req.model.CancelCmd = tea.Quit
+	model := req.model.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	// Cap the form at half the screen so a tall field (e.g. the .resume session
+	// picker's long Select) stays scrollable instead of dominating the terminal.
+	if h := fe.window.Height; h > 0 {
+		model = model.WithHeight(max(h/2, 3))
+	}
+	active := &activePromptForm{
+		request: req,
+		model:   model,
+		wrap:    teav1.New(model),
+		spacer:  &blankLine{},
+	}
+	active.wrap.OnQuit(func() {
+		fe.completePromptForm(active, true)
+	})
+
+	// Insert before keymapBar, then acquire scoped focus. Tuist preserves input
+	// typed before the wrapper's first render and restores the captured owner
+	// when this form is dismissed.
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(active.wrap)
+	fe.tui.AddChild(active.spacer)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.activeForm = active
+	active.focus = fe.tui.PushFocus(active.wrap)
+	fe.syncHardwareCursor()
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+}
+
+// completePromptForm tears down exactly one form. Late callbacks and duplicate
+// cancellation are harmless because identity and finished state are checked.
+func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeResult bool) {
+	if active == nil || fe.activeForm != active || active.request.finished {
+		return
+	}
+
+	active.focus.Restore()
+	fe.tui.RemoveChild(active.wrap)
+	fe.tui.RemoveChild(active.spacer)
+	fe.activeForm = nil
+	fe.syncHardwareCursor()
+
+	req := active.request
+	fe.finishPromptFormRequest(req, nil)
+	if invokeResult && req.result != nil {
+		// Teardown happens before callbacks so chained forms cannot orphan the
+		// wrapper that just quit.
+		req.result(active.model)
+	}
+	fe.activateNextPromptForm()
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
 	fe.Update()
+}
+
+func (fe *frontendPretty) finishPromptFormRequest(req *promptFormRequest, err error) {
+	if req == nil || req.finished {
+		return
+	}
+	req.err = err
+	req.finished = true
+	close(req.done)
+}
+
+func (fe *frontendPretty) cancelPromptForm(req *promptFormRequest) {
+	if req == nil || req.finished {
+		return
+	}
+	if fe.activeForm != nil && fe.activeForm.request == req {
+		fe.completePromptForm(fe.activeForm, false)
+		return
+	}
+	for i, pending := range fe.pendingForms {
+		if pending != req {
+			continue
+		}
+		fe.pendingForms = append(fe.pendingForms[:i], fe.pendingForms[i+1:]...)
+		break
+	}
+	fe.finishPromptFormRequest(req, req.ctx.Err())
+	fe.activateNextPromptForm()
 }
 
 // PrintAbove satisfies llmconfig.AbovePrinter: it writes text into the terminal
@@ -1391,42 +1515,6 @@ type blankLine struct{ tuist.Compo }
 
 func (*blankLine) Render(ctx tuist.Context) {
 	ctx.Line("")
-}
-
-func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
-	form.SubmitCmd = tea.Quit
-	form.CancelCmd = tea.Quit
-	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
-	// Cap the form at half the screen so a tall field (e.g. the .resume session
-	// picker's long Select) stays scrollable instead of dominating — or
-	// overflowing — the terminal. huh propagates this to its Selects, which then
-	// scroll within the allotted height. Only applied when the window height is
-	// known (>0); otherwise huh sizes to content as before.
-	if h := fe.window.Height; h > 0 {
-		fe.formModel = fe.formModel.WithHeight(max(h/2, 3))
-	}
-	fe.formWrap = teav1.New(fe.formModel)
-	fe.formSpacer = &blankLine{}
-	wrap := fe.formWrap
-	fe.formWrap.OnQuit(func() {
-		// Remove this form BEFORE invoking result: the callback may
-		// synchronously install a replacement form (e.g. branch()'s "custom
-		// prompt" path chains a second form via handlePromptForm), which
-		// reassigns fe.formWrap/fe.formModel/fe.formSpacer. Removing afterwards
-		// would then see the replacement, hit removeForm's guard and no-op,
-		// leaking this form (and its spacer) on screen. Capture the model first
-		// since removeForm nils fe.formModel.
-		model := fe.formModel
-		fe.removeForm(wrap)
-		result(model)
-	})
-	// Insert before keymapBar
-	fe.tui.RemoveChild(fe.keymapBar)
-	fe.tui.AddChild(fe.formWrap)
-	fe.tui.AddChild(fe.formSpacer)
-	fe.tui.AddChild(fe.keymapBar)
-	fe.tui.SetFocus(fe.formWrap)
-	return wrap
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -1995,6 +2083,100 @@ func (fe *frontendPretty) setupTUI() {
 	fe.tui.SetFocus(fe)
 }
 
+func (fe *frontendPretty) inputFocused() bool {
+	return fe.tui != nil && fe.textInput != nil && fe.tui.IsFocused(fe.textInput)
+}
+
+func (fe *frontendPretty) formFocused() bool {
+	return fe.tui != nil && fe.activeForm != nil && fe.tui.IsFocused(fe.activeForm.wrap)
+}
+
+func (fe *frontendPretty) searchFocused() bool {
+	return fe.tui != nil && fe.searchInput != nil && fe.tui.IsFocused(fe.searchInput)
+}
+
+func (fe *frontendPretty) logSearchFocused() bool {
+	return fe.tui != nil && fe.logSearchInput != nil && fe.tui.IsFocused(fe.logSearchInput)
+}
+
+func (fe *frontendPretty) logPagerFocused() bool {
+	return fe.tui != nil && fe.logPager != nil && fe.tui.IsFocused(fe.logPager)
+}
+
+func (fe *frontendPretty) testsFocusTarget() tuist.Component {
+	if fe.fullscreenTests == nil {
+		return nil
+	}
+	if children := fe.fullscreenTests.focusedChildren; children != nil && children.focusedSpan.IsValid() && children.sync() {
+		if children.scope.rows != nil && children.scope.rows.BySpan[children.focusedSpan] != nil {
+			if tree := children.scope.spanTrees[children.focusedSpan]; tree != nil {
+				return tree
+			}
+		}
+	}
+	return fe.fullscreenTests
+}
+
+func (fe *frontendPretty) testsFocused() bool {
+	if fe.tui == nil || !fe.testsMode || fe.fullscreenTests == nil {
+		return false
+	}
+	focused := fe.tui.Focused()
+	if focused == fe.fullscreenTests {
+		return true
+	}
+	for _, children := range fe.testSpanChildren {
+		for _, tree := range children.scope.spanTrees {
+			if focused == tree {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (fe *frontendPretty) navigationFocused() bool {
+	if fe.tui == nil {
+		return false
+	}
+	focused := fe.tui.Focused()
+	if focused == fe {
+		return true
+	}
+	for _, tree := range fe.spanTrees {
+		if focused == tree {
+			return true
+		}
+	}
+	return false
+}
+
+func (fe *frontendPretty) navigationTarget() tuist.Component {
+	if fe.FocusedSpan.IsValid() {
+		if tree := fe.spanTrees[fe.FocusedSpan]; tree != nil {
+			return tree
+		}
+	}
+	return fe
+}
+
+func (fe *frontendPretty) focusNavigationTarget() {
+	fe.tui.SetFocus(fe.navigationTarget())
+	fe.syncHardwareCursor()
+}
+
+// syncHardwareCursor keeps terminal cursor visibility as a rendering side
+// effect of Tuist focus. It is never consulted to decide who receives input.
+func (fe *frontendPretty) syncHardwareCursor() {
+	if fe.tui == nil {
+		return
+	}
+	focused := fe.tui.Focused()
+	show := focused != nil && (focused == fe.textInput || focused == fe.searchInput ||
+		focused == fe.logSearchInput || (fe.activeForm != nil && focused == fe.activeForm.wrap))
+	fe.tui.SetShowHardwareCursor(show)
+}
+
 // OnMount is called by tuist when the component is mounted into the TUI tree.
 // It starts the frame ticker and, on the first mount, spawns the run function.
 func (fe *frontendPretty) OnMount(ctx tuist.Context) {
@@ -2376,32 +2558,8 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 }
 
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
-	if fe.formModel != nil {
-		return fe.formModel.KeyBinds()
-	}
-
-	if fe.editlineFocused {
-		bnds := []key.Binding{
-			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
-		}
-		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
-			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
-			)
-		}
-		// Roster focus is shown only once there is more than one agent to
-		// switch between. A single-agent roster remains a state display.
-		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
-			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("alt+1"), key.WithHelp("alt+1…9", "focus agent")),
-				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
-					KeyEnabled(fe.lastFocusedAgent != "")),
-			)
-		}
-		if fe.shell != nil {
-			bnds = append(bnds, fe.shell.KeyBindings(out)...)
-		}
-		return bnds
+	if fe.formFocused() {
+		return fe.activeForm.model.KeyBinds()
 	}
 
 	var quitMsg string
@@ -2421,7 +2579,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		}
 		noExitHelp = out.String(noExitHelp).Foreground(color).String()
 	}
-	if fe.logSearchInput != nil {
+	if fe.searchFocused() || fe.logSearchFocused() {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("enter"),
 				key.WithHelp("enter", "search")),
@@ -2429,7 +2587,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				key.WithHelp("esc", "cancel")),
 		}
 	}
-	if fe.logPager != nil {
+	if fe.logPagerFocused() {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"),
 				key.WithHelp("↑↓", "scroll")),
@@ -2456,7 +2614,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		}
 	}
 	var focused *dagui.Span
-	if fe.testsMode {
+	if fe.testsFocused() {
 		enterHelp := "detail"
 		enterEnabled := false
 		if fe.fullscreenTests != nil {
@@ -2496,6 +2654,29 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.NewBinding(key.WithKeys("ctrl+c"),
 				key.WithHelp("ctrl+c", quitMsg)),
 		}
+	}
+	if fe.inputFocused() {
+		bnds := []key.Binding{
+			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
+		}
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
+			)
+		}
+		// Roster focus is shown only once there is more than one agent to
+		// switch between. A single-agent roster remains a state display.
+		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("alt+1"), key.WithHelp("alt+1…9", "focus agent")),
+				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
+					KeyEnabled(fe.lastFocusedAgent != "")),
+			)
+		}
+		if fe.shell != nil {
+			bnds = append(bnds, fe.shell.KeyBindings(out)...)
+		}
+		return bnds
 	}
 	if fe.FocusedSpan.IsValid() {
 		focused = fe.db.Spans.Map[fe.FocusedSpan]
@@ -2755,7 +2936,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// The zoom header is pinned above the body so the zoomed span stays in view.
 	ctx.Lines(zoomHeader...)
 	ctx.Lines(body...)
-	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
+	// NOTE: textInput, active forms, and keymapBar are rendered as siblings in the
 	// TUI container, not here (accounted for in reserved above). Their cursors
 	// propagate through tuist automatically.
 }
@@ -3421,14 +3602,13 @@ func (fe *frontendPretty) editlineHeight() int {
 	return height
 }
 
-// formHeight returns the estimated line count of the form wrap
-// for chrome-height budgeting. The actual rendering is handled by tuist
-// (formWrap is a sibling component).
+// formHeight returns the estimated line count of the active form wrapper for
+// chrome-height budgeting. The actual rendering is handled by Tuist.
 func (fe *frontendPretty) formHeight() int {
-	if fe.formModel == nil {
+	if fe.activeForm == nil {
 		return 0
 	}
-	view := fe.formModel.View()
+	view := fe.activeForm.model.View()
 	if view == "" {
 		return 0
 	}
@@ -3571,11 +3751,6 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		return
 	}
 
-	if fe.formWrap != nil {
-		// avoid stealing focus from a form if present
-		return
-	}
-
 	if fe.focusedIndex() < 0 {
 		// durability: focused span disappeared from view
 		fe.autoFocus = true
@@ -3596,11 +3771,14 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
 
-	// Re-apply tuist focus after sync. The focus() call above may have
-	// targeted a SpanTreeView that didn't exist yet (new span on first
-	// appearance). Now that syncSpanTreeState has created all
-	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
-	fe.applyTuistFocus()
+	// If navigation was waiting on the stable frontend fallback while the
+	// selected SpanTreeView was created, transfer focus to that view now. Never
+	// steal focus from an input, form, pager, or tests view.
+	if fe.tui.IsFocused(fe) {
+		if target := fe.navigationTarget(); target != fe {
+			fe.tui.SetFocus(target)
+		}
+	}
 }
 
 // surfaceRoot returns the span the reveal-independent surfacing (checks,
@@ -3901,7 +4079,7 @@ func (fe *frontendPretty) navFocusLastAgent() bool {
 // the whole trace, and focus does not change it. doBranch ends the same way,
 // for the same reason.
 func (fe *frontendPretty) returnToPromptAfterFocus() {
-	fe.enterInsertMode(false)
+	fe.enterInsertMode()
 }
 
 // focusAgent points the prompt at one roster entry: the draft in the input is
@@ -4395,31 +4573,6 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
-}
-
-// applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
-// test view in tests mode, the SpanTreeView for the selected span in trace mode,
-// or fe itself when no span is selected. Skipped when editline or search has
-// focus.
-func (fe *frontendPretty) applyTuistFocus() {
-	if fe.editlineFocused || fe.searchActive || fe.logSearchInput != nil {
-		return
-	}
-	if fe.logPager != nil {
-		fe.tui.SetFocus(fe.logPager)
-		return
-	}
-	if fe.testsMode && fe.fullscreenTests != nil {
-		fe.tui.SetFocus(fe.fullscreenTests)
-		return
-	}
-	if fe.FocusedSpan.IsValid() {
-		if sr, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			fe.tui.SetFocus(sr)
-			return
-		}
-	}
-	fe.tui.SetFocus(fe)
 }
 
 // syncSpanTreeState synchronizes the main trace SpanTreeView component tree
@@ -4940,21 +5093,17 @@ func (fe *frontendPretty) focusedIndex() int {
 }
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
+	moveKeyboard := fe.navigationFocused()
 	oldSpan := fe.FocusedSpan
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
-			fe.tui.SetFocus(fe)
-		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
-			if sr, ok := fe.spanTrees[newSpan]; ok {
-				fe.tui.SetFocus(sr)
-			}
-		}
+	}
+	if moveKeyboard {
+		fe.focusNavigationTarget()
 	}
 	// Invalidate the render caches of old and new SpanTreeViews when the
 	// selected span changes. Tuist SetFocus handles visual focus invalidation;
@@ -4981,8 +5130,8 @@ func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
 // ---------- tuist.Interactive -----------------------------------------------
 
 // HandleKeyPress implements tuist.Interactive. It dispatches key events to the
-// nav handler. When the TextInput or formWrap is focused, keys go directly to
-// them via tuist's focus routing.
+// navigation handler. Focused inputs and forms receive keys directly through
+// Tuist's focus routing.
 func (fe *frontendPretty) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool {
 	fe.handleNavKeyUV(ev)
 
@@ -5022,7 +5171,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.syncPrompt()
 		return true
 	case "esc", "alt+esc":
-		fe.enterNavMode(false)
+		fe.enterNavMode()
 		fe.syncPrompt()
 		return true
 	case "alt++", "alt+=":
@@ -5125,11 +5274,6 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	keyStr := k.String()
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
-	// Feed the turn-end auto-flip debounce: only NAV keys count, so a fast
-	// turn submitted from the prompt (whose enter also records a keypress)
-	// still hands the prompt back on completion.
-	fe.navKeyAt = time.Now()
-
 	if fe.logPager != nil {
 		switch keyStr {
 		case "q", "esc", "alt+esc":
@@ -5305,7 +5449,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		fe.recalculateViewLocked()
 		return
 	case "tab", "i":
-		fe.enterInsertMode(false)
+		fe.enterInsertMode()
 		return
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		// Roster focus on bare digits. Prompt mode has to hide the same jump
@@ -5410,10 +5554,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 // handleInputComplete is called when the editline signals that input is
 // complete (user pressed Enter on a complete line).
 func (fe *frontendPretty) handleInputComplete() {
-	if !fe.editlineFocused {
-		return
-	}
-
+	// TextInput.OnSubmit is only reached through Tuist's focused input routing.
 	// reset prompt error state
 	fe.clearPromptError()
 
@@ -5541,9 +5682,11 @@ func (fe *frontendPretty) startShellHandle(value string) {
 		fe.serialRunning = true
 	}
 
-	// switch back to following the bottom and re-enter nav mode
-	fe.goEnd()
-	fe.enterNavMode(true)
+	// A prompt submission may resume following new output, but a queued turn
+	// starting after the user moved elsewhere must not retarget navigation.
+	if fe.inputFocused() {
+		fe.goEnd()
+	}
 
 	go func() {
 		if serial {
@@ -5558,14 +5701,6 @@ func (fe *frontendPretty) startShellHandle(value string) {
 	}()
 }
 
-// autoModeSwitchDebounce is how recently a key must have been pressed for the
-// turn-end auto-flip to insert mode to be suppressed. The flip is a
-// convenience for an idle user; under active navigation it yanks the keyboard
-// out from under their fingers, turning nav keys ('2', 'i', arrow history
-// recall) into literal prompt text. A user left in nav mode is one `i` away
-// from the prompt either way.
-const autoModeSwitchDebounce = 1500 * time.Millisecond
-
 func (fe *frontendPretty) handleShellDone(err error, serial bool) {
 	fe.promptErr = err
 	if fe.promptErrLabel != nil {
@@ -5575,15 +5710,6 @@ func (fe *frontendPretty) handleShellDone(err error, serial bool) {
 		fe.promptFg = termenv.ANSIGreen
 	} else {
 		fe.promptFg = termenv.ANSIRed
-	}
-	if fe.autoModeSwitch {
-		// Only flip when nav-mode keys have been quiet for a moment (or the
-		// prompt already has focus, making the flip a no-op refocus):
-		// autoModeSwitch stays set, so a later turn's end still hands the
-		// prompt back once the user has gone idle.
-		if fe.editlineFocused || time.Since(fe.navKeyAt) >= autoModeSwitchDebounce {
-			fe.enterInsertMode(true)
-		}
 	}
 	fe.syncPrompt()
 	if fe.turnsRunning > 0 {
@@ -5604,18 +5730,15 @@ func (fe *frontendPretty) handleShellDone(err error, serial bool) {
 
 // ---------- mode switching --------------------------------------------------
 
-func (fe *frontendPretty) enterNavMode(auto bool) {
-	fe.autoModeSwitch = auto
-	fe.editlineFocused = false
-	fe.recalculateViewLocked() // also applies tuist focus via applyTuistFocus
+func (fe *frontendPretty) enterNavMode() {
+	fe.focusNavigationTarget()
 	fe.keymapBar.Update()
 }
 
 func (fe *frontendPretty) enterSearchMode() {
-	if fe.searchActive {
+	if fe.searchInput != nil {
 		return
 	}
-	fe.searchActive = true
 	fe.searchInput = tuist.NewTextInput("")
 	fe.searchInput.Prompt = "/"
 	fe.searchInput.OnSubmit = func(ctx tuist.Context, value string) bool {
@@ -5624,23 +5747,24 @@ func (fe *frontendPretty) enterSearchMode() {
 	}
 	fe.searchInput.KeyInterceptor = fe.interceptSearchKey
 
-	// Insert before keymapBar.
+	// Insert before keymapBar and temporarily own focus.
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.searchInput)
 	fe.tui.AddChild(fe.keymapBar)
-	fe.tui.SetFocus(fe.searchInput)
-	fe.tui.SetShowHardwareCursor(true)
+	fe.searchFocus = fe.tui.PushFocus(fe.searchInput)
+	fe.syncHardwareCursor()
 	fe.keymapBar.Update()
 }
 
 func (fe *frontendPretty) exitSearchMode() {
-	if fe.searchInput != nil {
-		fe.tui.RemoveChild(fe.searchInput)
-		fe.searchInput = nil
+	if fe.searchInput == nil {
+		return
 	}
-	fe.searchActive = false
-	fe.tui.SetShowHardwareCursor(fe.textInput != nil && fe.editlineFocused)
-	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+	fe.searchFocus.Restore()
+	fe.tui.RemoveChild(fe.searchInput)
+	fe.searchInput = nil
+	fe.searchFocus = nil
+	fe.syncHardwareCursor()
 	fe.keymapBar.Update()
 }
 
@@ -5673,13 +5797,11 @@ func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEven
 	return false
 }
 
-func (fe *frontendPretty) enterInsertMode(auto bool) {
-	fe.autoModeSwitch = auto
+func (fe *frontendPretty) enterInsertMode() {
 	if fe.textInput != nil {
-		fe.editlineFocused = true
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
-		fe.recalculateViewLocked()
+		fe.syncHardwareCursor()
 		fe.keymapBar.Update()
 	}
 }
@@ -5829,7 +5951,7 @@ func (fe *frontendPretty) editPrompt() {
 			fe.clearPromptError()
 			fe.textInput.SetValue(prompt)
 			fe.goEnd()
-			fe.enterInsertMode(false)
+			fe.enterInsertMode()
 			fe.syncPrompt()
 			fe.Update()
 		})
@@ -5921,7 +6043,7 @@ func (fe *frontendPretty) doBranch(encodedID string, summary BranchSummary) {
 				// After branching, follow the bottom and switch to insert mode
 				// so the user can immediately see new spans and type a prompt.
 				fe.goEnd()
-				fe.enterInsertMode(false)
+				fe.enterInsertMode()
 				fe.syncPrompt()
 				fe.Update()
 			})
@@ -6187,7 +6309,6 @@ func (fe *frontendPretty) initTextInput() {
 		fe.handleInputComplete()
 		return true // clear input
 	}
-	fe.editlineFocused = true
 }
 
 // syncPrompt refreshes the text input prompt from the shell handler.
@@ -8092,61 +8213,31 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	done := make(chan struct{})
-
-	fe.dispatch(func() {
-		fe.handlePromptForm(
-			NewForm(
-				huh.NewGroup(
-					huh.NewConfirm().
-						Title(title).
-						Description(strings.TrimSpace((&Markdown{
-							Content: message,
-							Width:   fe.window.Width,
-						}).View())).
-						Value(dest),
-				),
-			),
-			func(f *huh.Form) { close(done) },
-		)
-		fe.Update()
-	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
+	return fe.HandleForm(ctx, NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(title).
+				Description(strings.TrimSpace((&Markdown{
+					Content: message,
+					Width:   fe.window.Width,
+				}).View())).
+				Value(dest),
+		),
+	))
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
-	done := make(chan struct{})
-
-	fe.dispatch(func() {
-		fe.handlePromptForm(
-			NewForm(
-				huh.NewGroup(
-					huh.NewInput().
-						Title(title).
-						Description(strings.TrimSpace((&Markdown{
-							Content: message,
-							Width:   fe.window.Width,
-						}).View())).
-						Value(dest),
-				),
-			),
-			func(f *huh.Form) { close(done) },
-		)
-		fe.Update()
-	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
+	return fe.HandleForm(ctx, NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(title).
+				Description(strings.TrimSpace((&Markdown{
+					Content: message,
+					Width:   fe.window.Width,
+				}).View())).
+				Value(dest),
+		),
+	))
 }
 
 func handleTelemetryErrorOutput(w io.Writer, to TermOutput, err error) {
