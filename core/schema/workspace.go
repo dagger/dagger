@@ -508,7 +508,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("checkpoint", s.checkpoint).
 			View(AfterVersion("v1.0.0-beta.10")).
 			DoNotCache("Captures live client Git state after local safety preflight").
-			Doc("Return a frozen, host-independent Git workspace recipe.").
+			Doc("Return this workspace as a frozen, host-independent value whose recipe can be replayed without the originating client.",
+				"Replayable sources pass through (with mutable Git refs pinned); an eligible client-local Git checkout is captured; unsupported or non-replayable sources fail with the offending recipe leaf named.").
 			Args(
 				dagql.Arg("include").Doc("Explicitly include and approve matching nonignored paths."),
 				dagql.Arg("exclude").Doc("Exclude matching paths from capture."),
