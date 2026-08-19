@@ -124,6 +124,34 @@ func TestCaptureGitBuildsTwoRefBundleFromTemporaryObjects(t *testing.T) {
 	require.Error(t, gitErr(home, repo, "cat-file", "-e", meta.GetWorktreeSha()+"^{commit}"))
 }
 
+func TestCaptureGitStagesApprovedBytesWithoutCleanFilters(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, remote := initCaptureRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("base.txt filter=leak\n"), 0o600))
+	gitCmd(t, home, repo, "add", ".gitattributes")
+	gitCmd(t, home, repo, "commit", "-m", "configure attributes")
+	gitCmd(t, home, repo, "push", "origin", "main")
+
+	secret := "ignored-secret-must-not-enter-bundle\n"
+	require.NoError(t, os.WriteFile(filepath.Join(repo, ".git", "info", "exclude"), []byte("secret.ignored\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "secret.ignored"), []byte(secret), 0o600))
+	gitCmd(t, home, repo, "config", "filter.leak.clean", "cat secret.ignored")
+	gitCmd(t, home, repo, "config", "filter.leak.required", "true")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "base.txt"), []byte("approved raw bytes\n"), 0o600))
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{Include: []string{"base.txt"}})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+	bundlePath := filepath.Join(t.TempDir(), "capture.bundle")
+	require.NoError(t, os.WriteFile(bundlePath, srv.payload(CAPTURE_CHUNK_BUNDLE), 0o600))
+	clone := filepath.Join(t.TempDir(), "clone")
+	gitCmd(t, home, "", "clone", remote, clone)
+	gitCmd(t, home, clone, "fetch", bundlePath, captureWorktreeRef+":"+captureWorktreeRef)
+	gitCmd(t, home, clone, "checkout", "--detach", meta.GetWorktreeSha())
+	require.Equal(t, "approved raw bytes\n", string(mustReadFile(t, filepath.Join(clone, "base.txt"))))
+	require.NotContains(t, string(srv.payload(CAPTURE_CHUNK_BUNDLE)), secret)
+}
+
 func TestCaptureGitRemoteHeadCleanOmitsBundleDirtyRestores(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, remote := initCaptureRepo(t)
