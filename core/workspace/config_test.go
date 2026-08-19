@@ -965,6 +965,11 @@ func TestSDKManagedPaths(t *testing.T) {
 		require.ErrorContains(t, err, "escapes the workspace root")
 	})
 
+	t.Run("reads Windows separators", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "apps/demo/.dagger/modules/greeter", mustResolve(t, "apps/demo", `.dagger\modules\greeter`))
+	})
+
 	t.Run("treats every entry as a path, never a ref", func(t *testing.T) {
 		t.Parallel()
 		// ResolveModuleEntrySource would hand this back untouched, reading the

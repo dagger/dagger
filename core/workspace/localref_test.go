@@ -27,6 +27,9 @@ func TestIsLocalRef(t *testing.T) {
 		{name: "dot segment below a subdirectory", source: "common/.dagger/mymod", isLocal: true},
 		{name: "dot segment deeply nested", source: "a/b/c/.dagger/mymod", isLocal: true},
 		{name: "dotted leaf below a subdirectory", source: "common/mymod.v2", isLocal: true},
+		// A path typed on Windows: no git ref separates with backslashes.
+		{name: "windows dot segment below a subdirectory", source: `common\.dagger\mymod`, isLocal: true},
+		{name: "windows dotted leaf", source: `common\mymod.v2`, isLocal: true},
 
 		{name: "github", source: "github.com/acme/mymod", isLocal: false},
 		{name: "github subdir", source: "github.com/acme/repo/sub/mymod", isLocal: false},

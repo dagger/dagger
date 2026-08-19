@@ -962,6 +962,8 @@ func (GeneratorsSuite) TestAPIClientInitDottedModulePath(ctx context.Context, t 
 	}{
 		{name: "workspace-relative", ref: "common/.dagger/target"},
 		{name: "explicitly relative", ref: "./common/.dagger/target"},
+		// A ref typed on Windows reaches the Linux engine verbatim.
+		{name: "windows separators", ref: `common\.dagger\target`},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			initialized := base.

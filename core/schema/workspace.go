@@ -2634,11 +2634,17 @@ func (s *workspaceSchema) selectWorkspaceGitRepository(
 //   - Absolute paths resolve from the workspace boundary (/).
 //
 // Returns a path relative to the workspace boundary.
+//
+// A path typed on Windows arrives spelled with backslashes, which mean nothing
+// to the Linux engine resolving it — filepath would keep "a\b" as a single
+// element named "a\b" — so separators are normalized first, as they are for
+// host paths (see engine/client/pathutil). The cost is that a file whose name
+// really does contain a backslash cannot be addressed through these APIs.
 func resolveWorkspacePath(pathArg, basePath string) (string, error) {
 	if basePath == "" {
 		basePath = "."
 	}
-	clean := filepath.Clean(pathArg)
+	clean := filepath.Clean(strings.ReplaceAll(pathArg, `\`, "/"))
 	var resolved string
 	if filepath.IsAbs(clean) {
 		// Absolute path: relative to workspace boundary (strip leading /).

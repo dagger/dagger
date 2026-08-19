@@ -216,7 +216,10 @@ func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref, configDir string) 
 	if !workspace.IsLocalRef(ref, "") {
 		return ref, ref, nil
 	}
-	cleaned := filepath.Clean(ref)
+	// A local ref may be spelled with Windows separators; every path below this
+	// point is addressed on the engine, where filepath treats a backslash as an
+	// ordinary character.
+	cleaned := filepath.Clean(strings.ReplaceAll(ref, `\`, "/"))
 	if filepath.IsAbs(cleaned) {
 		hostRoot, ok := ws.LocalSourceHostPath()
 		if !ok {

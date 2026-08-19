@@ -147,7 +147,9 @@ func ResolveModuleEntrySource(configDir, source string) string {
 // escaping the root is refused. Unlike ResolveModuleEntrySource these entries
 // are always paths, never refs, so no ref classification happens here.
 func ResolveSDKManagedPath(configDir, p string) (string, error) {
-	clean := path.Clean(filepath.ToSlash(p))
+	// filepath.ToSlash is a no-op on the engine reading this, so a path spelled
+	// with Windows separators is normalized explicitly.
+	clean := path.Clean(strings.ReplaceAll(p, `\`, "/"))
 	var resolved string
 	if path.IsAbs(clean) {
 		resolved = strings.TrimPrefix(clean, "/")

@@ -365,6 +365,25 @@ func TestResolveWorkspacePath(t *testing.T) {
 		got, err := resolveWorkspacePath("../../..", "services/payment")
 		require.ErrorContains(t, err, "escapes workspace root", fmt.Sprintf("got %q instead of an error", got))
 	})
+
+	// A path typed on Windows reaches the Linux engine spelled with
+	// backslashes, where filepath reads the whole thing as one element: the
+	// segments never separate, "\.." never collapses, and the escape guard
+	// above never sees a "..".
+	t.Run("windows separators", func(t *testing.T) {
+		for _, tc := range []struct{ arg, base, want string }{
+			{`src\gen`, "services/payment", "services/payment/src/gen"},
+			{`..\shared`, "services/payment", "services/shared"},
+			{`\shared\config`, "services/payment", "shared/config"},
+		} {
+			got, err := resolveWorkspacePath(tc.arg, tc.base)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got, tc.arg)
+		}
+
+		got, err := resolveWorkspacePath(`..\..\..`, "services/payment")
+		require.ErrorContains(t, err, "escapes workspace root", fmt.Sprintf("got %q instead of an error", got))
+	})
 }
 
 func TestWorkspacePathInOrLeadingToCwd(t *testing.T) {
