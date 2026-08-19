@@ -72,6 +72,9 @@ func TestServicesReportSurfacesInstances(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 
 	fe := NewWithDB(io.Discard, db)
+	// This section is agent-only, and span handles are part of that rendering
+	// contract. Do not make the test depend on the caller's ambient environment.
+	fe.FrontendOpts.AgentStyle = true
 	fe.recalculateViewLocked()
 
 	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
@@ -80,8 +83,8 @@ func TestServicesReportSurfacesInstances(t *testing.T) {
 		t.Fatal("servicesReport returned no lines")
 	}
 	got := strings.Join(lines, "\n")
-	if !strings.HasPrefix(lines[0], "SERVICES") {
-		t.Fatalf("top header = %q, want SERVICES heading\n%s", lines[0], got)
+	if lines[0] != "== SERVICES ==" {
+		t.Fatalf("top header = %q, want agent-style SERVICES heading\n%s", lines[0], got)
 	}
 
 	lineWith := func(substr string) string {
