@@ -387,7 +387,7 @@ func (LLMSuite) TestResumeSkipsCommitAlreadyExported(ctx context.Context, t *tes
 			git("add", "a.txt")
 			git("commit", "-m", "base")
 
-			resumed := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
+			resumed, _ := saveAndResume(ctx, t, arrangement, saveAutosave, workdir,
 				func(cA *dagger.Client) *dagger.LLM {
 					ws := cA.CurrentWorkspace().
 						WithNewFile("a.txt", "EDITED\n").
