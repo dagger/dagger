@@ -4,6 +4,8 @@ slug: /extending/sdks/dang
 description: "Develop Dagger modules with Dang, Dagger's native DSL — no codegen, no build step, no generated client files."
 ---
 
+import { daggerVersion } from '../../partials/version.js';
+
 # Dang SDK
 
 Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger-module.toml`.
@@ -80,9 +82,9 @@ dagger api call dang-sdk init --name my-ci
 
 The generated `dagger-module.toml`:
 
-```toml title=".dagger/modules/my-ci/dagger-module.toml"
+```toml title=".dagger/modules/my-ci/dagger-module.toml" template
 name = "my-ci"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 
 [runtime]
 source = "dang"
@@ -539,9 +541,9 @@ dagger api call dang-sdk mod deps remove --name hello
 
 The result is reflected in `dagger-module.toml`:
 
-```toml title="dagger-module.toml"
+```toml title="dagger-module.toml" template
 name = "my-ci"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 
 [runtime]
 source = "dang"
@@ -619,12 +621,12 @@ Because there is nothing to commit from generation, the `--ignore-generated` fla
 
 Each module declares the Dagger engine version it requires via `engineVersion` in `dagger-module.toml`. Manage it with `mod engine`:
 
-```shell
+```shell template
 # Read the required version (without the leading "v")
 dagger api call dang-sdk mod engine required
 
 # Pin to a specific version — returns a changeset
-dagger api call dang-sdk mod engine require --version v1.0.0-beta.3
+dagger api call dang-sdk mod engine require --version v{{ version }}
 
 # Pin to the current engine
 dagger api call dang-sdk mod engine require-current
@@ -633,7 +635,7 @@ dagger api call dang-sdk mod engine require-current
 dagger api call dang-sdk mod engine require-latest
 ```
 
-`engineVersion` must be a concrete version (e.g. `v1.0.0-beta.3`). `require-latest` resolves the latest stable release to its concrete version and pins that, keeping the module reproducible across machines and CI.
+`engineVersion` must be a concrete version (e.g. <code>v{daggerVersion}</code>). `require-latest` resolves the latest stable release to its concrete version and pins that, keeping the module reproducible across machines and CI.
 
 ## Workspace inputs
 

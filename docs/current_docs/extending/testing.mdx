@@ -40,12 +40,12 @@ Following these principles leads to writing tests for your Dagger modules using 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```bash
+```bash template
 mkdir tests
 cd tests
 cat > dagger-module.toml <<'EOF'
 name = "tests"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 source = "."
 
 [runtime]
@@ -77,12 +77,12 @@ func (m *Tests) Hello(ctx context.Context) error {
 </TabItem>
 <TabItem value="python" label="Python">
 
-```bash
+```bash template
 mkdir tests
 cd tests
 cat > dagger-module.toml <<'EOF'
 name = "tests"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 source = "."
 
 [runtime]
@@ -110,12 +110,12 @@ class Tests:
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```bash
+```bash template
 mkdir tests
 cd tests
 cat > dagger-module.toml <<'EOF'
 name = "tests"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 source = "."
 
 [runtime]
@@ -164,12 +164,12 @@ You can combine example modules with the test module pattern to turn those examp
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```bash
+```bash template
 mkdir -p examples/go
 cd examples/go
 cat > dagger-module.toml <<'EOF'
 name = "examples-go"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 source = "."
 
 [runtime]
@@ -200,12 +200,12 @@ func (m *Examples) GreeterHello(ctx context.Context) error {
 </TabItem>
 <TabItem value="python" label="Python">
 
-```bash
+```bash template
 mkdir -p examples/python
 cd examples/python
 cat > dagger-module.toml <<'EOF'
 name = "examples-python"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 source = "."
 
 [runtime]
@@ -233,12 +233,12 @@ class Examples:
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```bash
+```bash template
 mkdir -p examples/typescript
 cd examples/typescript
 cat > dagger-module.toml <<'EOF'
 name = "examples-typescript"
-engineVersion = "v1.0.0-beta.3"
+engineVersion = "v{{ version }}"
 source = "."
 
 [runtime]
