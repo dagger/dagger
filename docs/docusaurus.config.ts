@@ -22,18 +22,6 @@ const localSearchExclude = [
     .filter((v) => v !== latestVersion)
     .map((v) => `${baseUrl}${v}/`),
 ];
-const versionLabels: Record<string, string> = {};
-const versionSelectOptions = [
-  ...versions.map((version) => ({
-    label: versionLabels[version] ?? version,
-    path: version === latestVersion ? baseUrl : `${baseUrl}${version}/`,
-  })),
-  { label: "Next", path: `${baseUrl}next/` },
-];
-const versionSelectHtml = `<select class="docs-version-select" aria-label="Docs version" onchange="window.location.href=this.value">
-  ${versionSelectOptions.map(({ label, path }) => `<option value="${path}">${label}</option>`).join("")}
-</select>`;
-
 function daggerWebFontsPlugin() {
   return {
     name: "dagger-webfonts",
@@ -257,10 +245,9 @@ const config: Config = {
       },
       items: [
         {
-          type: "html",
+          type: "custom-docsVersionSelect",
           position: "right",
           className: "navbar-version-select-mobile",
-          value: versionSelectHtml,
         },
         {
           type: "docsVersionDropdown",
