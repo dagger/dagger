@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -128,4 +129,27 @@ func TestSweepLocalCacheTrash(t *testing.T) {
 	require.NoDirExists(t, trashA)
 	require.NoDirExists(t, trashB)
 	require.DirExists(t, keep)
+}
+
+func TestStartLocalCacheTrashSweeperBlocksUnderDiskPressure(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	trashDir := filepath.Join(rootDir, workerTrashPrefix+"1")
+	writeTrashFixtureTree(t, trashDir)
+
+	dstat, err := disk.GetDiskStat(rootDir)
+	require.NoError(t, err)
+	srv := &Server{
+		rootDir:     rootDir,
+		shutdownCtx: context.Background(),
+		workerGCPolicies: []dagqlCachePrunePolicy{
+			{MinFreeSpace: dstat.Available + 1},
+		},
+	}
+
+	srv.startLocalCacheTrashSweeper()
+
+	// The call does not return until the trash is removed, ensuring startup
+	// has reclaimed space before the engine begins creating files again.
+	require.NoDirExists(t, trashDir)
 }
