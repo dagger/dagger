@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -45,11 +46,39 @@ func agentSpanAttrs(ctx context.Context, name string, self dagql.ObjectResult[*A
 	}
 	if self.Self() != nil {
 		attrs = append(attrs, attribute.String(telemetryattrs.AgentIDAttr, self.Self().InstanceID))
+		attrs = append(attrs, genAIAgentAttrs(self.Self().InstanceID, name)...)
 	}
 	if dig, err := self.RecipeDigest(ctx); err == nil {
 		attrs = append(attrs, attribute.String(telemetryattrs.AgentCallDigestAttr, dig.String()))
 	}
 	return []trace.SpanStartOption{trace.WithAttributes(attrs...)}
+}
+
+// genAIAgentAttrs returns the standard GenAI identity attributes for an
+// agent. These ride both the long-lived agent span and each conversation
+// message span beneath it, allowing trace consumers to group and discover an
+// agent's conversation without depending on Dagger-specific attributes.
+func genAIAgentAttrs(id, name string) []attribute.KeyValue {
+	attrs := make([]attribute.KeyValue, 0, 2)
+	if id != "" {
+		attrs = append(attrs, semconv.GenAIAgentID(id))
+	}
+	if name != "" {
+		attrs = append(attrs, semconv.GenAIAgentName(name))
+	}
+	return attrs
+}
+
+// genAIAgentAttrsFromContext identifies conversation message spans emitted by
+// an asynchronous agent. Synchronous LLM conversations have no agent identity
+// and intentionally receive no agent attributes.
+func genAIAgentAttrsFromContext(ctx context.Context) []attribute.KeyValue {
+	agent, ok := AgentFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	self := agent.Self()
+	return genAIAgentAttrs(self.InstanceID, self.Name)
 }
 
 // EmitAgentState publishes one agent-state record, attributed to the loop
@@ -106,11 +135,13 @@ func emitAgentFailure(ctx context.Context, loopErr error) {
 	if loopErr == nil {
 		return
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "agent failure", trace.WithAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, "✘"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-	))
+	}
+	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
+	ctx, span := Tracer(ctx).Start(ctx, "agent failure", trace.WithAttributes(attrs...))
 	span.SetStatus(codes.Error, loopErr.Error())
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/plain"))
