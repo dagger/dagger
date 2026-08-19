@@ -5230,7 +5230,7 @@ func (s *workspaceSchema) agents(
 	},
 ) (*core.AgentMiddlewareGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) && !parent.IsPortableCheckpoint() {
+	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
 		return &core.AgentMiddlewareGroup{}, nil
 	}
 
@@ -5238,11 +5238,11 @@ func (s *workspaceSchema) agents(
 	exclude := workspaceIncludePatterns(args.Exclude)
 
 	var mods []dagql.ObjectResult[*core.Module]
-	if parent.IsPortableCheckpoint() {
-		// A restored checkpoint has no owning client or served-module snapshot.
-		// Resolve every configured module from its frozen value-backed rootfs;
-		// workspaceOverlayModules treats the checkpoint marker as a config-wide
-		// invalidation and therefore includes untouched local modules too.
+	if parent.IsModuleBearingValue() {
+		// A module-bearing value has no owning client or served-module snapshot.
+		// Resolve every configured module from its own value-backed tree;
+		// workspaceOverlayModules treats this as a config-wide invalidation and
+		// therefore includes untouched local modules too.
 		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
 		if err != nil {
 			return nil, err

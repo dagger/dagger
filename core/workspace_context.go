@@ -69,29 +69,33 @@ func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 }
 
 // WorkspaceServedSchema derives the served GraphQL schema for a specific
-// Workspace, independent of which client is currently executing. It switches to
-// the workspace's owning client (so the served-module set reflects that
-// workspace's dagger.toml / installed modules), forces the full module set to
-// load — the LLM needs the whole schema, not whatever a prior request
-// demand-loaded — and returns the built schema server.
+// Workspace, independent of which client is currently executing. Client-local
+// workspaces switch to their owning client and force that client's full module
+// set to load. Module-bearing value workspaces instead start from the default
+// core schema and load their complete configured module set from their own tree.
+// The LLM needs the whole schema, not whatever a prior request demand-loaded.
 //
 // This is what makes the LLM's schema derive from its OWN Workspace (the one it
 // was bound to via LLM.withWorkspace) rather than from the outer client's env.
 // For the common case where the bound Workspace is the current client's
 // workspace, the owning client is the current client, so this resolves to the
-// same schema the CLI serves. For a value/synthetic Workspace (no owning client
-// or config) it degrades gracefully to the current client's schema.
+// same schema the CLI serves. An ordinary Directory-backed synthetic Workspace
+// remains intentionally module-less and degrades to the current client's
+// schema.
 //
-// When the workspace carries a pending overlay that affects module loading —
-// staged edits to a module's source, or to dagger.toml itself — the affected
-// modules are re-resolved through the overlay and REPLACE their served
-// counterparts in the derived schema (newly-configured ones are appended). The
-// served set is a snapshot of the on-disk workspace taken at session start;
-// without this, an agent that edits its own modules and recomposes
-// (Workspace.agents) would compose the fresh module but serve tools from the
-// stale schema. Callers that resolve client-scoped root fields directly under
-// [WorkspaceServedContext] (e.g. currentTypeDefs introspection) still see the
-// served snapshot; the overlay layering applies to the derived schema only.
+// When a client-local workspace carries a pending overlay that affects module
+// loading — staged edits to a module's source, or to dagger.toml itself — the
+// affected modules are re-resolved through the overlay and REPLACE their served
+// counterparts in the derived schema (newly-configured ones are appended).
+// Module-bearing values use the same layering path for their complete configured
+// set, with default core dependencies as the base so no caller-local modules can
+// leak in. The client-local served set is a snapshot of the on-disk workspace
+// taken at session start; without replacement, an agent that edits its own
+// modules and recomposes (Workspace.agents) would compose the fresh module but
+// serve tools from the stale schema. Callers that resolve client-scoped root
+// fields directly under [WorkspaceServedContext] (e.g. currentTypeDefs
+// introspection) still see the served snapshot; tree layering applies to the
+// derived schema only.
 func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*dagql.Server, error) {
 	wsCtx, err := WorkspaceServedContext(ctx, ws)
 	if err != nil {
@@ -101,7 +105,12 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 	if err != nil {
 		return nil, err
 	}
-	deps, err := query.CurrentServedDeps(wsCtx)
+	var deps *SchemaBuilder
+	if ws.Self().IsModuleBearingValue() {
+		deps, err = query.DefaultDeps(wsCtx)
+	} else {
+		deps, err = query.CurrentServedDeps(wsCtx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("workspace served deps: %w", err)
 	}
@@ -129,14 +138,15 @@ var overlayDepsCache = struct {
 
 const overlayDepsCacheLimit = 64
 
-// workspaceOverlayServedDeps layers the workspace overlay's re-resolved modules
-// onto the served deps, replacing same-named entries. No overlay influence
-// returns deps unchanged. If the overlay cannot load, the whole overlay is
-// discarded for schema serving and the client's last known-good served deps are
-// retained. Explicit Workspace.agents recomposition remains strict; this
+// workspaceOverlayServedDeps layers modules resolved from the workspace tree
+// onto the base deps. For client-local overlays these replace only affected
+// served modules; for module-bearing values they are the complete configured
+// set layered onto default core deps. No tree influence returns deps unchanged.
+// If a module cannot load, the whole tree layer is discarded and the base deps
+// are retained. Explicit Workspace.agents recomposition remains strict; this
 // fallback only keeps an already-composed LLM's repair tools callable.
 func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Workspace], deps *SchemaBuilder) (*SchemaBuilder, error) {
-	if _, ok := ws.Self().OverlayChanges(); !ok {
+	if _, ok := ws.Self().OverlayChanges(); !ok && !ws.Self().IsModuleBearingValue() {
 		return deps, nil
 	}
 
@@ -193,9 +203,12 @@ func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Work
 }
 
 // WorkspaceServedContext switches ctx to the Workspace's owning client and
-// forces its served modules to load, returning the switched context. Under this
-// context the client-scoped resolvers (CurrentServedDeps, currentTypeDefs,
-// currentModule) see the workspace's OWN served schema — the same switch
+// forces that client's served modules to load, returning the switched context.
+// Module-bearing values have no owning client or served snapshot, so their
+// schema starts from default deps and loads modules from the value tree in
+// [WorkspaceServedSchema]. Under this context the client-scoped resolvers
+// (CurrentServedDeps, currentTypeDefs, currentModule) for client-local
+// workspaces see the workspace's OWN served schema — the same switch
 // [WorkspaceServedSchema] makes for the schema server, exposed separately so
 // callers that resolve those root fields directly (e.g. the LLM's inspect tool
 // enumerating module entrypoints) resolve them against the same workspace.
@@ -203,6 +216,9 @@ func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspac
 	wsCtx, err := workspaceClientContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
+	}
+	if ws.Self().IsModuleBearingValue() {
+		return wsCtx, nil
 	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
