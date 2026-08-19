@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -1016,12 +1017,14 @@ func verifyCaptureBundle(ctx context.Context, stagingRepo, sourceObjects, tmpDir
 	if _, err := runHostGit(ctx, tmpDir, "init", "--bare", "--object-format="+objectFormat, verifyRepo); err != nil {
 		return errors.New("initialize bundle verification database failed")
 	}
+	packOffset := bytes.Index(data, []byte("\n\n")) + 2
 	alternateEnv := []string{"GIT_ALTERNATE_OBJECT_DIRECTORIES=" + sourceObjects}
-	if _, err := runHostGitBytes(ctx, verifyRepo, alternateEnv, nil, "bundle", "unbundle", bundlePath); err != nil {
-		return errors.New("stock Git rejected checkpoint bundle")
-	}
-	actual, err := captureObjectSet(ctx, verifyRepo, []string{"GIT_ALTERNATE_OBJECT_DIRECTORIES="},
-		"cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+	// A prerequisite bundle contains a thin pack. `bundle unbundle` repairs that
+	// pack by appending prerequisite objects used as delta bases, so enumerating
+	// its resulting pack would count objects that were not actually transmitted.
+	// Index the repaired pack, then use its offsets and the original pack's
+	// object count to distinguish incoming entries from appended delta bases.
+	actual, err := captureIncomingPackObjectSet(ctx, verifyRepo, alternateEnv, data[packOffset:], objectFormat)
 	if err != nil {
 		return errors.New("enumerate checkpoint bundle objects failed")
 	}
@@ -1029,6 +1032,63 @@ func verifyCaptureBundle(ctx context.Context, stagingRepo, sourceObjects, tmpDir
 		return fmt.Errorf("checkpoint bundle object closure differs from selected closure (%d expected, %d packed)", len(expected), len(actual))
 	}
 	return nil
+}
+
+type capturedPackObject struct {
+	oid    string
+	offset uint64
+}
+
+func captureIncomingPackObjectSet(ctx context.Context, repo string, env []string, pack []byte, objectFormat string) (map[string]struct{}, error) {
+	if len(pack) < 12 || string(pack[:4]) != "PACK" {
+		return nil, errors.New("checkpoint bundle pack header is invalid")
+	}
+	incomingCount := int(binary.BigEndian.Uint32(pack[8:12]))
+	if _, err := runHostGitBytes(ctx, repo, env, bytes.NewReader(pack), "index-pack", "--stdin", "--fix-thin"); err != nil {
+		return nil, fmt.Errorf("index checkpoint bundle pack: %w", err)
+	}
+	indexes, err := filepath.Glob(filepath.Join(repo, "objects", "pack", "*.idx"))
+	if err != nil {
+		return nil, fmt.Errorf("locate checkpoint bundle pack index: %w", err)
+	}
+	if len(indexes) != 1 {
+		return nil, fmt.Errorf("checkpoint bundle produced %d pack indexes", len(indexes))
+	}
+	out, err := runHostGitBytes(ctx, repo, nil, nil, "verify-pack", "-v", indexes[0])
+	if err != nil {
+		return nil, fmt.Errorf("inspect checkpoint bundle pack: %w", err)
+	}
+	oidLen := 40
+	if objectFormat == "sha256" {
+		oidLen = 64
+	}
+	objects := make([]capturedPackObject, 0, incomingCount)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || len(fields[0]) != oidLen {
+			continue
+		}
+		if _, err := hex.DecodeString(fields[0]); err != nil {
+			continue
+		}
+		offset, err := strconv.ParseUint(fields[4], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse checkpoint bundle pack offset: %w", err)
+		}
+		objects = append(objects, capturedPackObject{oid: fields[0], offset: offset})
+	}
+	if len(objects) < incomingCount {
+		return nil, fmt.Errorf("checkpoint bundle pack contains %d objects, expected at least %d", len(objects), incomingCount)
+	}
+	sort.Slice(objects, func(i, j int) bool { return objects[i].offset < objects[j].offset })
+	actual := make(map[string]struct{}, incomingCount)
+	for _, object := range objects[:incomingCount] {
+		actual[object.oid] = struct{}{}
+	}
+	if len(actual) != incomingCount {
+		return nil, errors.New("checkpoint bundle pack contains duplicate objects")
+	}
+	return actual, nil
 }
 
 func captureObjectSet(ctx context.Context, repo string, env []string, args ...string) (map[string]struct{}, error) {
