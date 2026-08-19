@@ -8,9 +8,9 @@ Builds on [host-git-reconstruction.md](host-git-reconstruction.md),
 [shared-host-git-mirrors.md](shared-host-git-mirrors.md), and
 [resume-from-trace.md](resume-from-trace.md).
 
-Status: **proposed**. Part I describes the end state; Part II describes the
-transition from the current implementation (a working spike with a different
-payload format and internal API).
+Status: **implementation in progress**. Part I describes the end state; Part II
+tracks the transition from the current implementation. Phases 1 and 2 are
+complete; phase 3 is next.
 
 ---
 
@@ -180,8 +180,10 @@ type GitBundle {
   refs: [GitBundleRef!]!
   "Commits that must already exist wherever this bundle is applied."
   prerequisiteSHAs: [String!]!
-  "Full structural verification (header, object closure, connectivity),
-   beyond the lazy header parse. Errors if the bundle is malformed."
+  "Validate the bundle structure available from its bytes. For a
+   prerequisite-free bundle this includes full Git connectivity. For a bundle
+   with prerequisites, final connectivity is verified by withBundle after it
+   fetches the required objects. Errors if the available structure is malformed."
   validate: GitBundle!
   "The bundle bytes as a File."
   asFile: File!
@@ -221,11 +223,18 @@ Semantics:
   bytes, so these fields add convenience, not capability, and need no special
   gating.
 - `withBundle` verification is Git's own (`git bundle verify`, fetch
-  connectivity) plus cheap resource safeguards: a size cap on the bundle File,
-  object/ref count caps, and timeouts. Hostile-input hardening beyond that is
-  explicitly out of scope.
-- `asGitBundle` performs a lazy header parse; `validate` is the full check, for
-  callers (e.g. backup verification) that want it before use.
+  connectivity) plus bounded ingestion: 128 MiB per bundle, 1,024 combined
+  refs/prerequisites, 1,000,000 pack objects, a 4 MiB header with 64 KiB lines,
+  and a ten-minute Git-command timeout. These are initial operational limits,
+  to be tuned by phase 7 rather than compatibility guarantees. Unknown or
+  unsupported v3 capabilities, including filtered bundles, are rejected;
+  hostile-input hardening beyond these bounds remains out of scope.
+- `asGitBundle` performs a lazy header parse. `validate` performs the strongest
+  repository-independent check: bounded header and pack-envelope parsing,
+  checksum and object-count verification, plus a real Git import/connectivity
+  check when there are no prerequisites. A prerequisite-bearing bundle cannot
+  prove final connectivity without the repository that supplies those objects;
+  `withBundle` performs that check after fetching every exact prerequisite.
 - Follow-up, not phase 1: `GitBundle.asRepository` for prerequisite-free
   bundles, and converging staged-commit save (`WorkspaceStagedCommitsBundle`)
   onto this surface.
@@ -707,8 +716,10 @@ the bulk; step 4 is mechanical.
   `core/workspace_commit.go`
 - Host Git discovery/capture/approval: `engine/session/git/git_capture.go`,
   `engine/session/git/git_pack.go`, `engine/session/git/git_worktree.go`
-- Canonical Git reconstruction and bundle import: `core/git_hostdir.go`
-- Public Git schema (bundle fields land here): `core/schema/git.go`,
+- Canonical host-Git and legacy checkpoint reconstruction: `core/git_hostdir.go`
+- Public bundle parsing, validation, creation, and import: `core/git_bundle.go`
+- Public bundle schema: `core/schema/git.go`, `core/schema/file.go`
+- Remote Git backing and mirrors: `core/git_remote.go`,
   `core/git_remote_mirror.go`
 - Inline File values: `core/schema/file.go`, `core/file.go`
 - Origin retention: `engine/server/session_workspaces.go`
@@ -733,10 +744,18 @@ leave the tree working and land as its own scoped commit(s).
   a live binary-blob GraphQL probe passed; the full integration package was
   blocked by an unrelated pre-existing compile error in
   `core/integration/llm_resume_test.go`.
-- [ ] **Phase 2 — public Git bundle surface (next).** Add `GitBundle`,
-  `GitBundleRef`, `File.asGitBundle`, `GitRepository.bundle`, and
-  `GitRepository.withBundle`, with cheap resource safeguards, round-trip tests,
-  and stock-Git interoperability.
+- [x] **Phase 2 — public Git bundle surface.** Commits `187046f` and
+  `484a70b` add `GitBundle`, `GitBundleRef`, `File.asGitBundle`,
+  `GitRepository.bundle`, `GitRepository.withBundle`, `GitBundle.validate`, and
+  `GitBundle.asFile`. Creation and import use canonical snapshot-backed Git,
+  exact prerequisite fetching with an optional ref hint, bounded ingestion,
+  and cleanup of transport-only prerequisite refs. Unit coverage, focused
+  round trips and failures, and stock-Git interoperability passed. SDK
+  generation produced no checked-in diff because the fields are gated after
+  `v1.0.0-beta.10`. The full integration package remains blocked by the
+  unrelated pre-existing compile error in `core/integration/llm_resume_test.go`.
+  Repeated Go module re-downloads during test invocations are a separate P0
+  developer-infrastructure follow-up; do not conflate them with bundle behavior.
 - [ ] **Phase 3 — secure two-ref client capture.** Build synthetic `S` in a
   temporary object database/index, emit one version-3 bundle advertising `L`
   and optional `S`, verify the selected object closure, replace the worktree
@@ -766,3 +785,10 @@ omits the empty bundle and `withBundle`; the frozen chain uses
 `Workspace.withFoo` fields rather than adding it to every `asWorkspace` call
 (`cwd` remains); and public bundle ingestion is not intentionally restricted to
 checkpoint-generated, single-prerequisite bundles.
+
+Phase 2 further settles that `withBundle` returns a canonical, locally backed
+repository while preserving the source repository URL through persisted object
+encoding. Refs used only to stage prerequisite objects are deleted before the
+result is exposed. The split `validate` behavior in §3.1 is intentional: bytes
+alone cannot prove connectivity through omitted prerequisite objects, so
+`withBundle` owns that final check.
