@@ -757,7 +757,7 @@ leave the tree working and land as its own scoped commit(s).
   Repeated Go module re-downloads during test invocations are a separate P0
   developer-infrastructure follow-up; do not conflate them with bundle behavior.
 - [x] **Phase 3 — secure two-ref client capture.** Commits `4712bee`
-  through `c714d47` build synthetic `S` in a temporary object database/index,
+  through `3bb1d9e` build synthetic `S` in a temporary object database/index,
   emit one verified version-3 bundle advertising `L` and optional `S`, enforce
   exact selected-object closure, bind approval retries and staged objects to the
   reviewed bytes, replace the separate worktree patch stream, and require one
