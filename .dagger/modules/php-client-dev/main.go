@@ -77,9 +77,8 @@ func (t PhpClientDev) BaseContainer() *dagger.Container {
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
 		WithWorkdir("/src").
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(dagger.DaggerEngineOpts{
+			return dag.DaggerEngine(t.Ws, dagger.DaggerEngineOpts{
 				ClientDockerConfig: t.ClientDockerConfig,
-				Ws:                 t.Ws,
 			}).InstallClient(c)
 		})
 }

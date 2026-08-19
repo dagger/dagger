@@ -9,24 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type EngineDev
-func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
-	q := r.query.Select("asEngineDev")
-
-	return &EngineDev{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type EngineDevLoadedEngine
-func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
-	q := r.query.Select("asEngineDevLoadedEngine")
-
-	return &EngineDevLoadedEngine{
-		query: q,
-	}
-}
-
 type EngineDev struct { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
 	query *querybuilder.Selection
 
@@ -823,57 +805,8 @@ func (r *EngineDevLoadedEngine) AsNode() Node {
 	}
 }
 
-// Create or update a binding of type EngineDev in the environment
-func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withEngineDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type EngineDevLoadedEngine in the environment
-func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoadedEngine, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withEngineDevLoadedEngineInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired EngineDevLoadedEngine output to be assigned in the environment
-func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
-	q := r.query.Select("withEngineDevLoadedEngineOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired EngineDev output to be assigned in the environment
-func (r *Env) WithEngineDevOutput(name string, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
-	q := r.query.Select("withEngineDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // EngineDevOpts contains options for Query.EngineDev
 type EngineDevOpts struct {
-	Ws *Workspace // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:21:2)
 	//
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
@@ -889,13 +822,10 @@ type EngineDevOpts struct {
 }
 
 // Creates a complete end-to-end build environment with CLI and engine for interactive testing
-func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:19:1)
+func (r *Query) EngineDev(ws *Workspace, opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:19:1)
+	assertNotNil("ws", ws)
 	q := r.query.Select("engineDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 		// `subnetNumber` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SubnetNumber) {
 			q = q.Arg("subnetNumber", opts[i].SubnetNumber)
@@ -905,6 +835,7 @@ func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
 		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &EngineDev{
 		query: q,

@@ -9,39 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type GoClientDev
-func (r *Binding) AsGoClientDev() *GoClientDev { // go-client-dev (../../../../../:0:0)
-	q := r.query.Select("asGoClientDev")
-
-	return &GoClientDev{
-		query: q,
-	}
-}
-
-// Create or update a binding of type GoClientDev in the environment
-func (r *Env) WithGoClientDevInput(name string, value *GoClientDev, description string) *Env { // go-client-dev (../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withGoClientDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired GoClientDev output to be assigned in the environment
-func (r *Env) WithGoClientDevOutput(name string, description string) *Env { // go-client-dev (../../../../../:0:0)
-	q := r.query.Select("withGoClientDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 type GoClientDev struct { // go-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -274,13 +241,10 @@ type GoClientDevOpts struct {
 	// Path of the Go SDK source within the workspace
 	//
 	SourcePath string // go-client-dev (../../../../../:0:0)
-	//
-	// Workspace
-	//
-	Ws *Workspace // go-client-dev (../../../../../:0:0)
 }
 
-func (r *Query) GoClientDev(opts ...GoClientDevOpts) *GoClientDev { // go-client-dev (../../../../../:0:0)
+func (r *Query) GoClientDev(ws *Workspace, opts ...GoClientDevOpts) *GoClientDev { // go-client-dev (../../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("goClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument
@@ -291,11 +255,8 @@ func (r *Query) GoClientDev(opts ...GoClientDevOpts) *GoClientDev { // go-client
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &GoClientDev{
 		query: q,

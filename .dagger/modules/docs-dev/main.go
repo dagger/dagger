@@ -83,7 +83,7 @@ func (d DocsDev) References(
 	// 1. Generate the GraphQL schema
 	withGqlSchema := src.WithFile(
 		"docs/docs-graphql/schema.graphqls",
-		dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
+		dag.EngineDev(ws).GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
 			Version: version,
 		}),
 	)
@@ -109,9 +109,9 @@ func (d DocsDev) References(
 
 	// 3. Generate config file schemas?
 	withConfigSchemas := src.
-		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).ConfigSchema("dagger.json")).
-		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).ConfigSchema("dagger-module.toml")).
-		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).ConfigSchema("dagger.toml"))
+		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev(ws).ConfigSchema("dagger.json")).
+		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev(ws).ConfigSchema("dagger-module.toml")).
+		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev(ws).ConfigSchema("dagger.toml"))
 
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).

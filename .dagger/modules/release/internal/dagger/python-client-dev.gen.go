@@ -9,105 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type PythonClientDev
-func (r *Binding) AsPythonClientDev() *PythonClientDev { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:15:6)
-	q := r.query.Select("asPythonClientDev")
-
-	return &PythonClientDev{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type PythonClientDevDocs
-func (r *Binding) AsPythonClientDevDocs() *PythonClientDevDocs { // python-client-dev (../../../../../.dagger/modules/python-client-dev/docs.go:9:6)
-	q := r.query.Select("asPythonClientDevDocs")
-
-	return &PythonClientDevDocs{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type PythonClientDevTestForPythonVersion
-func (r *Binding) AsPythonClientDevTestForPythonVersion() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/test.go:9:6)
-	q := r.query.Select("asPythonClientDevTestForPythonVersion")
-
-	return &PythonClientDevTestForPythonVersion{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PythonClientDevDocs in the environment
-func (r *Env) WithPythonClientDevDocsInput(name string, value *PythonClientDevDocs, description string) *Env { // python-client-dev (../../../../../.dagger/modules/python-client-dev/docs.go:9:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withPythonClientDevDocsInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PythonClientDevDocs output to be assigned in the environment
-func (r *Env) WithPythonClientDevDocsOutput(name string, description string) *Env { // python-client-dev (../../../../../.dagger/modules/python-client-dev/docs.go:9:6)
-	q := r.query.Select("withPythonClientDevDocsOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PythonClientDev in the environment
-func (r *Env) WithPythonClientDevInput(name string, value *PythonClientDev, description string) *Env { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:15:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withPythonClientDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PythonClientDev output to be assigned in the environment
-func (r *Env) WithPythonClientDevOutput(name string, description string) *Env { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:15:6)
-	q := r.query.Select("withPythonClientDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type PythonClientDevTestForPythonVersion in the environment
-func (r *Env) WithPythonClientDevTestForPythonVersionInput(name string, value *PythonClientDevTestForPythonVersion, description string) *Env { // python-client-dev (../../../../../.dagger/modules/python-client-dev/test.go:9:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withPythonClientDevTestForPythonVersionInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired PythonClientDevTestForPythonVersion output to be assigned in the environment
-func (r *Env) WithPythonClientDevTestForPythonVersionOutput(name string, description string) *Env { // python-client-dev (../../../../../.dagger/modules/python-client-dev/test.go:9:6)
-	q := r.query.Select("withPythonClientDevTestForPythonVersionOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // A toolchain to develop the Dagger Python SDK
 type PythonClientDev struct { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:15:6)
 	query *querybuilder.Selection
@@ -140,11 +41,11 @@ type PythonClientDevBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:288:2)
+	Version string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:287:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:285:1)
+func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:284:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -159,7 +60,7 @@ func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { /
 }
 
 // Regenerate the core Python client library
-func (r *PythonClientDev) ClientLibrary() *Changeset { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:188:1)
+func (r *PythonClientDev) ClientLibrary() *Changeset { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:187:1)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -177,7 +78,7 @@ func (r *PythonClientDev) DevContainer() *Container { // python-client-dev (../.
 }
 
 // Preview the reference documentation
-func (r *PythonClientDev) Docs() *PythonClientDevDocs { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:326:1)
+func (r *PythonClientDev) Docs() *PythonClientDevDocs { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:325:1)
 	q := r.query.Select("docs")
 
 	return &PythonClientDevDocs{
@@ -190,11 +91,11 @@ type PythonClientDevFormatOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:117:2)
+	Paths []string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:116:2)
 }
 
 // Format source files
-func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Changeset { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:114:1)
+func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Changeset { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:113:1)
 	q := r.query.Select("format")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -262,11 +163,11 @@ type PythonClientDevLintOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:105:2)
+	Paths []string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:104:2)
 }
 
 // Check for linting errors
-func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:102:1)
+func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:101:1)
 	q := r.query.Select("lint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -282,11 +183,11 @@ func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Container { // 
 
 // PythonClientDevLintDocsSnippetsOpts contains options for PythonClientDev.LintDocsSnippets
 type PythonClientDevLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:94:2)
+	Workspace *Directory // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:93:2)
 }
 
 // Lint the Python snippets in the documentation
-func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippetsOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:86:1)
+func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippetsOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:85:1)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -305,10 +206,10 @@ type PythonClientDevProvisionOpts struct {
 	//
 	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
 	//
-	RunnerHost string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:338:2)
+	RunnerHost string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:337:2)
 }
 
-func (r *PythonClientDev) Provision(cliBin *File, opts ...PythonClientDevProvisionOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:332:1)
+func (r *PythonClientDev) Provision(cliBin *File, opts ...PythonClientDevProvisionOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:331:1)
 	assertNotNil("cliBin", cliBin)
 	q := r.query.Select("provision")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -331,15 +232,15 @@ type PythonClientDevPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:302:2)
+	Version string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:301:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:305:2)
+	URL string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:304:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:297:1)
+func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:296:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -360,7 +261,7 @@ func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishO
 }
 
 // Test suite for python 3.10
-func (r *PythonClientDev) Python310() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:147:1)
+func (r *PythonClientDev) Python310() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:146:1)
 	q := r.query.Select("python310")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -369,7 +270,7 @@ func (r *PythonClientDev) Python310() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.11
-func (r *PythonClientDev) Python311() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:155:1)
+func (r *PythonClientDev) Python311() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:154:1)
 	q := r.query.Select("python311")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -378,7 +279,7 @@ func (r *PythonClientDev) Python311() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.12
-func (r *PythonClientDev) Python312() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:163:1)
+func (r *PythonClientDev) Python312() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:162:1)
 	q := r.query.Select("python312")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -387,7 +288,7 @@ func (r *PythonClientDev) Python312() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.13
-func (r *PythonClientDev) Python313() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:171:1)
+func (r *PythonClientDev) Python313() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:170:1)
 	q := r.query.Select("python313")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -396,7 +297,7 @@ func (r *PythonClientDev) Python313() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.14
-func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:179:1)
+func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:178:1)
 	q := r.query.Select("python314")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -406,17 +307,17 @@ func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // 
 
 // PythonClientDevReleaseOpts contains options for PythonClientDev.Release
 type PythonClientDevReleaseOpts struct {
-	DryRun bool // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:253:2)
+	DryRun bool // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:252:2)
 
-	PypiRepo string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:256:2)
+	PypiRepo string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:255:2)
 
-	PypiURL string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:259:2)
+	PypiURL string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:258:2)
 
-	PypiToken *Secret // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:262:2)
+	PypiToken *Secret // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:261:2)
 }
 
 // Release the Python SDK
-func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ...PythonClientDevReleaseOpts) error { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:246:1)
+func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ...PythonClientDevReleaseOpts) error { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:245:1)
 	if r.release != nil {
 		return nil
 	}
@@ -445,7 +346,7 @@ func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ..
 }
 
 // Test the publishing process
-func (r *PythonClientDev) ReleaseDryRun(ctx context.Context) error { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:234:1)
+func (r *PythonClientDev) ReleaseDryRun(ctx context.Context) error { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:233:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -483,11 +384,11 @@ type PythonClientDevTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:320:2)
+	Version string // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:319:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTestPublishOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:315:1)
+func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTestPublishOpts) *Container { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:314:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -505,7 +406,7 @@ func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTest
 
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
-func (r *PythonClientDev) Typecheck(ctx context.Context) error { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:129:1)
+func (r *PythonClientDev) Typecheck(ctx context.Context) error { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:128:1)
 	if r.typecheck != nil {
 		return nil
 	}
@@ -515,7 +416,7 @@ func (r *PythonClientDev) Typecheck(ctx context.Context) error { // python-clien
 }
 
 // Mount a directory on the base container
-func (r *PythonClientDev) WithDirectory(source *Directory) *PythonClientDev { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:138:1)
+func (r *PythonClientDev) WithDirectory(source *Directory) *PythonClientDev { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:137:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	q = q.Arg("source", source)
@@ -760,15 +661,11 @@ type PythonClientDevOpts struct {
 	// A docker config file with credentials to install on clients.
 	//
 	ClientDockerConfig *Secret // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:53:2)
-	//
-	// Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a
-	// direct call; dependencies don't inherit it, so callers must forward it.
-	//
-	Ws *Workspace // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:56:2)
 }
 
 // A toolchain to develop the Dagger Python SDK
-func (r *Query) PythonClientDev(opts ...PythonClientDevOpts) *PythonClientDev { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:26:1)
+func (r *Query) PythonClientDev(ws *Workspace, opts ...PythonClientDevOpts) *PythonClientDev { // python-client-dev (../../../../../.dagger/modules/python-client-dev/main.go:26:1)
+	assertNotNil("ws", ws)
 	q := r.query.Select("pythonClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument
@@ -783,11 +680,8 @@ func (r *Query) PythonClientDev(opts ...PythonClientDevOpts) *PythonClientDev { 
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
 		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &PythonClientDev{
 		query: q,

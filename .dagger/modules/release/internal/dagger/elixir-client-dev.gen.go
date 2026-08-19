@@ -9,15 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type ElixirClientDev
-func (r *Binding) AsElixirClientDev() *ElixirClientDev { // elixir-client-dev (../../../../../:0:0)
-	q := r.query.Select("asElixirClientDev")
-
-	return &ElixirClientDev{
-		query: q,
-	}
-}
-
 type ElixirClientDev struct { // elixir-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -250,30 +241,6 @@ func (r *ElixirClientDev) AsNode() Node {
 	}
 }
 
-// Create or update a binding of type ElixirClientDev in the environment
-func (r *Env) WithElixirClientDevInput(name string, value *ElixirClientDev, description string) *Env { // elixir-client-dev (../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withElixirClientDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ElixirClientDev output to be assigned in the environment
-func (r *Env) WithElixirClientDevOutput(name string, description string) *Env { // elixir-client-dev (../../../../../:0:0)
-	q := r.query.Select("withElixirClientDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // ElixirClientDevOpts contains options for Query.ElixirClientDev
 type ElixirClientDevOpts struct {
 	BaseImage string // elixir-client-dev (../../../../../:0:0)
@@ -281,13 +248,10 @@ type ElixirClientDevOpts struct {
 	WorkspaceDir *Directory // elixir-client-dev (../../../../../:0:0)
 
 	SourcePath string // elixir-client-dev (../../../../../:0:0)
-	//
-	// Workspace
-	//
-	Ws *Workspace // elixir-client-dev (../../../../../:0:0)
 }
 
-func (r *Query) ElixirClientDev(opts ...ElixirClientDevOpts) *ElixirClientDev { // elixir-client-dev (../../../../../:0:0)
+func (r *Query) ElixirClientDev(ws *Workspace, opts ...ElixirClientDevOpts) *ElixirClientDev { // elixir-client-dev (../../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("elixirClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `baseImage` optional argument
@@ -302,11 +266,8 @@ func (r *Query) ElixirClientDev(opts ...ElixirClientDevOpts) *ElixirClientDev { 
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &ElixirClientDev{
 		query: q,

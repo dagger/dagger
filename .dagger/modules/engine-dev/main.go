@@ -347,7 +347,7 @@ func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, erro
 		return nil, err
 	}
 	introspectionJSON := playground.
-		WithFile("/usr/local/bin/codegen", dag.Codegen(dagger.CodegenOpts{Ws: dev.Ws}).Binary()).
+		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
 	return introspectionJSON, nil
