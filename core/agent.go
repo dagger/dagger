@@ -1089,6 +1089,11 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 
 	var loopErr error
 	defer func() {
+		// Make a final failure part of the permanent conversation before waking
+		// message awaiters. This gives the focused-agent TUI a durable error line
+		// to render instead of racing the await's transient prompt error.
+		emitAgentFailure(ctx, loopErr)
+
 		rt.mu.Lock()
 		rt.transitionLocked(func() {
 			// Settle the mailbox in the same transition that makes the

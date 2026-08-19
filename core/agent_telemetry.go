@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
@@ -95,3 +97,24 @@ func EmitAgentSnapshot(ctx context.Context, digest string) {
 	telemetry.Logger(ctx, AgentInstrumentationScope).Emit(ctx, rec)
 }
 
+// emitAgentFailure publishes a failed loop's terminal error as a permanent
+// conversation message beneath that loop. Its status description and stdio are
+// both the loop's actual error: the former keeps failure semantics in the trace,
+// while the latter gives conversation renderers content they can retain in
+// scrollback and scope with agent focus.
+func emitAgentFailure(ctx context.Context, loopErr error) {
+	if loopErr == nil {
+		return
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "agent failure", trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "✘"),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+	))
+	span.SetStatus(codes.Error, loopErr.Error())
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/plain"))
+	fmt.Fprint(stdio.Stderr, loopErr.Error())
+	stdio.Close()
+	span.End()
+}

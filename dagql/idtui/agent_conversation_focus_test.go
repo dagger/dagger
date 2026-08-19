@@ -1,11 +1,15 @@
 package idtui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // The live tree follows FOCUS (hack/designs/async-agents.md §5.1): switching
@@ -13,8 +17,9 @@ import (
 // scoping rides the conversation-promotion axis rather than the zoom axis, so
 // these also pin that focus never disturbs where the user had navigated to.
 
-// focusConversationDB is rosterDB with a session root above the agents and one
-// turn spoken by each, so a render has something to scope.
+// focusConversationDB is rosterDB with a session root above the agents, one
+// turn spoken by each, and a terminal error message on the failed scout, so a
+// render has both ordinary conversation and failure content to scope.
 func focusConversationDB(t *testing.T) *dagui.DB {
 	t.Helper()
 	db := dagui.NewDB()
@@ -51,7 +56,25 @@ func focusConversationDB(t *testing.T) *dagui.DB {
 		// rosterTraceFor lays the chief's loop span at 1 and the scout's at 3.
 		say(91, "chief-said", prettyTestSpanID(1), 101),
 		say(92, "scout-said", prettyTestSpanID(3), 102),
+		dagui.SpanSnapshot{
+			ID:        prettyTestSpanID(93),
+			TraceID:   prettyTestTraceID(),
+			Name:      "agent failure",
+			Message:   "received",
+			StartTime: time.Unix(103, 0),
+			EndTime:   time.Unix(104, 0),
+			ParentID:  prettyTestSpanID(3),
+			LLMRole:   "assistant",
+			Status: sdktrace.Status{
+				Code:        codes.Error,
+				Description: "context limit reached",
+			},
+		},
 	)
+	// The terminal message and lifecycle record describe the same scout
+	// failure. The message stays in its conversation after the loop ends.
+	snapshots[2].AgentState = "FAILED"
+	snapshots[2].Status = sdktrace.Status{Code: codes.Error, Description: "context limit reached"}
 
 	db.ImportSnapshots(append([]dagui.SpanSnapshot{root}, snapshots...))
 	return db
@@ -81,16 +104,19 @@ func TestLiveTreeFollowsFocusedAgent(t *testing.T) {
 
 	// Unfocused: the whole trace, exactly as before the roster existed.
 	fe.recalculateViewLocked()
-	require.Equal(t, map[string]bool{"chief-said": true, "scout-said": true},
-		revealedNames(t, fe), "with no agent focused the tree is the whole session")
+	require.Equal(t, map[string]bool{
+		"chief-said": true, "scout-said": true, "agent failure": true,
+	}, revealedNames(t, fe), "with no agent focused the tree is the whole session")
 
 	// Focus the scout (nav mode's jump key, per §5.1).
 	pressNavKey(t, fe, '2')
 	awaitFocus(t, handler, "agent-scout")
 	fe.tui.Step() // drain the dispatch that settles focus
 	fe.recalculateViewLocked()
-	require.Equal(t, map[string]bool{"scout-said": true}, revealedNames(t, fe),
-		"focusing an agent scopes the tree to it, and retracts the previous scope")
+	require.Equal(t, map[string]bool{
+		"scout-said": true, "agent failure": true,
+	}, revealedNames(t, fe),
+		"focusing the failed scout keeps its permanent error and retracts the previous scope")
 
 	// And back: switching again must not leave the scout's turn behind.
 	pressNavKey(t, fe, '1')
@@ -99,6 +125,38 @@ func TestLiveTreeFollowsFocusedAgent(t *testing.T) {
 	fe.recalculateViewLocked()
 	require.Equal(t, map[string]bool{"chief-said": true}, revealedNames(t, fe),
 		"switching back scopes to the chief alone")
+}
+
+// TestFocusedAgentFailureRendersAboveInput verifies the durable failure message
+// occupies the conversation stream rather than a transient label: it renders
+// before the prompt and remains among the flowing lines used for scrollback.
+func TestFocusedAgentFailureRendersAboveInput(t *testing.T) {
+	const failureText = "context limit reached"
+	handler := &focusShellHandler{target: "agent-scout"}
+	fe := focusTestFrontend(t, focusConversationDB(t), handler)
+
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(120)
+	_, _ = logs.Write([]byte(failureText + "\n"))
+	fe.logs.Logs[prettyTestSpanID(93)] = logs
+	fe.updateAgentRoster()
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	failureLine, promptLine := -1, -1
+	for i, line := range lines {
+		switch {
+		case strings.Contains(line, failureText):
+			failureLine = i
+		case strings.Contains(line, "⋈ "):
+			promptLine = i
+		}
+	}
+	require.NotEqual(t, -1, failureLine, "failed agent error is absent:\n%s", strings.Join(lines, "\n"))
+	require.Greater(t, promptLine, failureLine,
+		"failed agent error must render above the input:\n%s", strings.Join(lines, "\n"))
+	require.NoError(t, fe.promptErr,
+		"the durable transcript message must not depend on the transient prompt error label")
 }
 
 // TestFocusDoesNotDisturbZoom pins the axis choice. Focus could have been
