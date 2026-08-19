@@ -114,14 +114,21 @@ func TestCaptureGitBuildsTwoRefBundleFromTemporaryObjects(t *testing.T) {
 		captureWorktreeRef+":"+captureWorktreeRef)
 	require.Equal(t, head, gitCmd(t, home, clone, "rev-parse", captureHeadRef))
 	require.Equal(t, head, gitCmd(t, home, clone, "rev-parse", meta.GetWorktreeSha()+"^"))
+	worktreeTree := gitCmd(t, home, clone, "rev-parse", meta.GetWorktreeSha()+"^{tree}")
+	worktreeBlob := gitCmd(t, home, clone, "rev-parse", meta.GetWorktreeSha()+":safe.txt")
 	gitCmd(t, home, clone, "checkout", "--detach", meta.GetWorktreeSha())
 	require.FileExists(t, filepath.Join(clone, "safe.txt"))
 	require.Equal(t, "dirty\n", string(mustReadFile(t, filepath.Join(clone, "base.txt"))))
 	require.NoFileExists(t, filepath.Join(clone, "cache.ignored"))
 
 	// S and every object created while staging it stay out of the user's object
-	// database; only the temporary bundle carries them.
+	// database; only the temporary bundle carries them. The user's index and refs
+	// are untouched as well.
 	require.Error(t, gitErr(home, repo, "cat-file", "-e", meta.GetWorktreeSha()+"^{commit}"))
+	require.Error(t, gitErr(home, repo, "cat-file", "-e", worktreeTree+"^{tree}"))
+	require.Error(t, gitErr(home, repo, "cat-file", "-e", worktreeBlob+"^{blob}"))
+	gitCmd(t, home, repo, "diff", "--cached", "--quiet")
+	require.Empty(t, gitCmd(t, home, repo, "for-each-ref", "--format=%(refname)", "refs/dagger/checkpoint"))
 }
 
 func TestCaptureGitStagesApprovedBytesWithoutCleanFilters(t *testing.T) {
