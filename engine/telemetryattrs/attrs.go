@@ -77,14 +77,16 @@ const (
 
 // Call payloads over OTel logs (dagger.io/dag.call.payload.*).
 //
-// Calls whose frames never receive spans still need to be reconstructable by
-// trace consumers. The engine therefore publishes their encoded call payloads
-// as log attributes, deduplicated by digest for the session.
+// Trace consumers need a call's root and transitive closure even when some
+// frames never receive spans. New engines publish every encoded call payload as
+// a log record, deduplicated within its delivery domain; consumers still ingest
+// legacy span-carried payloads.
 const (
 	// DagCallPayloadDigestAttr identifies the call frame encoded by the record.
 	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
 
-	// DagCallPayloadAttr carries one base64-encoded callpbv1.Call payload.
+	// DagCallPayloadAttr carries one base64-encoded callpbv1.Call payload, using
+	// the same encoding as the legacy dagger.io/dag.call span attribute.
 	DagCallPayloadAttr = "dagger.io/dag.call.payload"
 )
 

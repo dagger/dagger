@@ -69,8 +69,8 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 // whether a SPAN is emitted at all, while these decide whether a call PAYLOAD
 // still needs to cross the log channel. Claiming a payload digest is done for
 // every frame of a chain's transitive closure, so sharing the key space would
-// suppress the spans of every one of those frames; and conversely a span
-// suppressed by the dedupe must still be able to contribute its payload.
+// suppress the spans of every one of those frames; conversely span dedupe must
+// remain independent because a suppressed span still needs its log payload.
 // A prefix that cannot occur in a digest keeps the two disjoint by
 // construction.
 const callPayloadSeenKeyPrefix = "dag.call.payload:"
@@ -83,9 +83,10 @@ const callPayloadSeenKeyPrefix = "dag.call.payload:"
 // ancestors, i.e. the DBs the record actually fans out to), so a claim never
 // outlives the set of clients it was delivered to.
 //
-// Both channels claim through here. A span that carries the payload as
-// dagger.io/dag.call claims the digest too, so the log channel only ever
-// fills gaps instead of duplicating what spans already carry.
+// Producers claim every root and transitive frame through this function before
+// emitting its log record. Consumers may also populate the same payload store
+// from legacy dagger.io/dag.call span attributes, but those old attributes do
+// not participate in producer-side claims.
 //
 // Unlike ShouldEmitTelemetry this is deliberately NOT sensitive to
 // WithRepeatedTelemetry or to DoNotCache. Both exist so the same work can be

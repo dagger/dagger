@@ -6,15 +6,14 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-// The client half of the call-payload side channel (see the
+// The client half of the call-payload log transport (see the
 // dagger.io/dag.call.payload.* block in engine/telemetryattrs).
 //
 // Rebuilding a call ID (Span.CallID → extractIntoDAG → DB.Call) needs a
-// payload for every frame the chain references, and the span channel can only
-// ever carry payloads for frames that got a span. The engine publishes the
-// rest over the log stream; this is where they land, in the same
-// CallPayloads map the span attribute feeds, so nothing downstream has to
-// know which channel a payload arrived on.
+// payload for every frame the chain references. New engines publish the root
+// and its closure over the log stream; legacy span attributes feed the same
+// CallPayloads map, so nothing downstream has to know which channel carried an
+// older payload.
 
 // ingestCallPayload folds a call-payload log record (one carrying
 // telemetryattrs.DagCallPayloadAttr) into db.CallPayloads. It reports whether
