@@ -214,3 +214,9 @@ path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/rust-client-dev"
+
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/tla-check"
