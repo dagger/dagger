@@ -16,6 +16,7 @@ type GoCli {
     base.withTools(currentNode)
   }
 
+  @cache(policy: FunctionCachePolicy.Never)
   go(
     ws: Workspace!,
     """
@@ -29,7 +30,10 @@ type GoCli {
     let after = before
       .withExec(["go"] + args)
       .sync
-    after.directory(".").changes(before.directory("."))
+    after
+      .directory(".")
+      .withoutDirectory(".git")
+      .changes(before.directory(".").withoutDirectory(".git"))
   }
 
   base: Container! {
