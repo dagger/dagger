@@ -9159,17 +9159,17 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// GitRepositoryLatestVersionOpts contains options for GitRepository.LatestVersion
-type GitRepositoryLatestVersionOpts struct {
+// GitRepositoryLatestOpts contains options for GitRepository.Latest
+type GitRepositoryLatestOpts struct {
 	// Include prerelease tags when selecting the latest release.
 	IncludeSubreleases bool
 }
 
-// Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+// Return the latest release tag, falling back to HEAD when no release exists.
 //
 // This operation is pinned.
-func (r *GitRepository) LatestVersion(opts ...GitRepositoryLatestVersionOpts) *GitRef {
-	q := r.query.Select("latestVersion")
+func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
+	q := r.query.Select("latest")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `includeSubreleases` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IncludeSubreleases) {

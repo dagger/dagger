@@ -9041,7 +9041,7 @@ pub struct GitRepositoryBranchesOpts<'a> {
     pub patterns: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct GitRepositoryLatestVersionOpts {
+pub struct GitRepositoryLatestOpts {
     /// Include prerelease tags when selecting the latest release.
     #[builder(setter(into, strip_option), default)]
     pub include_subreleases: Option<bool>,
@@ -9171,28 +9171,28 @@ impl GitRepository {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+    /// Return the latest release tag, falling back to HEAD when no release exists.
     /// This operation is pinned.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn latest_version(&self) -> GitRef {
-        let query = self.selection.select("latestVersion");
+    pub fn latest(&self) -> GitRef {
+        let query = self.selection.select("latest");
         GitRef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+    /// Return the latest release tag, falling back to HEAD when no release exists.
     /// This operation is pinned.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn latest_version_opts(&self, opts: GitRepositoryLatestVersionOpts) -> GitRef {
-        let mut query = self.selection.select("latestVersion");
+    pub fn latest_opts(&self, opts: GitRepositoryLatestOpts) -> GitRef {
+        let mut query = self.selection.select("latest");
         if let Some(include_subreleases) = opts.include_subreleases {
             query = query.arg("includeSubreleases", include_subreleases);
         }

@@ -3333,11 +3333,11 @@ type GitRepository implements Node {
   id: ID!
 
   """
-  Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+  Return the latest release tag, falling back to HEAD when no release exists.
 
   This operation is pinned.
   """
-  latestVersion(
+  latest(
     """Include prerelease tags when selecting the latest release."""
     includeSubreleases: Boolean = false
   ): GitRef!

@@ -8790,13 +8790,13 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest_version(
+    def latest(
         self,
         *,
         include_subreleases: bool | None = False,
     ) -> GitRef:
-        """Return the latest release tag. If no release tag exists, fall back to
-        the remote HEAD branch.
+        """Return the latest release tag, falling back to HEAD when no release
+        exists.
 
         This operation is pinned.
 
@@ -8808,7 +8808,7 @@ class GitRepository(Type):
         _args = [
             Arg("includeSubreleases", include_subreleases, False),
         ]
-        _ctx = self._select("latestVersion", _args)
+        _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
     def ref(self, name: str) -> GitRef:

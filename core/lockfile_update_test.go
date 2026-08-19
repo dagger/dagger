@@ -96,7 +96,7 @@ func TestParseContainerFromLockInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := parseContainerFromLockInputs(lockContainerFromOperation, tc.inputs)
+			got, err := parseContainerFromLockInputs(tc.inputs)
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
 				return
@@ -109,33 +109,14 @@ func TestParseContainerFromLockInputs(t *testing.T) {
 	}
 }
 
-func TestContainerFromLatestInputsRequireBareRepository(t *testing.T) {
-	t.Parallel()
-
-	for _, ref := range []string{
-		"docker.io/library/alpine:latest",
-		"docker.io/library/alpine:3.22",
-		"docker.io/library/alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	} {
-		_, err := updateContainerFromLatestLockEntry(
-			context.Background(),
-			nil,
-			workspace.LookupEntry{
-				Inputs: []any{ref, "linux/amd64", false},
-			},
-		)
-		require.ErrorContains(t, err, "expected an image repository without a tag or digest")
-	}
-}
-
-func TestParseContainerFromLatestLockInputs(t *testing.T) {
+func TestParseContainerFromLatestReleaseLockInputs(t *testing.T) {
 	t.Parallel()
 
 	got, err := parseContainerFromLockInputs(
-		lockContainerFromLatestOperation,
 		[]any{"docker.io/library/alpine", "linux/amd64", true, "https", "insecureSkipTLSVerify"},
 	)
 	require.NoError(t, err)
+	require.True(t, got.latestRelease)
 	require.True(t, got.latestIncludeSubreleases)
 	require.Equal(t, serverresolver.RegistryTransport{
 		Protocol:              serverresolver.RegistryProtocolHTTPS,
@@ -143,8 +124,18 @@ func TestParseContainerFromLatestLockInputs(t *testing.T) {
 	}, got.registryTransport)
 
 	_, err = parseContainerFromLockInputs(
-		lockContainerFromLatestOperation,
 		[]any{"docker.io/library/alpine", "linux/amd64", "false"},
 	)
-	require.ErrorContains(t, err, "invalid container.from.latest latestIncludeSubreleases")
+	require.ErrorContains(t, err, "invalid container.from latestIncludeSubreleases")
+
+	tagged, err := parseContainerFromLockInputs(
+		[]any{"docker.io/library/alpine:latest", "linux/amd64"},
+	)
+	require.NoError(t, err)
+	require.False(t, tagged.latestRelease)
+
+	_, err = parseContainerFromLockInputs(
+		[]any{"docker.io/library/alpine:latest", "linux/amd64", false},
+	)
+	require.ErrorContains(t, err, "invalid container.from registry protocol")
 }

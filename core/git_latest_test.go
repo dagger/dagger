@@ -39,15 +39,15 @@ func TestSelectLatestGitRefFallsBackToHead(t *testing.T) {
 	remote := &gitutil.Remote{
 		Refs: []*gitutil.Ref{
 			{Name: "HEAD", SHA: headCommit},
-			{Name: "refs/heads/trunk", SHA: headCommit},
+			{Name: "refs/heads/main", SHA: headCommit},
 			{Name: "refs/tags/nightly", SHA: "0000000000000000000000000000000000000002"},
 		},
-		Symrefs: map[string]string{"HEAD": "refs/heads/trunk"},
+		Symrefs: map[string]string{"HEAD": "refs/heads/main"},
 	}
 
 	ref, err := SelectLatestGitRef(remote, false)
 	require.NoError(t, err)
-	require.Equal(t, "refs/heads/trunk", ref.Name)
+	require.Equal(t, "refs/heads/main", ref.Name)
 	require.Equal(t, headCommit, ref.SHA)
 }
 

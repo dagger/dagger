@@ -1067,8 +1067,7 @@ func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], i
 }
 
 const (
-	lockContainerFromOperation       = "container.from"
-	lockContainerFromLatestOperation = "container.from.latest"
+	lockContainerFromOperation = "container.from"
 )
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
@@ -1132,11 +1131,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	lockOperation := lockContainerFromOperation
 	latestRelease := reference.IsNameOnly(refName)
 	if latestRelease {
 		refName = reference.TrimNamed(refName)
-		lockOperation = lockContainerFromLatestOperation
 	} else {
 		if args.LatestIncludeSubreleases {
 			return inst, errors.New(
@@ -1252,7 +1249,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	// depending on registryService, so disable workspace lock entries when
 	// registryService is set.
 	if len(registryServices) == 0 {
-		lookupLock, err = lookupLockForAPI(ctx, query, lockOperation)
+		lookupLock, err = lookupLockForAPI(ctx, query, lockContainerFromOperation)
 		if err != nil {
 			return inst, err
 		}
@@ -1272,16 +1269,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inputs
 	}
 
-	// Engines that predate container.from.latest recorded a bare address like
+	// Engines that predate latest-release selection recorded a bare address like
 	// "alpine" as an exact container.from entry pinned at the implicit :latest
-	// tag. When the lockfile has such an entry and no container.from.latest
+	// tag. When the lockfile has such an entry and no latest-release
 	// entry, keep resolving through it so existing workspaces don't break
 	// after an engine upgrade.
 	if latestRelease && !args.LatestIncludeSubreleases && lookupLock != nil {
 		rawLock := lookupLock.lock
 		if _, ok, _ := rawLock.GetLookup(
 			lockCoreNamespace,
-			lockOperation,
+			lockContainerFromOperation,
 			lockInputsFor(refName, true),
 		); !ok {
 			legacyRef := reference.TagNameOnly(refName)
@@ -1291,7 +1288,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 				lockInputsFor(legacyRef, false),
 			); err == nil && ok {
 				latestRelease = false
-				lockOperation = lockContainerFromOperation
 				refName = legacyRef
 			}
 		}
@@ -1300,18 +1296,18 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	lockInputs := lockInputsFor(refName, latestRelease)
 	lockResolution, err := resolveLookupFromLoadedLock(
 		lookupLock,
-		lockOperation,
+		lockContainerFromOperation,
 		lockInputs,
 		workspace.PolicyPin,
 	)
 	if err != nil {
-		return inst, fmt.Errorf("%s lock resolution: %w", lockOperation, err)
+		return inst, fmt.Errorf("%s lock resolution: %w", lockContainerFromOperation, err)
 	}
 
 	if lockResolution.Pin != nil {
 		pin, ok := lockResolution.Pin.(string)
 		if !ok || pin == "" {
-			return inst, fmt.Errorf("invalid %s lock value %v", lockOperation, lockResolution.Pin)
+			return inst, fmt.Errorf("invalid %s lock value %v", lockContainerFromOperation, lockResolution.Pin)
 		}
 		if latestRelease {
 			refName, err = core.ParseContainerLatestPin(
@@ -1320,7 +1316,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 				args.LatestIncludeSubreleases,
 			)
 			if err != nil {
-				return inst, fmt.Errorf("%s lock value: %w", lockOperation, err)
+				return inst, fmt.Errorf("%s lock value: %w", lockContainerFromOperation, err)
 			}
 		} else {
 			resolvedDigest, err := digest.Parse(pin)
@@ -1389,14 +1385,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			}
 			if err := lookupLock.SetLookup(
 				lockCoreNamespace,
-				lockOperation,
+				lockContainerFromOperation,
 				lockInputs,
 				workspace.LookupResult{
 					Value:  lockValue,
 					Policy: lockResolution.Policy,
 				},
 			); err != nil {
-				return inst, fmt.Errorf("set lock entry for %s: %w", lockOperation, err)
+				return inst, fmt.Errorf("set lock entry for %s: %w", lockContainerFromOperation, err)
 			}
 		}
 	}

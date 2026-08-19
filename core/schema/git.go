@@ -112,9 +112,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("latestVersion", s.latestVersionLegacy).
 			View(BeforeVersion("v1.0.0-beta.10")).
 			Doc(`Returns details for the latest semver tag.`),
-		dagql.NodeFunc("latestVersion", s.latestVersion).
+		dagql.NodeFunc("latest", s.latest).
 			View(AfterVersion("v1.0.0-beta.10")).
-			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`, `This operation is pinned.`).
+			Doc(`Return the latest release tag, falling back to HEAD when no release exists.`, `This operation is pinned.`).
 			Args(
 				dagql.Arg("includeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`),
 			),
@@ -235,7 +235,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		// mixing tags into the commit's identity, which would invalidate the
 		// commit's metadata and tree every time anything in the repo is tagged.
 		// Per-session matches the freshness of the remote snapshot they answer
-		// from, the same guarantee GitRepository.tags and latestVersion give.
+		// from, the same guarantee GitRepository.tags and latest give.
 		// (selectGitReleaseTag re-resolves that snapshot for the same reason.)
 		dagql.NodeFunc("releaseTag", s.releaseTag).
 			WithInput(dagql.PerSessionInput).
@@ -761,13 +761,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 			public, err := IsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
 			if err != nil {
-				// In frozen lock mode the workspace lockfile may pin every
-				// lookup on this repository, in which case the remote is never
-				// contacted again. Don't fail the whole query just because the
-				// visibility probe couldn't reach it; skip implicit credentials
-				// and let any operation that truly needs the remote surface its
-				// own error.
-				if lockMode, lockErr := currentLookupLockMode(ctx); lockErr == nil && lockMode == workspace.LockModeFrozen {
+				// A workspace pin may let child fields resolve without contacting
+				// this repository. Don't fail the parent visibility probe when a
+				// pin for this remote exists; skip implicit credentials and let any
+				// operation that truly needs the remote surface its own error.
+				if gitRemoteHasWorkspacePin(ctx, remote.Remote()) {
 					break
 				}
 				return inst, err
@@ -1015,6 +1013,34 @@ func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
 		return nil, fmt.Errorf("git locking only supports remote repositories")
 	}
 	return []any{remoteRepo.URL.Remote(), name}, nil
+}
+
+func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false
+	}
+	lookupLock, err := lookupLockForAPI(ctx, query, lockGitLatestOperation)
+	if err != nil || lookupLock == nil {
+		return false
+	}
+	entries, err := lookupLock.lock.Entries()
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Namespace != lockCoreNamespace ||
+			!strings.HasPrefix(entry.Operation, "git.") ||
+			entry.Result.Policy != workspace.PolicyPin ||
+			len(entry.Inputs) == 0 {
+			continue
+		}
+		entryRemote, ok := entry.Inputs[0].(string)
+		if ok && entryRemote == remote {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
@@ -2060,14 +2086,14 @@ func (s *gitSchema) log(
 	return commits, nil
 }
 
-type latestVersionArgs struct {
+type latestArgs struct {
 	IncludeSubreleases bool `name:"includeSubreleases" default:"false"`
 }
 
-func (s *gitSchema) latestVersion(
+func (s *gitSchema) latest(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
-	args latestVersionArgs,
+	args latestArgs,
 ) (inst dagql.Result[*core.GitRef], _ error) {
 	repo := parent.Self()
 	remoteRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
@@ -2090,38 +2116,33 @@ func (s *gitSchema) latestVersion(
 	if err != nil {
 		return inst, err
 	}
-	lockMode, lookupLock, err := lookupLockForMode(ctx, query, lockGitLatestOperation)
+	lookupLock, err := lookupLockForAPI(ctx, query, lockGitLatestOperation)
 	if err != nil {
 		return inst, err
 	}
 
-	var lockResolution lookupLockResolution
-	if lockMode != workspace.LockModeDisabled {
-		lockResolution, err = resolveLookupFromLoadedLock(
-			ctx,
-			lockMode,
-			lookupLock,
-			lockGitLatestOperation,
-			lockInputs,
-			lockPolicy,
+	lockResolution, err := resolveLookupFromLoadedLock(
+		lookupLock,
+		lockGitLatestOperation,
+		lockInputs,
+		lockPolicy,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
+	}
+	if lockResolution.Pin != nil {
+		pin, ok := lockResolution.Pin.(string)
+		if !ok || pin == "" {
+			return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, lockResolution.Pin)
+		}
+		ref, err := core.DecodeGitLatestRefPin(
+			pin,
+			args.IncludeSubreleases,
 		)
 		if err != nil {
-			return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
+			return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
 		}
-		if lockResolution.Pin != nil {
-			pin, ok := lockResolution.Pin.(string)
-			if !ok || pin == "" {
-				return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, lockResolution.Pin)
-			}
-			ref, err := core.DecodeGitLatestRefPin(
-				pin,
-				args.IncludeSubreleases,
-			)
-			if err != nil {
-				return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
-			}
-			return s.gitRefResult(ctx, parent, ref)
-		}
+		return s.gitRefResult(ctx, parent, ref)
 	}
 
 	remote, err := repo.LoadRemote(ctx)

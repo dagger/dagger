@@ -8,7 +8,6 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -17,11 +16,10 @@ import (
 )
 
 const (
-	lockCoreNamespace                = ""
-	lockContainerFromOperation       = "container.from"
-	lockContainerFromLatestOperation = "container.from.latest"
-	lockGitLatestOperation           = "git.latest"
-	lockGitRefOperation              = "git.ref"
+	lockCoreNamespace          = ""
+	lockContainerFromOperation = "container.from"
+	lockGitLatestOperation     = "git.latest"
+	lockGitRefOperation        = "git.ref"
 )
 
 // UpdateWorkspaceLock refreshes the existing entries in a workspace lockfile in place.
@@ -48,8 +46,6 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	switch {
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromOperation:
 		return updateContainerFromLockEntry(ctx, query, entry)
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromLatestOperation:
-		return updateContainerFromLatestLockEntry(ctx, query, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitLatestOperation:
 		return updateGitLatestLockEntry(ctx, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitRefOperation:
@@ -62,40 +58,51 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 type containerFromLockInputs struct {
 	ref                      string
 	platform                 string
+	latestRelease            bool
 	latestIncludeSubreleases bool
 	registryTransport        serverresolver.RegistryTransport
 }
 
-func parseContainerFromLockInputs(operation string, inputs []any) (containerFromLockInputs, error) {
+func parseContainerFromLockInputs(inputs []any) (containerFromLockInputs, error) {
 	var parsed containerFromLockInputs
-	minInputs, maxInputs := 2, 4
-	transportOffset := 2
-	if operation == lockContainerFromLatestOperation {
-		minInputs, maxInputs = 3, 5
-		transportOffset = 3
-	}
-	if len(inputs) < minInputs || len(inputs) > maxInputs {
-		return parsed, fmt.Errorf("invalid %s inputs %v", operation, inputs)
+	if len(inputs) < 2 {
+		return parsed, fmt.Errorf("invalid %s inputs %v", lockContainerFromOperation, inputs)
 	}
 
 	ref, ok := inputs[0].(string)
 	if !ok || ref == "" {
-		return parsed, fmt.Errorf("invalid %s ref %v", operation, inputs[0])
+		return parsed, fmt.Errorf("invalid %s ref %v", lockContainerFromOperation, inputs[0])
 	}
 	parsed.ref = ref
 
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return parsed, fmt.Errorf("invalid %s ref %q: %w", lockContainerFromOperation, ref, err)
+	}
+	parsed.latestRelease = reference.IsNameOnly(refName)
+
+	minInputs, maxInputs := 2, 4
+	transportOffset := 2
+	if parsed.latestRelease {
+		minInputs, maxInputs = 3, 5
+		transportOffset = 3
+	}
+	if len(inputs) < minInputs || len(inputs) > maxInputs {
+		return parsed, fmt.Errorf("invalid %s inputs %v", lockContainerFromOperation, inputs)
+	}
+
 	platform, ok := inputs[1].(string)
 	if !ok || platform == "" {
-		return parsed, fmt.Errorf("invalid %s platform %v", operation, inputs[1])
+		return parsed, fmt.Errorf("invalid %s platform %v", lockContainerFromOperation, inputs[1])
 	}
 	parsed.platform = platform
 
-	if operation == lockContainerFromLatestOperation {
+	if parsed.latestRelease {
 		includeSubreleases, ok := inputs[2].(bool)
 		if !ok {
 			return parsed, fmt.Errorf(
 				"invalid %s latestIncludeSubreleases %v",
-				operation,
+				lockContainerFromOperation,
 				inputs[2],
 			)
 		}
@@ -107,7 +114,7 @@ func parseContainerFromLockInputs(operation string, inputs []any) (containerFrom
 		if !ok {
 			return parsed, fmt.Errorf(
 				"invalid %s registry protocol %v",
-				operation,
+				lockContainerFromOperation,
 				inputs[transportOffset],
 			)
 		}
@@ -115,7 +122,7 @@ func parseContainerFromLockInputs(operation string, inputs []any) (containerFrom
 		case serverresolver.RegistryProtocolHTTP, serverresolver.RegistryProtocolHTTPS:
 			parsed.registryTransport.Protocol = serverresolver.RegistryProtocol(protocol)
 		default:
-			return parsed, fmt.Errorf("invalid %s registry protocol %q", operation, protocol)
+			return parsed, fmt.Errorf("invalid %s registry protocol %q", lockContainerFromOperation, protocol)
 		}
 	}
 
@@ -124,14 +131,14 @@ func parseContainerFromLockInputs(operation string, inputs []any) (containerFrom
 		if !ok || marker != "insecureSkipTLSVerify" {
 			return parsed, fmt.Errorf(
 				"invalid %s registry transport option %v",
-				operation,
+				lockContainerFromOperation,
 				inputs[transportOffset+1],
 			)
 		}
 		if parsed.registryTransport.Protocol != serverresolver.RegistryProtocolHTTPS {
 			return parsed, fmt.Errorf(
 				"invalid %s registry transport options %v",
-				operation,
+				lockContainerFromOperation,
 				inputs[transportOffset:],
 			)
 		}
@@ -142,38 +149,26 @@ func parseContainerFromLockInputs(operation string, inputs []any) (containerFrom
 }
 
 func updateContainerFromLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	inputs, err := parseContainerFromLockInputs(lockContainerFromOperation, entry.Inputs)
+	inputs, err := parseContainerFromLockInputs(entry.Inputs)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
 
-	resolvedDigest, err := resolveContainerFromDigest(ctx, query, inputs)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
+	if !inputs.latestRelease {
+		resolvedDigest, err := resolveContainerFromDigest(ctx, query, inputs)
+		if err != nil {
+			return workspace.LookupResult{}, err
+		}
 
-	return workspace.LookupResult{
-		Value:  resolvedDigest.String(),
-		Policy: entry.Result.Policy,
-	}, nil
-}
-
-func updateContainerFromLatestLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	inputs, err := parseContainerFromLockInputs(lockContainerFromLatestOperation, entry.Inputs)
-	if err != nil {
-		return workspace.LookupResult{}, err
+		return workspace.LookupResult{
+			Value:  resolvedDigest.String(),
+			Policy: entry.Result.Policy,
+		}, nil
 	}
 
 	refName, err := reference.ParseNormalizedNamed(inputs.ref)
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("parse image address %q: %w", inputs.ref, err)
-	}
-	if !reference.IsNameOnly(refName) {
-		return workspace.LookupResult{}, fmt.Errorf(
-			"invalid %s ref %q: expected an image repository without a tag or digest",
-			lockContainerFromLatestOperation,
-			inputs.ref,
-		)
 	}
 	refName = reference.TrimNamed(refName)
 
@@ -335,17 +330,6 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 		return workspace.LookupResult{}, err
 	}
 
-	// The update loop writes the refreshed value itself; disable lock
-	// resolution inside the sub-query so it neither reads the stale entry nor
-	// writes one of its own.
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("client metadata: %w", err)
-	}
-	noLockMetadata := *clientMetadata
-	noLockMetadata.LockMode = string(workspace.LockModeDisabled)
-	ctx = engine.ContextWithClientMetadata(ctx, &noLockMetadata)
-
 	var latest dagql.ObjectResult[*GitRef]
 	if err := srv.Select(ctx, srv.Root(), &latest,
 		dagql.Selector{
@@ -355,7 +339,7 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 			},
 		},
 		dagql.Selector{
-			Field: "latestVersion",
+			Field: "latest",
 			Args: []dagql.NamedInput{
 				{Name: "includeSubreleases", Value: dagql.Boolean(includeSubreleases)},
 			},

@@ -37,23 +37,23 @@ func SelectLatestContainerTag(tags []string, includeSubreleases bool) string {
 func ParseContainerLatestPin(pin, repository string, includeSubreleases bool) (reference.Named, error) {
 	ref, err := reference.ParseNormalizedNamed(pin)
 	if err != nil {
-		return nil, fmt.Errorf("parse container.from.latest pin %q: %w", pin, err)
+		return nil, fmt.Errorf("parse container.from latest-release pin %q: %w", pin, err)
 	}
 	if _, ok := ref.(reference.Canonical); !ok {
-		return nil, fmt.Errorf("container.from.latest pin %q has no digest", pin)
+		return nil, fmt.Errorf("container.from latest-release pin %q has no digest", pin)
 	}
 	tagged, ok := ref.(reference.NamedTagged)
 	if !ok {
-		return nil, fmt.Errorf("container.from.latest pin %q has no tag", pin)
+		return nil, fmt.Errorf("container.from latest-release pin %q has no tag", pin)
 	}
 
 	expected, err := reference.ParseNormalizedNamed(repository)
 	if err != nil {
-		return nil, fmt.Errorf("parse container.from.latest repository %q: %w", repository, err)
+		return nil, fmt.Errorf("parse container.from latest-release repository %q: %w", repository, err)
 	}
 	if reference.TrimNamed(ref).Name() != reference.TrimNamed(expected).Name() {
 		return nil, fmt.Errorf(
-			"container.from.latest pin repository %q does not match %q",
+			"container.from latest-release pin repository %q does not match %q",
 			reference.TrimNamed(ref).Name(),
 			reference.TrimNamed(expected).Name(),
 		)
@@ -69,13 +69,13 @@ func ParseContainerLatestPin(pin, repository string, includeSubreleases bool) (r
 	}
 	if !semver.IsValid(version) {
 		return nil, fmt.Errorf(
-			"container.from.latest pin tag %q is not a semantic version",
+			"container.from latest-release pin tag %q is not a semantic version",
 			tag,
 		)
 	}
 	if !includeSubreleases && semver.Prerelease(version) != "" {
 		return nil, fmt.Errorf(
-			"container.from.latest pin tag %q is not a stable semantic version",
+			"container.from latest-release pin tag %q is not a stable semantic version",
 			tag,
 		)
 	}

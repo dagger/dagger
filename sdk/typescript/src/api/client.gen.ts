@@ -1853,7 +1853,7 @@ export type GitRepositoryBranchesOpts = {
   patterns?: string[]
 }
 
-export type GitRepositoryLatestVersionOpts = {
+export type GitRepositoryLatestOpts = {
   /**
    * Include prerelease tags when selecting the latest release.
    */
@@ -9802,13 +9802,13 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+   * Return the latest release tag, falling back to HEAD when no release exists.
    *
    * This operation is pinned.
    * @param opts.includeSubreleases Include prerelease tags when selecting the latest release.
    */
-  latestVersion = (opts?: GitRepositoryLatestVersionOpts): GitRef => {
-    const ctx = this._ctx.select("latestVersion", { ...opts })
+  latest = (opts?: GitRepositoryLatestOpts): GitRef => {
+    const ctx = this._ctx.select("latest", { ...opts })
     return new GitRef(ctx)
   }
 

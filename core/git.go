@@ -160,7 +160,7 @@ func DecodeGitRefPin(pin string) (*gitutil.Ref, error) {
 }
 
 // DecodeGitLatestRefPin decodes and validates a pin produced by the latest Git
-// release selector. Only semantic-version tags and the HEAD fallback are valid.
+// selector. Semantic-version tags and the HEAD fallback are valid.
 func DecodeGitLatestRefPin(pin string, includeSubreleases bool) (*gitutil.Ref, error) {
 	ref, err := DecodeGitRefPin(pin)
 	if err != nil {
@@ -187,6 +187,7 @@ func DecodeGitLatestRefPin(pin string, includeSubreleases bool) (*gitutil.Ref, e
 	if branch, ok := strings.CutPrefix(ref.Name, "refs/heads/"); ok && branch != "" {
 		return ref, nil
 	}
+
 	return nil, fmt.Errorf("invalid git.latest ref %q", ref.Name)
 }
 
