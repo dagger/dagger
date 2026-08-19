@@ -9,8 +9,8 @@ Builds on [host-git-reconstruction.md](host-git-reconstruction.md),
 [resume-from-trace.md](resume-from-trace.md).
 
 Status: **implementation in progress**. Part I describes the end state; Part II
-tracks the transition from the current implementation. Phases 1 and 2 are
-complete; phase 3 is next.
+tracks the transition from the current implementation. Phases 1 through 3 are
+complete; phase 4 is next.
 
 ---
 
@@ -756,10 +756,14 @@ leave the tree working and land as its own scoped commit(s).
   unrelated pre-existing compile error in `core/integration/llm_resume_test.go`.
   Repeated Go module re-downloads during test invocations are a separate P0
   developer-infrastructure follow-up; do not conflate them with bundle behavior.
-- [ ] **Phase 3 — secure two-ref client capture.** Build synthetic `S` in a
-  temporary object database/index, emit one version-3 bundle advertising `L`
-  and optional `S`, verify the selected object closure, replace the worktree
-  patch stream, and require one approval that lists all dirty files together.
+- [x] **Phase 3 — secure two-ref client capture.** Commits `4712bee`
+  through `c714d47` build synthetic `S` in a temporary object database/index,
+  emit one verified version-3 bundle advertising `L` and optional `S`, enforce
+  exact selected-object closure, bind approval retries and staged objects to the
+  reviewed bytes, replace the separate worktree patch stream, and require one
+  spoof-safe approval for the complete selected dirty set. Focused Git,
+  engine-client, core, schema, and checkpoint reconstruction tests passed;
+  `83501c4` also removed the pre-existing integration compile blocker.
 - [ ] **Phase 4 — total public checkpoint composition.** Implement the source
   matrix and owner gate, use transitive `NotReplayable` classification, pin
   mutable refs, return replayable values as public compositions, make
