@@ -199,11 +199,11 @@ func TestLegacySpanCarriedCallPayloadStillIngests(t *testing.T) {
 }
 
 func TestDigestedCallPayloadIsOpaqueButRebuildable(t *testing.T) {
-	const canary = "CHECKPOINT-CANARY-dagui-raw-only"
-	payloadDigest := digest.FromString("checkpoint-chunk")
+	const canary = "DIGESTED-CANARY-dagui-raw-only"
+	payloadDigest := digest.FromString("opaque-payload")
 	recipe := call.New().Append(
-		&ast.Type{NamedType: "WorkspaceCheckpointChunk", NonNull: true},
-		"workspaceCheckpointChunk",
+		&ast.Type{NamedType: "OpaquePayload", NonNull: true},
+		"opaquePayload",
 		call.WithArgs(call.NewArgument(
 			"data",
 			call.NewLiteralDigestedString(canary, payloadDigest),

@@ -136,24 +136,6 @@ type daggerSession struct {
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
-
-	// checkpointOrigins retains the live checkout each portable workspace
-	// checkpoint captured in this session came from, keyed by the checkpoint's
-	// own identity. It is what makes an explicit save of a frozen agent
-	// workspace land back in the checkout the agent was started from, without
-	// that destination ever entering the checkpoint's value, recipe or persisted
-	// payload — so it dies with the session, exactly like the client it names.
-	// See core.SetWorkspaceCheckpointOriginHooks.
-	checkpointOrigins  map[string]workspaceCheckpointOrigin
-	checkpointOriginMu sync.RWMutex
-}
-
-// workspaceCheckpointOrigin is the live checkout a portable workspace
-// checkpoint was captured from: the client whose session can reach it, and its
-// path on that client's host.
-type workspaceCheckpointOrigin struct {
-	clientID string
-	hostPath string
 }
 
 type workspaceLockKey struct {

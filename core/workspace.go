@@ -1,11 +1,9 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"path"
 	"path/filepath"
 	"slices"
@@ -13,7 +11,6 @@ import (
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -117,57 +114,6 @@ func BumpWorkspaceReadEpoch(ctx context.Context) error {
 	return workspaceReadEpochBumper(ctx)
 }
 
-// workspaceCheckpointOrigin hooks retain and resolve the live checkout a
-// portable workspace checkpoint was captured from, so an explicit save can
-// reconcile the agent's work back to it (see Workspace.ExportTarget).
-//
-// The route is deliberately session state rather than workspace state. A
-// checkpoint's Workspace is the value of a pure recipe: every session that
-// resolves that recipe shares the one cached value, and the value, its recipe
-// and its persisted payload must all stay host-independent so a cold restore
-// cannot inherit a destination and no session can save through another's
-// client. Carrying the origin on the value instead would either leak across
-// sessions with it or, if kept off the cached value by cloning it, leave the
-// clone with no result identity at all — it cannot be addressed by ID, so the
-// composed agent cannot bind it (`result *core.Workspace is detached`).
-//
-// Registered by engine/server, which owns session lifetime; nil in contexts
-// without a server, where nothing is retained and every lookup misses.
-var (
-	workspaceCheckpointOriginRetainer func(ctx context.Context, checkpointID, clientID, hostPath string) error
-	workspaceCheckpointOriginLookup   func(ctx context.Context, checkpointID string) (clientID, hostPath string, ok bool)
-)
-
-// SetWorkspaceCheckpointOriginHooks registers the retain/lookup pair used to
-// route an explicit save of a freshly captured checkpoint back to the checkout
-// it came from. Mirrors SetWorkspaceReadEpochHooks.
-func SetWorkspaceCheckpointOriginHooks(
-	retain func(ctx context.Context, checkpointID, clientID, hostPath string) error,
-	lookup func(ctx context.Context, checkpointID string) (clientID, hostPath string, ok bool),
-) {
-	workspaceCheckpointOriginRetainer = retain
-	workspaceCheckpointOriginLookup = lookup
-}
-
-// RetainWorkspaceCheckpointOrigin records the live checkout a checkpoint was
-// just captured from, for the calling session only. A no-op when no server has
-// registered the hook.
-func RetainWorkspaceCheckpointOrigin(ctx context.Context, checkpointID, clientID, hostPath string) error {
-	if workspaceCheckpointOriginRetainer == nil {
-		return nil
-	}
-	return workspaceCheckpointOriginRetainer(ctx, checkpointID, clientID, hostPath)
-}
-
-// WorkspaceCheckpointOrigin returns the checkout the identified checkpoint was
-// captured from, if the calling session is the one that captured it.
-func WorkspaceCheckpointOrigin(ctx context.Context, checkpointID string) (clientID, hostPath string, ok bool) {
-	if workspaceCheckpointOriginLookup == nil {
-		return "", "", false
-	}
-	return workspaceCheckpointOriginLookup(ctx, checkpointID)
-}
-
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
 	// source is the private backing source for workspace filesystem and git
@@ -219,17 +165,6 @@ type Workspace struct {
 	// recompose tools through the checkpoint do not depend on request-local
 	// client metadata, which nested module clients intentionally do not inherit.
 	workspaceEnv string
-
-	// checkpointID identifies the portable checkpoint this workspace derives
-	// from: the digest of the checkpoint manifest it was reconstructed from.
-	// It is pure and host-independent — the checkpoint's content identity, not a
-	// route to any machine — and Workspace.Clone carries it through the agent's
-	// edits and commits. The capturing session retains that checkpoint's
-	// originating checkout under this key (see workspaceCheckpointOrigin hooks),
-	// which is how an explicit save finds its way back to the checkout without
-	// the destination ever entering the value, the recipe or the payload.
-	// Empty for every workspace that is not checkpoint-derived.
-	checkpointID string
 
 	// gitOrigin is the normalized Git origin identifying this workspace across
 	// clones and content changes. It contains no credentials or transport
@@ -294,231 +229,6 @@ type Workspace struct {
 	// is untouched until the stack is exported. Internal only — not a GraphQL
 	// field, but persisted and dependency-tracked like mounts.
 	pendingCommits []WorkspacePendingCommit
-}
-
-// Workspace checkpoint payloads are recipe values, not storage handles. Keep
-// every leaf and the complete reconstruction bounded before allocating or
-// touching a snapshot. The chunk size is deliberately conservative; capture may
-// split more finely, but restore never accepts a leaf large enough to become an
-// unbounded trace frame.
-const (
-	WorkspaceCheckpointFormatVersion = 1
-
-	workspaceCheckpointMaxManifestBytes = 1 << 20
-	workspaceCheckpointMaxChunkBytes    = 1 << 20
-	workspaceCheckpointMaxChunks        = 1024
-	workspaceCheckpointMaxPayloadBytes  = 256 << 20
-)
-
-// WorkspaceCheckpointChunk is one opaque, content-addressed leaf of a portable
-// workspace recipe. Its bytes are intentionally not GraphQL fields: the only
-// operation that consumes them is the internal checkpoint constructor.
-type WorkspaceCheckpointChunk struct {
-	data   []byte
-	digest digest.Digest
-}
-
-func (*WorkspaceCheckpointChunk) Type() *ast.Type {
-	return &ast.Type{NamedType: "WorkspaceCheckpointChunk", NonNull: true}
-}
-
-func (*WorkspaceCheckpointChunk) TypeDescription() string {
-	return "An internal bounded payload chunk used to reconstruct a workspace checkpoint."
-}
-
-func NewWorkspaceCheckpointChunk(data []byte, claimed digest.Digest) (*WorkspaceCheckpointChunk, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("workspace checkpoint chunk is empty")
-	}
-	if len(data) > workspaceCheckpointMaxChunkBytes {
-		return nil, fmt.Errorf("workspace checkpoint chunk is %d bytes; maximum is %d", len(data), workspaceCheckpointMaxChunkBytes)
-	}
-	actual := digest.FromBytes(data)
-	if claimed != "" && claimed != actual {
-		return nil, fmt.Errorf("workspace checkpoint chunk digest %s does not match content %s", claimed, actual)
-	}
-	return &WorkspaceCheckpointChunk{data: slices.Clone(data), digest: actual}, nil
-}
-
-func (chunk *WorkspaceCheckpointChunk) Data() []byte {
-	if chunk == nil {
-		return nil
-	}
-	return slices.Clone(chunk.data)
-}
-
-func (chunk *WorkspaceCheckpointChunk) Digest() digest.Digest {
-	if chunk == nil {
-		return ""
-	}
-	return chunk.digest
-}
-
-// WorkspaceGitCheckpointManifest is the complete, versioned contract for the
-// pure checkpoint constructor. Phase 3 carries one bundle payload; the legacy
-// worktree payload remains empty until the spike constructor is deleted.
-type WorkspaceGitCheckpointManifest struct {
-	Version              int                          `json:"version"`
-	ObjectFormat         string                       `json:"objectFormat"`
-	RemoteURL            string                       `json:"remoteURL"`
-	RemoteRef            string                       `json:"remoteRef"`
-	BaseSHA              string                       `json:"baseSHA"`
-	HeadSHA              string                       `json:"headSHA"`
-	BundleRef            string                       `json:"bundleRef,omitempty"`
-	WorktreeSHA          string                       `json:"worktreeSHA,omitempty"`
-	WorktreeRef          string                       `json:"worktreeRef,omitempty"`
-	Bundle               WorkspaceCheckpointPayload   `json:"bundle"`
-	Worktree             WorkspaceCheckpointPayload   `json:"worktree"`
-	WorktreeTree         string                       `json:"worktreeTree"`
-	Commits              []WorkspaceBundledCommit     `json:"commits"`
-	Workspace            WorkspaceCheckpointWorkspace `json:"workspace"`
-	CapturePolicyVersion string                       `json:"capturePolicyVersion"`
-}
-
-type WorkspaceCheckpointPayload struct {
-	Size   int64                                `json:"size"`
-	Digest string                               `json:"digest"`
-	Chunks []WorkspaceCheckpointChunkDescriptor `json:"chunks"`
-}
-
-type WorkspaceCheckpointChunkDescriptor struct {
-	Size   int    `json:"size"`
-	Digest string `json:"digest"`
-}
-
-type WorkspaceBundledCommit struct {
-	SHA         string   `json:"sha"`
-	Origin      string   `json:"origin,omitempty"`
-	Message     string   `json:"message"`
-	Date        string   `json:"date"`
-	AuthorName  string   `json:"authorName"`
-	AuthorEmail string   `json:"authorEmail"`
-	Paths       []string `json:"paths"`
-}
-
-type WorkspaceCheckpointWorkspace struct {
-	Address        string `json:"address,omitempty"`
-	Cwd            string `json:"cwd"`
-	ConfigFile     string `json:"configFile,omitempty"`
-	LockFile       string `json:"lockFile,omitempty"`
-	Environment    string `json:"environment,omitempty"`
-	GitAuthorName  string `json:"gitAuthorName,omitempty"`
-	GitAuthorEmail string `json:"gitAuthorEmail,omitempty"`
-}
-
-// ParseWorkspaceGitCheckpointManifest rejects unknown fields and trailing data
-// so a newer producer cannot be silently interpreted with older semantics.
-func ParseWorkspaceGitCheckpointManifest(raw string) (*WorkspaceGitCheckpointManifest, error) {
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("workspace checkpoint manifest is empty")
-	}
-	if len(raw) > workspaceCheckpointMaxManifestBytes {
-		return nil, fmt.Errorf("workspace checkpoint manifest is %d bytes; maximum is %d", len(raw), workspaceCheckpointMaxManifestBytes)
-	}
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var manifest WorkspaceGitCheckpointManifest
-	if err := dec.Decode(&manifest); err != nil {
-		return nil, fmt.Errorf("decode workspace checkpoint manifest: %w", err)
-	}
-	if err := dec.Decode(new(any)); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("decode workspace checkpoint manifest: trailing JSON value")
-		}
-		return nil, fmt.Errorf("decode workspace checkpoint manifest: %w", err)
-	}
-	if manifest.Version != WorkspaceCheckpointFormatVersion {
-		return nil, fmt.Errorf("unsupported workspace checkpoint format version %d (expected %d)", manifest.Version, WorkspaceCheckpointFormatVersion)
-	}
-	return &manifest, nil
-}
-
-// AssembleWorkspaceCheckpointPayloads verifies positional chunk descriptors,
-// per-payload digests and all aggregate bounds. Phase 3 returns the bundle and
-// an empty legacy worktree payload.
-func AssembleWorkspaceCheckpointPayloads(
-	manifest *WorkspaceGitCheckpointManifest,
-	chunks []*WorkspaceCheckpointChunk,
-) (bundle, worktree []byte, _ error) {
-	if manifest == nil {
-		return nil, nil, fmt.Errorf("workspace checkpoint manifest is required")
-	}
-	if len(chunks) > workspaceCheckpointMaxChunks {
-		return nil, nil, fmt.Errorf("workspace checkpoint has %d chunks; maximum is %d", len(chunks), workspaceCheckpointMaxChunks)
-	}
-	total := manifest.Bundle.Size + manifest.Worktree.Size
-	if manifest.Bundle.Size < 0 || manifest.Worktree.Size < 0 || total < 0 || total > workspaceCheckpointMaxPayloadBytes {
-		return nil, nil, fmt.Errorf("workspace checkpoint payload is %d bytes; maximum is %d", total, workspaceCheckpointMaxPayloadBytes)
-	}
-
-	pos := 0
-	assemble := func(name string, payload WorkspaceCheckpointPayload) ([]byte, error) {
-		if payload.Size > workspaceCheckpointMaxPayloadBytes {
-			return nil, fmt.Errorf("workspace checkpoint %s payload is %d bytes; maximum is %d", name, payload.Size, workspaceCheckpointMaxPayloadBytes)
-		}
-		buf := bytes.NewBuffer(make([]byte, 0, int(payload.Size)))
-		for i, descriptor := range payload.Chunks {
-			if pos >= len(chunks) {
-				return nil, fmt.Errorf("workspace checkpoint %s chunk %d is missing", name, i)
-			}
-			chunk := chunks[pos]
-			pos++
-			if chunk == nil {
-				return nil, fmt.Errorf("workspace checkpoint %s chunk %d is nil", name, i)
-			}
-			if descriptor.Size <= 0 || descriptor.Size > workspaceCheckpointMaxChunkBytes {
-				return nil, fmt.Errorf("workspace checkpoint %s chunk %d has invalid size %d", name, i, descriptor.Size)
-			}
-			if descriptor.Size != len(chunk.data) {
-				return nil, fmt.Errorf("workspace checkpoint %s chunk %d size is %d, expected %d", name, i, len(chunk.data), descriptor.Size)
-			}
-			expected, err := parseWorkspaceCheckpointDigest(descriptor.Digest, fmt.Sprintf("%s chunk %d", name, i))
-			if err != nil {
-				return nil, err
-			}
-			if expected != chunk.digest {
-				return nil, fmt.Errorf("workspace checkpoint %s chunk %d digest is %s, expected %s", name, i, chunk.digest, expected)
-			}
-			_, _ = buf.Write(chunk.data)
-		}
-		if int64(buf.Len()) != payload.Size {
-			return nil, fmt.Errorf("workspace checkpoint %s payload size is %d, expected %d", name, buf.Len(), payload.Size)
-		}
-		expected, err := parseWorkspaceCheckpointDigest(payload.Digest, name+" payload")
-		if err != nil {
-			return nil, err
-		}
-		actual := digest.FromBytes(buf.Bytes())
-		if actual != expected {
-			return nil, fmt.Errorf("workspace checkpoint %s payload digest is %s, expected %s", name, actual, expected)
-		}
-		return buf.Bytes(), nil
-	}
-
-	var err error
-	bundle, err = assemble("bundle", manifest.Bundle)
-	if err != nil {
-		return nil, nil, err
-	}
-	worktree, err = assemble("worktree", manifest.Worktree)
-	if err != nil {
-		return nil, nil, err
-	}
-	if pos != len(chunks) {
-		return nil, nil, fmt.Errorf("workspace checkpoint has %d unreferenced chunks", len(chunks)-pos)
-	}
-	return bundle, worktree, nil
-}
-
-func parseWorkspaceCheckpointDigest(raw, label string) (digest.Digest, error) {
-	parsed, err := digest.Parse(raw)
-	if err != nil || parsed.Algorithm() != digest.SHA256 {
-		return "", fmt.Errorf("workspace checkpoint %s has invalid sha256 digest %q", label, raw)
-	}
-	if err := parsed.Validate(); err != nil {
-		return "", fmt.Errorf("workspace checkpoint %s has invalid digest %q: %w", label, raw, err)
-	}
-	return parsed, nil
 }
 
 // WorkspacePendingCommit is one commit staged engine-side on top of the
@@ -897,23 +607,6 @@ func (ws *Workspace) LocalSourceHostPath() (string, bool) {
 	}
 }
 
-// CheckpointID returns the identity of the portable checkpoint this workspace
-// derives from, or "" when it is not checkpoint-derived.
-func (ws *Workspace) CheckpointID() string {
-	if ws == nil {
-		return ""
-	}
-	return ws.checkpointID
-}
-
-// SetCheckpointID records the checkpoint identity a reconstructed workspace
-// derives from. Set once, by the pure checkpoint constructor.
-func (ws *Workspace) SetCheckpointID(checkpointID string) {
-	if ws != nil {
-		ws.checkpointID = checkpointID
-	}
-}
-
 // SetGitOrigin records the normalized, credential-free Git origin for this
 // workspace. It is internal provenance, not a public address: callers derive it
 // from the selected remote and checkpoints preserve it across reconstruction.
@@ -936,23 +629,13 @@ func (ws *Workspace) GitOrigin() string {
 // workspace must write to.
 //
 // An ordinary local workspace is its own destination. A portable checkpoint has
-// no checkout of its own: the checkout it was captured from is retained by the
-// capturing session, outside the recipe and the persisted payload, and is found
-// here by the checkpoint identity every workspace derived from it carries.
-// Anywhere else — a cold restore, or a later session on the same machine —
-// there is no target, and saving fails rather than guessing a destination.
-func (ws *Workspace) ExportTarget(ctx context.Context) (clientID, hostPath string, _ error) {
+// no checkout of its own and cannot be exported without an explicit target.
+func (ws *Workspace) ExportTarget(_ context.Context) (clientID, hostPath string, _ error) {
 	if ws == nil {
 		return "", "", fmt.Errorf("workspace is required")
 	}
-	if ws.checkpointID != "" {
-		if originClient, originCheckout, ok := WorkspaceCheckpointOrigin(ctx, ws.checkpointID); ok {
-			return originClient, originCheckout, nil
-		}
-	}
 	if ws.IsPortableCheckpoint() {
-		return "", "", fmt.Errorf("cannot export a restored workspace checkpoint: " +
-			"it has no checkout of its own, and the checkout it was captured from is not part of this session")
+		return "", "", fmt.Errorf("cannot export a portable workspace checkpoint without an explicit target")
 	}
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {
@@ -1279,7 +962,6 @@ type persistedWorkspacePayload struct {
 	CompatWorkspace    *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
 	PortableCheckpoint bool                           `json:"portableCheckpoint,omitempty"`
 	WorkspaceEnv       string                         `json:"workspaceEnv,omitempty"`
-	CheckpointID       string                         `json:"checkpointID,omitempty"`
 	GitOrigin          string                         `json:"gitOrigin,omitempty"`
 	Address            string                         `json:"address,omitempty"`
 	Cwd                string                         `json:"cwd,omitempty"`
@@ -1465,7 +1147,6 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		CompatWorkspace:    ws.compatWorkspace,
 		PortableCheckpoint: ws.portableCheckpoint,
 		WorkspaceEnv:       ws.workspaceEnv,
-		CheckpointID:       ws.checkpointID,
 		GitOrigin:          ws.gitOrigin,
 		Address:            ws.Address,
 		Cwd:                ws.Cwd,
@@ -1652,7 +1333,6 @@ func (*Workspace) DecodePersistedObject(
 		compatWorkspace:    persisted.CompatWorkspace,
 		portableCheckpoint: persisted.PortableCheckpoint,
 		workspaceEnv:       persisted.WorkspaceEnv,
-		checkpointID:       persisted.CheckpointID,
 		gitOrigin:          workspacepkg.NormalizeGitRemote(persisted.GitOrigin),
 		Address:            persisted.Address,
 		Cwd:                cwd,
