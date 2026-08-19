@@ -19,6 +19,7 @@ func TestWorkspaceSettingHintTypeInfo(t *testing.T) {
 		name         string
 		typeDef      *core.TypeDef
 		configurable bool
+		exampleValue string
 	}{
 		{
 			name:         "primitive",
@@ -29,6 +30,12 @@ func TestWorkspaceSettingHintTypeInfo(t *testing.T) {
 			name:         "address backed object",
 			typeDef:      objectTypeDef(t, dag, "Secret"),
 			configurable: true,
+		},
+		{
+			name:         "volume",
+			typeDef:      objectTypeDef(t, dag, "Volume"),
+			configurable: true,
+			exampleValue: `"engine-volume://data"`,
 		},
 		{
 			name:         "workspace object",
@@ -56,8 +63,11 @@ func TestWorkspaceSettingHintTypeInfo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, _, configurable := typeInfoFromTypeDef(tt.typeDef)
+			_, exampleValue, configurable := typeInfoFromTypeDef(tt.typeDef)
 			require.Equal(t, tt.configurable, configurable)
+			if tt.exampleValue != "" {
+				require.Equal(t, tt.exampleValue, exampleValue)
+			}
 		})
 	}
 }
