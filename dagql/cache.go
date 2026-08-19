@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
@@ -1757,12 +1758,21 @@ func wrapSharedResultWithResolver(ctx context.Context, res *sharedResult, hitCac
 // ongoingCall tracks one in-flight GetOrInitCall execution and points at the
 // shared result payload that will be returned to waiters.
 type ongoingCall struct {
-	callConcurrencyKeys     callConcurrencyKeys
-	isPersistable           bool
-	ttlSeconds              int64
-	initCompletedResultOnce sync.Once
-	handoffHoldActive       bool
-	initCompletedResultErr  error
+	callConcurrencyKeys callConcurrencyKeys
+	// isPersistable is monotonic persistence intent aggregated from every
+	// request admitted to this call. Late joiners update it under callsMu while
+	// publication reads it under egraphMu, so all accesses must be atomic.
+	isPersistable atomic.Bool
+	// persistedDuringPublication records whether the publication-time intent
+	// snapshot installed the persisted edge. If a late joiner arrives after
+	// that snapshot, needsPersistRepair is set when callsMu closes admission.
+	persistedDuringPublication bool
+	needsPersistRepair         bool
+	persistedEdgeExpiresAtUnix int64
+	ttlSeconds                 int64
+	initCompletedResultOnce    sync.Once
+	handoffHoldActive          bool
+	initCompletedResultErr     error
 
 	waitCh                     chan struct{}
 	cancel                     context.CancelCauseFunc
@@ -3667,7 +3677,7 @@ func (c *Cache) getOrInitCall(
 	if req.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
 			if req.IsPersistable {
-				oc.isPersistable = true
+				oc.isPersistable.Store(true)
 			}
 			// already an ongoing call
 			oc.waiters++
@@ -3692,13 +3702,15 @@ func (c *Cache) getOrInitCall(
 	}
 	oc := &ongoingCall{
 		callConcurrencyKeys:      callConcKeys,
-		isPersistable:            req.IsPersistable,
 		ttlSeconds:               req.TTL,
 		waitCh:                   make(chan struct{}),
 		cancel:                   cancel,
 		waiters:                  1,
 		sharedWorkCtx:            sharedWorkCtx,
 		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
+	}
+	if req.IsPersistable {
+		oc.isPersistable.Store(true)
 	}
 
 	if req.ConcurrencyKey != "" {
@@ -3890,13 +3902,8 @@ func (c *Cache) wait(
 			oc.cancel(canceledErr)
 		}
 		c.callsMu.Unlock()
-		if releaseHandoff && oc.res != nil {
-			c.egraphMu.Lock()
-			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
-			oc.handoffHoldActive = false
-			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
+		if releaseHandoff {
+			if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
 				return nil, errors.Join(canceledErr, relErr)
 			}
 		}
@@ -3921,23 +3928,20 @@ func (c *Cache) wait(
 		}()
 		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
 		c.callsMu.Lock()
+		oc.needsPersistRepair = oc.initCompletedResultErr == nil &&
+			oc.res != nil &&
+			!oc.persistedDuringPublication &&
+			oc.isPersistable.Load()
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()
 	})
-	// TODO there's a race condition here: thread one enters the .Do() above but hasn't finished calling initCompletedResult(....), the second thread will skip over the Do(),
-	// then check the err below before it's actually written to
 	if oc.initCompletedResultErr != nil {
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
 		c.callsMu.Unlock()
 		if lastWaiter && oc.handoffHoldActive {
-			c.egraphMu.Lock()
-			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
-			oc.handoffHoldActive = false
-			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
+			if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
 				return nil, relErr
 			}
 		}
@@ -3949,12 +3953,7 @@ func (c *Cache) wait(
 		lastWaiter := oc.waiters == 0
 		c.callsMu.Unlock()
 		if lastWaiter && oc.handoffHoldActive {
-			c.egraphMu.Lock()
-			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
-			oc.handoffHoldActive = false
-			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
+			if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
 				return nil, relErr
 			}
 		}
@@ -3975,12 +3974,7 @@ func (c *Cache) wait(
 	lastWaiter := oc.waiters == 0
 	c.callsMu.Unlock()
 	if lastWaiter && oc.handoffHoldActive {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		oc.handoffHoldActive = false
-		if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
+		if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
 			return nil, relErr
 		}
 	}
@@ -3992,10 +3986,33 @@ func (c *Cache) wait(
 	return retResAny, nil
 }
 
+// releaseOngoingCallHandoff releases the temporary ownership that protects a
+// published result until every admitted waiter has finished. If persistence
+// intent arrived after publication's initial snapshot, repair the missed edge
+// inside this already-required egraph critical section before dropping the
+// handoff ownership.
+func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) error {
+	if c == nil || oc == nil || oc.res == nil || !oc.handoffHoldActive {
+		return nil
+	}
+
+	c.egraphMu.Lock()
+	if oc.needsPersistRepair {
+		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
+	}
+	queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+	c.egraphMu.Unlock()
+	oc.handoffHoldActive = false
+
+	return errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
+	oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
 	var (
 		resultTermSelf   digest.Digest
 		resultTermInputs []digest.Digest
@@ -4302,8 +4319,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.egraphMu.Unlock()
 		return err
 	}
-	if oc.isPersistable {
-		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds), false)
+	if oc.isPersistable.Load() {
+		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
+		oc.persistedDuringPublication = true
 	}
 	// The cache-backed path already took the handoff hold when it adopted the
 	// canonical result above; only fresh results take it here.
