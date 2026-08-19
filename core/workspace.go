@@ -645,21 +645,21 @@ func (ws *Workspace) GitOrigin() string {
 	return ws.gitOrigin
 }
 
-// ExportTarget resolves the client and checkout an explicit save of this
-// workspace must write to.
+// ExportTarget validates that this workspace can be used as an export
+// destination and returns the owning client and checkout path.
 //
-// An ordinary local workspace is its own destination. A portable checkpoint has
-// no checkout of its own and cannot be exported without an explicit target.
+// Export destinations are deliberately client-local Git workspaces. A value,
+// remote, synthetic, or rootless workspace has no client checkout to write to.
 func (ws *Workspace) ExportTarget(_ context.Context) (clientID, hostPath string, _ error) {
 	if ws == nil {
 		return "", "", fmt.Errorf("workspace is required")
 	}
-	if ws.IsPortableCheckpoint() {
-		return "", "", fmt.Errorf("cannot export a portable workspace checkpoint without an explicit target")
-	}
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {
 		return "", "", err
+	}
+	if ws.ClientID == "" {
+		return "", "", fmt.Errorf("workspace export target must be a client-local Git workspace")
 	}
 	return ws.ClientID, hostPath, nil
 }

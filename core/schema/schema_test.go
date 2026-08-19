@@ -87,6 +87,34 @@ func TestGitBundleSchema(t *testing.T) {
 	require.Equal(t, "GitBundle", schemaArgument(t, withBundleField, "bundle").Directives.ExpectedType())
 }
 
+func TestWorkspaceExportSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "workspace-export-schema-client",
+		SessionID: "workspace-export-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	require.NoError(t, err)
+	schema := decodeSchemaResponse(t, fullJSON).Schema
+
+	exportField := schemaField(schema.Types.Get("Workspace"), "export")
+	require.NotNil(t, exportField)
+	require.True(t, exportField.TypeRef.IsVoid())
+	require.True(t, exportField.TypeRef.IsOptional(), "Workspace.export must return nullable Void")
+	to := schemaArgument(t, exportField, "to")
+	require.True(t, to.TypeRef.IsOptional())
+	require.Equal(t, "Workspace", to.Directives.ExpectedType())
+}
+
 func schemaArgument(t *testing.T, field *codegenintrospection.Field, name string) *codegenintrospection.InputValue {
 	t.Helper()
 	for i := range field.Args {

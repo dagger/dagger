@@ -430,9 +430,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the local Git workspace").
-			Doc("Write this workspace's pending changes to its local Git workspace.",
-				"Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead."),
+			DoNotCache("Writes pending workspace changes to a local Git workspace").
+			Doc("Write this workspace's pending changes to a local Git workspace.",
+				"Client-local workspaces export to themselves when to is omitted. Value-backed workspaces require an explicit target.",
+				"Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.").
+			Args(
+				dagql.Arg("to").
+					View(AfterVersion("v1.0.0-beta.10")).
+					Doc("Client-local Git workspace whose checkout receives the exported commits and changes."),
+			),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -3452,17 +3458,47 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 	return p == cwd || strings.HasPrefix(p, cwd+"/") || strings.HasPrefix(cwd, p+"/")
 }
 
+type workspaceExportArgs struct {
+	To dagql.Optional[dagql.ID[*core.Workspace]]
+}
+
 func (s *workspaceSchema) export(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
-) (core.Void, error) {
+	args workspaceExportArgs,
+) (res dagql.Nullable[core.Void], _ error) {
 	ws := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	// The argument selects only where host writes are routed. All commits,
+	// changes, mount write-through state, and reconciliation metadata continue
+	// to come from the receiver.
+	target := ws
+	if args.To.Valid {
+		targetResult, err := args.To.Value.Load(ctx, srv)
+		if err != nil {
+			return res, fmt.Errorf("load workspace export target: %w", err)
+		}
+		target = targetResult.Self()
+	} else if _, ok := ws.BaseSource().(*core.WorkspaceSourceClientLocal); !ok {
+		return res, fmt.Errorf("workspace export requires an explicit target when exporting a non-client-local workspace; pass a client-local Git workspace with `to`")
+	}
+
+	exportCtx, hostPath, err := workspaceExportContext(ctx, target)
+	if err != nil {
+		return res, fmt.Errorf("invalid workspace export target: %w", err)
+	}
+	if err := s.ensureWorkspaceGitDirectory(ctx, target); err != nil {
+		return res, fmt.Errorf("invalid workspace export target: %w", err)
+	}
 
 	// Verified before the fast-forward below, so a workspace carrying phantom
 	// deletions is refused with the checkout still untouched.
 	if err := s.assertOverlayRemovalsIntended(ctx, ws); err != nil {
-		return core.Void{}, fmt.Errorf("save: %w", err)
+		return res, fmt.Errorf("save: %w", err)
 	}
 
 	// Staged commits land first. They fast-forward unchanged when the checkout
@@ -3471,34 +3507,30 @@ func (s *workspaceSchema) export(
 	// the resulting HEAD (and `git status` on the host then shows exactly them).
 	// A conflict is prepared away from the checkout and leaves it untouched.
 	if len(ws.PendingCommits()) > 0 {
-		if err := s.exportPendingCommits(ctx, ws); err != nil {
-			return core.Void{}, err
+		if err := s.exportPendingCommits(ctx, ws, target); err != nil {
+			return res, err
 		}
 	}
 
-	// Base export: write the primary overlay changeset to the local Git
-	// workspace. Only a non-empty base changeset requires a valid host path;
-	// cache mount write-through (below) runs regardless of the base source.
-	//
+	// Base export: write the primary overlay changeset to the selected local Git
+	// workspace. The destination was validated above even when this changeset is
+	// empty, so value workspaces cannot use cache-only export to bypass the
+	// explicit-target requirement.
 	// The changeset is the staged-relative one: the fast-forward above already
 	// wrote every committed path into the work tree, so what is left to write is
 	// exactly the uncommitted remainder — each path lands once.
 	changes, hasChanges, err := s.workspaceOverlayChanges(ctx, ws)
 	if err != nil {
-		return core.Void{}, err
+		return res, err
 	}
 	if hasChanges && changes.Self() != nil {
 		isEmpty, err := changes.Self().IsEmpty(ctx)
 		if err != nil {
-			return core.Void{}, err
+			return res, err
 		}
 		if !isEmpty {
-			exportCtx, hostPath, err := workspaceExportContext(ctx, ws)
-			if err != nil {
-				return core.Void{}, err
-			}
 			if err := changes.Self().Export(exportCtx, hostPath); err != nil {
-				return core.Void{}, err
+				return res, err
 			}
 			if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
 				slog.Warn("could not invalidate workspace after export", "error", err)
@@ -3530,15 +3562,15 @@ func (s *workspaceSchema) export(
 			}
 			changes, err := s.cacheMountChanges(ctx, mounts, mount)
 			if err != nil {
-				return core.Void{}, fmt.Errorf("diff cache mount %q: %w", mount.Target, err)
+				return res, fmt.Errorf("diff cache mount %q: %w", mount.Target, err)
 			}
 			if err := mount.Volume.Self().CommitChanges(ctx, changes.Self()); err != nil {
-				return core.Void{}, fmt.Errorf("commit cache mount %q: %w", mount.Target, err)
+				return res, fmt.Errorf("commit cache mount %q: %w", mount.Target, err)
 			}
 		}
 	}
 
-	return core.Void{}, nil
+	return res, nil
 }
 
 // cacheMountChanges diffs a cache mount's current content in the mounts tree
@@ -4380,7 +4412,7 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	var inst dagql.ObjectResult[*core.Changeset]
 	ws := parent.Self().Workspace.Self()
 	if _, ok := ws.OverlayChanges(); ok {
-		if ref, ok := ws.SourceGitRef(); ok {
+		if ref, ok := ws.SourceGitRef(); ok && len(ws.PendingCommits()) == 0 {
 			return gitRefWorkspaceChanges(ctx, ws, ref)
 		}
 		if !ws.ClientLocalBase() {
@@ -5753,12 +5785,12 @@ func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (contex
 	return withWorkspaceClientIDContext(ctx, ws.ClientID)
 }
 
-// workspaceExportContext resolves where an explicit save of ws must write and
-// returns both the checkout path and a context routed to the client that owns
-// it. An ordinary local workspace saves to itself; remote, synthetic, and
-// portable workspaces have no implicit destination and fail rather than guess.
-func workspaceExportContext(ctx context.Context, ws *core.Workspace) (context.Context, string, error) {
-	clientID, hostPath, err := ws.ExportTarget(ctx)
+// workspaceExportContext resolves a validated export target's checkout and
+// routes host operations to the client that owns it. The target supplies only
+// this destination; export state and reconciliation metadata come from the
+// receiver workspace.
+func workspaceExportContext(ctx context.Context, target *core.Workspace) (context.Context, string, error) {
+	clientID, hostPath, err := target.ExportTarget(ctx)
 	if err != nil {
 		return nil, "", err
 	}

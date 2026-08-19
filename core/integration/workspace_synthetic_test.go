@@ -534,7 +534,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState
 
 	err = updated.Export(ctx)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "cannot export a synthetic workspace")
+	require.ErrorContains(t, err, "workspace export requires an explicit target")
 }
 
 // TestSyntheticWorkspaceFindUpValidatesNames asserts that Workspace.findUp
