@@ -5,8 +5,28 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dagger/dagger/core/gitref"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitRefSelectorUsesPinOverSourceVersion(t *testing.T) {
+	t.Parallel()
+
+	parsed := &ParsedGitRefString{
+		Parsed: gitref.Parsed{
+			HasVersion: true,
+			ModVersion: "main",
+		},
+	}
+
+	selector := gitRefSelector(parsed, "", "v1.2.3")
+
+	require.Equal(t, "ref", selector.Field)
+	require.Len(t, selector.Args, 1)
+	require.Equal(t, "name", selector.Args[0].Name)
+	require.Equal(t, dagql.String("v1.2.3"), selector.Args[0].Value)
+}
 
 func TestMatchVersion(t *testing.T) {
 	vers := []string{"v1.0.0", "v1.0.1", "v2.0.0", "path/v1.0.1", "path/v2.0.1"}

@@ -177,30 +177,10 @@ func (p *ParsedGitRefString) GitRef(
 	}
 	repoSelector = withCommitArg(repoSelector)
 
-	refSelector := dagql.Selector{Field: "head"}
-	switch {
-	case modTag != "":
-		refSelector = withCommitArg(dagql.Selector{
-			Field: "tag",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(modTag)},
-			},
-		})
-	case pinCommitRef != "" && !pinIsSHA:
-		// A config pin is authoritative, even when the source ref also
-		// contains a floating or symbolic version such as "@main".
-		refSelector = dagql.Selector{
-			Field: "ref",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(pinCommitRef)},
-			},
-		}
-	case p.HasVersion:
-		refSelector = withCommitArg(dagql.Selector{
-			Field: "ref",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(p.ModVersion)},
-			},
+	refSelector := gitRefSelector(p, modTag, pinCommitRef)
+	if pinIsSHA && (modTag != "" || p.HasVersion) {
+		refSelector.Args = append(refSelector.Args, dagql.NamedInput{
+			Name: "commit", Value: dagql.String(pinCommitRef),
 		})
 	}
 	var gitRef dagql.ObjectResult[*GitRef]
@@ -210,6 +190,36 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	return gitRef, nil
+}
+
+func gitRefSelector(p *ParsedGitRefString, modTag, pinCommitRef string) dagql.Selector {
+	switch {
+	case modTag != "":
+		return dagql.Selector{
+			Field: "tag",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(modTag)},
+			},
+		}
+	case pinCommitRef != "" && !gitutil.IsCommitSHA(pinCommitRef):
+		// A config pin is authoritative, even when the source ref also
+		// contains a floating or symbolic version such as "@main".
+		return dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(pinCommitRef)},
+			},
+		}
+	case p.HasVersion:
+		return dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(p.ModVersion)},
+			},
+		}
+	default:
+		return dagql.Selector{Field: "head"}
+	}
 }
 
 // Match a version string in a list of versions with optional subPath
