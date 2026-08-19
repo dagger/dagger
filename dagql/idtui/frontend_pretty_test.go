@@ -1251,18 +1251,16 @@ func prettyTestTraceID() dagui.TraceID {
 
 func TestLogPagerQClosesLikeEscape(t *testing.T) {
 	fe := NewWithDB(io.Discard, dagui.NewDB())
-	restored := false
+	fe.tui.SetFocus(fe)
 	fe.logPager = &LogPagerView{}
-	fe.logPagerReturn = func() { restored = true }
+	fe.logPagerFocus = fe.tui.PushFocus(fe.logPager)
 
 	fe.handleNavKeyUV(uv.KeyPressEvent(uv.Key{Text: "q", Code: 'q'}))
 
 	if fe.logPager != nil {
 		t.Fatal("expected q to close log pager")
 	}
-	if !restored {
-		t.Fatal("expected q to restore prior focus like escape")
-	}
+	require.True(t, fe.tui.IsFocused(fe), "expected q to restore prior focus like escape")
 }
 
 func TestTestsModeQClosesLikeEscape(t *testing.T) {
@@ -1518,7 +1516,7 @@ func TestPromptEditTarget(t *testing.T) {
 	live := newWithTerminal(io.Discard, db, term)
 	live.setupTUI()
 	live.startShell(context.Background(), handler)
-	live.enterNavMode(false)
+	live.enterNavMode()
 	live.FocusedSpan = replyID
 	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[replyID])
 	require.True(t, ok)
@@ -1534,7 +1532,7 @@ func TestPromptEditTarget(t *testing.T) {
 	close(handler.release)
 	require.Eventually(t, func() bool {
 		live.tui.Step()
-		return live.editlineFocused && live.textInput.Value() == "second wording"
+		return live.inputFocused() && live.textInput.Value() == "second wording"
 	}, time.Second, 10*time.Millisecond)
 }
 
@@ -2055,6 +2053,9 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 		fe.autoFocus = false
 		fe.FocusedSpan = focusID
 		fe.recalculateViewLocked()
+		// FocusedSpan selects the navigation row; Tuist focus owns the visual
+		// focus treatment, including the prompt cue.
+		fe.focusNavigationTarget()
 
 		for _, line := range strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n") {
 			if strings.Contains(stripANSICodes(line), "hello there") {
@@ -2139,6 +2140,9 @@ func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
 	fe.autoFocus = false
 	fe.FocusedSpan = asstID
 	fe.recalculateViewLocked()
+	// FocusedSpan selects the navigation row; Tuist focus owns the visual
+	// focus treatment, including the prompt cue.
+	fe.focusNavigationTarget()
 
 	lines := strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n")
 	cues := 0
