@@ -719,3 +719,50 @@ the bulk; step 4 is mechanical.
 - Opaque literal rendering: `dagql/call/literal.go`,
   `dagql/dagui/extract.go`, `dagql/dagui/grep.go`
 - Trace restore: `internal/cmd/dagger/restore.go`
+
+## 14. Implementation checklist
+
+This is the handoff point for the in-progress implementation. Each phase should
+leave the tree working and land as its own scoped commit(s).
+
+- [x] **Phase 1 — binary File recipes and call-payload transport.** Commits
+  `127fe46` and `9e2d1aa` add the public `Query.blob` API, a base64 GraphQL
+  `Bytes` scalar backed by raw byte literals in recipes, opaque byte rendering,
+  and a hard cut-over that emits root and transitive call payloads through the
+  existing log side channel instead of span attributes. Focused unit tests and
+  a live binary-blob GraphQL probe passed; the full integration package was
+  blocked by an unrelated pre-existing compile error in
+  `core/integration/llm_resume_test.go`.
+- [ ] **Phase 2 — public Git bundle surface (next).** Add `GitBundle`,
+  `GitBundleRef`, `File.asGitBundle`, `GitRepository.bundle`, and
+  `GitRepository.withBundle`, with cheap resource safeguards, round-trip tests,
+  and stock-Git interoperability.
+- [ ] **Phase 3 — secure two-ref client capture.** Build synthetic `S` in a
+  temporary object database/index, emit one version-3 bundle advertising `L`
+  and optional `S`, verify the selected object closure, replace the worktree
+  patch stream, and require one approval that lists all dirty files together.
+- [ ] **Phase 4 — total public checkpoint composition.** Implement the source
+  matrix and owner gate, use transitive `NotReplayable` classification, pin
+  mutable refs, return replayable values as public compositions, make
+  GitRef-backed synthetic workspaces module-bearing, and reduce the agent
+  binder to an ordinary `checkpoint()` caller.
+- [ ] **Phase 5 — explicit export target and spike deletion.** Add an optional
+  `Workspace.export(to: Workspace)` target: local workspaces may still export
+  to themselves, while frozen/value workspaces require a target. Make the agent
+  CLI pass `currentWorkspace`, remove checkpoint origin retention and the
+  private checkpoint ID, delete the chunk/manifest/internal-constructor surface,
+  and regenerate affected SDK/schema artifacts.
+- [ ] **Phase 6 — cold-restore and security validation.** Land the headline
+  fresh-engine/no-checkout restore, source-matrix, bundle failure, canary
+  opacity, rejected-byte absence, and no-remote-write coverage.
+- [ ] **Phase 7 — scale and transport validation.** Probe representative large
+  repositories and the live trace backend where available, then tune limits.
+  Compaction remains deferred unless measurements demand it.
+
+Ratified implementation adjustments: a completely clean `L = R` workspace
+omits the empty bundle and `withBundle`; the frozen chain uses
+`ref(name: L).asWorkspace(cwd: ...)` because `commit(L)` currently returns a
+`GitCommit`; workspace-only metadata is expressed through public
+`Workspace.withFoo` fields rather than adding it to every `asWorkspace` call
+(`cwd` remains); and public bundle ingestion is not intentionally restricted to
+checkpoint-generated, single-prerequisite bundles.
