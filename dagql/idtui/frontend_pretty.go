@@ -6687,12 +6687,6 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) {
 	span := row.Span
 
-	if row.Span.LLMTool != "" {
-		// For edit tools, render a unified diff below the title. No-op for all
-		// other tools and incomplete/missing edit args.
-		fe.renderToolArgs(out, r, row, prefix)
-	}
-
 	// The expanded-step-logs case (span.Message == "" && (Expanded || LLMTool))
 	// is now rendered by SpanTreeView.renderInlineLogs via the memoized
 	// LogsView. The rollup/shell branch below is preserved with the same
@@ -8241,9 +8235,12 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 
 		vterm := l.spanLogs(spanID)
-		if contentType == "text/markdown" {
+		switch contentType {
+		case "text/markdown":
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
-		} else {
+		case "text/x-diff":
+			_, _ = vterm.WriteDiff([]byte(log.Body().AsString()))
+		default:
 			_, _ = fmt.Fprint(vterm, log.Body().AsString())
 		}
 	}

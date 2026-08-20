@@ -381,6 +381,20 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	return patchpreview.SummarizeString(entries, summaryWidth)
 }
 
+const gitDiffContentType = "text/x-diff"
+
+// toolResultContentType classifies authoritative Git patches returned by tools.
+// Changeset.asPatch always starts with a diff --git header; summaries and other
+// tool output do not. Keeping this classification at the point that emits the
+// model-visible result lets every frontend render the same engine-side value
+// without reconstructing edits from tool arguments.
+func toolResultContentType(result string) string {
+	if strings.HasPrefix(result, "diff --git ") {
+		return gitDiffContentType
+	}
+	return ""
+}
+
 func toAny(v any) (res map[string]any, rerr error) {
 	pl, err := json.Marshal(v)
 	if err != nil {
@@ -1116,10 +1130,6 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		}
 	}()
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.Bool(telemetry.LogsVerboseAttr, true))
-	defer stdio.Close()
-
 	defer func() {
 		// Bound the result before anything observes it: everything downstream
 		// must see exactly what the LLM sees, and this is the one place every
@@ -1127,8 +1137,16 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		// and the LLMToolResultTokensAttr estimate endToolCallDisplay stamps
 		// from the string we return.
 		res = guardToolResult(res)
-		// write final result to telemetry so we see exactly what the LLM sees
+
+		attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+		if contentType := toolResultContentType(res); contentType != "" {
+			attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
+		}
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
+		// Write the final result to telemetry so the TUI sees exactly what the
+		// LLM sees, with semantic content type when the result is a patch.
 		fmt.Fprintln(stdio.Stdout, res)
+		_ = stdio.Close()
 	}()
 
 	toolCtx := ctx
