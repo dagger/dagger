@@ -2357,14 +2357,15 @@ type ongoingCall struct {
 	handoffHoldActive          bool
 	initCompletedResultErr     error
 
-	waitCh                     chan struct{}
-	cancel                     context.CancelCauseFunc
-	waiters                    int
-	err                        error
-	val                        AnyResult
-	sharedWorkCtx              context.Context
-	releaseSharedWorkLeaseFn   func(context.Context) error
-	releaseSharedWorkLeaseOnce sync.Once
+	waitCh                      chan struct{}
+	cancel                      context.CancelCauseFunc
+	waiters                     int
+	err                         error
+	val                         AnyResult
+	sharedWorkCtx               context.Context
+	clientScopeLease            *engine.ClientLifecycleLease
+	releaseOperationLeaseFn     func(context.Context) error
+	releaseSharedWorkLeasesOnce sync.Once
 
 	// profOpID is the wcprof op for the shared execution of this call, when
 	// profiling is enabled. Waiters record wait events against it.
@@ -2385,13 +2386,16 @@ type ongoingCall struct {
 	res *sharedResult
 }
 
-func (oc *ongoingCall) releaseSharedWorkLease(ctx context.Context) error {
-	if oc == nil || oc.releaseSharedWorkLeaseFn == nil {
+func (oc *ongoingCall) releaseSharedWorkLeases(ctx context.Context) error {
+	if oc == nil {
 		return nil
 	}
 	var err error
-	oc.releaseSharedWorkLeaseOnce.Do(func() {
-		err = oc.releaseSharedWorkLeaseFn(ctx)
+	oc.releaseSharedWorkLeasesOnce.Do(func() {
+		if oc.releaseOperationLeaseFn != nil {
+			err = oc.releaseOperationLeaseFn(ctx)
+		}
+		oc.clientScopeLease.Release()
 	})
 	return err
 }
@@ -3692,11 +3696,21 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 		shared.lazyEval = currentLazyEval
 
-		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
+		attemptBase, clientScopeLease, err := engine.DetachClientScope(
+			stackCtx,
+			engine.ClientLeaseSharedWork,
+			fmt.Sprintf("lazy/%d", shared.id),
+		)
+		if err != nil {
+			shared.lazyMu.Unlock()
+			return fmt.Errorf("acquire lazy client scope: %w", err)
+		}
+		attemptCtx, cancel := context.WithCancelCause(attemptBase)
 		attemptOp, err := c.beginContextOperation(attemptCtx)
 		if err != nil {
 			shared.lazyMu.Unlock()
 			cancel(err)
+			clientScopeLease.Release()
 			return fmt.Errorf("start lazy evaluation: %w", err)
 		}
 		evalCtx := attemptCtx
@@ -3745,6 +3759,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		shared.lazyMu.Unlock()
 
 		go func() {
+			// Finish the cache operation (including any deferred ReleaseSession
+			// cleanup) before releasing the runtime that owns this work.
+			defer clientScopeLease.Release()
 			defer attemptOp.finish(false)
 			// The lazy op span and re-pointed callback context were minted under
 			// lazyMu before this attempt was published. A span created on one
@@ -4521,9 +4538,20 @@ func (c *Cache) getOrInitCallInner(
 	// to occasional redundant execution instead of a late cache hit. We accept
 	// that waste to avoid paying an extra lookup on this miss path.
 
-	// make a new call with ctx that's only canceled when all caller contexts are canceled
+	// Make a new call with a lifecycle scope that's only canceled when all
+	// caller contexts are canceled. One shared callback owns one client scope
+	// lease, regardless of how many waiters join it.
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
-	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	sharedBase, clientScopeLease, err := engine.DetachClientScope(
+		callCtx,
+		engine.ClientLeaseSharedWork,
+		"call/"+callKey,
+	)
+	if err != nil {
+		c.callsMu.Unlock()
+		return nil, fmt.Errorf("acquire shared client scope: %w", err)
+	}
+	callCtx, cancel := context.WithCancelCause(sharedBase)
 	var execOp *wcprof.Op
 	if wcprof.Enabled(ctx) {
 		// the shared execution of this call's resolver; all singleflighted
@@ -4543,10 +4571,11 @@ func (c *Cache) getOrInitCallInner(
 	if OTelProfActive(callCtx) && !req.ResultCall.ProfileSkip {
 		callCtx, execSpan = beginOTelCallExec(callCtx, callKey, profCallClass(req.ResultCall))
 	}
-	sharedWorkCtx, releaseSharedWorkLease, err := withOperationLease(withoutOperationLease(callCtx))
+	sharedWorkCtx, releaseOperationLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
 		c.callsMu.Unlock()
 		cancel(err)
+		clientScopeLease.Release()
 		execOp.End(wcprof.OutcomeError)
 		if execSpan != nil {
 			execSpan.End()
@@ -4554,14 +4583,15 @@ func (c *Cache) getOrInitCallInner(
 		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
 	}
 	oc := &ongoingCall{
-		callConcurrencyKeys:      callConcKeys,
-		ttlSeconds:               req.TTL,
-		waitCh:                   make(chan struct{}),
-		cancel:                   cancel,
-		waiters:                  1,
-		sharedWorkCtx:            sharedWorkCtx,
-		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
-		profOpID:                 execOp.ID(),
+		callConcurrencyKeys:     callConcKeys,
+		ttlSeconds:              req.TTL,
+		waitCh:                  make(chan struct{}),
+		cancel:                  cancel,
+		waiters:                 1,
+		clientScopeLease:        clientScopeLease,
+		sharedWorkCtx:           sharedWorkCtx,
+		releaseOperationLeaseFn: releaseOperationLease,
+		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait gating (oc.res is not
 		// set yet when joiners wait). Gating on the TARGET's flag keeps the OTel
 		// source dangle-proof: a skipped target never minted its call_exec span, so a
@@ -4593,7 +4623,7 @@ func (c *Cache) getOrInitCallInner(
 		noWaiters := oc.waiters == 0
 		c.callsMu.Unlock()
 		if err != nil || noWaiters {
-			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
+			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
 		}
 	}()
 
@@ -4796,7 +4826,7 @@ func (c *Cache) wait(
 
 	oc.initCompletedResultOnce.Do(func() {
 		defer func() {
-			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
+			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
 		}()
 		var pubOp *wcprof.Op
 		if oc.profOpID != 0 {
