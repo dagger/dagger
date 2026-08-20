@@ -23,6 +23,36 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
+func TestToolResultContentType(t *testing.T) {
+	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
+	require.Equal(t, gitDiffContentType, toolResultContentType(patch))
+	require.Empty(t, toolResultContentType("main.go | 1 +\n"))
+	require.Empty(t, toolResultContentType("prefix\n"+patch))
+}
+
+func TestCallMarksPatchResult(t *testing.T) {
+	recorder, ctx := stateRecorderCtx(t)
+	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
+	result, failed := newMCP().Call(ctx, []LLMTool{{
+		Name: "edit",
+		Call: func(context.Context, any) (any, error) {
+			return patch, nil
+		},
+	}}, &LLMToolCall{Name: "edit"})
+	require.False(t, failed)
+	require.Equal(t, patch, result)
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	for _, record := range recorder.records {
+		if record.body == patch+"\n" {
+			require.Equal(t, gitDiffContentType, record.contentType)
+			return
+		}
+	}
+	t.Fatal("tool-result log was not emitted")
+}
+
 func TestTimeoutTool(t *testing.T) {
 	timeoutArgs := func(duration, tool string, arguments map[string]any) map[string]any {
 		return map[string]any{
