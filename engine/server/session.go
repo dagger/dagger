@@ -109,6 +109,15 @@ type daggerSession struct {
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
 
+	// Session-owned trace and log pipelines. Their processors capture an origin
+	// client ID from each emission context and their exporters resolve the
+	// session's immutable ancestry graph when a batch is exported.
+	tracerProvider *sdktrace.TracerProvider
+	loggerProvider *sdklog.LoggerProvider
+	spanExporter   sdktrace.SpanExporter
+	logExporter    sdklog.Exporter
+	telemetryDebug LifecycleTelemetryCounts
+
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
@@ -235,18 +244,17 @@ type daggerClient struct {
 	dialer                   *net.Dialer
 	engineUtilClient         *engineutil.Client
 
-	// Append-only per-client telemetry store and its OTel exporters.
-	tracerProvider *sdktrace.TracerProvider
-	spanExporter   sdktrace.SpanExporter
+	// The session owns trace/log providers and queues. These lightweight bound
+	// exporters are retained only for integrations that deliver telemetry for a
+	// known client without an emission context (for example cloud scale-out).
+	spanExporter sdktrace.SpanExporter
+	logExporter  sdklog.Exporter
 
-	loggerProvider *sdklog.LoggerProvider
-	logExporter    sdklog.Exporter
-
+	// Metrics remain per client until their aggregation/routing migration.
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
 
-	// telemetryDebug records the provider topology configured for this runtime.
-	// Queue occupancy is intentionally not inferred from these configured counts.
+	// telemetryDebug records the remaining per-runtime metric topology.
 	telemetryDebug LifecycleTelemetryCounts
 
 	// Workspace and extra module loading is deferred from initializeDaggerClient
@@ -297,12 +305,6 @@ type daggerClient struct {
 	workspaceModuleScopeConsumed bool
 	singleQueryMu                sync.Mutex
 	singleQueryServed            bool
-
-	// NOTE: do not use this field directly as it may not be open
-	// after the client has shutdown; use TelemetryDB() instead
-	// This field exists to "keepalive" the db while the client
-	// is around to avoid perf overhead of closing/reopening a lot
-	keepAliveTelemetryDB *clientdb.DB
 }
 
 func (srv *Server) getCoreSchemaBase(ctx context.Context) (*schema.CoreSchemaBase, error) {
@@ -407,11 +409,45 @@ func (sess *daggerSession) telemetryRouteClientIDs(client *daggerClient) ([]stri
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
 
-	route := make([]string, 0, len(client.parentClientIDs)+1)
-	route = append(route, client.clientID)
-	for _, parentID := range client.parentClientIDs {
-		if _, ok := sess.clients[parentID]; !ok {
+	route := append([]string{client.clientID}, client.parentClientIDs...)
+	for i, parentID := range client.parentClientIDs {
+		parent, ok := sess.clients[parentID]
+		if !ok {
 			return nil, fmt.Errorf("telemetry ancestor client %q not found for client %q", parentID, client.clientID)
+		}
+		if !slices.Equal(parent.parentClientIDs, client.parentClientIDs[:i]) {
+			return nil, fmt.Errorf("telemetry ancestor client %q has mismatched ancestry for client %q", parentID, client.clientID)
+		}
+	}
+	return route, nil
+}
+
+// telemetryRouteOriginClientID resolves an immutable origin ID through the
+// session's validated client graph. Exporters call this at batch delivery time
+// so records emitted before a proxy closes retain their exact visibility route
+// without retaining a client runtime pointer.
+func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) ([]string, error) {
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+
+	client, ok := sess.clients[originClientID]
+	if !ok {
+		return nil, fmt.Errorf("telemetry origin client %q not found", originClientID)
+	}
+	route := make([]string, 0, len(client.parentClientIDs)+1)
+	route = append(route, originClientID)
+	seen := map[string]struct{}{originClientID: {}}
+	for _, parentID := range client.parentClientIDs {
+		parent, ok := sess.clients[parentID]
+		if !ok {
+			return nil, fmt.Errorf("telemetry ancestor client %q not found for client %q", parentID, originClientID)
+		}
+		if _, duplicate := seen[parentID]; duplicate {
+			return nil, fmt.Errorf("telemetry route for client %q reaches %q more than once", originClientID, parentID)
+		}
+		seen[parentID] = struct{}{}
+		if len(parent.parentClientIDs) != len(route)-1 || !slices.Equal(parent.parentClientIDs, route[1:]) {
+			return nil, fmt.Errorf("telemetry ancestor client %q has mismatched ancestry for client %q", parentID, originClientID)
 		}
 		route = append(route, parentID)
 	}
@@ -433,71 +469,70 @@ func (client *daggerClient) TelemetryDB(ctx context.Context) (*clientdb.DB, erro
 	return client.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, client.clientID)
 }
 
-// closeKeepAliveTelemetryDB transfers and releases the client's one long-lived
-// store reference. The caller must either hold the session lifecycle lock or
-// be cleaning up a client that was never published into its session.
-func (client *daggerClient) closeKeepAliveTelemetryDB() error {
-	client.stateMu.Lock()
-	db := client.keepAliveTelemetryDB
-	client.keepAliveTelemetryDB = nil
-	client.stateMu.Unlock()
-	return db.Close()
-}
-
-// slowDrainOp flags a shutdown-drain operation (a client's provider flush, a
-// session-wide telemetry flush, a workspace lock flush) that ate a meaningful
-// chunk of the drain budget: the CLI allows 10s for the whole shutdown, and a
-// session-level flush covers every client in the session.
+// slowDrainOp flags a shutdown-drain operation that ate a meaningful chunk of
+// the drain budget: the CLI allows 10s for the whole shutdown.
 const slowDrainOp = 2 * time.Second
 
-// timedProviderOp times one provider's flush/shutdown within a client-level
-// telemetry flush, so slow flushes can be attributed to the traces vs. logs
-// vs. metrics pipeline.
 func timedProviderOp(ctx context.Context, errs *error, op func(context.Context) error) time.Duration {
 	start := time.Now()
 	*errs = errors.Join(*errs, op(ctx))
 	return time.Since(start)
 }
 
+// FlushTelemetry flushes this client's remaining metric provider together with
+// the session-owned trace/log providers. A detached span or log may have been
+// emitted by any client into those shared queues, so they are never flushed or
+// shut down through an individual runtime.
 func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
-	slog := slog.With("client", client.clientID)
-	start := time.Now()
 	var errs error
-	var traceDur, logDur, metricDur time.Duration
-	if client.tracerProvider != nil {
-		slog.ExtraDebug("force flushing client traces")
-		traceDur = timedProviderOp(ctx, &errs, client.tracerProvider.ForceFlush)
-	}
-	if client.loggerProvider != nil {
-		slog.ExtraDebug("force flushing client logs")
-		logDur = timedProviderOp(ctx, &errs, client.loggerProvider.ForceFlush)
-	}
+	errs = errors.Join(errs, client.daggerSession.flushTraceLogs(ctx, "client telemetry flush"))
 	if client.meterProvider != nil {
-		slog.ExtraDebug("force flushing client metrics")
-		metricDur = timedProviderOp(ctx, &errs, client.meterProvider.ForceFlush)
+		errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
 	}
-	logClientTelemetryOp(slog, "client telemetry flush", start, traceDur, logDur, metricDur, errs)
 	return errs
 }
 
-func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
-	slog := slog.With("client", client.clientID)
+func (client *daggerClient) ShutdownMetrics(ctx context.Context) error {
+	if client.meterProvider == nil {
+		return nil
+	}
+	return client.meterProvider.Shutdown(ctx)
+}
+
+func (sess *daggerSession) flushTraceLogs(ctx context.Context, reason string) error {
+	lg := slog.With("sessionID", sess.sessionID, "reason", reason)
 	start := time.Now()
 	var errs error
-	var traceDur, logDur, metricDur time.Duration
-	if client.tracerProvider != nil {
-		slog.ExtraDebug("force flushing client traces")
-		traceDur = timedProviderOp(ctx, &errs, client.tracerProvider.Shutdown)
+	var traceDur, logDur time.Duration
+	if sess.tracerProvider != nil {
+		traceDur = timedProviderOp(ctx, &errs, sess.tracerProvider.ForceFlush)
 	}
-	if client.loggerProvider != nil {
-		slog.ExtraDebug("force flushing client logs")
-		logDur = timedProviderOp(ctx, &errs, client.loggerProvider.Shutdown)
+	if sess.loggerProvider != nil {
+		logDur = timedProviderOp(ctx, &errs, sess.loggerProvider.ForceFlush)
 	}
-	if client.meterProvider != nil {
-		slog.ExtraDebug("force flushing client metrics")
-		metricDur = timedProviderOp(ctx, &errs, client.meterProvider.Shutdown)
+	logClientTelemetryOp(lg, "session trace/log flush", start, traceDur, logDur, 0, errs)
+	return errs
+}
+
+// shutdownTraceLogs is the final session telemetry barrier. Callers must first
+// stop and drain every producer and complete cleanup that can emit telemetry.
+func (sess *daggerSession) shutdownTraceLogs(ctx context.Context) error {
+	start := time.Now()
+	var errs error
+	var traceDur, logDur time.Duration
+	if sess.tracerProvider != nil {
+		traceDur = timedProviderOp(ctx, &errs, sess.tracerProvider.ForceFlush)
 	}
-	logClientTelemetryOp(slog, "client telemetry shutdown", start, traceDur, logDur, metricDur, errs)
+	if sess.loggerProvider != nil {
+		logDur = timedProviderOp(ctx, &errs, sess.loggerProvider.ForceFlush)
+	}
+	if sess.tracerProvider != nil {
+		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
+	}
+	if sess.loggerProvider != nil {
+		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
+	}
+	logClientTelemetryOp(slog.With("sessionID", sess.sessionID), "session trace/log shutdown", start, traceDur, logDur, 0, errs)
 	return errs
 }
 
@@ -543,12 +578,12 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	inflight := inflightSessionTelemetryFlushes.Add(1)
 	defer inflightSessionTelemetryFlushes.Add(-1)
 
-	sess.clientMu.Lock()
+	sess.clientMu.RLock()
 	clients := make([]*daggerClient, 0, len(sess.clients))
 	for _, client := range sess.clients {
 		clients = append(clients, client)
 	}
-	sess.clientMu.Unlock()
+	sess.clientMu.RUnlock()
 
 	lg := slog.With(
 		"sessionID", sess.sessionID,
@@ -558,21 +593,63 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	lg.Debug("flushing session telemetry")
 
 	start := time.Now()
-	eg := new(errgroup.Group)
-	for _, client := range clients {
-		eg.Go(func() error {
-			return client.FlushTelemetry(ctx)
-		})
-	}
-	err := eg.Wait()
+	var errs error
+	// There is exactly one trace queue and one log queue for the session.
+	errs = errors.Join(errs, sess.flushTraceLogs(ctx, reason))
 
-	lg = lg.With("duration", time.Since(start), "error", err)
+	// Metrics intentionally remain per runtime for now. Flush their independent
+	// aggregations concurrently without re-flushing the shared trace/log queues.
+	var eg errgroup.Group
+	for _, client := range clients {
+		if client.meterProvider != nil {
+			eg.Go(func() error { return client.meterProvider.ForceFlush(ctx) })
+		}
+	}
+	errs = errors.Join(errs, eg.Wait())
+
+	lg = lg.With("duration", time.Since(start), "error", errs)
 	if time.Since(start) > slowDrainOp {
 		lg.Warn("slow session telemetry flush")
 	} else {
 		lg.Debug("session telemetry flush done")
 	}
-	return err
+	return errs
+}
+
+func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
+	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
+	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
+	sess.spanExporter = spanExporter
+	sess.logExporter = logExporter
+
+	// Keep the raised link limit used by wcprof wait edges. One bounded trace
+	// queue and one bounded log queue now serve the entire session.
+	spanLimits := sdktrace.NewSpanLimits()
+	spanLimits.LinkCountLimit = 16384
+	tracerOpts := []sdktrace.TracerProviderOption{
+		sdktrace.WithRawSpanLimits(spanLimits),
+		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
+		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
+		// Stamp origin before the live processor freezes its start snapshot.
+		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
+		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter)),
+	}
+	loggerOpts := []sdklog.LoggerProviderOption{
+		sdklog.WithResource(telemetry.Resource),
+		// Stamp origin before the batch processor copies the record.
+		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
+		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logExporter)),
+	}
+	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
+	sess.telemetryDebug = LifecycleTelemetryCounts{
+		TracerProviders:          1,
+		LoggerProviders:          1,
+		ConfiguredSpanProcessors: 4,
+		ConfiguredLogProcessors:  2,
+		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
+		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
+	}
 }
 
 // requires that sess.lifecycleMu is held
@@ -610,6 +687,10 @@ func (srv *Server) initializeDaggerSession(
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
+	srv.initializeSessionTelemetry(sess)
+	failureCleanups.Add("shutdown session trace/log telemetry", func() error {
+		return sess.shutdownTraceLogs(context.Background())
+	})
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
 	sess.allowedLLMModules = clientMetadata.AllowedLLMModules
@@ -722,22 +803,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	}
 	sess.dagqlMu.Unlock()
 
-	// wcprof completeness checksum: queries are drained and services
-	// stopped, so the per-trace engine span counter is now its EXACT final value.
-	// Declare that total on a teardown carrier span (parented in this trace, created
-	// here so the telemetry shutdown below still flushes it) and drop the counter
-	// entry. Because the declaration is the exact final — not a per-query running
-	// floor — received <= declared always holds, so any drop (an individual leaf, a
-	// whole trailing query whose root is lost, or post-query async padding) shows up
-	// as received < declared and is caught.
-	srv.stampSessionComplete(ctx, sess)
-	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
-
-	// release containers + buildkit solver/session state in parallel
+	// Release containers, per-runtime metric providers, and buildkit state before
+	// the final trace/log barrier. Their cleanup paths may still emit telemetry.
 
 	var releaseGroup errgroup.Group
 	sess.containersMu.Lock()
-	defer sess.containersMu.Unlock()
 	for ctr := range sess.containers {
 		if ctr != nil {
 			releaseGroup.Go(func() error {
@@ -758,20 +828,14 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	for _, client := range clients {
 		releaseGroup.Go(func() error {
-			var errs error
-
-			// Flush all telemetry.
-			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
-
-			// Close the keepalive store reference; subscribers may re-open as
-			// needed with client.TelemetryDB(). Clearing the owned pointer before
-			// Close keeps repeated teardown paths from over-releasing the refcount.
-			errs = errors.Join(errs, client.closeKeepAliveTelemetryDB())
-
-			return errs
+			return client.ShutdownMetrics(ctx)
 		})
 	}
-	errs = errors.Join(errs, releaseGroup.Wait())
+	// Keep the container set closed to mutation until all captured containers have
+	// released, then drop the lock before later cleanup and telemetry barriers.
+	releaseErr := releaseGroup.Wait()
+	sess.containersMu.Unlock()
+	errs = errors.Join(errs, releaseErr)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
@@ -803,6 +867,14 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		)
 	}
 
+	// Every telemetry-producing request, background runtime, container, metric
+	// reader, analytics hook, and cache cleanup is now stopped. Stamp the exact
+	// final wcprof count, then make trace/log ForceFlush+Shutdown the final
+	// delivery barrier for the session-owned providers.
+	srv.stampSessionComplete(ctx, sess)
+	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
+	errs = errors.Join(errs, sess.shutdownTraceLogs(ctx))
+
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
@@ -829,9 +901,9 @@ func (srv *Server) deleteSession(sess *daggerSession) {
 // its final value. It writes that total on a dedicated carrier span — parented at
 // the session-root span recorded in serveQuery so it lands in this trace, named
 // wcprofSessionCompleteSpanName so the counter excludes it from the total and the
-// loader drops it from the compiled ops — then ends AND synchronously force-flushes
-// it so the live exporter ships it before the per-client telemetry is shut down. A
-// trace that never ran a traced main query, or whose count is zero, gets no carrier
+// loader drops it from the compiled ops. The session's final trace/log barrier
+// flushes the carrier after all cleanup producers have stopped. A trace that
+// never ran a traced main query, or whose count is zero, gets no carrier
 // and so fails the loader's gate by default (unverifiable → refused).
 func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
@@ -844,7 +916,7 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 	sess.clientMu.RLock()
 	mainClient := sess.clients[sess.mainClientCallerID]
 	sess.clientMu.RUnlock()
-	if mainClient == nil || mainClient.tracerProvider == nil {
+	if mainClient == nil || sess.tracerProvider == nil {
 		return
 	}
 	// Parent the carrier at the recorded session-root span so it inherits this
@@ -855,7 +927,8 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		SpanID:     sess.wcprofRootSpanID,
 		TraceFlags: trace.FlagsSampled,
 	}))
-	_, span := mainClient.tracerProvider.Tracer(InstrumentationLibrary).Start(
+	parentCtx = engine.ContextWithClientMetadata(parentCtx, mainClient.clientMetadata)
+	_, span := sess.tracerProvider.Tracer(InstrumentationLibrary).Start(
 		parentCtx, wcprofSessionCompleteSpanName,
 		trace.WithAttributes(
 			attribute.Bool(telemetryattrs.WcprofSessionCompleteAttr, true),
@@ -867,20 +940,6 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		),
 	)
 	span.End()
-	// The carrier is the TRAILING span of the trace (stamped at teardown), so relying
-	// on the async live-export batch to ship it races the per-client telemetry
-	// Shutdown below — and removeDaggerSession runs under the session-closing
-	// cancellation (withClosingCancel), so on a heavy build the bulk of spans ship
-	// live but this one last span is left queued and dropped once the ctx cancels,
-	// leaving the loader unable to certify completeness (marker absent → gate refuses).
-	// Force it through the exporter synchronously, under a context detached from the
-	// closing cancellation with a bounded timeout, so the count reliably reaches the
-	// client DB the CLI drains toward Cloud regardless of build size.
-	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-	if err := mainClient.tracerProvider.ForceFlush(flushCtx); err != nil {
-		slog.Warn("wcprof: failed to flush session-complete carrier span", "error", err)
-	}
 }
 
 type ClientInitOpts struct {
@@ -1036,81 +1095,16 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("resolve telemetry route: %w", err)
 	}
 
-	// configure OTel providers that export to the per-client telemetry store
-	client.spanExporter = srv.telemetryPubSub.Spans(client.clientID)
-	logs := srv.telemetryPubSub.Logs(client.clientID)
-	client.logExporter = logs
-
-	// All span/log destinations for this client: its own store plus every
-	// ancestor's (nested-client telemetry reaches Cloud via the parent DB, so
-	// each hop must receive every record, and must not drop on a burst).
-	// Fanned out below through ONE batch processor per signal rather than one
-	// processor per destination: every batch processor eagerly allocates its
-	// full bounded queue, so per-destination processors paid that fixed cost
-	// per (client, ancestor) pair — the engine's telemetry memory ceiling in a
-	// real OOM heap profile. See enginetel.NewSpanFanOutExporter.
-	spanDests := make([]sdktrace.SpanExporter, 0, len(telemetryRoute))
-	logDests := make([]sdklog.Exporter, 0, len(telemetryRoute))
-	for _, targetClientID := range telemetryRoute {
-		spanDests = append(spanDests, srv.telemetryPubSub.Spans(targetClientID))
-		logDests = append(logDests, srv.telemetryPubSub.Logs(targetClientID))
+	// Trace/log providers and queues are session-owned. These bound exporters
+	// stamp telemetry delivered without an emission context (cloud scale-out)
+	// with this client's immutable origin before using the same session router.
+	client.spanExporter = originSpanExporter{
+		origin: client.clientID,
+		next:   client.daggerSession.spanExporter,
 	}
-
-	// Raise the per-span link cap well above the SDK default of 128. The wcprof
-	// OTel profiling source emits runtime wait edges as span links attached to
-	// the *waiter*; a span that hosts many concurrent telemetry-suppressed
-	// siblings can accrue many such links, and the default cap evicts the
-	// *oldest* links on overflow — silently dropping the earliest waits and
-	// under-serializing the analysis. Build from NewSpanLimits() so every other
-	// limit keeps its default; WithRawSpanLimits would treat a zero-valued field
-	// as a real zero limit. 16384 exceeds any realistic count of concurrent
-	// suppressed siblings under one span while staying a low-single-digit-MB bound.
-	spanLimits := sdktrace.NewSpanLimits()
-	spanLimits.LinkCountLimit = 16384
-	tracerOpts := []sdktrace.TracerProviderOption{
-		sdktrace.WithRawSpanLimits(spanLimits),
-		// Stamp the wcprof.parent causal-parent override on lazy re-pointed work
-		// spans. Listed FIRST — before the fanned-out LiveSpanProcessor below —
-		// so OnStart sets the attribute on the shared span object before any
-		// live-start snapshot is taken. There is one tracer provider per client,
-		// so this single registration covers every per-client export (this
-		// client's own DB plus every ancestor's via the fan-out exporter): a
-		// lazy-work span never misses the override on any export path
-		// (behavioral guard: dagql TestWcprofLazyParentProcessorStampsAllExports).
-		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
-		// Count + mark every engine span for the wcprof completeness checksum
-		// (leaf-drop detection). Shared across all per-client tracer
-		// providers (main + nested) so a command's whole span population counts into
-		// one per-trace total; removeDaggerSession stamps that EXACT total at teardown
-		// on a wcprof.session_complete carrier span (see stampSessionComplete). Listed
-		// before the LiveSpanProcessor so the engine-span mark is set on the shared span
-		// object before any live-start snapshot is taken.
-		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
-		// save to our own client's DB and every ancestor's, via a single
-		// large-queue BSP over a fan-out exporter. Large-queue so a big burst
-		// (a cold engine build is ~15k spans, live-double-emitted ≈ 30k records)
-		// does not overflow the default 2048-slot queue and silently drop spans
-		// before they reach the DBs the CLI drains toward Cloud. Emit live start
-		// snapshots uniformly: internal spans can be load-bearing parents of
-		// visible progress spans. One queue serves every destination; each
-		// record is still exported once per destination, just without a
-		// per-destination queue.
-		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(
-			enginetel.NewSpanFanOutExporter(spanDests...),
-		)),
-	}
-
-	loggerOpts := []sdklog.LoggerProviderOption{
-		sdklog.WithResource(telemetry.Resource),
-		// NOTE: a synchronous processor here would append every record on its
-		// emitting goroutine and propagate hard-cap backpressure directly into
-		// application work. Keep emitters decoupled with bounded batching — see
-		// enginetel.NewLogBatchProcessor. Like the span processor above, a
-		// single processor fans out to every destination store so only one
-		// eagerly allocated record ring exists per client.
-		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(
-			enginetel.NewLogFanOutExporter(logDests...),
-		)),
+	client.logExporter = originLogExporter{
+		origin: client.clientID,
+		next:   client.daggerSession.logExporter,
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -1136,17 +1130,10 @@ func (srv *Server) initializeDaggerClient(
 			),
 		))
 	}
-	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
-	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 	client.telemetryDebug = LifecycleTelemetryCounts{
-		TracerProviders:          1,
-		LoggerProviders:          1,
-		MeterProviders:           1,
-		ConfiguredSpanProcessors: len(tracerOpts) - 1, // all options after span limits install processors
-		ConfiguredLogProcessors:  len(loggerOpts) - 1, // the other option installs the resource
-		ConfiguredMetricReaders:  len(meterOpts) - 1,  // the other option installs the resource
-		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
+		MeterProviders:          1,
+		ConfiguredMetricReaders: len(meterOpts) - 1, // the other option installs the resource
 	}
 
 	client.state = clientStateInitialized
@@ -1390,19 +1377,6 @@ func (srv *Server) getOrInitClient(
 			shutdownCh:      make(chan struct{}),
 			clientMetadata:  opts.ClientMetadata,
 			parentClientIDs: parentClientIDs,
-		}
-
-		// Open the store outside clientMu because replaying persisted streams can
-		// take time and must not block observers reading the clients map.
-		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
-			slog.Warn("failed to open client DB; continuing without keepalive",
-				"sessionID", sessionID,
-				"clientID", client.clientID,
-				"error", err,
-			)
-		} else {
-			client.keepAliveTelemetryDB = db
-			failureCleanups.Add("close client telemetry DB", client.closeKeepAliveTelemetryDB)
 		}
 	}
 
@@ -1932,7 +1906,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		// create a span to record telemetry into the client's DB
 		//
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
-		clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
+		clientTracer := sess.tracerProvider.Tracer(InstrumentationLibrary)
 		var span trace.Span
 		attrs := []attribute.KeyValue{
 			attribute.Bool(telemetry.UIPassthroughAttr, true),
@@ -1962,8 +1936,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		}
 	}
 
-	// install a logger+meter provider that records to the client's DB
-	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
+	// Install the session logger provider and the still-per-runtime meter provider.
+	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
@@ -2213,15 +2187,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		}
 	}
 
-	// Flush telemetry so nested spans land in the DBs the CLI drains. A client's
-	// own providers already export its spans to its own DB *and every ancestor
-	// DB*, so a nested client only needs to flush itself; re-flushing every
-	// sibling on each nested shutdown is redundant and, under a parallel
-	// teardown storm, self-inflicts an O(n^2) burst of concurrent whole-session
-	// flushes, multiplying exporter work and spill pressure enough to blow the
-	// client's shutdown budget. The main client (which shuts down last and whose
-	// DB the CLI ultimately drains) still does a session-wide flush to sweep up any
-	// stragglers from clients that hadn't shut down yet.
+	// Flush the shared trace/log queues before acknowledging a client shutdown so
+	// its current visibility is durable. Nested shutdown also flushes only that
+	// runtime's metrics; main shutdown flushes every remaining metric provider.
 	var flushErr error
 	if client.clientID == sess.mainClientCallerID {
 		flushErr = drainPhase("flush session telemetry", func() error {
@@ -3082,10 +3050,8 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	if err != nil {
 		return nil, err
 	}
-	// Flush ALL clients in the session, not just the requested one.
-	// Spans from nested clients may still be buffered in their
-	// BatchSpanProcessor. A session-wide flush ensures the span tree
-	// is complete before captureLogs walks it via SelectLogsBeneathSpan.
+	// Flush the session-owned span/log queues plus all remaining metric
+	// providers before captureLogs walks the requested DB.
 	if err := client.daggerSession.FlushTelemetry(ctx, "ClientTelemetry API"); err != nil {
 		return nil, fmt.Errorf("flush telemetry: %w", err)
 	}

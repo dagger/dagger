@@ -130,8 +130,8 @@ type Server struct {
 	// wcprofSpanCount declares, per trace, how many engine spans the engine emitted
 	// — the producer half of the wcprof completeness checksum, so the
 	// loader can refuse a trace that silently dropped a leaf span. Registered on
-	// every per-client tracer provider (shared instance) so nested-client spans
-	// count into the same trace.
+	// each session-owned tracer provider so nested-client spans count into the
+	// same trace.
 	wcprofSpanCount *wcprofSpanCounter
 
 	coreSchemaBase   *schema.CoreSchemaBase
