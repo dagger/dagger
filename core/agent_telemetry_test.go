@@ -21,6 +21,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -128,6 +129,50 @@ func (rt *AgentRuntime) testTransition(mut func()) {
 	rt.transitionLocked(mut)
 }
 
+func TestAgentTombstoneTelemetryContextIsCompact(t *testing.T) {
+	recorder, ctx := stateRecorderCtx(t)
+	loggerProvider := telemetry.LoggerProvider(ctx)
+
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{2},
+		Remote:  true,
+	})
+	ctx = trace.ContextWithSpanContext(ctx, spanContext)
+	ctx = ContextWithQuery(ctx, &Query{})
+
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "request", func() {}, nil)
+	defer lease.Release()
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "client",
+	}, lease)
+	require.NoError(t, err)
+	ctx, err = engine.ContextWithClientScope(ctx, scope)
+	require.NoError(t, err)
+
+	compact := agentTombstoneTelemetryContext(ctx)
+	_, err = CurrentQuery(compact)
+	require.Error(t, err, "tombstones must not retain the runtime query")
+	_, ok := engine.ClientScopeFromContext(compact)
+	require.False(t, ok, "the durable lease is stored explicitly, not in spanCtx")
+	metadata, err := engine.ClientMetadataFromContext(compact)
+	require.NoError(t, err)
+	require.Equal(t, "session", metadata.SessionID)
+	require.Equal(t, "client", metadata.ClientID)
+	require.Same(t, loggerProvider, telemetry.LoggerProvider(compact))
+	require.Equal(t, spanContext, trace.SpanContextFromContext(compact))
+	require.Nil(t, dagql.CurrentDagqlServer(compact))
+
+	EmitAgentState(compact, AgentStateStopped, "", AgentStopExplicit)
+	EmitAgentSnapshot(compact, "xxh3:compact")
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	require.Len(t, recorder.records, 2)
+	require.Equal(t, string(AgentStateStopped), recorder.records[0].state)
+	require.Equal(t, "xxh3:compact", recorder.records[1].digest)
+}
+
 func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
 	t.Parallel()
 
@@ -148,6 +193,7 @@ func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
 	require.NoError(t, err)
 	ctx, err := engine.ContextWithClientScope(context.Background(), scope)
 	require.NoError(t, err)
+	ctx = ContextWithQuery(ctx, &Query{})
 	ctx = testAgentContext(t, ctx, "agent-scope", "leased")
 	agent, ok := AgentFromContext(ctx)
 	require.True(t, ok)
@@ -165,6 +211,15 @@ func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
 	require.NoError(t, runtime.WaitFor(ctx, AgentStateStopped))
 	require.Equal(t, int32(1), acquired.Load())
 	require.Zero(t, released.Load())
+	runtime.mu.Lock()
+	tombstoneCtx := runtime.spanCtx
+	durableLease := runtime.scopeLease
+	runtime.mu.Unlock()
+	_, err = CurrentQuery(tombstoneCtx)
+	require.Error(t, err, "ordinary loop tombstones must compact resolver context")
+	_, ok = engine.ClientScopeFromContext(tombstoneCtx)
+	require.False(t, ok)
+	require.True(t, durableLease.Held(), "snapshot retention still requires its explicit lease")
 
 	require.NoError(t, runtimes.KillAll(ctx, errors.New("session closed")))
 	require.Equal(t, int32(1), released.Load())

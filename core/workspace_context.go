@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -44,16 +43,16 @@ func WorkspaceFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], 
 	return dagql.ObjectResult[*Workspace]{}, false
 }
 
-// workspaceClientContext switches ctx to the Workspace's owning client so that
-// client-scoped resolvers — CurrentServedDeps, EnsureWorkspaceModules — resolve
-// against the workspace's own served modules rather than whichever client is
-// currently executing. Synthetic/value workspaces have no owning client, so ctx
-// is returned unchanged and resolution falls back to the current client.
+// workspaceHostRoutingContext stamps the Workspace owner's immutable metadata
+// onto ctx for record and host-routing operations. It deliberately does not
+// replace the held ClientScope: metadata is not runtime execution authority, so
+// schema/module operations continue to execute under the caller's leased scope.
+// Synthetic/value workspaces have no owning client and leave ctx unchanged.
 //
 // This mirrors core/schema's withWorkspaceClientContext, reimplemented here so
 // the LLM's schema derivation ([WorkspaceServedSchema]) needs no core→schema
 // import.
-func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context, error) {
+func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
 		return ctx, nil
 	}
@@ -69,19 +68,17 @@ func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 }
 
 // WorkspaceServedSchema derives the served GraphQL schema for a specific
-// Workspace, independent of which client is currently executing. Client-local
-// workspaces switch to their owning client and force that client's full module
-// set to load. Module-bearing value workspaces instead start from the default
-// core schema and load their complete configured module set from their own tree.
-// The LLM needs the whole schema, not whatever a prior request demand-loaded.
+// Workspace. Client-local workspaces stamp their owner's metadata for host
+// routing, while runtime-backed schema operations remain authorized by the
+// caller's held ClientScope. Module-bearing value workspaces instead start from
+// the default core schema and load their complete configured module set from
+// their own tree. The LLM needs the whole schema, not whatever a prior request
+// demand-loaded.
 //
-// This is what makes the LLM's schema derive from its OWN Workspace (the one it
-// was bound to via LLM.withWorkspace) rather than from the outer client's env.
-// For the common case where the bound Workspace is the current client's
-// workspace, the owning client is the current client, so this resolves to the
-// same schema the CLI serves. An ordinary Directory-backed synthetic Workspace
-// remains intentionally module-less and degrades to the current client's
-// schema.
+// For the common case where the bound Workspace belongs to the calling client,
+// this resolves to the same schema the CLI serves. An ordinary Directory-backed
+// synthetic Workspace remains intentionally module-less and degrades to the
+// current client's schema.
 //
 // When a client-local workspace carries a pending overlay that affects module
 // loading — staged edits to a module's source, or to dagger.toml itself — the
@@ -121,22 +118,53 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 	return deps.Schema(wsCtx)
 }
 
-// overlayDepsCache memoizes the overlay-layered SchemaBuilder per (served deps
-// instance, workspace value). The layered builder must be a stable instance so
-// its own lazily-built schema server is reused across LLM steps: MCP.Server
-// derives the schema on every tool listing and dispatch, and rebuilding it each
-// time would re-install every module's typedefs per call. Keying on the served
-// builder's pointer identity makes a change to the client's served set (which
-// produces a new builder) miss naturally; keying on the workspace ID digest
-// makes any further overlay edit miss naturally. Bounded: reaching the cap
-// (many distinct overlay states composed in one engine's lifetime) clears the
-// map, which only costs a rebuild on next use.
-var overlayDepsCache = struct {
-	sync.Mutex
-	m map[string]*SchemaBuilder
-}{m: map[string]*SchemaBuilder{}}
+// A layered SchemaBuilder must be stable so its lazily-built schema server is
+// reused across LLM tool listings and dispatches. The cache lives on the
+// builder's root Query rather than globally: both the builder and its lazy
+// server retain that root, so global storage would make historical client
+// schema graphs independently reachable. The base-builder pointer distinguishes
+// served-deps snapshots; the workspace ID distinguishes overlay states. Keeping
+// the cache on Query also preserves reuse across fresh DefaultDeps clones.
+const workspaceSchemaCacheLimit = 64
 
-const overlayDepsCacheLimit = 64
+type workspaceSchemaCacheKey struct {
+	builder   *schemaBuilderIdentity
+	workspace string
+}
+
+func newWorkspaceSchemaCacheKey(deps *SchemaBuilder, workspace string) workspaceSchemaCacheKey {
+	return workspaceSchemaCacheKey{
+		builder:   deps.workspaceSchemaIdentity(),
+		workspace: workspace,
+	}
+}
+
+func cachedWorkspaceSchema(deps *SchemaBuilder, key workspaceSchemaCacheKey) (*SchemaBuilder, bool) {
+	if deps == nil || deps.root == nil {
+		return nil, false
+	}
+	root := deps.root
+	root.workspaceSchemaCacheMu.Lock()
+	defer root.workspaceSchemaCacheMu.Unlock()
+	cached, ok := root.workspaceSchemaCache[key]
+	return cached, ok
+}
+
+func cacheWorkspaceSchema(deps *SchemaBuilder, key workspaceSchemaCacheKey, layered *SchemaBuilder) {
+	if deps == nil || deps.root == nil {
+		return
+	}
+	root := deps.root
+	root.workspaceSchemaCacheMu.Lock()
+	defer root.workspaceSchemaCacheMu.Unlock()
+	if len(root.workspaceSchemaCache) >= workspaceSchemaCacheLimit {
+		root.workspaceSchemaCache = map[workspaceSchemaCacheKey]*SchemaBuilder{}
+	}
+	if root.workspaceSchemaCache == nil {
+		root.workspaceSchemaCache = map[workspaceSchemaCacheKey]*SchemaBuilder{}
+	}
+	root.workspaceSchemaCache[key] = layered
+}
 
 // workspaceOverlayServedDeps layers modules resolved from the workspace tree
 // onto the base deps. For client-local overlays these replace only affected
@@ -163,12 +191,9 @@ func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Work
 	} else {
 		wsKey = wsID.Digest().String()
 	}
-	key := fmt.Sprintf("%p|%s", deps, wsKey)
+	key := newWorkspaceSchemaCacheKey(deps, wsKey)
 
-	overlayDepsCache.Lock()
-	cached, ok := overlayDepsCache.m[key]
-	overlayDepsCache.Unlock()
-	if ok {
+	if cached, ok := cachedWorkspaceSchema(deps, key); ok {
 		return cached, nil
 	}
 
@@ -193,27 +218,18 @@ func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Work
 		layered = deps.Replacing(mods...)
 	}
 
-	overlayDepsCache.Lock()
-	if len(overlayDepsCache.m) >= overlayDepsCacheLimit {
-		overlayDepsCache.m = map[string]*SchemaBuilder{}
-	}
-	overlayDepsCache.m[key] = layered
-	overlayDepsCache.Unlock()
+	cacheWorkspaceSchema(deps, key, layered)
 	return layered, nil
 }
 
-// WorkspaceServedContext switches ctx to the Workspace's owning client and
-// forces that client's served modules to load, returning the switched context.
-// Module-bearing values have no owning client or served snapshot, so their
-// schema starts from default deps and loads modules from the value tree in
-// [WorkspaceServedSchema]. Under this context the client-scoped resolvers
-// (CurrentServedDeps, currentTypeDefs, currentModule) for client-local
-// workspaces see the workspace's OWN served schema — the same switch
-// [WorkspaceServedSchema] makes for the schema server, exposed separately so
-// callers that resolve those root fields directly (e.g. the LLM's inspect tool
-// enumerating module entrypoints) resolve them against the same workspace.
+// WorkspaceServedContext stamps client-local workspace owner metadata for host
+// routing and forces the caller's leased runtime to load its served modules.
+// It never treats owner metadata as authority to execute against another
+// runtime. Module-bearing values have no owner metadata or served snapshot, so
+// their schema starts from default deps and loads modules from the value tree in
+// [WorkspaceServedSchema].
 func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
-	wsCtx, err := workspaceClientContext(ctx, ws.Self())
+	wsCtx, err := workspaceHostRoutingContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
 	}

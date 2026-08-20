@@ -8,11 +8,13 @@ import (
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // Agent is a conversation loop packaged as an addressable, long-lived entity
@@ -563,6 +565,11 @@ type AgentRuntime struct {
 	// seed re-derived to). The loop binds it into its context
 	// (AgentToContext) so tools dispatched by a step can reach the calling
 	// agent — the Agent! argument injection.
+	// self and last are intentionally retained DagQL results, not
+	// self-contained snapshots. Their shared payloads may retain object classes,
+	// module values, and schema state, so every addressable tombstone keeps its
+	// durable scopeLease until relaunch replaces it or session teardown releases
+	// it.
 	self dagql.ObjectResult[*Agent]
 
 	mu sync.Mutex
@@ -605,11 +612,16 @@ type AgentRuntime struct {
 
 	// Telemetry directory plumbing (design §3.3), guarded by mu.
 	//
-	// spanCtx carries the loop span, set when the loop starts, and is what
-	// state records are attributed to. It deliberately outlives the span
-	// itself: a record emitted after the span ended still carries its span
-	// ID, which is how the tombstone-sealing transition (Stop on a FAILED
-	// agent, after the loop returned) still reaches a client's roster.
+	// spanCtx carries the loop span while the loop is live and is what state
+	// records are attributed to. At a dormant/tombstone transition it is reduced
+	// to logger provider, immutable client metadata, and SpanContext; retaining
+	// the full detached resolver context here would accidentally keep its Query,
+	// DagQL server, and ClientScope pointers in addition to the explicit lease.
+	//
+	// The compact context deliberately outlives the span itself: a record emitted
+	// after the span ended still carries its span ID, which is how the
+	// tombstone-sealing transition (Stop on a FAILED agent, after the loop
+	// returned) still reaches a client's roster.
 	//
 	// emittedState is the last state published on that channel, so a
 	// transition that does not change the PROJECTION emits nothing —
@@ -620,6 +632,19 @@ type AgentRuntime struct {
 	spanCtx         context.Context
 	emittedState    AgentState
 	emittedSnapshot string
+}
+
+// agentTombstoneTelemetryContext keeps only the values needed to attribute
+// post-loop state records. The retained DagQL snapshots are still runtime-backed
+// and protected by scopeLease; this helper removes only the second, accidental
+// retention path through a detached resolver context.
+func agentTombstoneTelemetryContext(ctx context.Context) context.Context {
+	compact := trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
+	compact = telemetry.WithLoggerProvider(compact, telemetry.LoggerProvider(ctx))
+	if metadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		compact = engine.ContextWithClientMetadata(compact, metadata)
+	}
+	return compact
 }
 
 func (rt *AgentRuntime) releaseClientScope() {
@@ -1017,6 +1042,7 @@ func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr
 		fmt.Sprintf("agent: %s", rt.name),
 		agentSpanAttrs(ctx, rt.name, rt.self)...)
 	span.End()
+	spanCtx = agentTombstoneTelemetryContext(spanCtx)
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -1131,6 +1157,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// message awaiters. This gives the focused-agent TUI a durable error line
 		// to render instead of racing the await's transient prompt error.
 		emitAgentFailure(ctx, loopErr)
+		tombstoneSpanCtx := agentTombstoneTelemetryContext(ctx)
 
 		rt.mu.Lock()
 		rt.transitionLocked(func() {
@@ -1167,6 +1194,9 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			rt.done = true
 			rt.loopErr = loopErr
 		})
+		// The final transition publishes through the live resolver context; once
+		// the tombstone facts are committed, retain only telemetry attribution.
+		rt.spanCtx = tombstoneSpanCtx
 		rt.mu.Unlock()
 		if loopErr != nil {
 			span.SetStatus(codes.Error, loopErr.Error())

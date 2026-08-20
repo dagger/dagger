@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -32,12 +33,30 @@ type modDepEntry struct {
 	opts InstallOpts
 }
 
+type schemaBuilderIdentity struct{ id uint64 }
+
+var nextSchemaBuilderIdentity atomic.Uint64
+
+func newSchemaBuilderIdentity() *schemaBuilderIdentity {
+	return &schemaBuilderIdentity{id: nextSchemaBuilderIdentity.Add(1)}
+}
+
 // SchemaBuilder lazily constructs a dagql server from a set of modules with
 // per-module install policy. It is used both for a module's own dependency
 // graph and for the set of modules served to a client session.
 type SchemaBuilder struct {
+	// root is the query value installed into derived schema servers. Query only
+	// carries the engine Server facade; runtime selection and authority come
+	// from the held ClientScope in each execution context, never from a pointer
+	// captured by the builder.
 	root    *Query
 	entries []modDepEntry
+
+	// workspaceCacheIdentity is preserved by read-only Clone/WithRoot calls so
+	// Query-owned overlay schema caching reuses work across fresh DefaultDeps
+	// clones. Composition-changing methods mint a new identity.
+	workspaceCacheIdentityMu sync.Mutex
+	workspaceCacheIdentity   *schemaBuilderIdentity
 
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
@@ -50,18 +69,32 @@ func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
 		entries[i] = modDepEntry{mod: m}
 	}
 	return &SchemaBuilder{
-		root:    root,
-		entries: entries,
+		root:                   root,
+		entries:                entries,
+		workspaceCacheIdentity: newSchemaBuilderIdentity(),
 	}
+}
+
+func (b *SchemaBuilder) workspaceSchemaIdentity() *schemaBuilderIdentity {
+	b.workspaceCacheIdentityMu.Lock()
+	defer b.workspaceCacheIdentityMu.Unlock()
+	if b.workspaceCacheIdentity == nil {
+		// Defensive initialization for tests or legacy constructors using a
+		// struct literal instead of NewSchemaBuilder.
+		b.workspaceCacheIdentity = newSchemaBuilderIdentity()
+	}
+	return b.workspaceCacheIdentity
 }
 
 func (b *SchemaBuilder) Clone() *SchemaBuilder {
 	if b == nil {
 		return nil
 	}
+	identity := b.workspaceSchemaIdentity()
 	return &SchemaBuilder{
-		root:    b.root,
-		entries: slices.Clone(b.entries),
+		root:                   b.root,
+		entries:                slices.Clone(b.entries),
+		workspaceCacheIdentity: identity,
 	}
 }
 
@@ -77,8 +110,9 @@ func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 		extra[i] = modDepEntry{mod: m}
 	}
 	return &SchemaBuilder{
-		root:    b.root,
-		entries: append(extra, b.entries...),
+		root:                   b.root,
+		entries:                append(extra, b.entries...),
+		workspaceCacheIdentity: newSchemaBuilderIdentity(),
 	}
 }
 
@@ -88,13 +122,15 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 		extra[i] = modDepEntry{mod: m}
 	}
 	return &SchemaBuilder{
-		root:    b.root,
-		entries: append(slices.Clone(b.entries), extra...),
+		root:                   b.root,
+		entries:                append(slices.Clone(b.entries), extra...),
+		workspaceCacheIdentity: newSchemaBuilderIdentity(),
 	}
 }
 
 func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 	cp := b.Clone()
+	cp.workspaceCacheIdentity = newSchemaBuilderIdentity()
 	for i, e := range cp.entries {
 		if e.mod.Name() == mod.Name() {
 			promoted := e.opts
@@ -120,6 +156,7 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 // re-resolved through a workspace overlay.
 func (b *SchemaBuilder) Replacing(mods ...Mod) *SchemaBuilder {
 	cp := b.Clone()
+	cp.workspaceCacheIdentity = newSchemaBuilderIdentity()
 	for _, mod := range mods {
 		replaced := false
 		for i, e := range cp.entries {

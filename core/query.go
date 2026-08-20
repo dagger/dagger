@@ -36,6 +36,13 @@ type Query struct {
 
 	cacheVolumeStoreMu sync.Mutex
 	cacheVolumeStore   *cacheVolumeStore
+
+	// workspaceSchemaCache is owned by this query root because every cached
+	// builder retains that root and may retain a lazily built DagQL server. It
+	// must not be global: a global cache would keep historical client schema
+	// graphs reachable independently of their owning runtime.
+	workspaceSchemaCacheMu sync.Mutex
+	workspaceSchemaCache   map[workspaceSchemaCacheKey]*SchemaBuilder
 }
 
 var (
