@@ -136,7 +136,7 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *clientRunt
 
 	// Wait for the client's session attachables to be available.
 	// Don't mark as loaded on failure — allow retry on next request.
-	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+	if _, err := client.daggerSession.getClientCaller(ctx, client.clientID); err != nil {
 		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
@@ -249,7 +249,7 @@ func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *clientRunt
 }
 
 func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *clientRuntime, hostPath string) error {
-	bk := client.engineUtilClient
+	bk := client.daggerSession.engineUtilClient
 	cwd, err := bk.AbsPath(ctx, hostPath)
 	if err != nil {
 		return fmt.Errorf("workspace detection: %w", err)
@@ -272,7 +272,7 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *client
 func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *clientRuntime, workspaceRef string) error {
 	// Resolve as local path first (relative to the connecting client's cwd).
 	// If not found, fall back to parsing as a git workspace ref.
-	bk := client.engineUtilClient
+	bk := client.daggerSession.engineUtilClient
 	localPath, err := bk.AbsPath(ctx, workspaceRef)
 	if err == nil {
 		localStat, statErr := bk.StatCallerHostPath(ctx, localPath, true)
@@ -424,7 +424,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRu
 		core.NewWorkspaceSourceGitRef(gitRef.Result, gitutil.IsCommitSHA(parsedRef.version)),
 		// The workspace tree is remote, but user-level config still comes from
 		// the caller's host; the key is the declared remote itself.
-		client.engineUtilClient.ReadCallerHostFile,
+		client.daggerSession.engineUtilClient.ReadCallerHostFile,
 		workspace.NormalizeGitRemote(parsedRef.cloneRef),
 	)
 }
@@ -1220,7 +1220,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 
 	// Wait for the client's session attachables to be available.
 	// Transient failure — allow retry on next request.
-	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+	if _, err := client.daggerSession.getClientCaller(ctx, client.clientID); err != nil {
 		return nil, fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
@@ -1283,7 +1283,7 @@ func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *c
 
 	// Wait for the client's session attachables to be available.
 	// Transient failure — allow retry on next request.
-	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+	if _, err := client.daggerSession.getClientCaller(ctx, client.clientID); err != nil {
 		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
