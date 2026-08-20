@@ -103,9 +103,9 @@ my-module/
 
 The module config records the runtime separately from the SDK that authors it:
 
-```toml title="dagger-module.toml"
+```toml title="dagger-module.toml" template
 name = "my-module"
-engineVersion = "v1.0.0-beta.6"
+engineVersion = "v{{ version }}"
 
 [runtime]
 source = "go"
@@ -668,9 +668,9 @@ func (run LintRun) Assert(ctx context.Context) error {
 
 A module can depend on other Dagger modules and call them through `dag` — for example `dag.Ruff()` once `ruff` is a dependency. Dependencies are recorded in `dagger-module.toml` under `dependencies`:
 
-```toml title="dagger-module.toml"
+```toml title="dagger-module.toml" template
 name = "dev"
-engineVersion = "v1.0.0-beta.6"
+engineVersion = "v{{ version }}"
 
 [runtime]
 source = "go"
@@ -757,9 +757,9 @@ dagger module engine required
 
 Pin a specific version, the current engine, or the latest stable release:
 
-```shell
+```shell template
 # A specific version
-dagger module engine require v1.0.0-beta.6
+dagger module engine require v{{ version }}
 
 # Whatever engine you're running now
 dagger module engine require-current

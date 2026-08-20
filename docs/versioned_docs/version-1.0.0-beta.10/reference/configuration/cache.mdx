@@ -78,3 +78,36 @@ lower than the maximum. Percentages and size strings are not accepted.
 A request with only these two flags does not prune the disk cache, though
 removing metadata can still free disk space. If a request also overrides the
 disk space limits, the disk prune runs first and the metadata prune second.
+
+## Full reset
+
+To start from a clean slate, remove the Dagger Engine container and Dagger's local cache and configuration directories.
+
+Remove the Dagger Engine container (for Docker; adjust for other runtimes):
+
+```shell
+docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
+```
+
+Then remove the `dagger` sub-directories of your local cache and configuration directories:
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+
+```shell
+rm -rf ~/Library/Caches/dagger
+rm -rf ~/Library/Application\ Support/dagger
+```
+
+</TabItem>
+<TabItem value="Linux">
+
+```shell
+rm -rf ~/.cache/dagger
+rm -rf ~/.config/dagger
+```
+
+</TabItem>
+</Tabs>
+
+These are the default paths (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux, or the platform equivalent) and may differ in your environment. Dagger resolves them with [adrg/xdg](https://github.com/adrg/xdg) (Go SDK and CLI), [env-paths](https://github.com/sindresorhus/env-paths) (Node.js), and [platformdirs](https://github.com/platformdirs/platformdirs) (Python).
