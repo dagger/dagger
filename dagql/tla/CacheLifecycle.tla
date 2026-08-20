@@ -213,6 +213,16 @@ EvalIds   == 1..Len(evals)
 InvocationIds    == 1..Len(invocations)
 OngoingCallIds     == 1..Len(ongoingCalls)
 
+\* Callback completion first latches an outcome and retires the published
+\* attempt under lazyMu. Closing that attempt's done channel is the following
+\* lock-free region. Existing waiters retain the attempt-local outcome while a
+\* new attempt may already be current on the result.
+EvalLatchedPhases == {"latchedDone", "latchedFail", "latchedCancel"}
+EvalWakePhases == {"wakeDone", "wakeFail", "wakeCancel"}
+EvalPendingPhases == {"demand", "waiting"} \cup EvalLatchedPhases \cup EvalWakePhases
+EvalTerminalPhases == {"done", "failedCallback", "abandoned"}
+EvalPhaseDomain == EvalPendingPhases \cup EvalTerminalPhases
+
 \* phase values in which an invocation has finished, one way or another.
 TerminalPhases == {"done", "failed", "canceled", "refused"}
 
@@ -312,7 +322,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      laundered |-> launderedFlag,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
-     lazyWaiters |-> 0, lazyRunning |-> 0, lazyErr |-> "none"]
+     lazyWaiters |-> 0, lazyRunning |-> 0]
 
 \* A collected result's ID is never reused, so after a restart the slots of
 \* results that were not in the snapshot stay as dead husks - present in
@@ -325,7 +335,7 @@ DeadHusk ==
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      laundered |-> FALSE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
-     lazyWaiters |-> 0, lazyRunning |-> 0, lazyErr |-> "none"]
+     lazyWaiters |-> 0, lazyRunning |-> 0]
 
 \* The candidate import rows for position pos: any call, persisted or not,
 \* at most one dependency and only on an earlier row, payload decoded or
@@ -761,10 +771,9 @@ PubIndexFresh(o) ==
                        \* on sharedResult (cache.go:1584-1597):
                        lazyCb |-> lazyCb,        \* lazyEval callback stored?
                        lazyComplete |-> FALSE,   \* lazyEvalComplete
-                       lazyPhase |-> "idle",     \* lazyEvalWaitCh lifecycle
-                       lazyWaiters |-> 0,        \* lazyEvalWaiters
-                       lazyRunning |-> 0,        \* callbacks actually running
-                       lazyErr |-> "none"]       \* lazyEvalErr, latched
+                       lazyPhase |-> "idle",     \* published attempt lifecycle
+                       lazyWaiters |-> 0,        \* current attempt's waiters
+                       lazyRunning |-> 0]        \* callbacks actually running
         IN /\ res' = Append(withDeps, newRes)
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
@@ -1385,8 +1394,9 @@ Restart ==
                                  !.waiters = 0]]
     /\ ongoingCallIndex' = [k \in Calls \X Sessions |-> 0]
     /\ evals' = [e \in EvalIds |->
-         IF evals[e].phase \in {"demand", "waiting"}
-         THEN [evals[e] EXCEPT !.phase = "abandoned"]
+         IF evals[e].phase \in EvalPendingPhases
+         THEN [evals[e] EXCEPT !.phase = "abandoned",
+                                  !.foreignCancel = FALSE]
          ELSE evals[e]]
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
@@ -1397,26 +1407,30 @@ Restart ==
 (***************************************************************************)
 (* LAZY EVALUATION. A resolver can return a result whose                   *)
 (* expensive materialization is deferred: the value carries a callback,    *)
-(* stored on the sharedResult (registerLazyEvaluation, cache.go:2878).     *)
+(* stored on the sharedResult by registerLazyEvaluation.                   *)
 (* Anyone later needing the materialized value calls Cache.Evaluate,       *)
-(* which coordinates all callers per result (evaluateOne,                  *)
-(* cache.go:3000):                                                         *)
+(* which coordinates all callers per result in evaluateOne:                *)
 (*   - if evaluation already completed, return immediately                 *)
 (*   - if an attempt is in flight, join it as a waiter                     *)
 (*   - otherwise start the callback in a goroutine and wait               *)
-(* Success is permanent (lazyEvalComplete set, callback cleared,           *)
-(* cache.go:3187-3191). Failure leaves the callback in place so a later    *)
-(* Evaluate retries. Each waiter can abandon its wait independently        *)
-(* (waitForLazyEvaluation's ctx.Done arm, cache.go:2945-2954); the LAST    *)
-(* waiter to abandon cancels the running callback.                         *)
+(* Success is permanent: lazyEvalComplete is set and the callback is       *)
+(* cleared. Failure leaves the callback in place so a later Evaluate can   *)
+(* retry. Each waiter can abandon independently; the LAST waiter to leave  *)
+(* a running attempt cancels that attempt's callback context.              *)
 (*                                                                         *)
-(* One window deserves attention, and gets a property below: after the     *)
-(* last waiter abandons and cancels, the attempt's wait channel stays      *)
-(* published until the dying callback actually finishes. A brand-new       *)
-(* Evaluate arriving in that window JOINS the dying attempt               *)
-(* (evaluateOne's join arm checks only lazyEvalWaitCh != nil) and is       *)
-(* handed the earlier caller's cancellation error - it fails though        *)
-(* nothing is wrong with the result and it never asked to cancel.          *)
+(* Attempt state is separate from permanent result state. The result       *)
+(* publishes one current attempt while its callback runs. Callback finish  *)
+(* latches the outcome on that attempt and unpublishes it under lazyMu;     *)
+(* closing the attempt's done channel is the following lock-free region.   *)
+(* Existing waiters retain the retired attempt record, so they cannot read *)
+(* or decrement a retry's state. A new attempt can start after callback    *)
+(* finish even before old waiters consume their outcome.                   *)
+(*                                                                         *)
+(* A healthy waiter may have joined an attempt after every earlier waiter  *)
+(* abandoned and requested cancellation. If that callback returns its     *)
+(* shared context's cancellation, the healthy waiter treats it as an       *)
+(* intermediate retry outcome, not a returned error. Its own cancellation  *)
+(* remains terminal, and a genuine callback failure still propagates.      *)
 (*                                                                         *)
 (* Evaluators here are modeled independently of the GetOrInitCall          *)
 (* invocations: in the engine, Evaluate is called by code already          *)
@@ -1426,16 +1440,25 @@ Restart ==
 (* release-during-in-flight investigations, not here.                      *)
 (*                                                                         *)
 (* Model phases of one attempt (res[r].lazyPhase):                         *)
-(*   "idle"            no attempt in flight (lazyEvalWaitCh == nil)        *)
+(*   "idle"            no attempt is published                            *)
 (*   "running"         callback running, waiters waiting                   *)
 (*   "cancelRequested" every waiter abandoned; the last one invoked the    *)
-(*                     cancel; the callback has not finished yet. The      *)
-(*                     wait channel is still published - the stale-error   *)
-(*                     join window                                         *)
-(*   "done"            callback finished and the error is latched, but    *)
-(*                     waiters have not all drained; the last waiter to    *)
-(*                     drain resets the state to "idle"                    *)
+(*                     cancel; the callback has not finished yet. A new    *)
+(*                     waiter may still join this published attempt.       *)
+(*                                                                         *)
+(* Evaluator latched phases mean callback finish stored an attempt-local   *)
+(* outcome and retired the attempt, but that attempt's done-channel close  *)
+(* has not yet become observable to this waiter. Wake phases mean the      *)
+(* close is observable and the select can consume either completion or the *)
+(* waiter's own cancellation.                                              *)
 (***************************************************************************)
+
+LatchEvalOutcomes(r, outcome) ==
+    [e \in DOMAIN evals |->
+        IF evals[e].phase = "waiting" /\ evals[e].target = r
+        THEN [evals[e] EXCEPT !.phase = outcome,
+                                  !.foreignCancel = (outcome = "latchedCancel")]
+        ELSE evals[e]]
 
 \* A new Evaluate caller appears, demanding some registered result.
 EvalSpawn ==
@@ -1443,26 +1466,27 @@ EvalSpawn ==
     /\ Len(evals) < MaxEvals
     /\ \E r \in ResultIds :
         /\ res[r].registered
-        /\ evals' = Append(evals, [target |-> r, phase |-> "demand"])
+        /\ evals' = Append(evals,
+             [target |-> r, phase |-> "demand", foreignCancel |-> FALSE])
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* Fast path: nothing to do - evaluation already completed, or the value
-\* carries no callback (evaluateOne, cache.go:3023-3039).
+\* Fast path: evaluation already completed, or the value carries no callback.
 EvalNoWork(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
        res[r].lazyComplete \/ res[r].lazyCb = "none"
-    /\ evals' = [evals EXCEPT ![e].phase = "done"]
+    /\ evals' = [evals EXCEPT ![e].phase = "done",
+                              ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* Start the callback: no attempt is in flight, so this caller becomes the
-\* leader - one lazyMu critical section publishes the wait channel and the
-\* cancel, then the callback goroutine starts (evaluateOne,
-\* cache.go:3145-3184).
+\* Start the callback: no attempt is published, so this caller becomes the
+\* leader. One lazyMu critical section publishes a fresh attempt record whose
+\* wait targets, done channel, cancel function, and waiter count are already
+\* initialized.
 EvalStartAttempt(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
@@ -1472,122 +1496,119 @@ EvalStartAttempt(e) ==
        /\ res' = [res EXCEPT
             ![r].lazyPhase = "running",
             ![r].lazyWaiters = @ + 1,
-            ![r].lazyRunning = @ + 1,
-            ![r].lazyErr = "none"]
-       /\ evals' = [evals EXCEPT ![e].phase = "waiting"]
+            ![r].lazyRunning = @ + 1]
+       /\ evals' = [evals EXCEPT ![e].phase = "waiting",
+                                 ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* Join an attempt already in flight (evaluateOne's join arm,
-\* cache.go:3040-3063). The guard is only "a wait channel is published" -
-\* which includes an attempt that every previous waiter has already
-\* abandoned ("cancelRequested") and one that has finished but not
-\* drained ("done"). Joining the first of those is the stale-error window.
+\* Join a published attempt. cancelRequested remains joinable because
+\* callback cancellation is cooperative; the joiner retains this attempt
+\* record and retries if its outcome is foreign cancellation.
 EvalJoin(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
        /\ res[r].lazyCb = "armed"
        /\ ~res[r].lazyComplete
-       /\ res[r].lazyPhase \in {"running", "cancelRequested", "done"}
+       /\ res[r].lazyPhase \in {"running", "cancelRequested"}
        /\ res' = [res EXCEPT ![r].lazyWaiters = @ + 1]
-       /\ evals' = [evals EXCEPT ![e].phase = "waiting"]
+       /\ evals' = [evals EXCEPT ![e].phase = "waiting",
+                                 ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* The callback finishes on its own (the goroutine tail, cache.go:3184-
-\* 3202): latch the outcome; success also marks completion and clears the
-\* callback. If no waiters remain, the goroutine itself resets the state
-\* to idle; otherwise the state stays "done" until the last waiter drains.
-\* The Go goroutine latches lazyEvalErr unconditionally. That is safe -
-\* and this model needs no cross-attempt-overwrite action - only because
-\* no second attempt can start while an old goroutine is alive: the state
-\* resets exclusively here or in the last waiter's wake, both of which
-\* happen after this latch.
+\* The callback finishes under lazyMu: latch the outcome on the attempt,
+\* retire the result's current-attempt pointer, and make the result idle.
+\* Success also marks permanent completion and clears the callback. Waiters
+\* move to an attempt-local latched phase; they no longer contribute to the
+\* result's current-attempt waiter count.
 EvalCallbackFinish(r) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase = "running"
     /\ res[r].lazyRunning > 0
     /\ \E ok \in IF LazyCanFail THEN {TRUE, FALSE} ELSE {TRUE} :
-        LET drained == res[r].lazyWaiters = 0
-        IN res' = [res EXCEPT
+        /\ res' = [res EXCEPT
              ![r].lazyRunning = @ - 1,
              ![r].lazyComplete = @ \/ ok,
              ![r].lazyCb = IF ok THEN "none" ELSE @,
-             ![r].lazyPhase = IF drained THEN "idle" ELSE "done",
-             ![r].lazyErr = IF drained THEN "none"
-                            ELSE IF ok THEN "none" ELSE "fail"]
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, evals,
+             ![r].lazyPhase = "idle",
+             ![r].lazyWaiters = 0]
+        /\ evals' = LatchEvalOutcomes(r,
+             IF ok THEN "latchedDone" ELSE "latchedFail")
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* The canceled callback winds down. It may still succeed (the callback
-\* returns nil despite its context being canceled) or finish with the
-\* cancellation error - which is then what any joiner who arrived during
-\* the wind-down is handed.
+\* A canceled callback may still succeed after ignoring cancellation. A
+\* cancellation-shaped failure attributable to its shared callback context
+\* is latched as foreign cancellation, which healthy waiters retry.
 EvalCallbackFinishCanceled(r) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase = "cancelRequested"
     /\ res[r].lazyRunning > 0
     /\ \E ok \in {TRUE, FALSE} :
-        LET drained == res[r].lazyWaiters = 0
-        IN res' = [res EXCEPT
+        /\ res' = [res EXCEPT
              ![r].lazyRunning = @ - 1,
              ![r].lazyComplete = @ \/ ok,
              ![r].lazyCb = IF ok THEN "none" ELSE @,
-             ![r].lazyPhase = IF drained THEN "idle" ELSE "done",
-             ![r].lazyErr = IF drained THEN "none"
-                            ELSE IF ok THEN "none" ELSE "cancel"]
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, evals,
-                   sessionEdges, countedEdges, sessionRelease,
-                   epoch, flushed>>
-
-\* A waiter wakes after the callback finished (waitForLazyEvaluation's
-\* wait-channel arm, cache.go:2925-2943): it reads the latched error,
-\* drops its waiter count, and the last waiter out resets the state to
-\* idle. A "cancel" error here means this caller is failing with an
-\* abandonment error some OTHER caller caused - the stale-cancel case.
-EvalWake(e) ==
-    /\ evals[e].phase = "waiting"
-    /\ LET r == evals[e].target
-           last == res[r].lazyWaiters = 1
-       IN /\ res[r].lazyPhase = "done"
-          /\ res' = [res EXCEPT
-               ![r].lazyWaiters = @ - 1,
-               ![r].lazyPhase = IF last THEN "idle" ELSE "done",
-               ![r].lazyErr = IF last THEN "none" ELSE @]
-          /\ evals' = [evals EXCEPT ![e].phase =
-               CASE res[r].lazyErr = "none" -> "done"
-                 [] res[r].lazyErr = "fail" -> "failedCallback"
-                 [] OTHER -> "failedStale"]
+             ![r].lazyPhase = "idle",
+             ![r].lazyWaiters = 0]
+        /\ evals' = LatchEvalOutcomes(r,
+             IF ok THEN "latchedDone" ELSE "latchedCancel")
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* A waiter gives up (its own context canceled - waitForLazyEvaluation's
-\* ctx.Done arm, cache.go:2945-2954). Only the LAST waiter to leave
-\* invokes the attempt's cancel; earlier leavers just walk away. Note
-\* what is NOT cleared: the wait channel stays published until the dying
-\* callback finishes.
+\* Closing the retired attempt's done channel is the lock-free region after
+\* callback finish. Each transition below represents that broadcast becoming
+\* observable to one retained waiter; the waiter still has not selected
+\* between completion and its own context cancellation.
+EvalCallbackClose(e) ==
+    /\ evals[e].phase \in EvalLatchedPhases
+    /\ evals' = [evals EXCEPT ![e].phase =
+         CASE @ = "latchedDone" -> "wakeDone"
+           [] @ = "latchedFail" -> "wakeFail"
+           [] OTHER -> "wakeCancel"]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, sessionRelease,
+                   epoch, flushed>>
+
+\* The completion arm consumes one retired attempt's outcome. Success and
+\* genuine callback failure terminate. Foreign cancellation returns the
+\* healthy evaluator to demand so it can re-check completion, join a current
+\* attempt, or lead a fresh one.
+EvalWake(e) ==
+    /\ evals[e].phase \in EvalWakePhases
+    /\ evals' = [evals EXCEPT
+         ![e].phase = CASE @ = "wakeDone" -> "done"
+                           [] @ = "wakeFail" -> "failedCallback"
+                           [] OTHER -> "demand",
+         ![e].foreignCancel = (evals[e].phase = "wakeCancel")]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, sessionRelease,
+                   epoch, flushed>>
+
+\* A waiter gives up because its own context was canceled. While the attempt
+\* is current, it decrements that attempt's waiter count and the last waiter
+\* requests callback cancellation. Once callback finish retired the attempt,
+\* abandonment touches no result-level state, even if a new attempt is current.
 EvalAbandon(e) ==
-    /\ evals[e].phase = "waiting"
+    /\ evals[e].phase \in {"waiting"} \cup EvalLatchedPhases \cup EvalWakePhases
     /\ LET r == evals[e].target
-           last == res[r].lazyWaiters = 1
-       IN \* Abandoning is possible in "done" too: when the callback has
-          \* finished AND the waiter's own context is canceled, both arms
-          \* of the Go select are ready and the runtime picks either. A
-          \* last waiter leaving through ctx.Done does NOT clear the
-          \* attempt state (that arm clears nothing), so the latched error
-          \* stays published with zero waiters - the next Evaluate joins
-          \* it and drains the stale error. Invoking the cancel on an
-          \* already-finished attempt is a harmless no-op.
-          /\ res[r].lazyPhase \in {"running", "cancelRequested", "done"}
-          /\ res' = [res EXCEPT
-               ![r].lazyWaiters = @ - 1,
-               ![r].lazyPhase = IF last /\ res[r].lazyPhase = "running"
-                                THEN "cancelRequested" ELSE @]
-          /\ evals' = [evals EXCEPT ![e].phase = "abandoned"]
+           current == evals[e].phase = "waiting"
+           last == current /\ res[r].lazyWaiters = 1
+       IN /\ ~current \/ res[r].lazyPhase \in {"running", "cancelRequested"}
+          /\ res' = IF current
+                    THEN [res EXCEPT
+                         ![r].lazyWaiters = @ - 1,
+                         ![r].lazyPhase =
+                              IF last /\ @ = "running"
+                              THEN "cancelRequested" ELSE @]
+                    ELSE res
+          /\ evals' = [evals EXCEPT ![e].phase = "abandoned",
+                                     ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
@@ -1622,7 +1643,7 @@ Next ==
     \/ EvalSpawn
     \/ \E e \in EvalIds :
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalJoin(e)
-         \/ EvalWake(e) \/ EvalAbandon(e)
+         \/ EvalCallbackClose(e) \/ EvalWake(e) \/ EvalAbandon(e)
     \/ \E r \in 1..Len(res) :
          EvalCallbackFinish(r) \/ EvalCallbackFinishCanceled(r)
     \/ Flush
@@ -1681,6 +1702,11 @@ WaiterProgress(i) ==
 EvalProgress(e) ==
     \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalJoin(e) \/ EvalWake(e)
 
+\* Callback completion always proceeds to close the retired attempt's done
+\* channel. This fairness covers the lock-free close becoming observable to
+\* each waiter that retained that attempt.
+LazyCallbackCloseProgress(e) == EvalCallbackClose(e)
+
 \* The lazy callback goroutine always eventually finishes, canceled or
 \* not. Fairness sits on the disjunction of both finish shapes for the
 \* same reason it does for attachment: weak fairness on the success arm
@@ -1698,6 +1724,8 @@ LiveSpec ==
     \* evaluation are untouched by the lazy machinery.
     /\ \A e \in 1..MaxEvals :
          WF_vars(e \in EvalIds /\ EvalProgress(e))
+    /\ \A e \in 1..MaxEvals :
+         WF_vars(e \in EvalIds /\ LazyCallbackCloseProgress(e))
     /\ \A r \in 1..MaxResults :
          WF_vars(r \in ResultIds /\ LazyCallbackProgress(r))
 
@@ -1727,7 +1755,14 @@ TypeOK ==
                  /\ e[2] \in sessionRelease[e[1]].snap)
     /\ epoch \in {1, 2}
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
-    /\ \A r \in ResultIds : res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
+    /\ \A r \in ResultIds :
+         /\ res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
+         /\ res[r].lazyWaiters = Cardinality(
+              {e \in EvalIds :
+                  evals[e].target = r /\ evals[e].phase = "waiting"})
+    /\ \A e \in EvalIds :
+         /\ evals[e].phase \in EvalPhaseDomain
+         /\ evals[e].foreignCancel \in BOOLEAN
     /\ \A i \in InvocationIds :
          /\ invocations[i].origin \in {"handler", "nested"}
          /\ invocations[i].refusedEpoch \in 0..epoch
@@ -1849,15 +1884,16 @@ LazyMutualExclusion ==
 LazySuccessPermanent ==
     \A r \in ResultIds : res[r].lazyComplete => res[r].lazyRunning = 0
 
-\* An Evaluate caller never fails with a cancellation error it did not
-\* cause. The code violates this: a caller arriving while a fully-
-\* abandoned attempt is still winding down joins that attempt
-\* (evaluateOne's join arm checks only that a wait channel is published)
-\* and is handed the abandoners' cancellation error - a spurious failure
-\* on a healthy, retryable result. "failedStale" records exactly that
-\* outcome at wake time.
+\* An Evaluate caller never returns a cancellation error caused by another
+\* waiter. foreignCancel becomes true when the canceled callback's outcome is
+\* latched on its retained waiters and remains true as a healthy waiter returns
+\* to demand, so the stale-cancellation configuration reaches states that
+\* exercise this predicate. Starting or joining the retry clears it. Reaching
+\* any terminal phase while it is true would mean the foreign cancellation
+\* escaped Evaluate instead of being retried.
 NoStaleCancelError ==
-    \A e \in EvalIds : evals[e].phase # "failedStale"
+    \A e \in EvalIds :
+        evals[e].foreignCancel => evals[e].phase \notin EvalTerminalPhases
 
 (***************************************************************************)
 (* IMPORT/FLUSH PROPERTIES.                                                *)
@@ -1913,8 +1949,7 @@ NoLaunderedServe ==
 EvalEventuallyTerminal ==
     \A e \in 1..MaxEvals :
         (e \in EvalIds) ~>
-            (e \in EvalIds /\ evals[e].phase \in
-                {"done", "failedCallback", "failedStale", "abandoned"})
+            (e \in EvalIds /\ evals[e].phase \in EvalTerminalPhases)
 
 \* Liveness (against LiveSpec): every issued call eventually terminates -
 \* served, failed, or canceled, never wedged forever.

@@ -1,7 +1,7 @@
 package dagql
 
 // Regression tests for two lazy-emit hazards:
-//   - the stale lazyEvalSpanCtx bug: a failed traced lazy eval must not leave a
+//   - a stale lazy attempt span target: a failed traced lazy eval must not leave a
 //     wait target that a later untraced retry leader fails to overwrite, which a
 //     traced joiner would then mis-link to the wrong (old) lazy op instead of
 //     emitting a gate-observable targetless wait.
@@ -28,8 +28,8 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// TestLazyEmitRetryDoesNotLeakStaleWaitTarget is the regression for the stale
-// lazyEvalSpanCtx bug. It drives the real evaluateOne path with three actors on
+// TestLazyEmitRetryDoesNotLeakStaleWaitTarget is the regression for a stale
+// lazy attempt span target. It drives the real evaluateOne path with three actors on
 // one shared pending result: a TRACED leader whose eval fails (minting a lazy op),
 // an UNTRACED retry leader (which must NOT re-mint), and a TRACED joiner of the
 // retry. Without the per-attempt reset, the joiner would read the failed
@@ -71,7 +71,7 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 				if calls.Add(1) == 1 {
 					return errors.New("first lazy attempt fails (retryable)")
 				}
-				// The retry leader's callback: lazyEvalWaitCh is published now,
+				// The retry leader's callback: its attempt is published now,
 				// so signal and block long enough for the joiner to join.
 				close(leaderReady)
 				<-release
@@ -102,7 +102,7 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 	select {
 	case <-leaderReady:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for the untraced retry leader to publish lazyEvalWaitCh")
+		t.Fatal("timed out waiting for the untraced retry leader to publish its attempt")
 	}
 
 	// J: a TRACED joiner of the retry. It reads the wait target under lazyMu and
@@ -118,7 +118,7 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared.lazyMu.Lock()
-		joined := shared.lazyEvalWaiters >= 2
+		joined := shared.lazyEvalAttempt != nil && shared.lazyEvalAttempt.waiters >= 2
 		shared.lazyMu.Unlock()
 		if joined {
 			break

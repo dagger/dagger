@@ -36,6 +36,7 @@ var expectedOutcome = map[string]string{
 	"liveness":          "",
 	"lazy":              "",
 	"lazy_liveness":     "",
+	"lazy_stale_cancel": "",
 	"persist":           "",
 	"persist_liveness":  "",
 	"flush_roundtrip":   "",
@@ -51,11 +52,10 @@ var expectedOutcome = map[string]string{
 	"flush_closure":     "",
 	// red: reproductions of known deficiencies in the current code; each
 	// config's comment describes the scenario and the mechanism
-	"release_inflight":  "ReturnedLive",
-	"drain_escape":      "ReturnedLive",
-	"lazy_stale_cancel": "NoStaleCancelError",
-	"flush_inflight":    "FlushCleanCapture",
-	"flush_drained":     "FlushCleanCapture",
+	"release_inflight": "ReturnedLive",
+	"drain_escape":     "ReturnedLive",
+	"flush_inflight":   "FlushCleanCapture",
+	"flush_drained":    "FlushCleanCapture",
 }
 
 type TlaCheck struct {
