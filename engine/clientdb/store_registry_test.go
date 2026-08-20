@@ -22,6 +22,7 @@ func TestStoreRegistryRefCount(t *testing.T) {
 	require.Same(t, d1a, d1b)
 	require.Len(t, registry.open, 1)
 	require.Equal(t, 2, d1a.refCount)
+	require.Equal(t, OpenStats{Stores: 1, Streams: 3, Refs: 2}, registry.OpenStats())
 
 	_, err = d1a.Read().SelectSpansSince(t.Context(), SelectSpansSinceParams{ID: 1, Limit: 1})
 	require.NoError(t, err)
