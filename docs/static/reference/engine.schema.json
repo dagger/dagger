@@ -31,6 +31,10 @@
           },
           "type": "object",
           "description": "Registries configures custom registry mirrors, root CAs, and insecure/HTTP access."
+        },
+        "maxParallelism": {
+          "$ref": "#/$defs/MaxParallelism",
+          "description": "MaxParallelism bounds concurrent build steps. When unset, parallelism is unbounded."
         }
       },
       "additionalProperties": false,
@@ -155,6 +159,21 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "MaxParallelism": {
+      "properties": {
+        "num": {
+          "type": "integer",
+          "description": "Num is an absolute number of parallel build steps."
+        },
+        "cpu": {
+          "type": "integer",
+          "description": "CPU is a percentage (1-100) of the engine's CPU cores; resolves to at least 1."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "MaxParallelism bounds concurrent build steps via one strategy."
     },
     "RegistryConfig": {
       "properties": {

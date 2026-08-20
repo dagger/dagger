@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -272,10 +271,6 @@ func addFlags(app *cli.App) {
 		cli.BoolFlag{
 			Name:  "oci-worker-selinux",
 			Usage: "apply SELinux labels",
-		},
-		cli.StringFlag{
-			Name:  "oci-max-parallelism",
-			Usage: "maximum number of parallel build steps that can be run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism.",
 		},
 		cli.StringFlag{
 			Name:  "oci-worker-gc-keepstorage",
@@ -786,19 +781,6 @@ func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 	}
 	if c.GlobalIsSet("oci-worker-selinux") {
 		cfg.Workers.OCI.SELinux = c.GlobalBool("oci-worker-selinux")
-	}
-	if c.GlobalIsSet("oci-max-parallelism") {
-		maxParallelismStr := c.GlobalString("oci-max-parallelism")
-		var maxParallelism int
-		if maxParallelismStr == "num-cpu" {
-			maxParallelism = runtime.NumCPU()
-		} else {
-			maxParallelism, err = strconv.Atoi(maxParallelismStr)
-			if err != nil {
-				return fmt.Errorf("failed to parse oci-max-parallelism, should be positive integer, 0 for unlimited, or 'num-cpu' for setting to the number of CPUs: %w", err)
-			}
-		}
-		cfg.Workers.OCI.MaxParallelism = maxParallelism
 	}
 
 	return nil

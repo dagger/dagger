@@ -34,6 +34,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/hashicorp/go-multierror"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -90,9 +91,20 @@ type Opts struct {
 	Interactive        bool
 	InteractiveCommand []string
 
+	// MaxParallelism bounds concurrent user execs engine-wide. 0 means unbounded.
+	MaxParallelism int
+
 	imageExportWriter *imageexport.Writer
 	running           map[string]*execState
 	runningMu         *sync.RWMutex
+	execSem           *semaphore.Weighted
+	// per-session bounds from each session's dagger.toml, keyed by session ID
+	sessionSems *sessionSemaphores
+}
+
+type sessionSemaphores struct {
+	mu   sync.Mutex
+	sems map[string]*semaphore.Weighted
 }
 
 // Client is dagger's internal engine utility client
@@ -122,6 +134,10 @@ func NewOpts(opts Opts) (*Opts, error) {
 	opts.imageExportWriter = imageWriter
 	opts.running = make(map[string]*execState)
 	opts.runningMu = &sync.RWMutex{}
+	if opts.MaxParallelism > 0 {
+		opts.execSem = semaphore.NewWeighted(int64(opts.MaxParallelism))
+	}
+	opts.sessionSems = &sessionSemaphores{sems: map[string]*semaphore.Weighted{}}
 	return &opts, nil
 }
 
@@ -143,6 +159,12 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	if opts.runningMu == nil {
 		opts.runningMu = &sync.RWMutex{}
+	}
+	if opts.execSem == nil && opts.MaxParallelism > 0 {
+		opts.execSem = semaphore.NewWeighted(int64(opts.MaxParallelism))
+	}
+	if opts.sessionSems == nil {
+		opts.sessionSems = &sessionSemaphores{sems: map[string]*semaphore.Weighted{}}
 	}
 	if opts.GetHostServiceCaller == nil {
 		opts.GetHostServiceCaller = opts.GetClientCaller
@@ -170,6 +192,55 @@ func (opts *Opts) Close() error {
 		}
 	}
 	return rerr
+}
+
+// AcquireEngineSlot blocks until an engine-global slot is free and returns a
+// release func (no-op when unbounded). Only gate leaf execs; gating nested
+// execs can deadlock.
+func (c *Client) AcquireEngineSlot(ctx context.Context) (func(), error) {
+	return acquire(ctx, c.execSem)
+}
+
+// SetSessionParallelism registers a per-session bound from the session's
+// dagger.toml (idempotent; limit <= 0 clears it).
+func (opts *Opts) SetSessionParallelism(sessionID string, limit int) {
+	opts.sessionSems.mu.Lock()
+	defer opts.sessionSems.mu.Unlock()
+	if limit <= 0 {
+		delete(opts.sessionSems.sems, sessionID)
+		return
+	}
+	if _, ok := opts.sessionSems.sems[sessionID]; !ok {
+		opts.sessionSems.sems[sessionID] = semaphore.NewWeighted(int64(limit))
+	}
+}
+
+// ClearSessionParallelism drops a session's bound when the session ends.
+func (opts *Opts) ClearSessionParallelism(sessionID string) {
+	opts.sessionSems.mu.Lock()
+	delete(opts.sessionSems.sems, sessionID)
+	opts.sessionSems.mu.Unlock()
+}
+
+// AcquireSessionSlot is AcquireEngineSlot for the session's dagger.toml bound.
+func (opts *Opts) AcquireSessionSlot(ctx context.Context, sessionID string) (func(), error) {
+	opts.sessionSems.mu.Lock()
+	sem := opts.sessionSems.sems[sessionID]
+	opts.sessionSems.mu.Unlock()
+	return acquire(ctx, sem)
+}
+
+func acquire(ctx context.Context, sem *semaphore.Weighted) (func(), error) {
+	if sem == nil {
+		return func() {}, nil
+	}
+	if err := sem.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() { sem.Release(1) })
+	}, nil
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
