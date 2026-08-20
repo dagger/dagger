@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -80,12 +81,19 @@ func (c *Cache) GetOrInitArbitrary(
 	}
 
 	if res := c.completedArbitraryCalls[callKey]; res != nil {
-		c.callsMu.Unlock()
 		ret := arbitraryResult{
 			shared:   res,
 			hitCache: true,
 		}
-		c.trackSessionArbitrary(sessionID, ret)
+		_, err := c.acquireSessionArbitraryLocked(sessionID, res)
+		var onRelease OnReleaseFunc
+		if err != nil {
+			onRelease = c.removeUnownedArbitraryLocked(res)
+		}
+		c.callsMu.Unlock()
+		if err != nil {
+			return nil, errors.Join(err, runArbitraryOnRelease(ctx, onRelease))
+		}
 		return ret, nil
 	}
 
@@ -152,7 +160,6 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 		} else {
 			c.completedArbitraryCalls[res.callKey] = res
 		}
-		c.callsMu.Unlock()
 
 		if isFirstCaller {
 			hitCache = false
@@ -161,19 +168,48 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 			shared:   res,
 			hitCache: hitCache,
 		}
-		c.trackSessionArbitrary(sessionID, ret)
+		_, claimErr := c.acquireSessionArbitraryLocked(sessionID, res)
+		var onRelease OnReleaseFunc
+		if claimErr != nil {
+			onRelease = c.removeUnownedArbitraryLocked(res)
+		}
+		c.callsMu.Unlock()
+		if claimErr != nil {
+			return nil, errors.Join(claimErr, runArbitraryOnRelease(ctx, onRelease))
+		}
 		return ret, nil
 	}
 
-	if res.ownerSessionCount == 0 && res.waiters == 0 {
-		if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
-			delete(c.ongoingArbitraryCalls, res.callKey)
-		}
-		if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
-			delete(c.completedArbitraryCalls, res.callKey)
-		}
-	}
+	c.removeUnownedArbitraryLocked(res)
 
 	c.callsMu.Unlock()
 	return nil, err
+}
+
+// removeUnownedArbitraryLocked drops an arbitrary value that has neither a
+// session owner nor an active waiter. The caller must hold callsMu.
+func (c *Cache) removeUnownedArbitraryLocked(res *sharedArbitraryResult) OnReleaseFunc {
+	if res == nil || res.ownerSessionCount != 0 || res.waiters != 0 {
+		return nil
+	}
+	removed := false
+	if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
+		delete(c.ongoingArbitraryCalls, res.callKey)
+		removed = true
+	}
+	if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
+		delete(c.completedArbitraryCalls, res.callKey)
+		removed = true
+	}
+	if !removed {
+		return nil
+	}
+	return res.onRelease
+}
+
+func runArbitraryOnRelease(ctx context.Context, onRelease OnReleaseFunc) error {
+	if onRelease == nil {
+		return nil
+	}
+	return onRelease(context.WithoutCancel(ctx))
 }
