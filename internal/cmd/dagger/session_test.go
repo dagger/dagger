@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,18 @@ func TestSessionClientParamsWorkspace(t *testing.T) {
 	require.True(t, params.LoadWorkspaceModules)
 	require.NotNil(t, params.Workspace)
 	require.Equal(t, "github.com/acme/ws", *params.Workspace)
+}
+
+func TestConnectParamsCarryOptionalSessionID(t *testing.T) {
+	withID, err := json.Marshal(connectParams{Port: 1234, SessionToken: "tok", SessionID: "sess-a"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"port":1234,"session_token":"tok","session_id":"sess-a"}`, string(withID))
+
+	// Existing SDK decoders that predate session_id must keep working, so the
+	// field is omitted when empty rather than serialized as "".
+	withoutID, err := json.Marshal(connectParams{Port: 1234, SessionToken: "tok"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"port":1234,"session_token":"tok"}`, string(withoutID))
 }
 
 func TestSessionClientParamsGlobalWorkspace(t *testing.T) {

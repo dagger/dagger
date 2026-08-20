@@ -32,6 +32,7 @@ class ConnectParams:
 
     port: int
     session_token: str
+    session_id: str | None = None
     url: httpx.URL = field(init=False)
 
     def __post_init__(self):
@@ -43,7 +44,25 @@ class ConnectParams:
 
     @classmethod
     def from_env(cls) -> "ConnectParams | None":
-        if not (port := os.getenv("DAGGER_SESSION_PORT")):
+        nesting = os.getenv("DAGGER_NESTING")
+        port = os.getenv("DAGGER_SESSION_PORT")
+        if nesting not in (None, "", "NESTED_CLIENT", "INDEPENDENT_SESSIONS"):
+            msg = f"Unknown DAGGER_NESTING value: {nesting}"
+            raise ClientConnectionError(msg)
+        if nesting in ("NESTED_CLIENT", "INDEPENDENT_SESSIONS") and not port:
+            msg = f"DAGGER_NESTING={nesting} requires DAGGER_SESSION_PORT"
+            raise ClientConnectionError(msg)
+        if not port:
+            return None
+        if nesting == "INDEPENDENT_SESSIONS":
+            try:
+                parsed_port = int(port)
+            except ValueError as e:
+                msg = f"Invalid DAGGER_SESSION_PORT: {port}"
+                raise ClientConnectionError(msg) from e
+            if parsed_port < 1:
+                msg = f"Invalid DAGGER_SESSION_PORT: {port}"
+                raise ClientConnectionError(msg)
             return None
         if not (token := os.getenv("DAGGER_SESSION_TOKEN")):
             msg = "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"

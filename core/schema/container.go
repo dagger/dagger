@@ -650,11 +650,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("redirectStderr").Doc(
 					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(BeforeVersion("v1.0.0-0")).
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Deprecated("Use daggerNesting: NESTED_CLIENT.").
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. Like --privileged in Docker`,
 					`DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.`),
@@ -934,8 +939,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			Args(
 				dagql.Arg("args").Doc(`The args of the command.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(BeforeVersion("v1.0.0-0")).
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Deprecated("Use daggerNesting: NESTED_CLIENT.").
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -950,8 +963,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(BeforeVersion("v1.0.0-0")).
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Deprecated("Use daggerNesting: NESTED_CLIENT.").
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -966,6 +987,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -4516,6 +4540,12 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	parent dagql.ObjectResult[*core.Container],
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
+	if err := core.ValidateDaggerNesting(
+		args.ExperimentalPrivilegedNesting.Value.Bool(),
+		args.DaggerNesting,
+	); err != nil {
+		return nil, err
+	}
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
@@ -4554,6 +4584,9 @@ func (s *containerSchema) terminal(
 
 	if !args.ExperimentalPrivilegedNesting.Valid {
 		args.ExperimentalPrivilegedNesting = ctr.Self().DefaultTerminalCmd.ExperimentalPrivilegedNesting
+	}
+	if !args.DaggerNesting.Valid {
+		args.DaggerNesting = ctr.Self().DefaultTerminalCmd.DaggerNesting
 	}
 
 	if !args.InsecureRootCapabilities.Valid {
@@ -4605,6 +4638,12 @@ func (s *containerSchema) terminalLegacy(
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",
 			Value: args.ExperimentalPrivilegedNesting,
+		})
+	}
+	if args.DaggerNesting.Valid {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "daggerNesting",
+			Value: args.DaggerNesting,
 		})
 	}
 	if args.InsecureRootCapabilities.Valid {

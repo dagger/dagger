@@ -18,7 +18,14 @@ var (
 		Name: "dagger_connected_clients",
 		Help: "Number of currently connected clients",
 	})
-
+	liveSessionsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dagger_live_sessions",
+		Help: "Number of live Dagger sessions",
+	})
+	independentListenerClaimedSessionsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dagger_independent_listener_claimed_sessions",
+		Help: "Number of live sessions claimed by independent process listeners",
+	})
 	dagqlCacheEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dagger_dagql_cache_entries",
 		Help: "Number of entries in the dagql cache",
@@ -47,7 +54,36 @@ var (
 
 // setupMetricsServer starts an HTTP server to expose Prometheus metrics
 func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) error {
+	independentListenerCleanupSucceededCounter := prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Name:        "dagger_independent_listener_cleanups_total",
+		Help:        "Number of independent process-listener cleanup outcomes",
+		ConstLabels: prometheus.Labels{"outcome": "success"},
+	}, func() float64 {
+		succeeded, _ := srv.IndependentListenerCleanupCounts()
+		return float64(succeeded)
+	})
+	independentListenerCleanupFailedCounter := prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Name:        "dagger_independent_listener_cleanups_total",
+		Help:        "Number of independent process-listener cleanup outcomes",
+		ConstLabels: prometheus.Labels{"outcome": "failure"},
+	}, func() float64 {
+		_, failed := srv.IndependentListenerCleanupCounts()
+		return float64(failed)
+	})
+
 	if err := prometheus.Register(connectedClientsGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(liveSessionsGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(independentListenerClaimedSessionsGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(independentListenerCleanupSucceededCounter); err != nil {
+		return err
+	}
+	if err := prometheus.Register(independentListenerCleanupFailedCounter); err != nil {
 		return err
 	}
 	if err := prometheus.Register(dagqlCacheEntriesGauge); err != nil {
@@ -106,7 +142,10 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 
 	// Set up HTTP server
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		connectedClientsGauge.Set(float64(srv.ConnectedClients()))
+		diagnostics := srv.SessionDiagnostics()
+		connectedClientsGauge.Set(float64(diagnostics.TotalClients))
+		liveSessionsGauge.Set(float64(diagnostics.LiveSessions))
+		independentListenerClaimedSessionsGauge.Set(float64(diagnostics.IndependentListenerClaimedSessions))
 		dagqlCacheEntriesGauge.Set(float64(srv.DagqlCacheEntries()))
 		dagqlCacheMetadataEstimatedBytesGauge.Set(float64(srv.DagqlCacheMetadataEstimatedBytes()))
 

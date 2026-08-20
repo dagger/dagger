@@ -38,8 +38,35 @@ public final class Connection {
 
   static Optional<Connection> fromEnv() {
     LOG.info("Trying initializing connection with engine from environment variables...");
+    String nesting = System.getenv("DAGGER_NESTING");
     String portStr = System.getenv("DAGGER_SESSION_PORT");
     String sessionToken = System.getenv("DAGGER_SESSION_TOKEN");
+    if (nesting != null
+        && !nesting.isEmpty()
+        && !nesting.equals("NESTED_CLIENT")
+        && !nesting.equals("INDEPENDENT_SESSIONS")) {
+      throw new IllegalStateException("unknown DAGGER_NESTING value " + nesting);
+    }
+    if (("NESTED_CLIENT".equals(nesting) || "INDEPENDENT_SESSIONS".equals(nesting))
+        && portStr == null) {
+      throw new IllegalStateException(
+          "DAGGER_NESTING=" + nesting + " requires DAGGER_SESSION_PORT");
+    }
+    if ("NESTED_CLIENT".equals(nesting) && sessionToken == null) {
+      throw new IllegalStateException(
+          "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT");
+    }
+    if ("INDEPENDENT_SESSIONS".equals(nesting)) {
+      try {
+        int port = Integer.parseInt(portStr);
+        if (port < 1) {
+          throw new NumberFormatException("port must be positive");
+        }
+      } catch (NumberFormatException nfe) {
+        throw new IllegalStateException("invalid port value in DAGGER_SESSION_PORT", nfe);
+      }
+      return Optional.empty();
+    }
     if (portStr != null && sessionToken != null) {
       try {
         int port = Integer.parseInt(portStr);

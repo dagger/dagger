@@ -54,6 +54,7 @@ type Service struct {
 	Container                     dagql.ObjectResult[*Container]
 	Args                          []string
 	ExperimentalPrivilegedNesting bool
+	DaggerNesting                 DaggerNesting
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
@@ -89,6 +90,7 @@ type persistedServicePayload struct {
 	ContainerResultID             uint64                        `json:"containerResultID,omitempty"`
 	Args                          []string                      `json:"args,omitempty"`
 	ExperimentalPrivilegedNesting bool                          `json:"experimentalPrivilegedNesting,omitempty"`
+	DaggerNesting                 DaggerNesting                 `json:"daggerNesting,omitempty"`
 	InsecureRootCapabilities      bool                          `json:"insecureRootCapabilities,omitempty"`
 	NoInit                        bool                          `json:"noInit,omitempty"`
 	ExecMD                        *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
@@ -122,6 +124,7 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 		CustomHostname:                svc.CustomHostname,
 		Args:                          slices.Clone(svc.Args),
 		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+		DaggerNesting:                 svc.DaggerNesting,
 		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 		NoInit:                        svc.NoInit,
 		ExecMD:                        svc.ExecMD,
@@ -199,6 +202,7 @@ func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 		Container:                     container,
 		Args:                          slices.Clone(persisted.Args),
 		ExperimentalPrivilegedNesting: persisted.ExperimentalPrivilegedNesting,
+		DaggerNesting:                 persisted.DaggerNesting,
 		InsecureRootCapabilities:      persisted.InsecureRootCapabilities,
 		NoInit:                        persisted.NoInit,
 		ExecMD:                        persisted.ExecMD,
@@ -583,6 +587,7 @@ func (svc *Service) startContainer(
 	if execMD == nil {
 		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+			DaggerNesting:                 dagql.Optional[DaggerNesting]{Valid: svc.DaggerNesting != "", Value: svc.DaggerNesting},
 			NoInit:                        svc.NoInit,
 		}, nil, svc.ModuleContext)
 		if err != nil {
@@ -710,6 +715,7 @@ func (svc *Service) startContainer(
 		meta, err = ctr.metaSpec(ctx, ContainerExecOpts{
 			Args:                          svc.Args,
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+			DaggerNesting:                 dagql.Optional[DaggerNesting]{Valid: svc.DaggerNesting != "", Value: svc.DaggerNesting},
 			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 			NoInit:                        svc.NoInit,
 		}, false)
@@ -808,8 +814,15 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
+	daggerNesting, err := daggerNestingMode(
+		svc.ExperimentalPrivilegedNesting,
+		dagql.Optional[DaggerNesting]{Valid: svc.DaggerNesting != "", Value: svc.DaggerNesting},
+	)
+	if err != nil {
+		return err
+	}
 	var nestedClientMetadata *engine.ClientMetadata
-	if svc.ExperimentalPrivilegedNesting {
+	if svc.ExperimentalPrivilegedNesting || daggerNesting == engineutil.DaggerNestingNestedClient {
 		nestedClientMetadata = &engine.ClientMetadata{
 			ClientID:          identity.NewID(),
 			ClientVersion:     engine.Version,
@@ -848,6 +861,7 @@ func (svc *Service) startContainer(
 			execMD,
 			clientMetadata.SessionID,
 			clientMetadata.ClientID,
+			daggerNesting,
 			nestedClientMetadata,
 			svc.ModuleContext,
 			nil,
