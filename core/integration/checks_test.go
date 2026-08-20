@@ -468,3 +468,36 @@ source = "../%s"
 		})
 	}
 }
+
+// A @check that declares a required argument breaks the marker's contract: no
+// caller supplies one when `dagger check` runs. Like @up and @generate, that is
+// a module load failure rather than a check quietly missing from the list.
+func (ChecksSuite) TestChecksValidationRejectsRequiredArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("required arg", func(ctx context.Context, t *testctx.T) {
+		modGen, err := checksTestEnv(t, c)
+		require.NoError(t, err)
+
+		// badcheck-arg's @check declares a required `name: String!`, which must be
+		// rejected at module load.
+		out, err := modGen.WithWorkdir("badcheck-arg").
+			With(daggerExecFail("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@check functions must be callable with no arguments")
+	})
+
+	t.Run("workspace arg", func(ctx context.Context, t *testctx.T) {
+		modGen, err := checksTestEnv(t, c)
+		require.NoError(t, err)
+
+		// A Workspace! argument is injected rather than supplied by the caller, so
+		// it is not a required argument as far as the contract is concerned.
+		out, err := modGen.WithWorkdir("check-workspace-arg").
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-workspace-arg:verify")
+	})
+}
