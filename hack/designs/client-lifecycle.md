@@ -67,8 +67,9 @@ Any implementation must preserve all of these:
 5. Client IDs are never reused or resurrected. Once reachability closes, the ID
    cannot accept a new transport even if its descriptor remains.
 6. Session teardown is authoritative: it prevents new work, cancels and waits for
-   all background work, flushes telemetry, releases cache/session resources, and
-   only then removes descriptors.
+   all background work, releases resources that may emit cleanup telemetry, then
+   flushes and shuts down telemetry as the final barrier, closes session resources,
+   and only then removes descriptors.
 7. Reclamation is idempotent and race-safe. A concurrent close, last request,
    last lease, and session teardown may run in any order.
 8. Resource cost after an idle period is bounded by live work and durable data,
@@ -108,7 +109,25 @@ database handles, or provider shutdown semantics. Records may initially live for
 the whole session; that is cheap and makes correctness simple. Reclaiming unused
 records can be a later optimization.
 
-The runtime is the capability to execute as that client. It has explicit leases:
+Metadata has a short, explicit bootstrap phase rather than a general mutable
+lifetime. Registering a transport creates the record, and the attachables, `/init`,
+and first request may monotonically fill fields that arrive on those adjacent
+initialization paths. The record seals its final immutable metadata snapshot before
+the first executable query can launch background work. Later identical metadata is
+accepted, while a conflicting lifecycle-relevant update is rejected. A
+`ClientScope` therefore never depends on metadata that might arrive after the work
+starts.
+
+The runtime is the capability to execute as that client. Nested reachability is
+registered explicitly when the engine-owned container or Dang proxy is created,
+not inferred from the first HTTP request. Registration returns one opaque transport
+handle whose idempotent close marks the record closed and releases the transport
+lease. Register-before-serve closes the race where proxy cleanup observes no
+published client and an in-flight first request publishes one afterward. A unique
+nested client ID has one owner transport; `/shutdown` is only an additional,
+idempotent close signal.
+
+The runtime has explicit leases:
 
 | Lease kind | Acquired | Released |
 |---|---|---|
@@ -132,11 +151,13 @@ documented durable lease. The system must never infer safety from an empty
 goroutine/request count.
 
 Agent tombstones are another cold-capability case: their last LLM snapshot stays
-addressable and may be resumed. The running loop's lease can be released at its
-terminal transition only after selecting from or resuming that snapshot no
-longer depends on the original live runtime. Until then, the tombstone must hold
-a visible durable lease. The same rule applies to exited-service diagnostics if
-they retain more than copied IDs and span contexts.
+addressable and may be resumed. A running, idle, or paused loop retains the scope
+that launched that loop. Once a failed or stopped tombstone's snapshot no longer
+depends on the original live runtime, it releases that scope; a later resume or
+send acquires the new calling client's scope, and that client owns the relaunched
+loop and its telemetry. Until the snapshot is self-contained, the tombstone must
+hold a visible durable lease on the original runtime. The same rule applies to
+exited-service diagnostics if they retain more than copied IDs and span contexts.
 
 ### Explicit client scope
 
@@ -155,6 +176,16 @@ longer the lifecycle primitive for executable work. Agent and service registries
 store the acquired scope and release it from their actual terminal transition.
 DagQL shared-work coordination acquires one lease for the shared callback, not
 one per waiter.
+
+Nested client creation is strict capability delegation. The engine-owned proxy
+must register its transport with the creating `ClientScope`, atomically cloning a
+`child` lease before it becomes reachable. A scope already held by accepted work
+may create a child while its record is closing, but a bare, stale, missing, or
+mismatched caller ID cannot. A non-empty parent never silently degrades into a
+root: intentional session/system roots use a separate explicit path. Child
+quiescence releases the parent lease. This extra plumbing is deliberate; it makes
+ancestry authorization, telemetry routing, and parent retention the same audited
+operation.
 
 This gives us one auditable boundary. A test hook can reject starting engine
 work from a closed or unleased scope, and counters can attribute retained
@@ -211,8 +242,12 @@ result at export. Until that conversion is complete, per-client meter providers
 may remain behind runtime leases. They are not a reason to retain trace/log
 queues or clientdb streams.
 
-Provider shutdown then happens only during session teardown. A detached agent
-cannot accidentally inherit a provider that another goroutine shuts down.
+Provider shutdown then happens only during session teardown. Teardown first
+prevents new root work, cancels and drains background leases, and releases cache
+and session resources that may emit cleanup telemetry. A final force-flush is the
+barrier after those producers have stopped; only then are the session providers
+shut down, DB references closed, and descriptors removed. A detached agent cannot
+accidentally inherit a provider that another goroutine shuts down.
 
 ### State machine
 
@@ -300,12 +335,16 @@ eventual deletion decision from a heuristic into an invariant.
 ### Deterministic lifecycle tests
 
 - Closing a proxy with an idle client reaches `quiescent` and releases its
-  runtime exactly once.
+  runtime exactly once; closing concurrently with the first request cannot publish
+  a runtime after the transport handle has closed.
+- Metadata may be monotonically completed during bootstrap, is sealed before the
+  first executable query, and rejects conflicting updates afterward.
 - Closing during an active request reaches `closing`; the last request release
   performs reclamation.
 - Closing while an agent is idle, running, paused, failed, or being resumed does
-  not invalidate its context. The runtime is reclaimed only after the agent's
-  terminal release.
+  not invalidate its context. A running or paused loop keeps its launching scope;
+  a self-contained failed/stopped tombstone releases that scope, and a relaunch is
+  owned by the new calling client.
 - The same matrix applies to shared and interactive services, including crash and
   concurrent stop.
 - Lazy evaluation triggered after its creating request either succeeds through a
@@ -314,7 +353,9 @@ eventual deletion decision from a heuristic into an invariant.
 - Secret/socket handles resolve through session bindings; missing external
   attachables fail for that reason, not "client not found."
 - A parent cannot quiesce before a live child; child release wakes parent
-  reclamation.
+  reclamation. Nested transport registration without the creating scope, with a
+  stale or mismatched scope, or with a missing parent fails instead of creating an
+  implicit root.
 - Concurrent proxy close, request completion, lease release, and session teardown
   pass under `-race` and every cleanup hook runs once.
 - A closed client ID cannot reconnect or be initialized again in the same
