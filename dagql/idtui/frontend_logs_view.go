@@ -18,11 +18,17 @@ import (
 // The owner (SpanTreeView, via renderInlineLogs) decides structurally whether
 // a row should show inline logs and pre-computes the prefixes; LogsView only
 // owns the fetch and the Vterm render.
+type logsViewKey struct {
+	spanID   dagui.SpanID
+	toolArgs bool
+}
+
 type LogsView struct {
 	tuist.Compo
 
-	fe     *frontendPretty
-	spanID dagui.SpanID
+	fe       *frontendPretty
+	spanID   dagui.SpanID
+	toolArgs bool
 
 	// descendants is passed to the log provider on mount: whether to roll up
 	// descendant logs (a check/test whose output lives in a sub-operation).
@@ -49,20 +55,25 @@ var (
 // getOrCreateLogsView returns the persistent LogsView for a span, creating it
 // on first use. Stable identity (the map) lets tuist memoize its render across
 // frames and lets it hold fetch state.
-func (fe *frontendPretty) getOrCreateLogsView(id dagui.SpanID) *LogsView {
+func (fe *frontendPretty) getOrCreateLogsView(id dagui.SpanID, toolArgs bool) *LogsView {
 	if fe.logsViews == nil {
-		fe.logsViews = make(map[dagui.SpanID]*LogsView)
+		fe.logsViews = make(map[logsViewKey]*LogsView)
 	}
-	lv := fe.logsViews[id]
+	key := logsViewKey{spanID: id, toolArgs: toolArgs}
+	lv := fe.logsViews[key]
 	if lv == nil {
-		lv = &LogsView{fe: fe, spanID: id}
-		fe.logsViews[id] = lv
+		lv = &LogsView{fe: fe, spanID: id, toolArgs: toolArgs}
+		fe.logsViews[key] = lv
 	}
 	return lv
 }
 
 func (lv *LogsView) Name() string {
-	return "Logs(" + lv.spanID.String() + ")"
+	kind := "Logs"
+	if lv.toolArgs {
+		kind = "ToolArgs"
+	}
+	return kind + "(" + lv.spanID.String() + ")"
 }
 
 // OnMount drives the interactive lazy-fetch: the first time a row's logs are
@@ -103,6 +114,26 @@ func (lv *LogsView) sync(logPrefix, trimPrefix string, height int, finalRender, 
 // so OnMount can drive the fetch. In report mode this is what makes the
 // two-pass work: the discovery render (RequestSurfacedLogs) mounts the views to
 // trigger their fetches, which trace.go drains before the single final render.
+const toolArgsVerbosity = 2
+
+func (fe *frontendPretty) spanVerbosity(span *dagui.Span) int {
+	if verbosity, ok := fe.FrontendOpts.SpanVerbosity[span.ID]; ok {
+		return verbosity
+	}
+	return fe.FrontendOpts.Verbosity
+}
+
+func isToolCallDisplay(span *dagui.Span) bool {
+	return span != nil && span.LLMRole != "" && span.LLMTool != ""
+}
+
+func collapsesToolOutput(span *dagui.Span) bool {
+	if !isToolCallDisplay(span) {
+		return false
+	}
+	return toolNameIs(span.LLMTool, "read") || toolNameIs(span.LLMTool, "grep")
+}
+
 func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dagui.TraceRow, focused bool) []string {
 	span := row.Span
 	if span.Message != "" || (!row.Expanded && span.LLMTool == "") {
@@ -140,13 +171,26 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 	r.indentFunc = s.indentFunc(styleOut)
 	logPrefix, trimPrefix := s.fe.logLinePrefixes(styleOut, r, row, "", focused)
 
-	lv := s.fe.getOrCreateLogsView(span.ID)
+	var lines []string
+	if isToolCallDisplay(span) && s.fe.spanVerbosity(span) >= toolArgsVerbosity {
+		argsView := s.fe.getOrCreateLogsView(span.ID, true)
+		argsView.sync(logPrefix, trimPrefix, limit, s.fe.finalRender, false)
+		lines = append(lines, s.RenderChildResult(ctx, argsView).Lines...)
+	}
+	if collapsesToolOutput(span) && !row.Expanded {
+		return lines
+	}
+
+	lv := s.fe.getOrCreateLogsView(span.ID, false)
 	lv.sync(logPrefix, trimPrefix, limit, s.fe.finalRender, s.fe.logDescendants(span.ID))
-	return s.RenderChildResult(ctx, lv).Lines
+	return append(lines, s.RenderChildResult(ctx, lv).Lines...)
 }
 
 func (lv *LogsView) Render(ctx tuist.Context) {
 	logs := lv.fe.logs.Logs[lv.spanID]
+	if lv.toolArgs {
+		logs = lv.fe.logs.ToolArgs[lv.spanID]
+	}
 	if logs == nil || logs.UsedHeight() == 0 {
 		return
 	}
