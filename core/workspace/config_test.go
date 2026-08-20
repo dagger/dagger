@@ -76,6 +76,26 @@ func TestValidateSDKs(t *testing.T) {
 		err := ValidateSDKs(cfg)
 		require.EqualError(t, err, `SDK lookup name "dagger-go-sdk" is ambiguous: SDKs "dagger-go-sdk" and "go" both resolve it`)
 	})
+
+	t.Run("SDK name must be a single command token", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"my sdk": {Module: "dagger-go-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `SDK name "my sdk" must be a single command token`)
+	})
+
+	t.Run("SDK name must not look like a flag", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"--go": {Module: "dagger-go-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `SDK name "--go" must not start with '-'`)
+	})
 }
 
 func TestParseConfigMigratesLegacySDK(t *testing.T) {
