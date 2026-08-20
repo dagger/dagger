@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Lazy cache evaluation no longer returns cancellation caused by earlier
+  callers abandoning shared work. Healthy callers now wait for the canceled
+  callback to finish and retry without running callbacks concurrently.
+time: 2026-08-20T05:32:38Z
+custom:
+  Author: sipsma
+  PR: 13938
