@@ -2406,7 +2406,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 							if !ok {
 								continue
 							}
-							if str, ok := val.(string); ok {
+							if str, ok := toolArgHeaderValue(name, val); ok {
 								toolArgNames = append(toolArgNames, name)
 								toolArgValues = append(toolArgValues, str)
 							}
@@ -2461,7 +2461,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				case LLMContentText, LLMContentThinking:
 					fmt.Fprint(stdio.Stdout, block.Text)
 				case LLMContentToolCall:
-					fmt.Fprint(stdio.Stdout, string(block.Arguments))
+					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
 				}
 			}
 			if g.kind == LLMContentToolCall {
