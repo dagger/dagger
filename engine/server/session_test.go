@@ -678,6 +678,100 @@ func TestClientRecordLookupsAreIndependentFromExecutableRuntime(t *testing.T) {
 	require.Same(t, runtime, retained, "zero leases must not enable runtime reclamation")
 }
 
+func TestWorkspaceHostAccessDoesNotRequireOwnerRuntime(t *testing.T) {
+	t.Parallel()
+
+	owner := &clientRecord{
+		clientID: "owner",
+		clientMetadata: &engine.ClientMetadata{
+			SessionID: "session",
+			ClientID:  "owner",
+			Labels:    map[string]string{"source": "record"},
+		},
+		metadataSealed: true,
+		accepting:      true,
+	}
+	callerRecord := &clientRecord{
+		clientID: "caller",
+		clientMetadata: &engine.ClientMetadata{
+			SessionID: "session",
+			ClientID:  "caller",
+		},
+		metadataSealed: true,
+		accepting:      true,
+	}
+	callerRuntime := &clientRuntime{
+		clientRecord:    callerRecord,
+		state:           clientStateInitialized,
+		lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+	}
+	ownerAttachable := &sessionAttachableCaller{
+		ctx:       context.Background(),
+		supported: map[string]struct{}{},
+	}
+	attachables := newSessionAttachableManager()
+	attachables.callers[owner.clientID] = ownerAttachable
+	sess := &daggerSession{
+		sessionID:   "session",
+		attachables: attachables,
+		clientRecords: map[string]*clientRecord{
+			owner.clientID:        owner,
+			callerRecord.clientID: callerRecord,
+		},
+		clientRuntimes: map[string]*clientRuntime{
+			callerRecord.clientID: callerRuntime,
+		},
+	}
+	owner.daggerSession = sess
+	callerRecord.daggerSession = sess
+	sess.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		return sess.attachables.Wait(ctx, id)
+	}
+	sess.engineUtilClient = &engineutil.Client{Opts: &engineutil.Opts{
+		GetClientCaller:      sess.getClientCaller,
+		GetHostServiceCaller: sess.resolveHostServiceCaller,
+	}}
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	scope, err := sess.acquireRootClientScope(callerRuntime, engine.ClientLeaseRequest, "workspace access")
+	require.NoError(t, err)
+	defer scope.Lease().Release()
+	callerCtx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+
+	workspaceCtx, gateway, err := srv.workspaceOwnerAccess(callerCtx, sess, &core.Workspace{ClientID: owner.clientID})
+	require.NoError(t, err)
+	require.Same(t, sess.engineUtilClient, gateway)
+	require.NotContains(t, sess.clientRuntimes, owner.clientID,
+		"workspace owner access must not require a retained owner runtime")
+
+	ownerMetadata, err := engine.ClientMetadataFromContext(workspaceCtx)
+	require.NoError(t, err)
+	require.Equal(t, owner.clientID, ownerMetadata.ClientID)
+	ownerMetadata.Labels["source"] = "mutated"
+
+	caller, err := gateway.GetSessionCaller(workspaceCtx)
+	require.NoError(t, err)
+	require.Same(t, ownerAttachable, caller,
+		"session gateway must route from immutable owner metadata to the owner attachable")
+
+	queryGateway, err := srv.Engine(workspaceCtx)
+	require.NoError(t, err)
+	require.Same(t, gateway, queryGateway,
+		"workspace Query.Engine paths must use the session-owned gateway")
+	caller, err = queryGateway.GetSessionCaller(workspaceCtx)
+	require.NoError(t, err)
+	require.Same(t, ownerAttachable, caller)
+
+	workspaceCtx, _, err = srv.workspaceOwnerAccess(callerCtx, sess, &core.Workspace{ClientID: owner.clientID})
+	require.NoError(t, err)
+	ownerMetadata, err = engine.ClientMetadataFromContext(workspaceCtx)
+	require.NoError(t, err)
+	require.Equal(t, "record", ownerMetadata.Labels["source"],
+		"workspace access must clone immutable owner metadata")
+}
+
 func TestClientScopeRequiresSealedMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -2946,32 +3040,35 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.Same(t, existing, child.workspace)
 }
 
-func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
+func TestResolveHostServiceCallerFallsBackToParentRecordWithoutRuntime(t *testing.T) {
 	t.Parallel()
 
 	parentCaller := &fakeSessionCaller{id: "parent"}
-	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent"}}
-	parent.getHostServiceCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{
+		clientID:                 "child",
+		hostServiceProxyClientID: "parent",
+		parentClientIDs:          []string{parent.clientID},
+	}
+	sess := &daggerSession{
+		attachables: newSessionAttachableManager(),
+		clientRecords: map[string]*clientRecord{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+		clientRuntimes: map[string]*clientRuntime{},
+	}
+	parent.daggerSession = sess
+	child.daggerSession = sess
+	sess.getClientCaller = func(_ context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "parent", id)
 		return parentCaller, nil
 	}
 
-	child := &clientRuntime{clientRecord: &clientRecord{
-		clientID:                 "child",
-		hostServiceProxyClientID: "parent",
-		parentClientIDs:          []string{parent.clientID}}}
-
-	child.daggerSession = &daggerSession{
-		attachables: newSessionAttachableManager(),
-		clientRuntimes: map[string]*clientRuntime{
-			parent.clientID: parent,
-			child.clientID:  child,
-		},
-	}
-
-	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
 	require.Same(t, parentCaller, caller)
+	require.Empty(t, sess.clientRuntimes, "host proxy routing must use records, not retained runtimes")
 }
 
 func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
@@ -2981,27 +3078,28 @@ func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 		ctx:       context.Background(),
 		supported: map[string]struct{}{},
 	}
-	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent"}}
-	parent.getHostServiceCaller = func(context.Context, string) (engineutil.SessionCaller, error) {
-		t.Fatal("unexpected parent fallback")
-		return nil, nil
-	}
 	attachables := newSessionAttachableManager()
 	attachables.callers["child"] = currentCaller
 
-	child := &clientRuntime{clientRecord: &clientRecord{
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
-		parentClientIDs:          []string{parent.clientID}}}
-	child.daggerSession = &daggerSession{
+		parentClientIDs:          []string{parent.clientID},
+	}
+	sess := &daggerSession{
 		attachables: attachables,
-		clientRuntimes: map[string]*clientRuntime{
+		clientRecords: map[string]*clientRecord{
 			parent.clientID: parent,
 			child.clientID:  child,
 		},
 	}
+	sess.getClientCaller = func(context.Context, string) (engineutil.SessionCaller, error) {
+		t.Fatal("unexpected parent fallback")
+		return nil, nil
+	}
 
-	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
 	require.Same(t, currentCaller, caller)
 }
@@ -3010,13 +3108,13 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 	t.Parallel()
 
 	otherCaller := &fakeSessionCaller{id: "other"}
-	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child"}}
-	child.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+	sess := &daggerSession{}
+	sess.getClientCaller = func(_ context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "other", id)
 		return otherCaller, nil
 	}
 
-	caller, err := child.resolveHostServiceCaller(context.Background(), "other")
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "other")
 	require.NoError(t, err)
 	require.Same(t, otherCaller, caller)
 }

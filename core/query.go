@@ -133,7 +133,8 @@ type Server interface {
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
-	// The engine utility client for the current client
+	// The session-owned engine utility gateway for the current executable scope.
+	// Caller-facing operations route from immutable ClientMetadata in context.
 	Engine(context.Context) (*engineutil.Client, error)
 
 	// The session-owned registry resolver for the current client.

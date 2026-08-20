@@ -95,6 +95,13 @@ type daggerSession struct {
 
 	attachables *sessionAttachableManager
 
+	// engineUtilClient is the session-owned engine gateway. Its caller routing
+	// is derived from immutable client metadata in context and the session's
+	// record/attachable graph, so host access never requires the metadata
+	// owner's retained execution runtime.
+	engineUtilClient *engineutil.Client
+	getClientCaller  func(context.Context, string) (engineutil.SessionCaller, error)
+
 	closingCtx       context.Context
 	cancelClosing    context.CancelCauseFunc
 	closeClosingOnce sync.Once
@@ -274,12 +281,6 @@ type clientRuntime struct {
 	// If the client is itself from a function call in a user module, this is set with the
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
-
-	// engine utility job-related state/config
-	getClientCaller      func(context.Context, string) (engineutil.SessionCaller, error)
-	getHostServiceCaller func(context.Context, string) (engineutil.SessionCaller, error)
-	dialer               *net.Dialer
-	engineUtilClient     *engineutil.Client
 
 	// The session owns trace/log providers and queues. These lightweight bound
 	// exporters are retained only for integrations that deliver telemetry for a
@@ -591,8 +592,8 @@ func logClientTelemetryOp(lg *slog.Logger, what string, start time.Time, traceDu
 	}
 }
 
-func (client *clientRuntime) getMainClientCaller(ctx context.Context) (engineutil.SessionCaller, error) {
-	return client.getClientCaller(ctx, client.daggerSession.mainClientCallerID)
+func (sess *daggerSession) getMainClientCaller(ctx context.Context) (engineutil.SessionCaller, error) {
+	return sess.getClientCaller(ctx, sess.mainClientCallerID)
 }
 
 func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
@@ -1048,6 +1049,67 @@ type ClientInitOpts struct {
 	FunctionCall *core.FunctionCall
 }
 
+// initializeSessionEngineClient publishes the one engine gateway shared by all
+// client runtimes in a session. Caller selection comes from ClientMetadata in
+// context and resolves only through session records and attachables; the gateway
+// never closes over a client runtime.
+//
+// requires that sess.lifecycleMu is held
+func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *daggerSession) error {
+	if sess.engineUtilClient != nil {
+		return nil
+	}
+
+	var callerG singleflight.Group[string, engineutil.SessionCaller]
+	sess.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
+			caller, _, err := srv.clientAttachableCaller(ctx, sess.sessionID, id, false)
+			return caller, err
+		})
+		return caller, err
+	}
+
+	dialer := &net.Dialer{}
+	dialer.Resolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if len(srv.dns.Nameservers) == 0 {
+				return nil, errors.New("no nameservers configured")
+			}
+
+			var errs []error
+			for _, ns := range srv.dns.Nameservers {
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+
+				return conn, nil
+			}
+
+			return nil, errors.Join(errs...)
+		},
+	}
+
+	engineUtilOpts := *srv.engineUtilOpts
+	engineUtilOpts.Dialer = dialer
+	engineUtilOpts.GetClientCaller = sess.getClientCaller
+	engineUtilOpts.GetHostServiceCaller = sess.resolveHostServiceCaller
+	engineUtilOpts.GetMainClientCaller = sess.getMainClientCaller
+	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
+	engineUtilOpts.Interactive = sess.interactive
+	engineUtilOpts.InteractiveCommand = sess.interactiveCommand
+	engineUtilClient, err := engineutil.NewClient(ctx, &engineUtilOpts)
+	if err != nil {
+		return fmt.Errorf("failed to create session engine client: %w", err)
+	}
+	sess.engineUtilClient = engineUtilClient
+	return nil
+}
+
 // requires that client.stateMu is held
 func (srv *Server) initializeClientRuntime(
 	ctx context.Context,
@@ -1061,57 +1123,9 @@ func (srv *Server) initializeClientRuntime(
 		"mainClientID", client.daggerSession.mainClientCallerID,
 	)
 	slog.Info("initializing new client")
-	var callerG singleflight.Group[string, engineutil.SessionCaller]
-	client.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
-			caller, _, err := srv.clientAttachableCaller(ctx, client.daggerSession.sessionID, id, false)
-			return caller, err
-		})
-		return caller, err
-	}
 	client.hostServiceProxyClientID = opts.HostServiceProxyClientID
-	client.getHostServiceCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
-		return client.resolveHostServiceCaller(ctx, id)
-	}
-
-	var err error
-	client.dialer = &net.Dialer{
-		Resolver: &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				if len(srv.dns.Nameservers) == 0 {
-					return nil, errors.New("no nameservers configured")
-				}
-
-				var errs []error
-				for _, ns := range srv.dns.Nameservers {
-					conn, err := client.dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
-					if err != nil {
-						errs = append(errs, err)
-						continue
-					}
-
-					return conn, nil
-				}
-
-				return nil, errors.Join(errs...)
-			},
-		},
-	}
-
-	engineUtilOpts := *srv.engineUtilOpts
-	engineUtilOpts.Dialer = client.dialer
-	engineUtilOpts.GetClientCaller = client.getClientCaller
-	engineUtilOpts.GetHostServiceCaller = client.getHostServiceCaller
-	engineUtilOpts.GetMainClientCaller = client.getMainClientCaller
-	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
-	engineUtilOpts.Interactive = client.daggerSession.interactive
-	engineUtilOpts.InteractiveCommand = client.daggerSession.interactiveCommand
-	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineUtilOpts)
-	if err != nil {
-		return fmt.Errorf("failed to create engine client: %w", err)
+	if err := srv.initializeSessionEngineClient(ctx, client.daggerSession); err != nil {
+		return err
 	}
 
 	client.fnCall = opts.FunctionCall
@@ -1225,33 +1239,49 @@ func (srv *Server) initializeClientRuntime(
 	return nil
 }
 
-func (client *clientRuntime) resolveHostServiceCaller(
+func (sess *daggerSession) resolveHostServiceCaller(
 	ctx context.Context,
 	id string,
 ) (engineutil.SessionCaller, error) {
-	if id == client.clientID && client.hostServiceProxyClientID != "" {
-		// Synthetic nested clients (e.g. builtin dang evaluation) do not
-		// establish their own session attachables. When host-backed services
-		// such as git config are requested through the current client ID, fall
-		// back to the explicit proxy client chain.
-		if caller, ok := client.daggerSession.attachables.Lookup(id); ok {
-			return caller, nil
-		}
+	// Synthetic nested clients (for example builtin Dang evaluation) do not
+	// establish their own session attachables. Resolve their explicit proxy
+	// through immutable ancestry records so this routing does not retain or
+	// require any client runtime.
+	sess.clientMu.RLock()
+	record := sess.clientRecords[id]
+	sess.clientMu.RUnlock()
 
-		ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
-		if err != nil {
-			return nil, fmt.Errorf("resolve host service proxy ancestry: %w", err)
-		}
-		for i := len(ancestors) - 1; i >= 0; i-- {
-			parent := ancestors[i]
-			if parent.clientID == client.hostServiceProxyClientID {
-				return parent.getHostServiceCaller(ctx, parent.clientID)
-			}
-		}
-		return nil, fmt.Errorf("host service proxy client %q not found for client %q", client.hostServiceProxyClientID, client.clientID)
+	var hostServiceProxyClientID string
+	var parentClientIDs []string
+	if record != nil {
+		// hostServiceProxyClientID is initialized under scopeMu. Do not hold
+		// clientMu while taking scopeMu: runtime publication takes them in the
+		// opposite order.
+		sess.scopeMu.Lock()
+		hostServiceProxyClientID = record.hostServiceProxyClientID
+		parentClientIDs = slices.Clone(record.parentClientIDs)
+		sess.scopeMu.Unlock()
 	}
 
-	return client.getClientCaller(ctx, id)
+	if hostServiceProxyClientID != "" {
+		if sess.attachables != nil {
+			if caller, ok := sess.attachables.Lookup(id); ok {
+				return caller, nil
+			}
+		}
+
+		for i := len(parentClientIDs) - 1; i >= 0; i-- {
+			if parentClientIDs[i] == hostServiceProxyClientID {
+				return sess.resolveHostServiceCaller(ctx, hostServiceProxyClientID)
+			}
+		}
+		return nil, fmt.Errorf("host service proxy client %q not found for client %q", hostServiceProxyClientID, id)
+	}
+
+	if sess.getClientCaller == nil {
+		return nil, fmt.Errorf("session client caller gateway is not initialized")
+	}
+	return sess.getClientCaller(ctx, id)
 }
 
 func (srv *Server) sessionFromID(sessID string) (*daggerSession, error) {
@@ -2136,7 +2166,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	if client.hostServiceProxyClientID == "" {
 		profWait := wcprof.BeginWaitIdent(ctx, "session:attachables", wcprof.WaitReasonIO)
-		_, err := client.getClientCaller(ctx, client.clientID)
+		_, err := sess.getClientCaller(ctx, client.clientID)
 		profWait.End()
 		if err != nil {
 			return gqlErr(fmt.Errorf("waiting for client session attachables: %w", err), http.StatusInternalServerError)
@@ -2633,19 +2663,16 @@ func (srv *Server) workspaceOwnerAccess(
 	if err != nil {
 		return nil, nil, fmt.Errorf("workspace owner client: %w", err)
 	}
-	ownerClient, err := sess.clientRuntimeForRecord(ownerRecord)
+	ownerMetadata, err := sess.clientMetadataSnapshot(ownerRecord)
 	if err != nil {
-		return nil, nil, fmt.Errorf("workspace owner runtime: %w", err)
+		return nil, nil, fmt.Errorf("workspace owner client metadata: %w", err)
 	}
-	if ownerClient.clientMetadata == nil {
-		return nil, nil, fmt.Errorf("workspace owner client metadata not initialized")
-	}
-	if ownerClient.engineUtilClient == nil {
-		return nil, nil, fmt.Errorf("workspace owner buildkit client not initialized")
+	if sess.engineUtilClient == nil {
+		return nil, nil, fmt.Errorf("workspace owner engine gateway not initialized")
 	}
 
-	workspaceCtx := engine.ContextWithClientMetadata(ctx, ownerClient.clientMetadata)
-	return workspaceCtx, ownerClient.engineUtilClient, nil
+	workspaceCtx := engine.ContextWithClientMetadata(ctx, ownerMetadata)
+	return workspaceCtx, sess.engineUtilClient, nil
 }
 
 func workspaceLockPath(ws *core.Workspace) (string, error) {
@@ -3175,13 +3202,16 @@ func (srv *Server) Auth(ctx context.Context) (*auth.RegistryAuthProvider, error)
 	return client.daggerSession.authProvider, nil
 }
 
-// The engine utility client for the current client
+// The session-owned engine utility gateway for the current executable scope.
 func (srv *Server) Engine(ctx context.Context) (*engineutil.Client, error) {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return client.engineUtilClient, nil
+	if client.daggerSession.engineUtilClient == nil {
+		return nil, errors.New("session engine gateway not initialized")
+	}
+	return client.daggerSession.engineUtilClient, nil
 }
 
 func (srv *Server) RegistryResolver(ctx context.Context) (*serverresolver.Resolver, error) {
@@ -3276,7 +3306,7 @@ func (srv *Server) CloudEngineClient(
 		return nil, false, err
 	}
 	parentCallerCtx := engine.ContextWithClientMetadata(ctx, parentClient.clientMetadata)
-	parentSession, err := parentClient.engineUtilClient.GetSessionCaller(parentCallerCtx)
+	parentSession, err := parentClient.daggerSession.engineUtilClient.GetSessionCaller(parentCallerCtx)
 	if err != nil {
 		return nil, false, err
 	}
