@@ -1359,7 +1359,7 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.NotNil(t, ancestorStableRef)
 	ancestorStable, err := ancestorStableRef.Name(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "refs/tags/2.0.0", ancestorStable)
+	require.Equal(t, "refs/tags/v2.0.0", ancestorStable)
 
 	ancestorPreReleaseRef, err := git.Head().TargetCommit().AncestorReleaseTag(ctx,
 		dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true})
@@ -1374,7 +1374,7 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.NotNil(t, directStableRef)
 	directStable, err := directStableRef.Name(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "refs/tags/2.0.0", directStable)
+	require.Equal(t, "refs/tags/v2.0.0", directStable)
 
 	directPreReleaseRef, err := git.Commit(rcSHA).ReleaseTag(ctx,
 		dagger.GitCommitReleaseTagOpts{IncludePreRelease: true})
@@ -1394,7 +1394,7 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.NotNil(t, offlineStableRef)
 	offlineStable, err := offlineStableRef.Name(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "refs/tags/2.0.0", offlineStable)
+	require.Equal(t, "refs/tags/v2.0.0", offlineStable)
 }
 
 func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx.T) {
@@ -1463,7 +1463,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 	sha2, advertised2, tag2 := lookup(ctx, t, c2)
 	require.Equal(t, sha1, sha2, "both sessions must resolve the same commit")
 	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, advertised2)
-	require.Equal(t, "refs/tags/2.0.0", tag2)
+	require.Equal(t, "refs/tags/v2.0.0", tag2)
 }
 
 func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
