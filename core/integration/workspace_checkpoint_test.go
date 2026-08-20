@@ -104,15 +104,19 @@ source = "modules/editor"
 	require.Contains(t, out, "workspace checkpoint capture is only available to the workspace's owning client")
 }
 
-// TestWorkspaceCheckpointIsAddressableAndCapturesLocalState verifies that a
-// freshly captured checkpoint resolves to a complete, addressable value.
+// TestWorkspaceCheckpointIsAddressableAndExportsToTarget covers both halves of
+// a freshly captured checkpoint.
 //
 // The frozen workspace must be addressable: `dagger agent` binds it into the LLM
 // it composes agents onto, which needs its ID, so the effectful checkpoint call
 // has to hand back the public composition's result rather than mint one of its
 // own (an uncacheable call's own results have no ID — the regression this
 // asserts against reported "result *core.Workspace is detached").
-func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndCapturesLocalState(ctx context.Context, t *testctx.T) {
+//
+// It must also be savable to an explicit client-local target. Both a pending
+// commit and a remaining overlay are exported from the frozen source; only the
+// host checkout and client route come from currentWorkspace.
+func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndExportsToTarget(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c)
 
@@ -131,69 +135,6 @@ func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndCapturesLocalState(
 }`))
 
 	out, err := captured.Stdout(ctx)
-	require.NoError(t, err)
-
-	var got struct {
-		CurrentWorkspace struct {
-			Checkpoint struct {
-				ID  string `json:"id"`
-				Git struct {
-					Head struct {
-						Commit string `json:"commit"`
-					} `json:"head"`
-					Uncommitted struct {
-						ModifiedPaths []string `json:"modifiedPaths"`
-					} `json:"uncommitted"`
-				} `json:"git"`
-			} `json:"checkpoint"`
-		} `json:"currentWorkspace"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &got))
-	checkpoint := got.CurrentWorkspace.Checkpoint
-
-	// Addressable: the checkpoint resolved to a value with an ID, which is what
-	// an agent's composition binds.
-	require.NotEmpty(t, checkpoint.ID)
-
-	// Frozen, and complete: the captured tree carries the commit that exists
-	// only in the local checkout, with the tracked dirt still uncommitted on
-	// top of it.
-	require.Equal(t, localCommit, strings.TrimSpace(checkpoint.Git.Head.Commit))
-	require.Equal(t, []string{"tracked.txt"}, checkpoint.Git.Uncommitted.ModifiedPaths)
-}
-
-// TestWorkspaceCheckpointIsAddressableAndExportsToTarget covers both halves of
-// a freshly captured checkpoint.
-//
-// The frozen workspace must be an addressable value: `dagger agent` binds it
-// into the LLM it composes agents onto, which needs its ID, so the effectful
-// checkpoint call has to hand back the pure constructor's result rather than
-// mint one of its own (an uncacheable call's own results have no ID — the
-// regression this asserts against reported "result *core.Workspace is
-// detached").
-//
-// It must also be savable to an explicit client-local target. Both a pending
-// commit and a remaining overlay are exported from the frozen source; only the
-// host checkout and client route come from currentWorkspace.
-func (WorkspaceSuite) TestWorkspaceCheckpointIsAddressableAndExportsToTarget(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := checkpointCheckoutBase(ctx, t, c)
-
-	localCommit := gitOut(ctx, t, base, "rev-parse", "HEAD")
-
-	inspected := base.With(daggerQuery(`{
-  currentWorkspace {
-    checkpoint(include: ["tracked.txt"]) {
-      id
-      git {
-        head { commit }
-        uncommitted { modifiedPaths }
-      }
-    }
-  }
-}`))
-
-	out, err := inspected.Stdout(ctx)
 	require.NoError(t, err)
 
 	var got struct {
