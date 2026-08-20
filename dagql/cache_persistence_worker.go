@@ -252,13 +252,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		case err != nil:
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
 		}
-		if err := validatePersistedResultCallReferences(resultSnapshot.frame, selectedResultIDs); err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame: %w", resultSnapshot.resultID, err)
-		}
-		if err := validatePersistedEnvelopeReferences(encoding.Envelope, selectedResultIDs); err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload: %w", resultSnapshot.resultID, err)
-		}
-
 		payload, err := json.Marshal(encoding.Envelope)
 		if err != nil {
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
@@ -346,93 +339,6 @@ func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{
 		}
 	}
 	return selected, persistedRoots
-}
-
-func validatePersistedResultCallReferences(frame *ResultCall, selected map[sharedResultID]struct{}) error {
-	seen := make(map[*ResultCall]struct{})
-	var walkFrame func(*ResultCall) error
-	var walkRef func(*ResultCallRef) error
-	var walkLiteral func(*ResultCallLiteral) error
-
-	walkRef = func(ref *ResultCallRef) error {
-		if ref == nil {
-			return nil
-		}
-		if ref.ResultID != 0 {
-			if _, found := selected[sharedResultID(ref.ResultID)]; !found {
-				return fmt.Errorf("references result %d outside persisted root closure", ref.ResultID)
-			}
-		}
-		return walkFrame(ref.Call)
-	}
-	walkLiteral = func(lit *ResultCallLiteral) error {
-		if lit == nil {
-			return nil
-		}
-		if err := walkRef(lit.ResultRef); err != nil {
-			return err
-		}
-		for _, item := range lit.ListItems {
-			if err := walkLiteral(item); err != nil {
-				return err
-			}
-		}
-		for _, field := range lit.ObjectFields {
-			if field != nil {
-				if err := walkLiteral(field.Value); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	walkFrame = func(current *ResultCall) error {
-		if current == nil {
-			return nil
-		}
-		if _, found := seen[current]; found {
-			return nil
-		}
-		seen[current] = struct{}{}
-		if err := walkRef(current.Receiver); err != nil {
-			return err
-		}
-		if current.Module != nil {
-			if err := walkRef(current.Module.ResultRef); err != nil {
-				return err
-			}
-		}
-		for _, arg := range current.Args {
-			if arg != nil {
-				if err := walkLiteral(arg.Value); err != nil {
-					return err
-				}
-			}
-		}
-		for _, arg := range current.ImplicitInputs {
-			if arg != nil {
-				if err := walkLiteral(arg.Value); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	return walkFrame(frame)
-}
-
-func validatePersistedEnvelopeReferences(env PersistedResultEnvelope, selected map[sharedResultID]struct{}) error {
-	if env.ResultID != 0 {
-		if _, found := selected[sharedResultID(env.ResultID)]; !found {
-			return fmt.Errorf("references result %d outside persisted root closure", env.ResultID)
-		}
-	}
-	for _, item := range env.Items {
-		if err := validatePersistedEnvelopeReferences(item, selected); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
