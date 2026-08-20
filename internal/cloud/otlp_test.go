@@ -17,6 +17,9 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"golang.org/x/oauth2"
+
+	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 // The stall watchdog (consumeSSE): a stored trace is a bounded download that
@@ -205,6 +208,134 @@ func TestFetchAbortsAStalledStream(t *testing.T) {
 	require.Equal(t, 1, events, "the event before the stall was delivered")
 	require.Less(t, time.Since(start), 10*time.Second,
 		"the watchdog, not the test timeout, must be what ended the read")
+}
+
+func TestOTLPRefreshesUnauthorizedRequest(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		switch r.Header.Get("Authorization") {
+		case "Bearer expired":
+			http.Error(w, "Failed to validate JWT.", http.StatusUnauthorized)
+		case "Bearer refreshed":
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {}\n\n")
+		default:
+			http.Error(w, "unexpected authorization", http.StatusForbidden)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	var refreshes atomic.Int32
+	client := stalledOTLPClient(t, srv, 0)
+	client.auth = &otlpAuthState{
+		header: "Bearer expired",
+		token:  &oauth2.Token{AccessToken: "expired", RefreshToken: "refresh", TokenType: "Bearer"},
+		refresh: func(_ context.Context, token *oauth2.Token) (*oauth2.Token, error) {
+			refreshes.Add(1)
+			require.Equal(t, "refresh", token.RefreshToken)
+			return &oauth2.Token{AccessToken: "refreshed", RefreshToken: "next-refresh", TokenType: "Bearer"}, nil
+		},
+	}
+
+	var events int
+	err := client.consumeSSE(t.Context(), otlpTraces, "trace-id", func([]byte) error {
+		events++
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, events)
+	require.EqualValues(t, 1, refreshes.Load())
+	require.EqualValues(t, 2, requests.Load())
+	require.Contains(t, client.StatsSummary(), "cloud fetch: 2 requests")
+}
+
+func TestOTLPConcurrentUnauthorizedRequestsShareRefresh(t *testing.T) {
+	t.Parallel()
+
+	allUnauthorized := make(chan struct{})
+	var expiredRequests atomic.Int32
+	var refreshedRequests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Authorization") {
+		case "Bearer expired":
+			if expiredRequests.Add(1) == 3 {
+				close(allUnauthorized)
+			}
+			<-allUnauthorized
+			http.Error(w, "Failed to validate JWT.", http.StatusUnauthorized)
+		case "Bearer refreshed":
+			refreshedRequests.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {}\n\n")
+		default:
+			http.Error(w, "unexpected authorization", http.StatusForbidden)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	var refreshes atomic.Int32
+	client := stalledOTLPClient(t, srv, 0)
+	client.auth = &otlpAuthState{
+		header: "Bearer expired",
+		token:  &oauth2.Token{AccessToken: "expired", RefreshToken: "refresh", TokenType: "Bearer"},
+		refresh: func(context.Context, *oauth2.Token) (*oauth2.Token, error) {
+			refreshes.Add(1)
+			return &oauth2.Token{AccessToken: "refreshed", RefreshToken: "next-refresh", TokenType: "Bearer"}, nil
+		},
+	}
+
+	sink := new(callbackProbeSink)
+	require.NoError(t, client.FetchTrace(t.Context(), "trace-id", sink))
+	require.EqualValues(t, 1, refreshes.Load())
+	require.EqualValues(t, 3, expiredRequests.Load())
+	require.EqualValues(t, 3, refreshedRequests.Load())
+	require.Contains(t, client.StatsSummary(), "cloud fetch: 6 requests")
+}
+
+func TestOTLPStaticCredentialsRemainUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		token *oauth2.Token
+	}{
+		{
+			name:  "Basic cloud token",
+			token: &oauth2.Token{AccessToken: "dag_org_token", TokenType: "Basic", RefreshToken: "must-not-refresh"},
+		},
+		{
+			name:  "CI OIDC token",
+			token: &oauth2.Token{AccessToken: "oidc-token", TokenType: "OIDC", RefreshToken: "must-not-refresh"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests.Add(1)
+				http.Error(w, "Failed to validate JWT.", http.StatusUnauthorized)
+			}))
+			t.Cleanup(srv.Close)
+
+			client, err := NewOTLPClient(t.Context(), &auth.Cloud{Token: test.token})
+			require.NoError(t, err)
+			client, err = client.WithBaseURL(srv.URL)
+			require.NoError(t, err)
+			client = client.WithStallTimeout(0)
+
+			err = client.consumeSSE(t.Context(), otlpTraces, "trace-id", func([]byte) error { return nil })
+			require.ErrorContains(t, err, "401 Unauthorized")
+			require.ErrorContains(t, err, "Failed to validate JWT.")
+			require.EqualValues(t, 1, requests.Load())
+			require.Contains(t, client.StatsSummary(), "cloud fetch: 1 requests")
+		})
+	}
 }
 
 func TestStallWatchdogCountsKeepalivesAsProgress(t *testing.T) {
