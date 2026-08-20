@@ -28,6 +28,7 @@ func TestToolArgStyle(t *testing.T) {
 
 	// Type_method matching: tries method part after _
 	assert.Equal(t, argStyleContent, toolArgStyle("Container_withExec", "args"))
+	assert.Equal(t, argStyleContent, toolArgStyle("SomeCustomTool", "args"))
 	assert.Equal(t, argStyleNone, toolArgStyle("Git_withCommit", "message")) // no "withcommit.message" rule
 	// No rule for "file.path", so Directory_file doesn't match
 	assert.Equal(t, argStyleNone, toolArgStyle("Directory_file", "path"))
@@ -75,7 +76,7 @@ func TestToolArgStyle(t *testing.T) {
 	assert.True(t, isConventionalArg("Read", "path"))
 	assert.True(t, isConventionalArg("Write", "content"))
 	assert.True(t, isConventionalArg("anything", "prompt"))
-	assert.False(t, isConventionalArg("Read", "limit"))
+	assert.True(t, isConventionalArg("Read", "limit"))
 	assert.False(t, isConventionalArg("Read", "description"))
 }
 
@@ -122,6 +123,16 @@ func TestRenderToolArgsSummary(t *testing.T) {
 	got = renderSummary(t, "Bash", []string{"command"}, []string{"echo hi"})
 	assert.Contains(t, stripANSICodes(got), "echo hi")
 	assert.Contains(t, got, "\x1b[2;3m")
+
+	// Read pagination is labeled so numeric values remain meaningful.
+	got = renderSummary(t, "Read",
+		[]string{"path", "offset", "limit"},
+		[]string{"main.go", "20", "10"})
+	assert.Equal(t, " main.go offset=20 limit=10", stripANSICodes(got))
+
+	// Generic argv is already flattened by core and reads like a shell command.
+	got = renderSummary(t, "Run", []string{"args"}, []string{"foo bar"})
+	assert.Equal(t, " foo bar", stripANSICodes(got))
 
 	// Multi-line content collapses to the first line with an ellipsis.
 	got = renderSummary(t, "Bash", []string{"command"}, []string{"echo hi\nrm -rf /"})

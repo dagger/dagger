@@ -316,7 +316,7 @@ type frontendPretty struct {
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
 	// memoized across unrelated parent repaints (spinner ticks, focus moves).
-	logsViews     map[dagui.SpanID]*LogsView
+	logsViews     map[logsViewKey]*LogsView
 	renderVersion uint64 // bumped on global render config changes (verbosity, zoom)
 
 	// progressExpanded tracks rows whose completed-transfer roll-up has
@@ -2485,8 +2485,10 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 	}
 	// The inline LogsView memoizes Vterm.View(); its content isn't an input the
 	// owner's sync() compares, so push an Update when logs arrive.
-	if lv, ok := fe.logsViews[spanID]; ok {
-		lv.Update()
+	for key, lv := range fe.logsViews {
+		if key.spanID == spanID {
+			lv.Update()
+		}
 	}
 	if _, _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
 		for id := spanID; ; {
@@ -7399,6 +7401,23 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 	}
 }
 
+func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Span) {
+	if !isToolCallDisplay(span) || !toolNameIs(span.LLMTool, "grep") {
+		return
+	}
+	logs := fe.logs.Logs[span.ID]
+	if exec := toolCallExecSpan(span); (logs == nil || logs.UsedHeight() == 0) && exec != nil {
+		logs = fe.logs.Logs[exec.ID]
+	}
+	if logs == nil {
+		return
+	}
+	summary := sanitizeSummary(strings.TrimSpace(ansi.Strip(logs.LastLine())))
+	if summary != "" {
+		fmt.Fprint(out, out.String(" - "+summary).Faint())
+	}
+}
+
 func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool, abridged bool) error {
 	span := row.Span
 	chained := row.Chained
@@ -7473,6 +7492,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		fe.renderDurationDynamic(ctx, out, r, span, statusHost, !empty)
+		fe.renderToolOutputSummary(out, span)
 
 		// Flag how many tokens a tool call's result added to the model's
 		// context, so an outsized one stands out at a glance.
@@ -8168,6 +8188,7 @@ func (fe *frontendPretty) writeLogTrimHeader(out TermOutput, trimPrefix string, 
 type prettyLogs struct {
 	DB            *dagui.DB
 	Logs          map[dagui.SpanID]*Vterm
+	ToolArgs      map[dagui.SpanID]*Vterm
 	PrefixWriters map[dagui.SpanID]*multiprefixw.Writer
 	LogWidth      int
 	SawEOF        map[dagui.SpanID]bool
@@ -8179,6 +8200,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
 		DB:            db,
 		Logs:          make(map[dagui.SpanID]*Vterm),
+		ToolArgs:      make(map[dagui.SpanID]*Vterm),
 		PrefixWriters: make(map[dagui.SpanID]*multiprefixw.Writer),
 		LogWidth:      -1,
 		Profile:       profile,
@@ -8235,6 +8257,11 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 
 		vterm := l.spanLogs(spanID)
+		if contentType == "application/json" {
+			if span := l.DB.Spans.Map[spanID]; span != nil && span.LLMRole != "" && span.LLMTool != "" {
+				vterm = l.spanToolArgs(spanID)
+			}
+		}
 		switch contentType {
 		case "text/markdown":
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
@@ -8331,9 +8358,24 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	return term
 }
 
+func (l *prettyLogs) spanToolArgs(spanID dagui.SpanID) *Vterm {
+	term, found := l.ToolArgs[spanID]
+	if !found {
+		term = NewVterm(l.Profile)
+		if l.LogWidth > -1 {
+			term.SetWidth(l.LogWidth)
+		}
+		l.ToolArgs[spanID] = term
+	}
+	return term
+}
+
 func (l *prettyLogs) SetWidth(width int) {
 	l.LogWidth = width
 	for _, vt := range l.Logs {
+		vt.SetWidth(width)
+	}
+	for _, vt := range l.ToolArgs {
 		vt.SetWidth(width)
 	}
 }
