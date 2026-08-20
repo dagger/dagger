@@ -159,7 +159,7 @@ func TestCacheSessionResultClaimAndReleaseAreAtomic(t *testing.T) {
 	})
 }
 
-func TestCacheRefusedFinalWaiterRepairsPersistenceBeforeHandoffRelease(t *testing.T) {
+func TestCacheRefusedFinalWaiterCommitsPersistenceBeforeHandoffRelease(t *testing.T) {
 	c, err := NewCache(t.Context(), "", nil, nil)
 	assert.NilError(t, err)
 
