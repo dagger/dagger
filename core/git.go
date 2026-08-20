@@ -86,16 +86,64 @@ type GitRefBackend interface {
 // SelectLatestGitRef selects the greatest semantic-version tag in remote,
 // falling back to HEAD when the remote has no eligible release tags.
 func SelectLatestGitRef(remote *gitutil.Remote, includeSubreleases bool) (*gitutil.Ref, error) {
+	return SelectLatestGitRefWithTagPrefix(remote, includeSubreleases, "")
+}
+
+// SelectLatestGitRefWithTagPrefix selects the greatest semantic-version tag
+// below tagPrefix. If no matching prefixed release exists, repository-wide
+// release tags are considered before falling back to HEAD.
+func SelectLatestGitRefWithTagPrefix(
+	remote *gitutil.Remote,
+	includeSubreleases bool,
+	tagPrefix string,
+) (*gitutil.Ref, error) {
 	if remote == nil {
 		return nil, fmt.Errorf("select latest git ref: nil remote")
 	}
 
+	tagPrefix = strings.Trim(tagPrefix, "/")
+	if tagPrefix != "" {
+		tagPrefix += "/"
+	}
+
+	bestRef := selectLatestGitRelease(remote, includeSubreleases, tagPrefix)
+	if bestRef == "" && tagPrefix != "" {
+		bestRef = selectLatestGitRelease(remote, includeSubreleases, "")
+	}
+
+	if bestRef == "" {
+		ref, err := remote.Lookup("HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve git remote HEAD: %w", err)
+		}
+		return ref, nil
+	}
+
+	ref, err := remote.Lookup(bestRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve latest git release %q: %w", bestRef, err)
+	}
+	return ref, nil
+}
+
+func selectLatestGitRelease(
+	remote *gitutil.Remote,
+	includeSubreleases bool,
+	tagPrefix string,
+) string {
 	var (
 		bestRef     string
 		bestVersion string
 	)
 	for _, ref := range remote.Tags().Refs {
 		version := ref.ShortName()
+		if tagPrefix != "" {
+			var ok bool
+			version, ok = strings.CutPrefix(version, tagPrefix)
+			if !ok {
+				continue
+			}
+		}
 		if !strings.HasPrefix(version, "v") {
 			version = "v" + version
 		}
@@ -112,20 +160,7 @@ func SelectLatestGitRef(remote *gitutil.Remote, includeSubreleases bool) (*gitut
 			bestVersion = version
 		}
 	}
-
-	if bestRef == "" {
-		ref, err := remote.Lookup("HEAD")
-		if err != nil {
-			return nil, fmt.Errorf("resolve git remote HEAD: %w", err)
-		}
-		return ref, nil
-	}
-
-	ref, err := remote.Lookup(bestRef)
-	if err != nil {
-		return nil, fmt.Errorf("resolve latest git release %q: %w", bestRef, err)
-	}
-	return ref, nil
+	return bestRef
 }
 
 // EncodeGitRefPin stores both the symbolic ref and resolved commit in a single
@@ -162,6 +197,16 @@ func DecodeGitRefPin(pin string) (*gitutil.Ref, error) {
 // DecodeGitLatestRefPin decodes and validates a pin produced by the latest Git
 // selector. Semantic-version tags and the HEAD fallback are valid.
 func DecodeGitLatestRefPin(pin string, includeSubreleases bool) (*gitutil.Ref, error) {
+	return DecodeGitLatestRefPinWithTagPrefix(pin, includeSubreleases, "")
+}
+
+// DecodeGitLatestRefPinWithTagPrefix validates a latest pin selected for a
+// monorepo tag prefix. Repository-wide release tags remain valid as fallback.
+func DecodeGitLatestRefPinWithTagPrefix(
+	pin string,
+	includeSubreleases bool,
+	tagPrefix string,
+) (*gitutil.Ref, error) {
 	ref, err := DecodeGitRefPin(pin)
 	if err != nil {
 		return nil, err
@@ -169,6 +214,10 @@ func DecodeGitLatestRefPin(pin string, includeSubreleases bool) (*gitutil.Ref, e
 
 	if tag, ok := strings.CutPrefix(ref.Name, "refs/tags/"); ok {
 		version := tag
+		tagPrefix = strings.Trim(tagPrefix, "/")
+		if tagPrefix != "" {
+			version, _ = strings.CutPrefix(version, tagPrefix+"/")
+		}
 		if !strings.HasPrefix(version, "v") {
 			version = "v" + version
 		}

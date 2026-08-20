@@ -307,7 +307,7 @@ func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remo
 }
 
 func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	if len(entry.Inputs) != 2 {
+	if len(entry.Inputs) < 2 || len(entry.Inputs) > 3 {
 		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest inputs %v", entry.Inputs)
 	}
 	remoteURL, ok := entry.Inputs[0].(string)
@@ -321,6 +321,17 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 			entry.Inputs[1],
 		)
 	}
+	var tagPrefix string
+	if len(entry.Inputs) == 3 {
+		var ok bool
+		tagPrefix, ok = entry.Inputs[2].(string)
+		if !ok || tagPrefix == "" {
+			return workspace.LookupResult{}, fmt.Errorf(
+				"invalid git.latest tag prefix %v",
+				entry.Inputs[2],
+			)
+		}
+	}
 
 	// Resolve through the schema's git resolver rather than a bare
 	// RemoteGitRepository so the same access context that created the pin
@@ -328,6 +339,16 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return workspace.LookupResult{}, err
+	}
+
+	latestInputs := []dagql.NamedInput{
+		{Name: "includeSubreleases", Value: dagql.Boolean(includeSubreleases)},
+	}
+	if tagPrefix != "" {
+		latestInputs = append(latestInputs, dagql.NamedInput{
+			Name:  "tagPrefix",
+			Value: dagql.String(tagPrefix),
+		})
 	}
 
 	var latest dagql.ObjectResult[*GitRef]
@@ -340,9 +361,7 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 		},
 		dagql.Selector{
 			Field: "latest",
-			Args: []dagql.NamedInput{
-				{Name: "includeSubreleases", Value: dagql.Boolean(includeSubreleases)},
-			},
+			Args:  latestInputs,
 		},
 	); err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)

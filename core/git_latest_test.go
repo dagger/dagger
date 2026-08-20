@@ -32,6 +32,36 @@ func TestSelectLatestGitRef(t *testing.T) {
 	require.Equal(t, stableCommit, ref.SHA)
 }
 
+func TestSelectLatestGitRefWithTagPrefix(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rootCommit   = "0000000000000000000000000000000000000001"
+		moduleCommit = "0000000000000000000000000000000000000002"
+	)
+	remote := &gitutil.Remote{
+		Refs: []*gitutil.Ref{
+			{Name: "HEAD", SHA: rootCommit},
+			{Name: "refs/heads/main", SHA: rootCommit},
+			{Name: "refs/tags/v9.0.0", SHA: rootCommit},
+			{Name: "refs/tags/other/v10.0.0", SHA: rootCommit},
+			{Name: "refs/tags/module/v1.1.0", SHA: rootCommit},
+			{Name: "refs/tags/module/v1.2.0", SHA: moduleCommit},
+		},
+		Symrefs: map[string]string{"HEAD": "refs/heads/main"},
+	}
+
+	ref, err := SelectLatestGitRefWithTagPrefix(remote, false, "module")
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/module/v1.2.0", ref.Name)
+	require.Equal(t, moduleCommit, ref.SHA)
+
+	ref, err = SelectLatestGitRefWithTagPrefix(remote, false, "missing")
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v9.0.0", ref.Name)
+	require.Equal(t, rootCommit, ref.SHA)
+}
+
 func TestSelectLatestGitRefFallsBackToHead(t *testing.T) {
 	t.Parallel()
 
@@ -206,6 +236,26 @@ func TestDecodeGitLatestRefPinValidatesSelectedRef(t *testing.T) {
 			require.Equal(t, commit, ref.SHA)
 		})
 	}
+}
+
+func TestDecodeGitLatestRefPinWithTagPrefix(t *testing.T) {
+	t.Parallel()
+
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	ref, err := DecodeGitLatestRefPinWithTagPrefix(
+		"refs/tags/module/v1.2.3@"+commit,
+		false,
+		"module",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/module/v1.2.3", ref.Name)
+
+	_, err = DecodeGitLatestRefPinWithTagPrefix(
+		"refs/tags/other/v1.2.3@"+commit,
+		false,
+		"module",
+	)
+	require.ErrorContains(t, err, "not a semantic version")
 }
 
 func TestGitRepositoryCloneWithBackendResetsRemoteMetadata(t *testing.T) {

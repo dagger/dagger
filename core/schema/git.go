@@ -117,6 +117,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Return the latest release tag, falling back to HEAD when no release exists.`, `This operation is pinned.`).
 			Args(
 				dagql.Arg("includeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`),
+				dagql.Arg("tagPrefix").
+					Doc(`Restrict release tags to a monorepo subpath.`).
+					Internal(),
 			),
 
 		dagql.Func("tags", s.tags).
@@ -2087,7 +2090,8 @@ func (s *gitSchema) log(
 }
 
 type latestArgs struct {
-	IncludeSubreleases bool `name:"includeSubreleases" default:"false"`
+	IncludeSubreleases bool   `name:"includeSubreleases" default:"false"`
+	TagPrefix          string `name:"tagPrefix" default:""`
 }
 
 func (s *gitSchema) latest(
@@ -2102,7 +2106,11 @@ func (s *gitSchema) latest(
 		if err != nil {
 			return inst, err
 		}
-		ref, err := core.SelectLatestGitRef(remote, args.IncludeSubreleases)
+		ref, err := core.SelectLatestGitRefWithTagPrefix(
+			remote,
+			args.IncludeSubreleases,
+			args.TagPrefix,
+		)
 		if err != nil {
 			return inst, err
 		}
@@ -2111,6 +2119,9 @@ func (s *gitSchema) latest(
 
 	const lockPolicy = workspace.PolicyPin
 	lockInputs := []any{remoteRepo.URL.Remote(), args.IncludeSubreleases}
+	if args.TagPrefix != "" {
+		lockInputs = append(lockInputs, args.TagPrefix)
+	}
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -2135,9 +2146,10 @@ func (s *gitSchema) latest(
 		if !ok || pin == "" {
 			return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, lockResolution.Pin)
 		}
-		ref, err := core.DecodeGitLatestRefPin(
+		ref, err := core.DecodeGitLatestRefPinWithTagPrefix(
 			pin,
 			args.IncludeSubreleases,
+			args.TagPrefix,
 		)
 		if err != nil {
 			return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
@@ -2149,7 +2161,11 @@ func (s *gitSchema) latest(
 	if err != nil {
 		return inst, err
 	}
-	ref, err := core.SelectLatestGitRef(remote, args.IncludeSubreleases)
+	ref, err := core.SelectLatestGitRefWithTagPrefix(
+		remote,
+		args.IncludeSubreleases,
+		args.TagPrefix,
+	)
 	if err != nil {
 		return inst, err
 	}

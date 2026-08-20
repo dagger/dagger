@@ -178,6 +178,12 @@ func (p *ParsedGitRefString) GitRef(
 	repoSelector = withCommitArg(repoSelector)
 
 	refSelector := dagql.Selector{Field: "latest"}
+	if p.RepoRootSubdir != "/" {
+		refSelector.Args = append(refSelector.Args, dagql.NamedInput{
+			Name:  "tagPrefix",
+			Value: dagql.String(strings.Trim(p.RepoRootSubdir, "/")),
+		})
+	}
 	switch {
 	case modTag != "":
 		refSelector = withCommitArg(dagql.Selector{

@@ -32,7 +32,9 @@ func TestUpdateGitLatestLockEntryValidatesInputs(t *testing.T) {
 		{name: "invalid remote type", inputs: []any{42, false}, wantErr: "invalid git.latest remote"},
 		{name: "empty remote", inputs: []any{"", false}, wantErr: "invalid git.latest remote"},
 		{name: "invalid policy", inputs: []any{"https://example.com/repo.git", "false"}, wantErr: "invalid git.latest includeSubreleases"},
-		{name: "extra input", inputs: []any{"https://example.com/repo.git", false, "extra"}, wantErr: "invalid git.latest inputs"},
+		{name: "invalid prefix type", inputs: []any{"https://example.com/repo.git", false, 42}, wantErr: "invalid git.latest tag prefix"},
+		{name: "empty prefix", inputs: []any{"https://example.com/repo.git", false, ""}, wantErr: "invalid git.latest tag prefix"},
+		{name: "extra input", inputs: []any{"https://example.com/repo.git", false, "module", "extra"}, wantErr: "invalid git.latest inputs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
