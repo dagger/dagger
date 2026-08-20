@@ -39,22 +39,35 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func newNestedTransportTestFixture(t *testing.T) (*Server, *daggerSession, *daggerClient, context.Context, engine.ClientScope) {
-	t.Helper()
-	parent := &daggerClient{
-		clientID:        "parent",
-		state:           clientStateInitialized,
-		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "parent", ClientSecretToken: "parent-token"},
-		metadataSealed:  true,
-		accepting:       true,
-		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
+func installTestClientRecords(sess *daggerSession) {
+	if sess.clientRecords == nil {
+		sess.clientRecords = make(map[string]*clientRecord, len(sess.clientRuntimes))
 	}
+	for id, runtime := range sess.clientRuntimes {
+		if runtime == nil || runtime.clientRecord == nil {
+			continue
+		}
+		runtime.daggerSession = sess
+		sess.clientRecords[id] = runtime.clientRecord
+	}
+}
+
+func newNestedTransportTestFixture(t *testing.T) (*Server, *daggerSession, *clientRuntime, context.Context, engine.ClientScope) {
+	t.Helper()
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "parent",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "parent", ClientSecretToken: "parent-token"},
+		metadataSealed: true,
+		accepting:      true},
+		state:           clientStateInitialized,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
 	sess := &daggerSession{
 		sessionID:          "session",
 		mainClientCallerID: parent.clientID,
-		clients:            map[string]*daggerClient{parent.clientID: parent},
+		clientRuntimes:     map[string]*clientRuntime{parent.clientID: parent},
 	}
 	parent.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
 	transport, err := sess.acquireRootClientScope(parent, engine.ClientLeaseTransport, "parent")
 	require.NoError(t, err)
@@ -75,16 +88,16 @@ func nestedTransportTestMetadata(clientID string) *engine.ClientMetadata {
 	}
 }
 
-func mergeClientMetadataForTest(sess *daggerSession, client *daggerClient, metadata *engine.ClientMetadata) error {
+func mergeClientMetadataForTest(sess *daggerSession, client *clientRuntime, metadata *engine.ClientMetadata) error {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
-	return sess.mergeClientMetadataLocked(client, metadata)
+	return sess.mergeClientMetadataLocked(client.clientRecord, metadata)
 }
 
-func sealClientMetadataForTest(sess *daggerSession, client *daggerClient) error {
+func sealClientMetadataForTest(sess *daggerSession, client *clientRuntime) error {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
-	return sess.sealClientMetadataLocked(client)
+	return sess.sealClientMetadataLocked(client.clientRecord)
 }
 
 func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
@@ -97,7 +110,7 @@ func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
 	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
 	require.NoError(t, err)
 	sess.clientMu.RLock()
-	child := sess.clients[metadata.ClientID]
+	child := sess.clientRuntimes[metadata.ClientID]
 	sess.clientMu.RUnlock()
 	require.NotNil(t, child)
 	require.Equal(t, clientStateUninitialized, child.state)
@@ -194,7 +207,7 @@ func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
 	defer requestScope.Lease().Release()
 	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
 	require.NoError(t, err)
-	child := sess.clients["child"]
+	child := sess.clientRuntimes["child"]
 
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil)
@@ -226,7 +239,7 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 	defer requestScope.Lease().Release()
 	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
 	require.NoError(t, err)
-	child := sess.clients["child"]
+	child := sess.clientRuntimes["child"]
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -262,7 +275,7 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 	second, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("second"), parent.clientID)
 	require.NoError(t, err)
 	second.Close()
-	secondChild := sess.clients["second"]
+	secondChild := sess.clientRuntimes["second"]
 	sess.scopeMu.Lock()
 	if secondChild.accepting {
 		secondChild.state = clientStateInitialized
@@ -279,7 +292,7 @@ func TestNestedBootstrapRequestsMergeBeforeSeal(t *testing.T) {
 	registration := nestedTransportTestMetadata("child")
 	transport, err := srv.RegisterNestedClientTransport(ctx, registration, parent.clientID)
 	require.NoError(t, err)
-	child := sess.clients[registration.ClientID]
+	child := sess.clientRuntimes[registration.ClientID]
 
 	attachables := *registration
 	attachables.AllowedLLMModules = []string{"github.com/acme/mod"}
@@ -292,7 +305,7 @@ func TestNestedBootstrapRequestsMergeBeforeSeal(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, cleanup())
 	require.Equal(t, clientStateUninitialized, child.state)
-	require.False(t, sess.clientMetadataSealed(child))
+	require.False(t, sess.clientMetadataSealed(child.clientRecord))
 
 	init := attachables
 	init.Workspace = stringPtr("github.com/acme/workspace@main")
@@ -316,7 +329,7 @@ func TestNestedBootstrapRequestsMergeBeforeSeal(t *testing.T) {
 	require.ErrorContains(t, err, "Workspace")
 
 	require.NoError(t, sealClientMetadataForTest(sess, child))
-	sealed, err := sess.clientMetadataSnapshot(child)
+	sealed, err := sess.clientMetadataSnapshot(child.clientRecord)
 	require.NoError(t, err)
 	require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
 	require.Equal(t, *init.Workspace, *sealed.Workspace)
@@ -375,7 +388,7 @@ func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
 	for _, order := range orders {
 		names := []string{contributions[order[0]].name, contributions[order[1]].name, contributions[order[2]].name}
 		t.Run(strings.Join(names, "-"), func(t *testing.T) {
-			client := &daggerClient{clientID: "client", accepting: true}
+			client := &clientRuntime{clientRecord: &clientRecord{clientID: "client", accepting: true}}
 			sess := &daggerSession{}
 			require.NoError(t, mergeClientMetadataForTest(sess, client, registration))
 			for _, index := range order {
@@ -383,7 +396,7 @@ func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
 			}
 			require.NoError(t, sealClientMetadataForTest(sess, client))
 
-			sealed, err := sess.clientMetadataSnapshot(client)
+			sealed, err := sess.clientMetadataSnapshot(client.clientRecord)
 			require.NoError(t, err)
 			require.Equal(t, "live", sealed.LockMode)
 			require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
@@ -403,7 +416,7 @@ func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
 		})
 	}
 
-	client := &daggerClient{clientID: "client", accepting: true}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "client", accepting: true}}
 	sess := &daggerSession{}
 	first := identity()
 	first.ClientVersion = "v1.0.0"
@@ -435,7 +448,7 @@ func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
 		WorkspaceEnv:          &workspaceEnv,
 		UseRecipeIDsByDefault: true,
 	}
-	client := &daggerClient{clientID: input.ClientID, accepting: true}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: input.ClientID, accepting: true}}
 	sess := &daggerSession{}
 	require.NoError(t, mergeClientMetadataForTest(sess, client, input))
 
@@ -448,11 +461,11 @@ func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
 	*input.WorkspaceEnv = "mutated"
 
 	require.NoError(t, sealClientMetadataForTest(sess, client))
-	lookup, err := sess.clientMetadataSnapshot(client)
+	lookup, err := sess.clientMetadataSnapshot(client.clientRecord)
 	require.NoError(t, err)
 	lookup.Labels["branch"] = "lookup-mutated"
 	lookup.ExtraModules[0].Ref = "lookup-mutated"
-	lookupAgain, err := sess.clientMetadataSnapshot(client)
+	lookupAgain, err := sess.clientMetadataSnapshot(client.clientRecord)
 	require.NoError(t, err)
 	require.Equal(t, "main", lookupAgain.Labels["branch"])
 	require.Equal(t, "github.com/acme/extra@v1", lookupAgain.ExtraModules[0].Ref)
@@ -488,7 +501,7 @@ func TestClientMetadataSealRacesTransportClose(t *testing.T) {
 		metadata := nestedTransportTestMetadata("child")
 		transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
 		require.NoError(t, err)
-		child := sess.clients[metadata.ClientID]
+		child := sess.clientRuntimes[metadata.ClientID]
 
 		start := make(chan struct{})
 		sealErr := make(chan error, 1)
@@ -502,11 +515,11 @@ func TestClientMetadataSealRacesTransportClose(t *testing.T) {
 			if !child.accepting || transport.Closed() {
 				return
 			}
-			if err := sess.mergeClientMetadataLocked(child, metadata); err != nil {
+			if err := sess.mergeClientMetadataLocked(child.clientRecord, metadata); err != nil {
 				sealErr <- err
 				return
 			}
-			if err := sess.sealClientMetadataLocked(child); err != nil {
+			if err := sess.sealClientMetadataLocked(child.clientRecord); err != nil {
 				sealErr <- err
 			}
 		}()
@@ -526,25 +539,156 @@ func TestClientMetadataSealRacesTransportClose(t *testing.T) {
 		accepting, _, leases := sess.clientLifecycleSnapshot(child)
 		require.False(t, accepting)
 		require.Empty(t, leases)
-		if sess.clientMetadataSealed(child) {
-			_, err := sess.clientMetadataSnapshot(child)
+		if sess.clientMetadataSealed(child.clientRecord) {
+			_, err := sess.clientMetadataSnapshot(child.clientRecord)
 			require.NoError(t, err)
 		}
 		requestScope.Lease().Release()
 	}
 }
 
+func TestSessionAttachablesLabelsAllowQueryAndShutdownAdmission(t *testing.T) {
+	t.Parallel()
+
+	metadata := &engine.ClientMetadata{
+		SessionID:         "session",
+		ClientID:          "client",
+		ClientSecretToken: "token",
+		Labels:            map[string]string{"dagger.io/sdk.name": "go"},
+	}
+	recordMetadata, err := cloneClientMetadata(metadata)
+	require.NoError(t, err)
+
+	analyticsLabels := sessionAnalyticsLabels(metadata, "test-engine").AsMap()
+	require.Equal(t, "test-engine", analyticsLabels["dagger.io/engine"])
+	require.Contains(t, analyticsLabels, "dagger.io/server.version")
+	require.Equal(t, map[string]string{"dagger.io/sdk.name": "go"}, metadata.Labels,
+		"session analytics labels must not mutate request metadata")
+
+	record := &clientRecord{
+		clientID:       metadata.ClientID,
+		clientMetadata: recordMetadata,
+		metadataSealed: true,
+		accepting:      true,
+	}
+	runtime := &clientRuntime{
+		clientRecord:    record,
+		state:           clientStateInitialized,
+		lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+	}
+	sess := &daggerSession{
+		sessionID:          metadata.SessionID,
+		mainClientCallerID: "main",
+		clientRecords:      map[string]*clientRecord{metadata.ClientID: record},
+		clientRuntimes:     map[string]*clientRuntime{metadata.ClientID: runtime},
+	}
+	record.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{metadata.SessionID: sess}}
+
+	for _, request := range []struct {
+		name          string
+		bootstrapOnly bool
+	}{
+		{name: "query", bootstrapOnly: false},
+		{name: "shutdown", bootstrapOnly: true},
+	} {
+		t.Run(request.name, func(t *testing.T) {
+			client, cleanup, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+				ClientMetadata: metadata,
+				RootClient:     true,
+				BootstrapOnly:  request.bootstrapOnly,
+			})
+			require.NoError(t, err)
+			require.Same(t, runtime, client)
+			require.NoError(t, cleanup())
+		})
+	}
+}
+
+func TestClientRecordLookupsAreIndependentFromExecutableRuntime(t *testing.T) {
+	t.Parallel()
+
+	root := &clientRecord{
+		clientID:        "root",
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "root", Labels: map[string]string{"kind": "record"}},
+		metadataSealed:  true,
+		accepting:       true,
+		parentClientIDs: nil,
+	}
+	child := &clientRecord{
+		clientID:        "child",
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "child"},
+		metadataSealed:  true,
+		accepting:       true,
+		parentClientIDs: []string{"root"},
+	}
+	sess := &daggerSession{
+		sessionID: "session",
+		clientRecords: map[string]*clientRecord{
+			root.clientID:  root,
+			child.clientID: child,
+		},
+		clientRuntimes: map[string]*clientRuntime{},
+	}
+	root.daggerSession = sess
+	child.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), child.clientMetadata)
+	metadata, err := srv.SpecificClientMetadata(ctx, root.clientID)
+	require.NoError(t, err)
+	require.Equal(t, "record", metadata.Labels["kind"])
+	route, err := sess.telemetryRouteOriginClientID(child.clientID)
+	require.NoError(t, err)
+	require.Equal(t, []string{"child", "root"}, route)
+
+	_, err = sess.clientRuntimeForRecord(child)
+	require.ErrorContains(t, err, "not retained")
+	_, err = srv.executableClientFromContext(ctx)
+	require.ErrorContains(t, err, "requires a client scope")
+
+	runtime := &clientRuntime{
+		clientRecord:    child,
+		state:           clientStateInitialized,
+		lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+	}
+	sess.clientMu.Lock()
+	sess.clientRuntimes[child.clientID] = runtime
+	sess.clientMu.Unlock()
+
+	_, err = srv.executableClientFromContext(ctx)
+	require.ErrorContains(t, err, "requires a client scope",
+		"metadata identity alone must not authorize executable runtime access")
+	scope, err := sess.acquireRootClientScope(runtime, engine.ClientLeaseRequest, "test")
+	require.NoError(t, err)
+	scopeCtx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+	got, err := srv.executableClientFromContext(scopeCtx)
+	require.NoError(t, err)
+	require.Same(t, runtime, got)
+	scope.Lease().Release()
+
+	_, _, leases := sess.clientLifecycleSnapshot(runtime)
+	require.Empty(t, leases)
+	sess.clientMu.RLock()
+	retained := sess.clientRuntimes[child.clientID]
+	sess.clientMu.RUnlock()
+	require.Same(t, runtime, retained, "zero leases must not enable runtime reclamation")
+}
+
 func TestClientScopeRequiresSealedMetadata(t *testing.T) {
 	t.Parallel()
 
-	client := &daggerClient{
-		clientID:        "client",
-		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client", ClientSecretToken: "token"},
-		accepting:       true,
-		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
-	}
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client", ClientSecretToken: "token"},
+		accepting:      true},
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
 	sess := &daggerSession{sessionID: "session"}
 	client.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
 	_, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "before-seal")
 	require.ErrorContains(t, err, "not sealed")
@@ -558,20 +702,20 @@ func TestClientScopeRequiresSealedMetadata(t *testing.T) {
 func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 	t.Parallel()
 
-	client := &daggerClient{
-		clientID:        "client",
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client", Labels: map[string]string{"scope": "sealed"}},
+		metadataSealed: true,
+		accepting:      true},
 		state:           clientStateInitialized,
-		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client", Labels: map[string]string{"scope": "sealed"}},
-		metadataSealed:  true,
-		accepting:       true,
-		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
-	}
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
 	sess := &daggerSession{
 		sessionID:          "session",
 		mainClientCallerID: client.clientID,
-		clients:            map[string]*daggerClient{client.clientID: client},
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 	}
 	client.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
 
 	transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
@@ -625,19 +769,19 @@ func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
 	t.Parallel()
 
-	client := &daggerClient{
-		clientID:        "client",
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client"},
+		metadataSealed: true,
+		accepting:      true},
 		state:           clientStateInitialized,
-		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client"},
-		metadataSealed:  true,
-		accepting:       true,
-		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
-	}
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
 	sess := &daggerSession{
-		sessionID: "session",
-		clients:   map[string]*daggerClient{client.clientID: client},
+		sessionID:      "session",
+		clientRuntimes: map[string]*clientRuntime{client.clientID: client},
 	}
 	client.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
 	transport, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
 	require.NoError(t, err)
@@ -679,24 +823,22 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 	t.Parallel()
 
 	closedAt := time.Now().Add(-time.Minute).Round(0)
-	parent := &daggerClient{
-		clientID:    "parent",
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID:   "parent",
+		shutdownAt: closedAt},
 		state:       clientStateInitialized,
 		activeCount: 2,
-		shutdownAt:  closedAt,
 		telemetryDebug: LifecycleTelemetryCounts{
 			MeterProviders:          1,
 			ConfiguredMetricReaders: 1,
-		},
-	}
-	child := &daggerClient{
+		}}
+	child := &clientRuntime{clientRecord: &clientRecord{
 		clientID:        "child",
-		state:           clientStateInitialized,
-		parentClientIDs: []string{"parent"},
-	}
+		parentClientIDs: []string{"parent"}},
+		state: clientStateInitialized}
 	sess := &daggerSession{
 		sessionID: "session",
-		clients: map[string]*daggerClient{
+		clientRuntimes: map[string]*clientRuntime{
 			parent.clientID: parent,
 			child.clientID:  child,
 		},
@@ -709,6 +851,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 		},
 	}
+	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
 	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
 
@@ -742,28 +885,29 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
 	t.Parallel()
 
-	root := &daggerClient{clientID: "root"}
-	parent := &daggerClient{clientID: "parent", parentClientIDs: []string{"root"}}
-	child := &daggerClient{clientID: "child", parentClientIDs: []string{"root", "parent"}}
-	sess := &daggerSession{clients: map[string]*daggerClient{
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
+	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent", parentClientIDs: []string{"root"}}}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root", "parent"}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
 		root.clientID:   root,
 		parent.clientID: parent,
 		child.clientID:  child,
 	}}
-	for _, client := range sess.clients {
+	for _, client := range sess.clientRuntimes {
 		client.daggerSession = sess
 	}
+	installTestClientRecords(sess)
 
-	ancestors, err := sess.ancestorClients(child)
+	ancestors, err := sess.ancestorRuntimes(child.clientRecord)
 	require.NoError(t, err)
 	require.Equal(t, []string{"root", "parent"}, []string{ancestors[0].clientID, ancestors[1].clientID})
 
-	route, err := sess.telemetryRouteClientIDs(child)
+	route, err := sess.telemetryRouteClientIDs(child.clientRecord)
 	require.NoError(t, err)
 	require.Equal(t, []string{"child", "root", "parent"}, route,
 		"telemetry must preserve origin-first, root-to-direct-parent fan-out")
 
-	delivery, err := sess.telemetryDeliveryClientIDs(child)
+	delivery, err := sess.telemetryDeliveryClientIDs(child.clientRecord)
 	require.NoError(t, err)
 	require.Equal(t, []string{"root", "parent", "child"}, delivery,
 		"call-payload claims retain their historical ancestor-first ordering")
@@ -778,24 +922,25 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	srv := &Server{clientDBs: dbs, wcprofSpanCount: newWcprofSpanCounter()}
 	srv.telemetryPubSub = NewPubSub(srv)
 
-	root := &daggerClient{clientID: "root", clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "root"}}
-	parent := &daggerClient{clientID: "parent", parentClientIDs: []string{"root"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "parent"}}
-	child := &daggerClient{clientID: "child", parentClientIDs: []string{"root", "parent"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "child"}, shutdownCh: make(chan struct{})}
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root", clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "root"}}}
+	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent", parentClientIDs: []string{"root"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "parent"}}}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root", "parent"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "child"}, shutdownCh: make(chan struct{})}}
 	sess := &daggerSession{
 		sessionID:          "session",
 		mainClientCallerID: root.clientID,
-		clients: map[string]*daggerClient{
+		clientRuntimes: map[string]*clientRuntime{
 			root.clientID: root, parent.clientID: parent, child.clientID: child,
 		},
 		telemetryPubSub: srv.telemetryPubSub,
 	}
-	for _, client := range sess.clients {
+	for _, client := range sess.clientRuntimes {
 		client.daggerSession = sess
 	}
+	installTestClientRecords(sess)
 	srv.initializeSessionTelemetry(sess)
 	t.Cleanup(func() { require.NoError(t, sess.shutdownTraceLogs(context.Background())) })
 
-	emit := func(client *daggerClient, name string, detached bool) trace.SpanID {
+	emit := func(client *clientRuntime, name string, detached bool) trace.SpanID {
 		ctx := engine.ContextWithClientMetadata(context.Background(), client.clientMetadata)
 		ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 		if detached {
@@ -902,14 +1047,15 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 func TestClientRegistrationRequiresValidExplicitAncestry(t *testing.T) {
 	t.Parallel()
 
-	root := &daggerClient{clientID: "root"}
-	otherRoot := &daggerClient{clientID: "other-root"}
-	child := &daggerClient{clientID: "child", parentClientIDs: []string{"root"}}
-	sess := &daggerSession{clients: map[string]*daggerClient{
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
+	otherRoot := &clientRuntime{clientRecord: &clientRecord{clientID: "other-root"}}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root"}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
 		root.clientID:      root,
 		otherRoot.clientID: otherRoot,
 		child.clientID:     child,
 	}}
+	installTestClientRecords(sess)
 
 	parentIDs, err := sess.parentClientIDsForRegistration("new-root", "", true)
 	require.NoError(t, err)
@@ -934,12 +1080,13 @@ func TestClientRegistrationRequiresValidExplicitAncestry(t *testing.T) {
 func TestClientRegistrationRejectsInvalidParentRoute(t *testing.T) {
 	t.Parallel()
 
-	root := &daggerClient{clientID: "root"}
-	broken := &daggerClient{clientID: "broken", parentClientIDs: []string{"missing"}}
-	sess := &daggerSession{clients: map[string]*daggerClient{
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
+	broken := &clientRuntime{clientRecord: &clientRecord{clientID: "broken", parentClientIDs: []string{"missing"}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
 		root.clientID:   root,
 		broken.clientID: broken,
 	}}
+	installTestClientRecords(sess)
 
 	_, err := sess.parentClientIDsForRegistration("child", "broken", false)
 	require.ErrorContains(t, err, `ancestor client "missing" not found`)
@@ -952,13 +1099,14 @@ func TestClientRegistrationRejectsInvalidParentRoute(t *testing.T) {
 func TestLifecycleDebugAndRouteLookupConcurrentClientMutation(t *testing.T) {
 	t.Parallel()
 
-	root := &daggerClient{clientID: "root", state: clientStateInitialized}
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}, state: clientStateInitialized}
 	sess := &daggerSession{
 		sessionID:          "session",
 		mainClientCallerID: root.clientID,
-		clients:            map[string]*daggerClient{root.clientID: root},
+		clientRuntimes:     map[string]*clientRuntime{root.clientID: root},
 	}
 	root.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
 	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
 
@@ -973,18 +1121,19 @@ func TestLifecycleDebugAndRouteLookupConcurrentClientMutation(t *testing.T) {
 				return
 			default:
 			}
-			child := &daggerClient{
+			child := &clientRuntime{clientRecord: &clientRecord{
 				clientID:        "transient",
-				state:           clientStateInitialized,
 				daggerSession:   sess,
-				parentClientIDs: []string{root.clientID},
-			}
+				parentClientIDs: []string{root.clientID}},
+				state: clientStateInitialized}
 			sess.clientMu.Lock()
-			sess.clients[child.clientID] = child
+			sess.clientRecords[child.clientID] = child.clientRecord
+			sess.clientRuntimes[child.clientID] = child
 			sess.clientMu.Unlock()
-			_, _ = sess.telemetryRouteClientIDs(child)
+			_, _ = sess.telemetryRouteClientIDs(child.clientRecord)
 			sess.clientMu.Lock()
-			delete(sess.clients, child.clientID)
+			delete(sess.clientRecords, child.clientID)
+			delete(sess.clientRuntimes, child.clientID)
 			sess.clientMu.Unlock()
 		}
 	}()
@@ -992,7 +1141,7 @@ func TestLifecycleDebugAndRouteLookupConcurrentClientMutation(t *testing.T) {
 	for range 1000 {
 		snapshot := srv.ClientLifecycleDebugSnapshot()
 		require.Len(t, snapshot.Sessions, 1)
-		got, err := srv.clientFromIDs(sess.sessionID, root.clientID)
+		got, err := srv.clientRecordFromIDs(sess.sessionID, root.clientID)
 		require.NoError(t, err)
 		route, err := sess.telemetryRouteClientIDs(got)
 		require.NoError(t, err)
@@ -1043,11 +1192,11 @@ func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	t.Parallel()
 
-	// Regression test: activeClientIDs must read sess.clients under clientMu.
+	// Regression test: activeClientIDs must read sess.clientRecords under clientMu.
 	// Without the lock, ranging the map while another goroutine writes it is a
 	// fatal "concurrent map iteration and map write" (caught here under -race).
 	sess := &daggerSession{
-		clients: map[string]*daggerClient{
+		clientRecords: map[string]*clientRecord{
 			"client-a": {clientID: "client-a"},
 		},
 	}
@@ -1079,8 +1228,8 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 			}
 
 			sess.clientMu.Lock()
-			sess.clients["transient"] = &daggerClient{clientID: "transient"}
-			delete(sess.clients, "transient")
+			sess.clientRecords["transient"] = &clientRecord{clientID: "transient"}
+			delete(sess.clientRecords, "transient")
 			sess.clientMu.Unlock()
 		}
 	}()
@@ -1091,11 +1240,11 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	}
 }
 
-func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
+func TestClientRecordFromIDsConcurrentSessionInitialization(t *testing.T) {
 	t.Parallel()
 
-	// Regression test: clientFromIDs must read sess.state (atomically) and
-	// sess.clients (under clientMu) while another goroutine mutates them during
+	// Regression test: clientRecordFromIDs must read sess.state (atomically) and
+	// sess.clientRecords (under clientMu) while another goroutine mutates them during
 	// session initialization. Without that discipline this is a data race (caught
 	// here under -race).
 	sess := &daggerSession{}
@@ -1126,35 +1275,35 @@ func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
 			default:
 			}
 
-			_, _ = srv.clientFromIDs("session-a", "client-a")
+			_, _ = srv.clientRecordFromIDs("session-a", "client-a")
 		}
 	}()
 	<-started
 
 	for i := 0; i < 1000; i++ {
 		sess.clientMu.Lock()
-		sess.clients = map[string]*daggerClient{
+		sess.clientRecords = map[string]*clientRecord{
 			"client-a": {clientID: "client-a"},
 		}
 		sess.clientMu.Unlock()
 		sess.state.Store(sessionStateInitialized)
 		sess.state.Store(sessionStateUninitialized)
 		sess.clientMu.Lock()
-		sess.clients = nil
+		sess.clientRecords = nil
 		sess.clientMu.Unlock()
 	}
 
-	client := &daggerClient{clientID: "client-a"}
+	record := &clientRecord{clientID: "client-a", daggerSession: sess}
 	sess.clientMu.Lock()
-	sess.clients = map[string]*daggerClient{
-		client.clientID: client,
+	sess.clientRecords = map[string]*clientRecord{
+		record.clientID: record,
 	}
 	sess.clientMu.Unlock()
 	sess.state.Store(sessionStateInitialized)
 
-	got, err := srv.clientFromIDs("session-a", client.clientID)
+	got, err := srv.clientRecordFromIDs("session-a", record.clientID)
 	require.NoError(t, err)
-	require.Same(t, client, got)
+	require.Same(t, record, got)
 }
 
 func TestClientsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
@@ -1195,13 +1344,13 @@ func TestActiveClientIDsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
 	// activeClientIDs() (the client-DB GC ticker) must also never acquire a
 	// session's lifecycleMu, for the same reason as Clients().
 	live := &daggerSession{
-		sessionID: "live",
-		clients:   map[string]*daggerClient{"c-live": {clientID: "c-live"}},
+		sessionID:     "live",
+		clientRecords: map[string]*clientRecord{"c-live": {clientID: "c-live"}},
 	}
 	live.state.Store(sessionStateInitialized)
 	busy := &daggerSession{
-		sessionID: "busy",
-		clients:   map[string]*daggerClient{"c-busy": {clientID: "c-busy"}},
+		sessionID:     "busy",
+		clientRecords: map[string]*clientRecord{"c-busy": {clientID: "c-busy"}},
 	}
 	busy.state.Store(sessionStateInitialized)
 	srv := &Server{daggerSessions: map[string]*daggerSession{
@@ -1260,40 +1409,43 @@ func TestGetOrInitClientReturnsFastForRemovedTombstone(t *testing.T) {
 	}
 }
 
-func TestClientFromIDsStateGating(t *testing.T) {
+func TestClientRecordFromIDsStateGating(t *testing.T) {
 	t.Parallel()
 
-	// clientFromIDs gates on the session's (atomic) lifecycle state without ever
-	// taking lifecycleMu, and never returns a client whose session isn't usable.
-	client := &daggerClient{clientID: "c"}
+	// clientRecordFromIDs gates on the session's atomic lifecycle state without
+	// ever taking lifecycleMu, and never returns a record whose session is not
+	// usable.
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "c"}}
 	sess := &daggerSession{
-		sessionID: "s",
-		clients:   map[string]*daggerClient{"c": client},
+		sessionID:      "s",
+		clientRecords:  map[string]*clientRecord{"c": client.clientRecord},
+		clientRuntimes: map[string]*clientRuntime{"c": client},
 	}
+	client.daggerSession = sess
 	srv := &Server{daggerSessions: map[string]*daggerSession{"s": sess}}
 
 	// uninitialized: not yet usable.
 	sess.state.Store(sessionStateUninitialized)
-	_, err := srv.clientFromIDs("s", "c")
+	_, err := srv.clientRecordFromIDs("s", "c")
 	require.ErrorContains(t, err, "not initialized")
 
 	// removed: retryable not-found (session is tearing down).
 	sess.state.Store(sessionStateRemoved)
-	_, err = srv.clientFromIDs("s", "c")
+	_, err = srv.clientRecordFromIDs("s", "c")
 	var retryable flightcontrol.RetryableError
 	require.ErrorAs(t, err, &retryable)
 
 	// initialized: returns the client.
 	sess.state.Store(sessionStateInitialized)
-	got, err := srv.clientFromIDs("s", "c")
+	got, err := srv.clientRecordFromIDs("s", "c")
 	require.NoError(t, err)
-	require.Same(t, client, got)
+	require.Same(t, client.clientRecord, got)
 }
 
 func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 	t.Parallel()
 
-	// Stress the observer paths (Clients/activeClientIDs/clientFromIDs) against
+	// Stress the observer paths (Clients/activeClientIDs/clientRecordFromIDs) against
 	// concurrent session churn. The churners exercise the observer-visible state
 	// the way the real lifecycle does — registry writes under daggerSessionsMu,
 	// the clients map under clientMu, the lifecycle state via the atomic, and a
@@ -1317,14 +1469,17 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 				sess := &daggerSession{
 					sessionID:          id,
 					mainClientCallerID: "m" + id,
-					clients:            map[string]*daggerClient{},
+					clientRecords:      map[string]*clientRecord{},
+					clientRuntimes:     map[string]*clientRuntime{},
 				}
 				// publish, then populate clients, then flip to initialized last.
 				srv.daggerSessionsMu.Lock()
 				srv.daggerSessions[id] = sess
 				srv.daggerSessionsMu.Unlock()
 				sess.clientMu.Lock()
-				sess.clients["c"] = &daggerClient{clientID: "c"}
+				record := &clientRecord{clientID: "c", daggerSession: sess}
+				sess.clientRecords[record.clientID] = record
+				sess.clientRuntimes[record.clientID] = &clientRuntime{clientRecord: record}
 				sess.clientMu.Unlock()
 				sess.state.Store(sessionStateInitialized)
 
@@ -1352,7 +1507,7 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 		}
 		_ = srv.Clients()
 		_ = srv.activeClientIDs()
-		_, _ = srv.clientFromIDs("s0", "c")
+		_, _ = srv.clientRecordFromIDs("s0", "c")
 	}
 }
 
@@ -1400,11 +1555,11 @@ func TestSessionTeardownFlushesTelemetryAfterRuntimeCleanup(t *testing.T) {
 	srv.telemetryPubSub = NewPubSub(srv)
 
 	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main"}
-	client := &daggerClient{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
 	sess := &daggerSession{
 		sessionID:          md.SessionID,
 		mainClientCallerID: md.ClientID,
-		clients:            map[string]*daggerClient{client.clientID: client},
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 		services:           core.NewServices(),
 		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
 		containers:         map[bkgw.Container]struct{}{},
@@ -1412,6 +1567,7 @@ func TestSessionTeardownFlushesTelemetryAfterRuntimeCleanup(t *testing.T) {
 		telemetryPubSub:    srv.telemetryPubSub,
 	}
 	client.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	srv.initializeSessionTelemetry(sess)
@@ -1442,20 +1598,20 @@ func TestSessionTeardownFlushesTelemetryAfterRuntimeCleanup(t *testing.T) {
 // has the given number of active connections. dagqlInFlight starts at 1 so
 // teardown deterministically blocks in the in-flight drain until
 // releaseTeardownDrain is called.
-func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *daggerClient) {
-	client := &daggerClient{
-		clientID:    mainClientID,
-		activeCount: activeCount,
-	}
+func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *clientRuntime) {
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID: mainClientID},
+		activeCount: activeCount}
 	sess := &daggerSession{
 		sessionID:          sessionID,
 		mainClientCallerID: mainClientID,
-		clients:            map[string]*daggerClient{mainClientID: client},
+		clientRuntimes:     map[string]*clientRuntime{mainClientID: client},
 		services:           core.NewServices(),
 		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
 		shutdownCh:         make(chan struct{}),
 	}
 	client.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.dagqlInFlight = 1
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -1947,16 +2103,15 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 }
 
 func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
-	client := &daggerClient{
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientID: "client",
 		clientMetadata: &engine.ClientMetadata{
 			WorkspaceModuleScope: "good",
-		},
+		}},
 		pendingModules: []pendingModule{
 			{Kind: moduleLoadKindAmbient, Name: "bad"},
 		},
-		servedWorkspaceModuleNames: map[string]struct{}{"good": {}},
-	}
+		servedWorkspaceModuleNames: map[string]struct{}{"good": {}}}
 	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{ currentTypeDefs { name } }"}`))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -2269,12 +2424,11 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -2337,12 +2491,11 @@ source = "modules/local"
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -2400,12 +2553,11 @@ func TestDetectAndLoadWorkspaceLoadsPlainModuleCompatWithoutConfig(t *testing.T)
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -2460,13 +2612,12 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 		Ref:        "/repo/explicit",
 		Entrypoint: true,
 	}}
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			ExtraModules: extra,
-		},
-		pendingExtraModules: extra,
-	}
+		}},
+		pendingWorkspaceLoad: true,
+		pendingExtraModules:  extra}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -2514,12 +2665,11 @@ func TestDetectAndLoadWorkspaceCreatesRootlessWorkspaceWithoutInferringModule(t 
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -2573,10 +2723,9 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
-		clientMetadata:       &engine.ClientMetadata{},
-	}
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientMetadata: &engine.ClientMetadata{}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
@@ -2632,12 +2781,11 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
@@ -2692,10 +2840,9 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
-		clientMetadata:       &engine.ClientMetadata{},
-	}
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientMetadata: &engine.ClientMetadata{}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -2758,20 +2905,19 @@ func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
 		ClientID: "parent-client",
 	}
 
-	parent := &daggerClient{
-		clientID:  "parent-client",
-		workspace: bound,
-	}
-	child := &daggerClient{
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID: "parent-client"},
+		workspace: bound}
+	child := &clientRuntime{clientRecord: &clientRecord{
 		clientID:        "child-client",
-		parentClientIDs: []string{parent.clientID},
-	}
-	sess := &daggerSession{clients: map[string]*daggerClient{
+		parentClientIDs: []string{parent.clientID}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
 		parent.clientID: parent,
 		child.clientID:  child,
 	}}
 	parent.daggerSession = sess
 	child.daggerSession = sess
+	installTestClientRecords(sess)
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, bound, child.workspace)
@@ -2788,15 +2934,13 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 		ClientID: "parent-client",
 	}
 
-	parent := &daggerClient{
-		clientID:  "parent-client",
-		workspace: parentBound,
-	}
-	child := &daggerClient{
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID: "parent-client"},
+		workspace: parentBound}
+	child := &clientRuntime{clientRecord: &clientRecord{
 		clientID:        "child-client",
-		workspace:       existing,
-		parentClientIDs: []string{parent.clientID},
-	}
+		parentClientIDs: []string{parent.clientID}},
+		workspace: existing}
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, existing, child.workspace)
@@ -2806,21 +2950,20 @@ func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *te
 	t.Parallel()
 
 	parentCaller := &fakeSessionCaller{id: "parent"}
-	parent := &daggerClient{clientID: "parent"}
+	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent"}}
 	parent.getHostServiceCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "parent", id)
 		return parentCaller, nil
 	}
 
-	child := &daggerClient{
+	child := &clientRuntime{clientRecord: &clientRecord{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
-		parentClientIDs:          []string{parent.clientID},
-	}
+		parentClientIDs:          []string{parent.clientID}}}
 
 	child.daggerSession = &daggerSession{
 		attachables: newSessionAttachableManager(),
-		clients: map[string]*daggerClient{
+		clientRuntimes: map[string]*clientRuntime{
 			parent.clientID: parent,
 			child.clientID:  child,
 		},
@@ -2838,7 +2981,7 @@ func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 		ctx:       context.Background(),
 		supported: map[string]struct{}{},
 	}
-	parent := &daggerClient{clientID: "parent"}
+	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent"}}
 	parent.getHostServiceCaller = func(context.Context, string) (engineutil.SessionCaller, error) {
 		t.Fatal("unexpected parent fallback")
 		return nil, nil
@@ -2846,14 +2989,13 @@ func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 	attachables := newSessionAttachableManager()
 	attachables.callers["child"] = currentCaller
 
-	child := &daggerClient{
+	child := &clientRuntime{clientRecord: &clientRecord{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
-		parentClientIDs:          []string{parent.clientID},
-	}
+		parentClientIDs:          []string{parent.clientID}}}
 	child.daggerSession = &daggerSession{
 		attachables: attachables,
-		clients: map[string]*daggerClient{
+		clientRuntimes: map[string]*clientRuntime{
 			parent.clientID: parent,
 			child.clientID:  child,
 		},
@@ -2868,7 +3010,7 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 	t.Parallel()
 
 	otherCaller := &fakeSessionCaller{id: "other"}
-	child := &daggerClient{clientID: "child"}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child"}}
 	child.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "other", id)
 		return otherCaller, nil
@@ -2885,12 +3027,11 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	t.Run("declared workspace takes precedence", func(t *testing.T) {
 		t.Parallel()
 
-		client := &daggerClient{
-			pendingWorkspaceLoad: false,
+		client := &clientRuntime{clientRecord: &clientRecord{
 			clientMetadata: &engine.ClientMetadata{
 				Workspace: stringPtr("github.com/dagger/dagger@main"),
-			},
-		}
+			}},
+			pendingWorkspaceLoad: false}
 
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingDeclared, mode)
@@ -2900,10 +3041,9 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	t.Run("non-module defaults to host detection", func(t *testing.T) {
 		t.Parallel()
 
-		client := &daggerClient{
-			pendingWorkspaceLoad: true,
-			clientMetadata:       &engine.ClientMetadata{},
-		}
+		client := &clientRuntime{clientRecord: &clientRecord{
+			clientMetadata: &engine.ClientMetadata{}},
+			pendingWorkspaceLoad: true}
 
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingDetectHost, mode)
@@ -2913,10 +3053,9 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	t.Run("module defaults to inheritance", func(t *testing.T) {
 		t.Parallel()
 
-		client := &daggerClient{
-			pendingWorkspaceLoad: false,
-			clientMetadata:       &engine.ClientMetadata{},
-		}
+		client := &clientRuntime{clientRecord: &clientRecord{
+			clientMetadata: &engine.ClientMetadata{}},
+			pendingWorkspaceLoad: false}
 
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingInherit, mode)
