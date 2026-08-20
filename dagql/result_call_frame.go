@@ -38,6 +38,17 @@ func NewResultCallType(gqlType *ast.Type) *ResultCallType {
 	}
 }
 
+func resultCallTypesEqual(a, b *ResultCallType) bool {
+	for a != nil && b != nil {
+		if a.NamedType != b.NamedType || a.NonNull != b.NonNull {
+			return false
+		}
+		a = a.Elem
+		b = b.Elem
+	}
+	return a == nil && b == nil
+}
+
 func (typ *ResultCallType) clone() *ResultCallType {
 	if typ == nil {
 		return nil

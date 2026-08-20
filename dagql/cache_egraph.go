@@ -212,6 +212,9 @@ func (c *Cache) initEgraphLocked() {
 	if c.resultIndexedDigests == nil {
 		c.resultIndexedDigests = make(map[sharedResultID][]string)
 	}
+	if c.resultIndexedDigestTypes == nil {
+		c.resultIndexedDigestTypes = make(map[sharedResultID]map[string][]*ResultCallType)
+	}
 	if c.broadlyIndexedResults == nil {
 		c.broadlyIndexedResults = make(map[sharedResultID]struct{})
 	}
@@ -592,10 +595,29 @@ func newSharedResultSet() *set.TreeSet[*sharedResult] {
 	return set.NewTreeSet(compareSharedResults)
 }
 
+func sharedResultHasType(res *sharedResult, expectedType *ResultCallType) bool {
+	if res == nil || expectedType == nil {
+		return false
+	}
+	frame := res.loadResultCall()
+	return frame != nil && resultCallTypesEqual(frame.Type, expectedType)
+}
+
+func (c *Cache) sharedResultHasIndexedDigestType(res *sharedResult, dig digest.Digest, expectedType *ResultCallType) bool {
+	if res == nil || dig == "" || expectedType == nil {
+		return false
+	}
+	for _, indexedType := range c.resultIndexedDigestTypes[res.id][dig.String()] {
+		if resultCallTypesEqual(indexedType, expectedType) {
+			return true
+		}
+	}
+	return false
+}
+
 // sawExpired, when non-nil, is set to true if expiry drops at least one
-// otherwise-matching result during accumulation (cache-evidence miss fact);
-// candidate gathering itself is unchanged.
-func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, nowUnix int64, sawExpired *bool) {
+// type-compatible result during accumulation (cache-evidence miss fact).
+func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, expectedType *ResultCallType, allowIndexedType bool, nowUnix int64, sawExpired *bool) {
 	if dig == "" {
 		return
 	}
@@ -605,7 +627,8 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 	}
 	for resID := range resultSet.Items() {
 		res := c.resultsByID[resID]
-		if res == nil {
+		if res == nil || (!sharedResultHasType(res, expectedType) &&
+			(!allowIndexedType || !c.sharedResultHasIndexedDigestType(res, dig, expectedType))) {
 			continue
 		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
@@ -618,7 +641,7 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 	}
 }
 
-func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, sawExpired *bool) {
+func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], expectedType *ResultCallType, nowUnix int64, sawExpired *bool) {
 	if termSet == nil {
 		return
 	}
@@ -626,7 +649,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 	for termID := range termSet.Items() {
 		for resID := range c.termResults[termID] {
 			res := c.resultsByID[resID]
-			if res == nil {
+			if res == nil || !sharedResultHasType(res, expectedType) {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -657,7 +680,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 		}
 		seenOutputEqClasses[outputEqID] = struct{}{}
 		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, sawExpired)
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), expectedType, false, nowUnix, sawExpired)
 		}
 	}
 }
@@ -688,7 +711,7 @@ func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidat
 	return nil
 }
 
-func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest, nowUnix int64) lookupMatch {
+func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest, expectedType *ResultCallType, nowUnix int64) lookupMatch {
 	match := lookupMatch{
 		primaryLookupPossible: true,
 		missingInputIndex:     -1,
@@ -698,7 +721,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 	}
 
 	candidates := newSharedResultSet()
-	c.appendDigestResultsLocked(candidates, recipeDigest, nowUnix, &match.sawExpired)
+	c.appendDigestResultsLocked(candidates, recipeDigest, expectedType, true, nowUnix, &match.sawExpired)
 	if !candidates.Empty() {
 		match.candidates = candidates
 		match.hitRecipeDigest = true
@@ -706,7 +729,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 		return match
 	}
 	for _, extra := range extraDigests {
-		c.appendDigestResultsLocked(candidates, extra.Digest, nowUnix, &match.sawExpired)
+		c.appendDigestResultsLocked(candidates, extra.Digest, expectedType, true, nowUnix, &match.sawExpired)
 	}
 	if !candidates.Empty() {
 		match.candidates = candidates
@@ -730,7 +753,7 @@ func (c *Cache) lookupMatchForCallLocked(
 		return match
 	}
 
-	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests, nowUnix)
+	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests, frame.Type, nowUnix)
 	if match.candidates != nil && !match.candidates.Empty() {
 		return match
 	}
@@ -760,7 +783,7 @@ func (c *Cache) lookupMatchForCallLocked(
 			match.termSetSize = termSet.Size()
 		}
 		candidates := newSharedResultSet()
-		c.appendTermSetResultsLocked(candidates, termSet, nowUnix, &match.sawExpired)
+		c.appendTermSetResultsLocked(candidates, termSet, frame.Type, nowUnix, &match.sawExpired)
 		if !candidates.Empty() {
 			match.candidates = candidates
 			match.route = CacheHitRouteStructural
@@ -783,9 +806,9 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 		if err != nil {
 			return err
 		}
-		c.addResultDigestPostingLocked(res.id, dig.String(), resultDigestPostingExact)
+		c.addResultDigestPostingLocked(res.id, dig.String(), resultDigestPostingExact, frame.Type)
 		for _, extra := range frame.ExtraDigests {
-			c.addResultDigestPostingLocked(res.id, extra.Digest.String(), resultDigestPostingExact)
+			c.addResultDigestPostingLocked(res.id, extra.Digest.String(), resultDigestPostingExact, frame.Type)
 		}
 		return nil
 	}
@@ -800,7 +823,7 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 
 // addResultDigestPostingLocked requires egraphMu and an e-graph initialized by
 // initEgraphLocked.
-func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind) {
+func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind, indexedTypes ...*ResultCallType) {
 	if resID == 0 || dig == "" {
 		return
 	}
@@ -815,8 +838,30 @@ func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, k
 		c.egraphResultsByDigest[dig] = results
 	}
 	inserted := results.Insert(resID)
-	if kind == resultDigestPostingExact && inserted {
-		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
+	if kind == resultDigestPostingExact {
+		if inserted {
+			c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
+		}
+		byDigest := c.resultIndexedDigestTypes[resID]
+		if byDigest == nil {
+			byDigest = make(map[string][]*ResultCallType)
+			c.resultIndexedDigestTypes[resID] = byDigest
+		}
+		for _, indexedType := range indexedTypes {
+			if indexedType == nil {
+				continue
+			}
+			found := false
+			for _, existingType := range byDigest[dig] {
+				if resultCallTypesEqual(existingType, indexedType) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				byDigest[dig] = append(byDigest[dig], indexedType.clone())
+			}
+		}
 	}
 }
 
@@ -863,6 +908,7 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 		}
 	}
 	delete(c.resultIndexedDigests, resID)
+	delete(c.resultIndexedDigestTypes, resID)
 	delete(c.broadlyIndexedResults, resID)
 }
 
@@ -1847,6 +1893,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.egraphTermsByTermDigest = nil
 	c.egraphResultsByDigest = nil
 	c.resultIndexedDigests = nil
+	c.resultIndexedDigestTypes = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
 	c.nextEgraphClassID = 0

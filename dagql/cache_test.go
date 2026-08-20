@@ -279,7 +279,7 @@ func TestCacheRejectsNilTypeResolver(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "type resolver is nil")
 
-	_, _, err = c.lookupCacheForDigests(ctx, "test-session", nil, digest.FromString("nil-type-resolver"), nil)
+	_, _, err = c.lookupCacheForDigests(ctx, "test-session", nil, digest.FromString("nil-type-resolver"), nil, NewResultCallType(Int(0).Type()))
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "type resolver is nil")
 
@@ -3890,6 +3890,98 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 	})
 }
 
+func TestCacheEquivalenceLookupsRequireMatchingResultType(t *testing.T) {
+	shared := call.ExtraDigest{
+		Digest: digest.FromString("cross-type-equivalence"),
+		Label:  call.ExtraDigestLabelContent,
+	}
+
+	setup := func(t *testing.T) (*Cache, context.Context, AnyResult, AnyResult) {
+		t.Helper()
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, c)
+
+		stringOut := &ResultCall{
+			Kind:         ResultCallKindField,
+			Type:         NewResultCallType(NewString("").Type()),
+			Field:        "cross-type-string-output",
+			ExtraDigests: []call.ExtraDigest{shared},
+		}
+		stringRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall: &ResultCall{
+				Kind:  ResultCallKindField,
+				Type:  NewResultCallType(NewString("").Type()),
+				Field: "cross-type-string-request",
+			},
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestDetachedResult(stringOut, NewString("wrong type")), nil
+		})
+		assert.NilError(t, err)
+
+		intOut := cacheTestIntCall("cross-type-int-output", shared)
+		intRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall: cacheTestIntCall("cross-type-int-request"),
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(intOut, 42), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, stringRes.cacheSharedResult().id < intRes.cacheSharedResult().id)
+		return c, ctx, stringRes, intRes
+	}
+
+	t.Run("legacy extra digest recipe lookup", func(t *testing.T) {
+		c, ctx, _, intRes := setup(t)
+		oldRecipe := call.New().Append(Int(0).Type(), "cross-type-old-recipe").With(call.WithExtraDigest(shared))
+
+		got, hit, err := c.lookupCacheForDigests(
+			ctx,
+			"recipe-session",
+			noopTypeResolver{},
+			oldRecipe.Digest(),
+			oldRecipe.ExtraDigests(),
+			NewResultCallType(oldRecipe.Type().ToAST()),
+		)
+		assert.NilError(t, err)
+		assert.Assert(t, hit)
+		assert.Equal(t, intRes.cacheSharedResult().id, got.cacheSharedResult().id)
+		assert.Equal(t, 42, cacheTestUnwrapInt(t, got))
+	})
+
+	t.Run("structural lookup", func(t *testing.T) {
+		c, ctx, stringRes, intRes := setup(t)
+		structural := cacheTestIntCall("cross-type-structural")
+		assert.NilError(t, c.TeachCallEquivalentToResult(ctx, "test-session", structural, stringRes))
+		structuralDigest, err := structural.deriveRecipeDigest(c)
+		assert.NilError(t, err)
+		c.egraphMu.Lock()
+		c.removeResultDigestPostingLocked(stringRes.cacheSharedResult().id, structuralDigest.String())
+		c.egraphMu.Unlock()
+
+		got, hit, err := c.lookupCallRequest(ctx, "structural-session", noopTypeResolver{}, &CallRequest{ResultCall: structural})
+		assert.NilError(t, err)
+		assert.Assert(t, hit)
+		assert.Equal(t, intRes.cacheSharedResult().id, got.cacheSharedResult().id)
+		assert.Equal(t, 42, cacheTestUnwrapInt(t, got))
+	})
+
+	t.Run("handle canonicalization", func(t *testing.T) {
+		c, ctx, _, intRes := setup(t)
+		intShared := intRes.cacheSharedResult()
+
+		got, _, _, err := c.sharedResultByResultID(
+			ctx,
+			"handle-session",
+			intShared.id,
+			sharedResultLookupCanonicalEquivalent,
+		)
+		assert.NilError(t, err)
+		assert.Equal(t, intShared.id, got.id)
+		assert.Assert(t, sharedResultHasType(got, NewResultCallType(Int(0).Type())))
+	})
+}
+
 func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	t.Parallel()
 
@@ -3950,7 +4042,7 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 
 	childBDigest, err := childBReq.deriveRecipeDigest(c)
 	assert.NilError(t, err)
-	resolvedChildB, hit, err := c.lookupCacheForDigests(ctx, "test-session", noopTypeResolver{}, childBDigest, childBReq.ExtraDigests)
+	resolvedChildB, hit, err := c.lookupCacheForDigests(ctx, "test-session", noopTypeResolver{}, childBDigest, childBReq.ExtraDigests, childBReq.ResultCall.Type)
 	assert.NilError(t, err)
 	assert.Assert(t, hit)
 	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.cacheSharedResult().id)
