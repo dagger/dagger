@@ -1,0 +1,360 @@
+# Engine client lifecycle and reclamation
+
+## Status
+
+Proposal. This replaces the reverted assumption that a nested client's proxy
+lifetime is the client's resource lifetime.
+
+## Problem
+
+A long-running session creates a fresh engine client for every nested SDK
+invocation. Those IDs are unique, but `daggerClient` instances are retained in
+`daggerSession.clients` until the main session ends.
+
+That retention is expensive. Every client currently owns a DagQL server and
+schema, an engine utility client, module and workspace state, three OpenTelemetry
+providers, one large trace queue, one log queue, periodic metric readers, and a
+long-lived clientdb reference with three stream goroutines. A session evaluating
+mostly Dang modules makes Dang dominate the profile, but the lifecycle problem
+applies to every SDK.
+
+Calling `/shutdown` from SDK runtimes does not solve this. Containerized SDKs do
+not currently call it, and the in-engine Dang runtime has no independent session
+transport. More importantly, proxy exit is not proof that the client is unused.
+The engine deliberately lets work outlive the request that created it:
+
+| Consumer | How it outlives a request | What it later needs |
+|---|---|---|
+| Agent runtime | `AgentRuntime.start` detaches the loop context | Query, DagQL server, client metadata, telemetry |
+| Service runtime | Service and tunnel starts detach their contexts | Engine utility client, attachables, telemetry |
+| Lazy/shared DagQL work | Cache evaluation detaches shared callbacks | Original call, query, client identity, telemetry |
+| Workspace | Stores its creator's `ClientID` | Creator metadata and engine utility client |
+| Secret/socket | Stores a source or binding client ID | Session resource binding and possibly attachables |
+| Nested telemetry | Fans out through the client's ancestor chain | Routing identity and clientdb destinations |
+
+The reverted retirement change waited for HTTP requests and descendant clients,
+but none of the other consumers above. It could shut down a tracer provider
+while an agent still used it, producing noop spans; it could also remove the
+client that `SpecificClientMetadata`, workspace access, or an agent's next tool
+call expected to find. The observed `hash of unhashable type noop.Span` panic was
+a latent `map[trace.Span]...` bug exposed by that invalid lifecycle transition,
+not evidence that retirement was otherwise safe.
+
+The core problem is that one object represents five different lifetimes:
+
+1. **Reachability**: a proxy or transport can submit new requests.
+2. **Requests**: accepted requests are still running.
+3. **Background work**: agents, services, or shared evaluations are running.
+4. **Durable capabilities**: cached values may refer to the client later.
+5. **Telemetry delivery**: buffered records and subscriptions still need routing.
+
+`activeCount` observes only the second lifetime. `/shutdown` observes only the
+first. Neither is a safe reclamation condition.
+
+## Invariants
+
+Any implementation must preserve all of these:
+
+1. Closing a proxy prevents new requests through that proxy but does not cancel
+   work already accepted by the engine.
+2. A client runtime is not reclaimed while a request, agent, service, lazy
+   callback, or descendant runtime can execute with its identity.
+3. A durable value either remains usable for its documented session lifetime or
+   fails because its external attachable disappeared, never because unrelated
+   client cleanup removed hidden state.
+4. Telemetry emitted by detached work remains recordable and follows the same
+   nested-to-ancestor visibility rules as synchronous work.
+5. Client IDs are never reused or resurrected. Once reachability closes, the ID
+   cannot accept a new transport even if its descriptor remains.
+6. Session teardown is authoritative: it prevents new work, cancels and waits for
+   all background work, flushes telemetry, releases cache/session resources, and
+   only then removes descriptors.
+7. Reclamation is idempotent and race-safe. A concurrent close, last request,
+   last lease, and session teardown may run in any order.
+8. Resource cost after an idle period is bounded by live work and durable data,
+   not by the number of SDK invocations that have occurred.
+
+## Proposed model
+
+Split today's `daggerClient` into a lightweight session record and a reclaimable
+execution runtime.
+
+```go
+type clientRecord struct {
+    id        string
+    parentIDs []string
+    metadata  clientMetadataSnapshot
+
+    // Monotonic state: open -> closed. Never reopened.
+    accepting bool
+
+    // Nil once quiescent. Protected by the session lifecycle lock.
+    runtime *clientRuntime
+}
+
+type clientRuntime struct {
+    dag          *dagql.Server
+    query        *core.Query
+    engine       *engineutil.Client
+    schema       *core.SchemaBuilder
+    // workspace/module initialization state, etc.
+
+    leases clientLeaseSet
+}
+```
+
+The record is an identity and routing descriptor. It has no goroutines, queues,
+database handles, or provider shutdown semantics. Records may initially live for
+the whole session; that is cheap and makes correctness simple. Reclaiming unused
+records can be a later optimization.
+
+The runtime is the capability to execute as that client. It has explicit leases:
+
+| Lease kind | Acquired | Released |
+|---|---|---|
+| `transport` | Proxy/runtime becomes reachable | Proxy/runtime permanently exits |
+| `request` | Request is authenticated and accepted | Handler completes |
+| `agent` | An agent loop launches with the client scope | That loop terminates; a relaunch acquires its current scope |
+| `service` | Running service captures the client scope | Service exit/stop is observed |
+| `shared-work` | Detached lazy/shared callback starts | Callback and its release path complete |
+| `child` | Nested runtime is created | Child runtime becomes quiescent |
+
+The runtime becomes quiescent only when reachability is closed and every lease is
+gone. The transition removes the runtime from executable lookup and releases its
+heavy fields. The lightweight record remains available for identity, ancestry,
+and diagnostics.
+
+This intentionally does **not** claim that leases alone immediately make every
+runtime reclaimable. A cached lazy value or workspace may be a cold capability:
+it is not executing now, but it can initiate client-scoped work later. Those
+paths must first be made independent of a live `daggerClient`, or must hold a
+documented durable lease. The system must never infer safety from an empty
+goroutine/request count.
+
+Agent tombstones are another cold-capability case: their last LLM snapshot stays
+addressable and may be resumed. The running loop's lease can be released at its
+terminal transition only after selecting from or resuming that snapshot no
+longer depends on the original live runtime. Until then, the tombstone must hold
+a visible durable lease. The same rule applies to exited-service diagnostics if
+they retain more than copied IDs and span contexts.
+
+### Explicit client scope
+
+Introduce a `ClientScope` value in context. It contains the session and client
+IDs, an immutable metadata snapshot, and an opaque runtime lease handle. Code
+that detaches client-bearing work must use an explicit operation:
+
+```go
+workCtx, release, err := query.DetachClientScope(ctx, "agent")
+if err != nil { ... }
+defer release()
+```
+
+`context.WithoutCancel` remains valid for cleanup-only contexts, but it is no
+longer the lifecycle primitive for executable work. Agent and service registries
+store the acquired scope and release it from their actual terminal transition.
+DagQL shared-work coordination acquires one lease for the shared callback, not
+one per waiter.
+
+This gives us one auditable boundary. A test hook can reject starting engine
+work from a closed or unleased scope, and counters can attribute retained
+runtimes to lease kinds.
+
+### Separate execution from durable identity
+
+The current APIs turn a client ID back into the entire `daggerClient`:
+`SpecificClientMetadata`, `workspaceOwnerAccess`, telemetry handlers, host
+attachable lookup, and cloud scale-out all use `clientFromIDs`. Replace that
+single lookup with purpose-specific APIs:
+
+| Need | New source |
+|---|---|
+| Metadata/ancestry | `clientRecord` |
+| External attachable | Session attachable registry, keyed by source client ID |
+| Telemetry route | Record's immutable parent-ID route |
+| Execute as owner | A live `ClientScope`, or a self-contained capability |
+| Workspace host access | Session-owned host gateway plus workspace owner metadata |
+
+In particular, move `engineutil.Client` toward a session-owned gateway whose
+methods take client metadata/scope. Most of its methods already derive routing
+from `ClientMetadataFromContext`; per-client wrapper allocation should not be the
+thing keeping an identity alive. Workspaces should capture the minimal host
+access capability they need, rather than rediscovering a full client by ID.
+
+Secrets and sockets already distinguish cached handles from concrete
+session-local bindings. Their resolution should continue through the session
+resource and attachable registries. A dead external attachable may produce the
+existing clear "no active session attachables" error; retaining a heavyweight
+client object cannot make that external process live again.
+
+### Session-owned telemetry
+
+Telemetry should be fixed before client reclamation. It is the dominant retained
+cost, and its lifetime is naturally the session's, not an individual proxy's.
+
+Create one trace provider and one logger provider per session. On span/log emit,
+a processor stamps the origin client ID from `ClientScope`; a routing exporter
+uses the session's lightweight record graph to write to the origin and ancestor
+client DBs. Parent relationships become IDs rather than pointers to full client
+objects. Incoming OTLP already has session/client headers and uses the same
+router.
+
+Clientdb references should be opened for an export/subscription and closed when
+that operation ends. Remove the per-client keepalive DB. The DB manager may keep
+an internal bounded idle cache if reopen cost is measurable, but that cache must
+have an explicit size/time bound rather than one entry per historical client.
+
+Metrics need a separate migration because an OTel meter provider aggregates
+measurements before export. Use one session meter provider and require engine
+measurements to carry origin client ID as an attribute; route or filter the
+result at export. Until that conversion is complete, per-client meter providers
+may remain behind runtime leases. They are not a reason to retain trace/log
+queues or clientdb streams.
+
+Provider shutdown then happens only during session teardown. A detached agent
+cannot accidentally inherit a provider that another goroutine shuts down.
+
+### State machine
+
+The lifecycle is monotonic:
+
+| State | Accept new transport work | Existing work executes | Heavy runtime present |
+|---|---:|---:|---:|
+| `open` | yes | yes | yes |
+| `closing` | no | yes | yes |
+| `quiescent` | no | no | no |
+| `removed` | no | no | no; record removed at session end |
+
+Closing is triggered by the owner proxy/runtime, not by an SDK convention. SDK
+`/shutdown` may be an additional signal, but correctness does not depend on every
+language runtime implementing it. A unique ID cannot transition from `closing`
+or `quiescent` back to `open`.
+
+All state changes run through one session lifecycle operation. In pseudocode,
+the only reclamation predicate is:
+
+```text
+session is live
+AND record.accepting == false
+AND runtime.totalLeases == 0
+AND runtime is still the record's published runtime
+```
+
+The operation atomically unpublishes the runtime before running slow cleanup.
+Lease acquisition first checks `accepting` under the same serialization point;
+an already-held lease may be cloned for child/background work while closing,
+but an unrelated request cannot acquire a new root lease. Session teardown wins
+by changing session state first, then draining through the same release paths.
+This prevents both resurrection and a last-release/new-acquire race.
+
+## Rejected shortcuts
+
+| Shortcut | Why it is insufficient |
+|---|---|
+| Have every SDK call `/shutdown` | Improves reachability signaling only; detached and cold capabilities remain |
+| Retire on `activeCount == 0` | Counts HTTP handlers, not engine work started by them |
+| Retire when no descendants remain | Parent pointers are only one retention path; agents, services, cache, and workspaces are invisible |
+| Delay retirement for a grace period | Changes race probability, not the safety condition |
+| Fix the noop-span panic and retry retirement | Prevents one symptom while leaving use-after-retirement failures elsewhere |
+| Keep current clients but shrink queues | Reduces slope but still makes providers, readers, DB streams, and schemas proportional to historical calls |
+| Reference-count `daggerClient` directly | Makes every accidental pointer an ownership edge and cannot explain cold capabilities; split identity from execution first |
+
+## Enabling changes
+
+Implement these as separately reviewable changes. Each one either reduces the
+leak by itself or makes the final reclamation condition mechanically provable.
+
+1. **Add lifecycle observability without changing behavior.** Report records and
+   runtimes by state, leases by kind and owner ID, provider/processor counts,
+   queued telemetry records, open clientdb streams, and the oldest closed runtime.
+   Add a debug dump that lists why each closed runtime is retained.
+2. **Replace client parent pointers with immutable parent IDs.** Centralize route
+   traversal in the session and reject cycles at creation. This removes accidental
+   ancestor retention and gives telemetry a stable routing graph.
+3. **Move traces and logs to session-owned providers.** Route by explicit origin
+   ID and remove per-client queues and provider shutdown. Then remove per-client
+   clientdb keepalives or replace them with a bounded DB-manager cache.
+4. **Introduce `ClientScope` and typed leases.** Convert request entry, agent
+   runtime, service runtime, and DagQL shared/lazy work. Make background-work
+   detachment impossible without choosing a lease kind.
+5. **Split lookup and storage.** Add `clientRecord`/`clientRuntime`; replace
+   `clientFromIDs` call sites with metadata, telemetry-route, attachable, or
+   executable-scope lookups. Keep records session-long initially.
+6. **Decouple cold capabilities.** Make workspace host access session-owned;
+   verify cached lazy callbacks either acquire a durable scope lease or capture a
+   self-contained capability. Audit module/schema objects for pointers back to
+   the client runtime.
+7. **Enable quiescent runtime reclamation.** The proxy close only marks
+   `accepting=false` and releases `transport`. A single serialized transition
+   drops the runtime after all leases and child runtimes are gone.
+8. **Optionally collect records.** Only after all durable references are
+   enumerable, add descriptor refcounts/epochs. This is not required to solve the
+   memory leak and should not be coupled to runtime reclamation.
+
+The order matters. Moving telemetry first bounds the known leak without risking
+execution correctness. Explicit leases and purpose-specific lookup then turn the
+eventual deletion decision from a heuristic into an invariant.
+
+## Verification
+
+### Deterministic lifecycle tests
+
+- Closing a proxy with an idle client reaches `quiescent` and releases its
+  runtime exactly once.
+- Closing during an active request reaches `closing`; the last request release
+  performs reclamation.
+- Closing while an agent is idle, running, paused, failed, or being resumed does
+  not invalidate its context. The runtime is reclaimed only after the agent's
+  terminal release.
+- The same matrix applies to shared and interactive services, including crash and
+  concurrent stop.
+- Lazy evaluation triggered after its creating request either succeeds through a
+  documented capability or holds a visible durable lease.
+- Workspace reload/export still works after its creator proxy closes.
+- Secret/socket handles resolve through session bindings; missing external
+  attachables fail for that reason, not "client not found."
+- A parent cannot quiesce before a live child; child release wakes parent
+  reclamation.
+- Concurrent proxy close, request completion, lease release, and session teardown
+  pass under `-race` and every cleanup hook runs once.
+- A closed client ID cannot reconnect or be initialized again in the same
+  session, even while its record remains.
+
+### Telemetry tests
+
+- Synchronous and detached spans/logs from nested clients appear in the origin
+  and every ancestor DB exactly once.
+- Provider count is proportional to sessions, not clients.
+- Clientdb stream goroutines return to the bounded idle baseline.
+- Closing any nested proxy cannot turn a live agent's tracer into a noop tracer.
+- Session flush includes records concurrently emitted by closing client scopes
+  and establishes a clear flush barrier before provider shutdown.
+
+### Stress acceptance test
+
+Run one long-lived `dagger agent` session and repeatedly evaluate a mix of Dang,
+Go, Python, and TypeScript modules, including agents, services, workspaces, lazy
+objects, secrets, and sockets. After each workload wave, stop all deliberately
+long-lived work and wait for two GC/telemetry intervals.
+
+The acceptance criteria are:
+
+- live client runtimes return to the known baseline;
+- trace/log provider and queue counts remain constant for the session;
+- clientdb goroutines and open streams remain within the configured idle bound;
+- heap after forced GC plateaus across waves rather than tracking total
+  invocations;
+- all functional and telemetry assertions above continue to pass.
+
+Capture heap, alloc, goroutine, and the lifecycle debug dump at every plateau.
+Compare retained objects by client ID so a failure identifies the exact lease or
+durable capability preventing reclamation.
+
+## Non-goals
+
+- Reusing client IDs. They remain unique per initialization.
+- Making external attachables survive their owning process.
+- Collecting every lightweight client record in the first implementation.
+- Treating the `map[trace.Span]...` panic as a lifecycle mechanism. That map
+  should be keyed by comparable span identity independently, but fixing it does
+  not make premature provider shutdown safe.
