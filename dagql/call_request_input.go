@@ -114,23 +114,11 @@ func resultCallRefFromIDInput(ctx context.Context, id *call.ID, memo recipeCallM
 	if err != nil {
 		return nil, fmt.Errorf("resolve ID input %q: current dagql cache: %w", idInputDebugString(id), err)
 	}
-	shared, _, _, err := cache.sharedResultByResultID(
-		ctx,
-		clientMetadata.SessionID,
-		sharedResultID(id.EngineResultID()),
-		sharedResultLookupCanonicalEquivalent,
-	)
+	ref, err := cache.resultCallRefByResultID(ctx, clientMetadata.SessionID, id.EngineResultID())
 	if err != nil {
 		return nil, fmt.Errorf("resolve ID input %q: %w", idInputDebugString(id), err)
 	}
-	frame := shared.loadResultCall()
-	if frame == nil {
-		return nil, fmt.Errorf("resolve ID input %q: missing result call frame", idInputDebugString(id))
-	}
-	if frame.Type != nil && frame.Type.NamedType == "Query" {
-		return nil, nil
-	}
-	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
+	return ref, nil
 }
 
 func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID, memo recipeCallMemo) (*ResultCall, error) {

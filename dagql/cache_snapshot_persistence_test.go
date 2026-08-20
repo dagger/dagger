@@ -64,6 +64,8 @@ type fakeSnapshotManager struct {
 	removeCalls         []string
 	deleteStaleKeep     map[string]struct{}
 	deleteStaleCallSeen bool
+	attachStarted       chan struct{}
+	allowAttach         chan struct{}
 }
 
 func (*fakeSnapshotManager) Search(context.Context, string, bool) ([]bkcache.RefMetadata, error) {
@@ -134,11 +136,50 @@ func (*fakeSnapshotManager) IdentityMapping() *idtools.IdentityMapping {
 
 func (m *fakeSnapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
 	_ = ctx
+	if m.attachStarted != nil {
+		close(m.attachStarted)
+		<-m.allowAttach
+	}
 	m.attachCalls = append(m.attachCalls, struct{ LeaseID, SnapshotID string }{
 		LeaseID:    leaseID,
 		SnapshotID: snapshotID,
 	})
 	return nil
+}
+
+func TestCacheSnapshotOwnerLeaseSyncDefersSessionCleanup(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	snapshotManager := &fakeSnapshotManager{}
+	c, err := NewCache(ctx, "", snapshotManager, nil)
+	assert.NilError(t, err)
+	sessionID := cacheTestSessionID(t, ctx)
+
+	call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistSnapshotValue{}).Type()),
+		Field: "snapshot-owner-release",
+	}
+	value := &persistSnapshotValue{Name: "value", SnapshotID: "snapshot-a"}
+	_, err = c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, func(context.Context) (AnyResult, error) {
+		return cacheTestPlainResult(value), nil
+	})
+	assert.NilError(t, err)
+
+	value.SnapshotID = "snapshot-b"
+	res, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, ValueFunc(nil))
+	assert.NilError(t, err)
+	snapshotManager.attachStarted = make(chan struct{})
+	snapshotManager.allowAttach = make(chan struct{})
+	syncDone := make(chan error, 1)
+	go func() { syncDone <- c.SyncResultSnapshotOwnerLeases(ctx, res) }()
+	<-snapshotManager.attachStarted
+
+	assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+	assert.Assert(t, c.Size() > 0, "release collected a result during snapshot-owner lease synchronization")
+
+	close(snapshotManager.allowAttach)
+	assert.NilError(t, <-syncDone)
+	assert.Equal(t, c.Size(), 0)
 }
 
 func (m *fakeSnapshotManager) RemoveLease(ctx context.Context, leaseID string) error {

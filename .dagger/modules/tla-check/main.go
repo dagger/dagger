@@ -1,11 +1,9 @@
 // TLA+ model checking for the dagql cache spec (dagql/tla).
 //
 // Runs every TLC configuration of CacheLifecycle.tla. Green configurations
-// are regression gates: any violation fails the check. Red configurations
-// reproduce known deficiencies in the current code: each must violate
-// exactly its designated invariant — coming up clean, or violating a
-// different invariant, fails the check, because either means the model or
-// a configuration drifted from the deficiency it reproduces.
+// are regression gates: any violation fails the check. A configuration may
+// name an expected invariant only while it deliberately tracks an accepted
+// model finding.
 package main
 
 import (
@@ -51,12 +49,11 @@ var expectedOutcome = map[string]string{
 	"poisoned_adoption": "",
 	"poisoned_restart":  "",
 	"flush_closure":     "",
-	// red: reproductions of known deficiencies in the current code; each
-	// config's comment describes the scenario and the mechanism
-	"release_inflight": "ReturnedLive",
-	"drain_escape":     "ReturnedLive",
-	"flush_inflight":   "FlushCleanCapture",
-	"flush_drained":    "FlushCleanCapture",
+	"release_inflight":  "",
+	"drain_escape":      "",
+	"flush_inflight":    "",
+	"flush_drained":     "",
+	"lazy_release":      "",
 }
 
 type TlaCheck struct {

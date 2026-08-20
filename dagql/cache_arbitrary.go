@@ -68,6 +68,23 @@ func (c *Cache) GetOrInitArbitrary(
 	if sessionID == "" {
 		return nil, fmt.Errorf("get or init arbitrary %q: empty session ID", callKey)
 	}
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get or init arbitrary %q: %w", callKey, err)
+	}
+	res, callErr := c.getOrInitArbitrary(ctx, sessionID, callKey, fn)
+	if op.finish(callErr == nil && res != nil) {
+		return nil, fmt.Errorf("get or init arbitrary %q: %w: %q", callKey, ErrCacheSessionReleased, sessionID)
+	}
+	return res, callErr
+}
+
+func (c *Cache) getOrInitArbitrary(
+	ctx context.Context,
+	sessionID string,
+	callKey string,
+	fn func(context.Context) (any, error),
+) (ArbitraryCachedResult, error) {
 	if callKey == "" {
 		return nil, fmt.Errorf("cache call key is empty")
 	}
