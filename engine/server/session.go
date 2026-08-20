@@ -82,8 +82,9 @@ type daggerSession struct {
 	// active-clients API or the client-DB GC.
 	lifecycleMu sync.Mutex
 
-	clients  map[string]*daggerClient // clientID -> client
-	clientMu sync.RWMutex
+	clients         map[string]*daggerClient // clientID -> client
+	dangClientCount int                      // guarded by clientMu
+	clientMu        sync.RWMutex
 
 	attachables *sessionAttachableManager
 
@@ -207,6 +208,10 @@ type daggerClient struct {
 	// the number of active http requests to any endpoint from this client,
 	// used to determine when to cleanup the client+session
 	activeCount int
+	// retireRequested is set when the proxy that made this nested client
+	// reachable has stopped. The client is removed after its requests and all
+	// descendant clients have drained.
+	retireRequested bool
 
 	dag       *dagql.Server
 	dagqlRoot *core.Query
@@ -1290,7 +1295,21 @@ func (srv *Server) getOrInitClient(
 		// (We hold lifecycleMu, so this is the only goroutine creating it.)
 		sess.clientMu.Lock()
 		sess.clients[clientID] = client
+		retainedClients := len(sess.clients)
+		if client.hostServiceProxyClientID != "" {
+			sess.dangClientCount++
+		}
+		retainedDangClients := sess.dangClientCount
 		sess.clientMu.Unlock()
+		if retainedDangClients > 0 && retainedDangClients%100 == 0 {
+			slog.Warn("session retained another 100 synthetic Dang clients",
+				"sessionID", sessionID,
+				"clientID", clientID,
+				"callerClientID", opts.CallerClientID,
+				"retainedClients", retainedClients,
+				"retainedDangClients", retainedDangClients,
+			)
+		}
 	case clientStateInitialized:
 		// verify token matches existing client
 		if token != client.secretToken {
@@ -1373,6 +1392,7 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 	client.stateMu.Lock()
 	client.activeCount--
 	activeCount := client.activeCount
+	retireRequested := client.retireRequested
 	client.stateMu.Unlock()
 
 	if activeCount > 0 {
@@ -1385,6 +1405,17 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 	).Info("all client connections closed")
 
 	if client.clientID != sess.mainClientCallerID {
+		if retireRequested {
+			go func() {
+				if err := srv.retireClients(context.WithoutCancel(ctx), sess); err != nil {
+					slog.Error("failed to retire drained nested client",
+						"sessionID", sess.sessionID,
+						"clientID", client.clientID,
+						"error", err,
+					)
+				}
+			}()
+		}
 		return nil
 	}
 
@@ -1394,6 +1425,113 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 	// observes the removed tombstone and retries against a fresh session.
 	go srv.reapDaggerSession(context.WithoutCancel(ctx), sess, client)
 	return nil
+}
+
+// RetireClient ends a nested client's lifetime after its owning proxy has
+// stopped. Main clients remain governed by the session shutdown lifecycle.
+func (srv *Server) RetireClient(ctx context.Context, md *engine.ClientMetadata) error {
+	if md == nil || md.SessionID == "" || md.ClientID == "" {
+		return nil
+	}
+
+	srv.daggerSessionsMu.RLock()
+	sess := srv.daggerSessions[md.SessionID]
+	srv.daggerSessionsMu.RUnlock()
+	if sess == nil || sess.state.Load() != sessionStateInitialized {
+		return nil
+	}
+
+	sess.clientMu.RLock()
+	client := sess.clients[md.ClientID]
+	sess.clientMu.RUnlock()
+	if client == nil {
+		return nil
+	}
+	if client.clientID == sess.mainClientCallerID {
+		return fmt.Errorf("cannot retire main client %q", client.clientID)
+	}
+
+	client.stateMu.Lock()
+	client.retireRequested = true
+	client.stateMu.Unlock()
+	return srv.retireClients(context.WithoutCancel(ctx), sess)
+}
+
+func (srv *Server) retireClients(ctx context.Context, sess *daggerSession) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	defer cancel()
+
+	sess.lifecycleMu.Lock()
+	defer sess.lifecycleMu.Unlock()
+
+	if sess.state.Load() != sessionStateInitialized {
+		return nil
+	}
+
+	var errs error
+	for {
+		sess.clientMu.RLock()
+		clients := make([]*daggerClient, 0, len(sess.clients))
+		for _, client := range sess.clients {
+			clients = append(clients, client)
+		}
+		sess.clientMu.RUnlock()
+
+		var ready *daggerClient
+		for _, candidate := range clients {
+			candidate.stateMu.RLock()
+			canRetire := candidate.retireRequested && candidate.activeCount == 0
+			candidate.stateMu.RUnlock()
+			if !canRetire {
+				continue
+			}
+
+			hasDescendant := false
+			for _, other := range clients {
+				if other == candidate {
+					continue
+				}
+				if slices.Contains(other.parents, candidate) {
+					hasDescendant = true
+					break
+				}
+			}
+			if !hasDescendant {
+				ready = candidate
+				break
+			}
+		}
+		if ready == nil {
+			return errs
+		}
+
+		ready.stateMu.RLock()
+		isDangClient := ready.hostServiceProxyClientID != ""
+		ready.stateMu.RUnlock()
+		sess.clientMu.Lock()
+		if sess.clients[ready.clientID] != ready {
+			sess.clientMu.Unlock()
+			continue
+		}
+		delete(sess.clients, ready.clientID)
+		if isDangClient {
+			sess.dangClientCount--
+		}
+		remainingClients := len(sess.clients)
+		sess.clientMu.Unlock()
+
+		clientErr := ready.ShutdownTelemetry(ctx)
+		clientErr = errors.Join(clientErr, ready.closeKeepAliveTelemetryDB())
+		ready.closeShutdownOnce.Do(func() { close(ready.shutdownCh) })
+		errs = errors.Join(errs, clientErr)
+		slog.Debug("retired nested client",
+			"sessionID", sess.sessionID,
+			"clientID", ready.clientID,
+			"remainingClients", remainingClients,
+			"error", clientErr,
+		)
+
+	}
 }
 
 // reapDaggerSession tears down a session in the background after the main

@@ -961,6 +961,67 @@ func (srv *Server) ConnectedClients() int {
 	return len(srv.daggerSessions)
 }
 
+// SessionClientStats describes client instances retained by live sessions.
+// A session may have many nested clients, each with its own telemetry providers
+// and clientdb streams, so this is intentionally distinct from ConnectedClients,
+// which historically counts sessions rather than client instances.
+type SessionClientStats struct {
+	Total      int
+	Nested     int
+	IdleNested int
+	Dang       int
+	IdleDang   int
+}
+
+// SessionClientStats returns a point-in-time snapshot of client instances held
+// by initialized sessions. Dang clients are the synthetic in-engine clients
+// whose host operations proxy to their caller.
+func (srv *Server) SessionClientStats() SessionClientStats {
+	srv.daggerSessionsMu.RLock()
+	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
+	for _, sess := range srv.daggerSessions {
+		sessions = append(sessions, sess)
+	}
+	srv.daggerSessionsMu.RUnlock()
+
+	var stats SessionClientStats
+	for _, sess := range sessions {
+		if sess.state.Load() != sessionStateInitialized {
+			continue
+		}
+
+		sess.clientMu.RLock()
+		clients := make([]*daggerClient, 0, len(sess.clients))
+		for _, client := range sess.clients {
+			clients = append(clients, client)
+		}
+		sess.clientMu.RUnlock()
+
+		for _, client := range clients {
+			stats.Total++
+			nested := client.clientID != sess.mainClientCallerID
+			if nested {
+				stats.Nested++
+			}
+
+			client.stateMu.RLock()
+			idle := client.activeCount == 0
+			dang := client.hostServiceProxyClientID != ""
+			client.stateMu.RUnlock()
+			if dang {
+				stats.Dang++
+			}
+			if idle && nested {
+				stats.IdleNested++
+			}
+			if idle && dang {
+				stats.IdleDang++
+			}
+		}
+	}
+	return stats
+}
+
 func (srv *Server) CorruptDBReset() bool {
 	return srv.corruptDBReset
 }

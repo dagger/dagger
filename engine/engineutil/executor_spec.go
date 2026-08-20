@@ -1132,6 +1132,9 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	})
 
+	state.cleanups.Add("retire nested client", func() error {
+		return c.SessionHandler.RetireClient(context.WithoutCancel(ctx), state.nestedClientMetadata)
+	})
 	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
 	// state.cleanups.ReAdd(stopSessionSrv)
 	state.cleanups.Add("close nested client http server", httpSrv.Close)

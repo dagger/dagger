@@ -18,6 +18,10 @@ var (
 		Name: "dagger_connected_clients",
 		Help: "Number of currently connected clients",
 	})
+	sessionClientInstancesGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "dagger_session_client_instances",
+		Help: "Number of client instances retained by live sessions",
+	}, []string{"kind"})
 
 	dagqlCacheEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dagger_dagql_cache_entries",
@@ -48,6 +52,9 @@ var (
 // setupMetricsServer starts an HTTP server to expose Prometheus metrics
 func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) error {
 	if err := prometheus.Register(connectedClientsGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(sessionClientInstancesGauge); err != nil {
 		return err
 	}
 	if err := prometheus.Register(dagqlCacheEntriesGauge); err != nil {
@@ -107,6 +114,12 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 	// Set up HTTP server
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		connectedClientsGauge.Set(float64(srv.ConnectedClients()))
+		clientStats := srv.SessionClientStats()
+		sessionClientInstancesGauge.WithLabelValues("total").Set(float64(clientStats.Total))
+		sessionClientInstancesGauge.WithLabelValues("nested").Set(float64(clientStats.Nested))
+		sessionClientInstancesGauge.WithLabelValues("idle_nested").Set(float64(clientStats.IdleNested))
+		sessionClientInstancesGauge.WithLabelValues("dang").Set(float64(clientStats.Dang))
+		sessionClientInstancesGauge.WithLabelValues("idle_dang").Set(float64(clientStats.IdleDang))
 		dagqlCacheEntriesGauge.Set(float64(srv.DagqlCacheEntries()))
 		dagqlCacheMetadataEstimatedBytesGauge.Set(float64(srv.DagqlCacheMetadataEstimatedBytes()))
 
