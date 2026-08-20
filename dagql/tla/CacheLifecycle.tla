@@ -1880,8 +1880,9 @@ FlushCleanCapture ==
                 (~flushed.rows[r].dirty /\ flushed.rows[r].ownClean)
 
 \* Every written result belongs to a complete clean dependency closure rooted
-\* at a written persisted edge. This is the result-level abstraction of the
-\* concrete database foreign-key and payload-reference checks in Go.
+\* at a written persisted edge. The Go closure walk
+\* (snapshotPersistedRootClosureLocked) provides this by construction, and
+\* import's explicit reference checks reject dangling rows at restart.
 FlushReferentialIntegrity ==
     flushed.done =>
         \A r \in DOMAIN flushed.rows :
