@@ -44,13 +44,14 @@ var expectedOutcome = map[string]string{
 	"drain_orphan":     "",
 	"rollback":         "",
 	"rollback_decode":  "",
+	"lost_cancel":      "",
+	"poisoned":         "",
+	"poisoned_restart": "",
+	"flush_closure":    "",
 	// red: reproductions of known deficiencies in the current code; each
 	// config's comment describes the scenario and the mechanism
-	"lost_cancel":       "NoLostCancels",
 	"release_inflight":  "ReturnedLive",
 	"drain_escape":      "ReturnedLive",
-	"poisoned":          "NoRetainedPoisonedEntry",
-	"poisoned_restart":  "NoLaunderedServe",
 	"lazy_stale_cancel": "NoStaleCancelError",
 	"flush_inflight":    "FlushCleanCapture",
 	"flush_drained":     "FlushCleanCapture",

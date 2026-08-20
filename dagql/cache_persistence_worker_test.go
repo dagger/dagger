@@ -193,7 +193,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	assert.Check(t, cmp.Equal(resultInputCount, 1))
 }
 
-func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T) {
+func TestCachePersistenceSnapshotOmitsSessionOnlyResult(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
@@ -215,9 +215,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 
 	snapshot, err := c.snapshotPersistState(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, 1, len(snapshot.results))
-	assert.Assert(t, snapshot.results[0].row.ID != 0)
-	snapshotResultID := snapshot.results[0].row.ID
+	assert.Equal(t, 0, len(snapshot.results))
 
 	cacheTestReleaseSession(t, cacheIface, ctx)
 	assert.Equal(t, 0, c.Size())
@@ -226,10 +224,128 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 
 	rows, err := c.pdb.ListMirrorResults(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, 1, len(rows))
-	assert.Equal(t, snapshotResultID, rows[0].ID)
+	assert.Equal(t, 0, len(rows))
+}
 
-	assert.Check(t, cmp.Contains(rows[0].CallFrameJSON, `"field":"persist-snapshot-self-contained"`))
+func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheIface, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	create := func(field string, receiver *sharedResult, persistable bool, value int) AnyResult {
+		t.Helper()
+		frame := cacheTestIntCall(field)
+		if receiver != nil {
+			frame.Receiver = &ResultCallRef{ResultID: uint64(receiver.id)}
+		}
+		res, err := c.GetOrInitCall(ctx, "root-closure", noopTypeResolver{}, &CallRequest{
+			ResultCall:     frame,
+			ConcurrencyKey: field,
+			IsPersistable:  persistable,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, value), nil
+		})
+		assert.NilError(t, err)
+		return res
+	}
+
+	keptDep := create("root-closure-kept-dep", nil, false, 1)
+	dirtyDep := create("root-closure-dirty-dep", nil, false, 2)
+	keptRoot := create("root-closure-kept-root", keptDep.cacheSharedResult(), true, 3)
+	droppedRoot := create("root-closure-dropped-root", dirtyDep.cacheSharedResult(), true, 4)
+	sessionOnly := create("root-closure-session-only", nil, false, 5)
+	assert.NilError(t, c.AddExplicitDependency(ctx, droppedRoot, keptDep, "shared-clean-dependency"))
+
+	dirtyShared := dirtyDep.cacheSharedResult()
+	dirtyShared.attachDepsMu.Lock()
+	dirtyShared.attachDepsWaitCh = make(chan struct{})
+	dirtyShared.attachDepsErr = context.Canceled
+	close(dirtyShared.attachDepsWaitCh)
+	dirtyShared.attachDepsMu.Unlock()
+
+	snapshot, err := c.snapshotPersistState(ctx)
+	assert.NilError(t, err)
+	selected := make(map[sharedResultID]struct{}, len(snapshot.results))
+	for _, result := range snapshot.results {
+		selected[result.resultID] = struct{}{}
+	}
+	_, keptDepSelected := selected[keptDep.cacheSharedResult().id]
+	_, keptRootSelected := selected[keptRoot.cacheSharedResult().id]
+	_, dirtyDepSelected := selected[dirtyDep.cacheSharedResult().id]
+	_, droppedRootSelected := selected[droppedRoot.cacheSharedResult().id]
+	_, sessionOnlySelected := selected[sessionOnly.cacheSharedResult().id]
+	assert.Assert(t, keptDepSelected)
+	assert.Assert(t, keptRootSelected)
+	assert.Assert(t, !dirtyDepSelected)
+	assert.Assert(t, !droppedRootSelected)
+	assert.Assert(t, !sessionOnlySelected)
+	assert.Equal(t, 1, len(snapshot.persistedEdges))
+	assert.Equal(t, int64(keptRoot.cacheSharedResult().id), snapshot.persistedEdges[0].ResultID)
+
+	assert.NilError(t, c.applyPersistStateSnapshot(ctx, snapshot))
+	rows, err := c.sqlDB.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	assert.NilError(t, err)
+	assert.Assert(t, !rows.Next(), "persisted mirror has a dangling foreign key")
+	assert.NilError(t, rows.Err())
+	assert.NilError(t, rows.Close())
+
+	for _, droppedID := range []sharedResultID{
+		dirtyDep.cacheSharedResult().id,
+		droppedRoot.cacheSharedResult().id,
+		sessionOnly.cacheSharedResult().id,
+	} {
+		for _, table := range []struct {
+			name   string
+			column string
+		}{
+			{name: "results", column: "id"},
+			{name: "persisted_edges", column: "result_id"},
+			{name: "result_output_eq_classes", column: "result_id"},
+			{name: "result_snapshot_links", column: "result_id"},
+			{name: "result_deps", column: "parent_result_id"},
+			{name: "result_deps", column: "dep_result_id"},
+		} {
+			var count int
+			err := c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table.name+` WHERE `+table.column+` = ?`, droppedID).Scan(&count)
+			assert.NilError(t, err)
+			assert.Equal(t, 0, count, table.name+"."+table.column)
+		}
+	}
+
+	for table, want := range map[string]int{
+		"eq_classes":               2,
+		"eq_class_digests":         2,
+		"terms":                    2,
+		"term_inputs":              1,
+		"results":                  2,
+		"persisted_edges":          1,
+		"result_output_eq_classes": 2,
+		"result_deps":              1,
+		"result_snapshot_links":    0,
+	} {
+		var count int
+		err := c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count)
+		assert.NilError(t, err)
+		assert.Equal(t, want, count, table)
+	}
+
+	assert.NilError(t, c.Close(context.Background()))
+	restarted, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, restarted.Close(context.Background()))
+	}()
+	restarted.egraphMu.RLock()
+	assert.Equal(t, 2, len(restarted.resultsByID))
+	assert.Assert(t, restarted.resultsByID[keptRoot.cacheSharedResult().id] != nil)
+	assert.Assert(t, restarted.resultsByID[keptDep.cacheSharedResult().id] != nil)
+	assert.Assert(t, restarted.resultsByID[droppedRoot.cacheSharedResult().id] == nil)
+	assert.Assert(t, restarted.resultsByID[dirtyDep.cacheSharedResult().id] == nil)
+	assert.Assert(t, restarted.resultsByID[sessionOnly.cacheSharedResult().id] == nil)
+	restarted.egraphMu.RUnlock()
+	assertCacheOwnershipExact(t, restarted)
 }
 
 func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
