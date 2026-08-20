@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql"
@@ -2251,6 +2252,63 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		},
 		Call: m.listServicesTool(srv),
 	})
+	allTools.Add(LLMTool{
+		Name:        "timeout",
+		Description: "Run one currently exposed tool with a timeout.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"duration": map[string]any{
+					"type":        "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
+				},
+				"tool": map[string]any{
+					"type":        "string",
+					"description": "Name of the currently exposed tool to invoke.",
+				},
+				"arguments": map[string]any{
+					"type":                 "object",
+					"description":          "Arguments to pass to the nested tool.",
+					"additionalProperties": true,
+				},
+			},
+			"required":             []string{"duration", "tool", "arguments"},
+			"additionalProperties": false,
+		},
+		Call: m.timeoutTool(allTools),
+	})
+}
+
+func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
+	return func(ctx context.Context, rawArgs any) (any, error) {
+		args, ok := rawArgs.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid arguments: %T", rawArgs)
+		}
+		durationArg, ok := args["duration"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid duration: expected string")
+		}
+		duration, err := time.ParseDuration(durationArg)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timeout duration %q: %w", durationArg, err)
+		}
+		toolName, ok := args["tool"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid tool: expected string")
+		}
+		toolArgs, ok := args["arguments"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid nested tool arguments: expected object")
+		}
+		tool, err := m.LookupTool(toolName, allTools.Order)
+		if err != nil {
+			return nil, err
+		}
+		ctx, cancel := context.WithTimeout(ctx, duration)
+		defer cancel()
+		return tool.Call(ctx, toolArgs)
+	}
 }
 
 func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
