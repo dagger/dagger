@@ -255,6 +255,24 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		randomB := runRandom(ctx, t, engineClientB)
 		require.NotEqual(t, randomA, randomB, "cache state from before the unclean shutdown should be discarded")
 
+		// The reset renames the invalid worker state aside to a sibling
+		// worker-trash-* directory and removes it in the background; poll the
+		// state volume until the trash is swept, so discarded state cannot
+		// leak across resets.
+		require.Eventually(t, func() bool {
+			out, err := c.
+				Container().
+				From(alpineImage).
+				WithMountedCache("/state", c.CacheVolume(stateKey)).
+				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithExec([]string{"sh", "-ec", "ls -d /state/worker-trash-* 2>/dev/null | wc -l"}).
+				Stdout(ctx)
+			if err != nil {
+				return false
+			}
+			return strings.TrimSpace(out) == "0"
+		}, 120*time.Second, 3*time.Second, "discarded worker state should be swept in the background")
+
 		stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB)
 		upstreamSvcB = nil
 		engineSvcB = nil
