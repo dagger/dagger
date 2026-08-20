@@ -4,6 +4,8 @@ use serde::Deserialize;
 pub struct ConnectParams {
     pub port: u64,
     pub session_token: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 impl ConnectParams {
@@ -11,6 +13,7 @@ impl ConnectParams {
         Self {
             port,
             session_token: session_token.to_string(),
+            session_id: None,
         }
     }
 

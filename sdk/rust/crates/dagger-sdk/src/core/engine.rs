@@ -65,7 +65,7 @@ impl Engine {
     ) -> eyre::Result<(ConnectParams, Option<DaggerSessionProc>)> {
         tracing::info!("starting dagger-engine");
 
-        if let Ok(conn) = self.from_session_env().await {
+        if let Some(conn) = self.from_session_env().await? {
             return Ok((conn, None));
         }
 
@@ -79,14 +79,54 @@ impl Engine {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    async fn from_session_env(&self) -> eyre::Result<ConnectParams> {
-        let port = std::env::var("DAGGER_SESSION_PORT").map(|p| p.parse::<u64>())??;
-        let token = std::env::var("DAGGER_SESSION_TOKEN")?;
-
-        Ok(ConnectParams {
-            port,
-            session_token: token,
-        })
+    async fn from_session_env(&self) -> eyre::Result<Option<ConnectParams>> {
+        let nesting = std::env::var("DAGGER_NESTING").unwrap_or_default();
+        match nesting.as_str() {
+            "" => {
+                // Preserve the legacy behavior: an incomplete direct-session
+                // environment falls through to ordinary CLI provisioning.
+                let Ok(port) = std::env::var("DAGGER_SESSION_PORT") else {
+                    return Ok(None);
+                };
+                let Ok(port) = port.parse::<u64>() else {
+                    return Ok(None);
+                };
+                let Ok(token) = std::env::var("DAGGER_SESSION_TOKEN") else {
+                    return Ok(None);
+                };
+                Ok(Some(ConnectParams {
+                    port,
+                    session_token: token,
+                    session_id: None,
+                }))
+            }
+            "NESTED_CLIENT" => {
+                let port = std::env::var("DAGGER_SESSION_PORT")
+                    .map_err(|_| {
+                        eyre::eyre!("DAGGER_NESTING=NESTED_CLIENT requires DAGGER_SESSION_PORT")
+                    })?
+                    .parse::<u64>()?;
+                let token = std::env::var("DAGGER_SESSION_TOKEN").map_err(|_| {
+                    eyre::eyre!("DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT")
+                })?;
+                Ok(Some(ConnectParams {
+                    port,
+                    session_token: token,
+                    session_id: None,
+                }))
+            }
+            "INDEPENDENT_SESSIONS" => {
+                std::env::var("DAGGER_SESSION_PORT")
+                    .map_err(|_| {
+                        eyre::eyre!(
+                            "DAGGER_NESTING=INDEPENDENT_SESSIONS requires DAGGER_SESSION_PORT"
+                        )
+                    })?
+                    .parse::<u64>()?;
+                Ok(None)
+            }
+            other => Err(eyre::eyre!("unknown DAGGER_NESTING value {other:?}")),
+        }
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -176,6 +216,28 @@ mod tests {
     use super::{fallback_to_local_cli, CliPathFallbackError, Engine};
 
     static PATH_LOCK: Mutex<()> = Mutex::new(());
+    static SESSION_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn independent_session_env_provisions_cli_without_inherited_token() {
+        let _lock = SESSION_ENV_LOCK.lock().await;
+        let _env = SessionEnvGuard::set(Some("INDEPENDENT_SESSIONS"), Some("1234"), None);
+
+        assert_eq!(Engine::new().from_session_env().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn explicit_nesting_validates_session_environment() {
+        let _lock = SESSION_ENV_LOCK.lock().await;
+        let _env = SessionEnvGuard::set(Some("INDEPENDENT_SESSIONS"), None, None);
+        let error = Engine::new().from_session_env().await.unwrap_err();
+        assert!(format!("{error:#}").contains("requires DAGGER_SESSION_PORT"));
+        drop(_env);
+
+        let _env = SessionEnvGuard::set(Some("UNKNOWN"), None, None);
+        let error = Engine::new().from_session_env().await.unwrap_err();
+        assert!(format!("{error:#}").contains("unknown DAGGER_NESTING"));
+    }
 
     #[test]
     fn fallback_to_local_cli_uses_dagger_in_path() {
@@ -355,6 +417,40 @@ mod tests {
             match &self.0 {
                 Some(path) => std::env::set_var("PATH", path),
                 None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+
+    struct SessionEnvGuard(Vec<(&'static str, Option<OsString>)>);
+
+    impl SessionEnvGuard {
+        fn set(nesting: Option<&str>, port: Option<&str>, token: Option<&str>) -> Self {
+            let values = [
+                ("DAGGER_NESTING", nesting),
+                ("DAGGER_SESSION_PORT", port),
+                ("DAGGER_SESSION_TOKEN", token),
+            ];
+            let previous = values
+                .iter()
+                .map(|(name, _)| (*name, std::env::var_os(name)))
+                .collect();
+            for (name, value) in values {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+            Self(previous)
+        }
+    }
+
+    impl Drop for SessionEnvGuard {
+        fn drop(&mut self) {
+            for (name, value) in &self.0 {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
             }
         }
     }

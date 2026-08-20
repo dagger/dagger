@@ -12,6 +12,7 @@ export interface ConnectOpts {
 export interface ConnectParams {
   port: number
   session_token: string
+  session_id?: string
 }
 
 export interface EngineConn {
