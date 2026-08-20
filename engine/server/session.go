@@ -82,6 +82,11 @@ type daggerSession struct {
 	// active-clients API or the client-DB GC.
 	lifecycleMu sync.Mutex
 
+	// scopeMu is the single serialization point for client lifecycle lease
+	// acquisition, release, closing, and session teardown.
+	scopeMu     sync.Mutex
+	nextScopeID uint64
+
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
 
@@ -211,6 +216,14 @@ type daggerClient struct {
 	// the session root to its direct parent. Keeping only IDs prevents a child
 	// runtime from retaining ancestor runtimes through lifecycle bookkeeping.
 	parentClientIDs []string
+
+	// accepting and lifecycleLeases are protected by the session scopeMu.
+	// Runtime reclamation is intentionally not enabled yet: leases make
+	// retention explicit without treating a zero count as proof that cold
+	// capabilities are independent of this runtime.
+	accepting       bool
+	lifecycleLeases map[uint64]clientLifecycleLeaseRecord
+	transportLease  *engine.ClientLifecycleLease
 
 	state   daggerClientState
 	stateMu sync.RWMutex
@@ -757,6 +770,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// session is intentionally left in srv.daggerSessions as a tombstone until
 	// the caller drops it via deleteSession after lifecycleMu is released.
 	sess.state.Store(sessionStateRemoved)
+	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 
 	// check if the local cache needs pruning after session is removed, prune if so
@@ -1377,6 +1391,8 @@ func (srv *Server) getOrInitClient(
 			shutdownCh:      make(chan struct{}),
 			clientMetadata:  opts.ClientMetadata,
 			parentClientIDs: parentClientIDs,
+			accepting:       true,
+			lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
 		}
 	}
 
@@ -1387,11 +1403,16 @@ func (srv *Server) getOrInitClient(
 		if err := srv.initializeDaggerClient(ctx, client, opts); err != nil {
 			return nil, nil, fmt.Errorf("initialize client: %w", err)
 		}
-		// Now that the client is fully initialized, publish it into the session.
-		// (We hold lifecycleMu, so this is the only goroutine creating it.)
+		// Publish the initialized runtime before acquiring its reachability
+		// lease; lifecycleMu prevents another request from observing the gap.
 		sess.clientMu.Lock()
 		sess.clients[clientID] = client
 		sess.clientMu.Unlock()
+		transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, clientID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("acquire client transport scope: %w", err)
+		}
+		client.transportLease = transportScope.Lease()
 	case clientStateInitialized:
 		// verify token matches existing client
 		if token != client.secretToken {
@@ -1740,7 +1761,20 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			}
 			return err
 		}
+
+		requestScope, err := client.daggerSession.acquireRootClientScope(client, engine.ClientLeaseRequest, r.Method+" "+r.URL.Path)
+		if err != nil {
+			_ = cleanup()
+			return httpErr(fmt.Errorf("acquire request client scope: %w", err), http.StatusServiceUnavailable)
+		}
+		ctx, err = engine.ContextWithClientScope(ctx, requestScope)
+		if err != nil {
+			requestScope.Lease().Release()
+			_ = cleanup()
+			return httpErr(fmt.Errorf("install request client scope: %w", err), http.StatusInternalServerError)
+		}
 		defer func() {
+			requestScope.Lease().Release()
 			err := cleanup()
 			if err != nil {
 				bklog.G(ctx).WithError(err).Error("client serve cleanup failed")
@@ -2131,6 +2165,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		client.shutdownAt = time.Now()
 	}
 	client.stateMu.Unlock()
+	// Reachability closes independently from this accepted shutdown request.
+	// Its request scope remains held and may still delegate cleanup work.
+	sess.closeClientScope(client)
 	shutdownStart := time.Now()
 	defer func() {
 		slog.Info("client shutdown done", "duration", time.Since(shutdownStart), "error", shutdownErr)

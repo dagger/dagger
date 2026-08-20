@@ -37,6 +37,124 @@ import (
 	"google.golang.org/grpc"
 )
 
+func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
+	t.Parallel()
+
+	client := &daggerClient{
+		clientID:        "client",
+		state:           clientStateInitialized,
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client", Labels: map[string]string{"scope": "sealed"}},
+		accepting:       true,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
+	}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: client.clientID,
+		clients:            map[string]*daggerClient{client.clientID: client},
+	}
+	client.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+
+	transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
+	require.NoError(t, err)
+	client.transportLease = transportScope.Lease()
+	requestScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "POST /query")
+	require.NoError(t, err)
+
+	sess.closeClientScope(client)
+	_, err = sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "late root")
+	require.ErrorContains(t, err, "closed")
+
+	// The accepted request remains a strict capability while reachability is
+	// closing and may still delegate terminal/background work.
+	agentScope, err := requestScope.Clone(engine.ClientLeaseAgent, "agent-1")
+	require.NoError(t, err)
+	sharedScope, err := requestScope.Clone(engine.ClientLeaseSharedWork, "call-1")
+	require.NoError(t, err)
+
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+	snapshot := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, []LifecycleRetentionReason{
+		{Kind: "agent", OwnerID: "agent-1", Count: 1},
+		{Kind: "request", OwnerID: "POST /query", Count: 1},
+		{Kind: "shared-work", OwnerID: "call-1", Count: 1},
+	}, snapshot.LeaseCounts)
+	require.Equal(t, 1, snapshot.ActiveRequests)
+
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			requestScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			agentScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			sharedScope.Lease().Release()
+		}()
+	}
+	wg.Wait()
+	require.Empty(t, srv.ClientLifecycleDebugSnapshot().LeaseCounts)
+	_, err = requestScope.Clone(engine.ClientLeaseChild, "late-child")
+	require.ErrorContains(t, err, "not held")
+}
+
+func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
+	t.Parallel()
+
+	client := &daggerClient{
+		clientID:        "client",
+		state:           clientStateInitialized,
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client"},
+		accepting:       true,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
+	}
+	sess := &daggerSession{
+		sessionID: "session",
+		clients:   map[string]*daggerClient{client.clientID: client},
+	}
+	client.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	transport, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
+	require.NoError(t, err)
+	client.transportLease = transport.Lease()
+	source, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "request")
+	require.NoError(t, err)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			clone, err := source.Clone(engine.ClientLeaseChild, fmt.Sprintf("child-%d", i))
+			if err == nil {
+				clone.Lease().Release()
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		sess.state.Store(sessionStateRemoved)
+		sess.beginClientScopeTeardown()
+	}()
+	close(start)
+	wg.Wait()
+	source.Lease().Release()
+
+	_, err = sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "late")
+	require.ErrorContains(t, err, "session")
+	_, _, leases := sess.clientLifecycleSnapshot(client)
+	require.Empty(t, leases)
+}
+
 func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T) {
 	t.Parallel()
 
