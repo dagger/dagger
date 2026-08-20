@@ -306,7 +306,7 @@ func TestProfileSkipLazyCrossRecipeForcerStaysClean(t *testing.T) {
 	select {
 	case <-leaderReady:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for the lazy leader to publish lazyEvalWaitCh")
+		t.Fatal("timed out waiting for the lazy leader to publish its attempt")
 	}
 
 	// Joiner (traced) — the non-skipped forcer of the skipped producer.
@@ -317,7 +317,7 @@ func TestProfileSkipLazyCrossRecipeForcerStaysClean(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared.lazyMu.Lock()
-		joined := shared.lazyEvalWaiters >= 2
+		joined := shared.lazyEvalAttempt != nil && shared.lazyEvalAttempt.waiters >= 2
 		shared.lazyMu.Unlock()
 		if joined {
 			break
@@ -381,7 +381,7 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 	require.False(t, shared.loadResultCall().ProfileSkip, "producer is intentionally NOT skipped")
 
 	// UNTRACED leader (baseCtx): runs the eval but OTelProfActive(evalCtx) is false,
-	// so it mints no OTel lazy span → lazyEvalSpanCtx stays invalid (a genuine
+	// so it mints no OTel lazy span → the attempt span target stays invalid (a genuine
 	// mixed/untraced recording). Parks so the traced joiner can join.
 	leaderDone := make(chan error, 1)
 	go func() { leaderDone <- c.Evaluate(baseCtx, result) }()
@@ -391,9 +391,9 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 		t.Fatal("timed out waiting for the untraced lazy leader")
 	}
 
-	// TRACED joiner: reads the invalid lazyEvalSpanCtx and, because the producer is
+	// TRACED joiner: reads the invalid attempt span target and, because the producer is
 	// NOT profile-skipped, STILL emits its OTel wait (targetless) — exactly what the
-	// gate must catch. (If the gate keyed on lazyEvalSpanCtx validity instead of the
+	// gate must catch. (If the gate keyed on span-target validity instead of the
 	// producer flag, this loss would be silently hidden.)
 	jCtx, jSpan := tr.Start(baseCtx, "traced-joiner")
 	jDone := make(chan error, 1)
@@ -402,7 +402,7 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared.lazyMu.Lock()
-		joined := shared.lazyEvalWaiters >= 2
+		joined := shared.lazyEvalAttempt != nil && shared.lazyEvalAttempt.waiters >= 2
 		shared.lazyMu.Unlock()
 		if joined {
 			break

@@ -211,7 +211,7 @@ func EmitOTelWait(ctx context.Context, target trace.SpanContext, reason wcprof.W
 	}
 	// Attach the wait edge even when target is invalid. In the always-on model
 	// the work owner and every waiter record uniformly, so a recording waiter's
-	// target (oc.execSpanCtx for call_exec, shared.lazyEvalSpanCtx for lazy) is
+	// target (oc.execSpanCtx for call_exec, the attempt span target for lazy) is
 	// always valid (the target was minted before the shared primitive). The only way it is invalid here is a non-uniform
 	// / mixed-recording trace — e.g. a recording waiter joining shared work started
 	// by an *untraced* session (ongoingCalls / lazy state are shared across
