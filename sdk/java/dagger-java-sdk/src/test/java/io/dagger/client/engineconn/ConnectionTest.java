@@ -54,6 +54,29 @@ public class ConnectionTest {
   }
 
   @Test
+  public void should_provision_cli_for_independent_sessions_without_inherited_token() {
+    environmentVariables.set("DAGGER_NESTING", "INDEPENDENT_SESSIONS");
+    environmentVariables.set("DAGGER_SESSION_PORT", "52037");
+    environmentVariables.set("DAGGER_SESSION_TOKEN", null);
+
+    assertThat(Connection.fromEnv()).isEmpty();
+  }
+
+  @Test
+  public void should_reject_invalid_dagger_nesting_environment() {
+    environmentVariables.set("DAGGER_NESTING", "UNKNOWN");
+    assertThatThrownBy(Connection::fromEnv)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unknown DAGGER_NESTING");
+
+    environmentVariables.set("DAGGER_NESTING", "INDEPENDENT_SESSIONS");
+    environmentVariables.set("DAGGER_SESSION_PORT", null);
+    assertThatThrownBy(Connection::fromEnv)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("requires DAGGER_SESSION_PORT");
+  }
+
+  @Test
   public void should_return_connection_from_dynamic_provisioning() throws Exception {
     CLIRunner runner = mock(CLIRunner.class);
     when(runner.getConnectionParams())

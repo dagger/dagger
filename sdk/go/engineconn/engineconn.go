@@ -34,6 +34,7 @@ type Config struct {
 type ConnectParams struct {
 	Port         int    `json:"port"`
 	SessionToken string `json:"session_token"`
+	SessionID    string `json:"session_id,omitempty"`
 }
 
 func Get(ctx context.Context, cfg *Config) (EngineConn, error) {

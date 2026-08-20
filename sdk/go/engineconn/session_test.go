@@ -52,3 +52,27 @@ func TestGetRejectsWorkspaceModuleLoadingForExistingSession(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "cannot configure workspace module loading for existing session")
 }
+
+func TestIndependentSessionEnvProvisionsCLIWithoutInheritedToken(t *testing.T) {
+	t.Setenv("DAGGER_NESTING", "INDEPENDENT_SESSIONS")
+	t.Setenv("DAGGER_SESSION_PORT", "1234")
+	t.Setenv("DAGGER_SESSION_TOKEN", "")
+
+	conn, ok, err := FromSessionEnv()
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, conn)
+}
+
+func TestDaggerNestingEnvValidation(t *testing.T) {
+	t.Run("unknown", func(t *testing.T) {
+		t.Setenv("DAGGER_NESTING", "UNKNOWN")
+		_, _, err := FromSessionEnv()
+		require.ErrorContains(t, err, "unknown DAGGER_NESTING")
+	})
+	t.Run("missing port", func(t *testing.T) {
+		t.Setenv("DAGGER_NESTING", "INDEPENDENT_SESSIONS")
+		_, _, err := FromSessionEnv()
+		require.ErrorContains(t, err, "requires DAGGER_SESSION_PORT")
+	})
+}
