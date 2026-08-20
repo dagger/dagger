@@ -215,8 +215,12 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 	}
 	client.workspaceMu.Unlock()
 
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
+	ancestors, err := client.daggerSession.ancestorClients(client)
+	if err != nil {
+		return fmt.Errorf("resolve workspace ancestry: %w", err)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		parent := ancestors[i]
 		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
 			return err
 		}
