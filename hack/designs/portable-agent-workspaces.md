@@ -237,7 +237,10 @@ Semantics:
   `withBundle` performs that check after fetching every exact prerequisite.
 - Follow-up, not phase 1: `GitBundle.asRepository` for prerequisite-free
   bundles, and converging staged-commit save (`WorkspaceStagedCommitsBundle`)
-  onto this surface.
+  onto this surface. The staged stack remains semantic Workspace state (origin,
+  per-commit changes, pending/export behavior); `GitBundle` is its lazy transport
+  projection. A shared internal commit-range builder should serve both the public
+  bundle API and staged save/push rather than maintaining two bundle creators.
 
 These fields stand alone: incremental backup, air-gapped transport, repro
 attachments, and mirror seeding compose from them with no checkpoint involved.
@@ -552,6 +555,15 @@ conflicts. Replay may rewrite SHAs while preserving metadata and origin.
 Uncommitted content is applied only after commit planning. Materializing a new
 checkout is the safe phase-1 fallback; in-place transactional reconciliation
 is follow-up work.
+
+A related follow-up may generalize `Workspace.withCommitsFrom(source)` from its
+current pending-stack-only behavior (a clean GitRef source offers nothing) into
+an atomic Workspace-to-Workspace pull. The call would negotiate effective
+source/receiver heads and a common base, then internally use a bundle to retain
+exact commits on a fast-forward or replay a bounded linear range when they have
+diverged. Taking a `GitBundle` instead would move have/want selection outside
+the operation and weaken that atomicity; the bundle should remain derived
+transport, while Workspace carries pending-state and origin semantics.
 
 Pushing is likewise an explicit `Workspace.git.push`-style action after
 review. It is never invoked by checkpoint, agent spawn, restore, or
