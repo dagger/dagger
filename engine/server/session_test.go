@@ -501,8 +501,6 @@ func TestLogRecordRowPreservesBytesBody(t *testing.T) {
 	require.Equal(t, payload, body.GetBytesValue())
 }
 
-func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
-
 func TestTelemetryExportReleasesClientDBHandle(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	ps := &PubSub{srv: &Server{clientDBs: dbs}}
