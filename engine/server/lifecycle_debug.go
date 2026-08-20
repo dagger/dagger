@@ -15,12 +15,16 @@ type LifecycleDebugSnapshot struct {
 	ClosedRuntimes      int                             `json:"closed_runtimes"`
 	OldestClosedRuntime *time.Time                      `json:"oldest_closed_runtime,omitempty"`
 	ActiveRequests      int                             `json:"active_requests"`
+	OpenClientDBs       int                             `json:"open_client_dbs"`
+	OpenClientDBStreams int                             `json:"open_client_db_streams"`
+	OpenClientDBRefs    int                             `json:"open_client_db_refs"`
 	Providers           LifecycleTelemetryCounts        `json:"providers"`
 	Sessions            []SessionLifecycleDebugSnapshot `json:"sessions"`
 }
 
-// LifecycleTelemetryCounts reports the heavyweight telemetry objects whose
-// count currently scales with retained client runtimes.
+// LifecycleTelemetryCounts reports configured provider, processor, reader, and
+// queue cardinality. Trace/log counts are session-owned; metric counts remain
+// per runtime. Queue capacity is configured fact, never measured occupancy.
 type LifecycleTelemetryCounts struct {
 	TracerProviders          int `json:"tracer_providers"`
 	LoggerProviders          int `json:"logger_providers"`
@@ -29,6 +33,7 @@ type LifecycleTelemetryCounts struct {
 	ConfiguredLogProcessors  int `json:"configured_log_processors"`
 	ConfiguredMetricReaders  int `json:"configured_metric_readers"`
 	ConfiguredSpanQueueSlots int `json:"configured_span_queue_slots"`
+	ConfiguredLogQueueSlots  int `json:"configured_log_queue_slots"`
 	// The OTel batch processors do not expose queue occupancy. Keep this
 	// explicit so configured capacity is never mistaken for measured backlog.
 	QueueOccupancyMeasured bool `json:"queue_occupancy_measured"`
@@ -39,6 +44,7 @@ type SessionLifecycleDebugSnapshot struct {
 	State     string                         `json:"state"`
 	Records   int                            `json:"records"`
 	Runtimes  int                            `json:"runtimes"`
+	Telemetry LifecycleTelemetryCounts       `json:"telemetry"`
 	Clients   []ClientLifecycleDebugSnapshot `json:"clients"`
 }
 
@@ -67,6 +73,12 @@ type LifecycleRetentionReason struct {
 func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 	now := time.Now()
 	out := LifecycleDebugSnapshot{GeneratedAt: now}
+	if srv.clientDBs != nil {
+		stats := srv.clientDBs.OpenStats()
+		out.OpenClientDBs = stats.Stores
+		out.OpenClientDBStreams = stats.Streams
+		out.OpenClientDBRefs = stats.Refs
+	}
 
 	srv.daggerSessionsMu.RLock()
 	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
@@ -79,7 +91,9 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 		sessOut := SessionLifecycleDebugSnapshot{
 			SessionID: sess.sessionID,
 			State:     sess.state.Load().String(),
+			Telemetry: sess.telemetryDebug,
 		}
+		addLifecycleTelemetryCounts(&out.Providers, sessOut.Telemetry)
 
 		sess.clientMu.RLock()
 		clients := make([]*daggerClient, 0, len(sess.clients))
@@ -104,7 +118,6 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 			}
 			initialized := client.state == clientStateInitialized
 			shutdownAt := client.shutdownAt
-			keepAliveDB := client.keepAliveTelemetryDB != nil
 			client.stateMu.RUnlock()
 
 			clientOut.ParentIDs = append(clientOut.ParentIDs, client.parentClientIDs...)
@@ -147,13 +160,6 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 					Count:   n,
 				})
 			}
-			if keepAliveDB {
-				clientOut.RetentionReasons = append(clientOut.RetentionReasons, LifecycleRetentionReason{
-					Kind:    "clientdb-keepalive",
-					OwnerID: client.clientID,
-				})
-			}
-
 			clientOut.Telemetry = client.telemetryDebug
 
 			sessOut.Clients = append(sessOut.Clients, clientOut)
@@ -185,6 +191,7 @@ func addLifecycleTelemetryCounts(dst *LifecycleTelemetryCounts, src LifecycleTel
 	dst.ConfiguredLogProcessors += src.ConfiguredLogProcessors
 	dst.ConfiguredMetricReaders += src.ConfiguredMetricReaders
 	dst.ConfiguredSpanQueueSlots += src.ConfiguredSpanQueueSlots
+	dst.ConfiguredLogQueueSlots += src.ConfiguredLogQueueSlots
 	// Occupancy is measured only when every contributing runtime can report it.
 	dst.QueueOccupancyMeasured = dst.QueueOccupancyMeasured && src.QueueOccupancyMeasured
 }

@@ -45,6 +45,24 @@ type DBs struct {
 	openStore    func(context.Context, string, string, int64) (*DB, error)
 }
 
+// OpenStats is a measured snapshot of currently referenced telemetry stores.
+// Each open store owns exactly three stream handles (spans, logs, metrics).
+type OpenStats struct {
+	Stores  int
+	Streams int
+	Refs    int
+}
+
+func (r *DBs) OpenStats() OpenStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	stats := OpenStats{Stores: len(r.open), Streams: len(r.open) * 3}
+	for _, store := range r.open {
+		stats.Refs += store.refCount
+	}
+	return stats
+}
+
 func NewDBs(root string) *DBs {
 	r := &DBs{
 		Root:         root,
