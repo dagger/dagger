@@ -2,8 +2,8 @@
 
 ## Status
 
-Implementation in progress. The correctness foundations through explicit nested
-transport registration are complete; runtime splitting and reclamation are still
+Implementation in progress. The correctness foundations through immutable client
+metadata sealing are complete; runtime splitting and reclamation are still
 deliberately disabled.
 
 ### Implementation progress
@@ -38,6 +38,13 @@ Completed, in dependency order:
    first request leaves a permanent closed tombstone, and closed or duplicate IDs
    cannot reconnect. A held scope may still delegate while its parent record is
    closing.
+6. Registration and every initialization request reconcile deeply cloned client
+   metadata under the session lifecycle serialization point. Missing fields may
+   be completed until the first runtime initialization seals one immutable
+   snapshot; identical replay remains valid, while conflicts and post-seal
+   completion are rejected. Scope acquisition and metadata lookup require and
+   clone that snapshot, and sealing/initialization serialize with transport close
+   and authoritative session teardown.
 
 Intentional interim retention remains visible: child quiescence is not yet
 implemented, so each parent's `child` lease is retained after transport close and
@@ -47,31 +54,27 @@ quiescence inference, or reclamation is enabled yet.
 
 ### Next implementation seam
 
-Implement monotonic client metadata bootstrap and sealing before any executable
-query can launch background work:
+Split identity records from retained execution runtimes without enabling
+reclamation yet:
 
-1. Give each client record an explicit bootstrap/sealed metadata state protected
-   by the session lifecycle serialization point. Transport registration seeds the
-   nested record without making its metadata generally mutable.
-2. Merge metadata arriving from registration, attachables, `/init`, and the first
-   request monotonically: missing fields may be completed, identical values are
-   accepted, and conflicting lifecycle-relevant values are rejected. Clone maps,
-   slices, pointers, and module/workspace declarations so callers cannot mutate
-   the stored value indirectly.
-3. Seal one immutable snapshot before constructing the first executable request
-   `ClientScope` or allowing query initialization to publish background-capable
-   state. Every later scope and metadata lookup must derive from that snapshot.
-4. Serialize seal, first-request initialization, transport close, and session
-   teardown so close-before-init and close-during-init cannot publish, mutate, or
-   resurrect an accepting runtime.
-5. Add deterministic and race tests for every registration/attachable/`/init`/
-   first-request ordering, identical replay, conflicting updates before and after
-   seal, close during bootstrap, and attempted reuse of a closed client ID.
+1. Introduce purpose-specific record and runtime storage while preserving the
+   session-long lifetime of both. Keep the sealed metadata snapshot, immutable
+   ancestry, accepting state, and routing identity on the record.
+2. Replace broad `clientFromIDs` use with explicit metadata/ancestry,
+   telemetry-route, attachable, and executable-scope lookups. A metadata or
+   routing lookup must not imply executable runtime ownership.
+3. Preserve every existing typed lease and cold capability while moving fields;
+   do not interpret an empty lease set as reclaimability.
+4. Keep host attachables and session resources keyed by stable record identity,
+   and keep runtime-only query/schema/engine state behind executable lookup.
+5. Add focused tests proving metadata and telemetry routing remain available
+   through the record path while executable access still requires the retained
+   runtime and a valid scope.
 
-Stop after that seam. Do not split or reclaim runtimes, release parent `child`
-leases based on guessed quiescence, or migrate metrics yet. Once metadata sealing
-is proven, continue with purpose-specific record/runtime lookup, cold-capability
-decoupling, session-owned metrics, and finally quiescent runtime reclamation.
+Stop after that seam. Do not reclaim runtimes, infer child quiescence, decouple
+cold capabilities opportunistically, or migrate metrics yet. Once lookup and
+storage are split, continue with cold-capability decoupling, session-owned
+metrics, and finally quiescent runtime reclamation.
 
 ## Problem
 
@@ -392,10 +395,10 @@ reclamation.
    and Dang proxies register before serving, own one opaque idempotent handle,
    reject stale/duplicate/reused identities, and retain the parent `child` lease
    until session teardown while child quiescence is unavailable.
-6. [ ] **Seal client metadata after monotonic bootstrap — next.** Reconcile
-   registration, attachable, `/init`, and first-request metadata under lifecycle
-   serialization, reject conflicts, and seal the immutable snapshot before
-   executable query work.
+6. [x] **Seal client metadata after monotonic bootstrap.** Registration and
+   initialization requests reconcile deeply cloned declarations under lifecycle
+   serialization, reject conflicts and post-seal completion, and seal the
+   snapshot before executable scope or query runtime publication.
 7. [ ] **Split lookup and storage.** Add `clientRecord`/`clientRuntime`; replace
    `clientFromIDs` call sites with metadata, telemetry-route, attachable, or
    executable-scope lookups. Keep records session-long initially.

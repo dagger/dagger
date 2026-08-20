@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -44,6 +45,7 @@ func newNestedTransportTestFixture(t *testing.T) (*Server, *daggerSession, *dagg
 		clientID:        "parent",
 		state:           clientStateInitialized,
 		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "parent", ClientSecretToken: "parent-token"},
+		metadataSealed:  true,
 		accepting:       true,
 		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
 	}
@@ -71,6 +73,18 @@ func nestedTransportTestMetadata(clientID string) *engine.ClientMetadata {
 		ClientSecretToken: clientID + "-token",
 		ClientVersion:     engine.Version,
 	}
+}
+
+func mergeClientMetadataForTest(sess *daggerSession, client *daggerClient, metadata *engine.ClientMetadata) error {
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
+	return sess.mergeClientMetadataLocked(client, metadata)
+}
+
+func sealClientMetadataForTest(sess *daggerSession, client *daggerClient) error {
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
+	return sess.sealClientMetadataLocked(client)
 }
 
 func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
@@ -257,6 +271,290 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 	require.Equal(t, clientStateUninitialized, secondChild.state)
 }
 
+func TestNestedBootstrapRequestsMergeBeforeSeal(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	registration := nestedTransportTestMetadata("child")
+	transport, err := srv.RegisterNestedClientTransport(ctx, registration, parent.clientID)
+	require.NoError(t, err)
+	child := sess.clients[registration.ClientID]
+
+	attachables := *registration
+	attachables.AllowedLLMModules = []string{"github.com/acme/mod"}
+	_, cleanup, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  &attachables,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cleanup())
+	require.Equal(t, clientStateUninitialized, child.state)
+	require.False(t, sess.clientMetadataSealed(child))
+
+	init := attachables
+	init.Workspace = stringPtr("github.com/acme/workspace@main")
+	_, cleanup, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  &init,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cleanup())
+
+	conflict := init
+	conflict.Workspace = stringPtr("github.com/acme/other@main")
+	_, _, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  &conflict,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.ErrorContains(t, err, "Workspace")
+
+	require.NoError(t, sealClientMetadataForTest(sess, child))
+	sealed, err := sess.clientMetadataSnapshot(child)
+	require.NoError(t, err)
+	require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
+	require.Equal(t, *init.Workspace, *sealed.Workspace)
+
+	_, cleanup, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  sealed,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err, "identical bootstrap replay after seal must be accepted")
+	require.NoError(t, cleanup())
+
+	transport.Close()
+	_, _, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  sealed,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.ErrorContains(t, err, "closed")
+}
+
+func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
+	t.Parallel()
+
+	type contribution struct {
+		name string
+		md   *engine.ClientMetadata
+	}
+	identity := func() *engine.ClientMetadata {
+		return &engine.ClientMetadata{
+			SessionID:         "session",
+			ClientID:          "client",
+			ClientSecretToken: "token",
+		}
+	}
+	registration := identity()
+	registration.LockMode = "live"
+	attachables := identity()
+	attachables.AllowedLLMModules = []string{"github.com/acme/mod"}
+	init := identity()
+	init.Workspace = stringPtr("github.com/acme/workspace@main")
+	query := identity()
+	query.ExtraModules = []engine.ExtraModule{{Ref: "github.com/acme/extra@v1", Name: "extra", Entrypoint: true}}
+	contributions := []contribution{{"attachables", attachables}, {"init", init}, {"first-request", query}}
+	orders := [][]int{
+		{0, 1, 2},
+		{0, 2, 1},
+		{1, 0, 2},
+		{1, 2, 0},
+		{2, 0, 1},
+		{2, 1, 0},
+	}
+
+	for _, order := range orders {
+		names := []string{contributions[order[0]].name, contributions[order[1]].name, contributions[order[2]].name}
+		t.Run(strings.Join(names, "-"), func(t *testing.T) {
+			client := &daggerClient{clientID: "client", accepting: true}
+			sess := &daggerSession{}
+			require.NoError(t, mergeClientMetadataForTest(sess, client, registration))
+			for _, index := range order {
+				require.NoError(t, mergeClientMetadataForTest(sess, client, contributions[index].md))
+			}
+			require.NoError(t, sealClientMetadataForTest(sess, client))
+
+			sealed, err := sess.clientMetadataSnapshot(client)
+			require.NoError(t, err)
+			require.Equal(t, "live", sealed.LockMode)
+			require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
+			require.Equal(t, *init.Workspace, *sealed.Workspace)
+			require.Equal(t, query.ExtraModules, sealed.ExtraModules)
+
+			// A complete identical replay is accepted after seal.
+			require.NoError(t, mergeClientMetadataForTest(sess, client, sealed))
+
+			completion := identity()
+			completion.WorkspaceEnv = stringPtr("ci")
+			require.ErrorContains(t, mergeClientMetadataForTest(sess, client, completion), "sealed")
+
+			conflict := identity()
+			conflict.Workspace = stringPtr("github.com/acme/other@main")
+			require.ErrorContains(t, mergeClientMetadataForTest(sess, client, conflict), "Workspace")
+		})
+	}
+
+	client := &daggerClient{clientID: "client", accepting: true}
+	sess := &daggerSession{}
+	first := identity()
+	first.ClientVersion = "v1.0.0"
+	require.NoError(t, mergeClientMetadataForTest(sess, client, first))
+	require.NoError(t, mergeClientMetadataForTest(sess, client, first), "identical replay before seal must be accepted")
+	conflict := identity()
+	conflict.ClientVersion = "v2.0.0"
+	require.ErrorContains(t, mergeClientMetadataForTest(sess, client, conflict), "ClientVersion")
+}
+
+func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
+	t.Parallel()
+
+	workspace := "github.com/acme/workspace@main"
+	workspaceEnv := "ci"
+	input := &engine.ClientMetadata{
+		SessionID:          "session",
+		ClientID:           "client",
+		ClientSecretToken:  "token",
+		Labels:             map[string]string{"branch": "main"},
+		InteractiveCommand: []string{"sh", "-l"},
+		AllowedLLMModules:  []string{"github.com/acme/mod"},
+		UpstreamCacheImportConfig: []*controlapi.CacheOptionsEntry{{
+			Type:  "registry",
+			Attrs: map[string]string{"ref": "registry.example/acme/cache"},
+		}},
+		ExtraModules:          []engine.ExtraModule{{Ref: "github.com/acme/extra@v1", Name: "extra"}},
+		Workspace:             &workspace,
+		WorkspaceEnv:          &workspaceEnv,
+		UseRecipeIDsByDefault: true,
+	}
+	client := &daggerClient{clientID: input.ClientID, accepting: true}
+	sess := &daggerSession{}
+	require.NoError(t, mergeClientMetadataForTest(sess, client, input))
+
+	input.Labels["branch"] = "mutated"
+	input.InteractiveCommand[0] = "mutated"
+	input.AllowedLLMModules[0] = "mutated"
+	input.UpstreamCacheImportConfig[0].Attrs["ref"] = "mutated"
+	input.ExtraModules[0].Ref = "mutated"
+	*input.Workspace = "mutated"
+	*input.WorkspaceEnv = "mutated"
+
+	require.NoError(t, sealClientMetadataForTest(sess, client))
+	lookup, err := sess.clientMetadataSnapshot(client)
+	require.NoError(t, err)
+	lookup.Labels["branch"] = "lookup-mutated"
+	lookup.ExtraModules[0].Ref = "lookup-mutated"
+	lookupAgain, err := sess.clientMetadataSnapshot(client)
+	require.NoError(t, err)
+	require.Equal(t, "main", lookupAgain.Labels["branch"])
+	require.Equal(t, "github.com/acme/extra@v1", lookupAgain.ExtraModules[0].Ref)
+
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", func() {}, nil)
+	scope, err := engine.NewClientScope(client.clientMetadata, lease)
+	require.NoError(t, err)
+	first, err := scope.Metadata()
+	require.NoError(t, err)
+	require.Equal(t, "main", first.Labels["branch"])
+	require.Equal(t, "sh", first.InteractiveCommand[0])
+	require.Equal(t, "github.com/acme/mod", first.AllowedLLMModules[0])
+	require.Equal(t, "registry.example/acme/cache", first.UpstreamCacheImportConfig[0].Attrs["ref"])
+	require.Equal(t, "github.com/acme/extra@v1", first.ExtraModules[0].Ref)
+	require.Equal(t, "github.com/acme/workspace@main", *first.Workspace)
+	require.Equal(t, "ci", *first.WorkspaceEnv)
+	require.True(t, first.UseRecipeIDsByDefault)
+
+	first.Labels["branch"] = "lookup-mutated"
+	first.ExtraModules[0].Ref = "lookup-mutated"
+	second, err := scope.Metadata()
+	require.NoError(t, err)
+	require.Equal(t, "main", second.Labels["branch"])
+	require.Equal(t, "github.com/acme/extra@v1", second.ExtraModules[0].Ref)
+	lease.Release()
+}
+
+func TestClientMetadataSealRacesTransportClose(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+		metadata := nestedTransportTestMetadata("child")
+		transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+		require.NoError(t, err)
+		child := sess.clients[metadata.ClientID]
+
+		start := make(chan struct{})
+		sealErr := make(chan error, 1)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			sess.scopeMu.Lock()
+			defer sess.scopeMu.Unlock()
+			if !child.accepting || transport.Closed() {
+				return
+			}
+			if err := sess.mergeClientMetadataLocked(child, metadata); err != nil {
+				sealErr <- err
+				return
+			}
+			if err := sess.sealClientMetadataLocked(child); err != nil {
+				sealErr <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			transport.Close()
+		}()
+		close(start)
+		wg.Wait()
+		select {
+		case err := <-sealErr:
+			require.ErrorContains(t, err, "closed")
+		default:
+		}
+
+		accepting, _, leases := sess.clientLifecycleSnapshot(child)
+		require.False(t, accepting)
+		require.Empty(t, leases)
+		if sess.clientMetadataSealed(child) {
+			_, err := sess.clientMetadataSnapshot(child)
+			require.NoError(t, err)
+		}
+		requestScope.Lease().Release()
+	}
+}
+
+func TestClientScopeRequiresSealedMetadata(t *testing.T) {
+	t.Parallel()
+
+	client := &daggerClient{
+		clientID:        "client",
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client", ClientSecretToken: "token"},
+		accepting:       true,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
+	}
+	sess := &daggerSession{sessionID: "session"}
+	client.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	_, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "before-seal")
+	require.ErrorContains(t, err, "not sealed")
+
+	require.NoError(t, sealClientMetadataForTest(sess, client))
+	scope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "after-seal")
+	require.NoError(t, err)
+	scope.Lease().Release()
+}
+
 func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 	t.Parallel()
 
@@ -264,6 +562,7 @@ func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 		clientID:        "client",
 		state:           clientStateInitialized,
 		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client", Labels: map[string]string{"scope": "sealed"}},
+		metadataSealed:  true,
 		accepting:       true,
 		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
 	}
@@ -330,6 +629,7 @@ func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
 		clientID:        "client",
 		state:           clientStateInitialized,
 		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "client"},
+		metadataSealed:  true,
 		accepting:       true,
 		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
 	}
