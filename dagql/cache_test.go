@@ -19,6 +19,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -313,6 +314,67 @@ func TestCacheRejectsEmptySessionIDForOwningEntrypoints(t *testing.T) {
 	})
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "empty session ID")
+}
+
+func TestSharedCallUsesOneClientScopeLeaseForAllWaiters(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			assert.Equal(t, kind, engine.ClientLeaseSharedWork)
+			assert.Assert(t, strings.HasPrefix(ownerID, "call/"))
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	assert.NilError(t, err)
+	ctx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	assert.NilError(t, err)
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+
+	frame := cacheTestIntCall("leased-singleflight")
+	req := &CallRequest{ResultCall: frame, ConcurrencyKey: "leased-singleflight"}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var executions atomic.Int32
+	call := func() (AnyResult, error) {
+		return cache.GetOrInitCall(ctx, "session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+			if executions.Add(1) == 1 {
+				close(started)
+			}
+			<-release
+			return cacheTestIntResult(frame, 1), nil
+		})
+	}
+
+	results := make(chan error, 2)
+	go func() { _, err := call(); results <- err }()
+	<-started
+	go func() { _, err := call(); results <- err }()
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		for _, ongoing := range cache.ongoingCalls {
+			if ongoing.waiters == 2 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+	close(release)
+	assert.NilError(t, <-results)
+	assert.NilError(t, <-results)
+	assert.Equal(t, executions.Load(), int32(1))
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
 }
 
 func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
@@ -359,7 +360,12 @@ func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResul
 	ars.entries[key] = rt
 	ars.mu.Unlock()
 
-	rt.rehydrate(ctx, state, loopErr)
+	if err := rt.rehydrate(ctx, state, loopErr); err != nil {
+		ars.mu.Lock()
+		delete(ars.entries, key)
+		ars.mu.Unlock()
+		return nil, err
+	}
 	return rt, nil
 }
 
@@ -417,7 +423,9 @@ func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*A
 	if err != nil {
 		return nil, err
 	}
-	rt.start(ctx)
+	if err := rt.start(ctx); err != nil {
+		return nil, err
+	}
 	return rt, nil
 }
 
@@ -458,7 +466,9 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// than the reverse) guarantees the loop's very first mailbox check
 	// sees the message; in the running case the enqueue's wake poke covers
 	// delivery.
-	rt.start(ctx)
+	if err := rt.start(ctx); err != nil {
+		return nil, err
+	}
 	return &AgentMessage{
 		AgentKey:  rt.key,
 		AgentName: rt.name,
@@ -529,7 +539,9 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 	for _, rt := range entries {
 		if err := rt.Stop(ctx, true, cause, AgentStopSession); err != nil {
 			errs = errors.Join(errs, err)
+			continue
 		}
+		rt.releaseClientScope()
 	}
 	return errs
 }
@@ -556,18 +568,19 @@ type AgentRuntime struct {
 	mu sync.Mutex
 
 	// Facts, guarded by mu. State() is a pure projection of these.
-	started       bool                     // the loop goroutine was launched
-	stepping      bool                     // a Step is in flight
-	turnOpen      bool                     // a turn has consumed input and not yet resolved
-	paused        bool                     // pause requested: park without draining or stepping
-	stopRequested bool                     // a graceful stop was requested
-	done          bool                     // the loop has ended (tombstone)
-	sealed        bool                     // stop sealed the tombstone: projects STOPPED over FAILED
-	stopReason    AgentStopReason          // who ended it: a caller's stop, or session teardown
-	loopErr       error                    // why the loop failed, if it did
-	last          dagql.ObjectResult[*LLM] // last committed conversation (initially the seed)
-	cancel        context.CancelCauseFunc  // kills the loop context (set on start)
-	stepCancel    context.CancelCauseFunc  // cancels the in-flight step's context (set while stepping)
+	started       bool                         // the loop goroutine was launched
+	stepping      bool                         // a Step is in flight
+	turnOpen      bool                         // a turn has consumed input and not yet resolved
+	paused        bool                         // pause requested: park without draining or stepping
+	stopRequested bool                         // a graceful stop was requested
+	done          bool                         // the loop has ended (tombstone)
+	sealed        bool                         // stop sealed the tombstone: projects STOPPED over FAILED
+	stopReason    AgentStopReason              // who ended it: a caller's stop, or session teardown
+	loopErr       error                        // why the loop failed, if it did
+	last          dagql.ObjectResult[*LLM]     // last committed conversation (initially the seed)
+	cancel        context.CancelCauseFunc      // kills the loop context (set on start)
+	stepCancel    context.CancelCauseFunc      // cancels the in-flight step's context (set while stepping)
+	scopeLease    *engine.ClientLifecycleLease // launching scope; retained by tombstones until relaunch/teardown
 
 	// Mailbox, guarded by mu. mailbox is the FIFO of pending (not yet
 	// consumed) message IDs; messages holds every record ever enqueued —
@@ -607,6 +620,14 @@ type AgentRuntime struct {
 	spanCtx         context.Context
 	emittedState    AgentState
 	emittedSnapshot string
+}
+
+func (rt *AgentRuntime) releaseClientScope() {
+	rt.mu.Lock()
+	lease := rt.scopeLease
+	rt.scopeLease = nil
+	rt.mu.Unlock()
+	lease.Release()
 }
 
 // Name returns the agent's display name.
@@ -983,16 +1004,23 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 // and every later transition — reach a roster. A later start opens the real
 // loop span; both carry the same dagger.io/agent.id, and a client unions
 // them into one entry by construction.
-func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr string) {
+func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr string) error {
+	// A restored snapshot is not yet demonstrably independent of its DagQL
+	// runtime, so retain a visible durable agent lease even without a loop.
+	scopeCtx, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgent, rt.key)
+	if err != nil {
+		return fmt.Errorf("retain rehydrated agent scope: %w", err)
+	}
 	// Detached from the request: the context is retained past this call, and
 	// records emitted on a canceled one would be publishing into a corpse.
-	spanCtx, span := Tracer(ctx).Start(context.WithoutCancel(ctx),
+	spanCtx, span := Tracer(scopeCtx).Start(scopeCtx,
 		fmt.Sprintf("agent: %s", rt.name),
 		agentSpanAttrs(ctx, rt.name, rt.self)...)
 	span.End()
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	rt.scopeLease = scopeLease
 	rt.spanCtx = spanCtx
 	switch state {
 	case AgentStatePaused:
@@ -1019,29 +1047,39 @@ func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr
 		rt.stopReason = AgentStopExplicit
 	}
 	rt.publishStateLocked()
-	rt.publishSnapshotLocked(ctx)
+	rt.publishSnapshotLocked(scopeCtx)
+	return nil
 }
 
 // start launches an evaluation loop for a live entry, once. Subsequent calls
 // are no-ops, as are calls on tombstones; Resume is the explicit relaunch path
 // for failed and stopped entries.
-func (rt *AgentRuntime) start(ctx context.Context) {
+func (rt *AgentRuntime) start(ctx context.Context) error {
 	rt.mu.Lock()
 	if rt.started || rt.done {
 		rt.mu.Unlock()
-		return
+		return nil
 	}
-	// The loop must outlive this request: detach from the resolver's
-	// cancellation but keep its values (query, dagql server, client
-	// metadata), mirroring the detached service start (services.go).
-	loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	// The loop must outlive this request, but it must retain the exact client
+	// scope that launched it. A tombstone's previous scope is deliberately
+	// retained until this replacement has been acquired successfully.
+	loopBase, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgent, rt.key)
+	if err != nil {
+		rt.mu.Unlock()
+		return fmt.Errorf("acquire agent client scope: %w", err)
+	}
+	loopCtx, cancel := context.WithCancelCause(loopBase)
+	previousLease := rt.scopeLease
+	rt.scopeLease = scopeLease
 	rt.cancel = cancel
 	rt.transitionLocked(func() {
 		rt.started = true
 	})
 	rt.mu.Unlock()
+	previousLease.Release()
 
 	go rt.loop(loopCtx)
+	return nil
 }
 
 // errAgentInterrupted is the cancellation cause Interrupt uses on the
@@ -1371,16 +1409,23 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 	rt.mu.Lock()
 	switch rt.stateLocked() {
 	case AgentStateStopped, AgentStateFailed:
-		// Relaunch from the last committed snapshot. FAILED retries its
-		// pending step; STOPPED may have no pending input and simply idle until
-		// the resume-first caller follows with send.
-		loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+		// Relaunch from the last committed snapshot under the NEW caller's
+		// scope. The old tombstone lease remains held until acquisition wins.
+		loopBase, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgent, rt.key)
+		if err != nil {
+			rt.mu.Unlock()
+			return fmt.Errorf("acquire agent relaunch scope: %w", err)
+		}
+		loopCtx, cancel := context.WithCancelCause(loopBase)
+		previousLease := rt.scopeLease
 		rt.transitionLocked(func() {
 			rt.resetForRelaunchLocked()
+			rt.scopeLease = scopeLease
 			rt.cancel = cancel
 			rt.started = true
 		})
 		rt.mu.Unlock()
+		previousLease.Release()
 		go rt.loop(loopCtx)
 		return nil
 	}

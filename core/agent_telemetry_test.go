@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
@@ -22,6 +23,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -124,6 +126,48 @@ func (rt *AgentRuntime) testTransition(mut func()) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	rt.transitionLocked(mut)
+}
+
+func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			require.Equal(t, engine.ClientLeaseAgent, kind)
+			require.Equal(t, "agent-scope", ownerID)
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+	ctx = testAgentContext(t, ctx, "agent-scope", "leased")
+	agent, ok := AgentFromContext(ctx)
+	require.True(t, ok)
+
+	runtimes := NewAgentRuntimes()
+	runtime, err := runtimes.GetOrCreate(ctx, agent)
+	require.NoError(t, err)
+	// Let the loop launch and immediately take its clean terminal path. The
+	// snapshot still embeds DagQL state, so the tombstone must retain its scope.
+	runtime.mu.Lock()
+	runtime.stopRequested = true
+	runtime.mu.Unlock()
+	_, err = runtimes.Start(ctx, agent)
+	require.NoError(t, err)
+	require.NoError(t, runtime.WaitFor(ctx, AgentStateStopped))
+	require.Equal(t, int32(1), acquired.Load())
+	require.Zero(t, released.Load())
+
+	require.NoError(t, runtimes.KillAll(ctx, errors.New("session closed")))
+	require.Equal(t, int32(1), released.Load())
 }
 
 // TestPublishStateEdgeTriggered covers the core contract: one record per
