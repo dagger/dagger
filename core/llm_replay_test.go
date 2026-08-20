@@ -13,6 +13,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -49,11 +50,11 @@ func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
 	emitMessageSpan(ctx, &LLMMessage{
 		Role:    LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "Please review this."}},
-	}, "", nil)
+	}, "", nil, nil)
 	emitMessageSpan(ctx, &LLMMessage{
 		Role:    LLMMessageRoleAssistant,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "On it."}},
-	}, "", nil)
+	}, "", nil, nil)
 
 	byName := map[string]sdktrace.ReadOnlySpan{}
 	for _, span := range sr.Ended() {
@@ -71,6 +72,45 @@ func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
 		require.True(t, ok, "%s: missing GenAI agent name", name)
 		require.Equal(t, "reviewer", agentName.AsString())
 	}
+}
+
+func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
+	_, ctx := replayTestRecorder(t)
+	recorder := &stateRecorder{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+	ctx = telemetry.WithLoggerProvider(ctx, provider)
+
+	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new\n"
+	llm := &LLM{Messages: []*LLMMessage{
+		{
+			Role: LLMMessageRoleAssistant,
+			Content: []*LLMContentBlock{{
+				Kind:      LLMContentToolCall,
+				CallID:    "call_1",
+				ToolName:  "edit",
+				Arguments: JSON(`{"filePath":"main.go"}`),
+			}},
+		},
+		{
+			Role: LLMMessageRoleUser,
+			Content: []*LLMContentBlock{{
+				Kind:   LLMContentToolResult,
+				CallID: "call_1",
+				Text:   patch,
+			}},
+		},
+	}}
+	llm.Replay(ctx)
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	for _, record := range recorder.records {
+		if record.body == patch+"\n" {
+			require.Equal(t, gitDiffContentType, record.contentType)
+			return
+		}
+	}
+	t.Fatal("replayed patch result was not emitted")
 }
 
 func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
