@@ -1283,6 +1283,9 @@ pub struct ContainerAsServiceOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Configure how the executed command may connect back to Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_nesting: Option<DaggerNesting>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
@@ -1449,6 +1452,9 @@ pub struct ContainerTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
+    /// Configure how the executed command may connect back to Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_nesting: Option<DaggerNesting>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -1462,6 +1468,9 @@ pub struct ContainerUpOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Configure how the executed command may connect back to Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_nesting: Option<DaggerNesting>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
@@ -1488,6 +1497,9 @@ pub struct ContainerUpOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
+    /// Configure how the executed command may connect back to Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_nesting: Option<DaggerNesting>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -1555,6 +1567,9 @@ pub struct ContainerWithEnvVariableOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
+    /// Configure how the executed command may connect back to Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_nesting: Option<DaggerNesting>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
@@ -1864,6 +1879,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_nesting) = opts.dagger_nesting {
+            query = query.arg("daggerNesting", dagger_nesting);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -2585,6 +2603,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(dagger_nesting) = opts.dagger_nesting {
+            query = query.arg("daggerNesting", dagger_nesting);
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -2629,6 +2650,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_nesting) = opts.dagger_nesting {
+            query = query.arg("daggerNesting", dagger_nesting);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -2718,6 +2742,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_nesting) = opts.dagger_nesting {
+            query = query.arg("daggerNesting", dagger_nesting);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -3046,6 +3073,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_nesting) = opts.dagger_nesting {
+            query = query.arg("daggerNesting", dagger_nesting);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -4964,6 +4994,9 @@ pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the default container used for the terminal.
     #[builder(setter(into, strip_option), default)]
     pub container: Option<Id>,
+    /// Configure how the executed command may connect back to Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_nesting: Option<DaggerNesting>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -5628,6 +5661,9 @@ impl Directory {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_nesting) = opts.dagger_nesting {
+            query = query.arg("daggerNesting", dagger_nesting);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -16954,6 +16990,13 @@ pub enum ChangesetsMergeConflict {
     Fail,
     #[serde(rename = "FAIL_EARLY")]
     FailEarly,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum DaggerNesting {
+    #[serde(rename = "INDEPENDENT_SESSIONS")]
+    IndependentSessions,
+    #[serde(rename = "NESTED_CLIENT")]
+    NestedClient,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum DiffStatKind {
