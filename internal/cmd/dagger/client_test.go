@@ -18,17 +18,14 @@ func TestRunSDKClientList(t *testing.T) {
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"
 
-[modules.dagger-go-sdk.as-sdk]
-name = "go"
+[sdks.go]
+module = "dagger-go-sdk"
 
-[[modules.dagger-go-sdk.as-sdk.clients]]
-path = "lib/z"
-module = "github.com/acme/api"
-pin = "abc123"
-
-[[modules.dagger-go-sdk.as-sdk.clients]]
-path = "lib/a"
-module = ".dagger/modules/api"
+[sdks.go.claimed]
+clients = [
+  { path = "lib/z", module = "github.com/acme/api@abc123" },
+  { path = "lib/a", module = ".dagger/modules/api" },
+]
 `), 0o600))
 
 	var buf bytes.Buffer
@@ -36,5 +33,5 @@ module = ".dagger/modules/api"
 	cmd.SetOut(&buf)
 	require.NoError(t, runSDKClientList(cmd, "go"))
 
-	require.Equal(t, "PATH   MODULE  PIN\nlib/a  .dagger/modules/api\nlib/z  github.com/acme/api  abc123\n", buf.String())
+	require.Equal(t, "PATH   MODULE\nlib/a  .dagger/modules/api\nlib/z  github.com/acme/api@abc123\n", buf.String())
 }

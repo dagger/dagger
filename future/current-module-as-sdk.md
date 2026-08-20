@@ -8,20 +8,23 @@ Status: proposed.
 SDKs should not require CLI-side special cases.
 
 But SDK generators need to know which modules and clients they manage in the
-current workspace. That information now lives in `dagger.toml` under the SDK
-module's `as-sdk` section:
+current workspace. That information now lives in the top-level SDK registry in
+`dagger.toml`:
 
 ```toml
 [modules.go]
 source = "github.com/dagger/go-sdk"
 
-[[modules.go.as-sdk.modules]]
-path = ".dagger"
+[sdks.go]
+module = "go"
 
-[[modules.go.as-sdk.clients]]
-path = "sdk"
-module = "."
-pin = "abc123"
+[sdks.go.claimed]
+modules = [
+  ".dagger",
+]
+clients = [
+  { path = "sdk", module = "." },
+]
 ```
 
 SDKs should not scan the workspace or parse `dagger.toml` themselves.
@@ -48,7 +51,6 @@ type CurrentModuleAsSDKModule {
 type CurrentModuleAsSDKClient {
   path: String!
   module: String!
-  pin: String
   moduleSource: ModuleSource!
 }
 ```
@@ -66,13 +68,13 @@ clients, err := sdk.Clients(ctx)
 `dag.CurrentModule().AsSDK(workspace)` means: treat the currently executing
 module as an SDK installed in that workspace.
 
-It resolves to the matching `[modules.<name>]` entry with an `as-sdk` marker,
-then exposes that entry's persisted SDK role data:
+It resolves the `[sdks.<name>]` entry whose `module` field names the currently
+executing installed module, then exposes its persisted claims:
 
-- `modules` contains the selected module entries from
-  `[[modules.<name>.as-sdk.modules]]`: every module at or below the workspace
+- `modules` contains the selected paths from
+  `sdks.<name>.claimed.modules`: every module at or below the workspace
   cwd, plus the nearest enclosing module when needed
-- `clients` from `[[modules.<name>.as-sdk.clients]]`
+- `clients` from `sdks.<name>.claimed.clients`
 
 If the current module is not installed as an SDK, error:
 
@@ -84,10 +86,10 @@ If multiple installed SDK entries could match, error instead of guessing.
 
 ## Field Rules
 
-Expose fields that are part of the persisted `as-sdk` contract:
+Expose fields that are part of the persisted SDK claim contract:
 
 - module: `path`
-- client: `path`, `module`, `pin`
+- client: `path`, `module`
 
 Also expose the engine-resolved client helper:
 
@@ -137,8 +139,8 @@ is only valid when exactly one installed SDK entry matches.
 - Add `CurrentModule.asSDK`.
 - Add `CurrentModuleAsSDK`, `CurrentModuleAsSDKModule`, and
   `CurrentModuleAsSDKClient`.
-- Resolve and filter modules from `entry.AsSDK.Modules`.
-- Resolve `clients` from `entry.AsSDK.Clients`.
+- Resolve and filter modules from `entry.Claimed.Modules`.
+- Resolve `clients` from `entry.Claimed.Clients`.
 - Add the derived client `moduleSource` field.
 - Test installed SDK, non-SDK current module, empty lists, populated lists, and
   duplicate SDK source installs.

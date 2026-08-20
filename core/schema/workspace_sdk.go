@@ -30,12 +30,9 @@ func (s *workspaceSchema) sdks(
 		return nil, err
 	}
 
-	sdks := make(core.WorkspaceSDKs, 0, len(cfg.Modules))
-	for name, entry := range cfg.Modules {
-		if entry.AsSDK == nil {
-			continue
-		}
-		sdk, err := workspaceSDKFromEntry(configDir, name, entry)
+	sdks := make(core.WorkspaceSDKs, 0, len(cfg.SDKs))
+	for name, entry := range cfg.SDKs {
+		sdk, err := workspaceSDKFromEntry(configDir, name, entry, cfg.Modules[entry.Module])
 		if err != nil {
 			return nil, err
 		}
@@ -72,11 +69,11 @@ func (s *workspaceSchema) sdk(
 		}
 	}
 
-	moduleName, entry, _, err := installedSDKSource(cfg, args.Name)
+	sdkName, entry, _, err := installedSDKSource(cfg, args.Name)
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
-	sdk, err := workspaceSDKFromEntry(configDir, moduleName, entry)
+	sdk, err := workspaceSDKFromEntry(configDir, sdkName, cfg.SDKs[sdkName], entry)
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
@@ -168,32 +165,29 @@ func (s *workspaceSchema) workspaceSDK(
 	return sdk, nil
 }
 
-func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
+func workspaceSDKFromEntry(configDir, sdkName string, sdkEntry workspace.SDKEntry, moduleEntry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
 	sdk := &core.WorkspaceSDK{
-		Name: workspace.EffectiveSDKName(moduleName, entry),
-		Ref:  resolvedModuleEntrySourceWithPin(configDir, entry),
+		Name: sdkName,
+		Ref:  resolvedModuleEntrySourceWithPin(configDir, moduleEntry),
 	}
-	for _, mod := range entry.AsSDK.Modules {
-		source, err := workspace.ResolveSDKManagedPath(configDir, mod.Path)
+	for _, modulePath := range sdkEntry.Claimed.Modules {
+		source, err := workspace.ResolveSDKManagedPath(configDir, modulePath)
 		if err != nil {
-			return nil, fmt.Errorf("module managed by %q: %w", moduleName, err)
+			return nil, fmt.Errorf("module managed by %q: %w", sdkName, err)
 		}
 		sdk.Modules = append(sdk.Modules, &core.WorkspaceModule{
 			Name:   filepath.ToSlash(filepath.Base(source)),
 			Source: source,
 		})
 	}
-	for _, client := range entry.AsSDK.Clients {
+	for _, client := range sdkEntry.Claimed.Clients {
 		ref, err := resolveSDKManagedClientModule(configDir, client.Module)
 		if err != nil {
-			return nil, fmt.Errorf("client managed by %q: %w", moduleName, err)
-		}
-		if client.Pin != "" && !strings.Contains(ref, "@") {
-			ref += "@" + client.Pin
+			return nil, fmt.Errorf("client managed by %q: %w", sdkName, err)
 		}
 		clientPath, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
 		if err != nil {
-			return nil, fmt.Errorf("client managed by %q: %w", moduleName, err)
+			return nil, fmt.Errorf("client managed by %q: %w", sdkName, err)
 		}
 		sdk.Clients = append(sdk.Clients, &core.WorkspaceModule{
 			Name:   clientPath,
@@ -206,30 +200,33 @@ func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleE
 }
 
 func installedSDKSource(cfg *workspace.Config, name string) (string, workspace.ModuleEntry, string, error) {
-	if cfg == nil || cfg.Modules == nil {
+	if cfg == nil || cfg.Modules == nil || cfg.SDKs == nil {
 		return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
 	}
-	if err := workspace.ValidateSDKNames(cfg); err != nil {
+	if err := workspace.ValidateSDKs(cfg); err != nil {
 		return "", workspace.ModuleEntry{}, "", err
 	}
-	if entry, ok := cfg.Modules[name]; ok && entry.AsSDK != nil {
-		return installedSDKSourceForModule(name, entry)
-	}
-
-	for moduleName, entry := range cfg.Modules {
-		if entry.AsSDK != nil && workspace.EffectiveSDKName(moduleName, entry) == name {
-			return installedSDKSourceForModule(moduleName, entry)
+	sdk, ok := cfg.SDKs[name]
+	if !ok {
+		// SDK implementations historically addressed Workspace.sdk by their own
+		// installed module name. Keep that engine-level lookup working while the
+		// CLI exposes only the explicit [sdks.<name>] command names.
+		if sdkName, found := workspace.SDKNameForModule(cfg, name); found {
+			sdk = cfg.SDKs[sdkName]
+			name = sdkName
+		} else {
+			return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
 		}
 	}
-	return "", workspace.ModuleEntry{}, "", fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", name)
+	return installedSDKSourceForModule(name, cfg.Modules[sdk.Module])
 }
 
-func installedSDKSourceForModule(moduleName string, entry workspace.ModuleEntry) (string, workspace.ModuleEntry, string, error) {
+func installedSDKSourceForModule(sdkName string, entry workspace.ModuleEntry) (string, workspace.ModuleEntry, string, error) {
 	source := moduleEntrySourceWithPin(entry)
 	if source == "" {
-		return "", workspace.ModuleEntry{}, "", fmt.Errorf("SDK module %q has no source", moduleName)
+		return "", workspace.ModuleEntry{}, "", fmt.Errorf("SDK %q has no module source", sdkName)
 	}
-	return moduleName, entry, source, nil
+	return sdkName, entry, source, nil
 }
 
 func moduleEntrySourceWithPin(entry workspace.ModuleEntry) string {

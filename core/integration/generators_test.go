@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -369,17 +370,14 @@ func (GeneratorsSuite) TestSDKGeneratorOwnsClients(ctx context.Context, t *testc
 		WithNewFile("dagger.toml", `[modules.client-generator-fixture]
 source = ".dagger/client-generator-fixture"
 
-[modules.client-generator-fixture.as-sdk]
-name = "fixture"
+[sdks.fixture]
+module = "client-generator-fixture"
 
-[[modules.client-generator-fixture.as-sdk.clients]]
-path = "clients/one"
-module = "github.com/shykes/hello"
-pin = "deadbeef"
-
-[[modules.client-generator-fixture.as-sdk.clients]]
-path = "clients/two"
-module = ".dagger/client-generator-fixture"
+[sdks.fixture.claimed]
+clients = [
+  { path = "clients/one", module = "github.com/shykes/hello@deadbeef" },
+  { path = "clients/two", module = ".dagger/client-generator-fixture" },
+]
 `).
 		WithNewFile(".dagger/client-generator-fixture/dagger.json", `{
   "name": "client-generator-fixture",
@@ -415,11 +413,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		if err != nil {
 			return nil, err
 		}
-		pin, err := client.Pin(ctx)
-		if err != nil {
-			return nil, err
-		}
-		contents := module + "\n" + pin + "\n"
+		contents := module + "\n"
 		// For a locally-bound client, resolve its module source through the
 		// bound workspace and record it, proving moduleSource resolves against
 		// the workspace asSDK was called on.
@@ -447,13 +441,13 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		With(daggerExec("sdk", "fixture", "client", "list")).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "PATH         MODULE                   PIN\nclients/one  github.com/shykes/hello  deadbeef\nclients/two  .dagger/client-generator-fixture\n", clients)
+	require.Equal(t, "PATH         MODULE\nclients/one  github.com/shykes/hello@deadbeef\nclients/two  .dagger/client-generator-fixture\n", clients)
 
 	generated := base.With(daggerExec("generate", "-y"))
 
 	one, err := generated.File("clients/one/generated.txt").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "github.com/shykes/hello\ndeadbeef\n", one)
+	require.Equal(t, "github.com/shykes/hello@deadbeef\n", one)
 
 	// clients/two is locally bound, so the generator additionally resolved its
 	// module source through the bound workspace (see the fixture). A non-empty
@@ -461,7 +455,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 	// the workspace asSDK was called on.
 	two, err := generated.File("clients/two/generated.txt").Contents(ctx)
 	require.NoError(t, err)
-	require.Contains(t, two, ".dagger/client-generator-fixture\n\nsource=")
+	require.Contains(t, two, ".dagger/client-generator-fixture\nsource=")
 	require.Contains(t, two, "client-generator-fixture")
 }
 
@@ -482,7 +476,7 @@ func initGeneratorFixture(t testing.TB, c *dagger.Client) *dagger.Container {
 // initGeneratorFixtureAt builds the fixture with its dagger.toml under
 // configDir, so tests can exercise a workspace config that is not at the
 // workspace (git) root. Every path in dagger.toml — [modules.X].source and the
-// as-sdk entries alike — is recorded relative to that config directory, so the
+// SDK claims alike — is recorded relative to that config directory, so the
 // fixture below reads the same wherever configDir sits.
 func initGeneratorFixtureAt(t testing.TB, c *dagger.Client, configDir string) *dagger.Container {
 	inConfigDir := func(p string) string { return path.Join(configDir, p) }
@@ -492,15 +486,16 @@ func initGeneratorFixtureAt(t testing.TB, c *dagger.Client, configDir string) *d
 		WithNewFile(inConfigDir("dagger.toml"), `[modules.init-fixture]
 source = "sdk/init-fixture"
 
-[modules.init-fixture.as-sdk]
-name = "fixture"
+[sdks.fixture]
+module = "init-fixture"
 
-[[modules.init-fixture.as-sdk.modules]]
-path = "existing/mod"
-
-[[modules.init-fixture.as-sdk.clients]]
-path = "existing/client"
-module = "sdk/init-fixture"
+[sdks.fixture.claimed]
+modules = [
+  "existing/mod",
+]
+clients = [
+  { path = "existing/client", module = "sdk/init-fixture" },
+]
 `).
 		WithNewFile(inConfigDir("sdk/init-fixture/dagger.json"), `{
   "name": "init-fixture",
@@ -745,13 +740,17 @@ func (GeneratorsSuite) TestSDKClaimAndUnclaim(ctx context.Context, t *testctx.T)
 			"sdk", "fixture", "module", "unclaim", ".dagger/modules/claimed", "--auto-apply"))
 		config, err := unclaimed.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, config, `path = ".dagger/modules/claimed"`)
+		cfg, err := workspacecfg.ParseConfig([]byte(config))
+		require.NoError(t, err)
+		require.Equal(t, []string{"existing/mod"}, cfg.SDKs["fixture"].Claimed.Modules)
 
 		claimed := unclaimed.With(daggerExec(
 			"sdk", "fixture", "module", "claim", ".dagger/modules/claimed", "--auto-apply"))
 		config, err = claimed.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, config, `path = ".dagger/modules/claimed"`)
+		cfg, err = workspacecfg.ParseConfig([]byte(config))
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"existing/mod", ".dagger/modules/claimed"}, cfg.SDKs["fixture"].Claimed.Modules)
 
 		list, err := claimed.With(daggerExec("sdk", "fixture", "module", "list")).Stdout(ctx)
 		require.NoError(t, err)
@@ -778,6 +777,9 @@ func (GeneratorsSuite) TestSDKClaimAndUnclaim(ctx context.Context, t *testctx.T)
 		config, err = reclaimed.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, config, `module = "github.com/shykes/hello"`)
+		lock, err := reclaimed.File("dagger.lock").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, lock, `"git.ref"`)
 
 		list, err := reclaimed.With(daggerExec("sdk", "fixture", "client", "list")).Stdout(ctx)
 		require.NoError(t, err)
@@ -840,12 +842,12 @@ func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t 
 		require.False(t, exists, "module init must not scaffold outside the config directory")
 
 		// Both paths dagger.toml records for the new module — its install
-		// source and the as-sdk entry — are relative to the config directory,
+		// source and the SDK claim — are relative to the config directory,
 		// so they read the same.
 		config, err := initialized.File("/work/common/dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, config, `source = ".dagger/modules/newmod"`)
-		require.Contains(t, config, `path = ".dagger/modules/newmod"`)
+		require.Contains(t, config, `".dagger/modules/newmod"`)
 	})
 
 	t.Run("module init resolves an explicit --path against the caller", func(ctx context.Context, t *testctx.T) {
@@ -1018,7 +1020,7 @@ func (GeneratorsSuite) TestAPIClientInitDottedModulePath(ctx context.Context, t 
 			initialized := base.
 				WithWorkdir("/work/common").
 				With(daggerExec(
-					"api", "client", "init", "fixture", "clients/dotted", tc.ref, "--auto-apply"))
+					"sdk", "fixture", "client", "init", "clients/dotted", tc.ref, "--auto-apply"))
 			out, err := initialized.CombinedOutput(ctx)
 			require.NoError(t, err, out)
 
@@ -1054,8 +1056,8 @@ entrypoint = true
 [modules.go-sdk]
 source = "github.com/dagger/go-sdk"
 
-[modules.go-sdk.as-sdk]
-name = "go"
+[sdks.go]
+module = "go-sdk"
 `).
 		WithNewFile(".dagger/modules/consumer/dagger.json", `{
   "name": "consumer",
@@ -1131,10 +1133,13 @@ source = ".dagger/modules/nested"
 [modules.fanout-sdk]
 source = ".dagger/modules/fanout-sdk"
 
-[modules.fanout-sdk.as-sdk]
+[sdks.fanout]
+module = "fanout-sdk"
 
-[[modules.fanout-sdk.as-sdk.modules]]
-path = "."
+[sdks.fanout.claimed]
+modules = [
+  ".",
+]
 `).
 		WithNewFile("dagger.json", `{
   "name": "root-mod",
@@ -1678,7 +1683,7 @@ func introspectModuleSourceSchema(ctx context.Context, t *testctx.T, ctr *dagger
 
 // TestCurrentModuleAsSDKClientModuleSourceField is a lighter engine-level check
 // that CurrentModuleAsSDKClient exposes the moduleSource field (which resolves
-// the bound module from its stored {module, pin}). Exercising it end-to-end
+// the bound module through the workspace lock). Exercising it end-to-end
 // requires an installed-SDK module execution context; here we assert the field
 // is registered on the v1.0 schema view with the right type.
 func (GeneratorsSuite) TestCurrentModuleAsSDKClientModuleSourceField(ctx context.Context, t *testctx.T) {

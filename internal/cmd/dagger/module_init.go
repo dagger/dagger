@@ -54,7 +54,7 @@ func parseSDKRegistry(data []byte) ([]sdkEntry, error) {
 //   - N > 1   → error ("ambiguous"), with candidate names.
 //
 // Registry names and aliases affect the CLI-side default install name and the
-// SDK alias persisted under [modules.<name>.as-sdk]. Only canonical full refs
+// SDK name persisted under [sdks.<name>]. Only canonical full refs
 // flow past this function.
 func sdkResolve(input string) (string, error) {
 	ref, _, _, err := sdkResolveInstall(input)
@@ -66,8 +66,7 @@ func sdkResolve(input string) (string, error) {
 //   - the workspace install name to use when the user did not pass --name: the
 //     registry repo basename with a "dagger-" prefix (e.g. "dagger-go-sdk"),
 //     reducing the chance of colliding with an unrelated module; and
-//   - the registry's canonical user-facing name, used as an explicit
-//     as-sdk.name only when it differs from the conventional install name.
+//   - the registry's canonical user-facing SDK name.
 //
 // Full refs return an empty install name so Workspace.withSDK keeps its normal
 // basename-derived behavior for third-party SDK refs. They also return an

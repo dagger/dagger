@@ -643,7 +643,8 @@ source = "dep"
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
 source = "dep"
 
-[modules.dep.as-sdk]
+[sdks.dep]
+module = "dep"
 
 [env.dev]
 `)

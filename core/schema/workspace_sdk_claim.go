@@ -34,7 +34,8 @@ type preparedWorkspaceClaim struct {
 	configPath string
 	staged     *stagedWorkspaceConfig
 	sdkName    string
-	sdkEntry   workspace.ModuleEntry
+	sdkEntry   workspace.SDKEntry
+	lock       *workspaceOverlayLock
 }
 
 func (s *workspaceSchema) withClaimedModule(
@@ -69,7 +70,7 @@ func (s *workspaceSchema) withClaimedModule(
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("path %q does not point to an initialized module", claim.path)
 	}
 
-	claim.sdkEntry.AsSDK.Modules = append(claim.sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: claim.configPath})
+	claim.sdkEntry.Claimed.Modules = append(claim.sdkEntry.Claimed.Modules, claim.configPath)
 	return s.stageWorkspaceClaim(ctx, parent, claim)
 }
 
@@ -119,7 +120,12 @@ func (s *workspaceSchema) withClaimedClient(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	targetModule, err := s.resolveClientTargetModule(workspaceCtx, claim.ws, moduleLoadRef, "")
+	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(workspaceCtx, claim.ws, claim.staged.ConfigDir)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	workspaceCtx = withWorkspaceLookupLockOverride(workspaceCtx, overlayLock.Lock)
+	_, err = s.resolveClientTargetModule(workspaceCtx, selected, moduleLoadRef)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -127,12 +133,12 @@ func (s *workspaceSchema) withClaimedClient(
 	if err := removeClientEntryAtPath(claim.staged.Config, claim.staged.ConfigDir, claim.path); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	claim.sdkEntry = claim.staged.Config.Modules[claim.sdkName]
-	claim.sdkEntry.AsSDK.Clients = append(claim.sdkEntry.AsSDK.Clients, workspace.SDKManagedClient{
+	claim.sdkEntry = claim.staged.Config.SDKs[claim.sdkName]
+	claim.sdkEntry.Claimed.Clients = append(claim.sdkEntry.Claimed.Clients, workspace.SDKManagedClient{
 		Path:   claim.configPath,
 		Module: configModuleRef,
-		Pin:    targetModule.Self().Pin(),
 	})
+	claim.lock = overlayLock
 	return s.stageWorkspaceClaim(ctx, parent, claim)
 }
 
@@ -158,9 +164,9 @@ func (s *workspaceSchema) withoutClaim(
 	removed := false
 	switch kind {
 	case workspaceModuleClaim:
-		kept := make([]workspace.SDKManagedModule, 0, len(claim.sdkEntry.AsSDK.Modules))
-		for _, module := range claim.sdkEntry.AsSDK.Modules {
-			resolved, err := workspace.ResolveSDKManagedPath(claim.staged.ConfigDir, module.Path)
+		kept := make([]string, 0, len(claim.sdkEntry.Claimed.Modules))
+		for _, modulePath := range claim.sdkEntry.Claimed.Modules {
+			resolved, err := workspace.ResolveSDKManagedPath(claim.staged.ConfigDir, modulePath)
 			if err != nil {
 				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module managed by %q: %w", claim.sdkName, err)
 			}
@@ -168,12 +174,12 @@ func (s *workspaceSchema) withoutClaim(
 				removed = true
 				continue
 			}
-			kept = append(kept, module)
+			kept = append(kept, modulePath)
 		}
-		claim.sdkEntry.AsSDK.Modules = kept
+		claim.sdkEntry.Claimed.Modules = kept
 	case workspaceClientClaim:
-		kept := make([]workspace.SDKManagedClient, 0, len(claim.sdkEntry.AsSDK.Clients))
-		for _, client := range claim.sdkEntry.AsSDK.Clients {
+		kept := make([]workspace.SDKManagedClient, 0, len(claim.sdkEntry.Claimed.Clients))
+		for _, client := range claim.sdkEntry.Claimed.Clients {
 			resolved, err := workspace.ResolveSDKManagedPath(claim.staged.ConfigDir, client.Path)
 			if err != nil {
 				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client managed by %q: %w", claim.sdkName, err)
@@ -184,7 +190,7 @@ func (s *workspaceSchema) withoutClaim(
 			}
 			kept = append(kept, client)
 		}
-		claim.sdkEntry.AsSDK.Clients = kept
+		claim.sdkEntry.Claimed.Clients = kept
 	}
 	if !removed {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("%s at %q is not claimed by SDK %q", kind, claim.path, args.SDK)
@@ -230,7 +236,7 @@ func (s *workspaceSchema) prepareWorkspaceClaim(
 	if err != nil {
 		return preparedWorkspaceClaim{}, err
 	}
-	sdkName, sdkEntry, _, err := installedSDKSource(staged.Config, args.SDK)
+	sdkName, _, _, err := installedSDKSource(staged.Config, args.SDK)
 	if err != nil {
 		return preparedWorkspaceClaim{}, err
 	}
@@ -240,7 +246,7 @@ func (s *workspaceSchema) prepareWorkspaceClaim(
 		configPath: configPath,
 		staged:     staged,
 		sdkName:    sdkName,
-		sdkEntry:   sdkEntry,
+		sdkEntry:   staged.Config.SDKs[sdkName],
 	}, nil
 }
 
@@ -249,12 +255,12 @@ func (s *workspaceSchema) stageWorkspaceClaim(
 	parent dagql.ObjectResult[*core.Workspace],
 	claim preparedWorkspaceClaim,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	claim.staged.Config.Modules[claim.sdkName] = claim.sdkEntry
+	claim.staged.Config.SDKs[claim.sdkName] = claim.sdkEntry
 	updated, err := workspace.UpdateConfigBytes(claim.staged.Data, claim.staged.Config)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update workspace config: %w", err)
 	}
-	return s.stageWorkspaceConfigBytes(ctx, parent, claim.staged, updated)
+	return s.stageWorkspaceConfigAndLock(ctx, parent, claim.staged, updated, claim.lock)
 }
 
 func claimedOwner(cfg *workspace.Config, configDir string, kind workspaceClaimKind, claimPath string) (string, bool, error) {
@@ -262,14 +268,11 @@ func claimedOwner(cfg *workspace.Config, configDir string, kind workspaceClaimKi
 		return "", false, nil
 	}
 	cleanPath := filepath.ToSlash(filepath.Clean(claimPath))
-	for sdkName, entry := range cfg.Modules {
-		if entry.AsSDK == nil {
-			continue
-		}
+	for sdkName, entry := range cfg.SDKs {
 		switch kind {
 		case workspaceModuleClaim:
-			for _, module := range entry.AsSDK.Modules {
-				resolved, err := workspace.ResolveSDKManagedPath(configDir, module.Path)
+			for _, modulePath := range entry.Claimed.Modules {
+				resolved, err := workspace.ResolveSDKManagedPath(configDir, modulePath)
 				if err != nil {
 					return "", false, fmt.Errorf("module managed by %q: %w", sdkName, err)
 				}
@@ -278,7 +281,7 @@ func claimedOwner(cfg *workspace.Config, configDir string, kind workspaceClaimKi
 				}
 			}
 		case workspaceClientClaim:
-			for _, client := range entry.AsSDK.Clients {
+			for _, client := range entry.Claimed.Clients {
 				resolved, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
 				if err != nil {
 					return "", false, fmt.Errorf("client managed by %q: %w", sdkName, err)

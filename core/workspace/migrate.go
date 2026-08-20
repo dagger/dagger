@@ -42,33 +42,37 @@ func migrationSDKInstallName(sdkRef string) string {
 }
 
 // AddMigratedModuleSDK records, in a workspace config, the SDK/runtime a
-// migrated module uses: modulePath is added to the as-sdk managed-module list
-// of the install that exposes sdkSource. An existing as-sdk install for the
+// migrated module uses: modulePath is added to the claimed-module list of the
+// SDK whose installed module exposes sdkSource. An existing SDK install for the
 // same runtime source is reused (so several locally-referenced modules sharing
 // a runtime collapse to one [modules.<sdk>] entry); otherwise a new one is
 // created, matching how the root module's SDK is recorded. This keeps every
 // locally-defined module's runtime installed and pinned in the workspace.
 func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath string) {
-	sdkName := ensureMigratedSDKInstall(wsCfg, sdkSource)
-	if sdkName == "" {
+	moduleName := ensureMigratedSDKInstall(wsCfg, sdkSource)
+	if moduleName == "" {
 		return
 	}
-	entry := wsCfg.Modules[sdkName]
-	entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
-	wsCfg.Modules[sdkName] = entry
+	sdkName, ok := SDKNameForModule(wsCfg, moduleName)
+	if !ok {
+		return
+	}
+	sdk := wsCfg.SDKs[sdkName]
+	sdk.Claimed.Modules = append(sdk.Claimed.Modules, modulePath)
+	wsCfg.SDKs[sdkName] = sdk
 }
 
 // AddMigratedSDKInstall records a workspace SDK install for sdkSource without
 // registering a managed module — the "repo is just a dagger module" pin, where
 // the one install is expected to serve every module in the repo. It reuses an
-// existing as-sdk install for the same runtime source, so a later
+// existing SDK install for the same runtime source, so a later
 // AddMigratedModuleSDK for the same runtime lands on the same entry instead of
 // installing the SDK twice.
 func AddMigratedSDKInstall(wsCfg *Config, sdkSource string) {
 	ensureMigratedSDKInstall(wsCfg, sdkSource)
 }
 
-// ensureMigratedSDKInstall finds or creates the as-sdk install entry for
+// ensureMigratedSDKInstall finds or creates the SDK install entry for
 // sdkSource and returns its install name ("" if there is nothing to record).
 func ensureMigratedSDKInstall(wsCfg *Config, sdkSource string) string {
 	if wsCfg == nil || sdkSource == "" {
@@ -78,11 +82,11 @@ func ensureMigratedSDKInstall(wsCfg *Config, sdkSource string) string {
 		wsCfg.Modules = map[string]ModuleEntry{}
 	}
 
-	// Reuse the existing as-sdk install for this runtime, if any, so the same
+	// Reuse the existing SDK install for this runtime, if any, so the same
 	// runtime is not installed twice under different names.
-	for name, entry := range wsCfg.Modules {
-		if entry.AsSDK != nil && entry.Source == sdkSource {
-			return name
+	for _, sdk := range wsCfg.SDKs {
+		if entry, ok := wsCfg.Modules[sdk.Module]; ok && entry.Source == sdkSource {
+			return sdk.Module
 		}
 	}
 
@@ -100,11 +104,39 @@ func ensureMigratedSDKInstall(wsCfg *Config, sdkSource string) string {
 	if !exists {
 		entry = ModuleEntry{Source: sdkSource}
 	}
-	if entry.AsSDK == nil {
-		entry.AsSDK = &ModuleAsSDK{}
-	}
 	wsCfg.Modules[sdkName] = entry
+	if wsCfg.SDKs == nil {
+		wsCfg.SDKs = map[string]SDKEntry{}
+	}
+	commandName := uniqueSDKName(wsCfg.SDKs, ConventionalSDKName(migrationSDKInstallName(sdkSource)))
+	wsCfg.SDKs[commandName] = SDKEntry{Module: sdkName}
 	return sdkName
+}
+
+// SDKNameForModule returns the named SDK provided by an installed module.
+func SDKNameForModule(cfg *Config, moduleName string) (string, bool) {
+	if cfg == nil {
+		return "", false
+	}
+	var found string
+	for sdkName, sdk := range cfg.SDKs {
+		if sdk.Module == moduleName && (found == "" || sdkName < found) {
+			found = sdkName
+		}
+	}
+	return found, found != ""
+}
+
+func uniqueSDKName(sdks map[string]SDKEntry, base string) string {
+	if _, taken := sdks[base]; !taken {
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, taken := sdks[candidate]; !taken {
+			return candidate
+		}
+	}
 }
 
 // uniqueModuleName returns base if free, otherwise base with a numeric suffix,
@@ -240,7 +272,7 @@ func PlanMigration(compatWorkspace *CompatWorkspace, workspaceRoot string) (*Mig
 		// authoring list. Legacy dagger.json carried the SDK inline on the
 		// module; new dagger.toml records every install (regular module or
 		// SDK) under [modules.*], with the SDK-role data nested in
-		// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
+		// [sdks.<name>.claimed]. This is the file-format catch-up for the
 		// runtime/SDK split. The module path is the module config's directory
 		// — the project root, where dagger-module.toml replaced dagger.json.
 		AddMigratedModuleSDK(wsCfg, cfg.SDK.Source, ".")

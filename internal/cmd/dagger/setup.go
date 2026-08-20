@@ -353,14 +353,18 @@ func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagg
 	out := cmd.OutOrStdout()
 	fixes := planMigratedSDKFixups(cfg)
 	if len(fixes) > 0 {
-		updated := ws
-		for _, fix := range fixes {
-			updated = updated.WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref)
-			if fix.SDKName != workspace.ConventionalSDKName(fix.ModuleName) {
-				updated = updated.WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
-			}
+		if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
+			return err
 		}
-		if err := updated.Export(ctx); err != nil {
+		updatedConfig, err := workspace.UpdateConfigBytes([]byte(raw), cfg)
+		if err != nil {
+			return err
+		}
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return err
+		}
+		if err := ws.WithNewFile(configFile, string(updatedConfig)).Export(ctx); err != nil {
 			return err
 		}
 		for _, fix := range fixes {
@@ -403,16 +407,8 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 	if len(fixes) == 0 {
 		return nil
 	}
-	for _, fix := range fixes {
-		entry := cfg.Modules[fix.ModuleName]
-		entry.Source = fix.Ref
-		if entry.AsSDK == nil {
-			entry.AsSDK = &workspace.ModuleAsSDK{}
-		}
-		if fix.SDKName != workspace.ConventionalSDKName(fix.ModuleName) {
-			entry.AsSDK.Name = fix.SDKName
-		}
-		cfg.Modules[fix.ModuleName] = entry
+	if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
+		return err
 	}
 	updated, err := workspace.UpdateConfigBytes(data, cfg)
 	if err != nil {
@@ -423,6 +419,25 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 	}
 	for _, fix := range fixes {
 		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
+	}
+	return nil
+}
+
+func applyMigratedSDKFixups(cfg *workspace.Config, fixes []migratedSDKFixup) error {
+	for _, fix := range fixes {
+		entry := cfg.Modules[fix.ModuleName]
+		entry.Source = fix.Ref
+		cfg.Modules[fix.ModuleName] = entry
+
+		if fix.CurrentSDKName == fix.SDKName {
+			continue
+		}
+		if _, exists := cfg.SDKs[fix.SDKName]; exists {
+			return fmt.Errorf("cannot rename SDK %q to %q: name already exists", fix.CurrentSDKName, fix.SDKName)
+		}
+		sdk := cfg.SDKs[fix.CurrentSDKName]
+		delete(cfg.SDKs, fix.CurrentSDKName)
+		cfg.SDKs[fix.SDKName] = sdk
 	}
 	return nil
 }

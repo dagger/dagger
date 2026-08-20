@@ -109,7 +109,7 @@ func runSDKInfo(cmd *cobra.Command, sdkName string) error {
 		sdk.commandName,
 		sdk.moduleName,
 		sdkModuleEntrySource(sdk.entry),
-		len(sdk.entry.AsSDK.Modules),
+		len(sdk.sdk.Claimed.Modules),
 	)
 	return err
 }
@@ -159,10 +159,7 @@ func runSDKModuleList(cmd *cobra.Command, sdkName string) error {
 	if err != nil {
 		return err
 	}
-	paths := make([]string, 0, len(sdk.entry.AsSDK.Modules))
-	for _, module := range sdk.entry.AsSDK.Modules {
-		paths = append(paths, module.Path)
-	}
+	paths := slices.Clone(sdk.sdk.Claimed.Modules)
 	sort.Strings(paths)
 	if len(paths) == 0 {
 		return nil
@@ -180,22 +177,17 @@ func runSDKClientList(cmd *cobra.Command, sdkName string) error {
 	if err != nil {
 		return err
 	}
-	clients := slices.Clone(sdk.entry.AsSDK.Clients)
+	clients := slices.Clone(sdk.sdk.Claimed.Clients)
 	if len(clients) == 0 {
 		return nil
 	}
 	sort.Slice(clients, func(i, j int) bool { return clients[i].Path < clients[j].Path })
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "PATH\tMODULE\tPIN"); err != nil {
+	if _, err := fmt.Fprintln(w, "PATH\tMODULE"); err != nil {
 		return err
 	}
 	for _, claimed := range clients {
-		var err error
-		if claimed.Pin == "" {
-			_, err = fmt.Fprintf(w, "%s\t%s\n", claimed.Path, claimed.Module)
-		} else {
-			_, err = fmt.Fprintf(w, "%s\t%s\t%s\n", claimed.Path, claimed.Module, claimed.Pin)
-		}
+		_, err := fmt.Fprintf(w, "%s\t%s\n", claimed.Path, claimed.Module)
 		if err != nil {
 			return err
 		}

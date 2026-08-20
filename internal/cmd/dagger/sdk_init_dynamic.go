@@ -82,29 +82,23 @@ type configuredSDK struct {
 	moduleName  string
 	commandName string
 	entry       workspace.ModuleEntry
-}
-
-func sdkCommandName(moduleName string, entry workspace.ModuleEntry) string {
-	return workspace.EffectiveSDKName(moduleName, entry)
+	sdk         workspace.SDKEntry
 }
 
 func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
-	if cfg == nil || cfg.Modules == nil {
+	if cfg == nil || cfg.SDKs == nil {
 		return nil, nil
 	}
-	if err := workspace.ValidateSDKNames(cfg); err != nil {
+	if err := workspace.ValidateSDKs(cfg); err != nil {
 		return nil, err
 	}
-	sdks := make([]configuredSDK, 0, len(cfg.Modules))
-	for moduleName, entry := range cfg.Modules {
-		if entry.AsSDK == nil {
-			continue
-		}
-		commandName := sdkCommandName(moduleName, entry)
+	sdks := make([]configuredSDK, 0, len(cfg.SDKs))
+	for commandName, sdk := range cfg.SDKs {
 		sdks = append(sdks, configuredSDK{
-			moduleName:  moduleName,
+			moduleName:  sdk.Module,
 			commandName: commandName,
-			entry:       entry,
+			entry:       cfg.Modules[sdk.Module],
+			sdk:         sdk,
 		})
 	}
 	sort.Slice(sdks, func(i, j int) bool {
@@ -117,28 +111,20 @@ func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
 }
 
 func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK, error) {
-	if cfg == nil || cfg.Modules == nil {
+	if cfg == nil || cfg.SDKs == nil {
 		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
 	}
-	if err := workspace.ValidateSDKNames(cfg); err != nil {
+	if err := workspace.ValidateSDKs(cfg); err != nil {
 		return configuredSDK{}, err
 	}
-	if entry, ok := cfg.Modules[sdkName]; ok && entry.AsSDK != nil {
+	sdk, ok := cfg.SDKs[sdkName]
+	if ok {
 		return configuredSDK{
-			moduleName:  sdkName,
-			commandName: sdkCommandName(sdkName, entry),
-			entry:       entry,
+			moduleName:  sdk.Module,
+			commandName: sdkName,
+			entry:       cfg.Modules[sdk.Module],
+			sdk:         sdk,
 		}, nil
-	}
-
-	for moduleName, entry := range cfg.Modules {
-		if entry.AsSDK != nil && sdkCommandName(moduleName, entry) == sdkName {
-			return configuredSDK{
-				moduleName:  moduleName,
-				commandName: sdkCommandName(moduleName, entry),
-				entry:       entry,
-			}, nil
-		}
 	}
 	return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger install <module-ref>`", sdkName)
 }
