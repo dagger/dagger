@@ -340,8 +340,20 @@ func readWorkspaceConfigForSDKInitRegistrationFrom(start string) (*workspace.Con
 	}
 }
 
-func shouldRegisterSDKCommands(args []string) bool {
-	return len(args) > 0 && args[0] == "sdk"
+func sdkCommandRegistrationArgs(args []string) ([]string, bool) {
+	if len(args) == 0 {
+		return nil, false
+	}
+	if args[0] == "sdk" {
+		return args, true
+	}
+	switch args[0] {
+	case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+		if len(args) > 1 && args[1] == "sdk" {
+			return args[1:], true
+		}
+	}
+	return nil, false
 }
 
 func sdkInvocationSDKName(args []string) (string, bool) {
