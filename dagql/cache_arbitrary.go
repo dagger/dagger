@@ -85,7 +85,7 @@ func (c *Cache) GetOrInitArbitrary(
 			shared:   res,
 			hitCache: true,
 		}
-		_, err := c.acquireSessionArbitraryLocked(sessionID, res)
+		err := c.acquireSessionArbitraryLocked(sessionID, res)
 		var onRelease OnReleaseFunc
 		if err != nil {
 			onRelease = c.removeUnownedArbitraryLocked(res)
@@ -168,7 +168,7 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 			shared:   res,
 			hitCache: hitCache,
 		}
-		_, claimErr := c.acquireSessionArbitraryLocked(sessionID, res)
+		claimErr := c.acquireSessionArbitraryLocked(sessionID, res)
 		var onRelease OnReleaseFunc
 		if claimErr != nil {
 			onRelease = c.removeUnownedArbitraryLocked(res)

@@ -748,15 +748,15 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 // acquireSessionArbitraryLocked records an arbitrary-value session edge and
 // its ownership unit in one critical section. The caller must hold callsMu;
 // this function nests sessionMu inside it.
-func (c *Cache) acquireSessionArbitraryLocked(sessionID string, shared *sharedArbitraryResult) (bool, error) {
+func (c *Cache) acquireSessionArbitraryLocked(sessionID string, shared *sharedArbitraryResult) error {
 	if c == nil || sessionID == "" || shared == nil {
-		return false, nil
+		return nil
 	}
 
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	if _, released := c.releasedSessionIDs[sessionID]; released {
-		return false, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+		return fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
 	}
 	if c.sessionArbitraryCallKeysBySession == nil {
 		c.sessionArbitraryCallKeysBySession = make(map[string]map[string]struct{})
@@ -765,14 +765,14 @@ func (c *Cache) acquireSessionArbitraryLocked(sessionID string, shared *sharedAr
 		c.sessionArbitraryCallKeysBySession[sessionID] = make(map[string]struct{})
 	}
 	if _, found := c.sessionArbitraryCallKeysBySession[sessionID][shared.callKey]; found {
-		return true, nil
+		return nil
 	}
 	c.sessionArbitraryCallKeysBySession[sessionID][shared.callKey] = struct{}{}
 	if c.testAfterSessionArbitraryRecord != nil {
 		c.testAfterSessionArbitraryRecord()
 	}
 	shared.ownerSessionCount++
-	return false, nil
+	return nil
 }
 
 func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
