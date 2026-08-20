@@ -296,18 +296,18 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "myapp")
-		goSDK := cfg.Modules["go-sdk"]
-		require.NotNil(t, goSDK.AsSDK)
-		require.Equal(t, []workspacecfg.SDKManagedModule{{Path: ".dagger/modules/myapp"}}, goSDK.AsSDK.Modules)
+		goSDK := cfg.SDKs["go"]
+		require.Equal(t, "go-sdk", goSDK.Module)
+		require.Equal(t, []string{".dagger/modules/myapp"}, goSDK.Claimed.Modules)
 
 		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "myapp")
 		require.NoError(t, err)
 
 		cfg = readInstalledWorkspaceConfig(t, workdir)
 		require.NotContains(t, cfg.Modules, "myapp")
-		goSDK = cfg.Modules["go-sdk"]
-		require.NotNil(t, goSDK.AsSDK)
-		require.Empty(t, goSDK.AsSDK.Modules)
+		goSDK = cfg.SDKs["go"]
+		require.Equal(t, "go-sdk", goSDK.Module)
+		require.Empty(t, goSDK.Claimed.Modules)
 
 		_, err = os.Stat(moduleDir)
 		require.True(t, os.IsNotExist(err), "expected %s to be removed, got %v", moduleDir, err)

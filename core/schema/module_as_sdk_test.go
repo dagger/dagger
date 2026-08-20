@@ -58,20 +58,8 @@ func TestCurrentModuleAsSDKModulesForCwd(t *testing.T) {
 }
 
 func TestResolveCurrentModuleSDKEntry(t *testing.T) {
-	goSDK := workspace.ModuleEntry{
-		Source: "github.com/dagger/go-sdk",
-		AsSDK: &workspace.ModuleAsSDK{
-			Name:    "go",
-			Modules: []workspace.SDKManagedModule{{Path: ".dagger/modules/my-module"}},
-		},
-	}
-	pySDK := workspace.ModuleEntry{
-		Source: "github.com/dagger/python-sdk",
-		AsSDK: &workspace.ModuleAsSDK{
-			Name:    "python",
-			Modules: []workspace.SDKManagedModule{{Path: ".dagger/modules/py-module"}},
-		},
-	}
+	goSDK := workspace.ModuleEntry{Source: "github.com/dagger/go-sdk"}
+	pySDK := workspace.ModuleEntry{Source: "github.com/dagger/python-sdk"}
 	plainModule := workspace.ModuleEntry{Source: ".dagger/modules/my-module"}
 	const notInstalledAsSDK = "current module is not installed as an SDK in this workspace"
 
@@ -92,12 +80,13 @@ func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"go-sdk":    goSDK,
 			"my-module": plainModule,
+		}, SDKs: map[string]workspace.SDKEntry{
+			"go": {Module: "go-sdk", Claimed: workspace.SDKClaims{Modules: []string{".dagger/modules/my-module"}}},
 		}}
 		name, entry, err := resolveCurrentModuleSDKEntry("go-sdk", cfg)
 		require.NoError(t, err)
-		require.Equal(t, "go-sdk", name)
-		require.Equal(t, "go", entry.AsSDK.Name)
-		require.Len(t, entry.AsSDK.Modules, 1)
+		require.Equal(t, "go", name)
+		require.Len(t, entry.Claimed.Modules, 1)
 	})
 
 	t.Run("plain workspace module does not resolve to sole SDK install", func(t *testing.T) {
@@ -106,6 +95,8 @@ func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"go-sdk":    goSDK,
 			"my-module": plainModule,
+		}, SDKs: map[string]workspace.SDKEntry{
+			"go": {Module: "go-sdk"},
 		}}
 		_, _, err := resolveCurrentModuleSDKEntry("my-module", cfg)
 		require.EqualError(t, err, notInstalledAsSDK)
@@ -115,33 +106,38 @@ func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"go-sdk":     goSDK,
 			"python-sdk": pySDK,
+		}, SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "go-sdk"},
+			"python": {Module: "python-sdk", Claimed: workspace.SDKClaims{Modules: []string{".dagger/modules/py-module"}}},
 		}}
 		name, entry, err := resolveCurrentModuleSDKEntry("python-sdk", cfg)
 		require.NoError(t, err)
-		require.Equal(t, "python-sdk", name)
-		require.Equal(t, "python", entry.AsSDK.Name)
+		require.Equal(t, "python", name)
+		require.Len(t, entry.Claimed.Modules, 1)
 	})
 
 	t.Run("unrelated current module is not installed as an SDK", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"go-sdk":     goSDK,
 			"python-sdk": pySDK,
+		}, SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "go-sdk"},
+			"python": {Module: "python-sdk"},
 		}}
 		_, _, err := resolveCurrentModuleSDKEntry("unrelated", cfg)
 		require.EqualError(t, err, notInstalledAsSDK)
 	})
 
 	t.Run("populated and empty module lists are preserved", func(t *testing.T) {
-		empty := workspace.ModuleEntry{
-			Source: "github.com/dagger/typescript-sdk",
-			AsSDK:  &workspace.ModuleAsSDK{},
-		}
+		empty := workspace.ModuleEntry{Source: "github.com/dagger/typescript-sdk"}
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"typescript-sdk": empty,
+		}, SDKs: map[string]workspace.SDKEntry{
+			"typescript": {Module: "typescript-sdk"},
 		}}
 		_, entry, err := resolveCurrentModuleSDKEntry("typescript-sdk", cfg)
 		require.NoError(t, err)
-		require.Empty(t, entry.AsSDK.Modules)
-		require.Empty(t, entry.AsSDK.Clients)
+		require.Empty(t, entry.Claimed.Modules)
+		require.Empty(t, entry.Claimed.Clients)
 	})
 }

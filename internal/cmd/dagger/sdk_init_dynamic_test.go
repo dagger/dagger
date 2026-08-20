@@ -15,8 +15,8 @@ func TestInstalledSDKCommandShape(t *testing.T) {
 		commandName: "go",
 		entry: workspace.ModuleEntry{
 			Source: "github.com/dagger/go-sdk",
-			AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
 		},
+		sdk: workspace.SDKEntry{Module: "dagger-go-sdk"},
 	}
 	cmd := newInstalledSDKCommand(sdk)
 	require.Equal(t, "go", cmd.Use)
@@ -107,17 +107,19 @@ func TestSDKInitArgsJSON(t *testing.T) {
 	require.JSONEq(t, `{"goVersion":"1.22"}`, args)
 }
 
-func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
+func TestConfiguredSDKsUsesSDKRegistryName(t *testing.T) {
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{
 			"go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{},
 			},
 			"custom-sdk": {
 				Source: "github.com/acme/custom-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{},
 			},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "go-sdk"},
+			"custom": {Module: "custom-sdk"},
 		},
 	}
 
@@ -131,9 +133,7 @@ func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
 	require.Equal(t, "go", resolved.commandName)
 
 	resolved, err = resolveConfiguredSDK(cfg, "go-sdk")
-	require.NoError(t, err)
-	require.Equal(t, "go-sdk", resolved.moduleName)
-	require.Equal(t, "go", resolved.commandName)
+	require.Error(t, err)
 }
 
 func TestConfiguredSDKsRejectsDuplicateCommandName(t *testing.T) {
@@ -141,17 +141,16 @@ func TestConfiguredSDKsRejectsDuplicateCommandName(t *testing.T) {
 		Modules: map[string]workspace.ModuleEntry{
 			"dagger-go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{},
 			},
-			"go-sdk": {
-				Source: "github.com/acme/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{},
-			},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "dagger-go-sdk"},
+			"golang": {Module: "dagger-go-sdk"},
 		},
 	}
 
 	_, err := configuredSDKs(cfg)
-	require.ErrorContains(t, err, `SDK name "go" is ambiguous`)
+	require.ErrorContains(t, err, `module "dagger-go-sdk" provides multiple SDKs`)
 }
 
 func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {

@@ -4021,7 +4021,6 @@ type CurrentModuleAsSDKClient struct {
 	id     *ID
 	module *string
 	path   *string
-	pin    *string
 }
 
 func (r *CurrentModuleAsSDKClient) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKClient {
@@ -4098,19 +4097,6 @@ func (r *CurrentModuleAsSDKClient) Path(ctx context.Context) (string, error) {
 		return *r.path, nil
 	}
 	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The pinned version of the bound module, if any.
-func (r *CurrentModuleAsSDKClient) Pin(ctx context.Context) (string, error) {
-	if r.pin != nil {
-		return *r.pin, nil
-	}
-	q := r.query.Select("pin")
 
 	var response string
 

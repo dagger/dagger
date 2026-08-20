@@ -109,6 +109,9 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
@@ -128,95 +131,44 @@ source = ".dagger/modules/tui-qa"
 [env.dev.modules.editor]
 source = "github.com/vito/editor"
 
-[modules.dagger-dang-sdk.as-sdk]
-name = "dang"
+[sdks.dang]
+module = "dagger-dang-sdk"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "cmd/codegen"
+[sdks.dang.claimed]
+modules = [
+  "cmd/codegen",
+  "modules/markdownlint",
+  ".dagger/modules/changelog",
+  ".dagger/modules/ci",
+  ".dagger/modules/dotnet-client-dev",
+  ".dagger/modules/elixir-client-dev",
+  ".dagger/modules/go-client-dev",
+  ".dagger/modules/java-client-dev",
+  ".dagger/modules/security",
+  ".dagger/modules/test-split",
+  ".dagger/modules/typescript-client-dev",
+]
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "modules/markdownlint"
+[sdks.go]
+module = "dagger-go-sdk"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/changelog"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/ci"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/dotnet-client-dev"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/elixir-client-dev"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/go-client-dev"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/java-client-dev"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/security"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/test-split"
-
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/typescript-client-dev"
-
-[modules.dagger-go-sdk.as-sdk]
-name = "go"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "modules/alpine"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "modules/git-releaser"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "modules/wolfi"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/cli-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/docs-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/docs-dev/docusaurus"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/engine-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/engine-dev/notify"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/php-client-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/python-client-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/python-client-dev/dockerd"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release/apko"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release/gh"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release/registry-config"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/rust-client-dev"
-
-[modules.tla-check]
-source = ".dagger/modules/tla-check"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/tla-check"
+[sdks.go.claimed]
+modules = [
+  "modules/alpine",
+  "modules/git-releaser",
+  "modules/wolfi",
+  ".dagger/modules/cli-dev",
+  ".dagger/modules/docs-dev",
+  ".dagger/modules/docs-dev/docusaurus",
+  ".dagger/modules/engine-dev",
+  ".dagger/modules/engine-dev/notify",
+  ".dagger/modules/php-client-dev",
+  ".dagger/modules/python-client-dev",
+  ".dagger/modules/python-client-dev/dockerd",
+  ".dagger/modules/release/apko",
+  ".dagger/modules/release",
+  ".dagger/modules/release/gh",
+  ".dagger/modules/release/registry-config",
+  ".dagger/modules/rust-client-dev",
+  ".dagger/modules/tla-check",
+]

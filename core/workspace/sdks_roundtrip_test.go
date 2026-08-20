@@ -3,11 +3,11 @@ package workspace
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-// TestModuleAsSDKRoundTripFresh covers a freshly-serialized config that
-// declares an SDK install via the as-sdk sub-table.
-func TestModuleAsSDKRoundTripFresh(t *testing.T) {
+func TestSDKRoundTripFresh(t *testing.T) {
 	cfg := &Config{
 		Modules: map[string]ModuleEntry{
 			"mymod": {Source: ".dagger/modules/mymod"},
@@ -15,16 +15,17 @@ func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 				Source:   "github.com/dagger/go-sdk",
 				Pin:      "abcdef",
 				Settings: map[string]any{"strict-build": true},
-				AsSDK: &ModuleAsSDK{
-					Modules: []SDKManagedModule{
-						{Path: ".dagger/modules/mymod"},
-						{Path: "libs/shared"},
-					},
+			},
+		},
+		SDKs: map[string]SDKEntry{
+			"go": {
+				Module: "go-sdk",
+				Claimed: SDKClaims{
+					Modules: []string{".dagger/modules/mymod", "libs/shared"},
 					Clients: []SDKManagedClient{
 						{
 							Path:   "./lib/cli",
 							Module: ".dagger/modules/cli",
-							Pin:    "123456",
 							Options: map[string]string{
 								"package-name": "@my-app/dagger-cli-client",
 							},
@@ -36,61 +37,20 @@ func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 	}
 
 	raw := SerializeConfig(cfg)
-	t.Logf("=== SerializeConfig ===\n%s", raw)
-
 	parsed, err := ParseConfig(raw)
-	if err != nil {
-		t.Fatalf("ParseConfig: %v", err)
-	}
-	goSDK, ok := parsed.Modules["go-sdk"]
-	if !ok {
-		t.Fatalf("go-sdk module missing from parsed config")
-	}
-	if goSDK.Source != "github.com/dagger/go-sdk" {
-		t.Errorf("Source: got %q", goSDK.Source)
-	}
-	if goSDK.Pin != "abcdef" {
-		t.Errorf("Pin: got %q", goSDK.Pin)
-	}
-	if goSDK.AsSDK == nil {
-		t.Fatalf("AsSDK is nil after round-trip")
-	}
-	if got := len(goSDK.AsSDK.Modules); got != 2 {
-		t.Errorf("Modules count: got %d", got)
-	}
-	if got := len(goSDK.AsSDK.Clients); got != 1 {
-		t.Errorf("Clients count: got %d", got)
-	}
-	if got := goSDK.AsSDK.Clients[0].Pin; got != "123456" {
-		t.Errorf("Client pin: got %q", got)
-	}
-	if got := goSDK.AsSDK.Clients[0].Options["package-name"]; got != "@my-app/dagger-cli-client" {
-		t.Errorf("Client package-name option: got %q", got)
-	}
+	require.NoError(t, err)
+	require.Equal(t, cfg.Modules["go-sdk"], parsed.Modules["go-sdk"])
+	require.Equal(t, cfg.SDKs["go"], parsed.SDKs["go"])
 
 	updated, err := UpdateConfigBytes(raw, parsed)
-	if err != nil {
-		t.Fatalf("UpdateConfigBytes: %v", err)
-	}
-	t.Logf("=== UpdateConfigBytes round-trip ===\n%s", updated)
-
-	for _, want := range []string{
-		"[modules.go-sdk]",
-		"[modules.go-sdk.settings]",
-		"[[modules.go-sdk.as-sdk.modules]]",
-		"[[modules.go-sdk.as-sdk.clients]]",
-		`pin = "123456"`,
-		`package-name = "@my-app/dagger-cli-client"`,
-	} {
-		if !strings.Contains(string(updated), want) {
-			t.Errorf("missing %q in round-trip output", want)
-		}
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(updated), "[sdks.go]")
+	require.Contains(t, string(updated), "[sdks.go.claimed]")
+	require.Contains(t, string(updated), `modules = [`)
+	require.Contains(t, string(updated), `{ path = "./lib/cli", module = ".dagger/modules/cli", package-name = "@my-app/dagger-cli-client" }`)
 }
 
-// TestModuleAsSDKPreservesCommentsOutside verifies that comments and
-// formatting in non-as-sdk regions survive a write that touches as-sdk.
-func TestModuleAsSDKPreservesCommentsOutside(t *testing.T) {
+func TestLegacySDKConfigMigratesOnWriteAndPreservesOtherComments(t *testing.T) {
 	original := []byte(`# Top-level comment
 ignore = ["*.bak"]
 
@@ -102,28 +62,40 @@ source = ".dagger/modules/mymod"  # inline comment
 source = "github.com/old/go-sdk"
 
 [[modules.go-sdk.as-sdk.modules]]
-path = ".dagger/modules/stale"
+path = ".dagger/modules/mymod"
+
+[[modules.go-sdk.as-sdk.clients]]
+path = "lib/client"
+module = "github.com/acme/api@main"
+pin = "abc123"
+
+[[modules.go-sdk.as-sdk.clients]]
+path = "lib/ssh-client"
+module = "git@github.com:acme/api"
+pin = "def456"
 `)
 
 	cfg, err := ParseConfig(original)
-	if err != nil {
-		t.Fatalf("ParseConfig: %v", err)
-	}
-
-	// Replace the SDK's as-sdk content entirely.
-	entry := cfg.Modules["go-sdk"]
-	entry.AsSDK = &ModuleAsSDK{
-		Modules: []SDKManagedModule{
-			{Path: ".dagger/modules/mymod"},
+	require.NoError(t, err)
+	require.Equal(t, SDKEntry{
+		Module: "go-sdk",
+		Claimed: SDKClaims{
+			Modules: []string{".dagger/modules/mymod"},
+			Clients: []SDKManagedClient{
+				{
+					Path:   "lib/client",
+					Module: "github.com/acme/api@abc123",
+				},
+				{
+					Path:   "lib/ssh-client",
+					Module: "git@github.com:acme/api@def456",
+				},
+			},
 		},
-	}
-	cfg.Modules["go-sdk"] = entry
+	}, cfg.SDKs["go"])
 
 	out, err := UpdateConfigBytes(original, cfg)
-	if err != nil {
-		t.Fatalf("UpdateConfigBytes: %v", err)
-	}
-	t.Logf("=== Updated ===\n%s", out)
+	require.NoError(t, err)
 
 	s := string(out)
 	for _, want := range []string{
@@ -132,51 +104,34 @@ path = ".dagger/modules/stale"
 		"# inline comment",
 		"[modules.go-sdk]",
 		`source = "github.com/old/go-sdk"`,
-		`path = ".dagger/modules/mymod"`,
+		"[sdks.go]",
+		"[sdks.go.claimed]",
+		`".dagger/modules/mymod"`,
+		`module = "github.com/acme/api@abc123"`,
+		`module = "git@github.com:acme/api@def456"`,
 	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("missing %q", want)
-		}
-	}
-	if strings.Contains(s, "stale") {
-		t.Errorf("stale as-sdk entry survived")
+		require.True(t, strings.Contains(s, want), "missing %q in:\n%s", want, s)
 	}
 }
 
-// TestModuleAsSDKRemovedWhenEmpty checks that clearing AsSDK from a module
-// entry drops the corresponding as-sdk array-of-tables on next write.
-func TestModuleAsSDKRemovedWhenEmpty(t *testing.T) {
-	original := []byte(`[modules.mymod]
-source = ".dagger/modules/mymod"
+func TestDottedSDKConfigCanonicalizesOnWrite(t *testing.T) {
+	original := []byte(`sdks.go.module = "go-sdk"
+sdks.go.claimed.modules = ["modules/api"]
+sdks.go.claimed.clients = [{ path = "clients/api", module = "modules/api" }]
 
+# Keep this comment
 [modules.go-sdk]
 source = "github.com/dagger/go-sdk"
-
-[[modules.go-sdk.as-sdk.modules]]
-path = ".dagger/modules/mymod"
 `)
 
 	cfg, err := ParseConfig(original)
-	if err != nil {
-		t.Fatalf("ParseConfig: %v", err)
-	}
-	entry := cfg.Modules["go-sdk"]
-	entry.AsSDK = nil
-	cfg.Modules["go-sdk"] = entry
-
+	require.NoError(t, err)
 	out, err := UpdateConfigBytes(original, cfg)
-	if err != nil {
-		t.Fatalf("UpdateConfigBytes: %v", err)
-	}
-	t.Logf("=== Updated (as-sdk removed) ===\n%s", out)
+	require.NoError(t, err)
 
-	if strings.Contains(string(out), "as-sdk") {
-		t.Errorf("as-sdk should be gone, got:\n%s", out)
-	}
-	if !strings.Contains(string(out), "[modules.go-sdk]") {
-		t.Errorf("the go-sdk module install should still be present")
-	}
-	if !strings.Contains(string(out), "[modules.mymod]") {
-		t.Errorf("the mymod module should still be present")
-	}
+	roundTripped, err := ParseConfig(out)
+	require.NoError(t, err)
+	require.Equal(t, cfg, roundTripped)
+	require.Contains(t, string(out), "# Keep this comment")
+	require.Contains(t, string(out), "[sdks.go.claimed]")
 }

@@ -16,28 +16,75 @@ func TestPlanMigratedSDKFixups(t *testing.T) {
 		Modules: map[string]workspace.ModuleEntry{
 			// builtin SDK recorded by migration (keyed by prefixed name, bare
 			// source): resolve the bare source to its real ref + name
-			"dagger-php-sdk": {Source: "php", AsSDK: &workspace.ModuleAsSDK{}},
-			"dagger-go-sdk":  {Source: "go", AsSDK: &workspace.ModuleAsSDK{}},
+			"dagger-php-sdk": {Source: "php"},
+			"dagger-go-sdk":  {Source: "go"},
 			// versioned builtin source: resolve, preserving the @version
-			"dagger-java-sdk": {Source: "java@v0.18", AsSDK: &workspace.ModuleAsSDK{}},
+			"dagger-java-sdk": {Source: "java@v0.18"},
 			// already a full ref: leave untouched
-			"custom-sdk": {Source: "github.com/dagger/go-sdk@v1.2.3", AsSDK: &workspace.ModuleAsSDK{}},
+			"custom-sdk": {Source: "github.com/dagger/go-sdk@v1.2.3"},
 			// not an SDK install: ignore even with a bare source
 			"plain": {Source: "mymod"},
 			// local path SDK: leave untouched
-			"local": {Source: "./sdks/local", AsSDK: &workspace.ModuleAsSDK{}},
+			"local": {Source: "./sdks/local"},
 			// bare name absent from the registry: leave untouched
-			"mystery": {Source: "mystery", AsSDK: &workspace.ModuleAsSDK{}},
+			"mystery": {Source: "mystery"},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"php":     {Module: "dagger-php-sdk"},
+			"go":      {Module: "dagger-go-sdk"},
+			"java":    {Module: "dagger-java-sdk"},
+			"custom":  {Module: "custom-sdk"},
+			"local":   {Module: "local"},
+			"mystery": {Module: "mystery"},
 		},
 	}
 
 	require.Equal(t, []migratedSDKFixup{
-		{ModuleName: "dagger-go-sdk", Ref: "github.com/dagger/go-sdk", SDKName: "go"},
-		{ModuleName: "dagger-java-sdk", Ref: "github.com/dagger/java-sdk@v0.18", SDKName: "java"},
-		{ModuleName: "dagger-php-sdk", Ref: "github.com/dagger/php-sdk", SDKName: "php"},
+		{ModuleName: "dagger-go-sdk", CurrentSDKName: "go", Ref: "github.com/dagger/go-sdk", SDKName: "go"},
+		{ModuleName: "dagger-java-sdk", CurrentSDKName: "java", Ref: "github.com/dagger/java-sdk@v0.18", SDKName: "java"},
+		{ModuleName: "dagger-php-sdk", CurrentSDKName: "php", Ref: "github.com/dagger/php-sdk", SDKName: "php"},
 	}, planMigratedSDKFixups(cfg))
 
 	require.Nil(t, planMigratedSDKFixups(nil))
+}
+
+func TestApplyMigratedSDKFixupsPreservesClaims(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"dagger-go-sdk": {Source: "go"},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"golang": {
+				Module: "dagger-go-sdk",
+				Claimed: workspace.SDKClaims{
+					Modules: []string{"modules/alpine"},
+					Clients: []workspace.SDKManagedClient{{
+						Path:   "sdk/go/client",
+						Module: ".",
+					}},
+				},
+			},
+		},
+	}
+
+	err := applyMigratedSDKFixups(cfg, []migratedSDKFixup{{
+		ModuleName:     "dagger-go-sdk",
+		CurrentSDKName: "golang",
+		Ref:            "github.com/dagger/go-sdk",
+		SDKName:        "go",
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk"].Source)
+	require.Equal(t, workspace.SDKEntry{
+		Module: "dagger-go-sdk",
+		Claimed: workspace.SDKClaims{
+			Modules: []string{"modules/alpine"},
+			Clients: []workspace.SDKManagedClient{{
+				Path:   "sdk/go/client",
+				Module: ".",
+			}},
+		},
+	}, cfg.SDKs["go"])
 }
 
 func TestSDKResolve(t *testing.T) {
@@ -258,13 +305,14 @@ func TestRunSDKInfo(t *testing.T) {
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"
 
-[modules.dagger-go-sdk.as-sdk]
-name = "go"
-
 [modules.custom-sdk]
 source = "github.com/acme/custom-sdk"
 
-[modules.custom-sdk.as-sdk]
+[sdks.go]
+module = "dagger-go-sdk"
+
+[sdks.custom]
+module = "custom-sdk"
 `), 0o600))
 
 	var buf bytes.Buffer

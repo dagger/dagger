@@ -28,7 +28,7 @@ type workspaceInitModuleArgs struct {
 
 // initModuleChanges builds the workspace edits required to create a new module
 // owned by this workspace: the module config file (dagger-module.toml) at
-// `path`, the authoring entry under `[[modules.<sdk>.as-sdk.modules]]`, and —
+// `path`, the authoring entry under `sdks.<sdk>.claimed.modules`, and —
 // when the default path is used — an `[modules.<name>]` install for the new
 // module so it's callable in this workspace. The SDK must already be
 // installed as an SDK; init is dispatch, not install.
@@ -94,7 +94,7 @@ func (s *workspaceSchema) initModuleChanges(
 	}
 
 	cfg := staged.Config
-	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
+	sdkName, providerEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, scope, err
 	}
@@ -117,11 +117,12 @@ func (s *workspaceSchema) initModuleChanges(
 		return res, scope, err
 	}
 	if claimed {
-		return res, scope, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, owner)
+		return res, scope, fmt.Errorf("a module is already claimed at %q by SDK %q", relPath, owner)
 	}
 
-	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: configPath})
-	cfg.Modules[sdkName] = sdkEntry
+	sdkEntry := cfg.SDKs[sdkName]
+	sdkEntry.Claimed.Modules = append(sdkEntry.Claimed.Modules, configPath)
+	cfg.SDKs[sdkName] = sdkEntry
 
 	loadedSDK, err := s.loadWorkspaceSDK(ctx, ws, staged.ConfigDir, sdkRef)
 	if err != nil {
@@ -130,7 +131,7 @@ func (s *workspaceSchema) initModuleChanges(
 
 	// By default the SDK module is also the runtime. SDKs that split authoring
 	// from execution advertise RuntimeTarget and provide the runtime ref.
-	defaultRuntimeRef, err := moduleEntrySourceWithPinRelativeTo(staged.ConfigDir, relPath, sdkEntry)
+	defaultRuntimeRef, err := moduleEntrySourceWithPinRelativeTo(staged.ConfigDir, relPath, providerEntry)
 	if err != nil {
 		return res, scope, err
 	}

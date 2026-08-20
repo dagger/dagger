@@ -13,11 +13,10 @@ import (
 // data its workspace install entry carries: the modules and clients this SDK
 // authors and manages. It lets SDK generators discover the workspace-managed
 // modules/clients they own from the engine's source of truth
-// ([[modules.<name>.as-sdk.modules]] / .clients) instead of scanning the
+// ([sdks.<name>.claimed]) instead of scanning the
 // workspace filesystem for legacy dagger.json files.
 type CurrentModuleAsSDK struct {
-	// Name is the user-facing SDK name (the as-sdk `name`, falling back to the
-	// conventional name derived from the workspace install entry name).
+	// Name is the user-facing SDK name from the top-level sdks table.
 	Name string `field:"true" doc:"The user-facing name of this SDK in the workspace."`
 
 	// Modules lists the workspace-local modules this SDK authors and manages.
@@ -61,7 +60,7 @@ func (*CurrentModuleAsSDK) DecodePersistedObject(ctx context.Context, dag *dagql
 }
 
 // CurrentModuleAsSDKModule is one workspace-local module managed by the current
-// SDK, mirroring a [[modules.<name>.as-sdk.modules]] entry.
+// SDK, mirroring an item in sdks.<name>.claimed.modules.
 type CurrentModuleAsSDKModule struct {
 	Path string `field:"true" doc:"Workspace-root-relative path to the managed module."`
 }
@@ -100,11 +99,10 @@ func (*CurrentModuleAsSDKModule) DecodePersistedObject(ctx context.Context, dag 
 }
 
 // CurrentModuleAsSDKClient is one generated client the current SDK produces in
-// the workspace, mirroring a [[modules.<name>.as-sdk.clients]] entry.
+// the workspace, mirroring an sdks.<name>.claimed.clients entry.
 type CurrentModuleAsSDKClient struct {
 	Path   string `field:"true" doc:"Workspace-root-relative path of the generated client."`
 	Module string `field:"true" doc:"The module the client is bound to (workspace-relative path or canonical ref)."`
-	Pin    string `field:"true" doc:"The pinned version of the bound module, if any."`
 
 	// BoundWorkspace is the Workspace asSDK was called on — the one whose config
 	// named this client. Its moduleSource field resolves the bound module against
@@ -126,7 +124,6 @@ var _ dagql.HasDependencyResults = (*CurrentModuleAsSDKClient)(nil)
 type persistedCurrentModuleAsSDKClientPayload struct {
 	Path                   string `json:"path,omitempty"`
 	Module                 string `json:"module,omitempty"`
-	Pin                    string `json:"pin,omitempty"`
 	BoundWorkspaceResultID uint64 `json:"boundWorkspaceResultID,omitempty"`
 }
 
@@ -149,7 +146,6 @@ func (c *CurrentModuleAsSDKClient) EncodePersistedObject(ctx context.Context, ca
 	payload := persistedCurrentModuleAsSDKClientPayload{
 		Path:   c.Path,
 		Module: c.Module,
-		Pin:    c.Pin,
 	}
 	if c.BoundWorkspace.Self() != nil {
 		wsID, err := encodePersistedObjectRef(cache, c.BoundWorkspace, "bound workspace")
@@ -169,7 +165,6 @@ func (*CurrentModuleAsSDKClient) DecodePersistedObject(ctx context.Context, dag 
 	c := &CurrentModuleAsSDKClient{
 		Path:   persisted.Path,
 		Module: persisted.Module,
-		Pin:    persisted.Pin,
 	}
 	if persisted.BoundWorkspaceResultID != 0 {
 		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.BoundWorkspaceResultID, "bound workspace")

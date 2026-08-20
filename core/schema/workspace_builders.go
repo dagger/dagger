@@ -272,11 +272,10 @@ func (s *workspaceSchema) withModuleInstall(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if !args.AsSdk {
-		if existing, ok := staged.Config.Modules[resolved.Name]; ok && existing.AsSDK != nil {
-			// A reinstall must preserve its explicit command-name override. An empty
-			// name continues to use the convention derived from the module entry name.
+		if sdkName, ok := workspace.SDKNameForModule(staged.Config, resolved.Name); ok {
+			// A reinstall preserves the SDK's explicit workspace name.
 			args.AsSdk = true
-			args.AsSdkName = existing.AsSDK.Name
+			args.AsSdkName = sdkName
 		} else {
 			isSDK, err := detectWorkspaceSDKCapabilities(lookupCtx, resolved.ModuleSource)
 			if err != nil {
@@ -354,8 +353,10 @@ func (s *workspaceSchema) withoutModule(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if envName, ok := selectedWorkspaceEnv(ctx); ok {
-		if entry, installed := staged.Config.Modules[args.Name]; installed && entry.AsSDK != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; uninstall SDKs in the base workspace config")
+		if _, installed := staged.Config.Modules[args.Name]; installed {
+			if _, isSDK := workspace.SDKNameForModule(staged.Config, args.Name); isSDK {
+				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; uninstall SDKs in the base workspace config")
+			}
 		}
 		return s.withoutEnvModule(ctx, parent, staged, envName, args.Name)
 	}
@@ -364,9 +365,12 @@ func (s *workspaceSchema) withoutModule(
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is not installed in the workspace", args.Name)
 	}
 
-	managedModulePath, removeManagedModuleDir, err := removeSDKManagedModuleReference(staged.Config, staged.ConfigDir, entry)
+	managedModulePath, removeManagedModuleDir, err := removeSDKManagedModuleReference(staged.Config, staged.ConfigDir, args.Name, entry)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if sdkName, isSDK := workspace.SDKNameForModule(staged.Config, args.Name); isSDK {
+		delete(staged.Config.SDKs, sdkName)
 	}
 	delete(staged.Config.Modules, args.Name)
 	updatedConfig, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
@@ -453,6 +457,15 @@ func (s *workspaceSchema) withoutSDK(
 	if _, ok := selectedWorkspaceEnv(ctx); ok {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; uninstall SDKs in the base workspace config")
 	}
+	staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent.Self(), workspaceConfigMustExist, args.Here)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sdkName, _, _, err := installedSDKSource(staged.Config, args.Name)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	args.Name = staged.Config.SDKs[sdkName].Module
 	return s.withoutModule(ctx, parent, args)
 }
 
@@ -516,13 +529,35 @@ func (s *workspaceSchema) withInitClient(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceInitClientArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(
+		ctx,
+		parent.Self(),
+		workspaceConfigDirectoryForWrite(parent.Self(), args.Here),
+	)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	changes, scope, err := s.initClientChanges(
-		withoutWorkspaceLookupLock(ctx),
+		withWorkspaceLookupLockOverride(ctx, overlayLock.Lock),
 		parent,
 		args,
 	)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	_, _, lockChanged, err := overlayLock.updatedFile()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if lockChanged {
+		lockChanges, err := s.workspaceLockChangeset(ctx, selected, overlayLock.Lock)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		changes, err = mergeWorkspaceInitChangeset(ctx, changes, lockChanges)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
 	}
 	updated, err := s.workspaceWithChangeset(ctx, parent, changes)
 	if err != nil {
@@ -575,18 +610,19 @@ func (s *workspaceSchema) sdkGenerators(
 		// generator functions to expose.
 		return &core.GeneratorGroup{}, nil
 	}
-	mod, err = moduleUnderWorkspaceName(ctx, mod, sdkName)
+	providerName := staged.Config.SDKs[sdkName].Module
+	mod, err = moduleUnderWorkspaceName(ctx, mod, providerName)
 	if err != nil {
-		return nil, fmt.Errorf("load SDK %q as %q: %w", sdkRef, sdkName, err)
+		return nil, fmt.Errorf("load SDK %q as %q: %w", sdkRef, providerName, err)
 	}
 
 	gg, err := core.NewGeneratorGroup(ctx, mod, nil)
 	if err != nil {
 		return nil, fmt.Errorf("generators from SDK %q: %w", sdkName, err)
 	}
-	// Name the tree after the workspace entry, so generator paths read the same
+	// Name the tree after the provider's workspace module entry, so generator paths read the same
 	// as they do under `dagger generate <sdk>`.
-	reparentWorkspaceTreeRoot(gg.Node, sdkName)
+	reparentWorkspaceTreeRoot(gg.Node, providerName)
 	// The SDK compares the workspace it returns with this exact input workspace,
 	// so it sees every staged init edit while returning only its own generated
 	// files.

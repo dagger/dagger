@@ -43,15 +43,16 @@ func TestLocalModuleRefsEmpty(t *testing.T) {
 func TestAddMigratedModuleSDK(t *testing.T) {
 	t.Parallel()
 
-	t.Run("creates a builtin as-sdk install", func(t *testing.T) {
+	t.Run("creates a builtin SDK install", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{}}
 		AddMigratedModuleSDK(cfg, "go", "libs/foo")
 		entry, ok := cfg.Modules["dagger-go-sdk"]
 		require.True(t, ok)
 		require.Equal(t, "go", entry.Source)
-		require.NotNil(t, entry.AsSDK)
-		require.Len(t, entry.AsSDK.Modules, 1)
-		require.Equal(t, "libs/foo", entry.AsSDK.Modules[0].Path)
+		require.Equal(t, SDKEntry{
+			Module:  "dagger-go-sdk",
+			Claimed: SDKClaims{Modules: []string{"libs/foo"}},
+		}, cfg.SDKs["go"])
 	})
 
 	t.Run("shares one entry across modules with the same runtime", func(t *testing.T) {
@@ -61,7 +62,7 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		require.Len(t, cfg.Modules, 1)
 		require.ElementsMatch(t,
 			[]string{".dagger/modules/myapp", "libs/foo"},
-			[]string{cfg.Modules["dagger-go-sdk"].AsSDK.Modules[0].Path, cfg.Modules["dagger-go-sdk"].AsSDK.Modules[1].Path},
+			cfg.SDKs["go"].Claimed.Modules,
 		)
 	})
 
@@ -79,8 +80,10 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		entry, ok := cfg.Modules["custom-sdk"]
 		require.True(t, ok)
 		require.Equal(t, "github.com/acme/custom-sdk", entry.Source)
-		require.NotNil(t, entry.AsSDK)
-		require.Len(t, entry.AsSDK.Modules, 1)
+		require.Equal(t, SDKEntry{
+			Module:  "custom-sdk",
+			Claimed: SDKClaims{Modules: []string{"libs/foo"}},
+		}, cfg.SDKs["custom"])
 	})
 }
 

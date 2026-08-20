@@ -25,9 +25,10 @@ var sdkCmd = &cobra.Command{
 // bare SDK short name and that must be resolved to its real ref and canonical
 // name through the sdks.json registry.
 type migratedSDKFixup struct {
-	ModuleName string
-	Ref        string
-	SDKName    string
+	ModuleName     string
+	CurrentSDKName string
+	Ref            string
+	SDKName        string
 }
 
 // planMigratedSDKFixups finds SDK installs whose source is a bare legacy SDK
@@ -38,8 +39,9 @@ func planMigratedSDKFixups(cfg *workspace.Config) []migratedSDKFixup {
 		return nil
 	}
 	var fixups []migratedSDKFixup
-	for name, entry := range cfg.Modules {
-		if entry.AsSDK == nil || entry.Source == "" || strings.Contains(entry.Source, "/") {
+	for currentSDKName, sdk := range cfg.SDKs {
+		entry, ok := cfg.Modules[sdk.Module]
+		if !ok || entry.Source == "" || strings.Contains(entry.Source, "/") {
 			continue
 		}
 		base, version, _ := strings.Cut(entry.Source, "@")
@@ -50,7 +52,12 @@ func planMigratedSDKFixups(cfg *workspace.Config) []migratedSDKFixup {
 		if version != "" {
 			ref += "@" + version
 		}
-		fixups = append(fixups, migratedSDKFixup{ModuleName: name, Ref: ref, SDKName: sdkName})
+		fixups = append(fixups, migratedSDKFixup{
+			ModuleName:     sdk.Module,
+			CurrentSDKName: currentSDKName,
+			Ref:            ref,
+			SDKName:        sdkName,
+		})
 	}
 	sort.Slice(fixups, func(i, j int) bool { return fixups[i].ModuleName < fixups[j].ModuleName })
 	return fixups
