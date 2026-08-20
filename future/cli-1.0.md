@@ -327,8 +327,8 @@ source = "github.com/dagger/wolfi"
 
 The `runtime` field resolves to either:
 
-- A **builtin runtime name** (`"go"`, `"python"`, `"typescript"`) — the engine's bundled runtime for that language.
-- A **canonical module ref** (`"github.com/dagger/go-sdk@v1.2.3"`) — the engine loads the named module as the runtime. The module must implement `moduleRuntime(modSource, introspectionJSON): Container!`.
+- A **builtin runtime name** (`"go"`, `"python"`, `"typescript"`) — the engine's bundled runtime for that language. The name means the artefact the engine actually bundles, and nothing else; a builtin name never resolves to a remote ref. See the open-questions note below.
+- A **canonical module ref** (`"github.com/dagger/go-sdk@v1.2.3"`) — the engine loads the named module as the runtime. The module must implement `moduleRuntime(modSource, introspectionJSON): Container!`. This is what a delegating SDK's `targetRuntime` returns, and it is the only way to name a runtime that lives outside the engine.
 
 Heuristic: no `/` and no `@` → builtin name; otherwise module ref.
 
@@ -679,7 +679,7 @@ Available subcommands depend entirely on what the SDK exposes. The CLI surface i
 ### Open questions in this section
 
 - Whether `dagger search` surfaces SDKs alongside other modules. Tentative: yes.
-- Whether the runtime-as-builtin-name namespace (`"go"`, `"python"`, …) is a closed set defined by the engine or extensible. Today's answer: closed, matching what the engine bundles. Extension would mean reserving a name for a future runtime module, which is unnecessary while engine builtins exist.
+- ~~Whether the runtime-as-builtin-name namespace (`"go"`, `"python"`, …) is a closed set defined by the engine or extensible.~~ **Settled: closed, and a builtin name resolves only to an engine-bundled artefact.** An SDK whose runtime lives in its own repository names it by ref through `targetRuntime`; the engine holds no name→ref table for runtimes. Investigated in full for `python` when `dagger/python-sdk` took its runtime in-repo, and rejected: making a builtin name resolve to a ref for *some* modules requires a discriminator, the only available one (module config format) is not one — `dagger setup` migration copies `runtime = "python"` across the format boundary verbatim (`core/modules/config_format.go:85`) — and the same load path also serves client generators, where the consuming module's format is the wrong axis entirely. See `future/python-runtime-name-resolution.md`.
 
 ## Discrete changes from current CLI
 
