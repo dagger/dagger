@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -28,6 +29,9 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 	if len(fields) == 0 {
 		return false
 	}
+	sort.SliceStable(fields, func(i, j int) bool {
+		return toolArgPriority(toolName, fields[i].Key) < toolArgPriority(toolName, fields[j].Key)
+	})
 
 	rendered := false
 	for _, f := range fields {
@@ -38,6 +42,9 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 		val := sanitizeSummary(firstLine(f.Value))
 		if strings.TrimSpace(val) == "" {
 			continue
+		}
+		if toolNameIs(toolName, "read") && (strings.EqualFold(f.Key, "offset") || strings.EqualFold(f.Key, "limit")) {
+			val = strings.ToLower(f.Key) + "=" + val
 		}
 		fmt.Fprint(out, " ")
 		switch style {
@@ -51,6 +58,32 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 		rendered = true
 	}
 	return rendered
+}
+
+func toolArgPriority(toolName, name string) int {
+	lower := strings.ToLower(name)
+	if toolNameIs(toolName, "read") {
+		switch lower {
+		case "path", "filepath", "file_path":
+			return 0
+		case "offset":
+			return 1
+		case "limit":
+			return 2
+		}
+	}
+	if lower == "args" {
+		return 4
+	}
+	return 3
+}
+
+func toolNameIs(toolName, want string) bool {
+	lower := strings.ToLower(toolName)
+	if idx := strings.LastIndex(lower, "_"); idx >= 0 {
+		lower = lower[idx+1:]
+	}
+	return lower == strings.ToLower(want)
 }
 
 // firstLine returns the first line of s, appending an ellipsis if the value

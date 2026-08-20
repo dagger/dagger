@@ -8,6 +8,8 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
@@ -72,6 +74,64 @@ func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
 		require.True(t, ok, "%s: missing GenAI agent name", name)
 		require.Equal(t, "reviewer", agentName.AsString())
 	}
+}
+
+func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
+	for _, args := range []string{"{}", "{}\n"} {
+		t.Run(fmt.Sprintf("trailing-newline-%t", strings.HasSuffix(args, "\n")), func(t *testing.T) {
+			_, ctx := replayTestRecorder(t)
+			recorder := &stateRecorder{}
+			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+			ctx = telemetry.WithLoggerProvider(ctx, provider)
+
+			dp := newDisplayPhases(ctx, "")
+			dp.EmitToolCall(0, "call_1", "read", args)
+
+			recorder.mu.Lock()
+			defer recorder.mu.Unlock()
+			var body strings.Builder
+			for _, record := range recorder.records {
+				body.WriteString(record.body)
+			}
+			require.Equal(t, "{}\n", body.String())
+		})
+	}
+}
+
+func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
+	sr, ctx := replayTestRecorder(t)
+	recorder := &stateRecorder{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+	ctx = telemetry.WithLoggerProvider(ctx, provider)
+	args := `{"path":"main.go","offset":20,"limit":10,"args":["foo","bar"]}`
+
+	emitMessageSpan(ctx, &LLMMessage{
+		Role: LLMMessageRoleAssistant,
+		Content: []*LLMContentBlock{{
+			Kind: LLMContentToolCall, CallID: "call_1", ToolName: "read", Arguments: JSON(args),
+		}},
+	}, "", nil, nil)
+
+	ended := sr.Ended()
+	require.NotEmpty(t, ended)
+	span := ended[len(ended)-1]
+	names, ok := spanAttr(span, telemetry.LLMToolArgNamesAttr)
+	require.True(t, ok)
+	values, ok := spanAttr(span, telemetry.LLMToolArgValuesAttr)
+	require.True(t, ok)
+	require.Equal(t, []string{"args", "limit", "offset", "path"}, names.AsStringSlice())
+	require.Equal(t, []string{"foo bar", "10", "20", "main.go"}, values.AsStringSlice())
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	require.Condition(t, func() bool {
+		for _, record := range recorder.records {
+			if record.body == args+"\n" {
+				return true
+			}
+		}
+		return false
+	}, "replayed tool JSON was not newline-terminated")
 }
 
 func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {

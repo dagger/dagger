@@ -284,7 +284,7 @@ func TestInlineLogsViewFetchesOnMountAndRenders(t *testing.T) {
 	if !gotChild {
 		t.Fatalf("expanded child's logs were not requested on LogsView mount; fetched=%v", fetched)
 	}
-	if fe.logsViews[childID] == nil {
+	if fe.logsViews[logsViewKey{spanID: childID}] == nil {
 		t.Fatal("no LogsView created for expanded child")
 	}
 
@@ -370,7 +370,7 @@ func TestInlineLogsReactToScreenHeight(t *testing.T) {
 
 	// Tall screen: the window is a third of it.
 	_ = fe.tui.Frame()
-	lv := fe.logsViews[childID]
+	lv := fe.logsViews[logsViewKey{spanID: childID}]
 	if lv == nil {
 		t.Fatal("no LogsView created for expanded child")
 	}
@@ -1894,6 +1894,8 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	setLog(thinkID, "let me think")
 	setLog(asstID, "here is my reply")
 	setLog(toolID, `{"pattern": "*"}`)
+	fe.logs.ToolArgs[toolID] = fe.logs.Logs[toolID]
+	delete(fe.logs.Logs, toolID)
 	setLog(failureID, "context limit reached")
 
 	fe.recalculateViewLocked()

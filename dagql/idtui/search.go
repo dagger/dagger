@@ -12,7 +12,8 @@ type searchMatch struct {
 	spanID dagui.SpanID
 	// logRow is the row index inside the Vterm, or -1 when the span name
 	// itself matched.
-	logRow int
+	logRow   int
+	toolArgs bool
 }
 
 // buildSearchMatches walks ALL spans in the trace tree (not just visible
@@ -46,14 +47,22 @@ func (fe *frontendPretty) buildSearchMatches() {
 			}
 
 			// 2. Vterm log content matches — reads midterm's cached results.
-			if logs, ok := fe.logs.Logs[spanID]; ok {
+			appendLogMatches := func(logs *Vterm, toolArgs bool) {
+				if logs == nil {
+					return
+				}
 				for _, r := range logs.Term().SearchMatchRows() {
 					fe.searchMatches = append(fe.searchMatches, searchMatch{
-						spanID: spanID,
-						logRow: r,
+						spanID:   spanID,
+						logRow:   r,
+						toolArgs: toolArgs,
 					})
 					fe.searchMatchSpans[spanID] = true
 				}
+			}
+			appendLogMatches(fe.logs.Logs[spanID], false)
+			if fe.spanVerbosity(tree.Span) >= toolArgsVerbosity {
+				appendLogMatches(fe.logs.ToolArgs[spanID], true)
 			}
 
 			walkTree(tree.Children)
@@ -228,7 +237,11 @@ func (fe *frontendPretty) goToSearchMatch(idx int) {
 	if m.logRow >= 0 {
 		fe.setExpanded(m.spanID, true)
 		fe.syncAfterExpandToggle(m.spanID)
-		if logs, ok := fe.logs.Logs[m.spanID]; ok {
+		logs := fe.logs.Logs[m.spanID]
+		if m.toolArgs {
+			logs = fe.logs.ToolArgs[m.spanID]
+		}
+		if logs != nil {
 			logs.ScrollToRow(m.logRow)
 		}
 	}
@@ -256,8 +269,10 @@ func (fe *frontendPretty) clearSearch() {
 	fe.searchQuery = ""
 	fe.searchMatches = nil
 	fe.searchIdx = -1
-	for _, vt := range fe.logs.Logs {
-		vt.SetSearchHighlight("", -1)
+	for _, logs := range []map[dagui.SpanID]*Vterm{fe.logs.Logs, fe.logs.ToolArgs} {
+		for _, vt := range logs {
+			vt.SetSearchHighlight("", -1)
+		}
 	}
 	fe.dirtySearchTrees()
 	fe.searchMatchSpans = nil
@@ -270,8 +285,10 @@ func (fe *frontendPretty) dirtySearchTrees() {
 		if st, ok := fe.spanTrees[spanID]; ok {
 			st.Update()
 		}
-		if lv, ok := fe.logsViews[spanID]; ok {
-			lv.Update()
+		for key, lv := range fe.logsViews {
+			if key.spanID == spanID {
+				lv.Update()
+			}
 		}
 	}
 	for spanID := range fe.prevSearchMatchSpans {
@@ -279,8 +296,10 @@ func (fe *frontendPretty) dirtySearchTrees() {
 			if st, ok := fe.spanTrees[spanID]; ok {
 				st.Update()
 			}
-			if lv, ok := fe.logsViews[spanID]; ok {
-				lv.Update()
+			for key, lv := range fe.logsViews {
+				if key.spanID == spanID {
+					lv.Update()
+				}
 			}
 		}
 	}
@@ -296,23 +315,27 @@ func (fe *frontendPretty) dirtySearchTrees() {
 func (fe *frontendPretty) syncVtermSearchHighlights() {
 	var currentSpan dagui.SpanID
 	currentRow := -1
+	currentToolArgs := false
 	if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
 		m := fe.searchMatches[fe.searchIdx]
 		if m.logRow >= 0 {
 			currentSpan = m.spanID
 			currentRow = m.logRow
+			currentToolArgs = m.toolArgs
 		}
 	}
 
-	for spanID, vt := range fe.logs.Logs {
-		if fe.searchQuery == "" {
-			vt.SetSearchHighlight("", -1)
-		} else {
-			cr := -1
-			if spanID == currentSpan {
-				cr = currentRow
+	for toolArgs, logs := range map[bool]map[dagui.SpanID]*Vterm{false: fe.logs.Logs, true: fe.logs.ToolArgs} {
+		for spanID, vt := range logs {
+			if fe.searchQuery == "" {
+				vt.SetSearchHighlight("", -1)
+			} else {
+				cr := -1
+				if spanID == currentSpan && toolArgs == currentToolArgs {
+					cr = currentRow
+				}
+				vt.SetSearchHighlight(fe.searchQuery, cr)
 			}
-			vt.SetSearchHighlight(fe.searchQuery, cr)
 		}
 	}
 }
