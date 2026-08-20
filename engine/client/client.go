@@ -534,7 +534,29 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	return nil
 }
 
+func (c *Client) telemetryContext(ctx context.Context) (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	go func() {
+		select {
+		case <-c.internalCtx.Done():
+			cancel(context.Cause(c.internalCtx))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
+}
+
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
+	// Keep telemetry alive across the caller's cancellation and the server's
+	// shutdown drain, but tie it to the client-owned internal lifetime so a
+	// failed initialization or rejected /shutdown cannot strand SSE streams.
+	ctx, cancel := c.telemetryContext(ctx)
+	defer func() {
+		if rerr != nil {
+			cancel(rerr)
+		}
+	}()
+
 	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
 		telemetry.Encapsulated())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -956,10 +978,6 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 }
 
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -991,10 +1009,6 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -1016,10 +1030,6 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 }
 
 func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/metrics",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
