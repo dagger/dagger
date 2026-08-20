@@ -74,6 +74,32 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	return n, nil
 }
 
+// WriteDiff syntax-highlights an authoritative unified diff while retaining its
+// original bytes for raw output and agent-facing reports.
+func (term *Vterm) WriteDiff(p []byte) (int, error) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
+	if term.Height == 0 {
+		atBottom = true
+	}
+
+	highlighted := highlightDiff(term.Profile, string(p))
+	if _, err := term.vt.Write([]byte(highlighted)); err != nil {
+		return 0, err
+	}
+	if _, err := term.rawBuf.Write(p); err != nil {
+		return 0, err
+	}
+
+	if atBottom {
+		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	}
+	term.needsRedraw = true
+	return len(p), nil
+}
+
 func (term *Vterm) Write(p []byte) (int, error) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
