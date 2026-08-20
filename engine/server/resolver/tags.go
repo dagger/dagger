@@ -90,17 +90,29 @@ func listImageTagsFromHost(ctx context.Context, host docker.RegistryHost, domain
 			return nil, fmt.Errorf("unexpected status %s: %s", resp.Status, strings.TrimSpace(string(body)))
 		}
 
+		body, err := io.ReadAll(io.LimitReader(
+			resp.Body,
+			maxRegistryTagListBody+1,
+		))
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read tag list from %q: %w", next, err)
+		}
+		if len(body) > maxRegistryTagListBody {
+			return nil, fmt.Errorf(
+				"tag list from %q exceeded %d bytes",
+				next,
+				maxRegistryTagListBody,
+			)
+		}
+
 		var page struct {
 			Tags []string `json:"tags"`
 		}
-		decoder := json.NewDecoder(io.LimitReader(resp.Body, maxRegistryTagListBody))
-		if err := decoder.Decode(&page); err != nil {
-			resp.Body.Close()
+		if err := json.Unmarshal(body, &page); err != nil {
 			return nil, fmt.Errorf("decode tag list from %q: %w", next, err)
 		}
-		resp.Body.Close()
 		if len(page.Tags) > maxRegistryTagCount || len(tags) > maxRegistryTagCount-len(page.Tags) {
-			resp.Body.Close()
 			return nil, fmt.Errorf("registry tag listing exceeded %d tags", maxRegistryTagCount)
 		}
 

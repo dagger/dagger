@@ -78,6 +78,62 @@ func TestListImageTagsRejectsPaginationToAnotherHost(t *testing.T) {
 	require.ErrorContains(t, err, "pagination escaped host")
 }
 
+func TestListImageTagsValidatesResponseBody(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name:    "trailing JSON value",
+			body:    `{"tags":["v1.0.0"]}{"tags":["v2.0.0"]}`,
+			wantErr: "invalid character",
+		},
+		{
+			name:    "trailing garbage",
+			body:    `{"tags":["v1.0.0"]}garbage`,
+			wantErr: "invalid character",
+		},
+		{
+			name:    "body limit",
+			body:    `{"tags":[]}` + strings.Repeat(" ", maxRegistryTagListBody),
+			wantErr: "exceeded 16777216 bytes",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					fmt.Fprint(w, tc.body)
+				},
+			))
+			t.Cleanup(server.Close)
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+			host := docker.RegistryHost{
+				Client:       server.Client(),
+				Host:         serverURL.Host,
+				Scheme:       serverURL.Scheme,
+				Path:         "/v2",
+				Capabilities: docker.HostCapabilityResolve,
+			}
+
+			_, err = listImageTagsFromHost(
+				context.Background(),
+				host,
+				"example.com",
+				"acme/widget",
+			)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
 type testRegistryAuthorizer struct {
 	mu         sync.Mutex
 	authorized bool
