@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
 )
 
@@ -204,14 +205,8 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	c.egraphMu.Lock()
 	assert.Assert(t, c.resultsByID[poisoned.id] == poisoned)
 	_, persistedAfterFailure := c.persistedEdgesByResult[poisoned.id]
-	canonical := c.canonicalEquivalentSharedResultLocked("canonical", poisoned, time.Now().Unix())
 	c.egraphMu.Unlock()
 	assert.Assert(t, !persistedAfterFailure)
-	assert.Assert(t, canonical == nil)
-
-	adopt := &ongoingCall{val: Result[Typed]{shared: poisoned}}
-	err = c.initCompletedResult(t.Context(), srv, adopt, &CallRequest{ResultCall: call}, "adopt")
-	assert.ErrorContains(t, err, "no clean canonical result")
 
 	replacement, err := c.GetOrInitCall(t.Context(), "replacement", srv, &CallRequest{
 		ResultCall:     call,
@@ -245,6 +240,112 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(t.Context(), "replacement"))
 	assert.NilError(t, c.ReleaseSession(t.Context(), "digest"))
 	assert.NilError(t, c.ReleaseSession(t.Context(), "id-load"))
+}
+
+// A persistable call whose fn returns an already-attached result must not
+// adopt a canonical sibling whose attachment is still open: adoption skips
+// the attach barrier and the handoff commits the persisted edge without
+// re-checking attachment, so an open sibling that later fails would end up
+// registered, persisted, and errored.
+func TestCacheAdoptionSkipsOpenAttachmentSibling(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+
+	contentDigest := digest.FromString("adoption-open-sibling-content")
+
+	// Session A publishes the open sibling first, so it has the lowest shared
+	// result ID and would win the canonical pick if open results were
+	// eligible. Its attachment blocks until the test releases it.
+	attachErr := errors.New("open sibling attachment failed")
+	attachmentStarted := make(chan struct{})
+	allowFailure := make(chan struct{})
+	openCall := cacheTestIntCall("adoption-open-sibling-open")
+	leaderErrCh := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(ctx, "session-a", noopTypeResolver{}, &CallRequest{
+			ResultCall: openCall,
+		}, func(ctx context.Context) (AnyResult, error) {
+			detached := cacheTestDetachedResult(openCall, cacheTestLeaseCheckedInt{
+				Int: NewInt(1),
+				onAttach: func(context.Context) error {
+					close(attachmentStarted)
+					<-allowFailure
+					return attachErr
+				},
+			})
+			return detached.WithContentDigest(ctx, contentDigest)
+		})
+		leaderErrCh <- err
+	}()
+	<-attachmentStarted
+	openID, err := c.resultIDForCall(openCall)
+	assert.NilError(t, err)
+	c.egraphMu.RLock()
+	open := c.resultsByID[openID]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, open != nil)
+
+	// Session B publishes a clean equivalent: same content digest, different
+	// recipe, higher shared result ID.
+	cleanCall := cacheTestIntCall("adoption-open-sibling-clean")
+	cleanRes, err := c.GetOrInitCall(ctx, "session-b", noopTypeResolver{}, &CallRequest{
+		ResultCall: cleanCall,
+	}, func(ctx context.Context) (AnyResult, error) {
+		detached := cacheTestDetachedResult(cleanCall, NewInt(2))
+		return detached.WithContentDigest(ctx, contentDigest)
+	})
+	assert.NilError(t, err)
+	clean := cleanRes.cacheSharedResult()
+	assert.Assert(t, open.id < clean.id, "open sibling must be the lowest-ID candidate")
+
+	// A persistable call whose fn returns the clean result. Adoption must pick
+	// the clean result even though the open sibling has the lower ID. If it
+	// adopted the open sibling instead, this call would block on its barrier
+	// and later persist the errored result.
+	adoptCall := cacheTestIntCall("adoption-open-sibling-adopt")
+	type adoptOutcome struct {
+		res AnyResult
+		err error
+	}
+	adoptDone := make(chan adoptOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(ctx, "session-b", noopTypeResolver{}, &CallRequest{
+			ResultCall:    adoptCall,
+			IsPersistable: true,
+		}, func(ctx context.Context) (AnyResult, error) {
+			return cleanRes, nil
+		})
+		adoptDone <- adoptOutcome{res, err}
+	}()
+
+	var adopted adoptOutcome
+	select {
+	case adopted = <-adoptDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("adopting call did not complete; it is blocked on the open sibling's attach barrier")
+	}
+	assert.NilError(t, adopted.err)
+	assert.Equal(t, clean.id, adopted.res.cacheSharedResult().id)
+
+	c.egraphMu.RLock()
+	_, openPersisted := c.persistedEdgesByResult[open.id]
+	_, cleanPersisted := c.persistedEdgesByResult[clean.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !openPersisted, "open sibling must not gain a persisted edge")
+	assert.Assert(t, cleanPersisted, "adopted clean result must carry the persisted edge")
+
+	close(allowFailure)
+	assert.ErrorIs(t, <-leaderErrCh, attachErr)
+
+	c.egraphMu.RLock()
+	_, openPersistedAfterFailure := c.persistedEdgesByResult[open.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !openPersistedAfterFailure, "errored sibling must not gain a persisted edge")
+
+	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
+	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
 }
 
 func TestCachePersistedEdgeInstallRejectsCollectedResult(t *testing.T) {
