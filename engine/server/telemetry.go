@@ -243,7 +243,7 @@ func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.srv.clientFromIDs(sessionID, clientID)
+	record, err := ps.srv.clientRecordFromIDs(sessionID, clientID)
 	if err != nil {
 		slog.Warn("error getting client", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -268,14 +268,14 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting spans", "spans", len(spans), "origin", clientID)
 
 	start := time.Now()
-	exporter := originSpanExporter{origin: clientID, next: client.daggerSession.spanExporter}
+	exporter := originSpanExporter{origin: clientID, next: record.daggerSession.spanExporter}
 	if err := exporter.ExportSpans(r.Context(), spans); err != nil {
 		slog.Error("error exporting spans", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if elapsed := time.Since(start); elapsed > slowTelemetryOp {
-		slog.Warn("slow span fan-out", "from", client.clientID, "spans", len(spans), "duration", elapsed)
+		slog.Warn("slow span fan-out", "from", record.clientID, "spans", len(spans), "duration", elapsed)
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -284,7 +284,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.srv.clientFromIDs(sessionID, clientID)
+	record, err := ps.srv.clientRecordFromIDs(sessionID, clientID)
 	if err != nil {
 		slog.Warn("error getting client", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -308,14 +308,14 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting logs", "origin", clientID)
 
 	start := time.Now()
-	exporter := originLogExporter{origin: clientID, next: client.daggerSession.logExporter}
+	exporter := originLogExporter{origin: clientID, next: record.daggerSession.logExporter}
 	if err := telemetry.ReexportLogsFromPB(r.Context(), exporter, &req); err != nil {
 		slog.Error("error exporting logs", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if elapsed := time.Since(start); elapsed > slowTelemetryOp {
-		slog.Warn("slow log fan-out", "from", client.clientID, "duration", elapsed)
+		slog.Warn("slow log fan-out", "from", record.clientID, "duration", elapsed)
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -324,7 +324,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.srv.clientFromIDs(sessionID, clientID)
+	record, err := ps.srv.clientRecordFromIDs(sessionID, clientID)
 	if err != nil {
 		slog.Warn("error getting client", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -345,7 +345,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, err := client.daggerSession.telemetryRouteClientIDs(client)
+	route, err := record.daggerSession.telemetryRouteClientIDs(record)
 	if err != nil {
 		slog.Warn("error resolving telemetry route", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -369,7 +369,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if elapsed := time.Since(start); elapsed > slowTelemetryOp {
-		slog.Warn("slow metric fan-out", "from", client.clientID, "clients", len(route), "duration", elapsed)
+		slog.Warn("slow metric fan-out", "from", record.clientID, "clients", len(route), "duration", elapsed)
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -409,8 +409,8 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 	}
 }
 
-func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
+func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	return ps.sseHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -449,8 +449,8 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 }
 
 //nolint:dupl
-func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
+func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	return ps.sseHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -485,8 +485,8 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 }
 
 //nolint:dupl
-func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
+func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	return ps.sseHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -797,8 +797,8 @@ func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
 type Fetcher func(ctx context.Context, db *clientdb.DB, since string) (*sse.Event, bool, error)
 
-func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
-	slog := slog.With("client", client.clientID, "path", r.URL.Path)
+func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher Fetcher) error {
+	slog := slog.With("client", record.clientID, "path", r.URL.Path)
 
 	flush := func() {
 		slog.Warn("flush not supported?")
@@ -813,7 +813,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 
 	since := r.Header.Get("X-Last-Event-ID")
 
-	db, err := client.TelemetryDB(r.Context())
+	db, err := record.TelemetryDB(r.Context())
 	if err != nil {
 		return fmt.Errorf("open client db: %w", err)
 	}
@@ -854,7 +854,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 				// Synchronizing with writes isn't worth the accompanying risk of hangs.
 				//
 				// NB: logging here is a bit too crazy
-			case <-client.shutdownCh:
+			case <-record.shutdownCh:
 				// Client is shutting down; next time we receive no data, we'll exit.
 				slog.ExtraDebug("shutting down")
 				terminating = true

@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// LifecycleDebugSnapshot is a point-in-time view of the current
-// daggerClient lifecycle. It deliberately describes the pre-reclamation model:
-// one retained record and one retained runtime per published client.
+// LifecycleDebugSnapshot is a point-in-time view of split client records and
+// retained runtimes. Runtime reclamation remains deliberately disabled.
 type LifecycleDebugSnapshot struct {
 	GeneratedAt         time.Time                       `json:"generated_at"`
 	Records             int                             `json:"records"`
@@ -100,21 +99,45 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 		addLifecycleTelemetryCounts(&out.Providers, sessOut.Telemetry)
 
 		sess.clientMu.RLock()
-		clients := make([]*daggerClient, 0, len(sess.clients))
-		for _, client := range sess.clients {
-			clients = append(clients, client)
+		records := make([]*clientRecord, 0, len(sess.clientRecords))
+		runtimes := make(map[string]*clientRuntime, len(sess.clientRuntimes))
+		for _, record := range sess.clientRecords {
+			records = append(records, record)
+		}
+		for id, runtime := range sess.clientRuntimes {
+			runtimes[id] = runtime
 		}
 		sess.clientMu.RUnlock()
 
-		descendants := make(map[string]int, len(clients))
-		for _, client := range clients {
-			for _, parentID := range client.parentClientIDs {
+		descendants := make(map[string]int, len(records))
+		for _, record := range records {
+			for _, parentID := range record.parentClientIDs {
 				descendants[parentID]++
 			}
 		}
 
-		for _, client := range clients {
-			accepting, lifecycleTracked, leases := sess.clientLifecycleSnapshot(client)
+		for _, record := range records {
+			runtime := runtimes[record.clientID]
+			var (
+				lifecycleTracked bool
+				leases           []clientLifecycleLeaseRecord
+				activeCount      int
+				initialized      bool
+				runtimeTelemetry LifecycleTelemetryCounts
+			)
+			accepting := false
+			if runtime != nil {
+				accepting, lifecycleTracked, leases = sess.clientLifecycleSnapshot(runtime)
+				runtime.stateMu.RLock()
+				activeCount = runtime.activeCount
+				initialized = runtime.state == clientStateInitialized
+				runtimeTelemetry = runtime.telemetryDebug
+				runtime.stateMu.RUnlock()
+			} else {
+				sess.scopeMu.Lock()
+				accepting = record.accepting
+				sess.scopeMu.Unlock()
+			}
 			clientLeaseCounts := make(map[string]LifecycleRetentionReason)
 			for _, lease := range leases {
 				addLifecycleLeaseCount(clientLeaseCounts, string(lease.kind), lease.ownerID)
@@ -122,16 +145,14 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 				addLifecycleLeaseCount(allLeaseCounts, string(lease.kind), lease.ownerID)
 			}
 
-			metadataSealed := sess.clientMetadataSealed(client)
-			client.stateMu.RLock()
-			activeCount := client.activeCount
+			metadataSealed := sess.clientMetadataSealed(record)
+			sess.scopeMu.Lock()
+			shutdownAt := record.shutdownAt
+			sess.scopeMu.Unlock()
 			clientOut := ClientLifecycleDebugSnapshot{
-				ClientID:       client.clientID,
+				ClientID:       record.clientID,
 				MetadataSealed: metadataSealed,
 			}
-			initialized := client.state == clientStateInitialized
-			shutdownAt := client.shutdownAt
-			client.stateMu.RUnlock()
 			requestLeases := lifecycleLeaseCountKind(clientLeaseCounts, "request")
 			if requestLeases > 0 {
 				clientOut.ActiveRequests = requestLeases
@@ -139,8 +160,8 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 				clientOut.ActiveRequests = activeCount
 			}
 
-			clientOut.ParentIDs = append(clientOut.ParentIDs, client.parentClientIDs...)
-			if !lifecycleTracked {
+			clientOut.ParentIDs = append(clientOut.ParentIDs, record.parentClientIDs...)
+			if runtime != nil && !lifecycleTracked {
 				accepting = shutdownAt.IsZero()
 			}
 
@@ -152,14 +173,18 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 					closed := shutdownAt
 					clientOut.RecordState = "shutdown-signaled"
 					clientOut.ShutdownAt = &closed
-					out.ClosedRuntimes++
-					if out.OldestClosedRuntime == nil || closed.Before(*out.OldestClosedRuntime) {
-						out.OldestClosedRuntime = &closed
+					if runtime != nil {
+						out.ClosedRuntimes++
+						if out.OldestClosedRuntime == nil || closed.Before(*out.OldestClosedRuntime) {
+							out.OldestClosedRuntime = &closed
+						}
 					}
 				}
 			}
 
 			switch {
+			case runtime == nil:
+				clientOut.RuntimeState = "not-retained"
 			case !initialized:
 				clientOut.RuntimeState = "initializing"
 			case accepting:
@@ -175,24 +200,26 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 			if clientOut.ActiveRequests > 0 && requestLeases == 0 {
 				clientOut.RetentionReasons = append(clientOut.RetentionReasons, LifecycleRetentionReason{
 					Kind:    "request",
-					OwnerID: client.clientID,
+					OwnerID: record.clientID,
 					Count:   clientOut.ActiveRequests,
 				})
 			}
-			if n := descendants[client.clientID]; n > 0 {
+			if n := descendants[record.clientID]; n > 0 {
 				clientOut.RetentionReasons = append(clientOut.RetentionReasons, LifecycleRetentionReason{
 					Kind:    "descendant",
-					OwnerID: client.clientID,
+					OwnerID: record.clientID,
 					Count:   n,
 				})
 			}
-			clientOut.Telemetry = client.telemetryDebug
+			clientOut.Telemetry = runtimeTelemetry
 
 			sessOut.Clients = append(sessOut.Clients, clientOut)
 			sessOut.Records++
-			sessOut.Runtimes++
 			out.Records++
-			out.Runtimes++
+			if runtime != nil {
+				sessOut.Runtimes++
+				out.Runtimes++
+			}
 			out.ActiveRequests += clientOut.ActiveRequests
 			addLifecycleTelemetryCounts(&out.Providers, clientOut.Telemetry)
 		}
