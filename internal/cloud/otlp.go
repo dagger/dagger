@@ -14,10 +14,11 @@ import (
 	"time"
 
 	"github.com/vito/go-sse/sse"
-	"golang.org/x/sync/errgroup"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -85,14 +86,21 @@ const (
 
 // OTLPClient streams a whole published trace out of Dagger Cloud as OTLP.
 type OTLPClient struct {
-	h          *http.Client
-	u          *url.URL
-	authHeader string
-	stats      *clientStats
+	h     *http.Client
+	u     *url.URL
+	auth  *otlpAuthState
+	stats *clientStats
 	// stall is how long a stream may deliver NO bytes before the fetch gives
 	// up on it. Zero disables the watchdog (no test depends on that; it is
 	// the natural meaning of the zero value).
 	stall time.Duration
+}
+
+type otlpAuthState struct {
+	mu      sync.Mutex
+	header  string
+	token   *oauth2.Token
+	refresh func(context.Context, *oauth2.Token) (*oauth2.Token, error)
 }
 
 // defaultStallTimeout bounds how long a fetch waits on a silent stream.
@@ -137,12 +145,21 @@ func NewOTLPClient(ctx context.Context, cloudAuth *auth.Cloud) (*OTLPClient, err
 		return nil, fmt.Errorf("parse cloud URL %q: %w", api, err)
 	}
 
+	token := *cloudAuth.Token
+	authState := &otlpAuthState{
+		header: authHeader,
+		token:  &token,
+	}
+	if token.RefreshToken != "" && token.TokenType != "Basic" && token.TokenType != "OIDC" {
+		authState.refresh = auth.RefreshToken
+	}
+
 	return &OTLPClient{
-		h:          http.DefaultClient,
-		u:          u,
-		authHeader: authHeader,
-		stats:      newClientStats(),
-		stall:      defaultStallTimeout,
+		h:     http.DefaultClient,
+		u:     u,
+		auth:  authState,
+		stats: newClientStats(),
+		stall: defaultStallTimeout,
 	}, nil
 }
 
@@ -194,6 +211,43 @@ func otlpAuthHeader(ctx context.Context, cloudAuth *auth.Cloud) (string, error) 
 	default:
 		return cloudAuth.Token.Type() + " " + cloudAuth.Token.AccessToken, nil
 	}
+}
+
+func (a *otlpAuthState) currentHeader() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.header
+}
+
+func (a *otlpAuthState) canRefresh() bool {
+	return a != nil && a.refresh != nil
+}
+
+// refreshHeader holds the lock across the grant so concurrent 401 responses
+// cannot spend the same refresh token. A waiter compares the header its failed
+// request used and reuses the winner's result instead of refreshing again.
+func (a *otlpAuthState) refreshHeader(ctx context.Context, usedHeader string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.header != usedHeader {
+		return a.header, nil
+	}
+
+	refreshed, err := a.refresh(ctx, a.token)
+	if err != nil {
+		return "", err
+	}
+	header, err := otlpAuthHeader(ctx, &auth.Cloud{Token: refreshed})
+	if err != nil {
+		return "", fmt.Errorf("render refreshed authorization: %w", err)
+	}
+	a.token = refreshed
+	a.header = header
+	return header, nil
 }
 
 // StatsSummary returns a human-readable breakdown of what the fetch pulled
@@ -303,6 +357,68 @@ func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink Tra
 	})
 }
 
+func (c *OTLPClient) openSSE(ctx context.Context, kind, endpoint string) (*http.Response, error) {
+	usedHeader := c.auth.currentHeader()
+	resp, err := c.requestSSE(ctx, kind, endpoint, usedHeader)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
+	}
+
+	status := resp.StatusCode
+	unauthorizedErr := closeResponseError(endpoint, resp)
+	if status != http.StatusUnauthorized || !c.auth.canRefresh() {
+		return nil, unauthorizedErr
+	}
+
+	refreshedHeader, err := c.auth.refreshHeader(ctx, usedHeader)
+	if err != nil {
+		return nil, errors.Join(unauthorizedErr, fmt.Errorf("refresh cloud OAuth credential: %w", err))
+	}
+
+	resp, err = c.requestSSE(ctx, kind, endpoint, refreshedHeader)
+	if err != nil {
+		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", err))
+	}
+	if resp.StatusCode != http.StatusOK {
+		retryErr := closeResponseError(endpoint, resp)
+		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", retryErr))
+	}
+	return resp, nil
+}
+
+func (c *OTLPClient) requestSSE(ctx context.Context, kind, endpoint, authHeader string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request for %s: %w", kind, err)
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "text/event-stream")
+
+	c.stats.addRequest(kind)
+	resp, err := c.h.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("connect to %s: %w", endpoint, err)
+	}
+	return resp, nil
+}
+
+func closeResponseError(endpoint string, resp *http.Response) error {
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	closeErr := resp.Body.Close()
+
+	err := fmt.Errorf("fetch %s: %s: %s", endpoint, resp.Status, strings.TrimSpace(string(body)))
+	if readErr != nil {
+		err = errors.Join(err, fmt.Errorf("read error response: %w", readErr))
+	}
+	if closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close error response: %w", closeErr))
+	}
+	return err
+}
+
 // consumeSSE connects to one of the OTLP endpoints and feeds every event's
 // payload to cb.
 //
@@ -317,26 +433,13 @@ func (c *OTLPClient) consumeSSE(ctx context.Context, kind, traceID string, cb fu
 	// prefix silently dropped.
 	endpoint := c.u.JoinPath("/v1/", kind, traceID).String()
 
-	c.stats.addRequest(kind)
 	slog.Debug("connecting to cloud OTLP SSE", "url", endpoint, "kind", kind)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	resp, err := c.openSSE(ctx, kind, endpoint)
 	if err != nil {
-		return fmt.Errorf("create request for %s: %w", kind, err)
-	}
-	req.Header.Set("Authorization", c.authHeader)
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := c.h.Do(req)
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", endpoint, err)
+		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("fetch %s: %s: %s", endpoint, resp.Status, strings.TrimSpace(string(body)))
-	}
 
 	slog.Debug("connected to cloud OTLP SSE", "kind", kind)
 

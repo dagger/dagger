@@ -185,6 +185,30 @@ func TokenSource(ctx context.Context, token *oauth2.Token) (oauth2.TokenSource, 
 	return authConfig.TokenSource(ctx, token), nil
 }
 
+// RefreshToken exchanges token's refresh token for a new OAuth credential and
+// persists it for subsequent Dagger invocations. Unlike Token, it always makes
+// a refresh grant: callers use it after a server rejects an access token that
+// may still appear locally valid.
+func RefreshToken(ctx context.Context, token *oauth2.Token) (*oauth2.Token, error) {
+	if token == nil {
+		return nil, fmt.Errorf("cannot refresh a nil OAuth token")
+	}
+	if token.RefreshToken == "" {
+		return nil, fmt.Errorf("OAuth token has no refresh token")
+	}
+
+	stale := *token
+	stale.Expiry = time.Now().Add(-time.Hour)
+	refreshed, err := authConfig.TokenSource(ctx, &stale).Token()
+	if err != nil {
+		return nil, fmt.Errorf("refresh OAuth token: %w", err)
+	}
+	if err := saveToken(refreshed); err != nil {
+		return nil, fmt.Errorf("persist refreshed OAuth token: %w", err)
+	}
+	return refreshed, nil
+}
+
 func Token(ctx context.Context) (*oauth2.Token, error) {
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
