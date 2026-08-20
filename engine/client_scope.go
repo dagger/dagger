@@ -23,15 +23,25 @@ const (
 	ClientLeaseChild      ClientLeaseKind = "child"
 )
 
+// ClientScopeAuthority is an opaque session identity used for strict
+// capability delegation.
+type ClientScopeAuthority struct{ identity byte }
+
+// NewClientScopeAuthority creates an unforgeable-by-identity session token used
+// to reject scopes retained from an older session record with reused string IDs.
+func NewClientScopeAuthority() *ClientScopeAuthority { return &ClientScopeAuthority{} }
+
 // ClientLifecycleLease is an idempotent handle retaining one client runtime for
 // a specific owner and reason.
 type ClientLifecycleLease struct {
-	kind    ClientLeaseKind
-	ownerID string
-	held    atomic.Bool
-	once    sync.Once
-	release func()
-	clone   func(ClientLeaseKind, string) (*ClientLifecycleLease, error)
+	kind      ClientLeaseKind
+	ownerID   string
+	held      atomic.Bool
+	once      sync.Once
+	release   func()
+	clone     func(ClientLeaseKind, string) (*ClientLifecycleLease, error)
+	delegate  func(string, string, ClientLeaseKind, string) (*ClientLifecycleLease, error)
+	authority *ClientScopeAuthority
 }
 
 // NewClientLifecycleLease constructs a lifecycle lease. The release and clone
@@ -43,11 +53,39 @@ func NewClientLifecycleLease(
 	release func(),
 	clone func(ClientLeaseKind, string) (*ClientLifecycleLease, error),
 ) *ClientLifecycleLease {
+	return newClientLifecycleLease(kind, ownerID, release, clone, nil)
+}
+
+// NewClientLifecycleLeaseWithDelegation constructs a lifecycle lease bound to
+// one session-owned client record. delegate must atomically validate the source
+// identity and ownership before cloning it; unlike Clone, Delegate never accepts
+// an unbound or synthetic lease.
+func NewClientLifecycleLeaseWithDelegation(
+	kind ClientLeaseKind,
+	ownerID string,
+	release func(),
+	clone func(ClientLeaseKind, string) (*ClientLifecycleLease, error),
+	delegate func(string, string, ClientLeaseKind, string) (*ClientLifecycleLease, error),
+	authority *ClientScopeAuthority,
+) *ClientLifecycleLease {
+	lease := newClientLifecycleLease(kind, ownerID, release, clone, delegate)
+	lease.authority = authority
+	return lease
+}
+
+func newClientLifecycleLease(
+	kind ClientLeaseKind,
+	ownerID string,
+	release func(),
+	clone func(ClientLeaseKind, string) (*ClientLifecycleLease, error),
+	delegate func(string, string, ClientLeaseKind, string) (*ClientLifecycleLease, error),
+) *ClientLifecycleLease {
 	lease := &ClientLifecycleLease{
-		kind:    kind,
-		ownerID: ownerID,
-		release: release,
-		clone:   clone,
+		kind:     kind,
+		ownerID:  ownerID,
+		release:  release,
+		clone:    clone,
+		delegate: delegate,
 	}
 	lease.held.Store(true)
 	return lease
@@ -154,6 +192,62 @@ func (scope ClientScope) Clone(kind ClientLeaseKind, ownerID string) (ClientScop
 		metadata:  append([]byte(nil), scope.metadata...),
 		lease:     lease,
 	}, nil
+}
+
+// CanDelegateTo reports whether this scope belongs to the exact live session
+// authority, not merely a record with equal session and client ID strings.
+func (scope ClientScope) CanDelegateTo(authority *ClientScopeAuthority) bool {
+	return authority != nil && scope.lease != nil && scope.lease.Held() && scope.lease.authority == authority
+}
+
+// Delegate clones a scope through its owning session's strict capability
+// boundary. It rejects synthetic, stale, released, or identity-mismatched
+// scopes instead of treating their IDs as authority.
+func (scope ClientScope) Delegate(kind ClientLeaseKind, ownerID string) (ClientScope, error) {
+	if scope.lease == nil || !scope.lease.Held() || scope.lease.delegate == nil {
+		return ClientScope{}, errors.New("client scope is not a held delegation capability")
+	}
+	lease, err := scope.lease.delegate(scope.sessionID, scope.clientID, kind, ownerID)
+	if err != nil {
+		return ClientScope{}, err
+	}
+	return ClientScope{
+		sessionID: scope.sessionID,
+		clientID:  scope.clientID,
+		metadata:  append([]byte(nil), scope.metadata...),
+		lease:     lease,
+	}, nil
+}
+
+type NestedClientTransport struct {
+	closed atomic.Bool
+	once   sync.Once
+	close  func()
+}
+
+// NewNestedClientTransport constructs the opaque ownership handle returned by
+// nested transport registration. Callers can only close or inspect it; the
+// registering server keeps the associated client identity private.
+func NewNestedClientTransport(close func()) *NestedClientTransport {
+	return &NestedClientTransport{close: close}
+}
+
+// Close marks nested reachability closed and relinquishes transport ownership
+// exactly once. It is safe to call concurrently and is also used by /shutdown.
+func (transport *NestedClientTransport) Close() {
+	if transport == nil {
+		return
+	}
+	transport.once.Do(func() {
+		transport.closed.Store(true)
+		if transport.close != nil {
+			transport.close()
+		}
+	})
+}
+
+func (transport *NestedClientTransport) Closed() bool {
+	return transport == nil || transport.closed.Load()
 }
 
 type clientScopeContextKey struct{}

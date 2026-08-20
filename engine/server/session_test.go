@@ -38,6 +38,225 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func newNestedTransportTestFixture(t *testing.T) (*Server, *daggerSession, *daggerClient, context.Context, engine.ClientScope) {
+	t.Helper()
+	parent := &daggerClient{
+		clientID:        "parent",
+		state:           clientStateInitialized,
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "parent", ClientSecretToken: "parent-token"},
+		accepting:       true,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
+	}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: parent.clientID,
+		clients:            map[string]*daggerClient{parent.clientID: parent},
+	}
+	parent.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	transport, err := sess.acquireRootClientScope(parent, engine.ClientLeaseTransport, "parent")
+	require.NoError(t, err)
+	parent.transportLease = transport.Lease()
+	requestScope, err := sess.acquireRootClientScope(parent, engine.ClientLeaseRequest, "POST /query")
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(context.Background(), requestScope)
+	require.NoError(t, err)
+	return &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}, sess, parent, ctx, requestScope
+}
+
+func nestedTransportTestMetadata(clientID string) *engine.ClientMetadata {
+	return &engine.ClientMetadata{
+		SessionID:         "session",
+		ClientID:          clientID,
+		ClientSecretToken: clientID + "-token",
+		ClientVersion:     engine.Version,
+	}
+}
+
+func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("child")
+
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	sess.clientMu.RLock()
+	child := sess.clients[metadata.ClientID]
+	sess.clientMu.RUnlock()
+	require.NotNil(t, child)
+	require.Equal(t, clientStateUninitialized, child.state)
+	require.Equal(t, []string{parent.clientID}, child.parentClientIDs)
+	require.Same(t, transport, child.nestedTransport)
+
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "already registered")
+
+	transport.Close()
+	transport.Close()
+	require.True(t, transport.Closed())
+	accepting, _, childLeases := sess.clientLifecycleSnapshot(child)
+	require.False(t, accepting)
+	require.Empty(t, childLeases, "double close must release transport ownership exactly once")
+
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "permanently closed")
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{version}"}`))
+	srv.ServeHTTPToNestedClient(recorder, req, transport, metadata, parent.clientID, false, nil, nil)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, clientStateUninitialized, child.state, "close before first request must leave a permanent cold tombstone")
+
+	// Child quiescence is deliberately not guessed yet: its parent-retention
+	// lease remains visible after transport close and is released at teardown.
+	_, _, parentLeases := sess.clientLifecycleSnapshot(parent)
+	require.Contains(t, parentLeases, clientLifecycleLeaseRecord{kind: engine.ClientLeaseChild, ownerID: metadata.ClientID})
+	sess.beginClientScopeTeardown()
+	_, _, parentLeases = sess.clientLifecycleSnapshot(parent)
+	for _, lease := range parentLeases {
+		require.NotEqual(t, engine.ClientLeaseChild, lease.kind)
+	}
+}
+
+func TestNestedTransportRegistrationRequiresExactHeldParentScope(t *testing.T) {
+	t.Parallel()
+
+	srv, _, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	metadata := nestedTransportTestMetadata("child")
+
+	_, err := srv.RegisterNestedClientTransport(context.Background(), metadata, parent.clientID)
+	require.ErrorContains(t, err, "requires a held parent client scope")
+
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, "other")
+	require.ErrorContains(t, err, "does not match")
+
+	otherSessionMetadata := *metadata
+	otherSessionMetadata.SessionID = "other-session"
+	_, err = srv.RegisterNestedClientTransport(ctx, &otherSessionMetadata, parent.clientID)
+	require.ErrorContains(t, err, "does not match")
+
+	fakeLease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "fake", func() {}, func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+		return engine.NewClientLifecycleLease(kind, ownerID, func() {}, nil), nil
+	})
+	fakeScope, err := engine.NewClientScope(parent.clientMetadata, fakeLease)
+	require.NoError(t, err)
+	fakeCtx, err := engine.ContextWithClientScope(context.Background(), fakeScope)
+	require.NoError(t, err)
+	_, err = srv.RegisterNestedClientTransport(fakeCtx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "does not belong to the current session")
+
+	requestScope.Lease().Release()
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "does not belong to the current session")
+
+	// Equal string IDs from a replaced session record are still stale: the
+	// session authority token must match by identity.
+	_, _, _, staleCtx, staleScope := newNestedTransportTestFixture(t)
+	defer staleScope.Lease().Release()
+	freshSrv, _, freshParent, _, freshScope := newNestedTransportTestFixture(t)
+	defer freshScope.Lease().Release()
+	_, err = freshSrv.RegisterNestedClientTransport(staleCtx, metadata, freshParent.clientID)
+	require.ErrorContains(t, err, "does not belong to the current session")
+}
+
+func TestHeldParentScopeDelegatesWhileParentClosing(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	sess.closeClientScope(parent)
+
+	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err, "already accepted work must remain a delegation capability during parent close")
+	transport.Close()
+}
+
+func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err)
+	child := sess.clients["child"]
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil)
+	require.NoError(t, srv.serveShutdown(recorder, req, child))
+	require.True(t, transport.Closed())
+	transport.Close()
+	accepting, _, leases := sess.clientLifecycleSnapshot(child)
+	require.False(t, accepting)
+	require.Empty(t, leases)
+
+	retry := httptest.NewRecorder()
+	srv.ServeHTTPToNestedClient(
+		retry,
+		httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil),
+		transport,
+		nestedTransportTestMetadata("child"),
+		parent.clientID,
+		false,
+		nil,
+		nil,
+	)
+	require.Equal(t, http.StatusNoContent, retry.Code)
+}
+
+func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err)
+	child := sess.clients["child"]
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	initialized := make(chan struct{})
+	go func() {
+		sess.scopeMu.Lock()
+		close(started)
+		<-release
+		if child.accepting {
+			child.state = clientStateInitialized
+		}
+		sess.scopeMu.Unlock()
+		close(initialized)
+	}()
+	<-started
+	closed := make(chan struct{})
+	go func() {
+		transport.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("transport close crossed in-progress initialization serialization")
+	default:
+	}
+	close(release)
+	<-initialized
+	<-closed
+	accepting, _, _ := sess.clientLifecycleSnapshot(child)
+	require.False(t, accepting)
+
+	// Run the opposite deterministic ordering: close wins before initialization.
+	second, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("second"), parent.clientID)
+	require.NoError(t, err)
+	second.Close()
+	secondChild := sess.clients["second"]
+	sess.scopeMu.Lock()
+	if secondChild.accepting {
+		secondChild.state = clientStateInitialized
+	}
+	sess.scopeMu.Unlock()
+	require.Equal(t, clientStateUninitialized, secondChild.state)
+}
+
 func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 	t.Parallel()
 
