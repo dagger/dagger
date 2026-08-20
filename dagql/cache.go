@@ -1371,6 +1371,9 @@ type Cache struct {
 	resultIndexedDigestTypes map[sharedResultID]map[string][]*ResultCallType
 	broadlyIndexedResults    map[sharedResultID]struct{}
 
+	// GraphQL type keys used to partition structural-input equivalence classes.
+	structuralInputTypeKeys map[string]struct{}
+
 	// Explicit retained-root edges for persisted results.
 	persistedEdgesByResult map[sharedResultID]persistedEdge
 

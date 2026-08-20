@@ -3966,6 +3966,37 @@ func TestCacheEquivalenceLookupsRequireMatchingResultType(t *testing.T) {
 		assert.Equal(t, 42, cacheTestUnwrapInt(t, got))
 	})
 
+	t.Run("structural input types", func(t *testing.T) {
+		c, ctx, stringRes, intRes := setup(t)
+		stringChild := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "cross-type-input-child",
+			Receiver: &ResultCallRef{ResultID: uint64(stringRes.cacheSharedResult().id)},
+		}
+		first, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: stringChild}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(stringChild, 100), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !first.HitCache())
+
+		intChild := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "cross-type-input-child",
+			Receiver: &ResultCallRef{ResultID: uint64(intRes.cacheSharedResult().id)},
+		}
+		initCalls := 0
+		second, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: intChild}, func(context.Context) (AnyResult, error) {
+			initCalls++
+			return cacheTestIntResult(intChild, 200), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, initCalls)
+		assert.Assert(t, !second.HitCache())
+		assert.Equal(t, 200, cacheTestUnwrapInt(t, second))
+	})
+
 	t.Run("handle canonicalization", func(t *testing.T) {
 		c, ctx, _, intRes := setup(t)
 		intShared := intRes.cacheSharedResult()
