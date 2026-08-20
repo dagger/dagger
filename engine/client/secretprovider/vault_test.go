@@ -7,11 +7,11 @@ import (
 
 func TestSplitVaultKey(t *testing.T) {
 	tests := []struct {
-		name        string
-		key         string
-		wantPath    string
-		wantField   string
-		wantErr     bool
+		name      string
+		key       string
+		wantPath  string
+		wantField string
+		wantErr   bool
 	}{
 		{
 			name:      "simple key",
@@ -74,30 +74,30 @@ func TestSplitVaultKey(t *testing.T) {
 
 func TestParseVaultFullKey(t *testing.T) {
 	tests := []struct {
-		name        string
-		key         string
-		wantMount   string
-		wantPath    string
-		wantField   string
-		wantErr     bool
+		name      string
+		key       string
+		wantMount string
+		wantPath  string
+		wantField string
+		wantErr   bool
 	}{
 		{
-			name:     "simple full path",
-			key:      "my-engine/my-app.token",
+			name:      "simple full path",
+			key:       "my-engine/my-app.token",
 			wantMount: "my-engine",
 			wantPath:  "my-app",
 			wantField: "token",
 		},
 		{
-			name:     "nested full path",
-			key:      "secret/foo/path/to/secret.credential",
+			name:      "nested full path",
+			key:       "secret/foo/path/to/secret.credential",
 			wantMount: "secret",
 			wantPath:  "foo/path/to/secret",
 			wantField: "credential",
 		},
 		{
-			name:     "full path with multiple fields (last dot splits)",
-			key:      "my-engine/foo.bar.baz",
+			name:      "full path with multiple fields (last dot splits)",
+			key:       "my-engine/foo.bar.baz",
 			wantMount: "my-engine",
 			wantPath:  "foo.bar",
 			wantField: "baz",
@@ -147,8 +147,8 @@ func TestParseVaultFullKey(t *testing.T) {
 
 func TestHasExpired(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   dataWithTTL
+		name     string
+		input    dataWithTTL
 		wantBool bool
 	}{
 		{
