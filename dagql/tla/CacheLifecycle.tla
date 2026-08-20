@@ -42,9 +42,9 @@
 (*     considers equivalent are interchangeable.                           *)
 (*   - Not modeled: session resources, TTL/expiry, DoNotCache,             *)
 (*     recipe-replay taint, and the arbitrary-value cache                  *)
-(*     (trackSessionArbitrary, cache.go:730 - the same two-section         *)
-(*     record/count shape as trackSessionResult, released at               *)
-(*     cache.go:805-831 with the decrement floored at zero).               *)
+(*     (acquireSessionArbitraryLocked, cache.go:751 - the same atomic      *)
+(*     record-and-count claim as the modeled result claim, under callsMu   *)
+(*     with sessionMu nested; Go tests carry its coverage).                *)
 (*   - ReleaseSession can fire at ANY time, including while the session    *)
 (*     has calls in flight. The server's drain (dagqlInFlight,             *)
 (*     engine/server/session.go:603-608) narrows but does not close that   *)
@@ -166,7 +166,9 @@ VARIABLES
                         \* field says where it is between critical sections
     res,                \* one record per allocated sharedResult, indexed
                         \* by sharedResultID; IDs are never reused
-                        \* (Cache.nextSharedResultID is monotonic)
+                        \* (Cache.nextSharedResultID is monotonic for the
+                        \* engine lifetime, surviving even a full e-graph
+                        \* reset in maybeResetEgraphLocked)
     ongoingCalls,       \* one record per ongoingCall struct ever created.
                         \* Records stay here even after leaving the index,
                         \* because waiters still reference them - exactly

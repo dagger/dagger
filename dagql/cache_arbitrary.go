@@ -19,6 +19,10 @@ type ArbitraryCachedResult interface {
 
 // sharedArbitraryResult is the in-memory-only cache entry for GetOrInitArbitrary values.
 type sharedArbitraryResult struct {
+	// id is the engine-lifetime-unique identity of this entry. A call key can
+	// be legitimately reused after its entry is removed, so removal paths
+	// compare ids to confirm a map entry is the one they hold.
+	id      uint64
 	callKey string
 
 	value any
@@ -105,7 +109,9 @@ func (c *Cache) GetOrInitArbitrary(
 
 	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	c.nextArbitraryResultID++
 	res := &sharedArbitraryResult{
+		id:      c.nextArbitraryResultID,
 		callKey: callKey,
 
 		waitCh:  make(chan struct{}),
@@ -193,11 +199,11 @@ func (c *Cache) removeUnownedArbitraryLocked(res *sharedArbitraryResult) OnRelea
 		return nil
 	}
 	removed := false
-	if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
+	if existing := c.ongoingArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
 		delete(c.ongoingArbitraryCalls, res.callKey)
 		removed = true
 	}
-	if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
+	if existing := c.completedArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
 		delete(c.completedArbitraryCalls, res.callKey)
 		removed = true
 	}

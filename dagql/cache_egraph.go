@@ -1515,8 +1515,10 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	// after its last owner released it: its OnRelease already ran, so its
 	// payload may reference released resources. Refuse to resurrect it rather
 	// than re-publish a dead payload into the cache.
-	if res.id != 0 && c.resultsByID[res.id] != res {
-		return fmt.Errorf("index result %d: result was already collected", res.id)
+	if res.id != 0 {
+		if _, found := c.resultsByID[res.id]; !found {
+			return fmt.Errorf("index result %d: result was already collected", res.id)
+		}
 	}
 
 	digestSet := make(map[string]struct{}, 6)
@@ -1822,7 +1824,13 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultsByID = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
-	c.nextSharedResultID = 0
+	// nextSharedResultID deliberately survives the reset: numeric result IDs
+	// must be engine-lifetime unique because they outlive this index (session
+	// records, dependency edges, persisted rows, results held by in-flight
+	// callers). Recycling a number could alias two different results. Class
+	// and term IDs never leave the index maps cleared above, so their
+	// counters can restart. Import seeds nextSharedResultID past the highest
+	// persisted ID at startup for the same reason.
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity

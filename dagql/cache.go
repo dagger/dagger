@@ -271,7 +271,7 @@ func (c *Cache) acquireSessionResultLocked(ctx context.Context, sessionID string
 	if _, released := c.releasedSessionIDs[sessionID]; released {
 		return false, 0, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
 	}
-	if c.resultsByID[shared.id] != shared {
+	if _, found := c.resultsByID[shared.id]; !found {
 		return false, 0, fmt.Errorf("track session result %d: result is not registered", shared.id)
 	}
 	if c.sessionResultIDsBySession == nil {
@@ -832,10 +832,10 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 				res.ownerSessionCount = 0
 			}
 			if res.ownerSessionCount == 0 && res.waiters == 0 {
-				if existing := c.ongoingArbitraryCalls[callKey]; existing == res {
+				if existing := c.ongoingArbitraryCalls[callKey]; existing != nil && existing.id == res.id {
 					delete(c.ongoingArbitraryCalls, callKey)
 				}
-				if existing := c.completedArbitraryCalls[callKey]; existing == res {
+				if existing := c.completedArbitraryCalls[callKey]; existing != nil && existing.id == res.id {
 					delete(c.completedArbitraryCalls, callKey)
 				}
 				onRelease = res.onRelease
@@ -985,7 +985,7 @@ func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *share
 	if c == nil || res == nil || res.id == 0 {
 		return queue
 	}
-	if c.resultsByID[res.id] != res {
+	if _, found := c.resultsByID[res.id]; !found {
 		return queue
 	}
 	if res.incomingOwnershipCount != 0 {
@@ -1021,7 +1021,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		res := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 
-		if c.resultsByID[res.id] != res {
+		if _, found := c.resultsByID[res.id]; !found {
 			continue
 		}
 		if res.incomingOwnershipCount != 0 {
@@ -1412,6 +1412,9 @@ type Cache struct {
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
 	completedArbitraryCalls map[string]*sharedArbitraryResult
+	// nextArbitraryResultID allocates engine-lifetime-unique identities for
+	// arbitrary entries; guarded by callsMu.
+	nextArbitraryResultID uint64
 
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
