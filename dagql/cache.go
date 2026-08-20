@@ -271,7 +271,7 @@ func (op *cacheOperation) finish(valueBearingSuccess bool) bool {
 			}
 			if op.session.lifecycle.CompareAndSwap(old, old-1) {
 				if lastReleasedOperation {
-					if _, err := op.cache.tryCleanupReleasedSession(op.session); err != nil {
+					if err := op.cache.tryCleanupReleasedSession(op.session); err != nil {
 						op.cache.recordReleaseCleanupError(op.sessionID, true, err)
 					}
 					op.cache.endCacheOperation()
@@ -1087,21 +1087,21 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	if oldLifecycle&^cacheSessionReleasedBit != 0 {
 		return nil
 	}
-	_, cleanupErr := c.tryCleanupReleasedSession(state)
+	cleanupErr := c.tryCleanupReleasedSession(state)
 	if cleanupErr != nil {
 		c.recordReleaseCleanupError(sessionID, false, cleanupErr)
 	}
 	return cleanupErr
 }
 
-func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) (bool, error) {
+func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) error {
 	if state == nil || state.lifecycle.Load() != cacheSessionReleasedBit {
-		return false, nil
+		return nil
 	}
 	state.releaseMu.Lock()
 	if state.releasePlan == nil || state.cleanupStarted || state.lifecycle.Load() != cacheSessionReleasedBit {
 		state.releaseMu.Unlock()
-		return false, nil
+		return nil
 	}
 	state.cleanupStarted = true
 	plan := state.releasePlan
@@ -1112,7 +1112,7 @@ func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) (bool, e
 	state.releaseMu.Lock()
 	state.releasePlan = nil
 	state.releaseMu.Unlock()
-	return true, err
+	return err
 }
 
 func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
@@ -2861,30 +2861,39 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 	return r.resultWithDerefView(), true
 }
 
-func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr error) {
-	if r.shared != nil && r.shared.id != 0 {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, r.Self(), err)
-		}
-		if clientMetadata.SessionID == "" {
-			return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, r.Self())
-		}
-		cache, err := EngineCache(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, r.Self(), err)
-		}
-		op, err := cache.beginSessionOperation(clientMetadata.SessionID)
-		if err != nil {
-			return nil, fmt.Errorf("load %dth value from %T: %w", nth, r.Self(), err)
-		}
-		defer func() {
-			if op.finish(rerr == nil && ret != nil) {
-				ret = nil
-				rerr = fmt.Errorf("load %dth value from %T: %w: %q", nth, r.Self(), ErrCacheSessionReleased, clientMetadata.SessionID)
-			}
-		}()
+func (r Result[T]) beginNthValueOperation(ctx context.Context, nth int) (cacheOperation, string, error) {
+	if r.shared == nil || r.shared.id == 0 {
+		return cacheOperation{}, "", nil
 	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, r.Self(), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: empty session ID", nth, r.Self())
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, r.Self(), err)
+	}
+	op, err := cache.beginSessionOperation(clientMetadata.SessionID)
+	if err != nil {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: %w", nth, r.Self(), err)
+	}
+	return op, clientMetadata.SessionID, nil
+}
+
+func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr error) {
+	op, sessionID, err := r.beginNthValueOperation(ctx, nth)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if op.finish(rerr == nil && ret != nil) {
+			ret = nil
+			rerr = fmt.Errorf("load %dth value from %T: %w: %q", nth, r.Self(), ErrCacheSessionReleased, sessionID)
+		}
+	}()
 
 	self := r.Self()
 	enumerableSelf, ok := any(self).(Enumerable)
@@ -3510,39 +3519,50 @@ func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
 	return eg.Wait()
 }
 
-func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
+func (c *Cache) beginEvaluateOne(ctx context.Context, res AnyResult) (cacheOperation, *sharedResult, context.Context, error) {
 	if c == nil {
-		return errors.New("evaluate: nil cache")
+		return cacheOperation{}, nil, nil, errors.New("evaluate: nil cache")
 	}
 	if res == nil {
-		return nil
+		return cacheOperation{}, nil, nil, nil
 	}
 	waiterOp, err := c.beginContextOperation(ctx)
 	if err != nil {
-		return fmt.Errorf("evaluate: %w", err)
+		return cacheOperation{}, nil, nil, fmt.Errorf("evaluate: %w", err)
 	}
-	defer func() {
-		if waiterOp.finish(rerr == nil) {
-			rerr = fmt.Errorf("evaluate: %w: %q", ErrCacheSessionReleased, waiterOp.sessionID)
-		}
-	}()
 
 	shared := res.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
-		return fmt.Errorf("evaluate %T: detached result", res)
+		waiterOp.finish(false)
+		return cacheOperation{}, nil, nil, fmt.Errorf("evaluate %T: detached result", res)
 	}
 
 	stack := lazyEvalStackFromContext(ctx)
-	if stack != nil {
-		if lazyEvalStackContains(stack, shared.id) {
-			return fmt.Errorf("recursive lazy evaluation detected")
-		}
+	if stack != nil && lazyEvalStackContains(stack, shared.id) {
+		waiterOp.finish(false)
+		return cacheOperation{}, nil, nil, fmt.Errorf("recursive lazy evaluation detected")
 	}
 
 	stackCtx := context.WithValue(ctx, lazyEvalStackCtxKey{}, &lazyEvalStackNode{
 		id:     shared.id,
 		parent: stack,
 	})
+	return waiterOp, shared, stackCtx, nil
+}
+
+func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
+	waiterOp, shared, stackCtx, err := c.beginEvaluateOne(ctx, res)
+	if err != nil {
+		return err
+	}
+	if shared == nil {
+		return nil
+	}
+	defer func() {
+		if waiterOp.finish(rerr == nil) {
+			rerr = fmt.Errorf("evaluate: %w: %q", ErrCacheSessionReleased, waiterOp.sessionID)
+		}
+	}()
 
 	for {
 		shared.lazyMu.Lock()
