@@ -22,6 +22,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -1995,7 +1996,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest, nil)
+		emitMessageSpan(ctx, msg, llmCallDigest, nil, nil)
 	}
 }
 
@@ -2307,18 +2308,23 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
+type replayedToolResult struct {
+	text    string
+	errored bool
+}
+
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
 // used both during live step() execution and during replay. callDigest is the
 // DAG digest enabling TUI branching from that point. resultTokens maps a tool
-// call's ID to the estimated token size of the result it produced (populated
-// only during replay, where the whole conversation is known up front), so a
-// replayed tool-call span carries the same result-size badge as a live one.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
+// call's ID to the estimated token size of the result it produced, while
+// replayedResults carries the authoritative result text so replay can reproduce
+// the same result logs as the live call.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens)
+		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens, replayedResults)
 	}
 }
 
@@ -2348,7 +2354,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	fmt.Fprint(stdio.Stdout, msg.TextContent())
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -2458,6 +2464,21 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					fmt.Fprint(stdio.Stdout, string(block.Arguments))
 				}
 			}
+			if g.kind == LLMContentToolCall {
+				block := g.blocks[0]
+				if result, ok := replayedResults[block.CallID]; ok {
+					if result.errored {
+						span.SetStatus(codes.Error, result.text)
+					}
+					resultAttrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+					if resultType := toolResultContentType(result.text); resultType != "" {
+						resultAttrs = append(resultAttrs, log.String(telemetry.ContentTypeAttr, resultType))
+					}
+					resultStdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary, resultAttrs...)
+					fmt.Fprintln(resultStdio.Stdout, result.text)
+					_ = resultStdio.Close()
+				}
+			}
 		}()
 	}
 }
@@ -2465,21 +2486,26 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 // Replay re-emits telemetry spans for all messages in the conversation history.
 // This allows the TUI to display the conversation after loading a saved session.
 func (llm *LLM) Replay(ctx context.Context) {
-	// Pre-scan for each tool result's estimated size, keyed by call ID, so a
-	// replayed tool-call span carries the same result-size badge the live path
-	// stamps in endToolCallDisplay (the result lives in a later user message).
+	// Pre-scan tool results, keyed by call ID, so the assistant tool-call span
+	// can carry the same result-size badge, status, and model-visible output as
+	// the live path even though the result is stored in a later user message.
 	resultTokens := map[string]int64{}
+	replayedResults := map[string]replayedToolResult{}
 	for _, msg := range llm.Messages {
 		for _, block := range msg.Content {
 			if block.Kind == LLMContentToolResult && block.CallID != "" {
 				resultTokens[block.CallID] = estimateTextTokens(len(block.Text))
+				replayedResults[block.CallID] = replayedToolResult{
+					text:    block.Text,
+					errored: block.Errored,
+				}
 			}
 		}
 	}
 	for _, msg := range llm.Messages {
 		// We don't have per-message call digests for replay, so pass empty.
 		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "", resultTokens)
+		emitMessageSpan(ctx, msg, "", resultTokens, replayedResults)
 	}
 }
 

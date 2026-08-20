@@ -28,11 +28,12 @@ import (
 // recordedState is one published agent-state record, flattened to the fields
 // the directory contract promises.
 type recordedState struct {
-	state      string
-	waitingOn  string
-	stopReason string
-	digest     string
-	body       string
+	state       string
+	waitingOn   string
+	stopReason  string
+	digest      string
+	body        string
+	contentType string
 }
 
 // stateRecorder captures agent state records emitted through a context.
@@ -53,6 +54,8 @@ func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 			got.stopReason = kv.Value.AsString()
 		case telemetryattrs.AgentSnapshotDigestAttr:
 			got.digest = kv.Value.AsString()
+		case telemetry.ContentTypeAttr:
+			got.contentType = kv.Value.AsString()
 		}
 		return true
 	})
