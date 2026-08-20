@@ -1360,7 +1360,7 @@ func (s *Server) loadNthValue(
 	return res, nil
 }
 
-func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr error) {
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr error) {
 	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
@@ -1394,8 +1394,18 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 	if err != nil {
 		return nil, fmt.Errorf("load %s: current dagql cache: %w", id.Display(), err)
 	}
+	cacheOp, err := cache.beginSessionOperation(clientMetadata.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", id.Display(), err)
+	}
+	defer func() {
+		if cacheOp.finish(rerr == nil && ret != nil) {
+			ret = nil
+			rerr = fmt.Errorf("load %s: %w: %q", id.Display(), ErrCacheSessionReleased, clientMetadata.SessionID)
+		}
+	}()
 	if id.IsHandle() {
-		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, s, id.EngineResultID())
+		res, err := cache.loadResultByResultID(ctx, clientMetadata.SessionID, s, id.EngineResultID())
 		if err != nil {
 			return nil, err
 		}

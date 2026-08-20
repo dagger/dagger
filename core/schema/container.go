@@ -2234,7 +2234,9 @@ func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql
 	if err != nil {
 		return inst, fmt.Errorf("resolve volatile variable %q: current dagql cache: %w", args.Name, err)
 	}
-	cache.SetVolatileVars(ctx, clientMetadata.SessionID, args.Name, args.Value)
+	if err := cache.SetVolatileVars(ctx, clientMetadata.SessionID, args.Name, args.Value); err != nil {
+		return inst, fmt.Errorf("record volatile variable %q: %w", args.Name, err)
+	}
 
 	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {

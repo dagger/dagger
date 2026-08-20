@@ -1010,6 +1010,12 @@ func (c *Cache) lookupCacheForRequest(
 }
 
 func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID string, frame *ResultCall, res AnyResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if sessionID != "" && c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
 	if frame == nil {
 		return fmt.Errorf("teach call equivalence: nil call")
 	}
@@ -1052,6 +1058,11 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	// Digest derivation above is outside egraphMu. Release can collect the
+	// result and an empty e-graph reset can reuse its numeric ID in that gap.
+	if c.resultsByID[shared.id] != shared {
+		return fmt.Errorf("teach call equivalence: result %d was already collected or replaced", shared.id)
+	}
 	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
 }
 
@@ -1113,10 +1124,11 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		}
 
 		c.egraphMu.Lock()
-		shared = c.resultsByID[shared.id]
-		if shared == nil {
+		// Keep the caller's pointer stable across retries. Rebinding by numeric
+		// ID could silently select a newer result after an empty-cache reset.
+		if c.resultsByID[shared.id] != shared {
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %T missing from cache", res)
+			return fmt.Errorf("teach content digest: result %d was already collected or replaced", shared.id)
 		}
 		if shared.loadResultCall() == nil {
 			c.egraphMu.Unlock()
