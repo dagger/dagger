@@ -285,13 +285,13 @@ func recordOpenAICompletionUsage(
 ) {
 	normalized := openAICompletionUsage(usage)
 	if normalized.OutputTokens > 0 {
-		outputTokens.Record(ctx, normalized.OutputTokens, metric.WithAttributes(attrs...))
+		outputTokens.Record(ctx, normalized.OutputTokens, llmMetricAttributes(ctx, attrs...))
 	}
 	if normalized.InputTokens > 0 {
-		inputTokens.Record(ctx, normalized.InputTokens, metric.WithAttributes(attrs...))
+		inputTokens.Record(ctx, normalized.InputTokens, llmMetricAttributes(ctx, attrs...))
 	}
 	if normalized.CachedTokenReads > 0 {
-		inputTokensCacheReads.Record(ctx, normalized.CachedTokenReads, metric.WithAttributes(attrs...))
+		inputTokensCacheReads.Record(ctx, normalized.CachedTokenReads, llmMetricAttributes(ctx, attrs...))
 	}
 }
 

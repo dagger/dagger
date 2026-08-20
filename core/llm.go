@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -36,6 +37,10 @@ import (
 
 func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
+}
+
+func llmMetricAttributes(ctx context.Context, attrs ...attribute.KeyValue) metric.MeasurementOption {
+	return telemetryattrs.MetricAttributes(ctx, attrs...)
 }
 
 const (

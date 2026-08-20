@@ -23,8 +23,8 @@ type LifecycleDebugSnapshot struct {
 }
 
 // LifecycleTelemetryCounts reports configured provider, processor, reader, and
-// queue cardinality. Trace/log counts are session-owned; metric counts remain
-// per runtime. Queue capacity is configured fact, never measured occupancy.
+// queue cardinality. All provider and reader counts are session-owned. Queue
+// capacity is configured fact, never measured occupancy.
 type LifecycleTelemetryCounts struct {
 	TracerProviders          int `json:"tracer_providers"`
 	LoggerProviders          int `json:"logger_providers"`
@@ -58,7 +58,9 @@ type ClientLifecycleDebugSnapshot struct {
 	ActiveRequests   int                        `json:"active_requests"`
 	ShutdownAt       *time.Time                 `json:"shutdown_at,omitempty"`
 	RetentionReasons []LifecycleRetentionReason `json:"retention_reasons,omitempty"`
-	Telemetry        LifecycleTelemetryCounts   `json:"telemetry"`
+	// Telemetry is retained for debug API compatibility and is now always zero;
+	// provider topology lives on the owning session snapshot.
+	Telemetry LifecycleTelemetryCounts `json:"telemetry"`
 }
 
 type LifecycleRetentionReason struct {
@@ -123,7 +125,6 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 				leases           []clientLifecycleLeaseRecord
 				activeCount      int
 				initialized      bool
-				runtimeTelemetry LifecycleTelemetryCounts
 			)
 			accepting := false
 			if runtime != nil {
@@ -131,7 +132,6 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 				runtime.stateMu.RLock()
 				activeCount = runtime.activeCount
 				initialized = runtime.state == clientStateInitialized
-				runtimeTelemetry = runtime.telemetryDebug
 				runtime.stateMu.RUnlock()
 			} else {
 				sess.scopeMu.Lock()
@@ -211,7 +211,6 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 					Count:   n,
 				})
 			}
-			clientOut.Telemetry = runtimeTelemetry
 
 			sessOut.Clients = append(sessOut.Clients, clientOut)
 			sessOut.Records++

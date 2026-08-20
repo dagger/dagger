@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
@@ -131,7 +132,7 @@ func (s *int64GaugeSample) record(ctx context.Context) {
 	if s.value == nil {
 		return
 	}
-	s.gauge.Record(ctx, *s.value, metric.WithAttributeSet(s.attrs))
+	s.gauge.Record(ctx, *s.value, telemetryattrs.MetricAttributeSet(ctx, s.attrs))
 }
 
 func newInt64GaugeSample(gauge metric.Int64Gauge, attrs attribute.Set) int64GaugeSample {
