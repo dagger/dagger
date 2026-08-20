@@ -51,8 +51,12 @@ type SpecificClientAttachableConnOpts struct {
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
-	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	// Register a unique nested transport using the creating context's held
+	// client scope before the proxy begins serving.
+	RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error)
+
+	// Handle an HTTP request from a registered nested Dagger client.
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
