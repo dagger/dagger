@@ -298,7 +298,7 @@ func TestPrintSDKSearchResults(t *testing.T) {
 	require.Contains(t, out, "\nRun 'dagger install <REPO>' to install a module.\n")
 }
 
-func TestRunSDKInfo(t *testing.T) {
+func TestWriteSDKInfo(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, workspace.ConfigFileName), []byte(`
@@ -315,13 +315,19 @@ module = "dagger-go-sdk"
 module = "custom-sdk"
 `), 0o600))
 
+	sdk, _, err := localSDK("go")
+	require.NoError(t, err)
+
 	var buf bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&buf)
-	require.NoError(t, runSDKInfo(cmd, "go"))
+	require.NoError(t, writeSDKInfo(cmd, sdk, map[sdkInitKind]*modFunction{
+		sdkInitKindModule: {},
+		sdkInitKindClient: {},
+	}))
 
 	out := buf.String()
-	require.Equal(t, "sdk-name: go\nmodule-name: dagger-go-sdk\nmodule-source: github.com/dagger/go-sdk\nclaimed-modules: 0\n", out)
+	require.Equal(t, "sdk-name: go\nmodule-name: dagger-go-sdk\nmodule-source: github.com/dagger/go-sdk\ncapabilities: module, client\nclaimed-modules: 0\nclaimed-clients: 0\n", out)
 }
 
 // Conventional SDK name derivation is shared with the engine in core/workspace.

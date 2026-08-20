@@ -3,8 +3,10 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"dagger.io/dagger"
@@ -101,15 +103,44 @@ func optionalPathArg(args []string) string {
 }
 
 func runSDKInfo(cmd *cobra.Command, sdkName string) error {
-	sdk, err := localSDK(sdkName)
+	sdk, cfgPath, err := localSDK(sdkName)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "sdk-name: %s\nmodule-name: %s\nmodule-source: %s\nclaimed-modules: %d\n",
+	sdkRef, err := sdkInitModuleEntrySource(sdk.entry, filepath.Dir(cfgPath))
+	if err != nil {
+		return err
+	}
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		functions, err := inspectSDKInitFunctions(ctx, ec.Dagger(), sdkRef)
+		if err != nil {
+			return err
+		}
+		return writeSDKInfo(cmd, sdk, functions)
+	})
+}
+
+func writeSDKInfo(cmd *cobra.Command, sdk configuredSDK, functions map[sdkInitKind]*modFunction) error {
+	capabilities := make([]string, 0, 2)
+	if functions[sdkInitKindModule] != nil {
+		capabilities = append(capabilities, "module")
+	}
+	if functions[sdkInitKindClient] != nil {
+		capabilities = append(capabilities, "client")
+	}
+	if len(capabilities) == 0 {
+		capabilities = append(capabilities, "none")
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "sdk-name: %s\nmodule-name: %s\nmodule-source: %s\ncapabilities: %s\nclaimed-modules: %d\nclaimed-clients: %d\n",
 		sdk.commandName,
 		sdk.moduleName,
 		sdkModuleEntrySource(sdk.entry),
+		strings.Join(capabilities, ", "),
 		len(sdk.sdk.Claimed.Modules),
+		len(sdk.sdk.Claimed.Clients),
 	)
 	return err
 }
@@ -155,7 +186,7 @@ func mutateSDKWorkspace(cmd *cobra.Command, action string, mutate func(*dagger.W
 }
 
 func runSDKModuleList(cmd *cobra.Command, sdkName string) error {
-	sdk, err := localSDK(sdkName)
+	sdk, _, err := localSDK(sdkName)
 	if err != nil {
 		return err
 	}
@@ -173,7 +204,7 @@ func runSDKModuleList(cmd *cobra.Command, sdkName string) error {
 }
 
 func runSDKClientList(cmd *cobra.Command, sdkName string) error {
-	sdk, err := localSDK(sdkName)
+	sdk, _, err := localSDK(sdkName)
 	if err != nil {
 		return err
 	}
@@ -195,10 +226,11 @@ func runSDKClientList(cmd *cobra.Command, sdkName string) error {
 	return w.Flush()
 }
 
-func localSDK(sdkName string) (configuredSDK, error) {
-	cfg, _, err := readLocalWorkspaceConfig()
+func localSDK(sdkName string) (configuredSDK, string, error) {
+	cfg, cfgPath, err := readLocalWorkspaceConfig()
 	if err != nil {
-		return configuredSDK{}, err
+		return configuredSDK{}, "", err
 	}
-	return resolveConfiguredSDK(cfg, sdkName)
+	sdk, err := resolveConfiguredSDK(cfg, sdkName)
+	return sdk, cfgPath, err
 }
