@@ -1993,7 +1993,14 @@ func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *Resul
 	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
 }
 
-func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64) *sharedResult {
+// canonicalEquivalentSharedResultLocked picks the canonical equivalent of res
+// from its output classes, falling back to res itself when no candidate is
+// selectable. requireCleanAttachment restricts candidates to results whose
+// dependency attachment finished cleanly: publication adoption skips the
+// attach barrier and commits persistence at the handoff without re-checking
+// attachment, so adoption must never swap to a result whose attachment could
+// still fail.
+func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64, requireCleanAttachment bool) *sharedResult {
 	if res == nil || res.id == 0 {
 		return nil
 	}
@@ -2008,18 +2015,18 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, nil)
 		}
 	}
-
-	if candidates.Empty() {
-		if res.attachmentState() == resultAttachmentFailed {
-			return nil
+	if requireCleanAttachment {
+		clean := newSharedResultSet()
+		for cand := range candidates.Items() {
+			if cand.attachmentState() == resultAttachmentClean {
+				clean.Insert(cand)
+			}
 		}
-		return res
+		candidates = clean
 	}
+
 	if canonical := c.selectLookupCandidateForSessionLocked(sessionID, candidates); canonical != nil {
 		return canonical
-	}
-	if res.attachmentState() == resultAttachmentFailed {
-		return nil
 	}
 	return res
 }
@@ -4402,11 +4409,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if oc.val != nil {
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
 			c.egraphMu.Lock()
-			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix())
-			if oc.res == nil {
-				c.egraphMu.Unlock()
-				return fmt.Errorf("adopt cache-backed result %d: no clean canonical result", existingRes.id)
-			}
+			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix(), true)
 			// Take the publication handoff hold inside the same critical
 			// section as the canonical pick: the adopted result may be owned
 			// only by another session, and a concurrent session release must

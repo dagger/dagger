@@ -541,16 +541,22 @@ CreateOcLeaseFail(i) ==
 (*   - "fresh": fn computed a new detached value                           *)
 (*   - "reuse": fn returned an already-attached result (for example, an    *)
 (*     inner call hit cache). This drives publication's canonical-         *)
-(*     adoption branch. The model picks any live result in the call's     *)
-(*     class - the static-partition stand-in for output-class merging.     *)
+(*     adoption branch. The model picks any cleanly attached result in     *)
+(*     the call's class - the static-partition stand-in for output-class   *)
+(*     merging. Clean attachment is required because a resolver cannot     *)
+(*     obtain an attachment-errored result through any current             *)
+(*     result-returning cache entry point: each such path either waits at  *)
+(*     the attach barrier and returns errors instead of values, or hands   *)
+(*     back a value whose clean attachment was already established.        *)
 (*   - error: only when FnCanFail is on                                    *)
 (***************************************************************************)
 FnComplete(o) ==
     /\ ongoingCalls[o].fnState = "running"
     /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
-       \/ \E r \in LookupEligibleInClass(ClassOf[ongoingCalls[o].call]) :
-            ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
-                               ![o].outcome = "reuse", ![o].reuseFrom = r]
+       \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
+            /\ res[r].barrier \in {"none", "closedOk"}
+            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
+                                  ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
@@ -772,51 +778,51 @@ PubIndexFresh(o) ==
 (* sharedResult.                                                           *)
 (***************************************************************************)
 
-\* The canonical equivalent: the lowest-ID attachment-eligible result in the
-\* class of the result the fn returned. Zero means no clean result can be
-\* adopted; the Go publication returns a normal error in that defensive case.
+\* The canonical equivalent Go picks during adoption: the lowest-ID cleanly
+\* attached result in the returned result's class
+\* (canonicalEquivalentSharedResultLocked with requireCleanAttachment).
+\* Candidates come from the returned result's own index entries, so a
+\* collected result has none and Go falls back to the returned result
+\* itself; the indexing step then refuses to re-register it (the
+\* PubIndexReuse failure branch). A registered returned result is always
+\* its own candidate - it stays cleanly attached once published - so the
+\* pick over a registered result is never empty.
 CanonicalPick(o) ==
-    LET k == ClassOf[res[ongoingCalls[o].reuseFrom].call]
-        live == LookupEligibleInClass(k)
-    IN IF live = {} THEN 0
-       ELSE CHOOSE r \in live : \A q \in live : r <= q
+    LET rf == ongoingCalls[o].reuseFrom
+    IN IF ~res[rf].registered
+       THEN rf
+       ELSE LET live == {r \in LiveInClass(ClassOf[res[rf].call]) :
+                            res[r].barrier \in {"none", "closedOk"}}
+            IN CHOOSE r \in live : \A q \in live : r <= q
 
 \* PubAdopt: one egraphMu critical section both picks the canonical
-\* equivalent AND takes the handoff hold (cache.go:4335-4346), so nothing
-\* can collect the adopted result before publication finishes. Taking the
-\* hold in the same section as the pick is what makes adoption safe
-\* against a concurrent session release; the regression test
-\* dagql/cache_canonical_race_test.go pins that property in Go.
+\* equivalent AND takes the handoff hold (initCompletedResult's adoption
+\* swap), so nothing can collect the adopted result before publication
+\* finishes. Taking the hold in the same section as the pick is what makes
+\* adoption safe against a concurrent session release; the regression test
+\* dagql/cache_canonical_race_test.go pins that property in Go. When the
+\* returned result was already collected, the pick falls back to it and the
+\* hold lands on the dead slot, mirroring Go's unconditional hold
+\* increment; PubIndexReuse then fails the publication.
 PubAdopt(o) ==
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "reuse"
     /\ LET r == CanonicalPick(o) IN
-        /\ r # 0
         /\ res' = [res EXCEPT ![r].own = @ + 1]
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "adopted",
                               ![o].hold = TRUE, ![o].resId = r]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
-\* If every canonical equivalent failed attachment before the adoption lock,
-\* publication returns an ordinary error without taking a handoff hold.
-PubAdoptReject(o) ==
-    /\ ongoingCalls[o].pubState = "begun"
-    /\ ongoingCalls[o].outcome = "reuse"
-    /\ CanonicalPick(o) = 0
-    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed"]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, evals, epoch, flushed>>
-
 (***************************************************************************)
 (* PubIndexReuse: finish publication for an adopted result - the egraphMu  *)
 (* section containing indexWaitResultInEgraphLocked. Behavior:             *)
-(*   - if the adopted result was collected in the meantime,                *)
-(*     indexWaitResultInEgraphLocked refuses to re-register it             *)
-(*     (cache_egraph.go:1548) and publication fails rather than serve a    *)
-(*     collected result                                                    *)
-(*   - no attach barrier: adopted results were already attached            *)
-(*     (resWasCacheBacked, cache.go:4627)                                  *)
+(*   - if the returned result was collected before the adoption pick, the  *)
+(*     pick fell back to it, and indexWaitResultInEgraphLocked refuses to  *)
+(*     re-register it: publication fails rather than serve a collected     *)
+(*     result                                                              *)
+(*   - no attach barrier: the adoption pick only selects cleanly attached  *)
+(*     results (resWasCacheBacked skips the barrier arm)                   *)
 (***************************************************************************)
 PubIndexReuse(o) ==
     /\ ongoingCalls[o].pubState = "adopted"
@@ -1607,7 +1613,7 @@ Next ==
          \/ DecodeWake(i) \/ DecodeFailHit(i) \/ DecodeFailWait(i)
     \/ \E o \in OngoingCallIds :
          \/ FnComplete(o) \/ PubBegin(o)
-         \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubAdoptReject(o) \/ PubIndexReuse(o)
+         \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
          \/ PubAttachAddDep(o) \/ PubFinishOk(o)
          \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
          \/ PubUnregister(o) \/ FnWindDown(o)
@@ -1654,7 +1660,7 @@ Spec == Init /\ [][Next]_vars
 (***************************************************************************)
 SystemProgress(o) ==
     \/ FnComplete(o) \/ PubBegin(o)
-    \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubAdoptReject(o) \/ PubIndexReuse(o)
+    \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
     \/ PubFinishOk(o) \/ PubAttachFailDropHold(o)
     \/ PubAttachFailCloseBarrier(o)
     \/ PubUnregister(o)

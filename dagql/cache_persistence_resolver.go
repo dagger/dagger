@@ -69,11 +69,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
 	if mode == sharedResultLookupCanonicalEquivalent {
-		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix())
-		if res == nil {
-			c.egraphMu.Unlock()
-			return nil, false, 0, fmt.Errorf("resolve result %d: canonical shared result missing", resultID)
-		}
+		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), false)
 	}
 
 	alreadyTracked, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, res)
