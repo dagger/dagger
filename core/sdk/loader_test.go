@@ -180,3 +180,29 @@ func TestWorkspaceModuleForRuntime(t *testing.T) {
 		})
 	}
 }
+
+// TestWorkspaceModuleForRuntimeGoSDKOffline verifies that DAGGER_GO_SDK_OFFLINE
+// stops the Go SDK from being mapped to its github.com/dagger/go-sdk git
+// workspace module (so the engine-embedded builtin Go SDK is used instead),
+// while leaving the other builtin SDKs untouched (they have no embedded copy).
+func TestWorkspaceModuleForRuntimeGoSDKOffline(t *testing.T) {
+	originalTag := engine.Tag
+	defer func() { engine.Tag = originalTag }()
+	engine.Tag = "v0.12.6"
+
+	t.Setenv(goSDKOfflineEnv, "1")
+
+	// go: gated -> no workspace module, falls back to the embedded builtin SDK.
+	got, ok, err := WorkspaceModuleForRuntime("go")
+	require.NoError(t, err)
+	require.False(t, ok, "go SDK must not resolve to a git workspace module when offline")
+	require.Empty(t, got)
+
+	// other builtin SDKs are unaffected (still resolve to their git modules).
+	for _, runtime := range []string{"typescript", "python"} {
+		got, ok, err := WorkspaceModuleForRuntime(runtime)
+		require.NoError(t, err)
+		require.True(t, ok, "%s SDK should be unaffected by DAGGER_GO_SDK_OFFLINE", runtime)
+		require.NotEmpty(t, got.Source)
+	}
+}

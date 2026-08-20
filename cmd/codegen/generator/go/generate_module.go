@@ -318,14 +318,21 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 		}
 	}
 
-	// Check if the module go.mod replaces the dagger.io/dagger library with a custom path.
-	// If so, we keep it as is.
-	// Otherwise, we install the given dagger.io/dagger package version.
+	// Check if the module go.mod replaces the dagger.io/dagger
+	// library with a custom path.  If so, we keep it as
+	// is. Otherwise, we install the dagger.io/dagger package
+	// version, or skip if LibVersion is empty (when
+	// DAGGER_GO_SDK_OFFLINE) so `go mod tidy` doesn't try to
+	// resolve dagger.io/dagger
 	if !isDaggerPkgCustomReplaced(mod.Replace) {
-		genSt.PostCommands = append(genSt.PostCommands,
-			// Do not pass -u here: LibVersion pins dagger.io/dagger, while -u also
-			// asks Go to upgrade transitive dependencies during generation.
-			exec.Command("go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
+		if g.Config.ModuleConfig.LibVersion != "" {
+			genSt.PostCommands = append(genSt.PostCommands,
+				// Do not pass -u here: LibVersion pins dagger.io/dagger, while -u also
+				// asks Go to upgrade transitive dependencies during generation.
+				exec.Command("go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
+		} else {
+			_ = mod.DropRequire(daggerImportPath)
+		}
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
