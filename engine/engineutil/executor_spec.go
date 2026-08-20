@@ -1100,6 +1100,11 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		state.nestedClientMetadata.ClientVersion = version
 	}
 
+	transport, err := c.registerNestedClientTransport(ctx, state)
+	if err != nil {
+		return err
+	}
+
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
 	state.cleanups.Add("cancel session server", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
@@ -1130,7 +1135,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}
@@ -1151,6 +1156,19 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}))
 
 	return nil
+}
+
+func (c *Client) registerNestedClientTransport(ctx context.Context, state *execState) (*engine.NestedClientTransport, error) {
+	transport, err := c.SessionHandler.RegisterNestedClientTransport(
+		ctx,
+		state.nestedClientMetadata,
+		state.callerClientID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("register nested client transport: %w", err)
+	}
+	state.cleanups.Add("close nested client transport", cleanups.Infallible(transport.Close))
+	return transport, nil
 }
 
 func (c *Client) installCACerts(ctx context.Context, state *execState) error {
