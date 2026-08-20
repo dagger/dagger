@@ -39,7 +39,7 @@ func WithNestedClientServer(
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	fn func(ctx context.Context, gqlClient graphql.Client) ([]byte, error),
-) (out []byte, rerr error) {
+) ([]byte, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
@@ -56,13 +56,7 @@ func WithNestedClientServer(
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer shutdownCancel()
-		rerr = errors.Join(rerr, httpSrv.Shutdown(shutdownCtx))
-		retirer, ok := query.Server.(interface {
-			RetireClient(context.Context, *engine.ClientMetadata) error
-		})
-		if ok {
-			rerr = errors.Join(rerr, retirer.RetireClient(shutdownCtx, nestedClientMetadata))
-		}
+		_ = httpSrv.Shutdown(shutdownCtx)
 	}()
 
 	srvErrCh := make(chan error, 1)
@@ -76,7 +70,7 @@ func WithNestedClientServer(
 
 	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", l.Addr()), nil)
 
-	out, err = fn(ctx, gqlClient)
+	out, err := fn(ctx, gqlClient)
 	if err != nil {
 		return nil, err
 	}
