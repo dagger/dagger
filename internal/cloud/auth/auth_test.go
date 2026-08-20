@@ -3,6 +3,8 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,6 +90,58 @@ func TestWriteDeviceAuthPrompt(t *testing.T) {
 			assert.Equal(t, tc.want, buf.String())
 		})
 	}
+}
+
+func TestRefreshTokenForcesGrantAndPersists(t *testing.T) {
+	var grants int
+	var grantType, refreshToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		grants++
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		grantType = r.Form.Get("grant_type")
+		refreshToken = r.Form.Get("refresh_token")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"new-refresh","token_type":"Bearer","expires_in":3600}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	oldAuthConfig := authConfig
+	oldCredentialsFile := credentialsFile
+	authConfig = &oauth2.Config{
+		ClientID: "test-client",
+		Endpoint: oauth2.Endpoint{
+			TokenURL:  srv.URL,
+			AuthStyle: oauth2.AuthStyleInParams,
+		},
+	}
+	credentialsFile = filepath.Join(t.TempDir(), "credentials.json")
+	t.Cleanup(func() {
+		authConfig = oldAuthConfig
+		credentialsFile = oldCredentialsFile
+	})
+
+	refreshed, err := RefreshToken(t.Context(), &oauth2.Token{
+		AccessToken:  "server-rejected-but-locally-valid",
+		RefreshToken: "old-refresh",
+		TokenType:    "Bearer",
+		Expiry:       time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "new-access", refreshed.AccessToken)
+	require.Equal(t, "new-refresh", refreshed.RefreshToken)
+	require.Equal(t, 1, grants)
+	require.Equal(t, "refresh_token", grantType)
+	require.Equal(t, "old-refresh", refreshToken)
+
+	data, err := os.ReadFile(credentialsFile)
+	require.NoError(t, err)
+	var persisted oauth2.Token
+	require.NoError(t, json.Unmarshal(data, &persisted))
+	require.Equal(t, refreshed.AccessToken, persisted.AccessToken)
+	require.Equal(t, refreshed.RefreshToken, persisted.RefreshToken)
 }
 
 func TestGetCloudAuthAllowsMissingOrgFile(t *testing.T) {
