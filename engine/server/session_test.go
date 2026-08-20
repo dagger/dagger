@@ -21,10 +21,18 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -40,13 +48,8 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 		activeCount: 2,
 		shutdownAt:  closedAt,
 		telemetryDebug: LifecycleTelemetryCounts{
-			TracerProviders:          1,
-			LoggerProviders:          1,
-			MeterProviders:           1,
-			ConfiguredSpanProcessors: 3,
-			ConfiguredLogProcessors:  1,
-			ConfiguredMetricReaders:  1,
-			ConfiguredSpanQueueSlots: 16384,
+			MeterProviders:          1,
+			ConfiguredMetricReaders: 1,
 		},
 	}
 	child := &daggerClient{
@@ -60,6 +63,14 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 			parent.clientID: parent,
 			child.clientID:  child,
 		},
+		telemetryDebug: LifecycleTelemetryCounts{
+			TracerProviders:          1,
+			LoggerProviders:          1,
+			ConfiguredSpanProcessors: 4,
+			ConfiguredLogProcessors:  2,
+			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
+			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
+		},
 	}
 	sess.state.Store(sessionStateInitialized)
 	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
@@ -72,7 +83,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 	require.NotNil(t, snapshot.OldestClosedRuntime)
 	require.Equal(t, closedAt, *snapshot.OldestClosedRuntime)
 	require.Equal(t, 1, snapshot.Providers.TracerProviders)
-	require.Equal(t, 3, snapshot.Providers.ConfiguredSpanProcessors)
+	require.Equal(t, 4, snapshot.Providers.ConfiguredSpanProcessors)
 	require.False(t, snapshot.Providers.QueueOccupancyMeasured)
 
 	require.Len(t, snapshot.Sessions, 1)
@@ -123,6 +134,132 @@ func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
 	route[1] = "mutated"
 	require.Equal(t, []string{"root", "parent"}, child.parentClientIDs,
 		"returned routes must not alias immutable client ancestry")
+}
+
+func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs, wcprofSpanCount: newWcprofSpanCounter()}
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	root := &daggerClient{clientID: "root", clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "root"}}
+	parent := &daggerClient{clientID: "parent", parentClientIDs: []string{"root"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "parent"}}
+	child := &daggerClient{clientID: "child", parentClientIDs: []string{"root", "parent"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "child"}, shutdownCh: make(chan struct{})}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: root.clientID,
+		clients: map[string]*daggerClient{
+			root.clientID: root, parent.clientID: parent, child.clientID: child,
+		},
+		telemetryPubSub: srv.telemetryPubSub,
+	}
+	for _, client := range sess.clients {
+		client.daggerSession = sess
+	}
+	srv.initializeSessionTelemetry(sess)
+	t.Cleanup(func() { require.NoError(t, sess.shutdownTraceLogs(context.Background())) })
+
+	emit := func(client *daggerClient, name string, detached bool) trace.SpanID {
+		ctx := engine.ContextWithClientMetadata(context.Background(), client.clientMetadata)
+		ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
+		if detached {
+			ctx = context.WithoutCancel(ctx)
+			client.closeShutdownOnce.Do(func() { close(client.shutdownCh) })
+		}
+		_, span := sess.tracerProvider.Tracer("test").Start(ctx, name)
+		spanID := span.SpanContext().SpanID()
+		span.End()
+		rec := otellog.Record{}
+		rec.SetTimestamp(time.Now())
+		rec.SetBody(otellog.StringValue(name))
+		telemetry.Logger(ctx, "test").Emit(ctx, rec)
+		return spanID
+	}
+
+	rootSpanID := emit(root, "root-work", false)
+	childSpanID := emit(child, "detached-child-work", true)
+	require.NoError(t, sess.FlushTelemetry(t.Context(), "test"))
+
+	load := func(clientID string) ([]clientdb.Span, []clientdb.Log) {
+		db, err := dbs.Open(t.Context(), clientID)
+		require.NoError(t, err)
+		defer db.Close()
+		spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
+		require.NoError(t, err)
+		logs, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		return spans, logs
+	}
+	countSpan := func(spans []clientdb.Span, id trace.SpanID) int {
+		count := 0
+		for _, span := range spans {
+			if span.SpanID == id.String() {
+				count++
+			}
+		}
+		return count
+	}
+
+	originAttr := func(attrsJSON []byte) string {
+		var attrs []*otlpcommonv1.KeyValue
+		require.NoError(t, clientdb.UnmarshalProtoJSONs(attrsJSON, &otlpcommonv1.KeyValue{}, &attrs))
+		for _, attr := range attrs {
+			if attr.Key == telemetryattrs.TelemetryOriginClientIDAttr {
+				return attr.Value.GetStringValue()
+			}
+		}
+		return ""
+	}
+
+	rootSpans, rootLogs := load("root")
+	parentSpans, parentLogs := load("parent")
+	childSpans, childLogs := load("child")
+	// Live span export emits one start and one end snapshot. Each snapshot must
+	// reach each visibility target once, without duplicate ancestry delivery.
+	require.Equal(t, 2, countSpan(rootSpans, rootSpanID))
+	require.Equal(t, 2, countSpan(rootSpans, childSpanID))
+	require.Equal(t, 2, countSpan(parentSpans, childSpanID))
+	require.Equal(t, 2, countSpan(childSpans, childSpanID))
+	require.Zero(t, countSpan(parentSpans, rootSpanID))
+	require.Zero(t, countSpan(childSpans, rootSpanID))
+	require.Len(t, rootLogs, 2)
+	require.Len(t, parentLogs, 1)
+	require.Len(t, childLogs, 1)
+	for _, span := range childSpans {
+		require.Equal(t, "child", originAttr(span.Attributes))
+	}
+	require.Equal(t, "child", originAttr(parentLogs[0].Attributes))
+	require.ElementsMatch(t, []string{"root", "child"}, []string{
+		originAttr(rootLogs[0].Attributes), originAttr(rootLogs[1].Attributes),
+	})
+
+	// Incoming OTLP/cloud telemetry has no emission context. Its authenticated
+	// origin adapter must overwrite any payload claim and use the same route.
+	require.NoError(t, (originSpanExporter{origin: "parent", next: sess.spanExporter}).ExportSpans(
+		t.Context(), []sdktrace.ReadOnlySpan{childSpans[0].ReadOnly()}))
+	incomingLog := sdklog.Record{}
+	incomingLog.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
+	require.NoError(t, (originLogExporter{origin: "parent", next: sess.logExporter}).Export(
+		t.Context(), []sdklog.Record{incomingLog}))
+	rootSpans, rootLogs = load("root")
+	parentSpans, parentLogs = load("parent")
+	childSpans, childLogs = load("child")
+	require.Equal(t, 3, countSpan(rootSpans, childSpanID))
+	require.Equal(t, 3, countSpan(parentSpans, childSpanID))
+	require.Equal(t, 2, countSpan(childSpans, childSpanID))
+	require.Len(t, rootLogs, 3)
+	require.Len(t, parentLogs, 2)
+	require.Len(t, childLogs, 1)
+	require.Equal(t, "parent", originAttr(rootLogs[len(rootLogs)-1].Attributes))
+
+	require.Equal(t, 0, dbs.OpenStats().Stores, "exports and reads must release DB handles")
+
+	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
+	sess.state.Store(sessionStateInitialized)
+	snapshot := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, 1, snapshot.Providers.TracerProviders)
+	require.Equal(t, 1, snapshot.Providers.LoggerProviders)
+	require.Equal(t, enginetel.LargeSpanQueueSize, snapshot.Providers.ConfiguredSpanQueueSlots)
+	require.Equal(t, enginetel.LogQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
 }
 
 func TestClientRegistrationRequiresValidExplicitAncestry(t *testing.T) {
@@ -247,16 +384,17 @@ func TestLogRecordRowPreservesBytesBody(t *testing.T) {
 }
 
 func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
-	dbs := clientdb.NewDBs(t.TempDir())
-	db, err := dbs.Open(t.Context(), "client")
-	require.NoError(t, err)
 
-	client := &daggerClient{keepAliveTelemetryDB: db}
-	require.NoError(t, client.closeKeepAliveTelemetryDB())
-	require.Nil(t, client.keepAliveTelemetryDB)
-	// A cleanup and teardown path converging on the same client is a no-op
-	// after the first path transfers the pointer.
-	require.NoError(t, client.closeKeepAliveTelemetryDB())
+func TestTelemetryExportReleasesClientDBHandle(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+
+	records := []sdklog.Record{{}}
+	require.NoError(t, ps.Logs("client").Export(t.Context(), records))
+	stats := dbs.OpenStats()
+	require.Zero(t, stats.Stores)
+	require.Zero(t, stats.Streams)
+	require.Zero(t, stats.Refs)
 }
 
 func (caller *fakeSessionCaller) Supports(string) bool {
@@ -598,6 +736,71 @@ func newTeardownTestServer(t *testing.T) *Server {
 		wcprofSpanCount:    newWcprofSpanCounter(),
 		throttledSessionGC: func() {},
 	}
+}
+
+type cleanupSpanMetricExporter struct {
+	ctx    context.Context
+	tracer trace.Tracer
+}
+
+func (exp cleanupSpanMetricExporter) Export(context.Context, *metricdata.ResourceMetrics) error {
+	return nil
+}
+func (cleanupSpanMetricExporter) ForceFlush(context.Context) error { return nil }
+func (exp cleanupSpanMetricExporter) Shutdown(context.Context) error {
+	_, span := exp.tracer.Start(exp.ctx, "metric cleanup telemetry")
+	span.End()
+	return nil
+}
+func (cleanupSpanMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+func (cleanupSpanMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+func TestSessionTeardownFlushesTelemetryAfterRuntimeCleanup(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	srv.clientDBs = clientdb.NewDBs(t.TempDir())
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main"}
+	client := &daggerClient{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clients:            map[string]*daggerClient{client.clientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		containers:         map[bkgw.Container]struct{}{},
+		shutdownCh:         make(chan struct{}),
+		telemetryPubSub:    srv.telemetryPubSub,
+	}
+	client.daggerSession = sess
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	srv.initializeSessionTelemetry(sess)
+
+	cleanupCtx := engine.ContextWithClientMetadata(context.Background(), md)
+	exporter := cleanupSpanMetricExporter{ctx: cleanupCtx, tracer: sess.tracerProvider.Tracer("test")}
+	client.meterProvider = sdkmetric.NewMeterProvider(sdkmetric.WithReader(
+		sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(time.Hour)),
+	))
+
+	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
+	db, err := srv.clientDBs.Open(t.Context(), client.clientID)
+	require.NoError(t, err)
+	defer db.Close()
+	spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	var cleanupSnapshots int
+	for _, span := range spans {
+		if span.Name == "metric cleanup telemetry" {
+			cleanupSnapshots++
+		}
+	}
+	require.Equal(t, 2, cleanupSnapshots,
+		"cleanup span start/end snapshots must pass the final session flush")
 }
 
 // newTeardownTestSession publishes an initialized session whose main client
