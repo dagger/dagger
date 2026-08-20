@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/core/sdk/sdkmeta"
@@ -47,6 +48,12 @@ func ValidateSDKs(cfg *Config) error {
 	for _, sdkName := range sdkNames {
 		if sdkName == "" {
 			return fmt.Errorf("SDK name must not be empty")
+		}
+		if strings.IndexFunc(sdkName, unicode.IsSpace) >= 0 {
+			return fmt.Errorf("SDK name %q must be a single command token", sdkName)
+		}
+		if strings.HasPrefix(sdkName, "-") {
+			return fmt.Errorf("SDK name %q must not start with '-'", sdkName)
 		}
 		sdk := cfg.SDKs[sdkName]
 		if sdk.Module == "" {
