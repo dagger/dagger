@@ -1377,6 +1377,9 @@ pub struct ContainerFromOpts {
     /// Allow HTTPS registry communication without verifying the server certificate.
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_tls_verify: Option<bool>,
+    /// Include prerelease tags when selecting the latest release.
+    #[builder(setter(into, strip_option), default)]
+    pub latest_include_subreleases: Option<bool>,
     /// Protocol to use for registry communication.
     /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
     #[builder(setter(into, strip_option), default)]
@@ -2250,6 +2253,9 @@ impl Container {
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
             query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+        }
+        if let Some(latest_include_subreleases) = opts.latest_include_subreleases {
+            query = query.arg("latestIncludeSubreleases", latest_include_subreleases);
         }
         Container {
             proc: self.proc.clone(),
@@ -9035,6 +9041,12 @@ pub struct GitRepositoryBranchesOpts<'a> {
     pub patterns: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryLatestOpts {
+    /// Include prerelease tags when selecting the latest release.
+    #[builder(setter(into, strip_option), default)]
+    pub include_subreleases: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
@@ -9159,9 +9171,31 @@ impl GitRepository {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Returns details for the latest semver tag.
-    pub fn latest_version(&self) -> GitRef {
-        let query = self.selection.select("latestVersion");
+    /// Return the latest release tag, falling back to HEAD when no release exists.
+    /// This operation is pinned.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn latest(&self) -> GitRef {
+        let query = self.selection.select("latest");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the latest release tag, falling back to HEAD when no release exists.
+    /// This operation is pinned.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn latest_opts(&self, opts: GitRepositoryLatestOpts) -> GitRef {
+        let mut query = self.selection.select("latest");
+        if let Some(include_subreleases) = opts.include_subreleases {
+            query = query.arg("includeSubreleases", include_subreleases);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,

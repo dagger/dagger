@@ -65,6 +65,7 @@ mod tests {
     fn registry_protocol_options_use_owned_enum_values() {
         let from_opts = ContainerFromOpts {
             insecure_skip_tls_verify: Some(true),
+            latest_include_subreleases: None,
             protocol: Some(RegistryProtocol::Https),
             registry_service: None,
         };

@@ -109,8 +109,18 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				// TODO: id is normally a reserved word; we should probably rename this
 				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 			),
-		dagql.NodeFunc("latestVersion", s.latestVersion).
+		dagql.NodeFunc("latestVersion", s.latestVersionLegacy).
+			View(BeforeVersion("v1.0.0-beta.10")).
 			Doc(`Returns details for the latest semver tag.`),
+		dagql.NodeFunc("latest", s.latest).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc(`Return the latest release tag, falling back to HEAD when no release exists.`, `This operation is pinned.`).
+			Args(
+				dagql.Arg("includeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`),
+				dagql.Arg("tagPrefix").
+					Doc(`Restrict release tags to a monorepo subpath.`).
+					Internal(),
+			),
 
 		dagql.Func("tags", s.tags).
 			Doc(`tags that match any of the given glob patterns.`).
@@ -228,7 +238,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		// mixing tags into the commit's identity, which would invalidate the
 		// commit's metadata and tree every time anything in the repo is tagged.
 		// Per-session matches the freshness of the remote snapshot they answer
-		// from, the same guarantee GitRepository.tags and latestVersion give.
+		// from, the same guarantee GitRepository.tags and latest give.
 		// (selectGitReleaseTag re-resolves that snapshot for the same reason.)
 		dagql.NodeFunc("releaseTag", s.releaseTag).
 			WithInput(dagql.PerSessionInput).
@@ -458,6 +468,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				View:  curCall.View,
 			})
 			if err != nil {
+				if errors.Is(err, gitutil.ErrGitAuthFailed) {
+					continue
+				}
+				return inst, err
+			}
+			if _, err := repo.Self().LoadRemote(ctx); err != nil {
 				if errors.Is(err, gitutil.ErrGitAuthFailed) {
 					continue
 				}
@@ -748,6 +764,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 			public, err := IsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
 			if err != nil {
+				// A workspace pin may let child fields resolve without contacting
+				// this repository. Don't fail the parent visibility probe when a
+				// pin for this remote exists; skip implicit credentials and let any
+				// operation that truly needs the remote surface its own error.
+				if gitRemoteHasWorkspacePin(ctx, remote.Remote()) {
+					break
+				}
 				return inst, err
 			}
 			if public {
@@ -982,7 +1005,10 @@ type refArgs struct {
 	LockName      string `default:"" internal:"true"`
 }
 
-const lockGitRefOperation = "git.ref"
+const (
+	lockGitLatestOperation = "git.latest"
+	lockGitRefOperation    = "git.ref"
+)
 
 func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
 	remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
@@ -990,6 +1016,34 @@ func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
 		return nil, fmt.Errorf("git locking only supports remote repositories")
 	}
 	return []any{remoteRepo.URL.Remote(), name}, nil
+}
+
+func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false
+	}
+	lookupLock, err := lookupLockForAPI(ctx, query, lockGitLatestOperation)
+	if err != nil || lookupLock == nil {
+		return false
+	}
+	entries, err := lookupLock.lock.Entries()
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Namespace != lockCoreNamespace ||
+			!strings.HasPrefix(entry.Operation, "git.") ||
+			entry.Result.Policy != workspace.PolicyPin ||
+			len(entry.Inputs) == 0 {
+			continue
+		}
+		entryRemote, ok := entry.Inputs[0].(string)
+		if ok && entryRemote == remote {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
@@ -1054,7 +1108,11 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		}
 	}
 
-	ref, err := repo.Remote.Lookup(args.Name)
+	remote, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ref, err := remote.Lookup(args.Name)
 	if err != nil {
 		return inst, err
 	}
@@ -1149,8 +1207,11 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	})
 }
 
-func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
-	remote := parent.Self().Remote
+func (s *gitSchema) latestVersionLegacy(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+	remote, err := parent.Self().LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
 	tags := remote.Tags().Filter([]string{"refs/tags/v*"}).ShortNames()
 	tags = slices.DeleteFunc(tags, func(tag string) bool {
 		return !semver.IsValid(tag)
@@ -1232,7 +1293,10 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	remote := parent.Remote
+	remote, err := parent.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return dagql.NewStringArray(remote.Filter(patterns).Tags().ShortNames()...), nil
 }
 
@@ -1247,7 +1311,10 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	remote := parent.Remote
+	remote, err := parent.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
 }
 
@@ -1344,9 +1411,8 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 	if err != nil {
 		return nil, err
 	}
-	repo := *parent
-	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		repo.Backend = &core.RemoteGitRepository{
+	if remote, ok := parent.Backend.(*core.RemoteGitRepository); ok {
+		backend := &core.RemoteGitRepository{
 			URL:           remote.URL,
 			SSHKnownHosts: remote.SSHKnownHosts,
 			SSHAuthSocket: remote.SSHAuthSocket,
@@ -1357,8 +1423,9 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 			AuthHeader:    remote.AuthHeader,
 			Mirror:        remote.Mirror,
 		}
+		return parent.CloneWithBackend(backend), nil
 	}
-	return &repo, nil
+	return parent, nil
 }
 
 type withAuthHeaderArgs struct {
@@ -1375,9 +1442,8 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 	if err != nil {
 		return nil, err
 	}
-	repo := *parent
-	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		repo.Backend = &core.RemoteGitRepository{
+	if remote, ok := parent.Backend.(*core.RemoteGitRepository); ok {
+		backend := &core.RemoteGitRepository{
 			URL:           remote.URL,
 			SSHKnownHosts: remote.SSHKnownHosts,
 			SSHAuthSocket: remote.SSHAuthSocket,
@@ -1388,8 +1454,9 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 			AuthHeader:    header,
 			Mirror:        remote.Mirror,
 		}
+		return parent.CloneWithBackend(backend), nil
 	}
-	return &repo, nil
+	return parent, nil
 }
 
 type treeArgs struct {
@@ -2020,4 +2087,106 @@ func (s *gitSchema) log(
 		commits = append(commits, commit)
 	}
 	return commits, nil
+}
+
+type latestArgs struct {
+	IncludeSubreleases bool   `name:"includeSubreleases" default:"false"`
+	TagPrefix          string `name:"tagPrefix" default:""`
+}
+
+func (s *gitSchema) latest(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args latestArgs,
+) (inst dagql.Result[*core.GitRef], _ error) {
+	repo := parent.Self()
+	remoteRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
+	if !isRemote {
+		remote, err := repo.LoadRemote(ctx)
+		if err != nil {
+			return inst, err
+		}
+		ref, err := core.SelectLatestGitRefWithTagPrefix(
+			remote,
+			args.IncludeSubreleases,
+			args.TagPrefix,
+		)
+		if err != nil {
+			return inst, err
+		}
+		return s.gitRefResult(ctx, parent, ref)
+	}
+
+	const lockPolicy = workspace.PolicyPin
+	lockInputs := []any{remoteRepo.URL.Remote(), args.IncludeSubreleases}
+	if args.TagPrefix != "" {
+		lockInputs = append(lockInputs, args.TagPrefix)
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	lookupLock, err := lookupLockForAPI(ctx, query, lockGitLatestOperation)
+	if err != nil {
+		return inst, err
+	}
+
+	lockResolution, err := resolveLookupFromLoadedLock(
+		lookupLock,
+		lockGitLatestOperation,
+		lockInputs,
+		lockPolicy,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
+	}
+	if lockResolution.Pin != nil {
+		pin, ok := lockResolution.Pin.(string)
+		if !ok || pin == "" {
+			return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, lockResolution.Pin)
+		}
+		ref, err := core.DecodeGitLatestRefPinWithTagPrefix(
+			pin,
+			args.IncludeSubreleases,
+			args.TagPrefix,
+		)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
+		}
+		return s.gitRefResult(ctx, parent, ref)
+	}
+
+	remote, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ref, err := core.SelectLatestGitRefWithTagPrefix(
+		remote,
+		args.IncludeSubreleases,
+		args.TagPrefix,
+	)
+	if err != nil {
+		return inst, err
+	}
+
+	if lockResolution.ShouldWrite && lookupLock != nil {
+		pin, err := core.EncodeGitRefPin(ref)
+		if err != nil {
+			return inst, err
+		}
+		if err := lookupLock.SetLookup(
+			lockCoreNamespace,
+			lockGitLatestOperation,
+			lockInputs,
+			workspace.LookupResult{
+				Value:  pin,
+				Policy: lockPolicy,
+			},
+		); err != nil {
+			return inst, fmt.Errorf("set lock entry for %s: %w", lockGitLatestOperation, err)
+		}
+	}
+
+	return s.gitRefResult(ctx, parent, ref)
 }

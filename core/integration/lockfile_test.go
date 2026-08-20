@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ import (
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/semver"
 )
 
 type LockfileSuite struct{}
@@ -513,4 +515,378 @@ func equalLockInputs(actual, expected []any) bool {
 		}
 	}
 	return true
+}
+
+const gitLatestCommitQuery = `{
+  git(url: "` + lockTestGitRepoURL + `") {
+    latest {
+      ref
+      commit
+    }
+  }
+}
+`
+
+func (LockfileSuite) TestGitLatestCreatesPin(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", gitLatestCommitQuery)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	assertGitLatestLockEntry(t, lockBytes)
+}
+
+func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", gitLatestCommitQuery)
+	writeGitLatestLock(t, workdir, "refs/tags/"+lockTestGitTagName+"@"+lockTestGitTagOldCommit)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "refs/tags/"+lockTestGitTagName)
+	require.Contains(t, string(out), lockTestGitTagOldCommit)
+}
+
+func (LockfileSuite) TestGitLatestPinnedDoesNotLoadRemoteMetadata(ctx context.Context, t *testctx.T) {
+	const unavailableRemote = "git://example.invalid/dagger.git"
+	const pinnedCommit = "0123456789abcdef0123456789abcdef01234567"
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+  git(url: "`+unavailableRemote+`") {
+    latest {
+      ref
+      commit
+    }
+  }
+}
+`)
+	writeGitLatestLockForRemote(
+		t,
+		workdir,
+		unavailableRemote,
+		"refs/tags/v1.2.3@"+pinnedCommit,
+	)
+
+	out, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "refs/tags/v1.2.3")
+	require.Contains(t, string(out), pinnedCommit)
+}
+
+// Unlike git://, an https:// URL without explicit auth makes the parent git
+// resolver probe the remote for visibility before latest can use the workspace
+// pin. That probe must not fail the query when the remote is unreachable.
+func (LockfileSuite) TestGitLatestPinnedHTTPSUnavailableRemoteUsesPin(ctx context.Context, t *testctx.T) {
+	const unavailableRemote = "https://git.example.invalid/dagger.git"
+	const pinnedCommit = "0123456789abcdef0123456789abcdef01234567"
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+  git(url: "`+unavailableRemote+`") {
+    latest {
+      ref
+      commit
+    }
+  }
+}
+`)
+	writeGitLatestLockForRemote(
+		t,
+		workdir,
+		unavailableRemote,
+		"refs/tags/v1.2.3@"+pinnedCommit,
+	)
+
+	out, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "refs/tags/v1.2.3")
+	require.Contains(t, string(out), pinnedCommit)
+}
+
+func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+  git(url: "git://example.invalid/dagger.git") {
+    latest { commit }
+  }
+}`)
+	writeGitLatestLockForRemote(
+		t,
+		workdir,
+		"git://example.invalid/dagger.git",
+		"refs/pull/1/head@0123456789abcdef0123456789abcdef01234567",
+	)
+
+	_, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.ErrorContains(t, err, `invalid git.latest ref "refs/pull/1/head"`)
+}
+
+// dagger update must refresh git.latest entries for private repositories: the
+// lock stores only the remote URL, so the update path has to recover the same
+// credential-helper access that created the pin.
+func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Context, t *testctx.T) {
+	const privateRepoURL = "https://github.com/grouville/daggerverse-private.git"
+	stalePin := "refs/tags/v0.0.1@" + strings.Repeat("0", 40)
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	lockPath, originalLock := writeGitLatestLockForRemote(t, workdir, privateRepoURL, stalePin)
+
+	// same committed read-only PAT as TestGitCredentialErrors
+	encodedPAT := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMnVKQm5ESVBNZ0h5X2lHYUVPZTZaR2xOTjB4Y2o2WEdRWjNSalhwdHQ0c2lSMmw0aUJTellKUmFKUFdERlNUVU1hRXlDYXNQCg=="
+	decodedPAT, err := base64.StdEncoding.DecodeString(encodedPAT)
+	require.NoError(t, err)
+	token := strings.TrimSpace(string(decodedPAT))
+
+	gitConfigPath := filepath.Join(workdir, ".gitconfig")
+	require.NoError(t, os.WriteFile(gitConfigPath, []byte(makeGitCredentials("github.com", "x-token-auth", token)), 0o600))
+
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--silent", "update")
+	cmd.Env = append(cmd.Env,
+		"GIT_CONFIG_GLOBAL="+gitConfigPath,
+		"GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.NotEqual(t, originalLock, string(lockBytes))
+	require.NotContains(t, string(lockBytes), stalePin)
+}
+
+func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	lockPath, originalLock := writeGitLatestLock(t, workdir, "refs/tags/"+lockTestGitTagName+"@"+lockTestGitTagOldCommit)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	require.NoError(t, err)
+	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
+
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.NotEqual(t, originalLock, string(lockBytes))
+	assertGitLatestLockEntry(t, lockBytes)
+	require.NotContains(t, string(lockBytes), lockTestGitTagOldCommit)
+}
+
+func writeGitLatestLock(t *testctx.T, workdir, pin string) (string, string) {
+	return writeGitLatestLockForRemote(
+		t,
+		workdir,
+		lockTestGitRepoURL,
+		pin,
+	)
+}
+
+func writeGitLatestLockForRemote(
+	t *testctx.T,
+	workdir,
+	remoteURL,
+	pin string,
+) (string, string) {
+	t.Helper()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup("", "git.latest", []any{remoteURL, false}, workspace.LookupResult{
+		Value:  pin,
+		Policy: workspace.PolicyPin,
+	}))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
+	return lockPath, string(lockBytes)
+}
+
+func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
+	t.Helper()
+
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "git.latest" {
+			continue
+		}
+		require.Equal(t, []any{lockTestGitRepoURL, false}, entry.Inputs)
+		require.Empty(t, entry.Policy) // pin is the lockfile's default policy
+		value, ok := entry.Value.(string)
+		require.True(t, ok)
+		ref, commit, found := strings.Cut(value, "@")
+		require.True(t, found)
+		require.True(t, strings.HasPrefix(ref, "refs/tags/"), ref)
+		require.Len(t, commit, 40)
+		return
+	}
+	require.Fail(t, "expected git.latest entry in lockfile")
+}
+
+const containerFromLatestImageRefQuery = `{
+  container {
+    from(address: "alpine") {
+      imageRef
+    }
+  }
+}
+`
+
+func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "latest-image-ref.graphql", containerFromLatestImageRefQuery)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	pin := assertContainerFromLatestLockEntry(t, lockBytes)
+	require.Contains(t, string(out), pin)
+
+	pinnedOut, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(pinnedOut), pin)
+
+	pinnedLockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, lockBytes, pinnedLockBytes)
+
+	stalePin := "docker.io/library/alpine:1.0.0@sha256:" + strings.Repeat("0", 64)
+	writeContainerFromLatestLock(t, workdir, lockTestPlatform(ctx, t), stalePin)
+
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	require.NoError(t, err)
+
+	updatedLockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	updatedPin := assertContainerFromLatestLockEntry(t, updatedLockBytes)
+	require.NotEqual(t, stalePin, updatedPin)
+}
+
+// Engines that predate latest-release selection recorded a bare address like
+// "alpine" as a container.from entry pinned at the implicit :latest tag.
+// Such workspaces must keep resolving through that entry after an upgrade.
+func (LockfileSuite) TestContainerFromLatestFallsBackToLegacyFromEntry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	imageRef, err := c.Container().From("alpine:latest").ImageRef(ctx)
+	require.NoError(t, err)
+	_, imageDigest, found := strings.Cut(imageRef, "@")
+	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+	require.True(t, strings.HasPrefix(imageDigest, "sha256:"), imageDigest)
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "latest-image-ref.graphql", containerFromLatestImageRefQuery)
+	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), imageDigest, workspace.PolicyPin)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "alpine:latest@"+imageDigest)
+
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, originalLock, string(lockBytes))
+}
+
+func writeContainerFromLatestLock(t *testctx.T, workdir, platform, pin string) {
+	t.Helper()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		"",
+		"container.from",
+		[]any{"docker.io/library/alpine", platform, false},
+		workspace.LookupResult{
+			Value:  pin,
+			Policy: workspace.PolicyPin,
+		},
+	))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, workspace.LockFileName),
+		lockBytes,
+		0o600,
+	))
+}
+
+func assertContainerFromLatestLockEntry(t *testctx.T, lockBytes []byte) string {
+	t.Helper()
+
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "container.from" {
+			continue
+		}
+		require.Len(t, entry.Inputs, 3)
+		require.Equal(t, "docker.io/library/alpine", entry.Inputs[0])
+		require.Equal(t, false, entry.Inputs[2])
+		require.Empty(t, entry.Policy) // pin is the lockfile's default policy
+
+		value, ok := entry.Value.(string)
+		require.True(t, ok)
+		tagAndDigest := strings.TrimPrefix(value, "docker.io/library/alpine:")
+		tag, imageDigest, found := strings.Cut(tagAndDigest, "@")
+		require.True(t, found, "expected tag and digest in %q", value)
+		require.True(t, strings.HasPrefix(imageDigest, "sha256:"), imageDigest)
+
+		version := tag
+		if !strings.HasPrefix(version, "v") {
+			version = "v" + version
+		}
+		require.True(t, semver.IsValid(version), "expected semantic-version tag in %q", value)
+		require.Empty(t, semver.Prerelease(version), "expected stable tag in %q", value)
+		return value
+	}
+
+	require.FailNow(t, "expected latest-release container.from entry in lockfile")
+	return ""
 }

@@ -1990,6 +1990,7 @@ class Container(Type):
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        latest_include_subreleases: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -2008,12 +2009,15 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        latest_include_subreleases:
+            Include prerelease tags when selecting the latest release.
         """
         _args = [
             Arg("address", address),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("latestIncludeSubreleases", latest_include_subreleases, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -8786,10 +8790,25 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest_version(self) -> GitRef:
-        """Returns details for the latest semver tag."""
-        _args: list[Arg] = []
-        _ctx = self._select("latestVersion", _args)
+    def latest(
+        self,
+        *,
+        include_subreleases: bool | None = False,
+    ) -> GitRef:
+        """Return the latest release tag, falling back to HEAD when no release
+        exists.
+
+        This operation is pinned.
+
+        Parameters
+        ----------
+        include_subreleases:
+            Include prerelease tags when selecting the latest release.
+        """
+        _args = [
+            Arg("includeSubreleases", include_subreleases, False),
+        ]
+        _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
     def ref(self, name: str) -> GitRef:

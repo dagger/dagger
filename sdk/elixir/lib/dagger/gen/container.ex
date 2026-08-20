@@ -372,7 +372,8 @@ defmodule Dagger.Container do
   @spec from(t(), String.t(), [
           {:registry_service, Dagger.Service.t() | nil},
           {:protocol, Dagger.RegistryProtocol.t() | nil},
-          {:insecure_skip_tls_verify, boolean() | nil}
+          {:insecure_skip_tls_verify, boolean() | nil},
+          {:latest_include_subreleases, boolean() | nil}
         ]) :: Dagger.Container.t()
   def from(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
@@ -388,6 +389,7 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("protocol", optional_args[:protocol])
       |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
+      |> QB.maybe_put_arg("latestIncludeSubreleases", optional_args[:latest_include_subreleases])
 
     %Dagger.Container{
       query_builder: query_builder,
