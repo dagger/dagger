@@ -127,10 +127,11 @@ func (lease *ClientLifecycleLease) Release() {
 // with one held lifecycle lease. Copies are safe: they refer to the same
 // idempotent lease, while Clone acquires independent ownership.
 type ClientScope struct {
-	sessionID string
-	clientID  string
-	metadata  []byte
-	lease     *ClientLifecycleLease
+	sessionID             string
+	clientID              string
+	metadata              []byte
+	useRecipeIDsByDefault bool
+	lease                 *ClientLifecycleLease
 }
 
 // NewClientScope snapshots metadata so later bootstrap mutations cannot change
@@ -150,10 +151,11 @@ func NewClientScope(metadata *ClientMetadata, lease *ClientLifecycleLease) (Clie
 		return ClientScope{}, fmt.Errorf("snapshot client scope metadata: %w", err)
 	}
 	return ClientScope{
-		sessionID: metadata.SessionID,
-		clientID:  metadata.ClientID,
-		metadata:  snapshot,
-		lease:     lease,
+		sessionID:             metadata.SessionID,
+		clientID:              metadata.ClientID,
+		metadata:              snapshot,
+		useRecipeIDsByDefault: metadata.UseRecipeIDsByDefault,
+		lease:                 lease,
 	}, nil
 }
 
@@ -171,6 +173,7 @@ func (scope ClientScope) Metadata() (*ClientMetadata, error) {
 	if err := json.Unmarshal(scope.metadata, &metadata); err != nil {
 		return nil, fmt.Errorf("restore client scope metadata: %w", err)
 	}
+	metadata.UseRecipeIDsByDefault = scope.useRecipeIDsByDefault
 	return &metadata, nil
 }
 
@@ -187,10 +190,11 @@ func (scope ClientScope) Clone(kind ClientLeaseKind, ownerID string) (ClientScop
 		return ClientScope{}, err
 	}
 	return ClientScope{
-		sessionID: scope.sessionID,
-		clientID:  scope.clientID,
-		metadata:  append([]byte(nil), scope.metadata...),
-		lease:     lease,
+		sessionID:             scope.sessionID,
+		clientID:              scope.clientID,
+		metadata:              append([]byte(nil), scope.metadata...),
+		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
+		lease:                 lease,
 	}, nil
 }
 
@@ -212,10 +216,11 @@ func (scope ClientScope) Delegate(kind ClientLeaseKind, ownerID string) (ClientS
 		return ClientScope{}, err
 	}
 	return ClientScope{
-		sessionID: scope.sessionID,
-		clientID:  scope.clientID,
-		metadata:  append([]byte(nil), scope.metadata...),
-		lease:     lease,
+		sessionID:             scope.sessionID,
+		clientID:              scope.clientID,
+		metadata:              append([]byte(nil), scope.metadata...),
+		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
+		lease:                 lease,
 	}, nil
 }
 
