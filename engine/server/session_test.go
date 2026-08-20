@@ -28,7 +28,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -920,11 +922,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 		clientID:   "parent",
 		shutdownAt: closedAt},
 		state:       clientStateInitialized,
-		activeCount: 2,
-		telemetryDebug: LifecycleTelemetryCounts{
-			MeterProviders:          1,
-			ConfiguredMetricReaders: 1,
-		}}
+		activeCount: 2}
 	child := &clientRuntime{clientRecord: &clientRecord{
 		clientID:        "child",
 		parentClientIDs: []string{"parent"}},
@@ -938,8 +936,10 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 		telemetryDebug: LifecycleTelemetryCounts{
 			TracerProviders:          1,
 			LoggerProviders:          1,
+			MeterProviders:           1,
 			ConfiguredSpanProcessors: 4,
 			ConfiguredLogProcessors:  2,
+			ConfiguredMetricReaders:  1,
 			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 		},
@@ -956,6 +956,8 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 	require.NotNil(t, snapshot.OldestClosedRuntime)
 	require.Equal(t, closedAt, *snapshot.OldestClosedRuntime)
 	require.Equal(t, 1, snapshot.Providers.TracerProviders)
+	require.Equal(t, 1, snapshot.Providers.MeterProviders)
+	require.Equal(t, 1, snapshot.Providers.ConfiguredMetricReaders)
 	require.Equal(t, 4, snapshot.Providers.ConfiguredSpanProcessors)
 	require.False(t, snapshot.Providers.QueueOccupancyMeasured)
 
@@ -967,6 +969,9 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 	gotParent := snapshot.Sessions[0].Clients[1]
 	require.Equal(t, "shutdown-signaled", gotParent.RecordState)
 	require.Equal(t, "closed-retained", gotParent.RuntimeState)
+	require.Zero(t, gotParent.Telemetry.MeterProviders,
+		"client runtimes must not report metric provider ownership")
+	require.Zero(t, gotParent.Telemetry.ConfiguredMetricReaders)
 	require.False(t, gotParent.MetadataSealed)
 	require.ElementsMatch(t, []string{"session-lifetime", "request", "descendant"}, []string{
 		gotParent.RetentionReasons[0].Kind,
@@ -1010,6 +1015,32 @@ func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
 		"returned routes must not alias immutable client ancestry")
 }
 
+func TestMetricAttributesPreferImmutableClientScopeOrigin(t *testing.T) {
+	t.Parallel()
+
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", nil, nil)
+	defer lease.Release()
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "scope-origin",
+	}, lease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+	require.NoError(t, err)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "mutable-metadata",
+	})
+
+	config := metric.NewRecordConfig([]metric.RecordOption{
+		telemetryattrs.MetricAttributes(ctx,
+			attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "payload-claim")),
+	})
+	origin, err := metricDataOriginClientID(config.Attributes())
+	require.NoError(t, err)
+	require.Equal(t, "scope-origin", origin)
+}
+
 func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	srv := &Server{clientDBs: dbs, wcprofSpanCount: newWcprofSpanCounter()}
@@ -1031,7 +1062,9 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	}
 	installTestClientRecords(sess)
 	srv.initializeSessionTelemetry(sess)
-	t.Cleanup(func() { require.NoError(t, sess.shutdownTraceLogs(context.Background())) })
+	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+	workGauge, err := sess.meterProvider.Meter("test").Int64Gauge("test.client.work")
+	require.NoError(t, err)
 
 	emit := func(client *clientRuntime, name string, detached bool) trace.SpanID {
 		ctx := engine.ContextWithClientMetadata(context.Background(), client.clientMetadata)
@@ -1047,6 +1080,7 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 		rec.SetTimestamp(time.Now())
 		rec.SetBody(otellog.StringValue(name))
 		telemetry.Logger(ctx, "test").Emit(ctx, rec)
+		workGauge.Record(ctx, 1, telemetryattrs.MetricAttributes(ctx))
 		return spanID
 	}
 
@@ -1054,7 +1088,7 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	childSpanID := emit(child, "detached-child-work", true)
 	require.NoError(t, sess.FlushTelemetry(t.Context(), "test"))
 
-	load := func(clientID string) ([]clientdb.Span, []clientdb.Log) {
+	load := func(clientID string) ([]clientdb.Span, []clientdb.Log, []clientdb.Metric) {
 		db, err := dbs.Open(t.Context(), clientID)
 		require.NoError(t, err)
 		defer db.Close()
@@ -1062,7 +1096,9 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 		require.NoError(t, err)
 		logs, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
 		require.NoError(t, err)
-		return spans, logs
+		metrics, err := db.Read().SelectMetricsSince(t.Context(), clientdb.SelectMetricsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		return spans, logs, metrics
 	}
 	countSpan := func(spans []clientdb.Span, id trace.SpanID) int {
 		count := 0
@@ -1084,10 +1120,29 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 		}
 		return ""
 	}
+	metricOrigins := func(rows []clientdb.Metric) []string {
+		var origins []string
+		for _, resourceMetricsPB := range clientdb.MetricsToPB(rows) {
+			resourceMetrics, err := telemetry.ResourceMetricsFromPB(resourceMetricsPB)
+			require.NoError(t, err)
+			for _, scopeMetrics := range resourceMetrics.ScopeMetrics {
+				for _, metrics := range scopeMetrics.Metrics {
+					gauge, ok := metrics.Data.(metricdata.Gauge[int64])
+					require.True(t, ok, "unexpected metric aggregation %T", metrics.Data)
+					for _, point := range gauge.DataPoints {
+						origin, err := metricDataOriginClientID(point.Attributes)
+						require.NoError(t, err)
+						origins = append(origins, origin)
+					}
+				}
+			}
+		}
+		return origins
+	}
 
-	rootSpans, rootLogs := load("root")
-	parentSpans, parentLogs := load("parent")
-	childSpans, childLogs := load("child")
+	rootSpans, rootLogs, rootMetrics := load("root")
+	parentSpans, parentLogs, parentMetrics := load("parent")
+	childSpans, childLogs, childMetrics := load("child")
 	// Live span export emits one start and one end snapshot. Each snapshot must
 	// reach each visibility target once, without duplicate ancestry delivery.
 	require.Equal(t, 2, countSpan(rootSpans, rootSpanID))
@@ -1099,6 +1154,9 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	require.Len(t, rootLogs, 2)
 	require.Len(t, parentLogs, 1)
 	require.Len(t, childLogs, 1)
+	require.ElementsMatch(t, []string{"root", "child"}, metricOrigins(rootMetrics))
+	require.Equal(t, []string{"child"}, metricOrigins(parentMetrics))
+	require.Equal(t, []string{"child"}, metricOrigins(childMetrics))
 	for _, span := range childSpans {
 		require.Equal(t, "child", originAttr(span.Attributes))
 	}
@@ -1115,15 +1173,29 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	incomingLog.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
 	require.NoError(t, (originLogExporter{origin: "parent", next: sess.logExporter}).Export(
 		t.Context(), []sdklog.Record{incomingLog}))
-	rootSpans, rootLogs = load("root")
-	parentSpans, parentLogs = load("parent")
-	childSpans, childLogs = load("child")
+	incomingMetrics := &metricdata.ResourceMetrics{ScopeMetrics: []metricdata.ScopeMetrics{{
+		Metrics: []metricdata.Metrics{{
+			Name: "incoming",
+			Data: metricdata.Gauge[int64]{DataPoints: []metricdata.DataPoint[int64]{{
+				Attributes: attribute.NewSet(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "child")),
+				Value:      1,
+			}}},
+		}},
+	}}}
+	require.NoError(t, (originMetricExporter{origin: "parent", next: sess.metricExporter}).Export(
+		t.Context(), incomingMetrics))
+	rootSpans, rootLogs, rootMetrics = load("root")
+	parentSpans, parentLogs, parentMetrics = load("parent")
+	childSpans, childLogs, childMetrics = load("child")
 	require.Equal(t, 3, countSpan(rootSpans, childSpanID))
 	require.Equal(t, 3, countSpan(parentSpans, childSpanID))
 	require.Equal(t, 2, countSpan(childSpans, childSpanID))
 	require.Len(t, rootLogs, 3)
 	require.Len(t, parentLogs, 2)
 	require.Len(t, childLogs, 1)
+	require.ElementsMatch(t, []string{"root", "child", "parent"}, metricOrigins(rootMetrics))
+	require.ElementsMatch(t, []string{"child", "parent"}, metricOrigins(parentMetrics))
+	require.Equal(t, []string{"child"}, metricOrigins(childMetrics))
 	require.Equal(t, "parent", originAttr(rootLogs[len(rootLogs)-1].Attributes))
 
 	require.Equal(t, 0, dbs.OpenStats().Stores, "exports and reads must release DB handles")
@@ -1133,8 +1205,14 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	snapshot := srv.ClientLifecycleDebugSnapshot()
 	require.Equal(t, 1, snapshot.Providers.TracerProviders)
 	require.Equal(t, 1, snapshot.Providers.LoggerProviders)
+	require.Equal(t, 1, snapshot.Providers.MeterProviders)
+	require.Equal(t, 1, snapshot.Providers.ConfiguredMetricReaders)
 	require.Equal(t, enginetel.LargeSpanQueueSize, snapshot.Providers.ConfiguredSpanQueueSlots)
 	require.Equal(t, enginetel.LogQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
+	for _, clientSnapshot := range snapshot.Sessions[0].Clients {
+		require.Zero(t, clientSnapshot.Telemetry.MeterProviders)
+		require.Zero(t, clientSnapshot.Telemetry.ConfiguredMetricReaders)
+	}
 }
 
 func TestClientRegistrationRequiresValidExplicitAncestry(t *testing.T) {
@@ -1608,11 +1686,18 @@ func newTeardownTestServer(t *testing.T) *Server {
 }
 
 type cleanupSpanMetricExporter struct {
-	ctx    context.Context
-	tracer trace.Tracer
+	ctx      context.Context
+	tracer   trace.Tracer
+	exported chan<- struct{}
 }
 
 func (exp cleanupSpanMetricExporter) Export(context.Context, *metricdata.ResourceMetrics) error {
+	if exp.exported != nil {
+		select {
+		case exp.exported <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 func (cleanupSpanMetricExporter) ForceFlush(context.Context) error { return nil }
@@ -1628,7 +1713,7 @@ func (cleanupSpanMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric
 	return sdkmetric.AggregationDefault{}
 }
 
-func TestSessionTeardownFlushesTelemetryAfterRuntimeCleanup(t *testing.T) {
+func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	srv := newTeardownTestServer(t)
 	srv.clientDBs = clientdb.NewDBs(t.TempDir())
 	srv.telemetryPubSub = NewPubSub(srv)
@@ -1652,12 +1737,26 @@ func TestSessionTeardownFlushesTelemetryAfterRuntimeCleanup(t *testing.T) {
 	srv.initializeSessionTelemetry(sess)
 
 	cleanupCtx := engine.ContextWithClientMetadata(context.Background(), md)
-	exporter := cleanupSpanMetricExporter{ctx: cleanupCtx, tracer: sess.tracerProvider.Tracer("test")}
-	client.meterProvider = sdkmetric.NewMeterProvider(sdkmetric.WithReader(
+	exported := make(chan struct{}, 1)
+	exporter := cleanupSpanMetricExporter{
+		ctx:      cleanupCtx,
+		tracer:   sess.tracerProvider.Tracer("test"),
+		exported: exported,
+	}
+	require.NoError(t, sess.meterProvider.Shutdown(t.Context()))
+	sess.meterProvider = sdkmetric.NewMeterProvider(sdkmetric.WithReader(
 		sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(time.Hour)),
 	))
+	gauge, err := sess.meterProvider.Meter("test").Int64Gauge("cleanup.metric")
+	require.NoError(t, err)
+	gauge.Record(cleanupCtx, 1, telemetryattrs.MetricAttributes(cleanupCtx))
 
 	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
+	select {
+	case <-exported:
+	default:
+		t.Fatal("final session telemetry barrier did not flush metrics")
+	}
 	db, err := srv.clientDBs.Open(t.Context(), client.clientID)
 	require.NoError(t, err)
 	defer db.Close()

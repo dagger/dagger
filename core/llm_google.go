@@ -14,7 +14,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"google.golang.org/genai"
@@ -480,13 +479,13 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		outputTokensTotal := int64(usageMeta.CandidatesTokenCount + usageMeta.ThoughtsTokenCount)
 
 		if outputTokensTotal > 0 {
-			outputTokens.Record(ctx, outputTokensTotal, metric.WithAttributes(attrs...))
+			outputTokens.Record(ctx, outputTokensTotal, llmMetricAttributes(ctx, attrs...))
 		}
 		if promptTokens > 0 {
-			inputTokens.Record(ctx, promptTokens, metric.WithAttributes(attrs...))
+			inputTokens.Record(ctx, promptTokens, llmMetricAttributes(ctx, attrs...))
 		}
 		if cachedTokens > 0 {
-			inputTokensCacheReads.Record(ctx, cachedTokens, metric.WithAttributes(attrs...))
+			inputTokensCacheReads.Record(ctx, cachedTokens, llmMetricAttributes(ctx, attrs...))
 		}
 
 		usageSummary.OutputTokens = outputTokensTotal
