@@ -1,0 +1,40 @@
+"""
+A module whose constructor declares a required Workspace argument, used to
+test that workspace settings can still wire its function output into another
+module's constructor: the engine builds that call by hand, and a required
+Workspace! must be supplied before dagql's non-null check rather than
+injected after it.
+"""
+type WorkspaceContainerProvider {
+  """
+  Contents of the workspace's marker.txt, captured at construction (a
+  Workspace itself can't be stored as an object field).
+  """
+  pub marker: String!
+
+  new(ws: Workspace!) {
+    self.marker = ws.file("marker.txt").contents
+    self
+  }
+
+  """
+  Returns a container annotated with this module's name and the marker read
+  from the workspace passed to the constructor, proving it received the
+  caller's workspace.
+  """
+  pub image: Container! {
+    container
+      .from("alpine:3.22.1")
+      .withEnvVariable("PROVIDED_BY", "workspace-container-provider:" + marker)
+  }
+
+  """
+  Same as image, but the Workspace is declared on the function rather than
+  (only) the constructor.
+  """
+  pub imageFor(ws: Workspace!): Container! {
+    container
+      .from("alpine:3.22.1")
+      .withEnvVariable("PROVIDED_BY", "workspace-container-provider:" + ws.file("marker.txt").contents)
+  }
+}
