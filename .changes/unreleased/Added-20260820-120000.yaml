@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Add a `daggerNesting` option to `Container.withExec`, `Container.asService`,
+  `Directory.asService`, and the terminal APIs. `NESTED_CLIENT` explicitly
+  selects the existing same-session nesting behavior, and `INDEPENDENT_SESSIONS`
+  lets the executed process open independent ordinary Dagger sessions with
+  their own lifetime and cache ownership. `experimentalPrivilegedNesting` is
+  deprecated in the v1 API in favor of `daggerNesting: NESTED_CLIENT`.
+time: 2026-08-20T12:00:00Z
+custom:
+  Author: sipsma
+  PR: 13866
