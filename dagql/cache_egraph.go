@@ -608,6 +608,9 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res == nil {
 			continue
 		}
+		if res.attachmentState() == resultAttachmentFailed {
+			continue
+		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			if sawExpired != nil {
 				*sawExpired = true
@@ -627,6 +630,9 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 		for resID := range c.termResults[termID] {
 			res := c.resultsByID[resID]
 			if res == nil {
+				continue
+			}
+			if res.attachmentState() == resultAttachmentFailed {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -879,12 +885,13 @@ func (c *Cache) lookupCacheForRequestLocked(
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
-) (AnyResult, bool, error) {
+) (AnyResult, bool, int64, error) {
 	if req == nil || req.ResultCall == nil {
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
+	persistedEdgeExpiresAtUnix := candidateSharedResultExpiryUnix(nowUnix, req.TTL)
 	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
@@ -909,7 +916,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 
 	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
@@ -920,7 +927,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 			hitCache: true,
 		}
 		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
-		return retRes, true, nil
+		return retRes, true, 0, nil
 	}
 
 	// We have a cache hit. Teach this request identity onto the existing shared
@@ -930,21 +937,18 @@ func (c *Cache) lookupCacheForRequestLocked(
 	// conservative expiry merge policy here so TTL remains effective on hits.
 	res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(nowUnix, req.TTL),
+		persistedEdgeExpiresAtUnix,
 	)
 	touchSharedResultLastUsed(res, now.UnixNano())
-	if req.IsPersistable {
-		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL), false)
-	}
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
-	return retRes, true, nil
+	return retRes, true, persistedEdgeExpiresAtUnix, nil
 }
 
 func (c *Cache) lookupCacheForRequest(
@@ -968,7 +972,7 @@ func (c *Cache) lookupCacheForRequest(
 	}
 
 	c.egraphMu.Lock()
-	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	retRes, hit, persistedEdgeExpiresAtUnix, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil || !hit {
 		c.egraphMu.Unlock()
 		return retRes, hit, err
@@ -989,6 +993,14 @@ func (c *Cache) lookupCacheForRequest(
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
 		return nil, false, err
+	}
+	if req.IsPersistable {
+		// Only persistable hits pay this second graph-lock acquisition. Keep
+		// the expiry captured at hit selection even if the barrier wait took
+		// long enough to cross a wall-clock second.
+		c.egraphMu.Lock()
+		c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+		c.egraphMu.Unlock()
 	}
 
 	if c.traceEnabled() {

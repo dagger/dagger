@@ -128,10 +128,8 @@ CONSTANTS
     FnCanFail,          \* the executed fn may return an error
     AttachCanFail,      \* attachDependencyResults may fail
     LeaseCanFail,       \* withOperationLease may fail. Its error branch
-                        \* (cache.go:3917-3925) returns without calling the
-                        \* WithCancelCause cancel created at cache.go:3897 -
-                        \* a known leak in the current code, counted by
-                        \* NoLostCancels.
+                        \* discharges the local cancel and returns without
+                        \* publishing shared state.
     ReaderCanCancel,    \* a caller's context may cancel while it waits at
                         \* the read barrier (ensurePersistedHitValueLoaded's
                         \* ctx.Done arms, cache_persistence_import.go:562,
@@ -193,7 +191,6 @@ VARIABLES
                         \*   phase "released":   both sections ran
                         \* snap holds the record snapshot the decrement
                         \* section will consume.
-    lostCancels,        \* count of WithCancelCause cancels never discharged
     evals,              \* one record per issued Cache.Evaluate caller
                         \* (empty unless ModelLazy)
     epoch,              \* 1 before the modeled restart, 2 after. One
@@ -205,7 +202,7 @@ VARIABLES
                         \* e-graph detail this model abstracts away.
 
 vars == <<invocations, res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-          sessionRelease, lostCancels, evals, epoch, flushed>>
+          sessionRelease, evals, epoch, flushed>>
 
 
 \* The currently-allocated ID ranges (sequences are 1-indexed).
@@ -250,10 +247,15 @@ DerivedOwn(r) ==
     SessEdgeCount(r) + DepParentCount(r)
       + HoldCount(r) + PersistedCount(r)
 
-\* All registered results whose call is in equivalence class k - the
-\* candidates a lookup for class k could return.
+\* All registered results whose call is in equivalence class k.
 LiveInClass(k) ==
     {r \in ResultIds : res[r].registered /\ ClassOf[res[r].call] = k}
+
+\* Lookup and canonical selection exclude an entry after dependency
+\* attachment closes with an error. An open barrier remains eligible because
+\* a reader may wait for its eventual outcome.
+LookupEligibleInClass(k) ==
+    {r \in LiveInClass(k) : res[r].barrier # "closedErr"}
 
 \* "The caller got a result it can actually keep": the session's atomic edge
 \* claim is still counted when the result returns.
@@ -364,7 +366,6 @@ Init ==
     /\ sessionEdges = {}
     /\ countedEdges = {}
     /\ sessionRelease = [s \in Sessions |-> [phase |-> "live", snap |-> {}]]
-    /\ lostCancels = 0
     /\ evals = <<>>
     /\ epoch = 1
     /\ flushed = [done |-> FALSE, rows |-> <<>>]
@@ -393,6 +394,7 @@ NewInvocation(s, c, p, o) ==
      \* their real goroutines and the cache's in-memory tombstones do not, so this
      \* field ties a refusal to the epoch whose lifecycle state produced it.
      refusedEpoch |-> 0,
+     lookupBarrierAtSelection |-> "none",
      retLive |-> TRUE, retOwned |-> TRUE,
      retBarrierOK |-> TRUE, retClean |-> TRUE]
 
@@ -402,7 +404,7 @@ Spawn ==
         /\ DrainOnRelease => sessionRelease[s].phase = "live"
         /\ invocations' = Append(invocations, NewInvocation(s, c, p, "handler"))
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 SpawnNested ==
     /\ ModelNestedCalls
@@ -413,47 +415,43 @@ SpawnNested ==
              /\ ongoingCalls[o].fnState \in {"running", "canceled"}
         /\ invocations' = Append(invocations, NewInvocation(s, c, p, "nested"))
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
-(* LookupHit: the lookup finds a live equivalent result. The egraphMu      *)
-(* section selects the result and applies persistence intent, then nests   *)
+(* LookupHit: the lookup finds a live equivalent result whose attachment   *)
+(* has not failed. The egraphMu section selects the result, then nests      *)
 (* sessionMu to claim the session edge. A released-session tombstone       *)
-(* refuses the claim without adding an edge.                               *)
+(* refuses the claim without adding an edge. Persistable hits commit their *)
+(* edge only after the read barrier and payload load succeed.               *)
 (*                                                                         *)
 (* Go: lookupCacheForRequest, cache_egraph.go:950-1001. Inside the one     *)
 (* lock hold:                                                              *)
 (*   - a candidate in the request's equivalence class is selected          *)
 (*   - the session record and ownership unit are added together             *)
-(*   - a persistable request also upserts the persisted edge               *)
-(*     (lookupCacheForRequestLocked's IsPersistable arm)                   *)
 (* After the lock, an accepted hit passes the read barrier before return.  *)
 (***************************************************************************)
 LookupHit(i) ==
     /\ invocations[i].phase = "lookup"
-    /\ \E r \in LiveInClass(ClassOf[invocations[i].call]) :
+    /\ \E r \in LookupEligibleInClass(ClassOf[invocations[i].call]) :
         LET s == invocations[i].sess
             haveEdge == <<s, r>> \in sessionEdges
-            withPersist ==
-                IF invocations[i].persistable /\ ~res[r].persisted
-                THEN [res EXCEPT ![r].persisted = TRUE,
-                                      ![r].own = @ + 1]
-                ELSE res
         IN IF sessionRelease[s].phase = "live"
-           THEN /\ res' = IF haveEdge THEN withPersist
-                           ELSE [withPersist EXCEPT ![r].own = @ + 1]
+           THEN /\ res' = IF haveEdge THEN res
+                           ELSE [res EXCEPT ![r].own = @ + 1]
                 /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
                 /\ countedEdges' = countedEdges \cup {<<s, r>>}
                 /\ invocations' = [invocations EXCEPT ![i].phase = "readBarrier",
                                         ![i].resId = r,
-                                        ![i].path = "hit"]
-           ELSE /\ res' = withPersist
+                                        ![i].path = "hit",
+                                        ![i].lookupBarrierAtSelection = res[r].barrier]
+           ELSE /\ UNCHANGED res
                 /\ invocations' = [invocations EXCEPT ![i].phase = "refused",
                                         ![i].resId = r,
                                         ![i].path = "hit",
+                                        ![i].lookupBarrierAtSelection = res[r].barrier,
                                         ![i].refusedEpoch = epoch]
                 /\ UNCHANGED <<sessionEdges, countedEdges>>
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionRelease, lostCancels, evals, epoch, flushed>>
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
 
 \* LookupMiss: the lookup finds nothing usable; fall through to the
 \* singleflight. A miss is allowed even when a candidate exists - that
@@ -463,7 +461,7 @@ LookupMiss(i) ==
     /\ invocations[i].phase = "lookup"
     /\ invocations' = [invocations EXCEPT ![i].phase = "join"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* Join: an ongoing call for this (call, session) already exists - become  *)
@@ -473,12 +471,9 @@ LookupMiss(i) ==
 (* section: bump oc.waiters, and stamp the persistence intent (the         *)
 (* atomic.Bool oc.isPersistable) onto the shared ongoingCall.              *)
 (*                                                                         *)
-(* Publication reads the intent in its own egraphMu section               *)
-(* (cache.go:4617) while the entry is still in the index, so a joiner's    *)
-(* intent can land after that read. The code preserves such late intent:   *)
-(* the Once tail snapshots it when it closes admission (see               *)
-(* PubUnregister) and the final handoff release repairs the missed edge    *)
-(* (see RepairThenDropHold). The guarantee is that the edge exists by the  *)
+(* The Once tail snapshots aggregate intent when it closes admission (see  *)
+(* PubUnregister), and the final handoff release commits the edge (see      *)
+(* PersistThenDropHold). The guarantee is that the edge exists by the       *)
 (* FINAL handoff release - not by each persistable waiter's own return; a  *)
 (* non-final late joiner can return before the edge lands. That is what    *)
 (* PersistableIntentDurable checks.                                        *)
@@ -494,7 +489,7 @@ Join(i) ==
           /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = o,
                                   ![i].path = "wait"]
     /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* CreateOc: no ongoing call exists - create one and start executing.      *)
@@ -516,31 +511,25 @@ CreateOc(i) ==
              waiters |-> 1, fnState |-> "running", fnErr |-> FALSE,
              outcome |-> "none", reuseFrom |-> 0,
              isPersistable |-> invocations[i].persistable,
-             \* late persistence-intent bookkeeping; see PubUnregister:
-             persistedDuringPub |-> FALSE, needsRepair |-> FALSE,
+             \* final-handoff persistence bookkeeping; see PubUnregister:
+             needsPersistedEdge |-> FALSE,
              pubState |-> "none", pubBy |-> 0, hold |-> FALSE, resId |-> 0,
              inIndex |-> TRUE])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
-\* CreateOcLeaseFail: the operation lease cannot be acquired and the call
-\* fails before anything starts.
-\*
-\* Go: the withOperationLease error branch, cache.go:3917-3925. This
-\* branch returns without calling the WithCancelCause cancel created at
-\* cache.go:3897. The parent context is WithoutCancel, so nothing wedges -
-\* it is an undischarged cancel, not corruption. The NoLostCancels
-\* property counts it; the lost_cancel configuration reproduces it as an
-\* expected violation.
+\* CreateOcLeaseFail: the operation lease cannot be acquired. The call
+\* discharges its newly-created cancel and fails before publishing any
+\* ongoing call, result, or ownership edge.
 CreateOcLeaseFail(i) ==
     /\ LeaseCanFail
     /\ invocations[i].phase = "join"
     /\ ongoingCallIndex[<<invocations[i].call, invocations[i].sess>>] = 0
-    /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
-    /\ lostCancels' = lostCancels + 1
+    /\ invocations' = [invocations EXCEPT ![i].phase = "failed",
+                                           ![i].path = "leaseFailure"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -557,13 +546,13 @@ CreateOcLeaseFail(i) ==
 FnComplete(o) ==
     /\ ongoingCalls[o].fnState = "running"
     /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
-       \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
+       \/ \E r \in LookupEligibleInClass(ClassOf[ongoingCalls[o].call]) :
             ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* WaiterCancel: a waiter's own context is canceled while the fn is still  *)
@@ -598,7 +587,7 @@ WaiterCancel(i) ==
                         ELSE ongoingCallIndex
           /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* FnWindDown: the cancel-requested executor finally exits. Until it does,
 \* its resolver can still issue nested cache calls (SpawnNested) - that
@@ -609,22 +598,19 @@ FnWindDown(o) ==
     /\ ongoingCalls[o].fnState = "canceled"
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "exited"]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
-\* Release the publication handoff hold, first repairing a missed persisted
-\* edge if the admission-close snapshot flagged one. Mirrors
-\* releaseOngoingCallHandoff (cache.go:4289-4306): the repair runs inside
-\* the same egraphMu section that drops the hold. Like the Go upsert
-\* (upsertPersistedEdgeLocked, cache.go:866), the repair does NOT re-check
-\* registration - composed with a release during in-flight work it would
-\* put a persisted edge on an already-collected result, exactly as the
-\* code would.
-RepairThenDropHold(o) ==
+\* Commit aggregate persistence intent and release the publication handoff
+\* hold in one egraphMu critical section. The registration check prevents a
+\* stale result pointer from recreating an edge after collection.
+PersistThenDropHold(o) ==
     LET r == ongoingCalls[o].resId
-        repaired == IF ongoingCalls[o].needsRepair /\ ~res[r].persisted
+        persisted == IF ongoingCalls[o].needsPersistedEdge
+                           /\ res[r].registered
+                           /\ ~res[r].persisted
                     THEN [res EXCEPT ![r].persisted = TRUE, ![r].own = @ + 1]
                     ELSE res
-    IN DecAndCascade(repaired, r)
+    IN DecAndCascade(persisted, r)
 
 (***************************************************************************)
 (* WaiterCancelLate: the select takes ctx.Done even though waitCh is       *)
@@ -633,7 +619,7 @@ RepairThenDropHold(o) ==
 (* through the same !completed branch (cache.go:4164-4182): waiters--,     *)
 (* and the LAST departing waiter removes a still-indexed entry,            *)
 (* discharges the fn cancel, and then releases the handoff hold - with     *)
-(* the late-persist repair - in a separate egraphMu section (see           *)
+(* the final persistence commit - in a separate egraphMu section (see      *)
 (* WaiterDropHoldCanceled).                                                *)
 (*                                                                         *)
 (* Guard notes:                                                            *)
@@ -670,21 +656,20 @@ WaiterCancelLate(i) ==
                 IF last /\ postOnce /\ ongoingCalls[o].hold
                 THEN "cancelDropHold" ELSE "canceled"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* WaiterDropHoldCanceled: the canceled final waiter drops the handoff
-\* hold in its own egraphMu section (releaseOngoingCallHandoff,
-\* cache.go:4289-4306), repairing a missed persisted edge first when the
-\* admission-close snapshot flagged one - late persistence intent survives
-\* even when the final waiter departs through cancellation.
+\* hold in its own egraphMu section. Aggregate persistence intent is
+\* committed first, so late intent survives even when the final waiter
+\* departs through cancellation.
 WaiterDropHoldCanceled(i) ==
     /\ invocations[i].phase = "cancelDropHold"
     /\ LET o == invocations[i].oc IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
-       /\ res' = RepairThenDropHold(o)
+       /\ res' = PersistThenDropHold(o)
        /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
     /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* WaiterObserveFnErr: the fn failed; each waiter observes the error and
 \* returns it. The last waiter removes the Cache.ongoingCalls index entry.
@@ -702,7 +687,7 @@ WaiterObserveFnErr(i) ==
                         ELSE ongoingCallIndex
           /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PUBLICATION - initCompletedResult, entered through the sync.Once in     *)
@@ -728,7 +713,7 @@ PubBegin(o) ==
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "begun",
                                                 ![o].pubBy = w]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PubIndexFresh: publish a freshly computed value. One egraphMu critical  *)
@@ -737,10 +722,8 @@ PubBegin(o) ==
 (*      from this instant, before attachment completes                     *)
 (*   2. add exact dependency edges from the result-call refs, each         *)
 (*      incrementing its dependency                                        *)
-(*   3. upsert the persisted edge on persistence intent                    *)
-(*      (cache.go:4617-4620; late intent is described at Join)             *)
-(*   4. take the publication handoff hold                                  *)
-(*   5. arm the dependency-attachment barrier (cache.go:4627-4631)         *)
+(*   3. take the publication handoff hold                                  *)
+(*   4. arm the dependency-attachment barrier                              *)
 (***************************************************************************)
 PubIndexFresh(o) ==
     /\ ongoingCalls[o].pubState = "begun"
@@ -757,9 +740,9 @@ PubIndexFresh(o) ==
                 ELSE res[r]]
             newRes == [call |-> ongoingCalls[o].call, registered |-> TRUE,
                        released |-> FALSE,
-                       own |-> 1 + (IF ongoingCalls[o].isPersistable THEN 1 ELSE 0),
+                       own |-> 1,
                        deps |-> deps,
-                       persisted |-> ongoingCalls[o].isPersistable,
+                       persisted |-> FALSE,
                        barrier |-> "open",
                        \* fresh results have their typed payload in memory;
                        \* only imported entries carry encoded envelopes
@@ -777,15 +760,9 @@ PubIndexFresh(o) ==
         IN /\ res' = Append(withDeps, newRes)
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
-                                 ![o].resId = Len(res) + 1,
-                                 \* the publication-time intent snapshot
-                                 \* (cache.go:4617-4620): remembers that this
-                                 \* read already installed the edge, so the
-                                 \* admission-close snapshot at PubUnregister
-                                 \* will not flag a repair for it
-                                 ![o].persistedDuringPub = ongoingCalls[o].isPersistable]
+                                 ![o].resId = Len(res) + 1]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* ADOPTION BRANCH: the fn returned an already-attached result, so         *)
@@ -793,13 +770,13 @@ PubIndexFresh(o) ==
 (* sharedResult.                                                           *)
 (***************************************************************************)
 
-\* The canonical equivalent: the lowest-ID live result in the class of the
-\* result the fn returned - or that result itself if nothing in the class
-\* is live. Mirrors canonicalEquivalentSharedResultLocked.
+\* The canonical equivalent: the lowest-ID attachment-eligible result in the
+\* class of the result the fn returned. Zero means no clean result can be
+\* adopted; the Go publication returns a normal error in that defensive case.
 CanonicalPick(o) ==
     LET k == ClassOf[res[ongoingCalls[o].reuseFrom].call]
-        live == LiveInClass(k)
-    IN IF live = {} THEN ongoingCalls[o].reuseFrom
+        live == LookupEligibleInClass(k)
+    IN IF live = {} THEN 0
        ELSE CHOOSE r \in live : \A q \in live : r <= q
 
 \* PubAdopt: one egraphMu critical section both picks the canonical
@@ -812,11 +789,22 @@ PubAdopt(o) ==
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "reuse"
     /\ LET r == CanonicalPick(o) IN
+        /\ r # 0
         /\ res' = [res EXCEPT ![r].own = @ + 1]
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "adopted",
                               ![o].hold = TRUE, ![o].resId = r]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
+
+\* If every canonical equivalent failed attachment before the adoption lock,
+\* publication returns an ordinary error without taking a handoff hold.
+PubAdoptReject(o) ==
+    /\ ongoingCalls[o].pubState = "begun"
+    /\ ongoingCalls[o].outcome = "reuse"
+    /\ CanonicalPick(o) = 0
+    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed"]
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PubIndexReuse: finish publication for an adopted result - the egraphMu  *)
@@ -825,8 +813,6 @@ PubAdopt(o) ==
 (*     indexWaitResultInEgraphLocked refuses to re-register it             *)
 (*     (cache_egraph.go:1548) and publication fails rather than serve a    *)
 (*     collected result                                                    *)
-(*   - oc.isPersistable is consumed here for adopted results               *)
-(*     (cache.go:4617-4620)                                                *)
 (*   - no attach barrier: adopted results were already attached            *)
 (*     (resWasCacheBacked, cache.go:4627)                                  *)
 (***************************************************************************)
@@ -836,19 +822,10 @@ PubIndexReuse(o) ==
        IF ~res[r].registered
        THEN /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed"]
             /\ UNCHANGED res
-       ELSE LET withPersist ==
-                    IF ongoingCalls[o].isPersistable /\ ~res[r].persisted
-                    THEN [res EXCEPT ![r].persisted = TRUE,
-                                     ![r].own = @ + 1]
-                    ELSE res
-            IN /\ res' = withPersist
-               /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done",
-                                     \* same intent snapshot as PubIndexFresh
-                                     \* (the upsert at cache.go:4617-4620 is
-                                     \* common to both publication branches)
-                                     ![o].persistedDuringPub = ongoingCalls[o].isPersistable]
+       ELSE /\ UNCHANGED res
+            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done"]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* ATTACHMENT PHASE for fresh results. attachDependencyResults runs        *)
@@ -858,8 +835,10 @@ PubIndexReuse(o) ==
 (*     records the dependency edge; each such AddExplicitDependency is     *)
 (*     its own egraphMu critical section (cache.go:2137)              *)
 (*   - PubFinishOk: attachment succeeded; close the barrier clean          *)
-(*   - PubAttachFail: attachment failed; release the hold, cascade, close  *)
-(*     the barrier with the error (cache.go:4635-4656)                     *)
+(*   - PubAttachFailDropHold: attachment failed; release the hold and      *)
+(*     cascade in one egraphMu critical section                            *)
+(*   - PubAttachFailCloseBarrier: close the barrier with the error in the  *)
+(*     following attachDepsMu critical section                             *)
 (*                                                                         *)
 (* STATED ASSUMPTION: dependency edges never form a cycle. The Go cache    *)
 (* does not enforce this - addExplicitDependencyLocked (cache.go:2168)     *)
@@ -902,44 +881,48 @@ PubAttachAddDep(o) ==
              ![ongoingCalls[o].resId].deps = @ \cup {d},
              ![d].own = @ + 1]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 PubFinishOk(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedOk"]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done"]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
-PubAttachFail(o) ==
+PubAttachFailDropHold(o) ==
     /\ AttachCanFail
     /\ ongoingCalls[o].pubState = "attaching"
-    /\ res' = DecAndCascade(
-         [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedErr"], ongoingCalls[o].resId)
-    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed", ![o].hold = FALSE]
+    /\ res' = DecAndCascade(res, ongoingCalls[o].resId)
+    /\ ongoingCalls' = [ongoingCalls EXCEPT
+         ![o].pubState = "attachFailClosing", ![o].hold = FALSE]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
+
+PubAttachFailCloseBarrier(o) ==
+    /\ ongoingCalls[o].pubState = "attachFailClosing"
+    /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedErr"]
+    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed"]
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
 
 \* PubUnregister: the entry leaves the Cache.ongoingCalls index - the tail of the Once
 \* (wait, cache.go:4225-4231), in its own callsMu critical section AFTER
 \* publication finished. Joining stays possible until this fires. This is
-\* also where admission closes, so the late-persist repair decision is
-\* snapshotted here (cache.go:4226-4229): repair is needed when
-\* publication succeeded, a result exists, the publication-time snapshot
-\* did not install the persisted edge, and some admitted request asked
-\* for persistence.
+\* also where admission closes, so final persistence intent is snapshotted:
+\* publication must have succeeded, a result must exist, and some admitted
+\* request must have asked for persistence.
 PubUnregister(o) ==
     /\ ongoingCalls[o].pubState \in {"done", "failed"}
     /\ ongoingCalls[o].inIndex
     /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].inIndex = FALSE,
-          ![o].needsRepair =
+          ![o].needsPersistedEdge =
               /\ ongoingCalls[o].pubState = "done"
               /\ ongoingCalls[o].resId # 0
-              /\ ~ongoingCalls[o].persistedDuringPub
               /\ ongoingCalls[o].isPersistable]
     /\ UNCHANGED <<invocations, res, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* WaiterObservePubErr: publication failed; each waiter observes the error
 \* and returns it, decrementing the waiter count under callsMu. If the
@@ -959,20 +942,20 @@ WaiterObservePubErr(i) ==
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF dropHold THEN "pubErrDropHold" ELSE "failed"]
     /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* WaiterDropHoldPubErr: the last waiter of a failed publication drops the
 \* handoff hold in its own egraphMu section (releaseOngoingCallHandoff,
-\* cache.go:4289-4306). The repair arm is vacuous here: needsRepair
-\* requires a successful publication.
+\* cache.go:4289-4306). The persistence arm is vacuous here because
+\* needsPersistedEdge requires a successful publication.
 WaiterDropHoldPubErr(i) ==
     /\ invocations[i].phase = "pubErrDropHold"
     /\ LET o == invocations[i].oc IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
-       /\ res' = RepairThenDropHold(o)
+       /\ res' = PersistThenDropHold(o)
        /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
     /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 (***************************************************************************)
 (* WAITER SUCCESS PATH. In code order (wait, cache.go:4259-4281):          *)
@@ -984,7 +967,7 @@ WaiterDropHoldPubErr(i) ==
 (*                                                                         *)
 (* The claim is one egraphMu critical section with sessionMu nested inside *)
 (* it. A released tombstone refuses the claim. The waiter still departs,   *)
-(* and the final waiter still repairs persistence before dropping the hold. *)
+(* and the final waiter still commits persistence before dropping the hold. *)
 (***************************************************************************)
 
 WaiterClaim(i) ==
@@ -1008,7 +991,7 @@ WaiterClaim(i) ==
                                         ![i].refusedEpoch = epoch]
                /\ UNCHANGED <<res, sessionEdges, countedEdges>>
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* WaiterDepart: waiters--, under callsMu. The last waiter goes on to
 \* release the handoff hold. Go: wait, cache.go:4267-4270.
@@ -1023,12 +1006,11 @@ WaiterDepart(i) ==
                          THEN IF refused THEN "refusedReleaseHold" ELSE "releaseHold"
                          ELSE IF refused THEN "refused" ELSE "readBarrier"]
     /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* WaiterReleaseHold: the last waiter drops the publication handoff hold,
-\* in its own egraphMu section - releaseOngoingCallHandoff
-\* (cache.go:4289-4306), which first repairs a missed persisted edge when
-\* the admission-close snapshot flagged one. From here on, only real
+\* in its own egraphMu section - releaseOngoingCallHandoff, which first
+\* commits the admission-close persistence intent. From here on, only real
 \* edges (session, dependency, persisted) keep the result alive.
 \* Go: wait, cache.go:4271-4275 -> releaseOngoingCallHandoff.
 WaiterReleaseHold(i) ==
@@ -1037,10 +1019,10 @@ WaiterReleaseHold(i) ==
            refused == invocations[i].phase = "refusedReleaseHold"
        IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
-       /\ res' = RepairThenDropHold(o)
+       /\ res' = PersistThenDropHold(o)
        /\ invocations' = [invocations EXCEPT ![i].phase = IF refused THEN "refused" ELSE "readBarrier"]
     /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 (***************************************************************************)
 (* THE READ BARRIER: every return path waits for the result's dependency   *)
@@ -1062,20 +1044,39 @@ ReadBarrierOk(i) ==
           \* returned; the decode actions below handle that arm and loop
           \* back here once the payload is in memory.
           /\ res[r].payload = "decoded"
-          \* There is no per-return persist repair: the missed persisted
-          \* edge is repaired at the FINAL handoff release, so a non-final
-          \* persistable joiner can return before the edge exists. That is
-          \* why PersistableIntentDurable is stated over quiesced calls,
-          \* not over each waiter's return.
           /\ invocations' = [invocations EXCEPT
-               ![i].phase = "done",
+               ![i].phase = IF invocations[i].path = "hit"
+                                  /\ invocations[i].persistable
+                             THEN "persistHit" ELSE "done",
                ![i].retLive = res[r].registered /\ ~res[r].released,
                ![i].retOwned = ProtectedReturn(invocations[i].sess, r),
                ![i].retBarrierOK = res[r].barrier \in {"none", "closedOk"},
                ![i].retClean = ~res[r].laundered]
           /\ UNCHANGED res
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
+
+\* A persistable cache hit takes one additional egraphMu critical section
+\* after attachment and payload loading succeed. The upsert keeps the expiry
+\* computed during lookup; TTL values are abstracted from this model. The
+\* registration guard prevents resurrection if the result was collected in
+\* the interval before this lock acquisition.
+PersistHit(i) ==
+    /\ invocations[i].phase = "persistHit"
+    /\ LET r == invocations[i].resId
+           persisted == IF res[r].registered /\ ~res[r].persisted
+                        THEN [res EXCEPT ![r].persisted = TRUE,
+                                         ![r].own = @ + 1]
+                        ELSE res
+       IN /\ res' = persisted
+          /\ invocations' = [invocations EXCEPT
+               ![i].phase = "done",
+               ![i].retLive = res[r].registered /\ ~res[r].released,
+               ![i].retOwned = ProtectedReturn(invocations[i].sess, r),
+               ![i].retBarrierOK = res[r].barrier \in {"none", "closedOk"},
+               ![i].retClean = ~res[r].laundered]
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
 
 ReadBarrierErrHit(i) ==
     /\ invocations[i].phase = "readBarrier"
@@ -1083,7 +1084,7 @@ ReadBarrierErrHit(i) ==
     /\ res[invocations[i].resId].barrier = "closedErr"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 ReadBarrierErrWait(i) ==
     /\ invocations[i].phase = "readBarrier"
@@ -1091,7 +1092,7 @@ ReadBarrierErrWait(i) ==
     /\ res[invocations[i].resId].barrier = "closedErr"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* READER CANCELLATION (ReaderCanCancel). ensurePersistedHitValueLoaded    *)
@@ -1108,7 +1109,7 @@ ReadBarrierCancelHit(i) ==
     /\ invocations[i].path = "hit"
     /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 \* The WAIT-path twin: the error propagates and the claimed session edge
 \* simply remains (wait, cache.go:4277-4281) - same as ReadBarrierErrWait.
@@ -1118,7 +1119,7 @@ ReadBarrierCancelWait(i) ==
     /\ invocations[i].path = "wait"
     /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PERSISTED-PAYLOAD DECODE. An imported result can exist                  *)
@@ -1152,7 +1153,7 @@ DecodeLead(i) ==
                              ![r].decodeErr = "none"]
        /\ invocations' = [invocations EXCEPT ![i].phase = "decoding"]
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 DecodeLeadFinish(i) ==
     /\ invocations[i].phase = "decoding"
@@ -1169,7 +1170,7 @@ DecodeLeadFinish(i) ==
                                      ![r].decodeErr = "fail"]
                /\ invocations' = [invocations EXCEPT ![i].phase = "decodeErr"]
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 DecodeJoin(i) ==
     /\ invocations[i].phase = "readBarrier"
@@ -1179,7 +1180,7 @@ DecodeJoin(i) ==
        /\ res[r].decodePhase = "running"
        /\ invocations' = [invocations EXCEPT ![i].phase = "decodeJoined"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 DecodeWake(i) ==
     /\ invocations[i].phase = "decodeJoined"
@@ -1188,7 +1189,7 @@ DecodeWake(i) ==
        /\ invocations' = [invocations EXCEPT ![i].phase =
             IF res[r].decodeErr = "fail" THEN "decodeErr" ELSE "readBarrier"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 \* Decode failed for a HIT-path caller.
 DecodeFailHit(i) ==
@@ -1196,7 +1197,7 @@ DecodeFailHit(i) ==
     /\ invocations[i].path = "hit"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
-                   lostCancels, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* Decode failed for a WAIT-path caller: the error just propagates; the
 \* session edge claimed after publication remains (wait, cache.go:4271-4275).
@@ -1205,7 +1206,7 @@ DecodeFailWait(i) ==
     /\ invocations[i].path = "wait"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* ReleaseSession, in its two real critical sections.                      *)
@@ -1238,7 +1239,7 @@ ReleaseSessionRecord(s) ==
                  snap |-> snap]]
           /\ sessionEdges' = {e \in sessionEdges : e[1] # s}
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   countedEdges, lostCancels, evals, epoch, flushed>>
+                   countedEdges, evals, epoch, flushed>>
 
 \* The egraphMu section: remove one unit per snapshotted, still-registered
 \* result, then collect.
@@ -1255,7 +1256,7 @@ ReleaseSessionCollect(s) ==
           /\ sessionRelease' = [sessionRelease EXCEPT ![s] =
                 [phase |-> "released", snap |-> {}]]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, lostCancels, evals, epoch, flushed>>
+                   sessionEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
@@ -1272,7 +1273,7 @@ PruneCut(r) ==
     /\ res[r].persisted
     /\ res' = DecAndCascade([res EXCEPT ![r].persisted = FALSE], r)
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, lostCancels, evals, epoch, flushed>>
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* FLUSH AND RESTART. Graceful shutdown removes every                      *)
@@ -1286,18 +1287,34 @@ PruneCut(r) ==
 (* that, so a snapshot racing an unfinished publication is a reachable    *)
 (* capture and the FlushCleanCapture property judges it.                   *)
 (*                                                                         *)
-(* Each snapshot row records, besides the result's durable state, two      *)
-(* verdicts used only by properties:                                       *)
+(* Snapshot selection starts at persisted roots. A root is kept only when  *)
+(* its entire transitive dependency closure is registered and cleanly      *)
+(* attached; every kept row is reachable from such a root. If any node is  *)
+(* open, errored, or missing, that node and every root depending on it are  *)
+(* rejected.                                                               *)
+(*                                                                         *)
+(* Each candidate row also records two verdicts used only by properties:   *)
 (*   dirty    - the attach barrier was not cleanly closed at capture       *)
 (*              (still open, or closed with an error). The Go writes no    *)
 (*              such marker: attachDeps state lives only in memory, which  *)
-(*              is exactly why a restart serves these entries as if they   *)
-(*              were fine. (Encoding a half-attached payload may also      *)
-(*              simply fail and abort the flush - the safe outcome; the    *)
-(*              model explores the successful-encode worst case.)          *)
+(*              is why the snapshot must reject them rather than rely on   *)
+(*              restart to remember the failure.                           *)
 (*   ownClean - ownership at capture was fully explained by persisted +    *)
 (*              dependency edges, nothing transient.                       *)
 (***************************************************************************)
+
+CleanAttachedResult(r) ==
+    res[r].registered /\ res[r].barrier \in {"none", "closedOk"}
+
+CleanPersistedRoot(r) ==
+    /\ CleanAttachedResult(r)
+    /\ res[r].persisted
+    /\ \A d \in ResultIds :
+         DepReachable(res, r, d) => CleanAttachedResult(d)
+
+KeptByPersistedRoot(r) ==
+    \E root \in ResultIds :
+        CleanPersistedRoot(root) /\ DepReachable(res, root, r)
 
 Flush ==
     /\ ModelPersistence
@@ -1307,7 +1324,7 @@ Flush ==
     \* critical sections) before Cache.Close snapshots.
     /\ \A s \in Sessions : sessionRelease[s].phase = "released"
     /\ flushed' = [done |-> TRUE, rows |-> [r \in 1..Len(res) |->
-         [keep      |-> res[r].registered,
+         [keep      |-> KeptByPersistedRoot(r),
           call      |-> res[r].call,
           persisted |-> res[r].persisted,
           deps      |-> res[r].deps,
@@ -1315,7 +1332,7 @@ Flush ==
           ownClean  |-> res[r].own =
               PersistedCount(r) + DepParentCount(r)]]]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    evals, epoch>>
 
 (***************************************************************************)
@@ -1356,7 +1373,7 @@ Restart ==
          [ongoingCalls[o] EXCEPT !.fnState = "exited", !.pubState = "none",
                                  !.pubBy = 0,
                                  !.hold = FALSE, !.inIndex = FALSE,
-                                 !.needsRepair = FALSE,
+                                 !.needsPersistedEdge = FALSE,
                                  !.waiters = 0]]
     /\ ongoingCallIndex' = [k \in Calls \X Sessions |-> 0]
     /\ evals' = [e \in EvalIds |->
@@ -1366,7 +1383,6 @@ Restart ==
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
     /\ sessionRelease' = [s \in Sessions |-> [phase |-> "live", snap |-> {}]]
-    /\ lostCancels' = 0
     /\ UNCHANGED flushed
 
 ---------------------------------------------------------------------------
@@ -1421,7 +1437,7 @@ EvalSpawn ==
         /\ res[r].registered
         /\ evals' = Append(evals, [target |-> r, phase |-> "demand"])
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* Fast path: nothing to do - evaluation already completed, or the value
@@ -1432,7 +1448,7 @@ EvalNoWork(e) ==
        res[r].lazyComplete \/ res[r].lazyCb = "none"
     /\ evals' = [evals EXCEPT ![e].phase = "done"]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* Start the callback: no attempt is in flight, so this caller becomes the
@@ -1452,7 +1468,7 @@ EvalStartAttempt(e) ==
             ![r].lazyErr = "none"]
        /\ evals' = [evals EXCEPT ![e].phase = "waiting"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* Join an attempt already in flight (evaluateOne's join arm,
@@ -1469,7 +1485,7 @@ EvalJoin(e) ==
        /\ res' = [res EXCEPT ![r].lazyWaiters = @ + 1]
        /\ evals' = [evals EXCEPT ![e].phase = "waiting"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* The callback finishes on its own (the goroutine tail, cache.go:3184-
@@ -1495,7 +1511,7 @@ EvalCallbackFinish(r) ==
              ![r].lazyErr = IF drained THEN "none"
                             ELSE IF ok THEN "none" ELSE "fail"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, evals,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* The canceled callback winds down. It may still succeed (the callback
@@ -1516,7 +1532,7 @@ EvalCallbackFinishCanceled(r) ==
              ![r].lazyErr = IF drained THEN "none"
                             ELSE IF ok THEN "none" ELSE "cancel"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, evals,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* A waiter wakes after the callback finished (waitForLazyEvaluation's
@@ -1538,7 +1554,7 @@ EvalWake(e) ==
                  [] res[r].lazyErr = "fail" -> "failedCallback"
                  [] OTHER -> "failedStale"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* A waiter gives up (its own context canceled - waitForLazyEvaluation's
@@ -1565,7 +1581,7 @@ EvalAbandon(e) ==
                                 THEN "cancelRequested" ELSE @]
           /\ evals' = [evals EXCEPT ![e].phase = "abandoned"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, lostCancels,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 ---------------------------------------------------------------------------
@@ -1582,14 +1598,16 @@ Next ==
          \/ WaiterDropHoldCanceled(i)
          \/ WaiterClaim(i)
          \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
-         \/ ReadBarrierOk(i) \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
+         \/ ReadBarrierOk(i) \/ PersistHit(i)
+         \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
          \/ ReadBarrierCancelHit(i) \/ ReadBarrierCancelWait(i)
          \/ DecodeLead(i) \/ DecodeLeadFinish(i) \/ DecodeJoin(i)
          \/ DecodeWake(i) \/ DecodeFailHit(i) \/ DecodeFailWait(i)
     \/ \E o \in OngoingCallIds :
          \/ FnComplete(o) \/ PubBegin(o)
-         \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
-         \/ PubAttachAddDep(o) \/ PubFinishOk(o) \/ PubAttachFail(o)
+         \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubAdoptReject(o) \/ PubIndexReuse(o)
+         \/ PubAttachAddDep(o) \/ PubFinishOk(o)
+         \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
          \/ PubUnregister(o) \/ FnWindDown(o)
     \/ \E s \in Sessions : ReleaseSessionRecord(s) \/ ReleaseSessionCollect(s)
     \/ \E r \in 1..Len(res) : PruneCut(r)
@@ -1628,14 +1646,15 @@ Spec == Init /\ [][Next]_vars
 (*   - FnComplete's fairness guarantees SOME outcome, not a successful     *)
 (*     one (the outcome choice inside stays nondeterministic)              *)
 (*   - fairness sits on the disjunction of the attach outcomes             *)
-(*     (PubFinishOk or PubAttachFail), never on the success arm alone -    *)
+(*     (PubFinishOk or PubAttachFailDropHold), never on the success arm -  *)
 (*     fairness on the success arm would wrongly forbid persistent         *)
 (*     failure                                                             *)
 (***************************************************************************)
 SystemProgress(o) ==
     \/ FnComplete(o) \/ PubBegin(o)
-    \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
-    \/ PubFinishOk(o) \/ PubAttachFail(o)
+    \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubAdoptReject(o) \/ PubIndexReuse(o)
+    \/ PubFinishOk(o) \/ PubAttachFailDropHold(o)
+    \/ PubAttachFailCloseBarrier(o)
     \/ PubUnregister(o)
 
 WaiterProgress(i) ==
@@ -1644,7 +1663,8 @@ WaiterProgress(i) ==
     \/ WaiterDropHoldPubErr(i) \/ WaiterDropHoldCanceled(i)
     \/ WaiterClaim(i)
     \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
-    \/ ReadBarrierOk(i) \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
+    \/ ReadBarrierOk(i) \/ PersistHit(i)
+    \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
     \/ DecodeLead(i) \/ DecodeLeadFinish(i) \/ DecodeJoin(i)
     \/ DecodeWake(i) \/ DecodeFailHit(i) \/ DecodeFailWait(i)
 
@@ -1703,6 +1723,8 @@ TypeOK ==
     /\ \A i \in InvocationIds :
          /\ invocations[i].origin \in {"handler", "nested"}
          /\ invocations[i].refusedEpoch \in 0..epoch
+         /\ invocations[i].lookupBarrierAtSelection
+              \in {"none", "open", "closedOk", "closedErr"}
 
 \* Ownership accounting is exact: for every registered result, the
 \* incrementally-maintained counter equals the recount of its edges
@@ -1735,12 +1757,10 @@ ReturnedOwned ==
 NoHalfAttachedRead ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retBarrierOK
 
-\* Persistence intent is never lost: once a call's admission has closed
-\* and its handoff hold has been released (waiters drained), an admitted
-\* persistable request implies the persisted edge exists - even when the
-\* final waiter departed through cancellation. Note the guarantee is
-\* stated over quiesced calls, not per return: a non-final late joiner
-\* can return before the repair lands at the final handoff release.
+\* Persistence intent is never lost: once a successful call's admission has
+\* closed and its handoff hold has been released, an admitted persistable
+\* request implies the persisted edge exists. This includes a refused or
+\* canceled final waiter because final handoff commits the edge first.
 PersistableIntentDurable ==
     \A o \in OngoingCallIds :
         (/\ ongoingCalls[o].pubState = "done"
@@ -1752,9 +1772,15 @@ PersistableIntentDurable ==
          /\ res[ongoingCalls[o].resId].registered)
             => res[ongoingCalls[o].resId].persisted
 
-\* Every created WithCancelCause cancel is eventually discharged.
-\* (Violated on main by the lease-error branch; see CreateOcLeaseFail.)
-NoLostCancels == lostCancels = 0
+\* Operation-lease failure terminates before an ongoing call, result, or
+\* ownership edge is published. The Go branch also discharges its local
+\* cancel, which has no persistent model state after the action completes.
+LeaseFailureClean ==
+    \A i \in InvocationIds :
+        invocations[i].path = "leaseFailure" =>
+            /\ invocations[i].phase = "failed"
+            /\ invocations[i].oc = 0
+            /\ invocations[i].resId = 0
 
 \* Racing alone never manufactures an execution failure: if no failure
 \* injection is enabled, no invocation ends in "failed". Cancellation and a
@@ -1784,23 +1810,20 @@ RefusedOnlyAfterRelease ==
             \/ /\ invocations[i].refusedEpoch = epoch
                /\ sessionRelease[invocations[i].sess].phase # "live"
 
-\* A result whose dependency attachment failed must not be retained beyond
-\* the failed call that produced it. The code violates this for persistable
-\* calls: the persisted edge is added inside the publication critical
-\* section (cache.go:4617-4620), BEFORE attachment runs (cache.go:4635), and the
-\* attach-error path releases only the handoff hold - the persisted edge
-\* survives. The result stays registered and lookup-visible with its
-\* barrier closed on an error, so every future equivalent call finds it,
-\* waits on the barrier, and fails - it never falls back to executing.
-\* Nothing in the code ever clears this state: the error lives only in
-\* memory, so a graceful shutdown flushes the entry like any retained
-\* result and a restart re-imports it without the error, serving a payload
-\* whose attachment never completed. Until then, only pruning the
-\* persisted edge (or wiping the store) recovers.
+\* Attachment failure never gains a persisted edge. A concurrent hit may
+\* have claimed a session edge while the barrier was open, so the errored
+\* result can remain registered until that session releases it.
 NoRetainedPoisonedEntry ==
     \A r \in ResultIds :
         (res[r].registered /\ res[r].barrier = "closedErr") =>
             ~res[r].persisted
+
+\* The selection-time marker distinguishes a forbidden lookup made after an
+\* attachment error from a legitimate lookup that selected an open barrier
+\* before the attachment later failed.
+NoErroredLookupSelection ==
+    \A i \in InvocationIds :
+        invocations[i].lookupBarrierAtSelection # "closedErr"
 
 (***************************************************************************)
 (* LAZY-EVALUATION PROPERTIES. Each names what the code's lazyMu           *)
@@ -1854,10 +1877,23 @@ FlushCleanCapture ==
             flushed.rows[r].keep =>
                 (~flushed.rows[r].dirty /\ flushed.rows[r].ownClean)
 
-\* A result imported from a snapshot row that was captured dirty
-\* (mid-attachment, or attach-failed) is never served to a caller. The
-\* code violates this: the dirtiness lives only in memory, so the
-\* restarted engine serves the entry as if it were fine.
+\* Every written result belongs to a complete clean dependency closure rooted
+\* at a written persisted edge. This is the result-level abstraction of the
+\* concrete database foreign-key and payload-reference checks in Go.
+FlushReferentialIntegrity ==
+    flushed.done =>
+        \A r \in DOMAIN flushed.rows :
+            flushed.rows[r].keep =>
+                /\ ~flushed.rows[r].dirty
+                /\ \A d \in flushed.rows[r].deps : flushed.rows[d].keep
+                /\ \E root \in DOMAIN flushed.rows :
+                     /\ flushed.rows[root].keep
+                     /\ flushed.rows[root].persisted
+                     /\ DepReachable(flushed.rows, root, r)
+
+\* A result that was open or attachment-errored at snapshot time is never
+\* imported and served. Flush rejects every persisted root whose dependency
+\* closure contains such a result.
 NoLaunderedServe ==
     \A i \in InvocationIds :
         invocations[i].phase = "done" => invocations[i].retClean

@@ -28,6 +28,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	var snapshot persistStateSnapshot
 
 	c.egraphMu.RLock()
+	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
 		eqID = c.findEqClassLocked(eqID)
@@ -38,54 +39,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	}
 
 	eqClassIDs := make(map[eqClassID]struct{})
+	retainedOutputEqClassIDs := make(map[eqClassID]struct{})
 
-	for eqID := range c.eqClassToDigests {
-		addEqClassID(eqClassIDs, eqID)
-	}
-	for eqID := range c.eqClassExtraDigests {
-		addEqClassID(eqClassIDs, eqID)
-	}
-
-	termIDs := make([]egraphTermID, 0, len(c.egraphTerms))
-	for termID := range c.egraphTerms {
-		termIDs = append(termIDs, termID)
-	}
-	slices.Sort(termIDs)
-	for _, termID := range termIDs {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		addEqClassID(eqClassIDs, outputEqID)
-		inputProvenance := c.termInputProvenance[termID]
-		if len(inputProvenance) != len(term.inputEqIDs) {
-			c.egraphMu.RUnlock()
-			return persistStateSnapshot{}, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
-		}
-		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
-		copy(inputEqIDs, term.inputEqIDs)
-		for i, inputEqID := range inputEqIDs {
-			inputEqID = c.findEqClassLocked(inputEqID)
-			inputEqIDs[i] = inputEqID
-			addEqClassID(eqClassIDs, inputEqID)
-			snapshot.termInputs = append(snapshot.termInputs, persistdb.MirrorTermInput{
-				TermID:         int64(termID),
-				Position:       int64(i),
-				InputEqClassID: int64(inputEqID),
-				ProvenanceKind: string(inputProvenance[i]),
-			})
-		}
-		snapshot.terms = append(snapshot.terms, persistdb.MirrorTerm{
-			ID:              int64(termID),
-			SelfDigest:      term.selfDigest.String(),
-			TermDigest:      calcEgraphTermDigest(term.selfDigest, inputEqIDs),
-			OutputEqClassID: int64(outputEqID),
-		})
-	}
-
-	resultIDs := make([]sharedResultID, 0, len(c.resultsByID))
-	for resultID := range c.resultsByID {
+	resultIDs := make([]sharedResultID, 0, len(selectedResultIDs))
+	for resultID := range selectedResultIDs {
 		resultIDs = append(resultIDs, resultID)
 	}
 	slices.Sort(resultIDs)
@@ -102,6 +59,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		slices.Sort(depIDs)
 		resultDeps := make([]persistdb.MirrorResultDep, 0, len(depIDs))
 		for _, depID := range depIDs {
+			if _, selected := selectedResultIDs[depID]; !selected {
+				c.egraphMu.RUnlock()
+				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", resultID, depID)
+			}
 			resultDeps = append(resultDeps, persistdb.MirrorResultDep{
 				ParentResultID: int64(resultID),
 				DepResultID:    int64(depID),
@@ -111,6 +72,11 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		outputEqClasses := c.outputEqClassesForResultLocked(resultID)
 		outputEqIDs := make([]eqClassID, 0, len(outputEqClasses))
 		for outputEqID := range outputEqClasses {
+			outputEqID = c.findEqClassLocked(outputEqID)
+			if outputEqID == 0 {
+				continue
+			}
+			retainedOutputEqClassIDs[outputEqID] = struct{}{}
 			addEqClassID(eqClassIDs, outputEqID)
 			outputEqIDs = append(outputEqIDs, outputEqID)
 		}
@@ -144,8 +110,49 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		})
 	}
 
-	persistedResultIDs := make([]sharedResultID, 0, len(c.persistedEdgesByResult))
-	for resultID := range c.persistedEdgesByResult {
+	termIDs := make([]egraphTermID, 0, len(c.egraphTerms))
+	for termID := range c.egraphTerms {
+		termIDs = append(termIDs, termID)
+	}
+	slices.Sort(termIDs)
+	for _, termID := range termIDs {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		outputEqID := c.findEqClassLocked(term.outputEqID)
+		if _, retained := retainedOutputEqClassIDs[outputEqID]; !retained {
+			continue
+		}
+		addEqClassID(eqClassIDs, outputEqID)
+		inputProvenance := c.termInputProvenance[termID]
+		if len(inputProvenance) != len(term.inputEqIDs) {
+			c.egraphMu.RUnlock()
+			return persistStateSnapshot{}, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
+		}
+		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
+		copy(inputEqIDs, term.inputEqIDs)
+		for i, inputEqID := range inputEqIDs {
+			inputEqID = c.findEqClassLocked(inputEqID)
+			inputEqIDs[i] = inputEqID
+			addEqClassID(eqClassIDs, inputEqID)
+			snapshot.termInputs = append(snapshot.termInputs, persistdb.MirrorTermInput{
+				TermID:         int64(termID),
+				Position:       int64(i),
+				InputEqClassID: int64(inputEqID),
+				ProvenanceKind: string(inputProvenance[i]),
+			})
+		}
+		snapshot.terms = append(snapshot.terms, persistdb.MirrorTerm{
+			ID:              int64(termID),
+			SelfDigest:      term.selfDigest.String(),
+			TermDigest:      calcEgraphTermDigest(term.selfDigest, inputEqIDs),
+			OutputEqClassID: int64(outputEqID),
+		})
+	}
+
+	persistedResultIDs := make([]sharedResultID, 0, len(persistedRootIDs))
+	for resultID := range persistedRootIDs {
 		persistedResultIDs = append(persistedResultIDs, resultID)
 	}
 	slices.Sort(persistedResultIDs)
@@ -245,6 +252,12 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		case err != nil:
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
 		}
+		if err := validatePersistedResultCallReferences(resultSnapshot.frame, selectedResultIDs); err != nil {
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame: %w", resultSnapshot.resultID, err)
+		}
+		if err := validatePersistedEnvelopeReferences(encoding.Envelope, selectedResultIDs); err != nil {
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload: %w", resultSnapshot.resultID, err)
+		}
 
 		payload, err := json.Marshal(encoding.Envelope)
 		if err != nil {
@@ -261,6 +274,165 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		resultSnapshot.resultSnapshotLinks = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
 	}
 	return snapshot, nil
+}
+
+// snapshotPersistedRootClosureLocked returns every clean result reachable from
+// a persisted root whose full dependency closure is clean and registered. It
+// requires egraphMu for reading.
+func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{}, map[sharedResultID]struct{}) {
+	invalid := make(map[sharedResultID]struct{})
+	parentsByDependency := make(map[sharedResultID][]sharedResultID)
+	invalidQueue := make([]sharedResultID, 0)
+	markInvalid := func(resultID sharedResultID) {
+		if _, found := invalid[resultID]; found {
+			return
+		}
+		invalid[resultID] = struct{}{}
+		invalidQueue = append(invalidQueue, resultID)
+	}
+
+	for resultID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		if res.attachmentState() != resultAttachmentClean {
+			markInvalid(resultID)
+		}
+		for depID := range res.deps {
+			parentsByDependency[depID] = append(parentsByDependency[depID], resultID)
+			if c.resultsByID[depID] == nil {
+				markInvalid(resultID)
+			}
+		}
+	}
+	for len(invalidQueue) > 0 {
+		resultID := invalidQueue[len(invalidQueue)-1]
+		invalidQueue = invalidQueue[:len(invalidQueue)-1]
+		for _, parentID := range parentsByDependency[resultID] {
+			markInvalid(parentID)
+		}
+	}
+
+	persistedRoots := make(map[sharedResultID]struct{}, len(c.persistedEdgesByResult))
+	stack := make([]sharedResultID, 0, len(c.persistedEdgesByResult))
+	for resultID := range c.persistedEdgesByResult {
+		if c.resultsByID[resultID] == nil {
+			continue
+		}
+		if _, rejected := invalid[resultID]; rejected {
+			continue
+		}
+		persistedRoots[resultID] = struct{}{}
+		stack = append(stack, resultID)
+	}
+
+	selected := make(map[sharedResultID]struct{})
+	for len(stack) > 0 {
+		resultID := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, found := selected[resultID]; found {
+			continue
+		}
+		res := c.resultsByID[resultID]
+		if res == nil {
+			continue
+		}
+		if _, rejected := invalid[resultID]; rejected {
+			continue
+		}
+		selected[resultID] = struct{}{}
+		for depID := range res.deps {
+			stack = append(stack, depID)
+		}
+	}
+	return selected, persistedRoots
+}
+
+func validatePersistedResultCallReferences(frame *ResultCall, selected map[sharedResultID]struct{}) error {
+	seen := make(map[*ResultCall]struct{})
+	var walkFrame func(*ResultCall) error
+	var walkRef func(*ResultCallRef) error
+	var walkLiteral func(*ResultCallLiteral) error
+
+	walkRef = func(ref *ResultCallRef) error {
+		if ref == nil {
+			return nil
+		}
+		if ref.ResultID != 0 {
+			if _, found := selected[sharedResultID(ref.ResultID)]; !found {
+				return fmt.Errorf("references result %d outside persisted root closure", ref.ResultID)
+			}
+		}
+		return walkFrame(ref.Call)
+	}
+	walkLiteral = func(lit *ResultCallLiteral) error {
+		if lit == nil {
+			return nil
+		}
+		if err := walkRef(lit.ResultRef); err != nil {
+			return err
+		}
+		for _, item := range lit.ListItems {
+			if err := walkLiteral(item); err != nil {
+				return err
+			}
+		}
+		for _, field := range lit.ObjectFields {
+			if field != nil {
+				if err := walkLiteral(field.Value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	walkFrame = func(current *ResultCall) error {
+		if current == nil {
+			return nil
+		}
+		if _, found := seen[current]; found {
+			return nil
+		}
+		seen[current] = struct{}{}
+		if err := walkRef(current.Receiver); err != nil {
+			return err
+		}
+		if current.Module != nil {
+			if err := walkRef(current.Module.ResultRef); err != nil {
+				return err
+			}
+		}
+		for _, arg := range current.Args {
+			if arg != nil {
+				if err := walkLiteral(arg.Value); err != nil {
+					return err
+				}
+			}
+		}
+		for _, arg := range current.ImplicitInputs {
+			if arg != nil {
+				if err := walkLiteral(arg.Value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	return walkFrame(frame)
+}
+
+func validatePersistedEnvelopeReferences(env PersistedResultEnvelope, selected map[sharedResultID]struct{}) error {
+	if env.ResultID != 0 {
+		if _, found := selected[sharedResultID(env.ResultID)]; !found {
+			return fmt.Errorf("references result %d outside persisted root closure", env.ResultID)
+		}
+	}
+	for _, item := range env.Items {
+		if err := validatePersistedEnvelopeReferences(item, selected); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
