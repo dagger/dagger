@@ -4140,9 +4140,6 @@ func (s *workspaceSchema) workspaceGitRepository(
 	var inst dagql.ObjectResult[*core.GitRepository]
 
 	ws := parent.Self().Workspace.Self()
-	if ref, ok := ws.SourceGitRef(); ok {
-		return ref.Self().Repo, nil
-	}
 
 	var dir dagql.ObjectResult[*core.Directory]
 	if latest, ok := ws.LatestPendingCommit(); ok && latest.Repo.Self() != nil {
@@ -4182,6 +4179,8 @@ func (s *workspaceSchema) workspaceGitRepository(
 				return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
 			}
 		}
+	} else if ref, ok := ws.SourceGitRef(); ok {
+		return ref.Self().Repo, nil
 	} else {
 		if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
 			return inst, err
@@ -4387,7 +4386,8 @@ func (s *workspaceSchema) workspaceGitHead(
 	_ struct{},
 ) (dagql.Result[*core.GitRef], error) {
 	var inst dagql.Result[*core.GitRef]
-	if ref, ok := parent.Self().Workspace.Self().SourceGitRef(); ok {
+	ws := parent.Self().Workspace.Self()
+	if ref, ok := ws.SourceGitRef(); ok && len(ws.PendingCommits()) == 0 {
 		return ref, nil
 	}
 	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
