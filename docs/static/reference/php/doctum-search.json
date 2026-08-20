@@ -3572,12 +3572,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\CurrentModuleAsSDKClient::pin",
-			"p": "Dagger/CurrentModuleAsSDKClient.html#method_pin",
-			"d": "<p>The pinned version of the bound module, if any.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\CurrentModuleAsSDKModule::id",
 			"p": "Dagger/CurrentModuleAsSDKModule.html#method_id",
 			"d": "<p>A unique identifier for this CurrentModuleAsSDKModule.</p>"

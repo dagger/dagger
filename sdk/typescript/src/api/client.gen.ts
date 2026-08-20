@@ -5938,24 +5938,16 @@ export class CurrentModuleAsSDKClient extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _module?: string = undefined
   private readonly _path?: string = undefined
-  private readonly _pin?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: ID,
-    _module?: string,
-    _path?: string,
-    _pin?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _module?: string, _path?: string) {
     super(ctx)
 
     this._id = _id
     this._module = _module
     this._path = _path
-    this._pin = _pin
   }
 
   /**
@@ -6005,21 +5997,6 @@ export class CurrentModuleAsSDKClient extends BaseClient {
     }
 
     const ctx = this._ctx.select("path")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The pinned version of the bound module, if any.
-   */
-  pin = async (): Promise<string> => {
-    if (this._pin) {
-      return this._pin
-    }
-
-    const ctx = this._ctx.select("pin")
 
     const response: Awaited<string> = await ctx.execute()
 

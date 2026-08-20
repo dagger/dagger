@@ -4147,27 +4147,6 @@ class CurrentModuleAsSDKClient(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(str)
 
-    async def pin(self) -> str:
-        """The pinned version of the bound module, if any.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("pin", _args)
-        return await _ctx.execute(str)
-
 
 @typecheck
 class CurrentModuleAsSDKModule(Type):
