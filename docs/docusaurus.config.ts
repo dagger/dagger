@@ -12,28 +12,6 @@ import { daggerVersion } from "./current_docs/partials/version";
 const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
-const latestVersion = "0.21.4";
-const versions = require("./versions.json") as string[];
-// Local search only indexes the default version (served at the root). Keep the
-// auto-generated SDK reference and every non-default version out of the index.
-const localSearchExclude = [
-  "/reference/typescript/",
-  ...versions
-    .filter((v) => v !== latestVersion)
-    .map((v) => `${baseUrl}${v}/`),
-];
-const versionLabels: Record<string, string> = {};
-const versionSelectOptions = [
-  ...versions.map((version) => ({
-    label: versionLabels[version] ?? version,
-    path: version === latestVersion ? baseUrl : `${baseUrl}${version}/`,
-  })),
-  { label: "Next", path: `${baseUrl}next/` },
-];
-const versionSelectHtml = `<select class="docs-version-select" aria-label="Docs version" onchange="window.location.href=this.value">
-  ${versionSelectOptions.map(({ label, path }) => `<option value="${path}">${label}</option>`).join("")}
-</select>`;
-
 function daggerWebFontsPlugin() {
   return {
     name: "dagger-webfonts",
@@ -126,11 +104,12 @@ const config: Config = {
           breadcrumbs: false,
           path: docsPath,
           routeBasePath: "/",
-          lastVersion: latestVersion,
+          // No lastVersion: the default (served at /) is the newest snapshot,
+          // i.e. versions.json[0], which docs:version prepends on each cut.
           versions: {
+            // Keep the old-version banner suppressed; path/label are derived
+            // (non-default versions are served at /<version>/).
             "0.21.4": {
-              label: "0.21.4",
-              path: "/",
               banner: "none",
               badge: false,
             },
@@ -191,8 +170,11 @@ const config: Config = {
     daggerApiReference,
     // Builds a client-side search index over the current docs version. Pairs
     // with the swizzled SearchBar (src/theme/SearchBar) for a local,
-    // command-palette search that needs no external service.
-    ["./plugins/local-search", { exclude: localSearchExclude }],
+    // command-palette search that needs no external service. Search covers the
+    // latest version (served at the root) and the unreleased /next docs; older
+    // snapshots live under a /<version>/ prefix and are skipped by the plugin.
+    // The generated SDK reference is excluded as noise.
+    ["./plugins/local-search", { exclude: ["/reference/typescript/"] }],
     [
       "posthog-docusaurus",
       {
@@ -257,10 +239,9 @@ const config: Config = {
       },
       items: [
         {
-          type: "html",
+          type: "custom-docsVersionSelect",
           position: "right",
           className: "navbar-version-select-mobile",
-          value: versionSelectHtml,
         },
         {
           type: "docsVersionDropdown",

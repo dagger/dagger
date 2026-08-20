@@ -1,80 +1,82 @@
 ---
 title: "Installation"
 slug: /getting-started/installation
-description: "Install Dagger and set up your environment"
+description: "Install the Dagger CLI"
 ---
 
-import PartialInstallCli from '../partials/_install-cli.mdx';
 import { daggerVersion } from '../partials/version.js';
 
-To use Dagger, you must have a container runtime installed and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), Apple's `container`, or other Docker-like systems.
+Dagger needs a container runtime. Docker works out of the box; Podman, nerdctl, and Apple Container also work.
 
-<PartialInstallCli />
+## Install the Dagger CLI
 
-## Update
+The commands below install Dagger v{daggerVersion}, the version this documentation covers.
 
-To update the Dagger CLI, use the same method that you originally used to install it. This will overwrite your currently-installed version with the latest (or specified) version.
-
-Homebrew users can alternatively use the following commands:
-
-```shell
-brew update
-brew upgrade dagger
-```
-
-## Uninstallation
-
-Remove the Dagger CLI using the following command:
-
-```shell
-sudo rm /usr/local/bin/dagger
-```
-
-Homebrew users can alternatively use the following command:
-
-```shell
-brew uninstall dagger
-```
-
-Next, remove the Dagger container using the following commands:
-
-```shell
-docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
-```
-
-Finally, remove the `dagger` sub-directory of your local cache and configuration directories (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux or the equivalent for other platforms):
-
-<Tabs>
+<Tabs groupId="platform">
 <TabItem value="macOS">
 
-```shell
-rm -rf ~/Library/Caches/dagger
-rm -rf ~/Library/Application\ Support/dagger
-```
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+
+If your user can't write to `/usr/local/bin`, run the script with `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
 
 </TabItem>
 <TabItem value="Linux">
 
-```shell
-rm -rf ~/.cache/dagger
-rm -rf ~/.config/dagger
-```
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=$HOME/.local/bin sh`}
+</CodeBlock>
+
+Make sure `$HOME/.local/bin` is in your `PATH`. To install system-wide instead, set `BIN_DIR=/usr/local/bin` and run the script with `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="Windows">
+
+In PowerShell 7 or later:
+
+<CodeBlock language="powershell">
+{`iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -DaggerVersion ${daggerVersion} -AddToPath`}
+</CodeBlock>
+
+This installs `dagger.exe` in `%USERPROFILE%\dagger` and adds it to your user `PATH`.
 
 </TabItem>
 </Tabs>
 
-:::note
-The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
-  - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
-  - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
-  - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
-:::
+Verify the installation:
 
-## Versioning
+<CodeBlock language="shell">
+{`dagger version\n# version:     v${daggerVersion}`}
+</CodeBlock>
 
-The Dagger CLI is released in tandem with the Dagger Engine and thus shares a version number with it. Dagger SDKs automatically provision a Dagger Engine at a compatible version.
+To upgrade or switch versions, re-run the install command with the version you want.
 
-The Dagger Engine runner is distributed as a container image at `registry.dagger.io/engine`. Tags are made for the version of each release. For example, the {daggerVersion} release has a corresponding image at <code>
-registry.dagger.io/engine:v{daggerVersion}</code>.
+## Package managers
 
-Each release notes the compatible Dagger Engine version in its release notes.
+Homebrew and winget carry the latest stable release only, which may differ from the version this documentation covers.
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+
+```shell
+brew install dagger/tap/dagger
+```
+
+</TabItem>
+<TabItem value="Windows">
+
+```powershell
+winget install Dagger.Cli
+```
+
+</TabItem>
+</Tabs>

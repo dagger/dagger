@@ -1,0 +1,47 @@
+---
+title: "TeamCity"
+slug: /adopting/triggers/teamcity
+description: "Learn how to use Dagger with TeamCity."
+---
+
+# TeamCity
+
+TeamCity provides a Dagger Recipe that runs `dagger check` in any build configuration, so the same checks you run locally run on every build — while keeping all of your existing TeamCity infrastructure. The recipe is taken from the [JetBrains Marketplace](https://plugins.jetbrains.com/teamcity_recipe).
+
+:::tip
+For checks with no build configuration at all, enable [Cloud Checks](./index.mdx) with `dagger cloud check on`. The recipe below is the hybrid-mode alternative for when you want to drive Dagger from your existing TeamCity setup.
+:::
+
+## How it works
+
+When running a CI pipeline with Dagger using TeamCity, the general workflow looks like this:
+
+1. A new build is triggered.
+1. The build is sent to an available TeamCity agent.
+1. The Dagger Recipe installs the required version of Dagger CLI on the agent.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one.
+1. The Dagger CLI runs `dagger check` against the modules installed in your workspace and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The build completes successfully or fails based on the check results. Logs appear in TeamCity as usual.
+
+## Prerequisites
+
+Running the examples shown below requires:
+
+1. A running TeamCity server.
+1. At least one TeamCity agent with Docker installed.
+1. A repository for storing build configurations as code, with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](../workspace-setup.mdx).
+
+## Example
+
+The following code sample demonstrates how to integrate Dagger with TeamCity to run `dagger check`. The code is written using the [TeamCity Kotlin DSL](https://www.jetbrains.com/help/teamcity/kotlin-dsl.html).
+
+```kotlin title="settings.kts" file=./snippets/teamcity-hello
+```
+
+## Resources
+
+- [Working with Recipes](https://www.jetbrains.com/help/teamcity/working-with-meta-runner.html): This guide provides useful information about TeamCity recipes.
+
+## About TeamCity
+
+[TeamCity](https://www.jetbrains.com/teamcity/) is a popular CI/CD tool developed by JetBrains.

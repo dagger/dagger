@@ -175,6 +175,21 @@ func (r *DocsDev) Site() *Directory {
 	}
 }
 
+// Freeze a released version's docs as a versioned snapshot. The docs are pulled
+// from the version's git tag -- not the in-development docs on the current
+// branch -- so the snapshot reflects what actually shipped. Runs docusaurus
+// docs:version and returns a Changeset that adds
+// versioned_docs/version-<version>/ (plus its sidebar) and prepends the version
+// to docs/versions.json, for review before applying.
+func (r *DocsDev) SnapshotRelease(version string) *Changeset {
+	q := r.query.Select("snapshotRelease")
+	q = q.Arg("version", version)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *DocsDev) Source() *Directory {
 	q := r.query.Select("source")
 
