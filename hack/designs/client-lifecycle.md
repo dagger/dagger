@@ -2,8 +2,76 @@
 
 ## Status
 
-Proposal. This replaces the reverted assumption that a nested client's proxy
-lifetime is the client's resource lifetime.
+Implementation in progress. The correctness foundations through explicit nested
+transport registration are complete; runtime splitting and reclamation are still
+deliberately disabled.
+
+### Implementation progress
+
+Completed, in dependency order:
+
+1. Lifecycle debug snapshots report records, retained runtimes, closed state,
+   active requests, typed lease owners, provider topology, and clientdb handle
+   cardinality without treating zero leases as proof of reclaimability.
+2. Client ancestry is stored as immutable root-to-parent ID routes. Registration
+   rejects missing roots, cycles, ancestry mismatch, and ID reuse; telemetry and
+   other consumers resolve ancestors from the session record graph instead of
+   retaining runtime pointers.
+3. Trace and log providers, processors, queues, routing, and final shutdown are
+   session-owned. Emissions carry an immutable origin client ID, nested telemetry
+   fans out through the validated ancestry route, clientdb operations release
+   their handles, and session teardown stops producers before the final
+   force-flush and provider shutdown barrier. Metrics intentionally remain per
+   runtime for now.
+4. `ClientScope` and typed lifecycle leases exist. Accepted requests carry an
+   immutable per-scope metadata snapshot, and agents, services, lazy evaluation,
+   and shared DagQL work explicitly clone one typed lease when detaching. Agent
+   tombstones retain their durable lease because their snapshots are not yet
+   self-contained, replacing it on relaunch and releasing it at session teardown;
+   service and shared-work leases release at observed terminal transitions.
+5. Engine-owned container proxies and in-engine Dang proxies explicitly register
+   one unique nested transport from the creating context's held `ClientScope`
+   before serving. Registration validates the exact session authority, parent
+   identity, and immutable ancestry while atomically cloning the parent's
+   `child` lease and publishing the child's `transport` lease. The opaque handle
+   closes idempotently from proxy exit or `/shutdown`; close before or during the
+   first request leaves a permanent closed tombstone, and closed or duplicate IDs
+   cannot reconnect. A held scope may still delegate while its parent record is
+   closing.
+
+Intentional interim retention remains visible: child quiescence is not yet
+implemented, so each parent's `child` lease is retained after transport close and
+released safely during authoritative session teardown. Client records and heavy
+runtimes also remain co-located and session-long. No runtime splitting,
+quiescence inference, or reclamation is enabled yet.
+
+### Next implementation seam
+
+Implement monotonic client metadata bootstrap and sealing before any executable
+query can launch background work:
+
+1. Give each client record an explicit bootstrap/sealed metadata state protected
+   by the session lifecycle serialization point. Transport registration seeds the
+   nested record without making its metadata generally mutable.
+2. Merge metadata arriving from registration, attachables, `/init`, and the first
+   request monotonically: missing fields may be completed, identical values are
+   accepted, and conflicting lifecycle-relevant values are rejected. Clone maps,
+   slices, pointers, and module/workspace declarations so callers cannot mutate
+   the stored value indirectly.
+3. Seal one immutable snapshot before constructing the first executable request
+   `ClientScope` or allowing query initialization to publish background-capable
+   state. Every later scope and metadata lookup must derive from that snapshot.
+4. Serialize seal, first-request initialization, transport close, and session
+   teardown so close-before-init and close-during-init cannot publish, mutate, or
+   resurrect an accepting runtime.
+5. Add deterministic and race tests for every registration/attachable/`/init`/
+   first-request ordering, identical replay, conflicting updates before and after
+   seal, close during bootstrap, and attempted reuse of a closed client ID.
+
+Stop after that seam. Do not split or reclaim runtimes, release parent `child`
+leases based on guessed quiescence, or migrate metrics yet. Once metadata sealing
+is proven, continue with purpose-specific record/runtime lookup, cold-capability
+decoupling, session-owned metrics, and finally quiescent runtime reclamation.
 
 ## Problem
 
@@ -11,17 +79,22 @@ A long-running session creates a fresh engine client for every nested SDK
 invocation. Those IDs are unique, but `daggerClient` instances are retained in
 `daggerSession.clients` until the main session ends.
 
-That retention is expensive. Every client currently owns a DagQL server and
-schema, an engine utility client, module and workspace state, three OpenTelemetry
-providers, one large trace queue, one log queue, periodic metric readers, and a
-long-lived clientdb reference with three stream goroutines. A session evaluating
-mostly Dang modules makes Dang dominate the profile, but the lifecycle problem
-applies to every SDK.
+At the time of the proposal, that retention was expensive. Every client owned a
+DagQL server and schema, an engine utility client, module and workspace state,
+three OpenTelemetry providers, one large trace queue, one log queue, periodic
+metric readers, and a long-lived clientdb reference with three stream goroutines.
+The completed session-telemetry seam has removed the per-client trace/log queues,
+providers, and DB keepalive, but runtimes and per-client metrics are still retained
+for the session. A session evaluating mostly Dang modules therefore still makes
+Dang dominate the remaining profile, though the lifecycle problem applies to
+every SDK.
 
-Calling `/shutdown` from SDK runtimes does not solve this. Containerized SDKs do
-not currently call it, and the in-engine Dang runtime has no independent session
-transport. More importantly, proxy exit is not proof that the client is unused.
-The engine deliberately lets work outlive the request that created it:
+At the time of the proposal, calling `/shutdown` from SDK runtimes did not solve
+this. Containerized SDKs did not consistently call it, and the in-engine Dang
+runtime had no independent session transport. Explicit proxy-owned registration
+now closes reachability correctly, but proxy exit is still not proof that the
+client runtime is unused. The engine deliberately lets work outlive the request
+that created it:
 
 | Consumer | How it outlives a request | What it later needs |
 |---|---|---|
@@ -296,39 +369,56 @@ This prevents both resurrection and a last-release/new-acquire race.
 
 ## Enabling changes
 
-Implement these as separately reviewable changes. Each one either reduces the
-leak by itself or makes the final reclamation condition mechanically provable.
+Keep the remaining work separately reviewable. The checked seams are implemented;
+the unchecked seams preserve the intended order from correctness foundations to
+reclamation.
 
-1. **Add lifecycle observability without changing behavior.** Report records and
-   runtimes by state, leases by kind and owner ID, provider/processor counts,
-   queued telemetry records, open clientdb streams, and the oldest closed runtime.
-   Add a debug dump that lists why each closed runtime is retained.
-2. **Replace client parent pointers with immutable parent IDs.** Centralize route
-   traversal in the session and reject cycles at creation. This removes accidental
-   ancestor retention and gives telemetry a stable routing graph.
-3. **Move traces and logs to session-owned providers.** Route by explicit origin
-   ID and remove per-client queues and provider shutdown. Then remove per-client
-   clientdb keepalives or replace them with a bounded DB-manager cache.
-4. **Introduce `ClientScope` and typed leases.** Convert request entry, agent
-   runtime, service runtime, and DagQL shared/lazy work. Make background-work
-   detachment impossible without choosing a lease kind.
-5. **Split lookup and storage.** Add `clientRecord`/`clientRuntime`; replace
+1. [x] **Add lifecycle observability without changing behavior.** Debug snapshots
+   report records and runtimes by state, typed leases by kind and owner ID,
+   provider/processor counts, clientdb handles, and why closed runtimes remain
+   retained. Queue capacity is reported explicitly; OTel does not expose measured
+   occupancy.
+2. [x] **Replace client parent pointers with immutable parent IDs.** Route
+   traversal is centralized in the session, registration rejects invalid ancestry,
+   and telemetry no longer retains ancestor runtimes through parent pointers.
+3. [x] **Move traces and logs to session-owned providers.** Explicit origin IDs
+   route records to immutable ancestry, per-client trace/log queues and DB
+   keepalives are gone, and final provider shutdown follows producer cleanup.
+   Per-client metrics remain as an explicitly deferred migration.
+4. [x] **Introduce `ClientScope` and typed leases.** Request entry, agent and
+   service runtimes, DagQL shared/lazy work, and explicit detachment now carry
+   auditable lifecycle ownership.
+5. [x] **Register nested transports through strict scope delegation.** Container
+   and Dang proxies register before serving, own one opaque idempotent handle,
+   reject stale/duplicate/reused identities, and retain the parent `child` lease
+   until session teardown while child quiescence is unavailable.
+6. [ ] **Seal client metadata after monotonic bootstrap — next.** Reconcile
+   registration, attachable, `/init`, and first-request metadata under lifecycle
+   serialization, reject conflicts, and seal the immutable snapshot before
+   executable query work.
+7. [ ] **Split lookup and storage.** Add `clientRecord`/`clientRuntime`; replace
    `clientFromIDs` call sites with metadata, telemetry-route, attachable, or
    executable-scope lookups. Keep records session-long initially.
-6. **Decouple cold capabilities.** Make workspace host access session-owned;
+8. [ ] **Decouple cold capabilities.** Make workspace host access session-owned;
    verify cached lazy callbacks either acquire a durable scope lease or capture a
-   self-contained capability. Audit module/schema objects for pointers back to
-   the client runtime.
-7. **Enable quiescent runtime reclamation.** The proxy close only marks
-   `accepting=false` and releases `transport`. A single serialized transition
-   drops the runtime after all leases and child runtimes are gone.
-8. **Optionally collect records.** Only after all durable references are
-   enumerable, add descriptor refcounts/epochs. This is not required to solve the
-   memory leak and should not be coupled to runtime reclamation.
+   self-contained capability. Audit module/schema objects and agent tombstones for
+   pointers back to the client runtime.
+9. [ ] **Move metrics to session ownership.** Preserve origin attribution through
+   aggregation and routing so per-runtime meter providers and periodic readers no
+   longer block runtime reclamation.
+10. [ ] **Enable quiescent runtime reclamation.** Proxy close marks
+    `accepting=false` and releases `transport`; one serialized transition drops the
+    runtime only after every executable and durable lease, including children, is
+    demonstrably gone.
+11. [ ] **Optionally collect records.** Only after all durable references are
+    enumerable, add descriptor refcounts/epochs. This is not required to solve the
+    memory leak and must not be coupled to runtime reclamation.
 
-The order matters. Moving telemetry first bounds the known leak without risking
-execution correctness. Explicit leases and purpose-specific lookup then turn the
-eventual deletion decision from a heuristic into an invariant.
+The order matters. The completed telemetry and lease seams bound known retention
+and make ownership visible without guessing. Metadata must be sealed before a
+record/runtime split can safely make identity snapshots authoritative; cold
+capabilities and metrics must then be independent before zero leases can become a
+valid reclamation proof.
 
 ## Verification
 
