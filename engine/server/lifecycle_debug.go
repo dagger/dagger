@@ -15,6 +15,7 @@ type LifecycleDebugSnapshot struct {
 	ClosedRuntimes      int                             `json:"closed_runtimes"`
 	OldestClosedRuntime *time.Time                      `json:"oldest_closed_runtime,omitempty"`
 	ActiveRequests      int                             `json:"active_requests"`
+	LeaseCounts         []LifecycleRetentionReason      `json:"lease_counts,omitempty"`
 	OpenClientDBs       int                             `json:"open_client_dbs"`
 	OpenClientDBStreams int                             `json:"open_client_db_streams"`
 	OpenClientDBRefs    int                             `json:"open_client_db_refs"`
@@ -40,12 +41,13 @@ type LifecycleTelemetryCounts struct {
 }
 
 type SessionLifecycleDebugSnapshot struct {
-	SessionID string                         `json:"session_id"`
-	State     string                         `json:"state"`
-	Records   int                            `json:"records"`
-	Runtimes  int                            `json:"runtimes"`
-	Telemetry LifecycleTelemetryCounts       `json:"telemetry"`
-	Clients   []ClientLifecycleDebugSnapshot `json:"clients"`
+	SessionID   string                         `json:"session_id"`
+	State       string                         `json:"state"`
+	Records     int                            `json:"records"`
+	Runtimes    int                            `json:"runtimes"`
+	LeaseCounts []LifecycleRetentionReason     `json:"lease_counts,omitempty"`
+	Telemetry   LifecycleTelemetryCounts       `json:"telemetry"`
+	Clients     []ClientLifecycleDebugSnapshot `json:"clients"`
 }
 
 type ClientLifecycleDebugSnapshot struct {
@@ -73,6 +75,7 @@ type LifecycleRetentionReason struct {
 func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 	now := time.Now()
 	out := LifecycleDebugSnapshot{GeneratedAt: now}
+	allLeaseCounts := make(map[string]LifecycleRetentionReason)
 	if srv.clientDBs != nil {
 		stats := srv.clientDBs.OpenStats()
 		out.OpenClientDBs = stats.Stores
@@ -88,6 +91,7 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 	srv.daggerSessionsMu.RUnlock()
 
 	for _, sess := range sessions {
+		sessionLeaseCounts := make(map[string]LifecycleRetentionReason)
 		sessOut := SessionLifecycleDebugSnapshot{
 			SessionID: sess.sessionID,
 			State:     sess.state.Load().String(),
@@ -110,43 +114,64 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 		}
 
 		for _, client := range clients {
+			accepting, lifecycleTracked, leases := sess.clientLifecycleSnapshot(client)
+			clientLeaseCounts := make(map[string]LifecycleRetentionReason)
+			for _, lease := range leases {
+				addLifecycleLeaseCount(clientLeaseCounts, string(lease.kind), lease.ownerID)
+				addLifecycleLeaseCount(sessionLeaseCounts, string(lease.kind), lease.ownerID)
+				addLifecycleLeaseCount(allLeaseCounts, string(lease.kind), lease.ownerID)
+			}
+
 			client.stateMu.RLock()
+			activeCount := client.activeCount
 			clientOut := ClientLifecycleDebugSnapshot{
 				ClientID:       client.clientID,
 				MetadataSealed: false,
-				ActiveRequests: client.activeCount,
 			}
 			initialized := client.state == clientStateInitialized
 			shutdownAt := client.shutdownAt
 			client.stateMu.RUnlock()
+			requestLeases := lifecycleLeaseCountKind(clientLeaseCounts, "request")
+			if requestLeases > 0 {
+				clientOut.ActiveRequests = requestLeases
+			} else {
+				clientOut.ActiveRequests = activeCount
+			}
 
 			clientOut.ParentIDs = append(clientOut.ParentIDs, client.parentClientIDs...)
+			if !lifecycleTracked {
+				accepting = shutdownAt.IsZero()
+			}
 
-			if shutdownAt.IsZero() {
-				clientOut.RecordState = "open-or-unobserved"
+			if accepting {
+				clientOut.RecordState = "open"
 			} else {
-				closed := shutdownAt
-				clientOut.RecordState = "shutdown-signaled"
-				clientOut.ShutdownAt = &closed
-				out.ClosedRuntimes++
-				if out.OldestClosedRuntime == nil || closed.Before(*out.OldestClosedRuntime) {
-					out.OldestClosedRuntime = &closed
+				clientOut.RecordState = "closed"
+				if !shutdownAt.IsZero() {
+					closed := shutdownAt
+					clientOut.RecordState = "shutdown-signaled"
+					clientOut.ShutdownAt = &closed
+					out.ClosedRuntimes++
+					if out.OldestClosedRuntime == nil || closed.Before(*out.OldestClosedRuntime) {
+						out.OldestClosedRuntime = &closed
+					}
 				}
 			}
 
 			switch {
 			case !initialized:
 				clientOut.RuntimeState = "initializing"
-			case shutdownAt.IsZero():
+			case accepting:
 				clientOut.RuntimeState = "open"
 			default:
 				clientOut.RuntimeState = "closed-retained"
 				clientOut.RetentionReasons = append(clientOut.RetentionReasons, LifecycleRetentionReason{
 					Kind:   "session-lifetime",
-					Detail: "runtime reclamation is not enabled",
+					Detail: "runtime reclamation is not enabled; cold capabilities are not yet independent",
 				})
 			}
-			if clientOut.ActiveRequests > 0 {
+			clientOut.RetentionReasons = append(clientOut.RetentionReasons, sortedLifecycleLeaseCounts(clientLeaseCounts)...)
+			if clientOut.ActiveRequests > 0 && requestLeases == 0 {
 				clientOut.RetentionReasons = append(clientOut.RetentionReasons, LifecycleRetentionReason{
 					Kind:    "request",
 					OwnerID: client.clientID,
@@ -171,14 +196,49 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 			addLifecycleTelemetryCounts(&out.Providers, clientOut.Telemetry)
 		}
 
+		sessOut.LeaseCounts = sortedLifecycleLeaseCounts(sessionLeaseCounts)
 		sort.Slice(sessOut.Clients, func(i, j int) bool {
 			return sessOut.Clients[i].ClientID < sessOut.Clients[j].ClientID
 		})
 		out.Sessions = append(out.Sessions, sessOut)
 	}
 
+	out.LeaseCounts = sortedLifecycleLeaseCounts(allLeaseCounts)
 	sort.Slice(out.Sessions, func(i, j int) bool {
 		return out.Sessions[i].SessionID < out.Sessions[j].SessionID
+	})
+	return out
+}
+
+func addLifecycleLeaseCount(counts map[string]LifecycleRetentionReason, kind, ownerID string) {
+	key := kind + "\x00" + ownerID
+	count := counts[key]
+	count.Kind = kind
+	count.OwnerID = ownerID
+	count.Count++
+	counts[key] = count
+}
+
+func lifecycleLeaseCountKind(counts map[string]LifecycleRetentionReason, kind string) int {
+	total := 0
+	for _, count := range counts {
+		if count.Kind == kind {
+			total += count.Count
+		}
+	}
+	return total
+}
+
+func sortedLifecycleLeaseCounts(counts map[string]LifecycleRetentionReason) []LifecycleRetentionReason {
+	out := make([]LifecycleRetentionReason, 0, len(counts))
+	for _, count := range counts {
+		out = append(out, count)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].OwnerID < out[j].OwnerID
 	})
 	return out
 }
