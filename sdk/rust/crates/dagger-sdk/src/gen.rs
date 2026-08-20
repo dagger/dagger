@@ -4701,11 +4701,6 @@ impl CurrentModuleAsSdkClient {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The pinned version of the bound module, if any.
-    pub async fn pin(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("pin");
-        query.execute(self.graphql_client.clone()).await
-    }
 }
 impl Node for CurrentModuleAsSdkClient {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {

@@ -1829,9 +1829,6 @@ type CurrentModuleAsSDKClient implements Node {
 
   """Workspace-root-relative path of the generated client."""
   path: String!
-
-  """The pinned version of the bound module, if any."""
-  pin: String!
 }
 
 """A workspace-local module managed by the current SDK."""
