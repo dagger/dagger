@@ -3,6 +3,7 @@ package dagql
 import (
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,4 +44,16 @@ func TestCachePrunePolicyMatchesExistingScalarFilters(t *testing.T) {
 
 	require.False(t, cachePrunePolicyMatchesEntry(CachePrunePolicy{Filters: []string{"inuse==false"}}, entry))
 	require.False(t, cachePrunePolicyMatchesEntry(CachePrunePolicy{Filters: []string{"type==source.local"}}, entry))
+}
+
+func TestPruneLogLiteralValueRendersBytesOpaque(t *testing.T) {
+	contents := []byte("binary contents must stay opaque")
+
+	got := pruneLogLiteralValue(nil, &ResultCallLiteral{
+		Kind:       ResultCallLiteralKindBytes,
+		BytesValue: contents,
+	}, 1)
+
+	require.Equal(t, call.DisplayBytes(contents), got)
+	require.NotContains(t, got, string(contents))
 }
