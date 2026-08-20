@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -46,6 +47,9 @@ import (
 type traceRestore struct {
 	// traceID is the Cloud trace to restore from.
 	traceID string
+	// timeout is the maximum interval a Cloud stream may deliver no bytes.
+	// When it elapses, restore proceeds best-effort from data already received.
+	timeout time.Duration
 	// agent names the conversation to focus, by instance ID or display name,
 	// overriding §3.1c's automatic choice.
 	agent string
@@ -90,8 +94,12 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	if err := fetchTraceIntoFrontend(ctx, req.traceID); err != nil {
+	if timedOut, err := fetchTraceForRestore(ctx, req, fetchTraceIntoFrontend); err != nil {
 		return err
+	} else if timedOut {
+		req.partial = true
+		restoreNotice(ctx, fmt.Sprintf(
+			"trace streams were idle for %s; restoring from data received so far", req.timeout))
 	}
 
 	target := &sessionRestore{
@@ -102,6 +110,24 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	return executeRestorePlan(ctx, restorer, target, req)
 }
 
+// traceFetcher is the Cloud fetch seam used to test timeout policy without a
+// frontend or credentials.
+type traceFetcher func(context.Context, string, time.Duration) error
+
+// fetchTraceForRestore applies the opt-in best-effort policy. The configured
+// timeout is idle time, not total transfer time: a large trace may stream for
+// arbitrarily long as long as bytes keep arriving.
+func fetchTraceForRestore(ctx context.Context, req traceRestore, fetch traceFetcher) (bool, error) {
+	err := fetch(ctx, req.traceID, req.timeout)
+	if err == nil {
+		return false, nil
+	}
+	if req.timeout > 0 && errors.Is(err, cloud.ErrStreamStalled) {
+		return true, nil
+	}
+	return false, err
+}
+
 // fetchTraceIntoFrontend streams the whole trace into the LIVE frontend's own
 // exporters (§5.1): one DB then holds both sessions, which is what makes the
 // restored session the old session's TUI plus a live prompt.
@@ -110,7 +136,7 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 // fetch does it internally, once the span stream has drained) and SetPrimary
 // (§5.1.1 — the live CLI's root stays the primary span, and repointing it
 // would take the restore plan's live-vs-imported discriminator with it).
-func fetchTraceIntoFrontend(ctx context.Context, traceID string) error {
+func fetchTraceIntoFrontend(ctx context.Context, traceID string, idleTimeout time.Duration) error {
 	cloudAuth, err := auth.GetCloudAuth(ctx)
 	if err != nil {
 		return fmt.Errorf("cloud auth: %w", err)
@@ -118,6 +144,9 @@ func fetchTraceIntoFrontend(ctx context.Context, traceID string) error {
 	client, err := cloud.NewOTLPClient(ctx, cloudAuth)
 	if err != nil {
 		return fmt.Errorf("cloud client: %w", err)
+	}
+	if idleTimeout > 0 {
+		client = client.WithStallTimeout(idleTimeout)
 	}
 	sink := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
 		Spans:   Frontend.SpanExporter(),
@@ -376,8 +405,14 @@ func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, ag
 
 // validateAgentTraceFlags rejects the combinations §5.4 rules out, before any
 // engine work happens.
-func validateAgentTraceFlags(traceID string, resume bool, args []string) error {
+func validateAgentTraceFlags(traceID string, timeout time.Duration, resume bool, args []string) error {
+	if timeout < 0 {
+		return errors.New("--trace-timeout cannot be negative")
+	}
 	if traceID == "" {
+		if timeout > 0 {
+			return errors.New("--trace-timeout requires --trace")
+		}
 		return nil
 	}
 	if resume {

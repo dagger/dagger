@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/stretchr/testify/require"
 )
 
@@ -296,6 +297,41 @@ func TestRestoreStopsOnARefusedRehydration(t *testing.T) {
 		"a failed re-hydration must not leave conversations attached to a half-restored session")
 }
 
+func TestTraceFetchTimeoutRestoresWhatArrived(t *testing.T) {
+	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
+	idleTimeout := 5 * time.Second
+	req := traceRestore{traceID: traceID, timeout: idleTimeout}
+
+	timedOut, err := fetchTraceForRestore(t.Context(), req,
+		func(_ context.Context, gotTraceID string, gotTimeout time.Duration) error {
+			require.Equal(t, traceID, gotTraceID)
+			require.Equal(t, idleTimeout, gotTimeout)
+			return fmt.Errorf("logs: %w", cloud.ErrStreamStalled)
+		})
+	require.NoError(t, err)
+	require.True(t, timedOut)
+}
+
+func TestTraceFetchErrorsRemainStrict(t *testing.T) {
+	t.Run("stall without timeout", func(t *testing.T) {
+		req := restoreRequest()
+		_, err := fetchTraceForRestore(t.Context(), req,
+			func(context.Context, string, time.Duration) error {
+				return fmt.Errorf("logs: %w", cloud.ErrStreamStalled)
+			})
+		require.ErrorIs(t, err, cloud.ErrStreamStalled)
+	})
+
+	t.Run("non-stall with timeout", func(t *testing.T) {
+		req := restoreRequest()
+		req.timeout = time.Second
+		want := errors.New("bad payload")
+		_, err := fetchTraceForRestore(t.Context(), req,
+			func(context.Context, string, time.Duration) error { return want })
+		require.ErrorIs(t, err, want)
+	})
+}
+
 // TestAgentTraceFlagConflicts is §5.4's surface. Both refusals are about two
 // things claiming to say what the session is: a saved session and a trace are
 // two stores for one conversation, and a restored session's composition comes
@@ -303,14 +339,16 @@ func TestRestoreStopsOnARefusedRehydration(t *testing.T) {
 func TestAgentTraceFlagConflicts(t *testing.T) {
 	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
 
-	require.NoError(t, validateAgentTraceFlags(traceID, false, nil))
-	require.NoError(t, validateAgentTraceFlags("", true, []string{"editor"}),
+	require.NoError(t, validateAgentTraceFlags(traceID, time.Second, false, nil))
+	require.NoError(t, validateAgentTraceFlags("", 0, true, []string{"editor"}),
 		"the flags only conflict WITH --trace")
+	require.ErrorContains(t, validateAgentTraceFlags("", time.Second, false, nil), "requires --trace")
+	require.ErrorContains(t, validateAgentTraceFlags(traceID, -time.Second, false, nil), "cannot be negative")
 
-	err := validateAgentTraceFlags(traceID, true, nil)
+	err := validateAgentTraceFlags(traceID, 0, true, nil)
 	require.ErrorContains(t, err, "-r/--resume")
 
-	err = validateAgentTraceFlags(traceID, false, []string{"editor", "dagger-go"})
+	err = validateAgentTraceFlags(traceID, 0, false, []string{"editor", "dagger-go"})
 	require.ErrorContains(t, err, "editor, dagger-go")
 	require.ErrorContains(t, err, "come from the trace")
 }

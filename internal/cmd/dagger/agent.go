@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
@@ -18,6 +19,7 @@ import (
 var agentListMode bool
 var agentResume agentSessionFlag
 var agentTrace string
+var agentTraceTimeout time.Duration
 var agentFocus string
 var agentPartial bool
 var agentCheckpointInclude []string
@@ -63,7 +65,7 @@ Examples:
 		resume := cmd.Flags().Changed("resume")
 		// Refuse the combinations that have no meaning before any engine work
 		// happens (hack/designs/resume-from-trace.md §5.4).
-		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
+		if err := validateAgentTraceFlags(agentTrace, agentTraceTimeout, resume, args); err != nil {
 			return err
 		}
 		return withEngine(
@@ -104,6 +106,7 @@ Examples:
 				sessionID := agentResume.SessionID()
 				restore := traceRestore{
 					traceID: agentTrace,
+					timeout: agentTraceTimeout,
 					agent:   agentFocus,
 					partial: agentPartial,
 				}
@@ -153,6 +156,8 @@ func init() {
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
 		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
+	agentCmd.Flags().DurationVar(&agentTraceTimeout, "trace-timeout", 0,
+		"Restore from data received so far if a trace stream is idle for this duration")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (instance ID or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
