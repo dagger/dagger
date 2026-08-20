@@ -1,0 +1,79 @@
+---
+title: "Modules"
+slug: /extending/how-dagger-works/modules
+description: "Learn what modules add to a workspace."
+---
+
+# Modules
+
+A module is a package of Dagger capabilities.
+
+It can expose functions, objects, checks, services, generators, and dependencies. A workspace installs a module so people and automation can use those capabilities.
+
+A module is not a script. It is an API.
+
+## Two Views
+
+There are two ways to look at a module:
+
+- **As a user:** the module is installed in a workspace and called by name.
+- **As an author:** the module is source code, metadata, dependencies, and docs.
+
+Keep both views in your head. The author writes code. The user sees an API.
+
+## What Users See
+
+Users see:
+
+- names
+- functions
+- arguments
+- return types
+- checks
+- docs
+- errors
+- traces
+
+That is the contract. Make it small, clear, and durable.
+
+## What Authors Control
+
+Authors control:
+
+- the module name
+- the SDK
+- the source layout
+- the public API
+- dependencies on other modules
+- docs for functions and arguments
+- checks and generators
+
+The SDK decides syntax. The platform model decides the shape of the API.
+
+## Good Modules Feel Obvious
+
+A good module does one thing clearly:
+
+- It has a clear purpose.
+- It has a small public surface.
+- It uses typed inputs instead of hidden state.
+- It returns useful Dagger objects.
+- It exposes checks for important guarantees.
+- It fails with messages users can act on.
+
+The user should feel guided, not tested.
+
+## When to Create One
+
+Create a module when a workflow needs a stable interface:
+
+- teammates run it often
+- other repos need it
+- it needs settings
+- it should add checks
+- it should compose with other modules
+- it should be versioned
+
+If it is a one-off command, do not make a module yet.
+
+Next: [Functions](./functions.mdx).

@@ -1,0 +1,73 @@
+---
+title: "Execution"
+slug: /extending/how-dagger-works/execution
+description: "Learn what happens when Dagger runs a module function."
+---
+
+# Execution
+
+Now connect the pieces.
+
+When a caller runs a function, Dagger does not just run a script. It loads a typed API and evaluates a graph.
+
+That is the heart of Dagger.
+
+## The Path
+
+A call moves through this path:
+
+1. The caller selects a workspace.
+2. The workspace resolves installed modules and settings.
+3. The engine loads the requested module.
+4. The SDK exposes the module API.
+5. The caller invokes a function.
+6. The function builds graph nodes.
+7. The caller asks for a result.
+8. The engine runs only the needed work.
+9. Dagger returns a value, error, trace, or check result.
+
+This is why clear APIs matter. The graph is built from your function names, inputs, outputs, objects, and defaults.
+
+## Lazy Work
+
+Dagger can describe work before it runs it.
+
+A function can return a `Container`, `Directory`, `File`, service, object, or changeset. That value can keep flowing through the graph.
+
+Dagger runs work when the caller needs a concrete result: a string, exported file, synced container, applied changeset, live service, or check status.
+
+Return composable values until the user needs a final answer.
+
+## Clear Boundaries
+
+Modules should make boundaries visible:
+
+- Files enter as `File` or `Directory`.
+- Credentials enter as `Secret`.
+- Long-running dependencies are `Service`.
+- Edits return as `Changeset`.
+- Artifacts return as `File`, `Directory`, or `Container`.
+
+No hidden host state. No surprise credentials. No local-only assumptions.
+
+## Traces
+
+Every run creates a trace. A good trace reads like the user's workflow, not your private implementation notes.
+
+Good module design makes traces useful:
+
+- clear function names
+- clear object names
+- clear errors
+- precise inputs
+- meaningful steps
+
+## Cloud
+
+Cloud does not change this model. It observes and automates it.
+
+The same checks that run locally can run for pull requests. The same traces that help you debug locally can help a team understand CI.
+
+That is why the platform feels powerful: one graph, many places to use it.
+
+Next: [Developer workflow](../index.mdx#developer-workflow).

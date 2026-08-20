@@ -1,0 +1,20 @@
+---
+title: "SDK Documentation"
+slug: /extending/sdks
+description: "Per-language guides for building Dagger modules with each SDK."
+---
+
+# SDK Documentation
+
+Each SDK has its own guide for building Dagger modules in that language. These guides assume you've read the [Module Developer Guide](../index.mdx) for the platform model, and focus on language syntax, project layout, the development workflow, dependencies, testing, and troubleshooting.
+
+Every SDK is itself a Dagger module — for example `github.com/dagger/go-sdk` — that provides the operations you use to develop a module: scaffolding a new module, regenerating bindings, managing dependencies, and pinning the engine version. See [Developer Workflow](../index.mdx#developer-workflow) for the shared flow; each page below shows the concrete commands for its language.
+
+## Choose your SDK
+
+- **[Dang](./dang.mdx)** — Dagger's native DSL. No codegen and no build step: what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
+- **[Go](./go.mdx)** — Build modules in Go with a generated, typed client.
+- **[TypeScript](./typescript.mdx)** — Build modules in TypeScript with decorators and a generated client (Bun, Deno, or Node).
+- **[Python](./python.mdx)** — Build modules in Python with type hints, decorators, and a generated client.
+
+More languages are planned. An SDK appears here once it has an official `github.com/dagger/<lang>-sdk` module.
