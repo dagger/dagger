@@ -83,6 +83,18 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 			logrus.WithError(err).Warn("failed streaming dagql cache debug snapshot")
 		}
 	}))
+	m.Handle("/debug/client-lifecycle", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(rw)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(eng.ClientLifecycleDebugSnapshot()); err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+		}
+	}))
 	// Engine-global profiling toggle: GET reports state, POST "on"/"off"
 	// (or any strconv.ParseBool value) flips it. Disabling keeps buffered
 	// events dumpable and does not stop sessions that opted in via --profile.
