@@ -3008,6 +3008,39 @@ func TestImplicitInputCachePerCall(t *testing.T) {
 	assert.Equal(t, third, 3)
 }
 
+func TestRecipeLoadBytesLiteral(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	srv.InstallScalar(dagql.Bytes(nil))
+	points.Install[Query](srv)
+
+	var gotContents []byte
+	dagql.Fields[Query]{
+		dagql.Func("pointFromBytes", func(_ context.Context, _ Query, args struct {
+			Contents dagql.Bytes
+		}) (*points.Point, error) {
+			gotContents = args.Contents.Bytes()
+			return &points.Point{X: len(args.Contents)}, nil
+		}),
+	}.Install(srv)
+
+	contents := []byte{0x00, 0xff, 0xfe, 0x80, 'b', 'l', 'o', 'b'}
+	recipe := call.New().Append(
+		(&points.Point{}).Type(),
+		"pointFromBytes",
+		call.WithArgs(call.NewArgument("contents", call.NewLiteralBytes(contents), false)),
+	)
+	require.False(t, recipe.IsHandle())
+
+	ctx := dagql.ContextWithCache(testContext(), newCache(t))
+	loaded, err := srv.Load(ctx, recipe)
+	require.NoError(t, err)
+	require.Equal(t, contents, gotContents)
+
+	var gotLen int
+	require.NoError(t, srv.Select(ctx, loaded, &gotLen, dagql.Selector{Field: "x"}))
+	require.Equal(t, len(contents), gotLen)
+}
+
 // TestNotReplayableRecipeLoad covers FieldSpec.NotReplayable on the recipe
 // load path: a marked call replayed from a saved recipe is served from cache
 // inside the session that recorded it, but re-executed when the recipe is
