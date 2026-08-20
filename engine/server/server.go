@@ -1047,7 +1047,7 @@ func (srv *Server) activeClientIDs() map[string]bool {
 			continue
 		}
 		sess.clientMu.RLock()
-		for id := range sess.clients {
+		for id := range sess.clientRecords {
 			keep[id] = true
 		}
 		sess.clientMu.RUnlock()

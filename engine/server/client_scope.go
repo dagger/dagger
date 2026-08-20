@@ -63,13 +63,15 @@ func (srv *Server) RegisterNestedClientTransport(
 	}
 
 	sess.clientMu.RLock()
-	_, exists := sess.clients[metadata.ClientID]
-	parent := sess.clients[parentClientID]
+	_, recordExists := sess.clientRecords[metadata.ClientID]
+	_, runtimeExists := sess.clientRuntimes[metadata.ClientID]
+	parentRecord := sess.clientRecords[parentClientID]
+	parent := sess.clientRuntimes[parentClientID]
 	sess.clientMu.RUnlock()
-	if exists {
+	if recordExists || runtimeExists {
 		return nil, fmt.Errorf("nested client %q transport is already registered or permanently closed", metadata.ClientID)
 	}
-	if parent == nil {
+	if parentRecord == nil || parent == nil || parent.clientRecord != parentRecord {
 		return nil, fmt.Errorf("parent client %q not found for nested client %q", parentClientID, metadata.ClientID)
 	}
 	parentIDs, err := sess.parentClientIDsForRegistration(metadata.ClientID, parentClientID, false)
@@ -91,21 +93,24 @@ func (srv *Server) RegisterNestedClientTransport(
 	if err != nil {
 		return nil, err
 	}
-	client := &daggerClient{
+	record := &clientRecord{
+		daggerSession:   sess,
+		clientID:        metadata.ClientID,
+		clientVersion:   metadata.ClientVersion,
+		secretToken:     metadata.ClientSecretToken,
+		shutdownCh:      make(chan struct{}),
+		clientMetadata:  metadataSnapshot,
+		parentClientIDs: parentIDs,
+		accepting:       true,
+	}
+	client := &clientRuntime{
+		clientRecord:           record,
 		state:                  clientStateUninitialized,
-		daggerSession:          sess,
-		clientID:               metadata.ClientID,
-		clientVersion:          metadata.ClientVersion,
-		secretToken:            metadata.ClientSecretToken,
-		shutdownCh:             make(chan struct{}),
-		clientMetadata:         metadataSnapshot,
-		parentClientIDs:        parentIDs,
-		accepting:              true,
 		lifecycleLeases:        make(map[uint64]clientLifecycleLeaseRecord),
 		parentClientScopeLease: parentScope.Lease(),
 	}
 	transport := engine.NewNestedClientTransport(func() {
-		sess.closeNestedClientTransport(client)
+		sess.closeNestedClientTransport(record)
 	})
 	client.nestedTransport = transport
 
@@ -114,12 +119,18 @@ func (srv *Server) RegisterNestedClientTransport(
 	sess.scopeMu.Unlock()
 
 	sess.clientMu.Lock()
-	if _, duplicate := sess.clients[metadata.ClientID]; duplicate {
+	if _, duplicate := sess.clientRecords[metadata.ClientID]; duplicate {
 		sess.clientMu.Unlock()
 		client.transportLease.Release()
 		return nil, fmt.Errorf("nested client %q transport was concurrently registered", metadata.ClientID)
 	}
-	sess.clients[metadata.ClientID] = client
+	if _, duplicate := sess.clientRuntimes[metadata.ClientID]; duplicate {
+		sess.clientMu.Unlock()
+		client.transportLease.Release()
+		return nil, fmt.Errorf("nested client %q runtime was concurrently registered", metadata.ClientID)
+	}
+	sess.clientRecords[metadata.ClientID] = record
+	sess.clientRuntimes[metadata.ClientID] = client
 	sess.clientMu.Unlock()
 	return transport, nil
 }
@@ -147,7 +158,7 @@ func cloneClientMetadata(metadata *engine.ClientMetadata) (*engine.ClientMetadat
 // mergeClientMetadataLocked monotonically completes a client's bootstrap
 // metadata. sess.scopeMu is the serialization point: it also protects sealing,
 // root scope acquisition, transport close, and session teardown.
-func (sess *daggerSession) mergeClientMetadataLocked(client *daggerClient, incoming *engine.ClientMetadata) error {
+func (sess *daggerSession) mergeClientMetadataLocked(record *clientRecord, incoming *engine.ClientMetadata) error {
 	if incoming == nil {
 		return errors.New("client metadata is nil")
 	}
@@ -155,15 +166,15 @@ func (sess *daggerSession) mergeClientMetadataLocked(client *daggerClient, incom
 	if err != nil {
 		return err
 	}
-	if client.clientMetadata == nil {
-		if client.metadataSealed {
-			return fmt.Errorf("client %q has sealed empty metadata", client.clientID)
+	if record.clientMetadata == nil {
+		if record.metadataSealed {
+			return fmt.Errorf("client %q has sealed empty metadata", record.clientID)
 		}
-		client.clientMetadata = candidate
+		record.clientMetadata = candidate
 		return nil
 	}
 
-	stored := reflect.ValueOf(client.clientMetadata).Elem()
+	stored := reflect.ValueOf(record.clientMetadata).Elem()
 	update := reflect.ValueOf(candidate).Elem()
 	typeOfMetadata := stored.Type()
 	for i := 0; i < stored.NumField(); i++ {
@@ -174,14 +185,14 @@ func (sess *daggerSession) mergeClientMetadataLocked(client *daggerClient, incom
 		storedField := stored.Field(i)
 		fieldName := typeOfMetadata.Field(i).Name
 		if storedField.IsZero() {
-			if client.metadataSealed {
-				return fmt.Errorf("client %q metadata is sealed; field %s cannot be completed", client.clientID, fieldName)
+			if record.metadataSealed {
+				return fmt.Errorf("client %q metadata is sealed; field %s cannot be completed", record.clientID, fieldName)
 			}
 			storedField.Set(incomingField)
 			continue
 		}
 		if !reflect.DeepEqual(storedField.Interface(), incomingField.Interface()) {
-			return fmt.Errorf("client %q metadata field %s conflicts with bootstrap value", client.clientID, fieldName)
+			return fmt.Errorf("client %q metadata field %s conflicts with bootstrap value", record.clientID, fieldName)
 		}
 	}
 	return nil
@@ -190,47 +201,54 @@ func (sess *daggerSession) mergeClientMetadataLocked(client *daggerClient, incom
 // sealClientMetadataLocked freezes one authoritative snapshot. Re-cloning at
 // the boundary ensures no alias retained by an earlier bootstrap caller can
 // mutate the value later. sess.scopeMu must be held.
-func (sess *daggerSession) sealClientMetadataLocked(client *daggerClient) error {
-	if client.metadataSealed {
+func (sess *daggerSession) sealClientMetadataLocked(record *clientRecord) error {
+	if record.metadataSealed {
 		return nil
 	}
-	if client.clientMetadata == nil {
-		return fmt.Errorf("client %q has no metadata to seal", client.clientID)
+	if record.clientMetadata == nil {
+		return fmt.Errorf("client %q has no metadata to seal", record.clientID)
 	}
-	if !client.accepting {
-		return fmt.Errorf("client %q is closed", client.clientID)
+	if !record.accepting {
+		return fmt.Errorf("client %q is closed", record.clientID)
 	}
-	if client.nestedTransport != nil && client.nestedTransport.Closed() {
-		return fmt.Errorf("nested client %q transport is closed", client.clientID)
+	if record.nestedTransport != nil && record.nestedTransport.Closed() {
+		return fmt.Errorf("nested client %q transport is closed", record.clientID)
 	}
-	snapshot, err := cloneClientMetadata(client.clientMetadata)
+	snapshot, err := cloneClientMetadata(record.clientMetadata)
 	if err != nil {
 		return err
 	}
-	client.clientMetadata = snapshot
-	client.clientVersion = snapshot.ClientVersion
-	client.secretToken = snapshot.ClientSecretToken
-	client.metadataSealed = true
+	record.clientMetadata = snapshot
+	record.clientVersion = snapshot.ClientVersion
+	record.secretToken = snapshot.ClientSecretToken
+	record.metadataSealed = true
 	return nil
 }
 
 // clientMetadataSnapshot returns an independent copy of sealed metadata for
 // lookups outside the runtime. Callers can mutate it without changing future
 // scopes or lookups.
-func (sess *daggerSession) clientMetadataSnapshot(client *daggerClient) (*engine.ClientMetadata, error) {
+func (sess *daggerSession) clientMetadataSnapshot(record *clientRecord) (*engine.ClientMetadata, error) {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
-	if !client.metadataSealed {
-		return nil, fmt.Errorf("client %q metadata is not sealed", client.clientID)
+	if !record.metadataSealed {
+		return nil, fmt.Errorf("client %q metadata is not sealed", record.clientID)
 	}
-	return cloneClientMetadata(client.clientMetadata)
+	return cloneClientMetadata(record.clientMetadata)
 }
 
-func (sess *daggerSession) closeNestedClientTransport(client *daggerClient) {
+func (sess *daggerSession) closeNestedClientTransport(record *clientRecord) {
+	sess.clientMu.RLock()
+	client := sess.clientRuntimes[record.clientID]
+	sess.clientMu.RUnlock()
+
 	sess.scopeMu.Lock()
-	client.accepting = false
-	transport := client.transportLease
-	client.transportLease = nil
+	record.accepting = false
+	var transport *engine.ClientLifecycleLease
+	if client != nil && client.clientRecord == record {
+		transport = client.transportLease
+		client.transportLease = nil
+	}
 	sess.scopeMu.Unlock()
 	transport.Release()
 }
@@ -239,7 +257,7 @@ func (sess *daggerSession) closeNestedClientTransport(client *daggerClient) {
 // acquisition is rejected after client close or session teardown; background
 // work must clone an already-held scope instead.
 func (sess *daggerSession) acquireRootClientScope(
-	client *daggerClient,
+	client *clientRuntime,
 	kind engine.ClientLeaseKind,
 	ownerID string,
 ) (engine.ClientScope, error) {
@@ -266,7 +284,7 @@ func (sess *daggerSession) acquireRootClientScope(
 
 // newClientLifecycleLeaseLocked publishes one lease. sess.scopeMu must be held.
 func (sess *daggerSession) newClientLifecycleLeaseLocked(
-	client *daggerClient,
+	client *clientRuntime,
 	kind engine.ClientLeaseKind,
 	ownerID string,
 ) *engine.ClientLifecycleLease {
@@ -294,7 +312,7 @@ func (sess *daggerSession) newClientLifecycleLeaseLocked(
 }
 
 func (sess *daggerSession) cloneClientLifecycleLease(
-	client *daggerClient,
+	client *clientRuntime,
 	sourceID uint64,
 	kind engine.ClientLeaseKind,
 	ownerID string,
@@ -311,7 +329,7 @@ func (sess *daggerSession) cloneClientLifecycleLease(
 }
 
 func (sess *daggerSession) delegateClientLifecycleLease(
-	client *daggerClient,
+	client *clientRuntime,
 	sourceID uint64,
 	sessionID, clientID string,
 	kind engine.ClientLeaseKind,
@@ -331,7 +349,7 @@ func (sess *daggerSession) delegateClientLifecycleLease(
 	return sess.newClientLifecycleLeaseLocked(client, kind, ownerID), nil
 }
 
-func (sess *daggerSession) releaseClientLifecycleLease(client *daggerClient, leaseID uint64) {
+func (sess *daggerSession) releaseClientLifecycleLease(client *clientRuntime, leaseID uint64) {
 	sess.scopeMu.Lock()
 	delete(client.lifecycleLeases, leaseID)
 	sess.scopeMu.Unlock()
@@ -339,7 +357,7 @@ func (sess *daggerSession) releaseClientLifecycleLease(client *daggerClient, lea
 
 // closeClientScope closes root acquisition and releases reachability. Existing
 // scopes remain cloneable until their own leases are released.
-func (sess *daggerSession) closeClientScope(client *daggerClient) {
+func (sess *daggerSession) closeClientScope(client *clientRuntime) {
 	sess.scopeMu.Lock()
 	client.accepting = false
 	transport := client.transportLease
@@ -352,8 +370,8 @@ func (sess *daggerSession) closeClientScope(client *daggerClient) {
 // Existing leased work drains through its normal terminal transitions.
 func (sess *daggerSession) beginClientScopeTeardown() {
 	sess.clientMu.RLock()
-	clients := make([]*daggerClient, 0, len(sess.clients))
-	for _, client := range sess.clients {
+	clients := make([]*clientRuntime, 0, len(sess.clientRuntimes))
+	for _, client := range sess.clientRuntimes {
 		clients = append(clients, client)
 	}
 	sess.clientMu.RUnlock()
@@ -384,13 +402,13 @@ func (sess *daggerSession) beginClientScopeTeardown() {
 	}
 }
 
-func (sess *daggerSession) clientMetadataSealed(client *daggerClient) bool {
+func (sess *daggerSession) clientMetadataSealed(record *clientRecord) bool {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
-	return client.metadataSealed
+	return record.metadataSealed
 }
 
-func (sess *daggerSession) clientLifecycleSnapshot(client *daggerClient) (bool, bool, []clientLifecycleLeaseRecord) {
+func (sess *daggerSession) clientLifecycleSnapshot(client *clientRuntime) (bool, bool, []clientLifecycleLeaseRecord) {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
 	out := make([]clientLifecycleLeaseRecord, 0, len(client.lifecycleLeases))

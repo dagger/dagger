@@ -28,8 +28,8 @@ package core
 // The resulting `*core.Workspace` carries `ClientID` — the client that built it
 // (engine/server/session_workspaces.go). Client IDs only resolve within their
 // own session: `SpecificClientMetadata` looks the ID up via
-// `clientFromIDs(currentSessionID, clientID)`. So a replayed workspace carrying
-// another session's client can never be routed, and every consumer that
+// `clientRecordFromIDs(currentSessionID, clientID)`. So a replayed workspace
+// carrying another session's client can never be routed, and every consumer that
 // switches into the workspace's owning client fails with:
 //
 //	workspace client metadata: failed to retrieve session main client:
