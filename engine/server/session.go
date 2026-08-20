@@ -203,6 +203,9 @@ type daggerClient struct {
 
 	state   daggerClientState
 	stateMu sync.RWMutex
+	// shutdownAt records the first /shutdown signal for lifecycle diagnostics.
+	// It does not drive reclamation: nested proxy ownership is not explicit yet.
+	shutdownAt time.Time
 	// the number of active http requests to any endpoint from this client,
 	// used to determine when to cleanup the client+session
 	activeCount int
@@ -239,6 +242,10 @@ type daggerClient struct {
 
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
+
+	// telemetryDebug records the provider topology configured for this runtime.
+	// Queue occupancy is intentionally not inferred from these configured counts.
+	telemetryDebug LifecycleTelemetryCounts
 
 	// Workspace and extra module loading is deferred from initializeDaggerClient
 	// to serveQuery because it requires the client's engine utility session, which
@@ -332,8 +339,10 @@ func (client *daggerClient) TelemetryDB(ctx context.Context) (*clientdb.DB, erro
 // store reference. The caller must either hold the session lifecycle lock or
 // be cleaning up a client that was never published into its session.
 func (client *daggerClient) closeKeepAliveTelemetryDB() error {
+	client.stateMu.Lock()
 	db := client.keepAliveTelemetryDB
 	client.keepAliveTelemetryDB = nil
+	client.stateMu.Unlock()
 	return db.Close()
 }
 
@@ -1050,6 +1059,15 @@ func (srv *Server) initializeDaggerClient(
 	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
+	client.telemetryDebug = LifecycleTelemetryCounts{
+		TracerProviders:          1,
+		LoggerProviders:          1,
+		MeterProviders:           1,
+		ConfiguredSpanProcessors: len(tracerOpts) - 1, // all options after span limits install processors
+		ConfiguredLogProcessors:  len(loggerOpts) - 1, // the other option installs the resource
+		ConfiguredMetricReaders:  len(meterOpts) - 1,  // the other option installs the resource
+		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
+	}
 
 	client.state = clientStateInitialized
 	return nil
@@ -2034,6 +2052,11 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"mainClientID", sess.mainClientCallerID)
 
 	slog.Info("client shutdown")
+	client.stateMu.Lock()
+	if client.shutdownAt.IsZero() {
+		client.shutdownAt = time.Now()
+	}
+	client.stateMu.Unlock()
 	shutdownStart := time.Now()
 	defer func() {
 		slog.Info("client shutdown done", "duration", time.Since(shutdownStart), "error", shutdownErr)

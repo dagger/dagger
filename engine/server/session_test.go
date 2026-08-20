@@ -30,6 +30,67 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T) {
+	t.Parallel()
+
+	closedAt := time.Now().Add(-time.Minute).Round(0)
+	parent := &daggerClient{
+		clientID:    "parent",
+		state:       clientStateInitialized,
+		activeCount: 2,
+		shutdownAt:  closedAt,
+		telemetryDebug: LifecycleTelemetryCounts{
+			TracerProviders:          1,
+			LoggerProviders:          1,
+			MeterProviders:           1,
+			ConfiguredSpanProcessors: 3,
+			ConfiguredLogProcessors:  1,
+			ConfiguredMetricReaders:  1,
+			ConfiguredSpanQueueSlots: 16384,
+		},
+	}
+	child := &daggerClient{
+		clientID: "child",
+		state:    clientStateInitialized,
+		parents:  []*daggerClient{parent},
+	}
+	sess := &daggerSession{
+		sessionID: "session",
+		clients: map[string]*daggerClient{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+	}
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	snapshot := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, 2, snapshot.Records)
+	require.Equal(t, 2, snapshot.Runtimes)
+	require.Equal(t, 1, snapshot.ClosedRuntimes)
+	require.Equal(t, 2, snapshot.ActiveRequests)
+	require.NotNil(t, snapshot.OldestClosedRuntime)
+	require.Equal(t, closedAt, *snapshot.OldestClosedRuntime)
+	require.Equal(t, 1, snapshot.Providers.TracerProviders)
+	require.Equal(t, 3, snapshot.Providers.ConfiguredSpanProcessors)
+	require.False(t, snapshot.Providers.QueueOccupancyMeasured)
+
+	require.Len(t, snapshot.Sessions, 1)
+	require.Equal(t, []string{"child", "parent"}, []string{
+		snapshot.Sessions[0].Clients[0].ClientID,
+		snapshot.Sessions[0].Clients[1].ClientID,
+	})
+	gotParent := snapshot.Sessions[0].Clients[1]
+	require.Equal(t, "shutdown-signaled", gotParent.RecordState)
+	require.Equal(t, "closed-retained", gotParent.RuntimeState)
+	require.False(t, gotParent.MetadataSealed)
+	require.ElementsMatch(t, []string{"session-lifetime", "request", "descendant"}, []string{
+		gotParent.RetentionReasons[0].Kind,
+		gotParent.RetentionReasons[1].Kind,
+		gotParent.RetentionReasons[2].Kind,
+	})
+}
+
 type fakeSessionCaller struct {
 	id   string
 	conn *grpc.ClientConn
