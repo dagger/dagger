@@ -9,10 +9,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/vito/go-sse/sse"
+	"golang.org/x/sync/errgroup"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -63,8 +65,10 @@ import (
 //
 // Seal is what turns "no end time" into a fact: a live span is exported at
 // START and again at end, so a span the capture shows running is only really
-// unfinished once the stream is over. FetchTrace calls it exactly once, after
-// the span stream is drained.
+// unfinished once importing has stopped. FetchTrace calls it exactly once after
+// all three stream goroutines return, including on partial or failed fetches.
+// Implementations need not be concurrency-safe; FetchTrace serializes all
+// callbacks while fetching the streams in parallel.
 type TraceImportSink interface {
 	ImportSpans(context.Context, *coltracepb.ExportTraceServiceRequest) error
 	ImportLogs(context.Context, *collogspb.ExportLogsServiceRequest) error
@@ -107,6 +111,10 @@ type OTLPClient struct {
 // audibly alive with comment keepalives, which never surface as events but
 // do count as bytes.
 const defaultStallTimeout = 60 * time.Second
+
+// ErrStreamStalled marks a fetch that stopped because one of its SSE streams
+// delivered no bytes for the configured idle timeout.
+var ErrStreamStalled = errors.New("cloud OTLP stream stalled")
 
 // NewOTLPClient returns a client for the OTLP-over-SSE endpoints, reading the
 // base URL from DAGGER_CLOUD_URL exactly as NewClient does.
@@ -156,6 +164,16 @@ func (c *OTLPClient) WithBaseURL(base string) (*OTLPClient, error) {
 	return &clone, nil
 }
 
+// WithStallTimeout returns a copy that stops any SSE stream after it delivers
+// no bytes for timeout. The timeout measures idle time, not total fetch time;
+// SSE comments and payloads both reset it. A non-positive timeout disables the
+// watchdog.
+func (c *OTLPClient) WithStallTimeout(timeout time.Duration) *OTLPClient {
+	clone := *c
+	clone.stall = timeout
+	return &clone
+}
+
 // otlpAuthHeader renders the Authorization header for a Cloud credential.
 //
 // A Basic token is the DAGGER_CLOUD_TOKEN case and goes through
@@ -186,52 +204,70 @@ func (c *OTLPClient) StatsSummary() string {
 
 // FetchTrace streams the whole of traceID into sink and seals it.
 //
-// THE THREE STREAMS RUN SEQUENTIALLY, spans first. The reference
-// implementation fans them out across an errgroup, and TraceImporter is
-// concurrency-safe, so the temptation is real — but the SINK is what decides,
-// and a sink is not required to be concurrency-safe. The OTel SDK's exporter
-// interfaces say so in as many words: sdktrace.SpanExporter.ExportSpans is
-// "called synchronously, so there is no concurrency safety requirement", and
-// sdklog.Exporter.Export "should never be called concurrently with other
-// Export calls". Slice 4 deliberately made the sinks an argument so a bare
-// dagui.DB — a plain struct with no locking — can be one, and the frontend's
-// own exporters only happen to serialize because they dispatch onto the UI
-// goroutine. Fanning out would impose a requirement the type never stated, on
-// every sink anyone ever passes. Measured, not argued: the fan-out shape trips
-// the race detector on the canned capture, deep in dagui.DB.
+// The three network streams run concurrently so a slow or blocked endpoint
+// does not prevent the others from transferring. Sink callbacks remain
+// serialized: TraceImportSink deliberately makes no concurrency-safety
+// promise, and common sinks (including the OTel SDK exporters and a bare
+// dagui.DB) require callers not to invoke exports concurrently.
 //
-// Spans FIRST, and drained, buys two more things. The seal is then trivially
-// "after the span stream ended", with no window in which a late span lands
-// already-sealed and keeps a stale end time. And every span a log record
-// refers to is real by the time the record arrives, so the record folds onto
-// it instead of minting the placeholder dagui.DB allocates for an unknown span
-// ID — a parentless, never-ended span the importer cannot know about and
-// therefore never seals.
-//
-// The cost is one startup fetch paying the sum of three round trips rather
-// than the max; §5.3 already runs it under a span so the wait is visible.
+// Once all three streams stop, no late span callbacks remain. FetchTrace then
+// calls Seal exactly once with the parent context, even after a stream error,
+// so partial span snapshots become a consistent bounded import. A seal error
+// is joined with the stream error rather than masking it.
 func (c *OTLPClient) FetchTrace(ctx context.Context, traceID string, sink TraceImportSink) error {
 	if traceID == "" {
 		return errors.New("no trace ID to fetch")
 	}
 
-	if err := c.streamTraces(ctx, traceID, sink); err != nil {
-		return err
-	}
+	sink = &serializedTraceImportSink{sink: sink}
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		return c.streamTraces(groupCtx, traceID, sink)
+	})
+	group.Go(func() error {
+		return c.streamLogs(groupCtx, traceID, sink)
+	})
+	group.Go(func() error {
+		return c.streamMetrics(groupCtx, traceID, sink)
+	})
+	streamErr := group.Wait()
 
-	// The span stream is drained: what is still running now really was left
-	// running (§5.1.2). Sealing HERE rather than after all three streams keeps
-	// the span half self-consistent even if a later stream fails, and nothing
-	// in the log or metric streams can move the seal's bound — the importer
-	// computes it from span timestamps alone.
+	var sealErr error
 	if err := sink.Seal(ctx); err != nil {
-		return fmt.Errorf("seal imported trace: %w", err)
+		sealErr = fmt.Errorf("seal imported trace: %w", err)
 	}
+	return errors.Join(streamErr, sealErr)
+}
 
-	if err := c.streamLogs(ctx, traceID, sink); err != nil {
-		return err
-	}
-	return c.streamMetrics(ctx, traceID, sink)
+// serializedTraceImportSink preserves TraceImportSink's synchronous callback
+// contract while FetchTrace overlaps the three network streams.
+type serializedTraceImportSink struct {
+	mu   sync.Mutex
+	sink TraceImportSink
+}
+
+func (s *serializedTraceImportSink) ImportSpans(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.ImportSpans(ctx, req)
+}
+
+func (s *serializedTraceImportSink) ImportLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.ImportLogs(ctx, req)
+}
+
+func (s *serializedTraceImportSink) ImportMetrics(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.ImportMetrics(ctx, req)
+}
+
+func (s *serializedTraceImportSink) Seal(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sink.Seal(ctx)
 }
 
 func (c *OTLPClient) streamTraces(ctx context.Context, traceID string, sink TraceImportSink) error {
@@ -348,8 +384,8 @@ func (c *OTLPClient) consumeSSE(ctx context.Context, kind, traceID string, cb fu
 			// and what that surfaces as (a closed-body error, sometimes even
 			// EOF) must not be mistaken for the end of the trace.
 			if stalled.Load() {
-				return fmt.Errorf("fetch %s stalled: no data for %s (after %d events, %d bytes): "+
-					"the server stopped sending without ending the stream", endpoint, c.stall, events, bytes)
+				return fmt.Errorf("%w: fetch %s: no data for %s (after %d events, %d bytes): "+
+					"the server stopped sending without ending the stream", ErrStreamStalled, endpoint, c.stall, events, bytes)
 			}
 			if errors.Is(err, io.EOF) {
 				slog.Debug("cloud OTLP SSE stream ended", "kind", kind)
