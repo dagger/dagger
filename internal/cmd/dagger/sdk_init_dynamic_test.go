@@ -189,19 +189,23 @@ func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported type for flag --settings")
 }
 
-func TestShouldRegisterSDKCommands(t *testing.T) {
+func TestSDKCommandRegistrationArgs(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		args []string
-		want bool
+		want []string
 	}{
-		{name: "sdk help", args: []string{"sdk", "--help"}, want: true},
-		{name: "sdk module init", args: []string{"sdk", "go", "module", "init", "myapp"}, want: true},
-		{name: "sdk client init", args: []string{"sdk", "typescript", "client", "init", "./client", "."}, want: true},
-		{name: "sdk search moved", args: []string{"search", "--sdk"}, want: false},
+		{name: "direct", args: []string{"sdk", "go", "module", "init", "myapp"}, want: []string{"sdk", "go", "module", "init", "myapp"}},
+		{name: "root help", args: []string{"help", "sdk", "go"}, want: []string{"sdk", "go"}},
+		{name: "completion", args: []string{cobra.ShellCompRequestCmd, "sdk", "go", ""}, want: []string{"sdk", "go", ""}},
+		{name: "completion without descriptions", args: []string{cobra.ShellCompNoDescRequestCmd, "sdk", ""}, want: []string{"sdk", ""}},
+		{name: "unrelated help", args: []string{"help", "workspace"}, want: nil},
+		{name: "sdk search moved", args: []string{"search", "--sdk"}, want: nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, shouldRegisterSDKCommands(tt.args))
+			got, ok := sdkCommandRegistrationArgs(tt.args)
+			require.Equal(t, tt.want != nil, ok)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
