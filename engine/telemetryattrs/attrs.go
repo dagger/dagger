@@ -1,10 +1,18 @@
 package telemetryattrs
 
+import (
+	"context"
+
+	"github.com/dagger/dagger/engine"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+)
+
 const (
 	// TelemetryOriginClientIDAttr records the immutable client identity captured
 	// from the emission context. Session-owned exporters use it to route each
-	// span and log to the origin client's DB and every validated ancestor DB.
-	// (string)
+	// span, log, and aggregated metric data point to the origin client's DB and
+	// every validated ancestor DB. (string)
 	TelemetryOriginClientIDAttr = "dagger.io/telemetry.origin_client_id"
 
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
@@ -343,3 +351,32 @@ const (
 	// simply not claimed here.
 	CacheOutputContentDigestAttr = "dagger.io/cache.output.content_digest"
 )
+
+// MetricAttributeSet attaches the immutable origin client identity to an
+// engine measurement before the OTel SDK aggregates it. The session metric
+// exporter can therefore split one shared aggregation back into the origin's
+// validated telemetry route. A scope identity takes precedence because it is a
+// sealed snapshot; metadata is retained as a fallback for bootstrap and tests.
+func MetricAttributeSet(ctx context.Context, attrs attribute.Set) metric.MeasurementOption {
+	origin := ""
+	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+		origin = scope.ClientID()
+	} else if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		origin = md.ClientID
+	}
+	if origin == "" {
+		return metric.WithAttributeSet(attrs)
+	}
+
+	filtered, _ := attrs.Filter(func(attr attribute.KeyValue) bool {
+		return string(attr.Key) != TelemetryOriginClientIDAttr
+	})
+	originAttrs := append(filtered.ToSlice(), attribute.String(TelemetryOriginClientIDAttr, origin))
+	return metric.WithAttributeSet(attribute.NewSet(originAttrs...))
+}
+
+// MetricAttributes is the variadic form of MetricAttributeSet.
+func MetricAttributes(ctx context.Context, attrs ...attribute.KeyValue) metric.MeasurementOption {
+	copied := append([]attribute.KeyValue(nil), attrs...)
+	return MetricAttributeSet(ctx, attribute.NewSet(copied...))
+}
