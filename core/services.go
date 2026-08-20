@@ -122,6 +122,7 @@ type RunningService struct {
 	refs                  []bkcache.Ref
 	resourceSnapshotCache bkcache.SnapshotManager
 	resourceLeaseID       string
+	clientScopeLease      *engine.ClientLifecycleLease
 
 	workspaceMu sync.Mutex
 
@@ -1040,8 +1041,11 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	svc.resourceSnapshotCache = nil
 	leaseID := svc.resourceLeaseID
 	svc.resourceLeaseID = ""
+	clientScopeLease := svc.clientScopeLease
+	svc.clientScopeLease = nil
 	svc.refsMu.Unlock()
 
+	clientScopeLease.Release()
 	var errs error
 	for _, ref := range refs {
 		errs = stderrors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
@@ -1216,7 +1220,18 @@ func (ss *Services) startWithKey(
 			}
 			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			suppress(running)
-			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+			svcBase, clientScopeLease, scopeErr := engine.DetachClientScope(
+				ctx,
+				engine.ClientLeaseService,
+				fmt.Sprintf("%s/%s/%s", key.Digest, key.Kind, key.InstanceID),
+			)
+			if scopeErr != nil {
+				ss.l.Unlock()
+				releaseSuppression()
+				return nil, nil, fmt.Errorf("acquire service client scope: %w", scopeErr)
+			}
+			running.clientScopeLease = clientScopeLease
+			svcCtx, cancel := context.WithCancelCause(svcBase)
 			var profOp *wcprof.Op
 			if wcprof.Enabled(svcCtx) {
 				svcCtx, profOp = wcprof.BeginOp(svcCtx, wcprof.OpKindServiceStart, "service.start", wcprof.OpOpts{
