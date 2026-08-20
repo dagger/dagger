@@ -76,5 +76,7 @@ func (CommandHintsSuite) TestSDKInstallAndDynamicCommands(ctx context.Context, t
 	require.Contains(t, string(infoOut), "sdk-name: go")
 	require.Contains(t, string(infoOut), "module-name: go-sdk")
 	require.Contains(t, string(infoOut), "module-source: github.com/dagger/go-sdk")
+	require.Contains(t, string(infoOut), "capabilities: module, client")
 	require.Contains(t, string(infoOut), "claimed-modules: 1")
+	require.Contains(t, string(infoOut), "claimed-clients: 1")
 }
