@@ -197,9 +197,10 @@ type daggerClient struct {
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
 
-	// if the client is a nested client, this is its ancestral clients,
-	// with the most recent parent last
-	parents []*daggerClient
+	// If the client is nested, parentClientIDs is its immutable ancestry from
+	// the session root to its direct parent. Keeping only IDs prevents a child
+	// runtime from retaining ancestor runtimes through lifecycle bookkeeping.
+	parentClientIDs []string
 
 	state   daggerClientState
 	stateMu sync.RWMutex
@@ -328,6 +329,102 @@ const (
 
 func (client *daggerClient) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
+}
+
+// parentClientIDsForRegistration validates a client's requested place in the
+// session graph and returns its immutable root-to-direct-parent ancestry. An
+// intentional root must be explicit; every nested client must name a live,
+// ancestry-consistent parent already published in this session.
+func (sess *daggerSession) parentClientIDsForRegistration(clientID, parentClientID string, root bool) ([]string, error) {
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+
+	var parentIDs []string
+	switch {
+	case root && parentClientID != "":
+		return nil, fmt.Errorf("root client %q cannot specify parent %q", clientID, parentClientID)
+	case root:
+		// Intentional roots have an explicitly empty route.
+	case parentClientID == "":
+		return nil, fmt.Errorf("nested client %q is missing parent client ID", clientID)
+	case parentClientID == clientID:
+		return nil, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", clientID)
+	default:
+		parent, ok := sess.clients[parentClientID]
+		if !ok {
+			return nil, fmt.Errorf("parent client %q not found for nested client %q", parentClientID, clientID)
+		}
+		parentIDs = append(slices.Clone(parent.parentClientIDs), parentClientID)
+	}
+
+	seen := map[string]struct{}{clientID: {}}
+	for i, ancestorID := range parentIDs {
+		if ancestorID == "" {
+			return nil, fmt.Errorf("client %q has empty ancestor at route index %d", clientID, i)
+		}
+		if _, ok := seen[ancestorID]; ok {
+			return nil, fmt.Errorf("client ancestry cycle: client %q reaches %q more than once", clientID, ancestorID)
+		}
+		seen[ancestorID] = struct{}{}
+
+		ancestor, ok := sess.clients[ancestorID]
+		if !ok {
+			return nil, fmt.Errorf("ancestor client %q not found for client %q", ancestorID, clientID)
+		}
+		if !slices.Equal(ancestor.parentClientIDs, parentIDs[:i]) {
+			return nil, fmt.Errorf("ancestor client %q has mismatched ancestry for client %q", ancestorID, clientID)
+		}
+	}
+
+	if existing, ok := sess.clients[clientID]; ok && !slices.Equal(existing.parentClientIDs, parentIDs) {
+		return nil, fmt.Errorf("client %q already exists with different parent ancestry", clientID)
+	}
+	return parentIDs, nil
+}
+
+// ancestorClients resolves the client's immutable ancestry in its historical
+// root-to-direct-parent order. Returned pointers are lookup results only; no
+// client stores them as lifecycle ownership edges.
+func (sess *daggerSession) ancestorClients(client *daggerClient) ([]*daggerClient, error) {
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+
+	ancestors := make([]*daggerClient, 0, len(client.parentClientIDs))
+	for _, parentID := range client.parentClientIDs {
+		parent, ok := sess.clients[parentID]
+		if !ok {
+			return nil, fmt.Errorf("ancestor client %q not found for client %q", parentID, client.clientID)
+		}
+		ancestors = append(ancestors, parent)
+	}
+	return ancestors, nil
+}
+
+// telemetryRouteClientIDs returns the exact nested-to-ancestor fan-out order:
+// the origin first, followed by ancestors from the root to the direct parent.
+func (sess *daggerSession) telemetryRouteClientIDs(client *daggerClient) ([]string, error) {
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+
+	route := make([]string, 0, len(client.parentClientIDs)+1)
+	route = append(route, client.clientID)
+	for _, parentID := range client.parentClientIDs {
+		if _, ok := sess.clients[parentID]; !ok {
+			return nil, fmt.Errorf("telemetry ancestor client %q not found for client %q", parentID, client.clientID)
+		}
+		route = append(route, parentID)
+	}
+	return route, nil
+}
+
+// telemetryDeliveryClientIDs preserves the delivery-domain key order used by
+// call-payload claims: ancestors root-to-direct, followed by the origin.
+func (sess *daggerSession) telemetryDeliveryClientIDs(client *daggerClient) ([]string, error) {
+	route, err := sess.telemetryRouteClientIDs(client)
+	if err != nil {
+		return nil, err
+	}
+	return append(slices.Clone(route[1:]), route[0]), nil
 }
 
 // NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
@@ -816,8 +913,13 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 type ClientInitOpts struct {
 	*engine.ClientMetadata
 
-	// If this is a nested client, the client ID of the caller that created it
-	CallerClientID string
+	// ParentClientID names the client that delegated reachability to this nested
+	// client. It is required for nested clients and forbidden for explicit roots.
+	ParentClientID string
+
+	// RootClient explicitly marks a session/root transport. Empty parent IDs do
+	// not implicitly create roots.
+	RootClient bool
 
 	// If set, host-backed services for this client may proxy through this
 	// ancestor when this client has no session attachables of its own.
@@ -956,9 +1058,14 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
+	telemetryRoute, err := client.daggerSession.telemetryRouteClientIDs(client)
+	if err != nil {
+		return fmt.Errorf("resolve telemetry route: %w", err)
+	}
+
 	// configure OTel providers that export to the per-client telemetry store
-	client.spanExporter = srv.telemetryPubSub.Spans(client)
-	logs := srv.telemetryPubSub.Logs(client)
+	client.spanExporter = srv.telemetryPubSub.Spans(client.clientID)
+	logs := srv.telemetryPubSub.Logs(client.clientID)
 	client.logExporter = logs
 
 	// All span/log destinations for this client: its own store plus every
@@ -969,11 +1076,11 @@ func (srv *Server) initializeDaggerClient(
 	// full bounded queue, so per-destination processors paid that fixed cost
 	// per (client, ancestor) pair — the engine's telemetry memory ceiling in a
 	// real OOM heap profile. See enginetel.NewSpanFanOutExporter.
-	spanDests := []sdktrace.SpanExporter{client.spanExporter}
-	logDests := []sdklog.Exporter{logs}
-	for _, parent := range client.parents {
-		spanDests = append(spanDests, srv.telemetryPubSub.Spans(parent))
-		logDests = append(logDests, srv.telemetryPubSub.Logs(parent))
+	spanDests := make([]sdktrace.SpanExporter, 0, len(telemetryRoute))
+	logDests := make([]sdklog.Exporter, 0, len(telemetryRoute))
+	for _, targetClientID := range telemetryRoute {
+		spanDests = append(spanDests, srv.telemetryPubSub.Spans(targetClientID))
+		logDests = append(logDests, srv.telemetryPubSub.Logs(targetClientID))
 	}
 
 	// Raise the per-span link cap well above the SDK default of 128. The wcprof
@@ -1035,7 +1142,7 @@ func (srv *Server) initializeDaggerClient(
 
 	const metricReaderInterval = 5 * time.Second
 
-	client.metricExporter = srv.telemetryPubSub.Metrics(client)
+	client.metricExporter = srv.telemetryPubSub.Metrics(client.clientID)
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
@@ -1048,10 +1155,10 @@ func (srv *Server) initializeDaggerClient(
 	// per destination: readers pull aggregated state on an interval and hold no
 	// per-record queue, so they are not part of the memory ceiling the span/log
 	// fan-out above addresses.
-	for _, parent := range client.parents {
+	for _, targetClientID := range telemetryRoute[1:] {
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
-				srv.telemetryPubSub.Metrics(parent),
+				srv.telemetryPubSub.Metrics(targetClientID),
 				sdkmetric.WithInterval(metricReaderInterval),
 			),
 		))
@@ -1086,8 +1193,12 @@ func (client *daggerClient) resolveHostServiceCaller(
 			return caller, nil
 		}
 
-		for i := len(client.parents) - 1; i >= 0; i-- {
-			parent := client.parents[i]
+		ancestors, err := client.daggerSession.ancestorClients(client)
+		if err != nil {
+			return nil, fmt.Errorf("resolve host service proxy ancestry: %w", err)
+		}
+		for i := len(ancestors) - 1; i >= 0; i-- {
+			parent := ancestors[i]
 			if parent.clientID == client.hostServiceProxyClientID {
 				return parent.getHostServiceCaller(ctx, parent.clientID)
 			}
@@ -1278,15 +1389,21 @@ func (srv *Server) getOrInitClient(
 	client, clientExists := sess.clients[clientID]
 	sess.clientMu.RUnlock()
 
+	parentClientIDs, err := sess.parentClientIDsForRegistration(clientID, opts.ParentClientID, opts.RootClient)
+	if err != nil {
+		return nil, nil, fmt.Errorf("validate client ancestry: %w", err)
+	}
+
 	if !clientExists {
 		client = &daggerClient{
-			state:          clientStateUninitialized,
-			daggerSession:  sess,
-			clientID:       clientID,
-			clientVersion:  opts.ClientVersion,
-			secretToken:    token,
-			shutdownCh:     make(chan struct{}),
-			clientMetadata: opts.ClientMetadata,
+			state:           clientStateUninitialized,
+			daggerSession:   sess,
+			clientID:        clientID,
+			clientVersion:   opts.ClientVersion,
+			secretToken:     token,
+			shutdownCh:      make(chan struct{}),
+			clientMetadata:  opts.ClientMetadata,
+			parentClientIDs: parentClientIDs,
 		}
 
 		// Open the store outside clientMu because replaying persisted streams can
@@ -1300,14 +1417,6 @@ func (srv *Server) getOrInitClient(
 		} else {
 			client.keepAliveTelemetryDB = db
 			failureCleanups.Add("close client telemetry DB", client.closeKeepAliveTelemetryDB)
-		}
-
-		sess.clientMu.RLock()
-		parent, parentExists := sess.clients[opts.CallerClientID]
-		sess.clientMu.RUnlock()
-		if parentExists {
-			client.parents = slices.Clone(parent.parents)
-			client.parents = append(client.parents, parent)
 		}
 	}
 
@@ -1481,6 +1590,7 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: clientMetadata,
+		RootClient:     true,
 	}).ServeHTTP(w, r)
 }
 
@@ -1529,7 +1639,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata:           clientMetadata,
-		CallerClientID:           callerClientID,
+		ParentClientID:           callerClientID,
 		HostServiceProxyClientID: hostServiceProxyClientID,
 		ModuleContext:            moduleContext,
 		FunctionCall:             fnCall,
@@ -1853,7 +1963,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		// stamp is only a running floor (it cannot see a whole trailing query drop or
 		// post-query async padding). It is declared ONCE, exactly, at session teardown
 		// (removeDaggerSession) on a carrier span parented at the ids recorded here.
-		if len(client.parents) == 0 {
+		if len(client.parentClientIDs) == 0 {
 			sess.wcprofTraceOnce.Do(func() {
 				sc := trace.SpanContextFromContext(ctx)
 				sess.wcprofTraceID = sc.TraceID()
@@ -2636,8 +2746,12 @@ func (srv *Server) ModuleParent(ctx context.Context) (dagql.ObjectResult[*core.M
 	if client.mod.Self() != nil {
 		return client.mod, nil
 	}
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
+	ancestors, err := client.daggerSession.ancestorClients(client)
+	if err != nil {
+		return zero, fmt.Errorf("resolve module parent ancestry: %w", err)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		parent := ancestors[i]
 		if parent.mod.Self() != nil {
 			return parent.mod, nil
 		}
@@ -2766,8 +2880,12 @@ func (srv *Server) nonModuleParentClient(ctx context.Context) (*daggerClient, er
 		// not a module client, return the current client
 		return client, nil
 	}
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
+	ancestors, err := client.daggerSession.ancestorClients(client)
+	if err != nil {
+		return nil, fmt.Errorf("resolve non-module parent ancestry: %w", err)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		parent := ancestors[i]
 		if parent.mod.Self() == nil {
 			// not a module client: match
 			return parent, nil
@@ -2823,11 +2941,10 @@ func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.Telemetry
 	if err != nil {
 		return nil, err
 	}
-	targets := make([]string, 0, len(client.parents)+1)
-	for _, parent := range client.parents {
-		targets = append(targets, parent.clientID)
+	targets, err := client.daggerSession.telemetryDeliveryClientIDs(client)
+	if err != nil {
+		return nil, fmt.Errorf("resolve call payload delivery route: %w", err)
 	}
-	targets = append(targets, client.clientID)
 	return &callPayloadDeliveryStore{
 		session: client.daggerSession,
 		targets: targets,

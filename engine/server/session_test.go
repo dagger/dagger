@@ -50,9 +50,9 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 		},
 	}
 	child := &daggerClient{
-		clientID: "child",
-		state:    clientStateInitialized,
-		parents:  []*daggerClient{parent},
+		clientID:        "child",
+		state:           clientStateInitialized,
+		parentClientIDs: []string{"parent"},
 	}
 	sess := &daggerSession{
 		sessionID: "session",
@@ -89,6 +89,143 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 		gotParent.RetentionReasons[1].Kind,
 		gotParent.RetentionReasons[2].Kind,
 	})
+}
+
+func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
+	t.Parallel()
+
+	root := &daggerClient{clientID: "root"}
+	parent := &daggerClient{clientID: "parent", parentClientIDs: []string{"root"}}
+	child := &daggerClient{clientID: "child", parentClientIDs: []string{"root", "parent"}}
+	sess := &daggerSession{clients: map[string]*daggerClient{
+		root.clientID:   root,
+		parent.clientID: parent,
+		child.clientID:  child,
+	}}
+	for _, client := range sess.clients {
+		client.daggerSession = sess
+	}
+
+	ancestors, err := sess.ancestorClients(child)
+	require.NoError(t, err)
+	require.Equal(t, []string{"root", "parent"}, []string{ancestors[0].clientID, ancestors[1].clientID})
+
+	route, err := sess.telemetryRouteClientIDs(child)
+	require.NoError(t, err)
+	require.Equal(t, []string{"child", "root", "parent"}, route,
+		"telemetry must preserve origin-first, root-to-direct-parent fan-out")
+
+	delivery, err := sess.telemetryDeliveryClientIDs(child)
+	require.NoError(t, err)
+	require.Equal(t, []string{"root", "parent", "child"}, delivery,
+		"call-payload claims retain their historical ancestor-first ordering")
+
+	route[1] = "mutated"
+	require.Equal(t, []string{"root", "parent"}, child.parentClientIDs,
+		"returned routes must not alias immutable client ancestry")
+}
+
+func TestClientRegistrationRequiresValidExplicitAncestry(t *testing.T) {
+	t.Parallel()
+
+	root := &daggerClient{clientID: "root"}
+	otherRoot := &daggerClient{clientID: "other-root"}
+	child := &daggerClient{clientID: "child", parentClientIDs: []string{"root"}}
+	sess := &daggerSession{clients: map[string]*daggerClient{
+		root.clientID:      root,
+		otherRoot.clientID: otherRoot,
+		child.clientID:     child,
+	}}
+
+	parentIDs, err := sess.parentClientIDsForRegistration("new-root", "", true)
+	require.NoError(t, err)
+	require.Empty(t, parentIDs)
+
+	_, err = sess.parentClientIDsForRegistration("implicit-root", "", false)
+	require.ErrorContains(t, err, "missing parent client ID")
+
+	_, err = sess.parentClientIDsForRegistration("nested", "missing", false)
+	require.ErrorContains(t, err, `parent client "missing" not found`)
+
+	_, err = sess.parentClientIDsForRegistration("cycle", "cycle", false)
+	require.ErrorContains(t, err, "ancestry cycle")
+
+	_, err = sess.parentClientIDsForRegistration("child", "other-root", false)
+	require.ErrorContains(t, err, "different parent ancestry")
+
+	_, err = sess.parentClientIDsForRegistration("child", "", true)
+	require.ErrorContains(t, err, "different parent ancestry")
+}
+
+func TestClientRegistrationRejectsInvalidParentRoute(t *testing.T) {
+	t.Parallel()
+
+	root := &daggerClient{clientID: "root"}
+	broken := &daggerClient{clientID: "broken", parentClientIDs: []string{"missing"}}
+	sess := &daggerSession{clients: map[string]*daggerClient{
+		root.clientID:   root,
+		broken.clientID: broken,
+	}}
+
+	_, err := sess.parentClientIDsForRegistration("child", "broken", false)
+	require.ErrorContains(t, err, `ancestor client "missing" not found`)
+
+	broken.parentClientIDs = []string{"root", "root"}
+	_, err = sess.parentClientIDsForRegistration("child", "broken", false)
+	require.ErrorContains(t, err, "reaches \"root\" more than once")
+}
+
+func TestLifecycleDebugAndRouteLookupConcurrentClientMutation(t *testing.T) {
+	t.Parallel()
+
+	root := &daggerClient{clientID: "root", state: clientStateInitialized}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: root.clientID,
+		clients:            map[string]*daggerClient{root.clientID: root},
+	}
+	root.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			child := &daggerClient{
+				clientID:        "transient",
+				state:           clientStateInitialized,
+				daggerSession:   sess,
+				parentClientIDs: []string{root.clientID},
+			}
+			sess.clientMu.Lock()
+			sess.clients[child.clientID] = child
+			sess.clientMu.Unlock()
+			_, _ = sess.telemetryRouteClientIDs(child)
+			sess.clientMu.Lock()
+			delete(sess.clients, child.clientID)
+			sess.clientMu.Unlock()
+		}
+	}()
+
+	for range 1000 {
+		snapshot := srv.ClientLifecycleDebugSnapshot()
+		require.Len(t, snapshot.Sessions, 1)
+		got, err := srv.clientFromIDs(sess.sessionID, root.clientID)
+		require.NoError(t, err)
+		route, err := sess.telemetryRouteClientIDs(got)
+		require.NoError(t, err)
+		require.Equal(t, []string{root.clientID}, route)
+	}
+	cancel()
+	wg.Wait()
 }
 
 type fakeSessionCaller struct {
@@ -1784,11 +1921,19 @@ func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
 	}
 
 	parent := &daggerClient{
+		clientID:  "parent-client",
 		workspace: bound,
 	}
 	child := &daggerClient{
-		parents: []*daggerClient{parent},
+		clientID:        "child-client",
+		parentClientIDs: []string{parent.clientID},
 	}
+	sess := &daggerSession{clients: map[string]*daggerClient{
+		parent.clientID: parent,
+		child.clientID:  child,
+	}}
+	parent.daggerSession = sess
+	child.daggerSession = sess
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, bound, child.workspace)
@@ -1806,11 +1951,13 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	}
 
 	parent := &daggerClient{
+		clientID:  "parent-client",
 		workspace: parentBound,
 	}
 	child := &daggerClient{
-		workspace: existing,
-		parents:   []*daggerClient{parent},
+		clientID:        "child-client",
+		workspace:       existing,
+		parentClientIDs: []string{parent.clientID},
 	}
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
@@ -1830,10 +1977,16 @@ func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *te
 	child := &daggerClient{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
-		parents:                  []*daggerClient{parent},
+		parentClientIDs:          []string{parent.clientID},
 	}
 
-	child.daggerSession = &daggerSession{attachables: newSessionAttachableManager()}
+	child.daggerSession = &daggerSession{
+		attachables: newSessionAttachableManager(),
+		clients: map[string]*daggerClient{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+	}
 
 	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
@@ -1858,8 +2011,14 @@ func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 	child := &daggerClient{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
-		parents:                  []*daggerClient{parent},
-		daggerSession:            &daggerSession{attachables: attachables},
+		parentClientIDs:          []string{parent.clientID},
+	}
+	child.daggerSession = &daggerSession{
+		attachables: attachables,
+		clients: map[string]*daggerClient{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
 	}
 
 	caller, err := child.resolveHostServiceCaller(context.Background(), "child")

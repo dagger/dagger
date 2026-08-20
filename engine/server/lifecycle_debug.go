@@ -88,10 +88,10 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 		}
 		sess.clientMu.RUnlock()
 
-		descendants := make(map[*daggerClient]int, len(clients))
+		descendants := make(map[string]int, len(clients))
 		for _, client := range clients {
-			for _, parent := range client.parents {
-				descendants[parent]++
+			for _, parentID := range client.parentClientIDs {
+				descendants[parentID]++
 			}
 		}
 
@@ -107,9 +107,7 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 			keepAliveDB := client.keepAliveTelemetryDB != nil
 			client.stateMu.RUnlock()
 
-			for _, parent := range client.parents {
-				clientOut.ParentIDs = append(clientOut.ParentIDs, parent.clientID)
-			}
+			clientOut.ParentIDs = append(clientOut.ParentIDs, client.parentClientIDs...)
 
 			if shutdownAt.IsZero() {
 				clientOut.RecordState = "open-or-unobserved"
@@ -142,7 +140,7 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 					Count:   clientOut.ActiveRequests,
 				})
 			}
-			if n := descendants[client]; n > 0 {
+			if n := descendants[client.clientID]; n > 0 {
 				clientOut.RetentionReasons = append(clientOut.RetentionReasons, LifecycleRetentionReason{
 					Kind:    "descendant",
 					OwnerID: client.clientID,
