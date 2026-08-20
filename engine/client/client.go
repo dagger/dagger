@@ -939,13 +939,26 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 		return fmt.Errorf("connect to SSE: %w", err)
 	}
 
+	var closeOnce sync.Once
+	closeSSE := func() {
+		closeOnce.Do(func() {
+			_ = sseConn.Close()
+		})
+	}
+	stopClose := context.AfterFunc(ctx, closeSSE)
+
 	c.eg.Go(func() error {
-		defer sseConn.Close()
+		defer func() {
+			stopClose()
+			closeSSE()
+		}()
 
 		for {
 			event, err := sseConn.Next()
 			if err != nil {
-				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				if errors.Is(err, io.EOF) ||
+					errors.Is(err, context.Canceled) ||
+					errors.Is(err, sse.ErrSourceClosed) {
 					return nil
 				}
 				return fmt.Errorf("decode: %w", err)
