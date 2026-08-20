@@ -158,11 +158,71 @@ func statuses(picks []commitPickSnapshot) []dagger.WorkspaceCommitPickStatus {
 	return out
 }
 
+// TestWorkspaceCommitsFromRawGitRef exercises staging and replay directly on
+// ordinary GitRef-backed workspaces. The source ref stays the base HEAD until a
+// virtual commit is staged; after that the staged repository takes precedence
+// for HEAD while the workspace tree and uncommitted remainder stay accurate.
+func (WorkspaceSuite) TestWorkspaceCommitsFromRawGitRef(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("a.txt", "a1\n"))
+	ref := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
+	baseSHA, err := ref.CommitSHA(ctx)
+	require.NoError(t, err)
+
+	base := ref.AsWorkspace()
+	ordinaryHead, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, ordinaryHead)
+	_, err = base.Git().Push(ctx)
+	require.ErrorContains(t, err, "cannot push: cannot export a remote Git workspace")
+
+	source := base.
+		WithNewFile("worker.txt", "from the worker\n").
+		WithNewFile("pending.txt", "leave me pending\n").
+		WithCommit("worker work", commitTestDate, dagger.WorkspaceWithCommitOpts{
+			Paths: []string{"worker.txt"},
+		})
+
+	sourceStaged := stagedCommitsOf(ctx, t, source)
+	require.Len(t, sourceStaged, 1)
+	require.NotEqual(t, baseSHA, sourceStaged[0].SHA)
+	sourceHead, err := source.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sourceStaged[0].SHA, sourceHead)
+	workerContents, err := source.File("worker.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from the worker\n", workerContents)
+	pendingContents, err := source.File("pending.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "leave me pending\n", pendingContents)
+	sourcePending, err := source.Git().Uncommitted().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"pending.txt"}, sourcePending)
+
+	plan := planCommitsFrom(ctx, t, base, source)
+	require.Len(t, plan, 1)
+	require.Equal(t, dagger.WorkspaceCommitPickStatusPickable, plan[0].Status)
+	require.Equal(t, dagger.WorkspaceCommitPickReasonNone, plan[0].Reason)
+
+	applied := base.WithCommitsFrom(source)
+	appliedStaged := stagedCommitsOf(ctx, t, applied)
+	require.Len(t, appliedStaged, 1)
+	require.Equal(t, sourceStaged[0].SHA, appliedStaged[0].Origin)
+	appliedHead, err := applied.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, appliedStaged[0].SHA, appliedHead)
+	appliedContents, err := applied.File("worker.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from the worker\n", appliedContents)
+	appliedEmpty, err := applied.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, appliedEmpty)
+}
+
 // TestWorkspaceCommitsFromPortableGitCheckpoint covers the receiver shape used
 // by portable workspace checkpointing: a pinned, remote-backed Git workspace
-// marked as a portable value. Both planning and replay must be able to stage the
-// worker's virtual commit on top of that value without making ordinary mutable
-// remote workspaces committable.
+// with captured metadata. Planning and replay must preserve the same behavior
+// as the ordinary GitRef-backed value tested above.
 func (WorkspaceSuite) TestWorkspaceCommitsFromPortableGitCheckpoint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("a.txt", "a1\n"))

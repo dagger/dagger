@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -13,25 +14,25 @@ func TestWorkspaceCheckpointMetadataPersists(t *testing.T) {
 
 	ws := &Workspace{}
 	ws.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
-	ws.SetPortableCheckpoint()
 	ws.SetWorkspaceEnv("dev")
 	ws.SetGitOrigin("git@github.com:acme/repo.git")
 
 	clone := ws.Clone()
-	require.True(t, clone.IsPortableCheckpoint())
 	require.Equal(t, "dev", clone.WorkspaceEnv())
 	require.Equal(t, "github.com/acme/repo", clone.GitOrigin())
 
 	encoded, err := clone.EncodePersistedObject(context.Background(), nil)
 	require.NoError(t, err)
-	require.Contains(t, string(encoded.JSON), `"portableCheckpoint":true`)
+	require.NotContains(t, string(encoded.JSON), `"portableCheckpoint"`)
 	require.Contains(t, string(encoded.JSON), `"workspaceEnv":"dev"`)
 	require.Contains(t, string(encoded.JSON), `"gitOrigin":"github.com/acme/repo"`)
 
-	decoded, err := (&Workspace{}).DecodePersistedObject(context.Background(), nil, 0, nil, encoded.JSON)
+	// Older saved sessions may still carry the retired classification. Unknown
+	// payload fields are ignored so those sessions remain decodable.
+	legacyJSON := []byte(strings.Replace(string(encoded.JSON), "{", `{"portableCheckpoint":true,`, 1))
+	decoded, err := (&Workspace{}).DecodePersistedObject(context.Background(), nil, 0, nil, legacyJSON)
 	require.NoError(t, err)
 	workspace := decoded.(*Workspace)
-	require.True(t, workspace.IsPortableCheckpoint())
 	require.Equal(t, "dev", workspace.WorkspaceEnv())
 	require.Equal(t, "github.com/acme/repo", workspace.GitOrigin())
 }
@@ -46,9 +47,13 @@ func TestWorkspaceExportTargetValidation(t *testing.T) {
 
 	value := &Workspace{}
 	value.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
-	value.SetPortableCheckpoint()
 	_, _, err := value.ExportTarget(ctx)
 	require.ErrorContains(t, err, "cannot export a synthetic workspace")
+
+	remote := &Workspace{}
+	remote.SetSource(NewWorkspaceSourceGitRef(dagql.Result[*GitRef]{}, false))
+	_, _, err = remote.ExportTarget(ctx)
+	require.ErrorContains(t, err, "cannot export a remote Git workspace")
 
 	local := &Workspace{ClientID: "local-client"}
 	local.SetSource(NewWorkspaceSourceClientLocal("/work"))

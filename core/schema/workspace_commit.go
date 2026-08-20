@@ -161,9 +161,6 @@ func (s *workspaceSchema) stageCommit(
 	if args.Date == "" {
 		return inst, fmt.Errorf("withCommit: date is required")
 	}
-	if _, ok := ws.SourceGitRef(); ok && !ws.IsPortableCheckpoint() {
-		return inst, fmt.Errorf("withCommit: cannot stage a commit on a remote git workspace")
-	}
 	// Before anything is written into history — including the replay path, which
 	// reaches this through __withReplayedCommit and is how one workspace's
 	// mistake crosses into another's.
@@ -745,9 +742,9 @@ func (s *workspaceSchema) scopeChangesetToPaths(
 // workspaceCommitBaseRepo returns the repository tree the next staged commit
 // builds on. Once commits are staged, that is the newest staged tree — its .git
 // already holds the whole stack. Otherwise it is the workspace's own repository
-// tree. A portable GitRef-backed checkpoint resolves that ref with its .git
-// directory intact; a host workspace reconstructs .git canonically from the
-// client's own git pack (worktree/submodule checkouts included), as
+// tree. A GitRef-backed workspace resolves that ref with its .git directory
+// intact; a host workspace reconstructs .git canonically from the client's own
+// git pack (worktree/submodule checkouts included), as
 // Workspace.git.__repository does.
 func (s *workspaceSchema) workspaceCommitBaseRepo(
 	ctx context.Context,
@@ -756,7 +753,7 @@ func (s *workspaceSchema) workspaceCommitBaseRepo(
 	if latest, ok := ws.LatestPendingCommit(); ok && latest.Repo.Self() != nil {
 		return latest.Repo, nil
 	}
-	if ref, ok := ws.SourceGitRef(); ok && ws.IsPortableCheckpoint() {
+	if ref, ok := ws.SourceGitRef(); ok {
 		srv, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
 			return dir, err

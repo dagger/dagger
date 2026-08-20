@@ -977,7 +977,6 @@ func checkpointWorkspaceMetadataComposition(
 	}); err != nil {
 		return inst, err
 	}
-	withAuthor.Self().SetPortableCheckpoint()
 	return withAuthor, nil
 }
 
