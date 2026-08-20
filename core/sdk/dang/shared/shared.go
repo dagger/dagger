@@ -46,11 +46,17 @@ func WithNestedClientServer(
 	}
 	defer l.Close()
 
+	transport, err := query.RegisterNestedClientTransport(ctx, nestedClientMetadata, callerClientID)
+	if err != nil {
+		return nil, fmt.Errorf("register nested client transport: %w", err)
+	}
+	defer transport.Close()
+
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall)
+			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall)
 		}),
 	}
 	defer func() {

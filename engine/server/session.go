@@ -84,8 +84,9 @@ type daggerSession struct {
 
 	// scopeMu is the single serialization point for client lifecycle lease
 	// acquisition, release, closing, and session teardown.
-	scopeMu     sync.Mutex
-	nextScopeID uint64
+	scopeMu        sync.Mutex
+	nextScopeID    uint64
+	scopeAuthority *engine.ClientScopeAuthority
 
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
@@ -221,9 +222,11 @@ type daggerClient struct {
 	// Runtime reclamation is intentionally not enabled yet: leases make
 	// retention explicit without treating a zero count as proof that cold
 	// capabilities are independent of this runtime.
-	accepting       bool
-	lifecycleLeases map[uint64]clientLifecycleLeaseRecord
-	transportLease  *engine.ClientLifecycleLease
+	accepting              bool
+	lifecycleLeases        map[uint64]clientLifecycleLeaseRecord
+	transportLease         *engine.ClientLifecycleLease
+	nestedTransport        *engine.NestedClientTransport
+	parentClientScopeLease *engine.ClientLifecycleLease
 
 	state   daggerClientState
 	stateMu sync.RWMutex
@@ -959,6 +962,10 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 type ClientInitOpts struct {
 	*engine.ClientMetadata
 
+	// NestedTransport proves that a nested proxy was explicitly registered
+	// before serving. It is nil only for intentional root transports.
+	NestedTransport *engine.NestedClientTransport
+
 	// ParentClientID names the client that delegated reachability to this nested
 	// client. It is required for nested clients and forbidden for explicit roots.
 	ParentClientID string
@@ -1381,6 +1388,27 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, fmt.Errorf("validate client ancestry: %w", err)
 	}
 
+	// Nested clients must already have an explicitly registered transport. Hold
+	// scopeMu across first-request initialization so transport close linearizes
+	// wholly before or after it; once close wins, initialization cannot publish
+	// an accepting runtime afterward.
+	if !opts.RootClient {
+		if opts.NestedTransport == nil {
+			return nil, nil, fmt.Errorf("nested client %q has no registered transport handle", clientID)
+		}
+		if !clientExists {
+			return nil, nil, fmt.Errorf("nested client %q transport is not registered", clientID)
+		}
+		sess.scopeMu.Lock()
+		defer sess.scopeMu.Unlock()
+		if client.nestedTransport != opts.NestedTransport {
+			return nil, nil, fmt.Errorf("nested client %q transport ownership does not match", clientID)
+		}
+		if !client.accepting || client.transportLease == nil || !client.transportLease.Held() {
+			return nil, nil, fmt.Errorf("nested client %q transport is closed", clientID)
+		}
+	}
+
 	if !clientExists {
 		client = &daggerClient{
 			state:           clientStateUninitialized,
@@ -1400,19 +1428,32 @@ func (srv *Server) getOrInitClient(
 	defer client.stateMu.Unlock()
 	switch client.state {
 	case clientStateUninitialized:
+		if clientExists {
+			if token != client.secretToken {
+				return nil, nil, fmt.Errorf("client %q registered with different secret token", clientID)
+			}
+			// The registered bootstrap snapshot supplies identity and ancestry;
+			// adjacent first-request metadata may still complete the runtime before
+			// the metadata-sealing seam is implemented.
+			client.clientMetadata = opts.ClientMetadata
+			client.clientVersion = opts.ClientVersion
+		}
 		if err := srv.initializeDaggerClient(ctx, client, opts); err != nil {
 			return nil, nil, fmt.Errorf("initialize client: %w", err)
 		}
-		// Publish the initialized runtime before acquiring its reachability
-		// lease; lifecycleMu prevents another request from observing the gap.
-		sess.clientMu.Lock()
-		sess.clients[clientID] = client
-		sess.clientMu.Unlock()
-		transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, clientID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("acquire client transport scope: %w", err)
+		if opts.RootClient {
+			// Root runtimes are published and gain reachability on their first
+			// request. Nested records were already published atomically by explicit
+			// transport registration and retain that exact transport lease.
+			sess.clientMu.Lock()
+			sess.clients[clientID] = client
+			sess.clientMu.Unlock()
+			transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, clientID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("acquire client transport scope: %w", err)
+			}
+			client.transportLease = transportScope.Lease()
 		}
-		client.transportLease = transportScope.Lease()
 	case clientStateInitialized:
 		// verify token matches existing client
 		if token != client.secretToken {
@@ -1467,6 +1508,14 @@ func (srv *Server) getOrInitClient(
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
 		}
+	}
+
+	if opts.NestedTransport != nil && opts.NestedTransport.Closed() {
+		// Close marks the opaque handle before waiting for scopeMu. Detect a close
+		// that began while first-request initialization held scopeMu, and never
+		// return that initialized runtime as accepting.
+		client.accepting = false
+		return nil, nil, fmt.Errorf("nested client %q transport closed during initialization", clientID)
 	}
 
 	// increment the number of active connections from this client
@@ -1580,12 +1629,28 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) ServeHTTPToNestedClient(
 	w http.ResponseWriter,
 	r *http.Request,
+	transport *engine.NestedClientTransport,
 	nestedClientMetadata *engine.ClientMetadata,
 	callerClientID string,
 	hostServiceProxyToCaller bool,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
 ) {
+	if transport == nil {
+		http.Error(w, "nested client transport is not registered", http.StatusServiceUnavailable)
+		return
+	}
+	if transport.Closed() {
+		if r.URL.Path == engine.ShutdownEndpoint {
+			// /shutdown is an additional idempotent close signal. Proxy cleanup
+			// may have won first, so acknowledge retries without reopening or
+			// looking up the permanently closed client record.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "nested client transport is closed", http.StatusServiceUnavailable)
+		return
+	}
 	if nestedClientMetadata == nil {
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
 		return
@@ -1621,6 +1686,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata:           clientMetadata,
+		NestedTransport:          transport,
 		ParentClientID:           callerClientID,
 		HostServiceProxyClientID: hostServiceProxyClientID,
 		ModuleContext:            moduleContext,
@@ -2166,8 +2232,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 	client.stateMu.Unlock()
 	// Reachability closes independently from this accepted shutdown request.
-	// Its request scope remains held and may still delegate cleanup work.
-	sess.closeClientScope(client)
+	// Its request scope remains held and may still delegate cleanup work. A
+	// nested /shutdown is an additional idempotent signal to the proxy-owned
+	// registration handle; intentional roots close their direct transport.
+	if client.nestedTransport != nil {
+		client.nestedTransport.Close()
+	} else {
+		sess.closeClientScope(client)
+	}
 	shutdownStart := time.Now()
 	defer func() {
 		slog.Info("client shutdown done", "duration", time.Since(shutdownStart), "error", shutdownErr)
