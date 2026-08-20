@@ -9,8 +9,8 @@ Builds on [host-git-reconstruction.md](host-git-reconstruction.md),
 [resume-from-trace.md](resume-from-trace.md).
 
 Status: **implementation in progress**. Part I describes the end state; Part II
-tracks the transition from the current implementation. Phases 1 through 4 are
-complete; phase 5 is next.
+tracks the transition from the current implementation. Phases 1 through 5 are
+complete; phase 6 is next.
 
 ---
 
@@ -512,21 +512,31 @@ evaluating the recipe, never additional restore inputs.
 
 ## 8. Save and publication
 
-Checkpoint has no remote write, and the frozen recipe has no host path. In the
-originating live session only, the capture path retains the source client and
-checkout as an ephemeral export target *outside* the recipe and persisted
-payload, so explicit save can reconcile agent commits back to the checkout
-that was captured.
+Checkpoint has no remote write, and the frozen recipe has no host path. Saving
+therefore names its destination explicitly:
 
-That retention is session state keyed by the frozen chain's final call digest,
-which the reconstructed Workspace and its derived values already carry as
-ordinary recipe identity. It is not a field on the Workspace value: the value
-belongs to a pure recipe shared by every session that resolves it, so a target
-stored on it would leak into warm cross-session restores. A cold-restored
-workspace has no retained route, and no-argument `Workspace.export` must fail
-rather than guess a destination.
+```graphql
+extend type Workspace {
+  "Write this workspace's pending changes to a local Git workspace."
+  export(to: ID @expectedType(name: "Workspace")): Void
+}
+```
 
-Saving is a separate, explicit reconciliation with a selected target:
+The result is nullable `Void`; the optional `to` argument is gated after
+`v1.0.0-beta.10` and appears in the generated Go SDK as
+`WorkspaceExportOpts.To`. The source Workspace supplies the pending commits,
+uncommitted changes, cache-mount writes, and reconciliation metadata. `to`
+supplies only the client route and local checkout; it does not enter the source
+value, recipe, or persisted payload. The target must be a client-local Git
+workspace and is validated before any commit, overlay, or cache-volume side
+effect. Omitting `to` keeps the existing ergonomic behavior for a client-local
+Workspace, while every value, remote, synthetic, or rootless source fails rather
+than guessing a destination. The agent CLI retains its ordinary
+`currentWorkspace` handle outside the frozen LLM binding and passes it as `to`
+on save. A cold-restored conversation can do the same when its new session has
+an eligible local checkout.
+
+Saving is a separate, explicit reconciliation with the selected target:
 
 ```text
 saved live checkout = selected target checkout
@@ -634,35 +644,38 @@ Additional coverage:
 
 ## 11. What exists now
 
-The tree contains a working spike that proved cold recipe reconstruction with
-a different payload format and API (the intermediate single-bundle/sole-ref
-redesign was documented but never implemented; the transition below starts
-from the code, not from that document):
+Before this transition, the tree contained a working spike that proved cold
+recipe reconstruction with a different payload format and API (the intermediate
+single-bundle/sole-ref redesign was documented but never implemented; the
+transition below starts from that code, not from that document):
 
 - **Public:** `Workspace.checkpoint(include, exclude, max*)` — the right
   entry-point shape, kept by this design. Its resolver already implements the
   return-pure-selection-verbatim identity discipline and already builds its
   base by selecting public `git(url)`.
-- **Internal API to be replaced:** `_workspaceCheckpointChunk` (chunked
+- **Internal API deleted by phase 5:** `_workspaceCheckpointChunk` (chunked
   `DigestedSerializedString` payload carriage), `_workspaceFromGitCheckpoint`
   (internal constructor taking base + JSON manifest + chunk IDs),
   `Directory.__withWorkspaceCheckpointBundle` and
   `Directory.__withWorkspaceCheckpointWorktree` (two-payload import: commit
   bundle plus separate worktree delta), `core.WorkspaceCheckpointChunk` (+ its
   ID in `core/ids.go`), and the versioned
-  `core.WorkspaceGitCheckpointManifest`.
-- **Mechanics to keep and refactor:** `MaterializeGitCheckpointBundle` and the
-  canonical-repository patterns in `core/git_hostdir.go` (they become
-  `withBundle`'s implementation); the client-side capture, preflight, and
-  approval loop in `engine/session/git/` and the CLI
-  (`GitCaptureApprovalError` → prompt → retry); origin retention
-  (`RetainWorkspaceCheckpointOrigin`, `engine/server/session_workspaces.go`);
-  `ValidateWorkspaceGitCheckpointHistory` (its graph checks survive; its
-  manifest inputs do not).
-- **Known gaps the spike carries:** telemetry renderers
-  (`dagql/dagui/extract.go`, `grep.go`) still display embedded
-  `DigestedSerializedString` values; chunk sizing lives in the core schema;
-  the worktree delta is a bespoke patch payload rather than Git objects.
+  `core.WorkspaceGitCheckpointManifest`. The associated payload assembly,
+  manifest validation, `MaterializeGitCheckpointBundle`,
+  `MaterializeGitCheckpointWorktree`, `WorkspaceGitTreeHash`, and
+  `ValidateWorkspaceGitCheckpointHistory` helpers are gone too.
+- **Transitional save routing deleted by phase 5:** the private checkpoint ID
+  and the session-scoped retain/lookup hooks in `engine/server` no longer infer
+  a destination from recipe identity. `Workspace.export(to:)` is the only route
+  from a value workspace to a checkout.
+- **Mechanics retained and refactored:** canonical-repository patterns in
+  `core/git_hostdir.go` informed `withBundle`'s implementation; the client-side
+  capture, preflight, and approval loop in `engine/session/git/` and the CLI
+  (`GitCaptureApprovalError` → prompt → retry) remain.
+- **Gaps closed by phases 1 and 3:** telemetry renderers
+  (`dagql/dagui/extract.go`, `grep.go`) render inline bytes opaquely, payload
+  carriage is generic call data rather than schema chunks, and the worktree
+  delta is represented by Git objects in the two-ref bundle.
 
 ## 12. Transition steps
 
@@ -692,37 +705,42 @@ deletes it.
    dispatch from the agent binder into the resolver so `checkpoint` is total,
    idempotent, and owner-gated; reduce the binder to an ordinary
    `checkpoint()` caller.
-4. **Delete the spike surface.** Remove `_workspaceCheckpointChunk`,
-   `_workspaceFromGitCheckpoint`, `__withWorkspaceCheckpointBundle`,
-   `__withWorkspaceCheckpointWorktree`, `WorkspaceCheckpointChunk` and its ID
-   type, `WorkspaceGitCheckpointManifest`, and the manifest halves of
-   `ValidateWorkspaceGitCheckpointHistory`. Regenerate SDKs and docs. No
-   deprecation window is needed: the spike shipped behind a dev view and the
-   checkpoint field's signature does not change.
+4. **Delete the spike and transitional save route.** Remove
+   `_workspaceCheckpointChunk`, `_workspaceFromGitCheckpoint`,
+   `__withWorkspaceCheckpointBundle`, `__withWorkspaceCheckpointWorktree`,
+   `WorkspaceCheckpointChunk` and its ID type,
+   `WorkspaceGitCheckpointManifest`, `ValidateWorkspaceGitCheckpointHistory`,
+   and the legacy payload/materialization helpers. Add the optional
+   `Workspace.export(to:)` target, delete the private checkpoint ID and
+   session-scoped origin retention, and make agent saves pass
+   `currentWorkspace`. Regenerate affected SDK artifacts. No deprecation window
+   is needed: the spike shipped behind a dev view and the checkpoint field's
+   signature does not change.
 5. **Validation and scale.** Land the §10 suite (headline cold-restore test
    first), then the monorepo measurements of §9. Compaction and the remaining
    §9 follow-ups stay deferred until measurements demand them.
 
 Step 1 gates step 3 (the chain embeds an inline File) but not step 2
-(engine-side bundles never inline client bytes). Steps 2 and 3 together are
-the bulk; step 4 is mechanical.
+(engine-side bundles never inline client bytes). Steps 2 and 3 are the bulk;
+step 4 completes the cut-over by removing the spike and replacing its
+transitional save route.
 
 ## 13. Code map
 
-- Checkpoint field and resolver: `core/schema/workspace.go`
+- Checkpoint and export fields/resolvers: `core/schema/workspace.go`
 - Agent binding: `internal/cmd/dagger/agent.go`
+- Agent save/export target: `internal/cmd/dagger/session_agent.go`
 - Workspace sources, overlays, persistence, pending state: `core/workspace.go`
 - `withCommit` and staged bundle export: `core/schema/workspace_commit.go`,
   `core/workspace_commit.go`
 - Host Git discovery/capture/approval: `engine/session/git/git_capture.go`,
   `engine/session/git/git_pack.go`, `engine/session/git/git_worktree.go`
-- Canonical host-Git and legacy checkpoint reconstruction: `core/git_hostdir.go`
+- Canonical host-Git reconstruction: `core/git_hostdir.go`
 - Public bundle parsing, validation, creation, and import: `core/git_bundle.go`
 - Public bundle schema: `core/schema/git.go`, `core/schema/file.go`
 - Remote Git backing and mirrors: `core/git_remote.go`,
   `core/git_remote_mirror.go`
 - Inline File values: `core/schema/file.go`, `core/file.go`
-- Origin retention: `engine/server/session_workspaces.go`
 - Portable LLM recipe flattening: `core/llm.go`
 - Call-frame redaction and recipe rebuilding: `dagql/result_call_frame.go`,
   `dagql/call/id.go`
@@ -776,12 +794,25 @@ leave the tree working and land as its own scoped commit(s).
   engine integration coverage for local history/worktree reconstruction and
   export, replayable pass-through, non-replayable diagnostics, owner rejection,
   and GitRef module/agent loading passed.
-- [ ] **Phase 5 — explicit export target and spike deletion.** Add an optional
-  `Workspace.export(to: Workspace)` target: local workspaces may still export
-  to themselves, while frozen/value workspaces require a target. Make the agent
-  CLI pass `currentWorkspace`, remove checkpoint origin retention and the
-  private checkpoint ID, delete the chunk/manifest/internal-constructor surface,
-  and regenerate affected SDK/schema artifacts.
+- [x] **Phase 5 — explicit export target and spike deletion.** Commits
+  `6acc525` and `f84e53d` delete the chunk/manifest/internal-constructor
+  surface, checkpoint identity, and session origin routing, then add the
+  optional `Workspace.export(to: Workspace)` target. Client-local workspaces
+  retain no-argument self-export; value workspaces require a validated
+  client-local Git target, and the agent CLI passes `currentWorkspace`
+  explicitly. The receiver remains authoritative for pending commits, overlays,
+  reconciliation metadata, and cache-mount writes; the target supplies only the
+  checkout and client route. The Go SDK was regenerated. Focused validation
+  passed for the nullable `Void`/optional-target schema, legacy-surface absence,
+  target requirement and rejection, local self-export compatibility, cache
+  write-through ordering, and checkpoint pending-commit plus overlay export
+  (`go test ./core/schema -run '^TestWorkspaceExportSchema$'`; focused engine
+  integration runs selected `TestWorkspaceExportTarget`,
+  `TestHostWorkspaceOverlayAndExport`, `TestWorkspaceMountedCache`,
+  `TestWorkspaceCommitExportHeadMoved`,
+  `TestSyntheticWorkspaceSourceIsPrivateInSchema`, and
+  `TestWorkspaceCheckpointIsAddressableAndExportsToTarget`, with 30 cases
+  passing across the two runs).
 - [ ] **Phase 6 — cold-restore and security validation.** Land the headline
   fresh-engine/no-checkout restore, source-matrix, bundle failure, canary
   opacity, rejected-byte absence, and no-remote-write coverage.
@@ -796,6 +827,23 @@ omits the empty bundle and `withBundle`; the frozen chain uses
 `Workspace.withFoo` fields rather than adding it to every `asWorkspace` call
 (`cwd` remains); and public bundle ingestion is not intentionally restricted to
 checkpoint-generated, single-prerequisite bundles.
+
+Phase 5 also had to distinguish a captured, GitRef-backed checkpoint from an
+ordinary remote GitRef workspace when staging later commits. The implementation
+retains the non-identity `PortableCheckpoint` classification so `withCommit`
+loads the imported ref tree with its `.git` directory and reports uncommitted
+state against the pending stack. This classification carries no checkout or
+client route and is separate from the deleted checkpoint ID. Because it is
+currently persisted Workspace metadata rather than a public call in the frozen
+chain, phase 6's fresh-engine, recipe-only test must prove that continued
+`withCommit`/push behavior does not depend on persisted result state; otherwise
+the classification must be derived structurally or represented by public
+composition.
+
+Phase 5 further settles that `Workspace.export` returns nullable `Void`, gates
+`to` after `v1.0.0-beta.10`, validates a client-local Git target before all
+side effects (including cache-volume write-through), and preserves the source
+workspace's `BaseHeadSHA` and pending stack for moved-HEAD reconciliation.
 
 Phase 2 further settles that `withBundle` returns a canonical, locally backed
 repository while preserving the source repository URL through persisted object
