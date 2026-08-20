@@ -208,6 +208,10 @@ type daggerClient struct {
 	clientVersion  string
 	secretToken    string
 	clientMetadata *engine.ClientMetadata
+	// metadataSealed and clientMetadata bootstrap mutation are protected by
+	// daggerSession.scopeMu. Once sealed, clientMetadata is immutable and every
+	// externally returned value is a deep clone of it.
+	metadataSealed bool
 
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
@@ -725,9 +729,9 @@ func (srv *Server) initializeDaggerSession(
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
 
 	// NOTE: state is NOT set to sessionStateInitialized here. getOrInitClient
-	// performs that atomic transition as its last step, after the main client is
-	// initialized and inserted, so observers never see an initialized session
-	// whose fields/clients aren't ready yet.
+	// performs that atomic transition as its last step, after the main client
+	// record is published, so observers never see initialized session resources
+	// without their root identity record.
 	return nil
 }
 
@@ -973,6 +977,11 @@ type ClientInitOpts struct {
 	// RootClient explicitly marks a session/root transport. Empty parent IDs do
 	// not implicitly create roots.
 	RootClient bool
+
+	// BootstrapOnly allows registration-adjacent attachable, /init, and shutdown
+	// requests to reconcile metadata without constructing the executable runtime.
+	// The first non-bootstrap request seals metadata before initialization.
+	BootstrapOnly bool
 
 	// If set, host-backed services for this client may proxy through this
 	// ancestor when this client has no session attachables of its own.
@@ -1223,8 +1232,9 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 
 	// Gate on the session's lifecycle state via a lock-free atomic read (never
 	// lifecycleMu), so this lookup can't block on a session that is initializing
-	// or tearing down. A client is inserted into sess.clients only after it is
-	// fully initialized, so a clientMu read can't observe a half-initialized one.
+	// or tearing down. Bootstrap records may be visible before their executable
+	// runtime initializes; callers needing metadata or execution must use the
+	// sealed-snapshot and scope boundaries rather than infer readiness here.
 	switch st := sess.state.Load(); st {
 	case sessionStateInitialized:
 		// continue
@@ -1263,6 +1273,17 @@ func (srv *Server) getOrInitClient(
 	ctx context.Context,
 	opts *ClientInitOpts,
 ) (_ *daggerClient, _ func() error, rerr error) {
+	if opts == nil || opts.ClientMetadata == nil {
+		return nil, nil, errors.New("client metadata is required")
+	}
+	metadata, err := cloneClientMetadata(opts.ClientMetadata)
+	if err != nil {
+		return nil, nil, err
+	}
+	optsCopy := *opts
+	optsCopy.ClientMetadata = metadata
+	opts = &optsCopy
+
 	if srv.isShuttingDown() {
 		return nil, nil, errServerShuttingDown
 	}
@@ -1372,13 +1393,10 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q removed", sessionID)}
 	}
 
-	// get or initialize the client itself.
-	//
-	// A client is inserted into sess.clients only AFTER it is fully initialized,
-	// so observer paths (clientFromIDs/activeClientIDs) can never see a
-	// half-initialized client. We hold lifecycleMu here, so no other goroutine
-	// can be creating the same client concurrently; a brief clientMu read to find
-	// an existing client is therefore sufficient (no double-checked locking).
+	// Get or create the client record. Explicitly registered nested records and
+	// root bootstrap requests may publish an uninitialized record; executable
+	// state is only published after metadata seals under scopeMu. lifecycleMu
+	// prevents concurrent creation of the same record.
 	sess.clientMu.RLock()
 	client, clientExists := sess.clients[clientID]
 	sess.clientMu.RUnlock()
@@ -1388,10 +1406,10 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, fmt.Errorf("validate client ancestry: %w", err)
 	}
 
-	// Nested clients must already have an explicitly registered transport. Hold
-	// scopeMu across first-request initialization so transport close linearizes
-	// wholly before or after it; once close wins, initialization cannot publish
-	// an accepting runtime afterward.
+	// Nested clients must already have an explicitly registered transport. The
+	// scope lock is also the metadata bootstrap/seal serialization point for all
+	// clients. Holding it through first initialization makes metadata seal,
+	// runtime publication, transport close, and session teardown one ordering.
 	if !opts.RootClient {
 		if opts.NestedTransport == nil {
 			return nil, nil, fmt.Errorf("nested client %q has no registered transport handle", clientID)
@@ -1399,122 +1417,78 @@ func (srv *Server) getOrInitClient(
 		if !clientExists {
 			return nil, nil, fmt.Errorf("nested client %q transport is not registered", clientID)
 		}
-		sess.scopeMu.Lock()
-		defer sess.scopeMu.Unlock()
-		if client.nestedTransport != opts.NestedTransport {
-			return nil, nil, fmt.Errorf("nested client %q transport ownership does not match", clientID)
-		}
-		if !client.accepting || client.transportLease == nil || !client.transportLease.Held() {
-			return nil, nil, fmt.Errorf("nested client %q transport is closed", clientID)
-		}
 	}
+
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
 
 	if !clientExists {
 		client = &daggerClient{
 			state:           clientStateUninitialized,
 			daggerSession:   sess,
 			clientID:        clientID,
-			clientVersion:   opts.ClientVersion,
-			secretToken:     token,
 			shutdownCh:      make(chan struct{}),
-			clientMetadata:  opts.ClientMetadata,
 			parentClientIDs: parentClientIDs,
 			accepting:       true,
 			lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
 		}
+	} else if !client.accepting {
+		return nil, nil, fmt.Errorf("client %q is closed", clientID)
+	}
+	if opts.NestedTransport != nil {
+		if client.nestedTransport != opts.NestedTransport {
+			return nil, nil, fmt.Errorf("nested client %q transport ownership does not match", clientID)
+		}
+		if client.transportLease == nil || !client.transportLease.Held() || opts.NestedTransport.Closed() {
+			return nil, nil, fmt.Errorf("nested client %q transport is closed", clientID)
+		}
+	}
+	if err := sess.mergeClientMetadataLocked(client, opts.ClientMetadata); err != nil {
+		return nil, nil, err
+	}
+	if client.clientMetadata.ClientSecretToken != token {
+		return nil, nil, fmt.Errorf("client %q registered with different secret token", clientID)
+	}
+	if opts.HostServiceProxyClientID != "" && client.hostServiceProxyClientID != "" && client.hostServiceProxyClientID != opts.HostServiceProxyClientID {
+		return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
 	}
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	switch client.state {
 	case clientStateUninitialized:
-		if clientExists {
-			if token != client.secretToken {
-				return nil, nil, fmt.Errorf("client %q registered with different secret token", clientID)
+		if !opts.BootstrapOnly {
+			if err := sess.sealClientMetadataLocked(client); err != nil {
+				return nil, nil, fmt.Errorf("seal client metadata: %w", err)
 			}
-			// The registered bootstrap snapshot supplies identity and ancestry;
-			// adjacent first-request metadata may still complete the runtime before
-			// the metadata-sealing seam is implemented.
-			client.clientMetadata = opts.ClientMetadata
-			client.clientVersion = opts.ClientVersion
-		}
-		if err := srv.initializeDaggerClient(ctx, client, opts); err != nil {
-			return nil, nil, fmt.Errorf("initialize client: %w", err)
-		}
-		if opts.RootClient {
-			// Root runtimes are published and gain reachability on their first
-			// request. Nested records were already published atomically by explicit
-			// transport registration and retain that exact transport lease.
-			sess.clientMu.Lock()
-			sess.clients[clientID] = client
-			sess.clientMu.Unlock()
-			transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, clientID)
-			if err != nil {
-				return nil, nil, fmt.Errorf("acquire client transport scope: %w", err)
+			if err := srv.initializeDaggerClient(ctx, client, opts); err != nil {
+				return nil, nil, fmt.Errorf("initialize client: %w", err)
 			}
-			client.transportLease = transportScope.Lease()
 		}
 	case clientStateInitialized:
-		// verify token matches existing client
-		if token != client.secretToken {
-			return nil, nil, fmt.Errorf("client %q already exists with different secret token", clientID)
-		}
+		// Metadata was reconciled above against the sealed snapshot. Identical
+		// replay is accepted; completion or conflict after seal is rejected.
+	}
 
-		// for nested clients running the dagger cli, the session attachable
-		// connection may not have all of the client metadata yet, so we
-		// fill in some missing fields here that may be set later by the cli
-		if client.clientMetadata.AllowedLLMModules == nil {
-			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
-		}
-		if opts.LoadWorkspaceModules {
-			client.clientMetadata.LoadWorkspaceModules = true
-		}
-		if opts.HostServiceProxyClientID != "" {
-			switch client.hostServiceProxyClientID {
-			case "":
-				client.hostServiceProxyClientID = opts.HostServiceProxyClientID
-			case opts.HostServiceProxyClientID:
-			default:
-				return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
-			}
-		}
-		if opts.SingleQuery {
-			client.clientMetadata.SingleQuery = true
-		}
-		if client.clientMetadata.WorkspaceModuleScope == "" {
-			client.clientMetadata.WorkspaceModuleScope = opts.WorkspaceModuleScope
-		}
-		if opts.SuppressCompatWorkspaceWarning {
-			client.clientMetadata.SuppressCompatWorkspaceWarning = true
-		}
-		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
-			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
-				ref := workspaceRef
-				client.clientMetadata.Workspace = &ref
-			}
-		}
-		if client.clientMetadata.WorkspaceEnv == nil && !client.workspaceLoaded {
-			if workspaceEnv, ok := workspaceEnvFromClientMetadata(opts.ClientMetadata); ok {
-				env := workspaceEnv
-				client.clientMetadata.WorkspaceEnv = &env
-			}
-		}
-		if client.clientMetadata.UserConfigPath == "" && !client.workspaceLoaded {
-			client.clientMetadata.UserConfigPath = opts.ClientMetadata.UserConfigPath
-		}
-		// ExtraModules may arrive on a later request (e.g. /init) after the
-		// session attachable request already created the client without them.
-		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.extraModulesLoaded {
-			client.clientMetadata.ExtraModules = opts.ExtraModules
-			client.pendingExtraModules = opts.ExtraModules
-		}
+	if opts.RootClient && !clientExists {
+		// Root records and transport ownership are published on their first
+		// bootstrap request. Unlike executable request scopes, the transport lease
+		// carries no metadata snapshot, so adjacent /init metadata may still merge
+		// before the first query seals the record.
+		sess.clientMu.Lock()
+		sess.clients[clientID] = client
+		sess.clientMu.Unlock()
+		client.transportLease = sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseTransport, clientID)
 	}
 
 	if opts.NestedTransport != nil && opts.NestedTransport.Closed() {
 		// Close marks the opaque handle before waiting for scopeMu. Detect a close
-		// that began while first-request initialization held scopeMu, and never
-		// return that initialized runtime as accepting.
+		// that began while first-request initialization held scopeMu, stop the one
+		// background producer initialized above, and never return an accepting
+		// runtime or request scope.
 		client.accepting = false
+		_ = client.ShutdownMetrics(context.Background())
+		client.meterProvider = nil
 		return nil, nil, fmt.Errorf("nested client %q transport closed during initialization", clientID)
 	}
 
@@ -1522,8 +1496,8 @@ func (srv *Server) getOrInitClient(
 	client.activeCount++
 
 	// If this call initialized the session, mark it initialized now — as the
-	// LAST step, after the main client has been initialized and inserted — so
-	// observers never see an initialized session whose main client isn't present.
+	// LAST step, after the main client record has been published — so observers
+	// never see initialized session resources without the root identity.
 	if sess.state.Load() == sessionStateUninitialized {
 		sess.state.Store(sessionStateInitialized)
 	}
@@ -1816,7 +1790,12 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, client))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, client))
 	default:
-		client, cleanup, err := srv.getOrInitClient(ctx, opts)
+		requestOpts := *opts
+		switch r.URL.Path {
+		case engine.SessionAttachablesEndpoint, engine.InitEndpoint, engine.ShutdownEndpoint:
+			requestOpts.BootstrapOnly = true
+		}
+		client, cleanup, err := srv.getOrInitClient(ctx, &requestOpts)
 		if err != nil {
 			err = fmt.Errorf("get or init client: %w", err)
 			switch r.URL.Path {
@@ -1828,19 +1807,26 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			return err
 		}
 
-		requestScope, err := client.daggerSession.acquireRootClientScope(client, engine.ClientLeaseRequest, r.Method+" "+r.URL.Path)
-		if err != nil {
+		var requestLease *engine.ClientLifecycleLease
+		if client.daggerSession.clientMetadataSealed(client) {
+			requestScope, err := client.daggerSession.acquireRootClientScope(client, engine.ClientLeaseRequest, r.Method+" "+r.URL.Path)
+			if err != nil {
+				_ = cleanup()
+				return httpErr(fmt.Errorf("acquire request client scope: %w", err), http.StatusServiceUnavailable)
+			}
+			ctx, err = engine.ContextWithClientScope(ctx, requestScope)
+			if err != nil {
+				requestScope.Lease().Release()
+				_ = cleanup()
+				return httpErr(fmt.Errorf("install request client scope: %w", err), http.StatusInternalServerError)
+			}
+			requestLease = requestScope.Lease()
+		} else if !requestOpts.BootstrapOnly {
 			_ = cleanup()
-			return httpErr(fmt.Errorf("acquire request client scope: %w", err), http.StatusServiceUnavailable)
-		}
-		ctx, err = engine.ContextWithClientScope(ctx, requestScope)
-		if err != nil {
-			requestScope.Lease().Release()
-			_ = cleanup()
-			return httpErr(fmt.Errorf("install request client scope: %w", err), http.StatusInternalServerError)
+			return httpErr(fmt.Errorf("client %q metadata was not sealed for executable request", client.clientID), http.StatusInternalServerError)
 		}
 		defer func() {
-			requestScope.Lease().Release()
+			requestLease.Release()
 			err := cleanup()
 			if err != nil {
 				bklog.G(ctx).WithError(err).Error("client serve cleanup failed")
@@ -2231,9 +2217,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		client.shutdownAt = time.Now()
 	}
 	client.stateMu.Unlock()
-	// Reachability closes independently from this accepted shutdown request.
-	// Its request scope remains held and may still delegate cleanup work. A
-	// nested /shutdown is an additional idempotent signal to the proxy-owned
+	// Reachability closes independently from this accepted shutdown request. An
+	// initialized request keeps its scope and may still delegate cleanup work; a
+	// close-before-init bootstrap request deliberately has no executable scope.
+	// A nested /shutdown is an additional idempotent signal to the proxy-owned
 	// registration handle; intentional roots close their direct transport.
 	if client.nestedTransport != nil {
 		client.nestedTransport.Close()
@@ -2868,7 +2855,7 @@ func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve session main client: %w", err)
 	}
-	return clientMD.clientMetadata, nil
+	return client.daggerSession.clientMetadataSnapshot(clientMD)
 }
 
 func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID string, opts core.SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
@@ -2969,7 +2956,7 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 	if err != nil {
 		return nil, err
 	}
-	return client.clientMetadata, nil
+	return client.daggerSession.clientMetadataSnapshot(client)
 }
 
 // The default deps of every user module (currently just core)

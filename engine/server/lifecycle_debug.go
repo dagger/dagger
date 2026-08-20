@@ -122,11 +122,12 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 				addLifecycleLeaseCount(allLeaseCounts, string(lease.kind), lease.ownerID)
 			}
 
+			metadataSealed := sess.clientMetadataSealed(client)
 			client.stateMu.RLock()
 			activeCount := client.activeCount
 			clientOut := ClientLifecycleDebugSnapshot{
 				ClientID:       client.clientID,
-				MetadataSealed: false,
+				MetadataSealed: metadataSealed,
 			}
 			initialized := client.state == clientStateInitialized
 			shutdownAt := client.shutdownAt
