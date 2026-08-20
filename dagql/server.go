@@ -1621,7 +1621,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	callCtx := state.ctx
 	replayable := state.notReplayable.classify(id) == nil
 	if replayable {
-		if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
+		if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests(), NewResultCallType(id.Type().ToAST())); err != nil {
 			return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
 		} else if ok {
 			return hit, nil

@@ -129,7 +129,12 @@ func resultCallRefFromIDInput(ctx context.Context, id *call.ID, memo recipeCallM
 	if frame == nil {
 		return nil, fmt.Errorf("resolve ID input %q: missing result call frame", idInputDebugString(id))
 	}
-	if frame.Type != nil && frame.Type.NamedType == "Query" {
+	declaredType := id.Type().ToAST()
+	resolvedType := frame.Type.toAST()
+	if resolvedType == nil || declaredType.NamedType != resolvedType.NamedType {
+		return nil, fmt.Errorf("resolve ID input %q: expected %v, got %v", idInputDebugString(id), declaredType, resolvedType)
+	}
+	if frame.Type.NamedType == "Query" {
 		return nil, nil
 	}
 	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil

@@ -1409,8 +1409,12 @@ type Cache struct {
 	egraphResultsByDigest map[string]*set.TreeSet[sharedResultID]
 	// Exact reverse postings recorded for ordinary runtime results. Imported
 	// class-wide postings are deliberately omitted and marked broad instead.
-	resultIndexedDigests  map[sharedResultID][]string
-	broadlyIndexedResults map[sharedResultID]struct{}
+	resultIndexedDigests     map[sharedResultID][]string
+	resultIndexedDigestTypes map[sharedResultID]map[string][]*ResultCallType
+	broadlyIndexedResults    map[sharedResultID]struct{}
+
+	// GraphQL type keys used to partition structural-input equivalence classes.
+	structuralInputTypeKeys map[string]struct{}
 
 	// Explicit retained-root edges for persisted results.
 	persistedEdgesByResult map[sharedResultID]persistedEdge
@@ -2005,6 +2009,11 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 		return nil
 	}
 
+	frame := res.loadResultCall()
+	if frame == nil || frame.Type == nil {
+		return res
+	}
+
 	candidates := newSharedResultSet()
 	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
 		outputEqID = c.findEqClassLocked(outputEqID)
@@ -2012,7 +2021,7 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 			continue
 		}
 		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, nil)
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), frame.Type, false, nowUnix, nil)
 		}
 	}
 	if requireCleanAttachment {
@@ -4124,6 +4133,7 @@ func (c *Cache) lookupCacheForDigests(
 	resolver TypeResolver,
 	recipeDigest digest.Digest,
 	extraDigests []call.ExtraDigest,
+	expectedType *ResultCallType,
 ) (AnyResult, bool, error) {
 	if sessionID == "" {
 		return nil, false, errors.New("lookup cache for digests: empty session ID")
@@ -4131,14 +4141,14 @@ func (c *Cache) lookupCacheForDigests(
 	if resolver == nil {
 		return nil, false, errors.New("lookup cache for digests: type resolver is nil")
 	}
-	if recipeDigest == "" {
+	if recipeDigest == "" || expectedType == nil {
 		return nil, false, nil
 	}
 
 	c.egraphMu.Lock()
 	now := time.Now()
 	nowUnix := now.Unix()
-	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
+	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, expectedType, nowUnix)
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 	if hitRes == nil {

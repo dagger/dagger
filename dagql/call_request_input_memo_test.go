@@ -149,6 +149,37 @@ func TestRecipeMemoSharesAcrossReceiverChain(t *testing.T) {
 		"expected depth step frames + 1 shared base; a tree unroll would be far larger")
 }
 
+func TestResultCallRefFromHandleValidatesResolvedType(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+
+	attached, err := cache.AttachResult(ctx, "test-session", noopTypeResolver{}, cacheTestIntResult(cacheTestIntCall("resolved"), 1))
+	require.NoError(t, err)
+	shared := attached.cacheSharedResult()
+	require.NotNil(t, shared)
+	require.NotZero(t, shared.id)
+
+	t.Run("matching type", func(t *testing.T) {
+		handle := call.NewEngineResultID(uint64(shared.id), call.NewType(Int(0).Type()))
+		ref, err := resultCallRefFromIDInput(ctx, handle, recipeCallMemo{})
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.Equal(t, uint64(shared.id), ref.ResultID)
+	})
+
+	t.Run("mistyped handle", func(t *testing.T) {
+		handle := call.NewEngineResultID(uint64(shared.id), call.NewType(&ast.Type{
+			NamedType: "Directory",
+			NonNull:   true,
+		}))
+		ref, err := resultCallRefFromIDInput(ctx, handle, recipeCallMemo{})
+		require.ErrorContains(t, err, "expected Directory!, got Int!")
+		require.Nil(t, ref)
+	})
+}
+
 func receiverFrame(f *ResultCall) *ResultCall {
 	if f == nil || f.Receiver == nil {
 		return nil
