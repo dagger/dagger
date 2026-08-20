@@ -29,6 +29,8 @@ var toolArgStyles = map[string]argStyle{
 	"read.path":       argStylePath,
 	"read.filepath":   argStylePath,
 	"read.file_path":  argStylePath,
+	"read.offset":     argStyleDesc,
+	"read.limit":      argStyleDesc,
 	"write.path":      argStylePath,
 	"write.filepath":  argStylePath,
 	"write.file_path": argStylePath,
@@ -93,6 +95,11 @@ func toolArgStyle(toolName, argName string) argStyle {
 		if style, ok := toolArgStyles[method+"."+argLower]; ok {
 			return style
 		}
+	}
+
+	// Shell argv is always useful as header text, regardless of the tool name.
+	if argLower == "args" {
+		return argStyleContent
 	}
 
 	// Fallback: prompt is always content-style regardless of tool.

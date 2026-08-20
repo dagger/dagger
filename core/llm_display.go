@@ -28,7 +28,9 @@ type displayPhase struct {
 	MarkdownW io.Writer
 
 	// callID is set for tool call phases.
-	callID string
+	callID              string
+	toolArgsWritten     bool
+	toolArgsEndsNewline bool
 }
 
 // displayPhases manages the lifecycle of display spans during LLM streaming.
@@ -171,15 +173,22 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 	return p
 }
 
+func (p *displayPhase) writeToolArgs(args string) {
+	if args == "" {
+		return
+	}
+	fmt.Fprint(p.Stdio.Stdout, args)
+	p.toolArgsWritten = true
+	p.toolArgsEndsNewline = args[len(args)-1] == '\n'
+}
+
 // EmitToolCall records a fully-accumulated tool call as a display phase: it
 // opens the tool-call span, writes its arguments, and closes the phase so the
 // span is handed back for execution nesting. Use this for providers that
 // deliver tool calls whole rather than streaming their arguments.
 func (dp *displayPhases) EmitToolCall(idx int64, callID, toolName, args string) {
 	p := dp.StartToolCall(idx, callID, toolName)
-	if args != "" {
-		fmt.Fprint(p.Stdio.Stdout, args)
-	}
+	p.writeToolArgs(args)
 	dp.Close(idx)
 }
 
@@ -200,6 +209,12 @@ func (dp *displayPhases) Close(idx int64) {
 	p, ok := dp.phases[idx]
 	if !ok {
 		return
+	}
+	if p.callID != "" && p.toolArgsWritten && !p.toolArgsEndsNewline {
+		// Tool results may be routed into the same display stream. Terminate the
+		// JSON arguments so the first result line cannot be glued to the closing
+		// brace.
+		fmt.Fprintln(p.Stdio.Stdout)
 	}
 	p.Stdio.Close()
 	dp.displaySpans = append(dp.displaySpans, p.span)

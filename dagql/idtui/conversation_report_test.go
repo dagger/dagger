@@ -374,11 +374,12 @@ func TestConversationReportRendersToolCallArgsAndOutput(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 
 	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = toolArgsVerbosity
 
 	argLogs := NewVterm(termenv.Ascii)
 	argLogs.SetWidth(120)
 	_, _ = argLogs.Write([]byte(`{"script":"currentWorkspace.id"}` + "\n"))
-	fe.logs.Logs[toolCallID] = argLogs
+	fe.logs.ToolArgs[toolCallID] = argLogs
 
 	// A tall result, so the cap kicks in and hides all but the last
 	// llmLogsLastLines lines.
@@ -411,6 +412,77 @@ func TestConversationReportRendersToolCallArgsAndOutput(t *testing.T) {
 	if want := fmt.Sprintf("...%d lines hidden...", outputLines-llmLogsLastLines); !strings.Contains(joined, want) {
 		t.Fatalf("missing trim header %q:\n%s", want, joined)
 	}
+}
+
+func TestConversationReportConciseReadAndGrep(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	start := time.Unix(100, 0)
+
+	render := func(t *testing.T, tool string, names, values []string, args, result string, verbosity int) (*frontendPretty, *dagui.Span, string) {
+		t.Helper()
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		toolID := prettyTestSpanID(2)
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			{
+				ID: rootID, TraceID: prettyTestTraceID(), Name: "shell",
+				StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			},
+			{
+				ID: toolID, TraceID: prettyTestTraceID(), Name: tool,
+				LLMRole: "assistant", LLMTool: tool,
+				LLMToolArgNames: names, LLMToolArgValues: values,
+				ParentID: rootID, StartTime: start, EndTime: start.Add(600 * time.Millisecond), Final: true,
+			},
+		})
+		db.SetPrimarySpan(rootID)
+		fe := NewWithDB(io.Discard, db)
+		fe.FrontendOpts.Verbosity = verbosity
+		if args != "" {
+			fe.logs.ToolArgs[toolID] = testVterm(t, args)
+		}
+		if result != "" {
+			fe.logs.Logs[toolID] = testVterm(t, result)
+		}
+		fe.recalculateViewLocked()
+		r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+		return fe, db.Spans.Map[toolID], strings.Join(fe.conversationReport(tuist.Context{Width: 120}, r, false), "\n")
+	}
+
+	t.Run("read", func(t *testing.T) {
+		for _, verbosity := range []int{1, 2} {
+			fe, span, got := render(t, "Read",
+				[]string{"path", "offset", "limit"}, []string{"main.go", "20", "10"},
+				`{"path":"main.go","offset":20,"limit":10}`, "FILE CONTENT\n", verbosity)
+			if !strings.Contains(got, "Read main.go offset=20 limit=10") {
+				t.Fatalf("Read header missing pagination at verbosity %d:\n%s", verbosity, got)
+			}
+			if strings.Contains(got, "FILE CONTENT") {
+				t.Fatalf("collapsed Read leaked output at verbosity %d:\n%s", verbosity, got)
+			}
+			if strings.Contains(got, `{"path":"main.go"`) != (verbosity >= toolArgsVerbosity) {
+				t.Fatalf("Read JSON args visibility wrong at verbosity %d:\n%s", verbosity, got)
+			}
+			if verbosity >= toolArgsVerbosity {
+				var buf strings.Builder
+				fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), span)
+				if rendered := buf.String(); rendered != "" && !strings.HasSuffix(rendered, "\n") {
+					t.Fatalf("rendered JSON args lack trailing newline: %q", rendered)
+				}
+			}
+		}
+	})
+
+	t.Run("grep", func(t *testing.T) {
+		_, _, got := render(t, "Grep", []string{"pattern"}, []string{"Foo"},
+			`{"pattern":"Foo"}`, "main.go:10:Foo\n1 matches in 1 files\n", 1)
+		if !strings.Contains(got, "Grep Foo 0.6s - 1 matches in 1 files") {
+			t.Fatalf("Grep header missing final output line:\n%s", got)
+		}
+		if strings.Contains(got, "main.go:10:Foo") || strings.Contains(got, `{"pattern":"Foo"}`) {
+			t.Fatalf("collapsed Grep leaked body or JSON args:\n%s", got)
+		}
+	})
 }
 
 // TestConversationLogsPreFetchedBeforeFailureFetch is a regression test for the

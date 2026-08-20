@@ -19,6 +19,33 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
+func TestCallPreservesHeaderArgs(t *testing.T) {
+	sr, ctx := replayTestRecorder(t)
+	result, failed := newMCP().Call(ctx, []LLMTool{{
+		Name: "read",
+		Schema: map[string]any{
+			"required": []string{"path"},
+		},
+		Call: func(context.Context, any) (any, error) { return "ok", nil },
+	}}, &LLMToolCall{
+		Name:      "read",
+		Arguments: JSON(`{"path":"main.go","offset":20,"limit":10,"args":["foo","bar"]}`),
+	})
+	require.False(t, failed)
+	require.Equal(t, "ok", result)
+	trace.SpanFromContext(ctx).End()
+
+	ended := sr.Ended()
+	require.NotEmpty(t, ended)
+	span := ended[len(ended)-1]
+	names, ok := spanAttr(span, telemetry.LLMToolArgNamesAttr)
+	require.True(t, ok)
+	values, ok := spanAttr(span, telemetry.LLMToolArgValuesAttr)
+	require.True(t, ok)
+	require.Equal(t, []string{"path", "offset", "limit", "args"}, names.AsStringSlice())
+	require.Equal(t, []string{"main.go", "20", "10", "foo bar"}, values.AsStringSlice())
+}
+
 func TestToolResultContentType(t *testing.T) {
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
 	require.Equal(t, gitDiffContentType, toolResultContentType(patch))

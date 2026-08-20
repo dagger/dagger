@@ -111,6 +111,9 @@ func (fe *frontendPretty) indentMessageNodeLogs(span *dagui.Span, width int) {
 		if vt := fe.logs.Logs[id]; vt != nil {
 			vt.SetWidth(width)
 		}
+		if vt := fe.logs.ToolArgs[id]; vt != nil {
+			vt.SetWidth(width)
+		}
 	}
 	setWidth(span.ID)
 	if exec := toolCallExecSpan(span); exec != nil {
@@ -118,22 +121,24 @@ func (fe *frontendPretty) indentMessageNodeLogs(span *dagui.Span, width int) {
 	}
 }
 
-// renderMessageLogs renders a tool-call node's arguments and, beneath them, the
-// result (or error) the LLM saw -- used for tool-call nodes, whose content
-// isn't rendered by renderStep's Message path. The arguments are the tool-call
-// display span's own logs (the streamed JSON call); the output is the nested
-// execution span's own logs. Cloud's descendant roll-up doesn't return that
-// execution output here (it crosses the tool call's RollUpLogs boundary), so the
-// report fetches the exec span's own logs directly (recalculateViewLocked).
+// renderMessageLogs renders a tool-call node's arguments at verbose levels and,
+// beneath them, the result (or error) the LLM saw. Read and Grep keep their
+// regular result bodies collapsed; Grep's final summary line is in the header.
+// The arguments are the tool-call display span's application/json records; the
+// output is on that span or on the nested execution span. Cloud's descendant
+// roll-up doesn't return nested execution output here (it crosses the tool call's
+// RollUpLogs boundary), so the report fetches the exec span's own logs directly
+// (recalculateViewLocked).
 func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span) {
-	// Arguments in full -- a tool call's arguments are short and worth reading
-	// verbatim. The execution output is tail-capped: a single inspect or
-	// ReadSkill can dump hundreds of lines the model skimmed, which would bury
-	// the transcript. llmLogsLastLines matches the tail the live tree shows for a
-	// collapsed tool call (and what the model itself is shown).
-	fe.renderSpanLogBlock(out, span, span, 0)
+	if fe.spanVerbosity(span) >= toolArgsVerbosity {
+		fe.renderSpanLogBlock(out, span, span, 0, true)
+	}
+	if collapsesToolOutput(span) {
+		return
+	}
+	fe.renderSpanLogBlock(out, span, span, 0, false)
 	if exec := toolCallExecSpan(span); exec != nil {
-		fe.renderSpanLogBlock(out, exec, span, llmLogsLastLines)
+		fe.renderSpanLogBlock(out, exec, span, llmLogsLastLines, false)
 	}
 }
 
@@ -141,10 +146,13 @@ func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span) {
 // status-colored pipe (so an errored call's output reads red). When maxHeight >
 // 0 and the block is taller, only its last maxHeight lines are shown, above a
 // "...N lines hidden..." header. No-op when the logs are absent or claimed.
-func (fe *frontendPretty) renderSpanLogBlock(out TermOutput, logSpan, colorSpan *dagui.Span, maxHeight int) {
+func (fe *frontendPretty) renderSpanLogBlock(out TermOutput, logSpan, colorSpan *dagui.Span, maxHeight int, toolArgs bool) {
 	fe.requestLogsOnRender(logSpan.ID)
 	logs := fe.logs.Logs[logSpan.ID]
-	if logs == nil || fe.claims.hasLog(logSpan.ID) {
+	if toolArgs {
+		logs = fe.logs.ToolArgs[logSpan.ID]
+	}
+	if logs == nil || (!toolArgs && fe.claims.hasLog(logSpan.ID)) {
 		return
 	}
 	color := restrainedStatusColor(colorSpan)
@@ -156,8 +164,14 @@ func (fe *frontendPretty) renderSpanLogBlock(out TermOutput, logSpan, colorSpan 
 		height = maxHeight
 	}
 	logs.SetHeight(height)
-	fmt.Fprint(out, logs.View())
-	fe.claims.claimLog(logSpan)
+	view := logs.View()
+	fmt.Fprint(out, view)
+	if view != "" && !strings.HasSuffix(view, "\n") {
+		fmt.Fprintln(out)
+	}
+	if !toolArgs {
+		fe.claims.claimLog(logSpan)
+	}
 }
 
 // toolCallExecSpan returns the execution span nested directly beneath a

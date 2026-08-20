@@ -1070,6 +1070,31 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
+func toolArgHeaderValue(name string, value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if str, ok := value.(string); ok {
+		return str, true
+	}
+	switch name {
+	case "offset", "limit":
+		return fmt.Sprint(value), true
+	case "args":
+		values, ok := value.([]any)
+		if !ok {
+			return "", false
+		}
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			parts = append(parts, fmt.Sprint(value))
+		}
+		return strings.Join(parts, " "), true
+	default:
+		return "", false
+	}
+}
+
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
 	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
@@ -1085,17 +1110,28 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 
 	var toolArgNames []string
 	var toolArgValues []string
+	seenToolArgs := map[string]bool{}
+	appendToolArg := func(name string) {
+		if seenToolArgs[name] {
+			return
+		}
+		val, ok := toolArgHeaderValue(name, args[name])
+		if !ok {
+			return
+		}
+		toolArgNames = append(toolArgNames, name)
+		toolArgValues = append(toolArgValues, val)
+		seenToolArgs[name] = true
+	}
 	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
 		for _, arg := range requiredArgs {
-			val, ok := args[arg]
-			if !ok {
-				continue
-			}
-			if str, ok := val.(string); ok {
-				toolArgNames = append(toolArgNames, arg)
-				toolArgValues = append(toolArgValues, str)
-			}
+			appendToolArg(arg)
 		}
+	}
+	// Header-specific optional values: Read's pagination controls and generic
+	// argv arrays are useful context even though they are not required args.
+	for _, arg := range []string{"offset", "limit", "args"} {
+		appendToolArg(arg)
 	}
 	toolName := tool.Name
 	if tool.Server != "" {
