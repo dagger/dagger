@@ -901,7 +901,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 	}
 	// Collection can legitimately win a race with deferred callers, so a stale
 	// upsert is a no-op rather than an error.
-	if c.resultsByID[res.id] != res {
+	if _, found := c.resultsByID[res.id]; !found {
 		return
 	}
 	if c.persistedEdgesByResult == nil {
@@ -942,7 +942,7 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 	}
 
 	c.egraphMu.Lock()
-	if c.resultsByID[shared.id] != shared {
+	if _, found := c.resultsByID[shared.id]; !found {
 		c.egraphMu.Unlock()
 		return fmt.Errorf("make result unpruneable: result %d was already collected", shared.id)
 	}
