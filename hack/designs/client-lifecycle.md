@@ -2,9 +2,9 @@
 
 ## Status
 
-Implementation in progress. The correctness foundations through immutable client
-metadata sealing are complete; runtime splitting and reclamation are still
-deliberately disabled.
+Implementation in progress. The correctness foundations through separate client
+record/runtime storage are complete; cold-capability decoupling and reclamation
+are still deliberately disabled.
 
 ### Implementation progress
 
@@ -46,35 +46,40 @@ Completed, in dependency order:
    clone that snapshot, and sealing/initialization serialize with transport close
    and authoritative session teardown.
 
+7. Client identity and routing records are stored separately from retained
+   execution runtimes. Metadata, ancestry, telemetry, attachable, and
+   executable lookups are purpose-specific; executable runtime access requires
+   a held `ClientScope`. Both maps remain session-long, and zero leases never
+   trigger reclamation.
+
 Intentional interim retention remains visible: child quiescence is not yet
 implemented, so each parent's `child` lease is retained after transport close and
-released safely during authoritative session teardown. Client records and heavy
-runtimes also remain co-located and session-long. No runtime splitting,
-quiescence inference, or reclamation is enabled yet.
+released safely during authoritative session teardown. Records and execution
+runtimes are now separate, but both remain session-long while cold capabilities
+and per-runtime metrics still depend on retained execution state. No quiescence
+inference or reclamation is enabled yet.
 
 ### Next implementation seam
 
-Split identity records from retained execution runtimes without enabling
+Decouple cold capabilities from retained execution runtimes without enabling
 reclamation yet:
 
-1. Introduce purpose-specific record and runtime storage while preserving the
-   session-long lifetime of both. Keep the sealed metadata snapshot, immutable
-   ancestry, accepting state, and routing identity on the record.
-2. Replace broad `clientFromIDs` use with explicit metadata/ancestry,
-   telemetry-route, attachable, and executable-scope lookups. A metadata or
-   routing lookup must not imply executable runtime ownership.
-3. Preserve every existing typed lease and cold capability while moving fields;
-   do not interpret an empty lease set as reclaimability.
-4. Keep host attachables and session resources keyed by stable record identity,
-   and keep runtime-only query/schema/engine state behind executable lookup.
-5. Add focused tests proving metadata and telemetry routing remain available
-   through the record path while executable access still requires the retained
-   runtime and a valid scope.
+1. Make workspace host access session-owned and capture only immutable owner
+   metadata plus the minimal host gateway capability instead of rediscovering a
+   retained runtime by client ID.
+2. Audit cached lazy/shared callbacks and require each path either to retain a
+   documented durable scope lease or to capture a self-contained capability
+   that no longer points back to runtime query/schema/engine state.
+3. Audit module/schema objects and agent tombstones for retained runtime
+   pointers. Preserve every current typed lease until the corresponding cold
+   value is demonstrably self-contained.
+4. Keep records and runtimes session-long, metrics per runtime, and child leases
+   retained until teardown throughout this seam.
 
-Stop after that seam. Do not reclaim runtimes, infer child quiescence, decouple
-cold capabilities opportunistically, or migrate metrics yet. Once lookup and
-storage are split, continue with cold-capability decoupling, session-owned
-metrics, and finally quiescent runtime reclamation.
+Stop after that seam. Do not infer child quiescence, migrate metrics, or reclaim
+runtimes yet. Once cold capabilities no longer depend accidentally on runtime
+identity, continue with session-owned metrics and finally quiescent runtime
+reclamation.
 
 ## Problem
 
@@ -399,9 +404,10 @@ reclamation.
    initialization requests reconcile deeply cloned declarations under lifecycle
    serialization, reject conflicts and post-seal completion, and seal the
    snapshot before executable scope or query runtime publication.
-7. [ ] **Split lookup and storage.** Add `clientRecord`/`clientRuntime`; replace
-   `clientFromIDs` call sites with metadata, telemetry-route, attachable, or
-   executable-scope lookups. Keep records session-long initially.
+7. [x] **Split lookup and storage.** Separate session-long `clientRecord` and
+   `clientRuntime` maps now back metadata, telemetry-route, attachable, and
+   executable-scope lookups. Record-only paths do not require a runtime, while
+   executable lookup requires both a retained runtime and a held scope.
 8. [ ] **Decouple cold capabilities.** Make workspace host access session-owned;
    verify cached lazy callbacks either acquire a durable scope lease or capture a
    self-contained capability. Audit module/schema objects and agent tombstones for
