@@ -154,12 +154,6 @@ type Workspace struct {
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
-	// portableCheckpoint distinguishes a frozen value-backed checkout from an
-	// ordinary synthetic Directory workspace. Both have no client, but a
-	// checkpoint still owns a complete module tree and must compose tools from
-	// that tree rather than being treated as an intentionally module-less value.
-	portableCheckpoint bool
-
 	// workspaceEnv is the config environment selected when this workspace was
 	// frozen. Portable checkpoints carry it as value state so module calls that
 	// recompose tools through the checkpoint do not depend on request-local
@@ -667,29 +661,16 @@ func (ws *Workspace) ExportHostPath() (string, error) {
 	}
 }
 
-func (ws *Workspace) IsPortableCheckpoint() bool {
-	return ws != nil && ws.portableCheckpoint
-}
-
 // IsModuleBearingValue reports whether a value-backed workspace owns the
-// module tree its schema and agent composition must load from. Portable
-// checkpoints and GitRef workspaces are complete checkout values; ordinary
-// Directory workspaces remain intentionally module-less.
+// module tree its schema and agent composition must load from. GitRef
+// workspaces are complete checkout values; Directory workspaces remain
+// intentionally module-less.
 func (ws *Workspace) IsModuleBearingValue() bool {
 	if ws == nil {
 		return false
 	}
-	if ws.portableCheckpoint {
-		return true
-	}
 	_, ok := ws.BaseSource().(*WorkspaceSourceGitRef)
 	return ok
-}
-
-func (ws *Workspace) SetPortableCheckpoint() {
-	if ws != nil {
-		ws.portableCheckpoint = true
-	}
 }
 
 // WorkspaceEnv returns the config environment captured with this workspace.
@@ -954,21 +935,20 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	RootfsResultID     uint64                         `json:"rootfsResultID,omitempty"`
-	MountsResultID     uint64                         `json:"mountsResultID,omitempty"`
-	MountPoints        []string                       `json:"mountPoints,omitempty"`
-	CacheMounts        []persistedWorkspaceCacheMount `json:"cacheMounts,omitempty"`
-	Source             *persistedWorkspaceSource      `json:"source,omitempty"`
-	CompatWorkspace    *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
-	PortableCheckpoint bool                           `json:"portableCheckpoint,omitempty"`
-	WorkspaceEnv       string                         `json:"workspaceEnv,omitempty"`
-	GitOrigin          string                         `json:"gitOrigin,omitempty"`
-	Address            string                         `json:"address,omitempty"`
-	Cwd                string                         `json:"cwd,omitempty"`
-	ConfigFile         string                         `json:"configFile,omitempty"`
-	LockFile           string                         `json:"lockFile,omitempty"`
-	ClientID           string                         `json:"clientID,omitempty"`
-	HostPath           string                         `json:"hostPath,omitempty"`
+	RootfsResultID  uint64                         `json:"rootfsResultID,omitempty"`
+	MountsResultID  uint64                         `json:"mountsResultID,omitempty"`
+	MountPoints     []string                       `json:"mountPoints,omitempty"`
+	CacheMounts     []persistedWorkspaceCacheMount `json:"cacheMounts,omitempty"`
+	Source          *persistedWorkspaceSource      `json:"source,omitempty"`
+	CompatWorkspace *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
+	WorkspaceEnv    string                         `json:"workspaceEnv,omitempty"`
+	GitOrigin       string                         `json:"gitOrigin,omitempty"`
+	Address         string                         `json:"address,omitempty"`
+	Cwd             string                         `json:"cwd,omitempty"`
+	ConfigFile      string                         `json:"configFile,omitempty"`
+	LockFile        string                         `json:"lockFile,omitempty"`
+	ClientID        string                         `json:"clientID,omitempty"`
+	HostPath        string                         `json:"hostPath,omitempty"`
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
@@ -1144,20 +1124,19 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace:    ws.compatWorkspace,
-		PortableCheckpoint: ws.portableCheckpoint,
-		WorkspaceEnv:       ws.workspaceEnv,
-		GitOrigin:          ws.gitOrigin,
-		Address:            ws.Address,
-		Cwd:                ws.Cwd,
-		ConfigFile:         ws.ConfigFile,
-		LockFile:           ws.LockFile,
-		ClientID:           ws.ClientID,
-		HostPath:           ws.hostPath,
-		StagedGeneration:   ws.StagedGeneration,
-		GitAuthorName:      ws.GitAuthorName,
-		GitAuthorEmail:     ws.GitAuthorEmail,
-		BaseHeadSHA:        ws.BaseHeadSHA,
+		CompatWorkspace:  ws.compatWorkspace,
+		WorkspaceEnv:     ws.workspaceEnv,
+		GitOrigin:        ws.gitOrigin,
+		Address:          ws.Address,
+		Cwd:              ws.Cwd,
+		ConfigFile:       ws.ConfigFile,
+		LockFile:         ws.LockFile,
+		ClientID:         ws.ClientID,
+		HostPath:         ws.hostPath,
+		StagedGeneration: ws.StagedGeneration,
+		GitAuthorName:    ws.GitAuthorName,
+		GitAuthorEmail:   ws.GitAuthorEmail,
+		BaseHeadSHA:      ws.BaseHeadSHA,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -1326,25 +1305,24 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:             rootfs,
-		mounts:             mounts,
-		mountPoints:        persisted.MountPoints,
-		cacheMounts:        cacheMounts,
-		compatWorkspace:    persisted.CompatWorkspace,
-		portableCheckpoint: persisted.PortableCheckpoint,
-		workspaceEnv:       persisted.WorkspaceEnv,
-		gitOrigin:          workspacepkg.NormalizeGitRemote(persisted.GitOrigin),
-		Address:            persisted.Address,
-		Cwd:                cwd,
-		ConfigFile:         configFile,
-		LockFile:           lockFile,
-		ClientID:           persisted.ClientID,
-		hostPath:           persisted.HostPath,
-		StagedGeneration:   persisted.StagedGeneration,
-		GitAuthorName:      persisted.GitAuthorName,
-		GitAuthorEmail:     persisted.GitAuthorEmail,
-		BaseHeadSHA:        persisted.BaseHeadSHA,
-		pendingCommits:     pendingCommits,
+		rootfs:           rootfs,
+		mounts:           mounts,
+		mountPoints:      persisted.MountPoints,
+		cacheMounts:      cacheMounts,
+		compatWorkspace:  persisted.CompatWorkspace,
+		workspaceEnv:     persisted.WorkspaceEnv,
+		gitOrigin:        workspacepkg.NormalizeGitRemote(persisted.GitOrigin),
+		Address:          persisted.Address,
+		Cwd:              cwd,
+		ConfigFile:       configFile,
+		LockFile:         lockFile,
+		ClientID:         persisted.ClientID,
+		hostPath:         persisted.HostPath,
+		StagedGeneration: persisted.StagedGeneration,
+		GitAuthorName:    persisted.GitAuthorName,
+		GitAuthorEmail:   persisted.GitAuthorEmail,
+		BaseHeadSHA:      persisted.BaseHeadSHA,
+		pendingCommits:   pendingCommits,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)

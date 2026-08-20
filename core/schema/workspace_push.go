@@ -43,10 +43,6 @@ func (s *workspaceSchema) workspaceGitPush(
 	if args.Remote == "" {
 		return "", fmt.Errorf("push: remote is required")
 	}
-	if _, ok := ws.SourceGitRef(); ok && !ws.IsPortableCheckpoint() {
-		return "", fmt.Errorf("cannot push from a remote git workspace: there is no local checkout whose remotes and credentials could run the push")
-	}
-
 	// Preconditions first, exactly like a save: nothing is transferred until
 	// the workspace is known to be backed by a local git checkout.
 	clientCtx, hostPath, err := workspaceExportContext(ctx, ws)
