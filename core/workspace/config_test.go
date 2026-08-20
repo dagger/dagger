@@ -97,6 +97,45 @@ path = "modules/demo"
 	}, cfg.SDKs["go"])
 }
 
+func TestParseConfigMigratesLegacySDKClientPin(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		module string
+		want   string
+	}{
+		{
+			name:   "selector containing slash",
+			module: "github.com/acme/api@feature/work",
+			want:   "github.com/acme/api@deadbeef",
+		},
+		{
+			name:   "SCP userinfo without selector",
+			module: "git@github.com:acme/api",
+			want:   "git@github.com:acme/api@deadbeef",
+		},
+		{
+			name:   "URL userinfo without selector",
+			module: "ssh://git@github.com/acme/api",
+			want:   "ssh://git@github.com/acme/api@deadbeef",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := ParseConfig([]byte(fmt.Sprintf(`[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[[modules.dagger-go-sdk.as-sdk.clients]]
+path = "client"
+module = %q
+pin = "deadbeef"
+`, tc.module)))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, cfg.SDKs["go"].Claimed.Clients[0].Module)
+		})
+	}
+}
+
 func TestUpdateConfigBytesRejectsMultipleSDKsPerProvider(t *testing.T) {
 	t.Parallel()
 

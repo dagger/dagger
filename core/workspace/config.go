@@ -359,12 +359,7 @@ func migrateLegacySDKConfig(cfg *Config, legacyModules map[string]legacyModuleEn
 		for _, client := range legacy.Clients {
 			moduleRef := client.Module
 			if client.Pin != "" && !IsLocalRef(moduleRef, "") {
-				// A selector trails the repository path. Earlier @ characters may
-				// belong to SSH userinfo (git@host or ssh://git@host) and must stay.
-				if selector := strings.LastIndex(moduleRef, "@"); selector > strings.LastIndex(moduleRef, "/") {
-					moduleRef = moduleRef[:selector]
-				}
-				moduleRef += "@" + client.Pin
+				moduleRef = replaceModuleRefSelector(moduleRef, client.Pin)
 			}
 			sdk.Claimed.Clients = append(sdk.Claimed.Clients, SDKManagedClient{
 				Path:    client.Path,
@@ -375,6 +370,32 @@ func migrateLegacySDKConfig(cfg *Config, legacyModules map[string]legacyModuleEn
 		cfg.SDKs[sdkName] = sdk
 	}
 	return nil
+}
+
+// replaceModuleRefSelector replaces a remote module ref's selector while
+// preserving any @ that belongs to URL or SCP-style userinfo. Selectors may
+// contain slashes (for example, @feature/work), so their position cannot be
+// inferred from the final path separator.
+func replaceModuleRefSelector(ref, selector string) string {
+	selectorIndex := strings.LastIndex(ref, "@")
+	if selectorIndex < 0 {
+		return ref + "@" + selector
+	}
+
+	pathStart := -1
+	if scheme := strings.Index(ref, "://"); scheme >= 0 {
+		authorityStart := scheme + len("://")
+		if path := strings.Index(ref[authorityStart:], "/"); path >= 0 {
+			pathStart = authorityStart + path
+		}
+	} else {
+		pathStart = strings.IndexAny(ref, "/:")
+	}
+	if pathStart < 0 || selectorIndex < pathStart {
+		// The only @ is part of userinfo, not a selector.
+		return ref + "@" + selector
+	}
+	return ref[:selectorIndex] + "@" + selector
 }
 
 func clientOptionsFromTree(tree *toml.Tree) map[string]string {
