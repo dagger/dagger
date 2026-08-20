@@ -206,6 +206,108 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 	require.ErrorContains(t, err, baseSHA)
 }
 
+func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base\n"))
+
+	// Capture a bundle rooted at the remote's initial main, without resolving
+	// that remote through core Git. This keeps the later import's remote lookup
+	// honest: its first view of main is the advanced tip.
+	localCtr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithServiceBinding("bundle-origin", gitDaemon).
+		WithEnvVariable("REPO_URL", repoURL).
+		WithExec([]string{"sh", "-ec", `
+			git clone "$REPO_URL" /repo
+			cd /repo
+			git config user.name Bundle
+			git config user.email bundle@example.com
+			printf 'captured\n' > captured.txt
+			git add captured.txt
+			git commit -qm captured
+			git rev-parse HEAD~1
+		`})
+	baseSHA, err := localCtr.Stdout(ctx)
+	require.NoError(t, err)
+	baseSHA = strings.TrimSpace(baseSHA)
+	local := localCtr.Directory("/repo").AsGit()
+	localID, err := local.ID(ctx)
+	require.NoError(t, err)
+	baseID, err := local.Ref(baseSHA).ID(ctx)
+	require.NoError(t, err)
+	capturedSHA, err := local.Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	bundle, err := testutil.QueryWithClient[struct {
+		Node struct{ Bundle struct{ ID string } }
+	}](c, t, `query($repo: ID!, $base: ID!) {
+		node(id: $repo) {
+			... on GitRepository {
+				bundle(refs: ["refs/heads/main"], base: $base) { id }
+			}
+		}
+	}`, &testutil.QueryOptions{Variables: map[string]any{
+		"repo": localID,
+		"base": baseID,
+	}})
+	require.NoError(t, err)
+
+	// Advance the same ref after capture. A prerequisite ref is a fetch hint,
+	// not the captured identity: restore must still use the bundle's exact base
+	// SHA and captured head rather than substituting this new workspace state.
+	_, err = c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithServiceBinding("bundle-origin", gitDaemon).
+		WithEnvVariable("REPO_URL", repoURL).
+		WithExec([]string{"sh", "-ec", `
+			git clone "$REPO_URL" /repo
+			cd /repo
+			git config user.name Advance
+			git config user.email advance@example.com
+			printf 'current\n' > current.txt
+			git add current.txt
+			git commit -m current
+			git push origin HEAD:main
+		`}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	remote := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	remoteID, err := remote.ID(ctx)
+	require.NoError(t, err)
+	imported, err := testutil.QueryWithClient[struct {
+		Node struct {
+			WithBundle struct {
+				Ref struct {
+					CommitSHA string
+					Tree      struct{ Entries []string }
+				}
+			}
+		}
+	}](c, t, `query($repo: ID!, $bundle: ID!, $head: String!) {
+		node(id: $repo) {
+			... on GitRepository {
+				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
+					ref(name: $head) {
+						commitSHA
+						tree(discardGitDir: true) { entries }
+					}
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{Variables: map[string]any{
+		"repo":   remoteID,
+		"bundle": bundle.Node.Bundle.ID,
+		"head":   capturedSHA,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, capturedSHA, imported.Node.WithBundle.Ref.CommitSHA)
+	require.Contains(t, imported.Node.WithBundle.Ref.Tree.Entries, "captured.txt")
+	require.NotContains(t, imported.Node.WithBundle.Ref.Tree.Entries, "current.txt")
+}
+
 func (GitSuite) TestGitBundleMalformedAndResourceFailures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
