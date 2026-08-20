@@ -78,7 +78,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, err)
 		require.Contains(t, cfg.Modules, "mywolfi")
 		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
+		require.Empty(t, cfg.Modules["mywolfi"].Pin)
 		require.False(t, cfg.Modules["mywolfi"].Entrypoint)
+		require.NotContains(t, string(configBytes), "pin =")
 
 		require.NoError(t, c.Close())
 
@@ -177,6 +179,14 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
 		require.Contains(t, string(lockBytes), `"git.ref"`)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+		cfg, err := workspacecfg.ParseConfig(configBytes)
+		require.NoError(t, err)
+		require.Equal(t, ref, cfg.Modules["wolfi"].Source)
+		require.Empty(t, cfg.Modules["wolfi"].Pin)
+		require.NotContains(t, string(configBytes), "pin =")
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {
