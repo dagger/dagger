@@ -71,6 +71,16 @@ class ChangesetsMergeConflict(Enum):
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
 
 
+class DaggerNesting(Enum):
+    """How a process may connect back to Dagger."""
+
+    INDEPENDENT_SESSIONS = "INDEPENDENT_SESSIONS"
+    """Allow the process to create independent ordinary sessions."""
+
+    NESTED_CLIENT = "NESTED_CLIENT"
+    """Connect to the session that created the process."""
+
+
 class DiffStatKind(Enum):
     """The type of change for a diff stat entry."""
 
@@ -1501,6 +1511,7 @@ class Container(Type):
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_nesting: DaggerNesting | None = None,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -1519,6 +1530,9 @@ class Container(Type):
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+            .. deprecated:: Use daggerNesting: NESTED_CLIENT.
+        dagger_nesting:
+            Configure how the executed command may connect back to Dagger.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1541,6 +1555,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerNesting", dagger_nesting, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -2412,6 +2427,7 @@ class Container(Type):
         *,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
+        dagger_nesting: DaggerNesting | None = None,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal for this container using its configured
@@ -2425,6 +2441,9 @@ class Container(Type):
             invoke these command arguments instead.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+            .. deprecated:: Use daggerNesting: NESTED_CLIENT.
+        dagger_nesting:
+            Configure how the executed command may connect back to Dagger.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2437,6 +2456,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerNesting", dagger_nesting, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
@@ -2450,6 +2470,7 @@ class Container(Type):
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_nesting: DaggerNesting | None = None,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -2475,6 +2496,9 @@ class Container(Type):
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+            .. deprecated:: Use daggerNesting: NESTED_CLIENT.
+        dagger_nesting:
+            Configure how the executed command may connect back to Dagger.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2512,6 +2536,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerNesting", dagger_nesting, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -2578,6 +2603,7 @@ class Container(Type):
         args: list[str],
         *,
         experimental_privileged_nesting: bool | None = False,
+        dagger_nesting: DaggerNesting | None = None,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Set the default command to invoke for the container's terminal API.
@@ -2588,6 +2614,9 @@ class Container(Type):
             The args of the command.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+            .. deprecated:: Use daggerNesting: NESTED_CLIENT.
+        dagger_nesting:
+            Configure how the executed command may connect back to Dagger.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2600,6 +2629,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerNesting", dagger_nesting, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("withDefaultTerminalCmd", _args)
@@ -2803,6 +2833,7 @@ class Container(Type):
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
         experimental_privileged_nesting: bool | None = False,
+        dagger_nesting: DaggerNesting | None = None,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -2838,6 +2869,9 @@ class Container(Type):
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+            .. deprecated:: Use daggerNesting: NESTED_CLIENT.
+        dagger_nesting:
+            Configure how the executed command may connect back to Dagger.
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -2865,6 +2899,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerNesting", dagger_nesting, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -4937,6 +4972,7 @@ class Directory(Type):
         container: Container | None = None,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
+        dagger_nesting: DaggerNesting | None = None,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal in new container with this directory
@@ -4951,6 +4987,9 @@ class Directory(Type):
             invoke these command arguments instead.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+            .. deprecated:: Use daggerNesting: NESTED_CLIENT.
+        dagger_nesting:
+            Configure how the executed command may connect back to Dagger.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -4964,6 +5003,7 @@ class Directory(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerNesting", dagger_nesting, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
@@ -16635,6 +16675,7 @@ __all__ = [
     "CurrentModuleAsSDK",
     "CurrentModuleAsSDKClient",
     "CurrentModuleAsSDKModule",
+    "DaggerNesting",
     "DiffStat",
     "DiffStatKind",
     "Directory",
