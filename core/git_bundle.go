@@ -616,16 +616,12 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 		if err != nil {
 			return nil, fmt.Errorf("resolve git bundle prerequisite ref %q: %w", prerequisiteRef, err)
 		}
-		matched := false
+		// The hint identifies a remote ref whose history carried the exact
+		// prerequisite at capture time. Its tip may have advanced since then;
+		// keep the prerequisite SHA from the bundle and use only the resolved
+		// ref name to guide remotes that do not allow fetches by object ID.
 		for i, prerequisite := range prerequisites {
-			if prerequisite.SHA == hint.SHA {
-				prerequisites[i] = &gitutil.Ref{Name: hint.Name, SHA: prerequisite.SHA}
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return nil, fmt.Errorf("git bundle prerequisite ref %q resolves to %s, which is not a bundle prerequisite", prerequisiteRef, hint.SHA)
+			prerequisites[i] = &gitutil.Ref{Name: hint.Name, SHA: prerequisite.SHA}
 		}
 	}
 	backends := make([]GitRefBackend, 0, len(prerequisites))
