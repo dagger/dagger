@@ -7,6 +7,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -894,6 +896,33 @@ func (ChangesetSuite) TestChangesetProjectsOnlyReportedPaths(ctx context.Context
 		keep, err := applied.File("keep.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "local edit", keep)
+	})
+
+	t.Run("layer", func(ctx context.Context, t *testctx.T) {
+		entries, err := changes.Layer().Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Equal(t, []string{"added.txt"}, entries)
+	})
+
+	t.Run("export", func(ctx context.Context, t *testctx.T) {
+		dest := t.TempDir()
+		keepPath := filepath.Join(dest, "keep.txt")
+		require.NoError(t, os.WriteFile(keepPath, []byte("local edit"), 0o644))
+
+		_, err := changes.Export(ctx, dest)
+		require.NoError(t, err)
+
+		entries, err := os.ReadDir(dest)
+		require.NoError(t, err)
+		var names []string
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		require.ElementsMatch(t, []string{"added.txt", "keep.txt"}, names)
+
+		keep, err := os.ReadFile(keepPath)
+		require.NoError(t, err)
+		require.Equal(t, "local edit", string(keep))
 	})
 }
 
