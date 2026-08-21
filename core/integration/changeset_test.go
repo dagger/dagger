@@ -7,6 +7,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -850,6 +852,78 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 		return dest.WithChanges(source)
 	}, false)
 	s.testWithChangesSymlinks(t)
+}
+
+// A changeset's before/after structural diff is metadata-sensitive: a file
+// rewritten with identical bytes but a fresh mtime shows up in it, even though
+// the changeset does not report it as changed. Every surface that projects a
+// changeset back into content has to narrow the diff to the reported paths, or
+// it writes over content the changeset never claimed. Regenerating a module
+// hits this every time, since codegen rewrites its whole context and only some
+// files actually change.
+func (ChangesetSuite) TestChangesetProjectsOnlyReportedPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	before := c.Directory().
+		WithNewFile("keep.txt", "same").
+		WithNewFile("nested/other.txt", "same too")
+	after := before.
+		WithTimestamps(1234567890).
+		WithNewFile("added.txt", "new")
+
+	changes := after.Changes(before)
+
+	added, err := changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"added.txt"}, added)
+	modified, err := changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, modified)
+	removed, err := changes.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, removed)
+
+	t.Run("withChanges", func(ctx context.Context, t *testctx.T) {
+		applied := c.Directory().
+			WithNewFile("keep.txt", "local edit").
+			WithChanges(changes)
+
+		entries, err := applied.Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Contains(t, entries, "added.txt")
+		require.NotContains(t, entries, "nested/other.txt")
+
+		keep, err := applied.File("keep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "local edit", keep)
+	})
+
+	t.Run("layer", func(ctx context.Context, t *testctx.T) {
+		entries, err := changes.Layer().Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Equal(t, []string{"added.txt"}, entries)
+	})
+
+	t.Run("export", func(ctx context.Context, t *testctx.T) {
+		dest := t.TempDir()
+		keepPath := filepath.Join(dest, "keep.txt")
+		require.NoError(t, os.WriteFile(keepPath, []byte("local edit"), 0o644))
+
+		_, err := changes.Export(ctx, dest)
+		require.NoError(t, err)
+
+		entries, err := os.ReadDir(dest)
+		require.NoError(t, err)
+		var names []string
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		require.ElementsMatch(t, []string{"added.txt", "keep.txt"}, names)
+
+		keep, err := os.ReadFile(keepPath)
+		require.NoError(t, err)
+		require.Equal(t, "local edit", string(keep))
+	})
 }
 
 // Regression test for a snapshot use-after-release: Directory.withChanges with
