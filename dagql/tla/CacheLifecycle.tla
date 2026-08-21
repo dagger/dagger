@@ -1474,12 +1474,19 @@ LatchEvalOutcomes(r, outcome) ==
                                   !.foreignCancel = (outcome = "latchedCancel")]
         ELSE evals[e]]
 
-\* A new Evaluate caller appears, demanding some registered result.
+\* A new Evaluate caller appears, demanding some registered result it
+\* holds. A caller can only hold a result whose attachment barrier is not
+\* open and not errored: every result-returning API waits at the barrier
+\* and returns errors instead of values, and lazy callbacks are registered
+\* only at attachment completion (registerLazyEvaluation, immediately
+\* before the barrier closes). "none" covers results that never armed a
+\* fresh barrier, such as imported rows and adopted cache-backed values.
 EvalSpawn ==
     /\ ModelLazy
     /\ Len(evals) < MaxEvals
     /\ \E r \in ResultIds :
         /\ res[r].registered
+        /\ res[r].barrier \notin {"open", "closedErr"}
         /\ evals' = Append(evals,
              [target |-> r, phase |-> "demand", foreignCancel |-> FALSE])
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
