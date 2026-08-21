@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"gotest.tools/v3/assert"
 )
 
@@ -542,4 +543,56 @@ func TestCacheCloseCancellationFailsDirtyWhileOperationActive(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, reopened.PersistenceResetReason(), CachePersistenceResetUncleanShutdown)
 	assert.NilError(t, reopened.CloseDiscardingPersistence())
+}
+
+// A detached writer that captures telemetry spans after its session was
+// released must not recreate the per-session span maps: session IDs are
+// single-use, so a recreated entry would be retained for the engine
+// lifetime.
+func TestCacheReleasedSessionDoesNotRecreateSpanMaps(t *testing.T) {
+	ctx := t.Context()
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "span-capture-released"
+	call := cacheTestIntCall("span-capture-released")
+	spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{7},
+		SpanID:  trace.SpanID{7},
+	})
+	spanIn := trace.ContextWithSpanContext(ctx, spanCtx)
+
+	res, err := c.GetOrInitCall(spanIn, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(call, 1), nil
+	})
+	assert.NilError(t, err)
+
+	// Positive control: before release, both writers record state, so a
+	// post-release no-op below cannot be explained by broken test inputs.
+	c.captureSessionLazySpanContext(spanIn, sessionID, res)
+	c.captureSessionResultInstallSpan(spanIn, sessionID, res)
+	c.sessionMu.Lock()
+	_, lazyBefore := c.sessionLazySpansBySession[sessionID]
+	_, installBefore := c.sessionResultInstallSpans[sessionID]
+	c.sessionMu.Unlock()
+	assert.Assert(t, lazyBefore)
+	assert.Assert(t, installBefore)
+
+	assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+	c.sessionMu.Lock()
+	_, lazyAfterRelease := c.sessionLazySpansBySession[sessionID]
+	_, installAfterRelease := c.sessionResultInstallSpans[sessionID]
+	c.sessionMu.Unlock()
+	assert.Assert(t, !lazyAfterRelease)
+	assert.Assert(t, !installAfterRelease)
+
+	c.captureSessionLazySpanContext(spanIn, sessionID, res)
+	c.captureSessionResultInstallSpan(spanIn, sessionID, res)
+
+	c.sessionMu.Lock()
+	_, lazyRecreated := c.sessionLazySpansBySession[sessionID]
+	_, installRecreated := c.sessionResultInstallSpans[sessionID]
+	c.sessionMu.Unlock()
+	assert.Assert(t, !lazyRecreated)
+	assert.Assert(t, !installRecreated)
 }
