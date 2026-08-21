@@ -37,6 +37,7 @@ var expectedOutcome = map[string]string{
 	"lazy":              "",
 	"lazy_liveness":     "",
 	"lazy_stale_cancel": "",
+	"lazy_import":       "",
 	"persist":           "",
 	"persist_liveness":  "",
 	"flush_roundtrip":   "",
