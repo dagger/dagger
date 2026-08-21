@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"testing"
@@ -45,7 +46,11 @@ type mockServer struct {
 	moduleSource   *ModuleSource
 	functionCall   *FunctionCall
 	clientMetadata *engine.ClientMetadata
-	attachables    map[string]*grpc.ClientConn
+	// when set, the client-scoped lookups fail the way the real server does
+	// once the calling client's session is gone: a nil value alongside an
+	// error.
+	clientLookupErr error
+	attachables     map[string]*grpc.ClientConn
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
@@ -106,10 +111,16 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 }
 
 func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
+	if ms.clientLookupErr != nil {
+		return nil, ms.clientLookupErr
+	}
 	return NewSchemaBuilder(nil, nil), nil
 }
 
 func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
+	if ms.clientLookupErr != nil {
+		return nil, ms.clientLookupErr
+	}
 	if ms.clientMetadata != nil {
 		return ms.clientMetadata, nil
 	}
@@ -231,6 +242,51 @@ func TestParseCallerCalleeRefs(t *testing.T) {
 	require.Equal(t, "github.com/dagger/dagger-test-modules/versioned", calleeRef.ref)
 	require.Equal(t, "0cabe03cc0a9079e738c92b2c589d81fd560011f", calleeRef.version)
 	require.Equal(t, "VersionedGitSSH.hello", calleeRef.functionName)
+}
+
+// Telemetry enrichment runs on every module call, including ones made long
+// after the calling client's session went away — e.g. from an agent's tool
+// loop. The client-scoped lookups then hand back nil values alongside their
+// error, so parsing must degrade to "no refs" instead of dereferencing them.
+func TestParseCallerCalleeRefsWithoutClient(t *testing.T) {
+	call := &dagql.ResultCall{
+		Kind:  dagql.ResultCallKindField,
+		Field: "VersionedGitSSH.hello",
+		Type:  dagql.NewResultCallType((&Void{}).Type()),
+		Module: &dagql.ResultCallModule{
+			Name: "versioned_git_ssh",
+			Ref:  "git@github.com:dagger/dagger-test-modules/versioned@main",
+			Pin:  "0cabe03cc0a9079e738c92b2c589d81fd560011f",
+		},
+	}
+
+	t.Run("no current module and no served deps", func(t *testing.T) {
+		// nil *SchemaBuilder: the callee module can't be resolved at all.
+		mockSrv := &mockServer{
+			clientLookupErr: errors.New("session not found"),
+			functionCall:    &FunctionCall{Name: "callerFunction"},
+		}
+
+		callerRef, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, call)
+		require.Nil(t, callerRef)
+		require.Nil(t, calleeRef)
+	})
+
+	t.Run("no caller metadata", func(t *testing.T) {
+		// nil *ClientMetadata: a local caller whose git labels are unknowable.
+		mockSrv := &mockServer{
+			clientLookupErr: errors.New("session not found"),
+			moduleSource: &ModuleSource{
+				Kind:  ModuleSourceKindLocal,
+				Local: &LocalModuleSource{ContextDirectoryPath: "/src"},
+			},
+			functionCall: &FunctionCall{Name: "callerFunction"},
+		}
+
+		callerRef, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, call)
+		require.Nil(t, callerRef)
+		require.Nil(t, calleeRef)
+	})
 }
 
 func TestAroundFuncMarksIntrospectionRootAsSkipped(t *testing.T) {
