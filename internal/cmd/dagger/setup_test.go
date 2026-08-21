@@ -36,3 +36,7 @@ func TestSetupStepLogin(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupShowsFinalProgress(t *testing.T) {
+	require.True(t, commandShowsFinalProgress(setupCmd))
+}
