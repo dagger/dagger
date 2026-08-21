@@ -3295,10 +3295,10 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 			// Retire the shared pointer only after the callback has finished. Old
 			// waiters retain attempt, so they cannot read or decrement a retry's
-			// state; new callers may now safely lead a fresh callback.
-			if shared.lazyEvalAttempt == attempt {
-				shared.lazyEvalAttempt = nil
-			}
+			// state; new callers may now safely lead a fresh callback. The pointer
+			// still names this attempt: publishing a successor requires it to be
+			// nil, and only this path clears it.
+			shared.lazyEvalAttempt = nil
 			shared.lazyMu.Unlock()
 
 			if c.testAfterLazyEvalFinish != nil {
