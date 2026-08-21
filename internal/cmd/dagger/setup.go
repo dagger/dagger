@@ -64,7 +64,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 
 	out := cmd.OutOrStdout()
 
-	if err := setupStepLogin(cmd); err != nil {
+	if err := setupStepLogin(cmd, cloudauth.GetCloudAuth); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", err)
 		// Login failures shouldn't block migration/recommend.
 	}
@@ -163,13 +163,13 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 
 // --- Step 1: Cloud login ---
 
-func setupStepLogin(cmd *cobra.Command) error {
+func setupStepLogin(cmd *cobra.Command, getCloudAuth func(context.Context) (*cloudauth.Cloud, error)) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
 	fmt.Fprintln(out, "Step 1: Cloud login")
 
-	if _, err := cloudauth.GetCloudAuth(ctx); err == nil {
+	if auth, err := getCloudAuth(ctx); err == nil && auth != nil {
 		fmt.Fprintln(out, "  Already logged in.")
 		return nil
 	}
