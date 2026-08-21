@@ -1540,9 +1540,10 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	}
 }
 
-// Regression test for #11996. An unversioned dependency with a named pin must
-// resolve that tag or branch rather than silently falling back to the default branch.
-func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testctx.T) {
+// Regression test for #11996. A dependency's named pin must resolve that tag
+// or branch even when source also contains a different symbolic ref such as
+// @main, rather than silently following the source ref.
+func (ModuleSuite) TestContextGitRemoteDepNamedPinOverridesSourceRef(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	remoteRepo := "github.com/dagger/dagger-test-modules"

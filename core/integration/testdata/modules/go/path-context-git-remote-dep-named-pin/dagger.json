@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "context-git",
-      "source": "github.com/dagger/dagger-test-modules/context-git",
+      "source": "github.com/dagger/dagger-test-modules/context-git@main",
       "pin": "v1.2.3"
     }
   ]
