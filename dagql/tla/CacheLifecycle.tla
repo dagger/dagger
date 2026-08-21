@@ -321,6 +321,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
      persisted |-> persistedFlag, barrier |-> "none",
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      laundered |-> launderedFlag,
+     imported |-> TRUE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
      lazyWaiters |-> 0, lazyRunning |-> 0]
@@ -335,6 +336,7 @@ DeadHusk ==
      persisted |-> FALSE, barrier |-> "none",
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      laundered |-> FALSE,
+     imported |-> TRUE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
      lazyWaiters |-> 0, lazyRunning |-> 0]
@@ -771,6 +773,7 @@ PubIndexFresh(o) ==
                        laundered |-> FALSE,
                        \* lazy-evaluation state, mirroring the lazyMu block
                        \* on sharedResult (cache.go:1584-1597):
+                       imported |-> FALSE,       \* fresh, not from the store
                        lazyCb |-> lazyCb,        \* lazyEval callback stored?
                        lazyComplete |-> FALSE,   \* lazyEvalComplete
                        lazyPhase |-> "idle",     \* published attempt lifecycle
@@ -1397,11 +1400,15 @@ Restart ==
                                  !.needsPersistedEdge = FALSE,
                                  !.waiters = 0]]
     /\ ongoingCallIndex' = [k \in Calls \X Sessions |-> 0]
-    /\ evals' = [e \in EvalIds |->
-         IF evals[e].phase \in EvalPendingPhases
-         THEN [evals[e] EXCEPT !.phase = "abandoned",
-                                  !.foreignCancel = FALSE]
-         ELSE evals[e]]
+    \* A restart kills the process: evaluator goroutines die with it, so no
+    \* evaluator record survives, terminal or not. (Invocations differ:
+    \* they are retained across restart with epoch bookkeeping because the
+    \* refusal properties must still judge pre-restart refusals; no
+    \* evaluator property needs that, and a retained "done" evaluator would
+    \* pair with a rebuilt incomplete result and falsely trip
+    \* EvalDoneComplete.) Clearing also resets the MaxEvals budget: a new
+    \* process gets new callers.
+    /\ evals' = <<>>
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
     /\ sessionRelease' = [s \in Sessions |-> [phase |-> "live", snap |-> {}]]
@@ -1494,6 +1501,33 @@ EvalSpawn ==
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
+
+\* A hit loads an imported result's value and registers its lazy work:
+\* ensurePersistedHitValueLoaded calls registerLazyEvaluation after the
+\* value (possibly just decoded) is in memory, and persisted payloads can
+\* carry deferred work - a lazy container persists its recipe
+\* (core/container.go, persistedContainerFormLazy). Whether a given row
+\* carries lazy work is payload data the model does not track, so arming
+\* is optional: rows without lazy work are the paths where this never
+\* fires. Registration reads object-side state under lazyMu only with no
+\* attempt published, and is a no-op once a callback is stored, evaluation
+\* completed, or bookkeeping is pending, hence the guards. Fresh results
+\* arm at publication (PubIndexFresh), never here. After a restart every
+\* kept row is imported again and may re-arm, matching a store row whose
+\* payload still carries its recipe.
+ImportedLazyArm(r) ==
+    /\ ModelLazy
+    /\ r \in ResultIds
+    /\ res[r].registered
+    /\ res[r].imported
+    /\ res[r].payload = "decoded"
+    /\ res[r].lazyCb = "none"
+    /\ ~res[r].lazyComplete
+    /\ ~res[r].lazySyncPending
+    /\ res[r].lazyPhase = "idle"
+    /\ res' = [res EXCEPT ![r].lazyCb = "armed"]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
 
 \* Fast path under lazyMu: evaluation already completed, or nothing
 \* deferred remains anywhere - no published attempt, no object-side
@@ -1701,7 +1735,7 @@ Next ==
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalJoin(e)
          \/ EvalCallbackClose(e) \/ EvalWake(e) \/ EvalAbandon(e)
     \/ \E r \in 1..Len(res) :
-         EvalBodyFinish(r) \/ EvalSyncFinish(r)
+         EvalBodyFinish(r) \/ EvalSyncFinish(r) \/ ImportedLazyArm(r)
     \/ Flush
     \/ Restart
 
@@ -1813,6 +1847,7 @@ TypeOK ==
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
     /\ \A r \in ResultIds :
          /\ res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
+         /\ res[r].imported \in BOOLEAN
          /\ res[r].lazyPhase \in {"idle", "running", "syncing"}
          /\ res[r].lazyCb \in {"none", "armed"}
          /\ res[r].lazyCancel \in BOOLEAN
