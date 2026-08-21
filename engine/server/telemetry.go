@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
@@ -29,7 +30,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	"github.com/vito/go-sse/sse"
 )
 
 type Topic struct {
@@ -713,113 +713,64 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.sseHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
-		var since int64
-		if lastID != "" {
-			_, err := fmt.Sscanf(lastID, "%d", &since)
-			if err != nil {
-				return nil, false, fmt.Errorf("invalid last ID: %w", err)
-			}
-		}
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
 		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
 		if err != nil {
-			return nil, false, fmt.Errorf("select spans: %w", err)
+			return 0, nil, false, fmt.Errorf("select spans: %w", err)
 		}
 		if len(spans) == 0 {
-			return nil, false, nil
+			return since, nil, false, nil
 		}
 		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
 		for i, span := range spans {
 			roSpans[i] = span.ReadOnly()
 			since = span.ID
 		}
-		// Marshal the spans to OTLP.
-		payload, err := protojson.Marshal(&coltracepb.ExportTraceServiceRequest{
+		return since, &coltracepb.ExportTraceServiceRequest{
 			ResourceSpans: telemetry.SpansToPB(roSpans),
-		})
-		if err != nil {
-			return nil, false, fmt.Errorf("marshal spans: %w", err)
-		}
-		return &sse.Event{
-			Name: "spans",
-			ID:   fmt.Sprintf("%d", since),
-			Data: payload,
 		}, true, nil
 	})
 }
 
 //nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.sseHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
-		var since int64
-		if lastID != "" {
-			_, err := fmt.Sscanf(lastID, "%d", &since)
-			if err != nil {
-				return nil, false, fmt.Errorf("invalid last ID: %w", err)
-			}
-		}
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
 		logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
 		if err != nil {
-			return nil, false, fmt.Errorf("select logs: %w", err)
+			return 0, nil, false, fmt.Errorf("select logs: %w", err)
 		}
 		if len(logs) == 0 {
-			return nil, false, nil
+			return since, nil, false, nil
 		}
 		since = logs[len(logs)-1].ID
-		// Marshal the logs to OTLP.
-		payload, err := protojson.Marshal(&collogspb.ExportLogsServiceRequest{
+		return since, &collogspb.ExportLogsServiceRequest{
 			ResourceLogs: clientdb.LogsToPB(logs),
-		})
-		if err != nil {
-			return nil, false, fmt.Errorf("marshal logs: %w", err)
-		}
-		return &sse.Event{
-			Name: "logs",
-			ID:   fmt.Sprintf("%d", since),
-			Data: payload,
 		}, true, nil
 	})
 }
 
 //nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.sseHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
-		var since int64
-		if lastID != "" {
-			_, err := fmt.Sscanf(lastID, "%d", &since)
-			if err != nil {
-				return nil, false, fmt.Errorf("invalid last ID: %w", err)
-			}
-		}
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
 		if err != nil {
-			return nil, false, fmt.Errorf("select metrics: %w", err)
+			return 0, nil, false, fmt.Errorf("select metrics: %w", err)
 		}
-
 		if len(metrics) == 0 {
-			return nil, false, nil
+			return since, nil, false, nil
 		}
 		since = metrics[len(metrics)-1].ID
-		// Marshal the metrics to OTLP.
-		payload, err := protojson.Marshal(&colmetricspb.ExportMetricsServiceRequest{
+		return since, &colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: clientdb.MetricsToPB(metrics),
-		})
-		if err != nil {
-			return nil, false, fmt.Errorf("marshal metrics: %w", err)
-		}
-		return &sse.Event{
-			Name: "metrics",
-			ID:   fmt.Sprintf("%d", since),
-			Data: payload,
 		}, true, nil
 	})
 }
@@ -1098,23 +1049,26 @@ func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
-type Fetcher func(ctx context.Context, db *clientdb.DB, since string) (*sse.Event, bool, error)
+type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error)
 
-func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher Fetcher) error {
-	slog := slog.With("client", record.clientID, "path", r.URL.Path)
+func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
+	logger := slog.With("client", record.clientID, "path", r.URL.Path)
 
-	flush := func() {
-		slog.Warn("flush not supported?")
-	}
+	var flush func()
 	if flusher, ok := w.(http.Flusher); ok {
 		flush = flusher.Flush
+	} else {
+		flush = func() { logger.Warn("response flushing is not supported") }
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	since := r.Header.Get("X-Last-Event-ID")
+	var since int64
+	if cursor := r.Header.Get(enginetel.LiveCursorHeader); cursor != "" {
+		var err error
+		since, err = strconv.ParseInt(cursor, 10, 64)
+		if err != nil || since < 0 {
+			return fmt.Errorf("invalid telemetry cursor %q", cursor)
+		}
+	}
 
 	db, err := record.TelemetryDB(r.Context())
 	if err != nil {
@@ -1122,59 +1076,56 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, record *cli
 	}
 	defer db.Close()
 
-	// Send an initial event just to indicate that the client has subscribed.
-	//
-	// This helps distinguish 'attached but no data yet' vs. 'waiting for headers'.
-	// Theoretically the flush() is enough, but we might as well send a different
-	// event type to keep people on their toes.
-	sse.Event{
-		Name: "subscribed",
-	}.Write(w)
+	w.Header().Set("Content-Type", enginetel.LiveContentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	// Commit and flush the response before waiting for the first batch so the
+	// client can distinguish an attached subscription from pending headers.
 	flush()
 
-	var terminating bool
+	terminating := false
 	for {
 		fetchStart := time.Now()
-		event, hasData, err := fetcher(r.Context(), db, since)
+		next, message, hasData, err := fetcher(r.Context(), db, since)
 		if elapsed := time.Since(fetchStart); elapsed > slowTelemetryOp {
-			// A slow historical file scan does not hold the stream mutex, but it
-			// can still threaten the terminating subscriber's drain budget.
-			slog.Warn("slow SSE fetch", "duration", elapsed, "hasData", hasData, "error", err)
+			logger.Warn("slow OTLP stream fetch", "duration", elapsed, "hasData", hasData, "error", err)
 		}
 		if err != nil {
-			slog.Warn("error fetching event", "err", err)
 			return fmt.Errorf("fetch: %w", err)
 		}
 		if !hasData {
 			if terminating {
-				// We're already terminating and found no data, so we're done.
+				if err := enginetel.WriteLiveTerminal(w, since); err != nil {
+					return fmt.Errorf("write terminal frame: %w", err)
+				}
+				flush()
 				return nil
 			}
 			select {
 			case <-time.After(telemetry.NearlyImmediate):
-				// Poll for more data at the same frequency that it's batched and saved.
-				// Tail reads are cheap enough for aggressive polling.
-				// Synchronizing with writes isn't worth the accompanying risk of hangs.
-				//
-				// NB: logging here is a bit too crazy
+				// Poll at the telemetry batching frequency. Tail reads are cheap,
+				// while coupling readers to writers risks blocking shutdown.
 			case <-record.shutdownCh:
-				// Client is shutting down; next time we receive no data, we'll exit.
-				slog.ExtraDebug("shutting down")
+				logger.ExtraDebug("shutting down")
 				terminating = true
 			case <-r.Context().Done():
-				// Client went away, no point hanging around.
-				slog.ExtraDebug("client went away")
+				logger.ExtraDebug("client went away")
 				return nil
 			}
 			continue
 		}
-
-		since = event.ID
-
-		if err := event.Write(w); err != nil {
-			return fmt.Errorf("write: %w", err)
+		if next <= since {
+			return fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since)
 		}
 
+		payload, err := proto.Marshal(message)
+		if err != nil {
+			return fmt.Errorf("marshal OTLP batch: %w", err)
+		}
+		if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
+			return fmt.Errorf("write OTLP frame: %w", err)
+		}
+		since = next
 		flush()
 	}
 }

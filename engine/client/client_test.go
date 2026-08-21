@@ -1,8 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -59,8 +62,11 @@ func TestOTLPConsumerStopsOnContextCancellation(t *testing.T) {
 			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
-					Body:       body,
-					Request:    req,
+					Header: http.Header{
+						"Content-Type": []string{enginetel.LiveContentType},
+					},
+					Body:    body,
+					Request: req,
 				}, nil
 			}),
 		},
@@ -94,6 +100,72 @@ func TestOTLPConsumerStopsOnContextCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("telemetry consumer did not stop after context cancellation")
 	}
+}
+
+func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
+	t.Parallel()
+
+	var requests int
+	httpClient := &httpClient{
+		inner: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				var stream bytes.Buffer
+				switch requests {
+				case 1:
+					if cursor := req.Header.Get(enginetel.LiveCursorHeader); cursor != "" {
+						return nil, fmt.Errorf("initial cursor = %q", cursor)
+					}
+					if err := enginetel.WriteLiveFrame(&stream, 7, []byte("batch one")); err != nil {
+						return nil, err
+					}
+				case 2:
+					if cursor := req.Header.Get(enginetel.LiveCursorHeader); cursor != "7" {
+						return nil, fmt.Errorf("resume cursor = %q, want 7", cursor)
+					}
+					if err := enginetel.WriteLiveFrame(&stream, 9, []byte("batch two")); err != nil {
+						return nil, err
+					}
+					if err := enginetel.WriteLiveTerminal(&stream, 9); err != nil {
+						return nil, err
+					}
+				default:
+					return nil, fmt.Errorf("unexpected request %d", requests)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header: http.Header{
+						"Content-Type": []string{enginetel.LiveContentType},
+					},
+					Body:    io.NopCloser(bytes.NewReader(stream.Bytes())),
+					Request: req,
+				}, nil
+			}),
+		},
+	}
+
+	telemetryGroup := new(errgroup.Group)
+	consumer := &otlpConsumer{
+		httpClient: httpClient,
+		path:       "/v1/traces",
+		eg:         telemetryGroup,
+	}
+	var batches [][]byte
+	require.NoError(t, consumer.Consume(context.Background(), func(payload []byte) error {
+		batches = append(batches, bytes.Clone(payload))
+		return nil
+	}))
+
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- telemetryGroup.Wait() }()
+	select {
+	case err := <-waitDone:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("telemetry consumer did not finish after terminal frame")
+	}
+	require.Equal(t, [][]byte{[]byte("batch one"), []byte("batch two")}, batches)
+	require.Equal(t, 2, requests)
 }
 
 func TestClientMetadataUsesExplicitModuleInsteadOfWorkspaceModules(t *testing.T) {

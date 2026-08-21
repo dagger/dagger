@@ -36,8 +36,11 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 func installTestClientRecords(sess *daggerSession) {
@@ -1566,6 +1569,57 @@ func (caller *fakeSessionCaller) Supports(string) bool {
 
 func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
 	return caller.conn
+}
+
+func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	ps := &PubSub{srv: srv}
+	sess := &daggerSession{telemetryPubSub: ps}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: sess,
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set(enginetel.LiveCursorHeader, "4")
+	resp := httptest.NewRecorder()
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
+		switch since {
+		case 4, 5:
+			next := since + 1
+			return next, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: fmt.Sprintf("batch-%d", next)}},
+			}, true, nil
+		default:
+			return since, nil, false, nil
+		}
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, enginetel.LiveContentType, resp.Header().Get("Content-Type"))
+	require.True(t, resp.Flushed)
+
+	for _, expectedCursor := range []int64{5, 6} {
+		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedCursor, cursor)
+		require.False(t, terminal)
+		require.NotEmpty(t, payload)
+		require.NotEqual(t, byte('{'), payload[0], "payload must be binary protobuf, not protojson")
+		var batch collogspb.ExportLogsServiceRequest
+		require.NoError(t, proto.Unmarshal(payload, &batch))
+		require.Equal(t, fmt.Sprintf("batch-%d", expectedCursor), batch.ResourceLogs[0].SchemaUrl)
+	}
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), cursor)
+	require.Nil(t, payload)
+	require.True(t, terminal)
+	require.Empty(t, resp.Body.Bytes())
 }
 
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
