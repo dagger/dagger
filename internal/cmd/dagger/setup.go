@@ -69,19 +69,23 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("setup does not support --env; it configures the base workspace")
 	}
 
-	if err := setupStepLogin(cmd, cloudauth.GetCloudAuth); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", err)
-		// Login failures shouldn't block migration/recommend.
-	}
-
 	// All steps run under ONE Frontend (one live TUI) so their prompts can be
 	// huh forms the TUI renders — a raw stdin prompt would be drawn over by the
 	// progress display. withSetupSessions provides connect() so the install can
 	// run in a FRESH engine session: the per-client workspace is detected once
 	// and cached for a session's lifetime, so install must not reuse the
 	// migrate session or it would still see the legacy dagger.json.
-	return withSetupSessions(cmd.Context(), func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) (rerr error) {
-		setupUI := newSetupUI(Frontend)
+	var setupUI *setupUI
+	return withSetupSessions(cmd.Context(), func(ctx context.Context) {
+		setupUI = newSetupUI(Frontend)
+		if err := setupStepLogin(ctx, cmd, cloudauth.GetCloudAuth, setupUI); err != nil {
+			setupUI.setLoginFailed(err)
+			if setupUI == nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", err)
+			}
+			// Login failures shouldn't block migration/recommend.
+		}
+	}, func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) (rerr error) {
 		defer func() {
 			if rerr != nil {
 				setupUI.fail(rerr)
@@ -215,27 +219,76 @@ func setupMessage(ctx context.Context, name, markdown string) {
 
 // --- Step 1: Cloud login ---
 
-func setupStepLogin(cmd *cobra.Command, getCloudAuth func(context.Context) (*cloudauth.Cloud, error)) error {
-	ctx := cmd.Context()
+func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(context.Context) (*cloudauth.Cloud, error), ui *setupUI) error {
 	out := cmd.OutOrStdout()
 
-	fmt.Fprintln(out, "Step 1: Cloud login")
+	if ui == nil {
+		fmt.Fprintln(out, "Step 1: Cloud login")
+	} else {
+		ui.setLoginPending("Checking Cloud account...")
+	}
 
 	if auth, err := getCloudAuth(ctx); err == nil && auth != nil {
-		fmt.Fprintln(out, "  Already logged in.")
+		if ui == nil {
+			fmt.Fprintln(out, "  Already logged in.")
+		} else {
+			ui.setLoginComplete("Already logged in.")
+		}
 		return nil
 	}
 
-	if !confirm(cmd, "  Log in to Dagger Cloud?") {
-		fmt.Fprintln(out, "  Skipped.")
+	if ui != nil {
+		ui.setLoginPending("Waiting for login choice...")
+	}
+	if !confirmSetupLogin(ctx, cmd, ui) {
+		if ui == nil {
+			fmt.Fprintln(out, "  Skipped.")
+		} else {
+			ui.setLoginSkipped("Skipped.")
+		}
 		return nil
 	}
 
-	if err := cloudauth.Login(ctx, cmd.ErrOrStderr(), cloudauth.WithAuthGate()); err != nil {
+	loginOut := io.Writer(cmd.ErrOrStderr())
+	if ui != nil && ui.live {
+		ui.setLoginPending("Waiting for authentication...")
+		loginOut = setupLoginWriter{ui: ui}
+	}
+	if err := cloudauth.Login(ctx, loginOut, cloudauth.WithAuthGate()); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "  Logged in.")
+	if ui == nil {
+		fmt.Fprintln(out, "  Logged in.")
+	} else {
+		ui.setLoginComplete("Logged in.")
+	}
 	return nil
+}
+
+func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) bool {
+	if ui == nil || !ui.live {
+		return confirm(cmd, "  Log in to Dagger Cloud?")
+	}
+	if autoApply {
+		return true
+	}
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		ui.setLoginSkipped("Skipped in non-interactive mode; use --auto-apply to accept.")
+		return false
+	}
+	var accepted bool
+	if err := Frontend.HandlePrompt(ctx, "Cloud account", "Log in to Dagger Cloud?", &accepted); err != nil {
+		ui.setLoginFailed(err)
+		return false
+	}
+	return accepted
+}
+
+type setupLoginWriter struct{ ui *setupUI }
+
+func (w setupLoginWriter) Write(p []byte) (int, error) {
+	w.ui.appendLoginDetail(string(p))
+	return len(p), nil
 }
 
 // --- Step 2: Migrate ---

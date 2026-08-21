@@ -128,6 +128,7 @@ type Frontend interface {
 // a plain-output fallback for streaming frontends.
 type CommandFrontend interface {
 	SetView(ViewFactory) ViewHandle
+	Live() bool
 }
 
 // ViewFactory constructs a command screen using services owned by the pretty

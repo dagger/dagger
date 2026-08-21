@@ -262,8 +262,11 @@ available.
 
 ## `dagger setup`
 
-Cloud login remains before TUI startup so that it does not begin the Cloud
-trace that login is intended to establish.
+The TUI host starts before Cloud login, but telemetry does not. Login is an
+untraced semantic phase rendered by `SetupView`; once it succeeds or is
+skipped, setup initializes telemetry and begins the traced workspace phase.
+Credentials established by login therefore apply to the entire trace without
+forcing login outside the composed screen.
 
 After login, `dagger setup` installs a `SetupView` and starts its primary setup
 span. The view owns:
@@ -345,6 +348,8 @@ guards against disappearing or interleaved output.
 - [x] Preserve descendant focus across renders and restore focus after forms
       and overlays close.
 - [x] Add an explicit live-to-final transition for custom command screens.
+- [x] Decouple the setup TUI lifetime from its traced execution lifetime so
+      Cloud login can render inside the screen before telemetry starts.
 - [x] Support deterministic final rendering for non-interactive output.
 - [x] Implement `SetupView` with semantic workspace guidance and an embedded
       installation span checklist.

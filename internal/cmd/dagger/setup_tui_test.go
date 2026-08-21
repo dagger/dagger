@@ -1,14 +1,20 @@
 package daggercmd
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 )
 
 func TestSetupViewFinalSummary(t *testing.T) {
 	view := &setupView{
+		loginState:       setupLoginComplete,
+		loginMessage:     "Already logged in.",
 		complete:         true,
 		migrationMessage: "No workspace loaded here yet — nothing to migrate.",
 		installed:        []string{"eslint", "go"},
@@ -19,6 +25,7 @@ func TestSetupViewFinalSummary(t *testing.T) {
 
 	rendered := strings.Join(tui.RenderLines(), "\n")
 	for _, want := range []string{
+		"Cloud account: Already logged in.",
 		"Setup complete.",
 		"No workspace loaded here yet",
 		"Installed eslint, go.",
@@ -30,4 +37,22 @@ func TestSetupViewFinalSummary(t *testing.T) {
 	if !strings.HasSuffix(strings.TrimSpace(rendered), "Setup complete.") {
 		t.Fatalf("completion message was not last:\n%s", rendered)
 	}
+}
+
+type immediateViewHandle struct{}
+
+func (immediateViewHandle) Update(fn func()) { fn() }
+
+func TestSetupLoginUpdatesCommandView(t *testing.T) {
+	view := &setupView{}
+	ui := &setupUI{view: view, handle: immediateViewHandle{}, live: true}
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+
+	err := setupStepLogin(t.Context(), cmd, func(context.Context) (*cloudauth.Cloud, error) {
+		return &cloudauth.Cloud{}, nil
+	}, ui)
+	require.NoError(t, err)
+	require.Equal(t, setupLoginComplete, view.loginState)
+	require.Equal(t, "Already logged in.", view.loginMessage)
 }

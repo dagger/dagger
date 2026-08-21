@@ -16,15 +16,30 @@ import (
 type setupUI struct {
 	view   *setupView
 	handle idtui.ViewHandle
+	live   bool
 }
+
+type setupLoginState int
+
+const (
+	setupLoginPending setupLoginState = iota
+	setupLoginComplete
+	setupLoginSkipped
+	setupLoginFailed
+)
 
 func newSetupUI(frontend idtui.Frontend) *setupUI {
 	host, ok := frontend.(idtui.CommandFrontend)
 	if !ok {
 		return nil
 	}
-	view := &setupView{}
-	ui := &setupUI{view: view}
+	view := &setupView{
+		loginState:   setupLoginPending,
+		loginMessage: "Checking Cloud account...",
+		loginSpinner: tuist.NewSpinner(),
+		workSpinner:  tuist.NewSpinner(),
+	}
+	ui := &setupUI{view: view, live: host.Live()}
 	ui.handle = host.SetView(func(ctx idtui.ViewContext) idtui.CommandView {
 		view.workspace = ctx.SpanList(
 			func() dagui.SpanID { return view.rootID },
@@ -65,6 +80,42 @@ func (ui *setupUI) setRoot(id dagui.SpanID) {
 	ui.update(func(view *setupView) { view.rootID = id })
 }
 
+func (ui *setupUI) setLoginPending(message string) {
+	ui.update(func(view *setupView) {
+		view.loginState = setupLoginPending
+		view.loginMessage = message
+	})
+}
+
+func (ui *setupUI) setLoginComplete(message string) {
+	ui.update(func(view *setupView) {
+		view.loginState = setupLoginComplete
+		view.loginMessage = message
+		view.loginDetail = ""
+	})
+}
+
+func (ui *setupUI) setLoginSkipped(message string) {
+	ui.update(func(view *setupView) {
+		if view.loginState != setupLoginPending {
+			return
+		}
+		view.loginState = setupLoginSkipped
+		view.loginMessage = message
+	})
+}
+
+func (ui *setupUI) setLoginFailed(err error) {
+	ui.update(func(view *setupView) {
+		view.loginState = setupLoginFailed
+		view.loginMessage = err.Error()
+	})
+}
+
+func (ui *setupUI) appendLoginDetail(detail string) {
+	ui.update(func(view *setupView) { view.loginDetail += detail })
+}
+
 func (ui *setupUI) setMigration(id dagui.SpanID) {
 	ui.update(func(view *setupView) { view.migrationID = id })
 }
@@ -99,7 +150,12 @@ func (ui *setupUI) fail(err error) {
 type setupView struct {
 	tuist.Compo
 
-	final bool
+	final        bool
+	loginState   setupLoginState
+	loginMessage string
+	loginDetail  string
+	loginSpinner *tuist.Spinner
+	workSpinner  *tuist.Spinner
 
 	rootID           dagui.SpanID
 	migrationID      dagui.SpanID
@@ -132,9 +188,17 @@ func (view *setupView) Render(ctx tuist.Context) {
 
 	ctx.Line("Setting up this workspace")
 	ctx.Line("")
+	ctx.Line("Cloud account")
+	view.renderLogin(ctx)
+	ctx.Line("")
 	ctx.Line("Workspace")
-	if view.workspace != nil {
+	if view.migrationID.IsValid() && view.workspace != nil {
 		view.RenderChild(ctx, view.workspace)
+	} else if view.loginState == setupLoginPending {
+		ctx.Line("○ Waiting for Cloud account")
+	} else if view.workSpinner != nil {
+		view.workSpinner.Label = "Starting workspace setup..."
+		view.RenderChild(ctx, view.workSpinner)
 	}
 	lines(ctx, view.migrationMessage)
 
@@ -145,6 +209,23 @@ func (view *setupView) Render(ctx tuist.Context) {
 			view.RenderChild(ctx, view.recommend)
 		}
 		lines(ctx, view.recommendMessage)
+	}
+}
+
+func (view *setupView) renderLogin(ctx tuist.Context) {
+	switch view.loginState {
+	case setupLoginPending:
+		view.loginSpinner.Label = view.loginMessage
+		view.RenderChild(ctx, view.loginSpinner)
+	case setupLoginComplete:
+		ctx.Line("✓ " + view.loginMessage)
+	case setupLoginSkipped:
+		ctx.Line("○ " + view.loginMessage)
+	case setupLoginFailed:
+		ctx.Line("✗ " + view.loginMessage)
+	}
+	if detail := strings.TrimSpace(view.loginDetail); detail != "" {
+		ctx.Lines(strings.Split(detail, "\n")...)
 	}
 }
 
@@ -187,6 +268,17 @@ func (view *setupView) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) bo
 }
 
 func (view *setupView) renderFinal(ctx tuist.Context) {
+	switch view.loginState {
+	case setupLoginComplete:
+		ctx.Line("Cloud account: " + view.loginMessage)
+	case setupLoginSkipped:
+		ctx.Line("Cloud account: " + view.loginMessage)
+	case setupLoginFailed:
+		ctx.Line("Cloud account: " + view.loginMessage)
+	}
+	if view.migrationMessage != "" {
+		ctx.Line("")
+	}
 	if view.migrationMessage != "" {
 		lines(ctx, view.migrationMessage)
 	}

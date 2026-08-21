@@ -28,9 +28,9 @@ func TestSetupStepLogin(t *testing.T) {
 			cmd.SetContext(ctx)
 			cmd.SetOut(&out)
 
-			err := setupStepLogin(cmd, func(context.Context) (*cloudauth.Cloud, error) {
+			err := setupStepLogin(ctx, cmd, func(context.Context) (*cloudauth.Cloud, error) {
 				return tt.auth, nil
-			})
+			}, nil)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantAlready, bytes.Contains(out.Bytes(), []byte("Already logged in.")))
 		})

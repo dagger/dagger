@@ -266,6 +266,13 @@ var (
 
 var _ CommandFrontend = (*frontendPretty)(nil)
 
+// Live reports whether command components are being rendered interactively.
+// Report mode still uses their final rendering, but cannot surface forms or
+// transient login instructions.
+func (fe *frontendPretty) Live() bool {
+	return !fe.reportOnly
+}
+
 type commandViewContext struct {
 	fe *frontendPretty
 }
