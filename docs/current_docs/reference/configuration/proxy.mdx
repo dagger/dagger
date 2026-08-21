@@ -5,8 +5,6 @@ slug: /reference/configuration/proxy
 sidebar_label: "Service Proxies"
 ---
 
-import CallStages from "@components/CallStages";
-
 Dagger can be configured to use HTTP(S) proxies to connect to external HTTP
 services. This configuration applies to "core" operations like pulling
 container images, cloning Git repositories, etc. and is also supplied to user
@@ -27,9 +25,15 @@ As well as the custom environment variable:
   (`https://proxy.golang.org`) is unreachable and you need a mirror such as
   `https://goproxy.cn,direct`.
 
-Go downloads happen at generate, or on a first build if the cache is empty. Call uses files that already exist.
+```mermaid
+flowchart LR
+  E["Engine — already on"]
+  G["Generate — writes SDK files<br/>downloads modules if the cache is empty"]
+  C["Call — build and run"]
+  E --> G --> C
+```
 
-<CallStages />
+The engine is already on. It does not download here. Generate writes the SDK files. If the cache is empty, modules download then. Call builds and runs from those files. A first build can still download.
 
 Configuring these settings requires [provisioning a custom
 engine](./custom-runner.mdx). Set the variable(s) on that engine container,
