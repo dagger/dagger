@@ -102,3 +102,12 @@ func ShouldEmitCallPayload(store TelemetrySeenKeyStore, callDigest string) bool 
 	}
 	return !store.LoadOrStoreTelemetrySeenKey(callPayloadSeenKeyPrefix + callDigest)
 }
+
+// CallPayloadSeenKeyStore tracks immutable call payload delivery per target in
+// the current route. The producer-side check must not claim: log delivery owns
+// its atomic claim, while a recording span explicitly marks its payload as
+// delivered through CallPayloadDelivered.
+type CallPayloadSeenKeyStore interface {
+	CallPayloadNeedsEmission(string) bool
+	CallPayloadDelivered(string)
+}

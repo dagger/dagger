@@ -9,6 +9,8 @@ import (
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -87,6 +89,16 @@ func spanOriginClientID(span sdktrace.ReadOnlySpan) string {
 	return ""
 }
 
+func withoutSpanOrigin(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
+	attrs := make([]attribute.KeyValue, 0, len(span.Attributes()))
+	for _, attr := range span.Attributes() {
+		if string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr {
+			attrs = append(attrs, attr)
+		}
+	}
+	return originReadOnlySpan{ReadOnlySpan: span, attrs: attrs}
+}
+
 func logOriginClientID(rec sdklog.Record) string {
 	var origin string
 	rec.WalkAttributes(func(attr log.KeyValue) bool {
@@ -97,6 +109,42 @@ func logOriginClientID(rec sdklog.Record) string {
 		return true
 	})
 	return origin
+}
+
+func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
+	clean := rec.Clone()
+	attrs := make([]log.KeyValue, 0, rec.AttributesLen())
+	rec.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key != telemetryattrs.TelemetryOriginClientIDAttr {
+			attrs = append(attrs, attr)
+		}
+		return true
+	})
+	clean.SetAttributes(attrs...)
+	return clean
+}
+
+// dagCallPayloadDigest centralizes recognition of call-payload records so the
+// router is independent of consumers: a record whose content type declares an
+// encoded call carries its own recipe digest embedded in the protobuf body.
+func dagCallPayloadDigest(rec sdklog.Record) (string, bool) {
+	payload := false
+	rec.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key == telemetry.ContentTypeAttr {
+			payload = attr.Value.Kind() == log.KindString &&
+				attr.Value.AsString() == telemetryattrs.CallPayloadContentType
+			return false
+		}
+		return true
+	})
+	if !payload || rec.Body().Kind() != log.KindBytes {
+		return "", false
+	}
+	decoded := new(callpbv1.Call)
+	if err := proto.Unmarshal(rec.Body().AsBytes(), decoded); err != nil {
+		return "", false
+	}
+	return decoded.GetDigest(), decoded.GetDigest() != ""
 }
 
 type sessionSpanExporter struct {
@@ -115,6 +163,7 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		if err != nil {
 			return err
 		}
+		span = withoutSpanOrigin(span)
 		for _, target := range route {
 			byTarget[target] = append(byTarget[target], span)
 		}
@@ -149,6 +198,13 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if err != nil {
 			return err
 		}
+		if digest, ok := dagCallPayloadDigest(rec); ok {
+			route = exp.sess.callPayloadMissingTargets(digest, route, true)
+		}
+		if len(route) == 0 {
+			continue
+		}
+		rec = withoutLogOrigin(rec)
 		for _, target := range route {
 			byTarget[target] = append(byTarget[target], rec)
 		}
@@ -219,7 +275,10 @@ func (exp sessionMetricExporter) Export(ctx context.Context, metrics *metricdata
 				return attrs, false, err
 			}
 			_, include := targetOrigins[origin]
-			return attrs, include, nil
+			filtered, _ := attrs.Filter(func(attr attribute.KeyValue) bool {
+				return string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr
+			})
+			return filtered, include, nil
 		})
 		if err != nil {
 			return err
