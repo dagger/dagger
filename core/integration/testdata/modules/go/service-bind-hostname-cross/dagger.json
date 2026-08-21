@@ -1,0 +1,13 @@
+{
+  "name": "consumer",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "producer",
+      "source": "producer"
+    }
+  ]
+}
