@@ -16,7 +16,7 @@ import (
 
 // --- private sdks.json registry ---
 //
-// This is an implementation detail of `dagger sdk install <name>`. It is NOT
+// This is an implementation detail of migrated SDK installs. It is NOT
 // a general-purpose alias registry. Adding a new alias is a registry data
 // change here; no other surface reaches for `sdks.json`.
 
@@ -54,7 +54,7 @@ func parseSDKRegistry(data []byte) ([]sdkEntry, error) {
 //   - N > 1   → error ("ambiguous"), with candidate names.
 //
 // Registry names and aliases affect the CLI-side default install name and the
-// SDK alias persisted under [modules.<name>.as-sdk]. Only canonical full refs
+// SDK name persisted under [sdks.<name>]. Only canonical full refs
 // flow past this function.
 func sdkResolve(input string) (string, error) {
 	ref, _, _, err := sdkResolveInstall(input)
@@ -66,11 +66,12 @@ func sdkResolve(input string) (string, error) {
 //   - the workspace install name to use when the user did not pass --name: the
 //     registry repo basename with a "dagger-" prefix (e.g. "dagger-go-sdk"),
 //     reducing the chance of colliding with an unrelated module; and
-//   - the registry's canonical user-facing name to persist as as-sdk.name.
+//   - the registry's canonical user-facing SDK name.
 //
 // Full refs return an empty install name so Workspace.withSDK keeps its normal
 // basename-derived behavior for third-party SDK refs. They also return an
-// empty SDK name so third-party refs can rely on the module entry name.
+// empty SDK name so third-party refs can rely on the conventional name derived
+// from the module entry name.
 func sdkResolveInstall(input string) (ref string, installName string, asSDKName string, _ error) {
 	if strings.ContainsAny(input, "/@") {
 		return input, "", "", nil
@@ -99,7 +100,7 @@ func sdkResolveInstall(input string) (ref string, installName string, asSDKName 
 	}
 	switch len(matches) {
 	case 0:
-		return "", "", "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
+		return "", "", "", fmt.Errorf("SDK %q not found in registry; try `dagger search --sdk %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
 	case 1:
 		return matches[0].Repo, sdkmeta.InstallNamePrefix + sdkRegistryRepoBase(matches[0].Repo), matches[0].Name, nil
 	default:
@@ -119,56 +120,7 @@ func sdkRegistryRepoBase(repo string) string {
 	return repo
 }
 
-// --- dagger module init ---
-
-var (
-	moduleInitPath       string
-	moduleInitNoGenerate bool
-)
-
-var moduleInitCmd = &cobra.Command{
-	Use:   "init <sdk> <name>",
-	Short: "Initialize a new module in the current workspace",
-	Long: `Initialize a new module in the workspace.
-
-<sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
-to add more choices.
-
-The CLI is a thin wrapper around the engine's Workspace.withInitModule. The
-engine validates that <sdk> is installed as an SDK in dagger.toml and returns
-an updated workspace that the CLI previews and exports.
-
-What the engine does (atomically, in one Changeset):
-  1. Resolves <sdk> to an installed SDK entry and requires its as-sdk marker.
-  2. Generates the new module's dagger-module.toml + SDK-emitted source
-     scaffold at <path>.
-  3. Records [[modules.<sdk-module>.as-sdk.modules]] authoring entry for
-     <path>.
-  4. When --path is omitted, also installs the new module as
-     [modules.<name>] so it's callable here.
-  5. Runs the SDK's generators scoped to <path>, so the new module is
-     loadable without a separate 'dagger generate'. Pass --no-generate to
-     skip this.
-
-When --path is omitted, the module is created under .dagger/modules/<name>
-beside the dagger.toml being edited. Pass --path to choose a location: it is
-relative to the current directory, and a leading "/" means the workspace
-root. A custom path skips the [modules.<name>] install (the user is managing
-workspace layout explicitly).`,
-	Example: "dagger sdk install go && dagger module init go my-module",
-	Args:    cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return cmd.Help()
-	},
-}
-
-func init() {
-	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path, relative to the current directory (\"/\" = workspace root; default: .dagger/modules/<name> beside dagger.toml)")
-	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
-	moduleCmd.AddCommand(moduleInitCmd)
-}
-
-func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
+func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name, path string, noGenerate bool) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module init does not support --env; it scaffolds modules into the base workspace config")
 	}
@@ -182,8 +134,8 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			return err
 		}
 		opts := dagger.WorkspaceWithInitModuleOpts{
-			Path:       moduleInitPath,
-			NoGenerate: moduleInitNoGenerate,
+			Path:       path,
+			NoGenerate: noGenerate,
 		}
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)

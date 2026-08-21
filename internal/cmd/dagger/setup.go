@@ -199,10 +199,11 @@ const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to m
         dagger install <module>
 
     • Install an SDK to author your own:
-        dagger sdk search
+        dagger search --sdk
+        dagger install <sdk-module>
 
     • Create a new module (after installing an SDK):
-        dagger module init <sdk> <name>
+        dagger sdk <sdk> module init <name>
 `
 
 // setupStepMigrate reports whether a migration was applied (which routes setup
@@ -334,7 +335,7 @@ func migratedConfigPaths(ctx context.Context, changes *dagger.Changeset) ([]stri
 
 // setupResolveMigratedSDKs rewrites SDK installs that migration recorded by bare
 // short name (e.g. `php`) to their real ref and canonical name from sdks.json,
-// so the SDK is loadable for authoring (`dagger module init <sdk>`) instead of
+// so the SDK is loadable for authoring (`dagger sdk <sdk> module init`) instead of
 // being treated as a local path. Runs in a post-migration session where the
 // workspace is native; a no-op when nothing was recorded by short name (and
 // when the user declined migration, leaving the legacy config in place).
@@ -352,13 +353,18 @@ func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagg
 	out := cmd.OutOrStdout()
 	fixes := planMigratedSDKFixups(cfg)
 	if len(fixes) > 0 {
-		updated := ws
-		for _, fix := range fixes {
-			updated = updated.
-				WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref).
-				WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
+		if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
+			return err
 		}
-		if err := updated.Export(ctx); err != nil {
+		updatedConfig, err := workspace.UpdateConfigBytes([]byte(raw), cfg)
+		if err != nil {
+			return err
+		}
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return err
+		}
+		if err := ws.WithNewFile(configFile, string(updatedConfig)).Export(ctx); err != nil {
 			return err
 		}
 		for _, fix := range fixes {
@@ -401,14 +407,8 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 	if len(fixes) == 0 {
 		return nil
 	}
-	for _, fix := range fixes {
-		entry := cfg.Modules[fix.ModuleName]
-		entry.Source = fix.Ref
-		if entry.AsSDK == nil {
-			entry.AsSDK = &workspace.ModuleAsSDK{}
-		}
-		entry.AsSDK.Name = fix.SDKName
-		cfg.Modules[fix.ModuleName] = entry
+	if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
+		return err
 	}
 	updated, err := workspace.UpdateConfigBytes(data, cfg)
 	if err != nil {
@@ -419,6 +419,25 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 	}
 	for _, fix := range fixes {
 		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
+	}
+	return nil
+}
+
+func applyMigratedSDKFixups(cfg *workspace.Config, fixes []migratedSDKFixup) error {
+	for _, fix := range fixes {
+		entry := cfg.Modules[fix.ModuleName]
+		entry.Source = fix.Ref
+		cfg.Modules[fix.ModuleName] = entry
+
+		if fix.CurrentSDKName == fix.SDKName {
+			continue
+		}
+		if _, exists := cfg.SDKs[fix.SDKName]; exists {
+			return fmt.Errorf("cannot rename SDK %q to %q: name already exists", fix.CurrentSDKName, fix.SDKName)
+		}
+		sdk := cfg.SDKs[fix.CurrentSDKName]
+		delete(cfg.SDKs, fix.CurrentSDKName)
+		cfg.SDKs[fix.SDKName] = sdk
 	}
 	return nil
 }

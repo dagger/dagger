@@ -58,15 +58,6 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"api", "client"})
-	require.NoError(t, err)
-	require.Same(t, apiClientCmd, cmd)
-	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"client"})
-	require.NoError(t, err)
-	require.NotSame(t, apiClientCmd, cmd)
-
 	cmd, _, err = rootCmd.Find([]string{"call"})
 	require.NoError(t, err)
 	require.Same(t, callModCmd.Command(), cmd)
@@ -225,7 +216,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"version",
 		"api",
 		"cloud",
-		"module",
 		"sdk",
 		"workspace",
 	} {
@@ -256,7 +246,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	}
 
 	for _, leaf := range []string{"activity", "check", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update"} {
-		for _, parent := range []string{"api", "cloud", "module", "sdk", "workspace"} {
+		for _, parent := range []string{"api", "cloud", "sdk", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
 	}
@@ -401,10 +391,11 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	workdir = "."
 	workspaceRef = ""
 
-	parseGlobalFlags([]string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
+	args := parseGlobalFlags([]string{"--org", "acme", "call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
 
 	require.Equal(t, "/work/shell", workdir)
 	require.Equal(t, "./ws", workspaceRef)
+	require.Equal(t, []string{"call", "identify"}, args)
 }
 
 func TestWorkspaceFlagPolicy(t *testing.T) {

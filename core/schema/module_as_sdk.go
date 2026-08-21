@@ -12,7 +12,7 @@ import (
 )
 
 // currentModuleAsSDK treats the currently executing module as an SDK installed
-// in the supplied workspace and returns its persisted as-sdk role data (the
+// in the supplied workspace and returns its persisted SDK role data (the
 // modules and clients it authors/manages). This is the engine-owned source of
 // truth that SDK generators use to discover their workspace-managed modules,
 // rather than scanning the workspace filesystem themselves.
@@ -51,17 +51,12 @@ func (s *moduleSchema) currentModuleAsSDK(
 	if mod := curMod.Module.Self(); mod != nil {
 		curName = mod.Name()
 	}
-	name, entry, err := resolveCurrentModuleSDKEntry(curName, cfg)
+	sdkName, entry, err := resolveCurrentModuleSDKEntry(curName, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	sdkName := entry.AsSDK.Name
-	if sdkName == "" {
-		sdkName = name
-	}
-
-	// as-sdk entries are recorded against the config directory; SDKs are
+	// Claimed entries are recorded against the config directory; SDKs are
 	// handed workspace-root-relative paths, the same currency as ws.Cwd and
 	// the changesets they return.
 	configDir, err := workspaceConfigDirectory(ws)
@@ -70,27 +65,26 @@ func (s *moduleSchema) currentModuleAsSDK(
 	}
 
 	result := &core.CurrentModuleAsSDK{Name: sdkName}
-	for _, mod := range entry.AsSDK.Modules {
-		modPath, err := workspace.ResolveSDKManagedPath(configDir, mod.Path)
+	for _, modulePath := range entry.Claimed.Modules {
+		modPath, err := workspace.ResolveSDKManagedPath(configDir, modulePath)
 		if err != nil {
-			return nil, fmt.Errorf("module managed by %q: %w", name, err)
+			return nil, fmt.Errorf("module managed by %q: %w", sdkName, err)
 		}
 		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: modPath})
 	}
 	result.Modules = currentModuleAsSDKModulesForCwd(result.Modules, ws.Cwd)
-	for _, client := range entry.AsSDK.Clients {
+	for _, client := range entry.Claimed.Clients {
 		clientPath, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
 		if err != nil {
-			return nil, fmt.Errorf("client managed by %q: %w", name, err)
+			return nil, fmt.Errorf("client managed by %q: %w", sdkName, err)
 		}
 		clientModule, err := resolveSDKManagedClientModule(configDir, client.Module)
 		if err != nil {
-			return nil, fmt.Errorf("client managed by %q: %w", name, err)
+			return nil, fmt.Errorf("client managed by %q: %w", sdkName, err)
 		}
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
 			Path:           clientPath,
 			Module:         clientModule,
-			Pin:            client.Pin,
 			BoundWorkspace: wsResult,
 		})
 	}
@@ -102,14 +96,16 @@ func (s *moduleSchema) currentModuleAsSDK(
 func resolveCurrentModuleSDKEntry(
 	curName string,
 	cfg *workspace.Config,
-) (string, workspace.ModuleEntry, error) {
+) (string, workspace.SDKEntry, error) {
 	if cfg == nil {
-		return "", workspace.ModuleEntry{}, fmt.Errorf("current module is not installed as an SDK in this workspace")
+		return "", workspace.SDKEntry{}, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
-	if entry, ok := cfg.Modules[curName]; ok && entry.AsSDK != nil {
-		return curName, entry, nil
+	for sdkName, entry := range cfg.SDKs {
+		if entry.Module == curName {
+			return sdkName, entry, nil
+		}
 	}
-	return "", workspace.ModuleEntry{}, fmt.Errorf("current module is not installed as an SDK in this workspace")
+	return "", workspace.SDKEntry{}, fmt.Errorf("current module is not installed as an SDK in this workspace")
 }
 
 func (s *moduleSchema) currentModuleAsSDKModules(
@@ -176,9 +172,9 @@ func (s *moduleSchema) currentModuleAsSDKClients(
 }
 
 // currentModuleAsSDKClientModuleSource resolves the module a client is bound to
-// from its stored {module, pin}. Resolution goes through the same
+// from its stored module ref. Resolution goes through the same
 // resolveClientTargetModule the workspace client-generation path uses, so local
-// (workspace-relative) refs are expanded to host paths, the pin is applied, and
+// (workspace-relative) refs are expanded to host paths, lockfile pins apply, and
 // the load happens in the workspace client context -- correct for both local
 // and remote/git refs, unlike resolving the ref string directly.
 func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
@@ -215,5 +211,5 @@ func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
 		}
 	}
 
-	return wsSchema.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, client.Pin)
+	return wsSchema.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef)
 }

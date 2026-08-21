@@ -8,14 +8,79 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	toml "github.com/pelletier/go-toml"
 )
+
+// ConventionalSDKName derives the user-facing SDK command name from its
+// installed module name by removing the conventional "dagger-" prefix and
+// trailing "sdk" marker, along with adjacent separators.
+func ConventionalSDKName(moduleName string) string {
+	name := strings.TrimSpace(moduleName)
+	name = strings.TrimPrefix(name, sdkmeta.InstallNamePrefix)
+	name = strings.Trim(name, "-_")
+	name = strings.TrimSuffix(name, "sdk")
+	name = strings.Trim(name, "-_")
+	if name == "" {
+		return moduleName
+	}
+	return name
+}
+
+// ValidateSDKs ensures every SDK names an installed provider module and that a
+// module does not provide more than one named SDK.
+func ValidateSDKs(cfg *Config) error {
+	if cfg == nil || len(cfg.SDKs) == 0 {
+		return nil
+	}
+
+	sdkNames := make([]string, 0, len(cfg.SDKs))
+	for sdkName := range cfg.SDKs {
+		sdkNames = append(sdkNames, sdkName)
+	}
+	sort.Strings(sdkNames)
+
+	providers := map[string]string{}
+	lookupNames := map[string]string{}
+	for _, sdkName := range sdkNames {
+		if sdkName == "" {
+			return fmt.Errorf("SDK name must not be empty")
+		}
+		if strings.IndexFunc(sdkName, unicode.IsSpace) >= 0 {
+			return fmt.Errorf("SDK name %q must be a single command token", sdkName)
+		}
+		if strings.HasPrefix(sdkName, "-") {
+			return fmt.Errorf("SDK name %q must not start with '-'", sdkName)
+		}
+		sdk := cfg.SDKs[sdkName]
+		if sdk.Module == "" {
+			return fmt.Errorf("SDK %q has no provider module; set %s", sdkName, JoinConfigPath("sdks", sdkName, "module"))
+		}
+		if _, ok := cfg.Modules[sdk.Module]; !ok {
+			return fmt.Errorf("SDK %q references module %q, which is not installed", sdkName, sdk.Module)
+		}
+		if existing, ok := providers[sdk.Module]; ok {
+			return fmt.Errorf("module %q provides multiple SDKs: %q and %q", sdk.Module, existing, sdkName)
+		}
+		providers[sdk.Module] = sdkName
+
+		for _, lookupName := range []string{sdkName, sdk.Module} {
+			if existing, ok := lookupNames[lookupName]; ok && existing != sdkName {
+				return fmt.Errorf("SDK lookup name %q is ambiguous: SDKs %q and %q both resolve it", lookupName, existing, sdkName)
+			}
+			lookupNames[lookupName] = sdkName
+		}
+	}
+	return nil
+}
 
 // Config represents a parsed dagger.toml workspace configuration.
 type Config struct {
 	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
+	SDKs               map[string]SDKEntry    `json:"sdks,omitempty" toml:"sdks"`
 	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
 	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
 	// CheckGenerated controls whether `dagger check` runs generate-as-checks,
@@ -45,42 +110,19 @@ type ModuleEntry struct {
 	Up                ModuleSkip     `json:"up,omitempty" toml:"up,omitempty"`
 	Generate          ModuleSkip     `json:"generate,omitempty" toml:"generate,omitempty"`
 	Check             ModuleSkip     `json:"check,omitempty" toml:"check,omitempty"`
-
-	// AsSDK is the SDK-role data for module entries that serve as SDKs in
-	// this workspace. Its presence (any populated sub-field) marks the
-	// module as installed *as* an SDK; absence means it's a plain installed
-	// module. The role data — which authored modules and generated clients
-	// this SDK manages locally — lives nested rather than in a parallel
-	// top-level section so settings, install, and SDK metadata all
-	// converge on a single [modules.<name>.*] entry.
-	AsSDK *ModuleAsSDK `json:"as-sdk,omitempty" toml:"as-sdk,omitempty"`
 }
 
-// ModuleAsSDK carries the per-module SDK-role data: which authored modules
-// and clients this SDK manages in the workspace. Serialized under
-// [modules.<name>.as-sdk] with array-of-tables sub-blocks.
-type ModuleAsSDK struct {
-	// Name is the user-facing SDK name used by `dagger module init <sdk>` and
-	// `dagger api client init <sdk>`. When empty, the module entry name is used.
-	Name string `json:"name,omitempty" toml:"name,omitempty"`
+// SDKEntry registers an installed module as a named SDK in this workspace.
+type SDKEntry struct {
+	Module  string    `json:"module" toml:"module"`
+	Claimed SDKClaims `json:"claimed,omitempty" toml:"claimed,omitempty"`
+}
 
-	// Modules lists the workspace-local modules this SDK authors and
-	// manages. Each entry becomes a [[modules.<name>.as-sdk.modules]] block.
-	Modules []SDKManagedModule `json:"modules,omitempty" toml:"modules,omitempty"`
-
-	// Clients lists generated typed bindings this SDK produces in the
-	// workspace. Each entry becomes a [[modules.<name>.as-sdk.clients]]
-	// block. Shape is intentionally minimal until concrete client SDKs
-	// (TypeScript, Go) take shape.
+// SDKClaims records the workspace paths a named SDK manages. Module entries
+// need only a path; clients additionally name the module they bind to.
+type SDKClaims struct {
+	Modules []string           `json:"modules,omitempty" toml:"modules,omitempty"`
 	Clients []SDKManagedClient `json:"clients,omitempty" toml:"clients,omitempty"`
-}
-
-// SDKManagedModule is a path to a module that an SDK authors and manages here,
-// resolved against the directory holding this dagger.toml, with a leading "/"
-// anchoring it at the workspace root instead. The path is the only required
-// field; the module's own engine state lives in <path>/dagger-module.toml.
-type SDKManagedModule struct {
-	Path string `json:"path" toml:"path"`
 }
 
 // SDKManagedClient is a generated client produced by an SDK and bound to one
@@ -91,8 +133,32 @@ type SDKManagedModule struct {
 type SDKManagedClient struct {
 	Path    string            `json:"path" toml:"path"`
 	Module  string            `json:"module" toml:"module"`
-	Pin     string            `json:"pin,omitempty" toml:"pin,omitempty"`
 	Options map[string]string `json:"options,omitempty" toml:"-"`
+}
+
+type legacyModuleAsSDK struct {
+	Name    string                   `toml:"name,omitempty"`
+	Modules []legacySDKManagedModule `toml:"modules,omitempty"`
+	Clients []legacySDKManagedClient `toml:"clients,omitempty"`
+}
+
+type legacyConfig struct {
+	Modules map[string]legacyModuleEntry `toml:"modules"`
+}
+
+type legacyModuleEntry struct {
+	AsSDK *legacyModuleAsSDK `toml:"as-sdk,omitempty"`
+}
+
+type legacySDKManagedModule struct {
+	Path string `toml:"path"`
+}
+
+type legacySDKManagedClient struct {
+	Path    string            `toml:"path"`
+	Module  string            `toml:"module"`
+	Pin     string            `toml:"pin,omitempty"`
+	Options map[string]string `toml:"-"`
 }
 
 // ModuleSkip carries the per-action skip patterns for a module entry.
@@ -140,7 +206,7 @@ func ResolveModuleEntrySource(configDir, source string) string {
 	return filepath.Clean(filepath.Join(configDir, source))
 }
 
-// ResolveSDKManagedPath turns an as-sdk path into the workspace-relative path
+// ResolveSDKManagedPath turns an SDK claim path into the workspace-relative path
 // the engine addresses modules and clients by, following the same rule as every
 // other path a workspace resolves: a leading "/" means the workspace root,
 // anything else is relative to the directory of the config that records it, and
@@ -167,7 +233,7 @@ func ResolveSDKManagedPath(configDir, p string) (string, error) {
 }
 
 // SDKManagedPathFor is the inverse of ResolveSDKManagedPath: it expresses a
-// workspace-relative path the way an as-sdk entry records it. A target outside
+// workspace-relative path the way an SDK claim records it. A target outside
 // the config directory keeps a "../" prefix, as its install source would.
 func SDKManagedPathFor(configDir, workspacePath string) (string, error) {
 	if configDir == "" {
@@ -189,14 +255,24 @@ func ParseConfig(data []byte) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
-	if err := populateClientOptions(data, &cfg); err != nil {
+	var legacy legacyConfig
+	if err := toml.Unmarshal(data, &legacy); err != nil {
+		return nil, fmt.Errorf("parse legacy SDK config: %w", err)
+	}
+	if err := populateClientOptions(data, &cfg, legacy.Modules); err != nil {
+		return nil, err
+	}
+	if err := migrateLegacySDKConfig(&cfg, legacy.Modules); err != nil {
+		return nil, err
+	}
+	if err := ValidateSDKs(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
 }
 
-func populateClientOptions(data []byte, cfg *Config) error {
-	if len(data) == 0 || cfg == nil || len(cfg.Modules) == 0 {
+func populateClientOptions(data []byte, cfg *Config, legacyModules map[string]legacyModuleEntry) error {
+	if len(data) == 0 || cfg == nil {
 		return nil
 	}
 	tree, err := toml.LoadBytes(data)
@@ -204,7 +280,7 @@ func populateClientOptions(data []byte, cfg *Config) error {
 		return fmt.Errorf("parse dagger.toml client options: %w", err)
 	}
 
-	for moduleName, entry := range cfg.Modules {
+	for moduleName, entry := range legacyModules {
 		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
 			continue
 		}
@@ -222,9 +298,111 @@ func populateClientOptions(data []byte, cfg *Config) error {
 				entry.AsSDK.Clients[i].Options = options
 			}
 		}
-		cfg.Modules[moduleName] = entry
+		legacyModules[moduleName] = entry
+	}
+
+	for sdkName, sdk := range cfg.SDKs {
+		if len(sdk.Claimed.Clients) == 0 {
+			continue
+		}
+		rawClients := tree.GetPath([]string{"sdks", sdkName, "claimed", "clients"})
+		clientTrees, ok := rawClients.([]*toml.Tree)
+		if !ok {
+			continue
+		}
+		for i := range sdk.Claimed.Clients {
+			if i >= len(clientTrees) {
+				break
+			}
+			options := clientOptionsFromTree(clientTrees[i])
+			if len(options) > 0 {
+				sdk.Claimed.Clients[i].Options = options
+			}
+		}
+		cfg.SDKs[sdkName] = sdk
 	}
 	return nil
+}
+
+// migrateLegacySDKConfig converts the beta-era module-nested SDK declaration
+// into the canonical top-level SDK registry. A legacy client pin is preserved
+// as an explicit immutable module ref; new symbolic refs resolve through
+// dagger.lock instead of storing a second pin in dagger.toml.
+func migrateLegacySDKConfig(cfg *Config, legacyModules map[string]legacyModuleEntry) error {
+	if cfg == nil || len(legacyModules) == 0 {
+		return nil
+	}
+
+	moduleNames := make([]string, 0, len(legacyModules))
+	for moduleName, entry := range legacyModules {
+		if entry.AsSDK != nil {
+			moduleNames = append(moduleNames, moduleName)
+		}
+	}
+	sort.Strings(moduleNames)
+
+	for _, moduleName := range moduleNames {
+		legacy := legacyModules[moduleName].AsSDK
+		sdkName := legacy.Name
+		if sdkName == "" {
+			sdkName = ConventionalSDKName(moduleName)
+		}
+		if cfg.SDKs == nil {
+			cfg.SDKs = map[string]SDKEntry{}
+		}
+		if _, ok := cfg.SDKs[sdkName]; ok {
+			return fmt.Errorf(
+				"SDK name %q is declared by both %s and %s",
+				sdkName,
+				JoinConfigPath("sdks", sdkName),
+				JoinConfigPath("modules", moduleName, "as-sdk"),
+			)
+		}
+
+		sdk := SDKEntry{Module: moduleName}
+		for _, module := range legacy.Modules {
+			sdk.Claimed.Modules = append(sdk.Claimed.Modules, module.Path)
+		}
+		for _, client := range legacy.Clients {
+			moduleRef := client.Module
+			if client.Pin != "" && !IsLocalRef(moduleRef, "") {
+				moduleRef = replaceModuleRefSelector(moduleRef, client.Pin)
+			}
+			sdk.Claimed.Clients = append(sdk.Claimed.Clients, SDKManagedClient{
+				Path:    client.Path,
+				Module:  moduleRef,
+				Options: client.Options,
+			})
+		}
+		cfg.SDKs[sdkName] = sdk
+	}
+	return nil
+}
+
+// replaceModuleRefSelector replaces a remote module ref's selector while
+// preserving any @ that belongs to URL or SCP-style userinfo. Selectors may
+// contain slashes (for example, @feature/work), so their position cannot be
+// inferred from the final path separator.
+func replaceModuleRefSelector(ref, selector string) string {
+	selectorIndex := strings.LastIndex(ref, "@")
+	if selectorIndex < 0 {
+		return ref + "@" + selector
+	}
+
+	pathStart := -1
+	if scheme := strings.Index(ref, "://"); scheme >= 0 {
+		authorityStart := scheme + len("://")
+		if path := strings.Index(ref[authorityStart:], "/"); path >= 0 {
+			pathStart = authorityStart + path
+		}
+	} else {
+		pathStart = strings.IndexAny(ref, "/:")
+	}
+	if pathStart < 0 || selectorIndex < pathStart {
+		// The only @ is part of userinfo, not a selector.
+		return ref + "@" + selector
+	}
+	return ref[:selectorIndex] + "@" + selector
 }
 
 func clientOptionsFromTree(tree *toml.Tree) map[string]string {
@@ -424,11 +602,20 @@ func SerializeConfig(cfg *Config) []byte {
 		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
 	}
 
-	wroteModules := writeModuleEntries(&b, cfg.Modules)
-	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
+	wrote := writeModuleEntries(&b, cfg.Modules)
+	if wrote && len(cfg.SDKs) > 0 {
 		b.WriteString("\n")
 	}
-	if writeEnvEntries(&b, cfg.Env) && len(cfg.Ports) > 0 {
+	if writeSDKEntries(&b, cfg.SDKs) {
+		wrote = true
+	}
+	if wrote && len(cfg.Env) > 0 {
+		b.WriteString("\n")
+	}
+	if writeEnvEntries(&b, cfg.Env) {
+		wrote = true
+	}
+	if wrote && len(cfg.Ports) > 0 {
 		b.WriteString("\n")
 	}
 	writePortEntries(&b, cfg.Ports)
@@ -461,7 +648,18 @@ func cloneConfig(cfg *Config) *Config {
 				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
 				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
 				Check:             ModuleSkip{Skip: append([]string(nil), entry.Check.Skip...)},
-				AsSDK:             cloneModuleAsSDK(entry.AsSDK),
+			}
+		}
+	}
+	if len(cfg.SDKs) > 0 {
+		cloned.SDKs = make(map[string]SDKEntry, len(cfg.SDKs))
+		for name, sdk := range cfg.SDKs {
+			cloned.SDKs[name] = SDKEntry{
+				Module: sdk.Module,
+				Claimed: SDKClaims{
+					Modules: append([]string(nil), sdk.Claimed.Modules...),
+					Clients: cloneSDKManagedClients(sdk.Claimed.Clients),
+				},
 			}
 		}
 	}
@@ -489,22 +687,6 @@ func cloneConfig(cfg *Config) *Config {
 		}
 	}
 	return cloned
-}
-
-// cloneModuleAsSDK deep-copies the AsSDK sub-table. Preserves an empty
-// (non-nil with no Modules and no Clients) AsSDK — its mere presence is the
-// "this install IS an SDK" marker, even before any module or client is
-// authored under it. A nil input means "this install is not an SDK"; the
-// clone passes that through unchanged.
-func cloneModuleAsSDK(in *ModuleAsSDK) *ModuleAsSDK {
-	if in == nil {
-		return nil
-	}
-	return &ModuleAsSDK{
-		Name:    in.Name,
-		Modules: append([]SDKManagedModule(nil), in.Modules...),
-		Clients: cloneSDKManagedClients(in.Clients),
-	}
 }
 
 func cloneSDKManagedClients(in []SDKManagedClient) []SDKManagedClient {
@@ -574,50 +756,61 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 			fmt.Fprintf(b, "check.skip = %s\n", formatConfigValue(entry.Check.Skip))
 		}
 		writeConfigTable(b, modulePath+".settings", entry.Settings, true)
-		writeModuleAsSDK(b, modulePath, entry.AsSDK)
 	}
 
 	return true
 }
 
-// writeModuleAsSDK renders the [[modules.<name>.as-sdk.modules]] and
-// [[modules.<name>.as-sdk.clients]] array-of-tables blocks under a module's
-// section. No-op when the module isn't installed as an SDK.
-func writeModuleAsSDK(b *strings.Builder, modulePath string, asSDK *ModuleAsSDK) {
-	if asSDK == nil {
-		return
+func writeSDKEntries(b *strings.Builder, sdks map[string]SDKEntry) bool {
+	if len(sdks) == 0 {
+		return false
 	}
-	// Emit the parent section when it carries scalar metadata or when the
-	// otherwise-empty section is the "this install IS an SDK" marker.
-	if asSDK.Name != "" || len(asSDK.Modules) == 0 && len(asSDK.Clients) == 0 {
+
+	names := make([]string, 0, len(sdks))
+	for name := range sdks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		sdk := sdks[name]
+		sdkPath := "sdks." + formatConfigPathSegment(name)
+		fmt.Fprintf(b, "[%s]\n", sdkPath)
+		fmt.Fprintf(b, "module = %q\n", sdk.Module)
+
+		if len(sdk.Claimed.Modules) == 0 && len(sdk.Claimed.Clients) == 0 {
+			continue
+		}
 		b.WriteString("\n")
-		fmt.Fprintf(b, "[%s.as-sdk]\n", modulePath)
-		if asSDK.Name != "" {
-			fmt.Fprintf(b, "name = %q\n", asSDK.Name)
+		fmt.Fprintf(b, "[%s.claimed]\n", sdkPath)
+		if len(sdk.Claimed.Modules) > 0 {
+			b.WriteString("modules = [\n")
+			for _, module := range sdk.Claimed.Modules {
+				fmt.Fprintf(b, "  %q,\n", module)
+			}
+			b.WriteString("]\n")
+		}
+		if len(sdk.Claimed.Clients) > 0 {
+			b.WriteString("clients = [\n")
+			for _, client := range sdk.Claimed.Clients {
+				fmt.Fprintf(b, "  { path = %q, module = %q", client.Path, client.Module)
+				keys := make([]string, 0, len(client.Options))
+				for key := range client.Options {
+					keys = append(keys, key)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					fmt.Fprintf(b, ", %s = %s", formatConfigPathSegment(key), formatConfigValue(client.Options[key]))
+				}
+				b.WriteString(" },\n")
+			}
+			b.WriteString("]\n")
 		}
 	}
-	for _, mod := range asSDK.Modules {
-		b.WriteString("\n")
-		fmt.Fprintf(b, "[[%s.as-sdk.modules]]\n", modulePath)
-		fmt.Fprintf(b, "path = %q\n", mod.Path)
-	}
-	for _, client := range asSDK.Clients {
-		b.WriteString("\n")
-		fmt.Fprintf(b, "[[%s.as-sdk.clients]]\n", modulePath)
-		fmt.Fprintf(b, "path = %q\n", client.Path)
-		fmt.Fprintf(b, "module = %q\n", client.Module)
-		if client.Pin != "" {
-			fmt.Fprintf(b, "pin = %q\n", client.Pin)
-		}
-		keys := make([]string, 0, len(client.Options))
-		for key := range client.Options {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			fmt.Fprintf(b, "%s = %s\n", formatConfigPathSegment(key), formatConfigValue(client.Options[key]))
-		}
-	}
+	return true
 }
 
 func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
@@ -832,6 +1025,17 @@ func DeleteConfigValue(existingData []byte, key string) ([]byte, error) {
 	if len(parts) == 2 && parts[0] == "modules" {
 		return nil, fmt.Errorf("cannot unset %q directly; use dagger uninstall to remove a module", key)
 	}
+	if len(parts) == 2 && parts[0] == "sdks" {
+		cfg, err := ParseConfig(existingData)
+		if err != nil {
+			return nil, fmt.Errorf("parse existing config: %w", err)
+		}
+		if _, ok := cfg.SDKs[parts[1]]; !ok {
+			return nil, fmt.Errorf("key %q is not set", key)
+		}
+		delete(cfg.SDKs, parts[1])
+		return UpdateConfigBytes(existingData, cfg)
+	}
 	if err := validateConfigKeyParts(parts, key, "unset"); err != nil {
 		return nil, err
 	}
@@ -882,7 +1086,9 @@ func refuseProtectedConfigDelete(parts []string, key string) error {
 	case parts[0] == "modules" && len(parts) >= 3 && parts[2] == "source":
 		return fmt.Errorf("cannot unset %s; module entries require a source", key)
 	case parts[0] == "modules" && len(parts) >= 3 && parts[2] == "as-sdk":
-		return fmt.Errorf("cannot unset %q; SDK state is managed by dagger install", key)
+		return fmt.Errorf("cannot unset %q; legacy SDK state is managed by dagger install", key)
+	case parts[0] == "sdks":
+		return fmt.Errorf("cannot unset %q directly; unset the containing SDK entry", key)
 	}
 	return nil
 }
@@ -1256,17 +1462,22 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 				entry.Check.Skip = skip
 			}
 		case "as-sdk":
-			if len(parts) != 4 || parts[3] != "name" {
-				return fmt.Errorf("invalid key %q; expected modules.%s.as-sdk.name", strings.Join(parts, "."), moduleName)
-			}
-			if entry.AsSDK == nil {
-				entry.AsSDK = &ModuleAsSDK{}
-			}
-			entry.AsSDK.Name = fmt.Sprint(value)
+			return fmt.Errorf("cannot set legacy SDK config %q; use dagger sdk commands", strings.Join(parts, "."))
 		default:
 			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}
 		cfg.Modules[moduleName] = entry
+		return nil
+	case "sdks":
+		if len(parts) != 3 || parts[2] != "module" {
+			return fmt.Errorf("invalid key %q; expected sdks.<name>.module", strings.Join(parts, "."))
+		}
+		if cfg.SDKs == nil {
+			cfg.SDKs = map[string]SDKEntry{}
+		}
+		sdk := cfg.SDKs[parts[1]]
+		sdk.Module = fmt.Sprint(value)
+		cfg.SDKs[parts[1]] = sdk
 		return nil
 	case "env":
 		if len(parts) < 5 || parts[2] != "modules" {

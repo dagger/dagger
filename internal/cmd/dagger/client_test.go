@@ -1,72 +1,37 @@
 package daggercmd
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAPIClientInitCommandShape(t *testing.T) {
-	t.Parallel()
+func TestRunSDKClientList(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, workspace.ConfigFileName), []byte(`
+[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
 
-	cmd, _, err := apiClientCmd.Find([]string{"init"})
-	require.NoError(t, err)
-	require.Same(t, apiClientInitCmd, cmd)
-	require.Equal(t, "init <sdk> <path> <module>", cmd.Use)
-	require.Nil(t, cmd.Flags().Lookup("sdk"))
-	require.Nil(t, cmd.Flags().Lookup("module"))
-	require.Nil(t, cmd.Flags().Lookup("option"))
-	require.Contains(t, cmd.Long, "to add more choices")
-}
+[sdks.go]
+module = "dagger-go-sdk"
 
-func TestAPIClientEntries(t *testing.T) {
-	t.Parallel()
+[sdks.go.claimed]
+clients = [
+  { path = "lib/z", module = "github.com/acme/api@abc123" },
+  { path = "lib/a", module = ".dagger/modules/api" },
+]
+`), 0o600))
 
-	entries := apiClientEntries(&workspace.Config{
-		Modules: map[string]workspace.ModuleEntry{
-			"go-sdk": {
-				Source: "github.com/dagger/go-sdk",
-				AsSDK: &workspace.ModuleAsSDK{
-					Name: "go",
-					Clients: []workspace.SDKManagedClient{
-						{
-							Path:   "lib/go",
-							Module: ".dagger/modules/api",
-							Pin:    "abc123",
-							Options: map[string]string{
-								"go-module": "example.com/client",
-							},
-						},
-					},
-				},
-			},
-			"typescript-sdk": {
-				Source: "github.com/dagger/typescript-sdk",
-				AsSDK: &workspace.ModuleAsSDK{
-					Name: "typescript",
-					Clients: []workspace.SDKManagedClient{
-						{Path: "lib/ts", Module: "github.com/dagger/postgres@v1.2.3"},
-					},
-				},
-			},
-		},
-	})
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+	require.NoError(t, runSDKClientList(cmd, "go"))
 
-	require.Equal(t, []apiClientListEntry{
-		{
-			SDK:    "go",
-			Path:   "lib/go",
-			Module: ".dagger/modules/api",
-			Pin:    "abc123",
-			Options: map[string]string{
-				"go-module": "example.com/client",
-			},
-		},
-		{
-			SDK:    "typescript",
-			Path:   "lib/ts",
-			Module: "github.com/dagger/postgres@v1.2.3",
-		},
-	}, entries)
+	require.Equal(t, "PATH   MODULE\nlib/a  .dagger/modules/api\nlib/z  github.com/acme/api@abc123\n", buf.String())
 }

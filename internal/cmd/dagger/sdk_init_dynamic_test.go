@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"bytes"
 	"testing"
 
 	"dagger.io/dagger"
@@ -10,29 +9,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDynamicSDKInitCommandLookup(t *testing.T) {
-	moduleParent := &cobra.Command{
-		Use:  "init <sdk> <name>",
-		Args: cobra.NoArgs,
+func TestInstalledSDKCommandShape(t *testing.T) {
+	sdk := configuredSDK{
+		moduleName:  "dagger-go-sdk",
+		commandName: "go",
+		entry: workspace.ModuleEntry{
+			Source: "github.com/dagger/go-sdk",
+		},
+		sdk: workspace.SDKEntry{Module: "dagger-go-sdk"},
 	}
-	moduleParent.AddCommand(newModuleInitSDKCommand("go"))
+	cmd := newInstalledSDKCommand(sdk)
+	require.Equal(t, "go", cmd.Use)
+	require.Equal(t, "Use the go SDK to develop and consume modules", cmd.Short)
+	require.Equal(t, "true", cmd.Annotations[dynamicSDKCommandAnnotation])
+	require.Equal(t, []string{"client", "info", "module"}, commandNames(cmd.Commands()))
 
-	moduleChild, _, err := moduleParent.Find([]string{"go", "myapp"})
-	require.NoError(t, err)
-	require.Equal(t, "go", moduleChild.Name())
-	require.Equal(t, "go <name>", moduleChild.Use)
+	moduleCmd := newSDKModuleCommand("go")
+	for _, name := range []string{"claim", "list", "unclaim"} {
+		require.NotNil(t, findCommand(moduleCmd, name))
+	}
+	require.NoError(t, addSDKModuleInitCommand(moduleCmd, "go", &modFunction{}))
+	require.Equal(t, "init <name>", findCommand(moduleCmd, "init").Use)
 
-	cmd, args, err := moduleParent.Find([]string{"plain", "myapp"})
-	require.NoError(t, err)
-	require.Same(t, moduleParent, cmd)
-	require.Equal(t, []string{"plain", "myapp"}, args)
-	require.ErrorContains(t, moduleParent.Args(moduleParent, args), `unknown command "plain"`)
+	clientCmd := newSDKClientCommand("go")
+	for _, name := range []string{"claim", "list", "unclaim"} {
+		require.NotNil(t, findCommand(clientCmd, name))
+	}
+	require.NoError(t, addSDKClientInitCommand(clientCmd, "go", &modFunction{}))
+	require.Equal(t, "claim <path> <module>", findCommand(clientCmd, "claim").Use)
+	require.Equal(t, "init <path> <module>", findCommand(clientCmd, "init").Use)
+}
 
-	clearDynamicSDKInitCommands(moduleParent)
-	cmd, args, err = moduleParent.Find([]string{"go", "myapp"})
-	require.NoError(t, err)
-	require.Same(t, moduleParent, cmd)
-	require.Equal(t, []string{"go", "myapp"}, args)
+func TestClearDynamicSDKCommands(t *testing.T) {
+	parent := &cobra.Command{Use: "sdk"}
+	dynamic := newInstalledSDKCommand(configuredSDK{moduleName: "go-sdk", commandName: "go"})
+	static := &cobra.Command{Use: "static"}
+	parent.AddCommand(dynamic, static)
+
+	clearDynamicSDKCommands(parent)
+	require.Equal(t, []string{"static"}, commandNames(parent.Commands()))
 }
 
 func TestSDKInitFunctionExtraArgs(t *testing.T) {
@@ -92,23 +107,25 @@ func TestSDKInitArgsJSON(t *testing.T) {
 	require.JSONEq(t, `{"goVersion":"1.22"}`, args)
 }
 
-func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
+func TestConfiguredSDKsUsesSDKRegistryName(t *testing.T) {
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{
 			"go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
 			},
 			"custom-sdk": {
 				Source: "github.com/acme/custom-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{},
 			},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "go-sdk"},
+			"custom": {Module: "custom-sdk"},
 		},
 	}
 
 	sdks, err := configuredSDKs(cfg)
 	require.NoError(t, err)
-	require.Equal(t, []string{"custom-sdk", "go"}, []string{sdks[0].commandName, sdks[1].commandName})
+	require.Equal(t, []string{"custom", "go"}, []string{sdks[0].commandName, sdks[1].commandName})
 
 	resolved, err := resolveConfiguredSDK(cfg, "go")
 	require.NoError(t, err)
@@ -116,27 +133,24 @@ func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
 	require.Equal(t, "go", resolved.commandName)
 
 	resolved, err = resolveConfiguredSDK(cfg, "go-sdk")
-	require.NoError(t, err)
-	require.Equal(t, "go-sdk", resolved.moduleName)
-	require.Equal(t, "go", resolved.commandName)
+	require.Error(t, err)
 }
 
 func TestConfiguredSDKsRejectsDuplicateCommandName(t *testing.T) {
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{
-			"go-sdk": {
+			"dagger-go-sdk": {
 				Source: "github.com/dagger/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
 			},
-			"custom-go-sdk": {
-				Source: "github.com/acme/go-sdk",
-				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
-			},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "dagger-go-sdk"},
+			"golang": {Module: "dagger-go-sdk"},
 		},
 	}
 
 	_, err := configuredSDKs(cfg)
-	require.ErrorContains(t, err, `SDK command name "go" is ambiguous`)
+	require.ErrorContains(t, err, `module "dagger-go-sdk" provides multiple SDKs`)
 }
 
 func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {
@@ -175,121 +189,53 @@ func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported type for flag --settings")
 }
 
-func TestPrintSDKInitOptions(t *testing.T) {
-	args := []*modFunctionArg{
-		{
-			Name:        "goVersion",
-			Description: "Go version to use.",
-			TypeDef: &modTypeDef{
-				Kind: dagger.TypeDefKindStringKind,
-			},
-		},
-		{
-			Name:        "cgoEnabled",
-			Description: "Enable cgo.",
-			TypeDef: &modTypeDef{
-				Kind:     dagger.TypeDefKindBooleanKind,
-				Optional: true,
-			},
-		},
-	}
-
-	var buf bytes.Buffer
-	require.NoError(t, printSDKInitOptions(&buf, "go", sdkInitKindModule, args))
-	out := buf.String()
-	require.Contains(t, out, "Flags for `dagger module init go <name>`:")
-	require.Contains(t, out, "--go-version")
-	require.Contains(t, out, "string")
-	require.Contains(t, out, "yes")
-	require.Contains(t, out, "--cgo-enabled")
-	require.Contains(t, out, "bool")
-	require.Contains(t, out, "no")
-}
-
-func TestShouldRegisterSDKInitCommands(t *testing.T) {
+func TestSDKCommandRegistrationArgs(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		args []string
-		want bool
+		want []string
 	}{
-		{
-			name: "module init",
-			args: []string{"module", "init", "go", "myapp"},
-			want: true,
-		},
-		{
-			name: "api client init",
-			args: []string{"api", "client", "init", "typescript", "./client", "."},
-			want: true,
-		},
-		{
-			name: "global workspace flag",
-			args: []string{"--workspace", "./ws", "module", "init", "go", "myapp"},
-			want: true,
-		},
-		{
-			name: "global workspace short flag",
-			args: []string{"-W", "./ws", "api", "client", "init", "go", "./client", "."},
-			want: true,
-		},
-		{
-			name: "unrelated command",
-			args: []string{"sdk", "list"},
-			want: false,
-		},
+		{name: "direct", args: []string{"sdk", "go", "module", "init", "myapp"}, want: []string{"sdk", "go", "module", "init", "myapp"}},
+		{name: "root help", args: []string{"help", "sdk", "go"}, want: []string{"sdk", "go"}},
+		{name: "completion", args: []string{cobra.ShellCompRequestCmd, "sdk", "go", ""}, want: []string{"sdk", "go", ""}},
+		{name: "completion without descriptions", args: []string{cobra.ShellCompNoDescRequestCmd, "sdk", ""}, want: []string{"sdk", ""}},
+		{name: "unrelated help", args: []string{"help", "workspace"}, want: nil},
+		{name: "sdk search moved", args: []string{"search", "--sdk"}, want: nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, shouldRegisterSDKInitCommands(tt.args))
+			got, ok := sdkCommandRegistrationArgs(tt.args)
+			require.Equal(t, tt.want != nil, ok)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestUninstalledSDKInitSuggestion(t *testing.T) {
-	newParents := func() (*cobra.Command, *cobra.Command) {
-		return &cobra.Command{Use: "init", Args: cobra.NoArgs},
-			&cobra.Command{Use: "init", Args: cobra.NoArgs}
+func TestSDKInvocationParsing(t *testing.T) {
+	name, ok := sdkInvocationSDKName([]string{"sdk", "go", "info"})
+	require.True(t, ok)
+	require.Equal(t, "go", name)
+	require.False(t, sdkInvocationNeedsInit([]string{"sdk", "go", "info"}))
+	require.False(t, sdkInvocationNeedsInit([]string{"sdk", "go", "module", "list"}))
+	require.True(t, sdkInvocationNeedsInit([]string{"sdk", "go", "module", "init"}))
+	require.True(t, sdkInvocationNeedsInit([]string{"sdk", "go", "module"}))
+	require.True(t, sdkInvocationNeedsInit([]string{"sdk", "go"}))
+}
+
+func commandNames(commands []*cobra.Command) []string {
+	names := make([]string, len(commands))
+	for i, command := range commands {
+		names[i] = command.Name()
 	}
+	return names
+}
 
-	t.Run("known SDK, nothing installed", func(t *testing.T) {
-		moduleParent, clientParent := newParents()
-		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindModule,
-			[]string{"module", "init", "go", "myapp"}, nil)
-
-		cmd, _, err := moduleParent.Find([]string{"go", "myapp"})
-		require.NoError(t, err)
-		require.Equal(t, "go", cmd.Name())
-		// Must be runnable, otherwise cobra prints help instead of RunE's hint.
-		require.True(t, cmd.Runnable())
-		require.ErrorContains(t, cmd.RunE(cmd, []string{"myapp"}), "dagger sdk install go")
-	})
-
-	t.Run("unknown SDK is left to cobra", func(t *testing.T) {
-		moduleParent, clientParent := newParents()
-		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindModule,
-			[]string{"module", "init", "definitely-not-an-sdk", "myapp"}, nil)
-		require.Empty(t, moduleParent.Commands())
-	})
-
-	t.Run("installed SDK is left to the real command", func(t *testing.T) {
-		moduleParent, clientParent := newParents()
-		sdks := []configuredSDK{{moduleName: "go", commandName: "go"}}
-		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindModule,
-			[]string{"module", "init", "go", "myapp"}, sdks)
-		require.Empty(t, moduleParent.Commands())
-	})
-
-	t.Run("client kind registers under the client parent", func(t *testing.T) {
-		moduleParent, clientParent := newParents()
-		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindClient,
-			[]string{"api", "client", "init", "go", "./client", "."}, nil)
-		require.Empty(t, moduleParent.Commands())
-
-		cmd, _, err := clientParent.Find([]string{"go", "./client", "."})
-		require.NoError(t, err)
-		require.Equal(t, "go", cmd.Name())
-		require.True(t, cmd.Runnable())
-		require.ErrorContains(t, cmd.RunE(cmd, []string{"./client", "."}), "dagger sdk install go")
-	})
+func findCommand(parent *cobra.Command, name string) *cobra.Command {
+	for _, command := range parent.Commands() {
+		if command.Name() == name {
+			return command
+		}
+	}
+	return nil
 }
 
 func sdkInitArgNames(args []*modFunctionArg) []string {

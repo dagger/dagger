@@ -178,7 +178,6 @@ func init() {
 	settingsCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
-	moduleCmd.GroupID = "toolbox"
 	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
@@ -208,7 +207,6 @@ func init() {
 		searchCmd,
 		installedCmd,
 		activityCmd,
-		moduleCmd,
 		sdkCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
@@ -615,7 +613,7 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(args []string) {
+func parseGlobalFlags(args []string) []string {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
@@ -628,6 +626,7 @@ func parseGlobalFlags(args []string) {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
+	return flags.Args()
 }
 
 func xReleaseLogLine(msg string) string {
@@ -638,10 +637,6 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
-// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
-// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
-//
-//nolint:unparam
 func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
@@ -815,7 +810,7 @@ func Main() {
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(os.Args[1:])
+	commandArgs := parseGlobalFlags(os.Args[1:])
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -910,8 +905,8 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
+	if sdkArgs, ok := sdkCommandRegistrationArgs(commandArgs); ok {
+		if err := registerInstalledSDKCommands(ctx, sdkArgs); err != nil {
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			exitWithCode(1)
 		}

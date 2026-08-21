@@ -1077,13 +1077,13 @@ source = "./demo"
 func (WorkspaceAPISuite) TestSyntheticWorkspaceModuleBuildersUseWorkspaceSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	workspaceID, err := c.Directory().
-		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`).
+		WithNewFile("modules/demo/dagger.json", `{
+  "name": "demo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
+		WithNewFile("modules/demo/main.go", "package main\n\ntype Demo struct{}\n").
 		AsWorkspace().
 		ID(ctx)
 	require.NoError(t, err)
@@ -1158,13 +1158,13 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 
 	ws := c.CurrentWorkspace()
 	updated := ws.
-		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`).
+		WithNewFile("modules/demo/dagger.json", `{
+  "name": "demo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
+		WithNewFile("modules/demo/main.go", "package main\n\ntype Demo struct{}\n").
 		WithModule(filepath.Join(workdir, "modules", "demo"))
 
 	name, err := updated.Module("demo").Name(ctx)
@@ -1172,9 +1172,9 @@ source = "go"
 	require.Equal(t, "demo", name)
 	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger-module.toml"}, added)
+	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger.json", "modules/demo/main.go"}, added)
 
-	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger-module.toml"))
+	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger.json"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
@@ -1312,7 +1312,7 @@ source = "go"
 	require.NoError(t, err)
 	query := `query SDKReaders($from: ID!) {
   currentWorkspace {
-    withSDK(ref: "./sdk", name: "go-sdk", asSdkName: "go") {
+    withSDK(ref: "./sdk", name: "go-sdk") {
       changes(from: $from) {
         addedPaths
       }
@@ -1371,8 +1371,8 @@ source = "go"
 	require.Equal(t, []string{"dagger.toml"}, staged.Changes.AddedPaths)
 	require.Contains(t, staged.File.Contents, `[modules.go-sdk]`)
 	require.Contains(t, staged.File.Contents, `source = "sdk"`)
-	require.Contains(t, staged.File.Contents, `[modules.go-sdk.as-sdk]`)
-	require.Contains(t, staged.File.Contents, `name = "go"`)
+	require.Contains(t, staged.File.Contents, `[sdks.go]`)
+	require.Contains(t, staged.File.Contents, `module = "go-sdk"`)
 	require.Len(t, staged.SDKs, 1)
 	require.Equal(t, "go", staged.SDKs[0].Name)
 	require.Equal(t, "sdk", staged.SDKs[0].Ref)
@@ -1385,35 +1385,51 @@ source = "go"
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func (WorkspaceAPISuite) TestWorkspaceWithoutSDKUsesSDKName(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[sdks.go]
+module = "dagger-go-sdk"
+`), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	_, err := c.CurrentWorkspace().WithoutSDK("go").ID(ctx)
+	require.NoError(t, err)
+}
+
 func (WorkspaceAPISuite) TestWorkspaceSDKsHaveDistinctIdentity(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`[modules.alpha]
 source = "sdk-alpha"
 
-[modules.alpha.as-sdk]
-name = "alpha-sdk"
-
-[[modules.alpha.as-sdk.modules]]
-path = "modules/alpha"
-
-[[modules.alpha.as-sdk.clients]]
-path = "clients/alpha"
-module = "github.com/example/alpha"
-pin = "deadbeef"
-
 [modules.beta]
 source = "sdk-beta"
 
-[modules.beta.as-sdk]
-name = "beta-sdk"
+[sdks.alpha-sdk]
+module = "alpha"
 
-[[modules.beta.as-sdk.modules]]
-path = "modules/beta"
+[sdks.alpha-sdk.claimed]
+modules = [
+  "modules/alpha",
+]
+clients = [
+  { path = "clients/alpha", module = "github.com/example/alpha@deadbeef" },
+]
 
-[[modules.beta.as-sdk.clients]]
-path = "clients/beta"
-module = "github.com/example/beta"
+[sdks.beta-sdk]
+module = "beta"
+
+[sdks.beta-sdk.claimed]
+modules = [
+  "modules/beta",
+]
+clients = [
+  { path = "clients/beta", module = "github.com/example/beta" },
+]
 `), 0o644))
 
 	queryPath := writeQueryDoc(t, workdir, "sdk-identities.graphql", `{

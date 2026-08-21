@@ -1,0 +1,236 @@
+package daggercmd
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+	"text/tabwriter"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/spf13/cobra"
+)
+
+func newSDKInfoCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "info",
+		Short: "Show SDK information",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSDKInfo(cmd, sdkName)
+		},
+	}
+}
+
+func newSDKModuleClaimCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "claim [path]",
+		Short: "Claim an existing module source",
+		Long:  "Claim an existing module so this SDK manages and regenerates it. The path defaults to the current directory.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSDKModuleClaim(cmd, sdkName, optionalPathArg(args))
+		},
+	}
+}
+
+func newSDKModuleUnclaimCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unclaim [path]",
+		Short: "Stop managing an existing module",
+		Long:  "Stop this SDK from managing and regenerating an existing module. Files are left untouched. The path defaults to the current directory.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSDKModuleUnclaim(cmd, sdkName, optionalPathArg(args))
+		},
+	}
+}
+
+func newSDKModuleListCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List modules managed by this SDK",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSDKModuleList(cmd, sdkName)
+		},
+	}
+}
+
+func newSDKClientClaimCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "claim <path> <module>",
+		Short: "Claim an existing generated client",
+		Long:  "Claim an existing generated client so this SDK manages and regenerates it.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSDKClientClaim(cmd, sdkName, args[0], args[1])
+		},
+	}
+}
+
+func newSDKClientUnclaimCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unclaim [path]",
+		Short: "Stop managing a generated client",
+		Long:  "Stop this SDK from managing and regenerating a client. Files are left untouched. The path defaults to the current directory.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSDKClientUnclaim(cmd, sdkName, optionalPathArg(args))
+		},
+	}
+}
+
+func newSDKClientListCommand(sdkName string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List clients managed by this SDK",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSDKClientList(cmd, sdkName)
+		},
+	}
+}
+
+func optionalPathArg(args []string) string {
+	if len(args) == 0 {
+		return "."
+	}
+	return args[0]
+}
+
+func runSDKInfo(cmd *cobra.Command, sdkName string) error {
+	sdk, cfgPath, err := localSDK(sdkName)
+	if err != nil {
+		return err
+	}
+	sdkRef, err := sdkInitModuleEntrySource(sdk.entry, filepath.Dir(cfgPath))
+	if err != nil {
+		return err
+	}
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		functions, err := inspectSDKInitFunctions(ctx, ec.Dagger(), sdkRef)
+		if err != nil {
+			return err
+		}
+		return writeSDKInfo(cmd, sdk, functions)
+	})
+}
+
+func writeSDKInfo(cmd *cobra.Command, sdk configuredSDK, functions map[sdkInitKind]*modFunction) error {
+	capabilities := make([]string, 0, 2)
+	if functions[sdkInitKindModule] != nil {
+		capabilities = append(capabilities, "module")
+	}
+	if functions[sdkInitKindClient] != nil {
+		capabilities = append(capabilities, "client")
+	}
+	if len(capabilities) == 0 {
+		capabilities = append(capabilities, "none")
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "sdk-name: %s\nmodule-name: %s\nmodule-source: %s\ncapabilities: %s\nclaimed-modules: %d\nclaimed-clients: %d\n",
+		sdk.commandName,
+		sdk.moduleName,
+		sdkModuleEntrySource(sdk.entry),
+		strings.Join(capabilities, ", "),
+		len(sdk.sdk.Claimed.Modules),
+		len(sdk.sdk.Claimed.Clients),
+	)
+	return err
+}
+
+func runSDKModuleClaim(cmd *cobra.Command, sdkName, path string) error {
+	return mutateSDKWorkspace(cmd, "module claim", func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithClaimedModule(sdkName, path)
+	})
+}
+
+func runSDKModuleUnclaim(cmd *cobra.Command, sdkName, path string) error {
+	return mutateSDKWorkspace(cmd, "module unclaim", func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithoutClaimedModule(sdkName, path)
+	})
+}
+
+func runSDKClientClaim(cmd *cobra.Command, sdkName, path, module string) error {
+	return mutateSDKWorkspace(cmd, "client claim", func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithClaimedClient(sdkName, path, module)
+	})
+}
+
+func runSDKClientUnclaim(cmd *cobra.Command, sdkName, path string) error {
+	return mutateSDKWorkspace(cmd, "client unclaim", func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithoutClaimedClient(sdkName, path)
+	})
+}
+
+func mutateSDKWorkspace(cmd *cobra.Command, action string, mutate func(*dagger.Workspace) *dagger.Workspace) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("%s does not support --env; SDK claims live in the base workspace config", action)
+	}
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		dag := ec.Dagger()
+		current := dag.CurrentWorkspace()
+		updated := mutate(current).WithWorkdir(".")
+		_, err := handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
+		return err
+	})
+}
+
+func runSDKModuleList(cmd *cobra.Command, sdkName string) error {
+	sdk, _, err := localSDK(sdkName)
+	if err != nil {
+		return err
+	}
+	paths := slices.Clone(sdk.sdk.Claimed.Modules)
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return nil
+	}
+	for _, path := range paths {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runSDKClientList(cmd *cobra.Command, sdkName string) error {
+	sdk, _, err := localSDK(sdkName)
+	if err != nil {
+		return err
+	}
+	clients := slices.Clone(sdk.sdk.Claimed.Clients)
+	if len(clients) == 0 {
+		return nil
+	}
+	sort.Slice(clients, func(i, j int) bool { return clients[i].Path < clients[j].Path })
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "PATH\tMODULE"); err != nil {
+		return err
+	}
+	for _, claimed := range clients {
+		_, err := fmt.Fprintf(w, "%s\t%s\n", claimed.Path, claimed.Module)
+		if err != nil {
+			return err
+		}
+	}
+	return w.Flush()
+}
+
+func localSDK(sdkName string) (configuredSDK, string, error) {
+	cfg, cfgPath, err := readLocalWorkspaceConfig()
+	if err != nil {
+		return configuredSDK{}, "", err
+	}
+	sdk, err := resolveConfiguredSDK(cfg, sdkName)
+	return sdk, cfgPath, err
+}

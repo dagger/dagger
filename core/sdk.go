@@ -83,7 +83,7 @@ type ClientGenerator interface {
 
 /*
 ModuleInitializer is an interface that an SDK may implement to add
-SDK-specific workspace edits during `dagger module init`.
+SDK-specific workspace edits during `dagger sdk <SDK> module init`.
 */
 type ModuleInitializer interface {
 	/*
@@ -112,7 +112,7 @@ type ModuleInitializer interface {
 
 /*
 ClientInitializer is an interface that an SDK may implement to add
-SDK-specific workspace edits during `dagger api client init`.
+SDK-specific workspace edits during `dagger sdk <SDK> client init`.
 */
 type ClientInitializer interface {
 	/*
@@ -144,7 +144,7 @@ RuntimeTarget is an interface that an SDK may implement to delegate runtime
 execution to a different module than the SDK itself. By default the SDK
 module IS the runtime — its own installed ref is recorded as `[runtime]
 source` in the new module's dagger-module.toml. When an SDK implements this
-interface, the engine calls `targetRuntime` at `dagger module init` time
+interface, the engine calls `targetRuntime` at `dagger sdk <SDK> module init` time
 and records the returned value instead. The split lets a thin codegen-only
 SDK target a separate, canonical runtime module.
 */

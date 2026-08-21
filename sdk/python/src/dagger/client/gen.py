@@ -4147,27 +4147,6 @@ class CurrentModuleAsSDKClient(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(str)
 
-    async def pin(self) -> str:
-        """The pinned version of the bound module, if any.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("pin", _args)
-        return await _ctx.execute(str)
-
 
 @typecheck
 class CurrentModuleAsSDKModule(Type):
@@ -15608,6 +15587,46 @@ class Workspace(Type):
         _ctx = self._select("withChanges", _args)
         return Workspace(_ctx)
 
+    def with_claimed_client(self, sdk: str, path: str, module: str) -> Self:
+        """Return this workspace with an existing generated client claimed by an
+        installed SDK.
+
+        Parameters
+        ----------
+        sdk:
+            Workspace SDK name or module entry name to claim the client with.
+        path:
+            Path of the existing client, relative to the workspace cwd.
+        module:
+            Workspace-relative path or canonical ref for the module the client
+            binds to.
+        """
+        _args = [
+            Arg("sdk", sdk),
+            Arg("path", path),
+            Arg("module", module),
+        ]
+        _ctx = self._select("withClaimedClient", _args)
+        return Workspace(_ctx)
+
+    def with_claimed_module(self, sdk: str, path: str) -> Self:
+        """Return this workspace with an existing module claimed by an installed
+        SDK.
+
+        Parameters
+        ----------
+        sdk:
+            Workspace SDK name or module entry name to claim the module with.
+        path:
+            Path of the existing module, relative to the workspace cwd.
+        """
+        _args = [
+            Arg("sdk", sdk),
+            Arg("path", path),
+        ]
+        _ctx = self._select("withClaimedModule", _args)
+        return Workspace(_ctx)
+
     def with_config_env(
         self,
         name: str,
@@ -15902,8 +15921,8 @@ class Workspace(Type):
         here:
             Write to the workspace config directory at the workspace cwd.
         as_sdk_name:
-            User-facing SDK name to persist under `[modules.<name>.as-sdk]
-            name = ...`.
+            Optional override for the SDK name conventionally derived from the
+            installed module name.
         """
         _args = [
             Arg("ref", ref),
@@ -15933,6 +15952,44 @@ class Workspace(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withWorkdir", _args)
+        return Workspace(_ctx)
+
+    def without_claimed_client(self, sdk: str, path: str) -> Self:
+        """Return this workspace with a generated client no longer claimed by an
+        installed SDK.
+
+        Parameters
+        ----------
+        sdk:
+            Workspace SDK name or module entry name currently claiming the
+            client.
+        path:
+            Path of the claimed client, relative to the workspace cwd.
+        """
+        _args = [
+            Arg("sdk", sdk),
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutClaimedClient", _args)
+        return Workspace(_ctx)
+
+    def without_claimed_module(self, sdk: str, path: str) -> Self:
+        """Return this workspace with a module no longer claimed by an installed
+        SDK.
+
+        Parameters
+        ----------
+        sdk:
+            Workspace SDK name or module entry name currently claiming the
+            module.
+        path:
+            Path of the claimed module, relative to the workspace cwd.
+        """
+        _args = [
+            Arg("sdk", sdk),
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutClaimedModule", _args)
         return Workspace(_ctx)
 
     def without_config_env(

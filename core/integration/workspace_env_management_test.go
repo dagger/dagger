@@ -634,7 +634,7 @@ source = "dep"
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "sdk", "install", "./dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "github.com/dagger/go-sdk")
 		require.Error(t, err)
 		requireErrOut(t, err, `SDKs cannot be installed in env "dev"`)
 	})
@@ -643,12 +643,13 @@ source = "dep"
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
 source = "dep"
 
-[modules.dep.as-sdk]
+[sdks.dep]
+module = "dep"
 
 [env.dev]
 `)
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "sdk", "uninstall", "dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "uninstall", "dep")
 		require.Error(t, err)
 		requireErrOut(t, err, "SDKs are not env-scoped")
 	})

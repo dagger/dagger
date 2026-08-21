@@ -109,6 +109,9 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
@@ -128,6 +131,8 @@ source = ".dagger/modules/tui-qa"
 [env.dev.modules.editor]
 source = "github.com/vito/editor"
 
+# TODO: Migrate this repository to [sdks.*] after that schema is available in
+# the released CLI used to bootstrap CI.
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
 
@@ -214,9 +219,6 @@ path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/rust-client-dev"
-
-[modules.tla-check]
-source = ".dagger/modules/tla-check"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/tla-check"

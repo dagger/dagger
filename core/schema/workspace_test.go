@@ -526,7 +526,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.NoError(t, err)
 		sdk := cfg.Modules["dagger-go-sdk"]
 		require.Equal(t, "go", sdk.Source)
-		require.NotNil(t, sdk.AsSDK)
+		require.Equal(t, "dagger-go-sdk", cfg.SDKs["go"].Module)
 		require.Equal(t, []string{
 			"Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.",
 		}, plans[0].Warnings)
@@ -558,7 +558,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.NoError(t, err)
 		sdk := cfg.Modules["dagger-go-sdk"]
 		require.Equal(t, "go", sdk.Source)
-		require.NotNil(t, sdk.AsSDK)
+		require.Equal(t, "dagger-go-sdk", cfg.SDKs["go"].Module)
 		require.Equal(t, []string{
 			"services/api requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m services/api ...`.",
 		}, workspaceMigrationWarnings(migrated))
@@ -569,7 +569,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 	t.Run("project-style module at the root is not assigned a runtime pin", func(t *testing.T) {
 		// A must-migrate config at the workspace root with its source in a
 		// subdirectory installs the module into its own migrated workspace
-		// config with the SDK recorded as-sdk; the parent-plan flow must leave
+		// config with the SDK registered; the parent-plan flow must leave
 		// it alone entirely.
 		project := testRuntimeCompatWorkspace(t, root, `{
   "name": "api",
@@ -649,7 +649,7 @@ source = "github.com/acme/custom-go-sdk"
 		require.Equal(t, "github.com/acme/custom-go-sdk", cfg.Modules["dagger-go-sdk"].Source)
 		sdk := cfg.Modules["dagger-go-sdk-2"]
 		require.Equal(t, "go", sdk.Source)
-		require.NotNil(t, sdk.AsSDK)
+		require.Equal(t, "dagger-go-sdk-2", cfg.SDKs["go"].Module)
 	})
 
 	t.Run("module repo runtime pin and discovered dependency share one SDK install", func(t *testing.T) {
@@ -683,9 +683,8 @@ source = "github.com/acme/custom-go-sdk"
 		require.Len(t, cfg.Modules, 1, "one SDK install serves every module in the repo")
 		sdk := cfg.Modules["dagger-go-sdk"]
 		require.Equal(t, "go", sdk.Source)
-		require.NotNil(t, sdk.AsSDK)
-		require.Len(t, sdk.AsSDK.Modules, 1)
-		require.Equal(t, filepath.Join("services", "api", "libs", "dep"), filepath.FromSlash(sdk.AsSDK.Modules[0].Path))
+		require.Len(t, cfg.SDKs["go"].Claimed.Modules, 1)
+		require.Equal(t, filepath.Join("services", "api", "libs", "dep"), filepath.FromSlash(cfg.SDKs["go"].Claimed.Modules[0]))
 	})
 }
 
@@ -956,14 +955,62 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 	t.Run("re-sourcing a base SDK entry is rejected", func(t *testing.T) {
 		cfg := &workspace.Config{
 			Modules: map[string]workspace.ModuleEntry{
-				"go-sdk": {Source: "sdk/go", AsSDK: &workspace.ModuleAsSDK{}},
+				"go-sdk": {Source: "sdk/go"},
 			},
+			SDKs: map[string]workspace.SDKEntry{"go": {Module: "go-sdk"}},
 		}
 
 		_, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "go-sdk", "other/go")
 		require.ErrorContains(t, err, `module "go-sdk" is an SDK; SDKs cannot be installed in env "dev"`)
 		require.Empty(t, cfg.Env)
 	})
+}
+
+func TestPlanWorkspaceInstallConfigSDKNames(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		},
+		SDKs: map[string]workspace.SDKEntry{"go": {Module: "dagger-go-sdk"}},
+	}
+
+	_, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{AsSdk: true}, "go-sdk", "github.com/acme/go-sdk")
+	require.EqualError(t, err, `SDK "go" is already provided by module "dagger-go-sdk"`)
+	require.NotContains(t, cfg.Modules, "go-sdk")
+
+	plan, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{AsSdk: true, AsSdkName: "custom-go"}, "go-sdk", "github.com/acme/go-sdk")
+	require.NoError(t, err)
+	require.True(t, plan.Changed)
+	require.True(t, plan.Added)
+	require.Equal(t, "go-sdk", cfg.SDKs["custom-go"].Module)
+}
+
+func TestClaimedSDKOwners(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{"go-sdk": {}},
+		SDKs: map[string]workspace.SDKEntry{
+			"go": {Module: "go-sdk", Claimed: workspace.SDKClaims{
+				Modules: []string{"modules/demo"},
+				Clients: []workspace.SDKManagedClient{{Path: "clients/demo"}},
+			}},
+		},
+	}
+
+	owner, ok, err := claimedOwner(cfg, ".", workspaceModuleClaim, "./modules/demo")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "go", owner)
+	owner, ok, err = claimedOwner(cfg, ".", workspaceClientClaim, "clients/other/../demo")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "go", owner)
+	_, ok, err = claimedOwner(cfg, ".", workspaceModuleClaim, "modules/other")
+	require.NoError(t, err)
+	require.False(t, ok)
 }
 
 func TestEnvScopedConfigKeyMissingEnv(t *testing.T) {

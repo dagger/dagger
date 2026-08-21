@@ -457,7 +457,7 @@ type Myapp {
 		// The converted toolchain's runtime is installed and pinned in the
 		// workspace, sharing the root module's dang SDK install.
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
-		require.Contains(t, wsOut, `path = "toolchain"`)
+		require.Contains(t, wsOut, `  "toolchain",`)
 
 		// The converted module loads from its own runtime field.
 		callOut, err := ctr.With(daggerCallAt("toolchain", "message")).Stdout(ctx)
@@ -502,8 +502,8 @@ type Myapp {
 		wsOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
-		require.Contains(t, wsOut, `path = "libs/foo"`)
-		// The runtime is resolved to its real ref, matching `dagger sdk install`,
+		require.Contains(t, wsOut, `  "libs/foo",`)
+		// The runtime is resolved to its real ref, matching a generic SDK-module install,
 		// not left as the bare "dang" short name.
 		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`)
 		require.NotContains(t, wsOut, `source = "dang"`)

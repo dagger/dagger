@@ -4021,7 +4021,6 @@ type CurrentModuleAsSDKClient struct {
 	id     *ID
 	module *string
 	path   *string
-	pin    *string
 }
 
 func (r *CurrentModuleAsSDKClient) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKClient {
@@ -4098,19 +4097,6 @@ func (r *CurrentModuleAsSDKClient) Path(ctx context.Context) (string, error) {
 		return *r.path, nil
 	}
 	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The pinned version of the bound module, if any.
-func (r *CurrentModuleAsSDKClient) Pin(ctx context.Context) (string, error) {
-	if r.pin != nil {
-		return *r.pin, nil
-	}
-	q := r.query.Select("pin")
 
 	var response string
 
@@ -16695,6 +16681,29 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// Return this workspace with an existing generated client claimed by an installed SDK.
+func (r *Workspace) WithClaimedClient(sdk string, path string, module string) *Workspace {
+	q := r.query.Select("withClaimedClient")
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("path", path)
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with an existing module claimed by an installed SDK.
+func (r *Workspace) WithClaimedModule(sdk string, path string) *Workspace {
+	q := r.query.Select("withClaimedModule")
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -16942,7 +16951,7 @@ type WorkspaceWithSDKOpts struct {
 	Name string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
-	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+	// Optional override for the SDK name conventionally derived from the installed module name.
 	AsSDKName string
 }
 
@@ -16982,6 +16991,28 @@ func (r *Workspace) WithUpdatedLock() *Workspace {
 // Return this workspace with its working directory pointed at the given workspace-relative path.
 func (r *Workspace) WithWorkdir(path string) *Workspace {
 	q := r.query.Select("withWorkdir")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a generated client no longer claimed by an installed SDK.
+func (r *Workspace) WithoutClaimedClient(sdk string, path string) *Workspace {
+	q := r.query.Select("withoutClaimedClient")
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a module no longer claimed by an installed SDK.
+func (r *Workspace) WithoutClaimedModule(sdk string, path string) *Workspace {
+	q := r.query.Select("withoutClaimedModule")
+	q = q.Arg("sdk", sdk)
 	q = q.Arg("path", path)
 
 	return &Workspace{

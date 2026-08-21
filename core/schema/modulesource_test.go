@@ -267,20 +267,13 @@ func TestSDKOwnersByModulePathFromConfig(t *testing.T) {
 	t.Run("maps normalized module paths", func(t *testing.T) {
 		owners, err := sdkOwnersByModulePathFromConfig(".", &workspace.Config{
 			Modules: map[string]workspace.ModuleEntry{
-				"go-sdk": {
-					AsSDK: &workspace.ModuleAsSDK{
-						Modules: []workspace.SDKManagedModule{
-							{Path: "./modules/go"},
-							{Path: "modules/go"},
-						},
-					},
-				},
-				"typescript-sdk": {
-					AsSDK: &workspace.ModuleAsSDK{
-						Modules: []workspace.SDKManagedModule{{Path: "modules/typescript"}},
-					},
-				},
-				"plain-module": {},
+				"go-sdk":         {},
+				"typescript-sdk": {},
+				"plain-module":   {},
+			},
+			SDKs: map[string]workspace.SDKEntry{
+				"go":         {Module: "go-sdk", Claimed: workspace.SDKClaims{Modules: []string{"./modules/go", "modules/go"}}},
+				"typescript": {Module: "typescript-sdk", Claimed: workspace.SDKClaims{Modules: []string{"modules/typescript"}}},
 			},
 		})
 		require.NoError(t, err)
@@ -293,14 +286,10 @@ func TestSDKOwnersByModulePathFromConfig(t *testing.T) {
 	t.Run("resolves paths against a config directory below the root", func(t *testing.T) {
 		owners, err := sdkOwnersByModulePathFromConfig("apps/demo", &workspace.Config{
 			Modules: map[string]workspace.ModuleEntry{
-				"go-sdk": {
-					AsSDK: &workspace.ModuleAsSDK{
-						Modules: []workspace.SDKManagedModule{
-							{Path: ".dagger/modules/go"},
-							{Path: "../shared"},
-						},
-					},
-				},
+				"go-sdk": {},
+			},
+			SDKs: map[string]workspace.SDKEntry{
+				"go": {Module: "go-sdk", Claimed: workspace.SDKClaims{Modules: []string{".dagger/modules/go", "../shared"}}},
 			},
 		})
 		require.NoError(t, err)
@@ -313,16 +302,12 @@ func TestSDKOwnersByModulePathFromConfig(t *testing.T) {
 	t.Run("rejects paths managed by multiple SDKs", func(t *testing.T) {
 		_, err := sdkOwnersByModulePathFromConfig(".", &workspace.Config{
 			Modules: map[string]workspace.ModuleEntry{
-				"go-sdk": {
-					AsSDK: &workspace.ModuleAsSDK{
-						Modules: []workspace.SDKManagedModule{{Path: "./modules/shared"}},
-					},
-				},
-				"typescript-sdk": {
-					AsSDK: &workspace.ModuleAsSDK{
-						Modules: []workspace.SDKManagedModule{{Path: "modules/shared"}},
-					},
-				},
+				"go-sdk":         {},
+				"typescript-sdk": {},
+			},
+			SDKs: map[string]workspace.SDKEntry{
+				"go":         {Module: "go-sdk", Claimed: workspace.SDKClaims{Modules: []string{"./modules/shared"}}},
+				"typescript": {Module: "typescript-sdk", Claimed: workspace.SDKClaims{Modules: []string{"modules/shared"}}},
 			},
 		})
 		require.EqualError(t, err, `module path "modules/shared" is managed by multiple SDKs: "go-sdk" and "typescript-sdk"`)

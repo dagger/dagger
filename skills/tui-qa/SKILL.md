@@ -76,7 +76,7 @@ python3 skills/tui-qa/scripts/tui_qa.py record \
 ```bash
 python3 skills/tui-qa/scripts/tui_qa.py record \
   --name module-init \
-  --command 'dagger sdk install go && dagger module init go demo' \
+  --command 'dagger install github.com/dagger/go-sdk --auto-apply && dagger sdk go module init demo --auto-apply' \
   --workdir /tmp/playground
 ```
 

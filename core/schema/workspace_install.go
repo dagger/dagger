@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
@@ -22,6 +23,29 @@ type workspaceInstallArgs struct {
 type workspaceInstallConfigPlan struct {
 	Changed bool
 	Added   bool
+}
+
+// detectWorkspaceSDKCapabilities initializes the module schema and checks the
+// main object for either function that makes a regular module an SDK.
+func detectWorkspaceSDKCapabilities(
+	ctx context.Context,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (bool, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, fmt.Errorf("dagql server: %w", err)
+	}
+
+	var mod dagql.ObjectResult[*core.Module]
+	if err := srv.Select(ctx, source, &mod, dagql.Selector{
+		Field: "asModule",
+		Args: []dagql.NamedInput{
+			{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+		},
+	}); err != nil {
+		return false, fmt.Errorf("inspect installed module capabilities: %w", err)
+	}
+	return coresdk.HasInitializer(mod.Self()), nil
 }
 
 func planWorkspaceInstallConfig(
@@ -44,33 +68,57 @@ func planWorkspaceInstallConfig(
 				sourcePath,
 			)
 		}
-		if args.AsSdk && (existing.AsSDK == nil || existing.AsSDK.Name == "" && args.AsSdkName != "") {
-			if existing.AsSDK == nil {
-				existing.AsSDK = &workspace.ModuleAsSDK{}
+		if args.AsSdk {
+			sdkName := args.AsSdkName
+			if sdkName == "" {
+				sdkName = workspace.ConventionalSDKName(name)
 			}
-			if args.AsSdkName != "" {
-				existing.AsSDK.Name = args.AsSdkName
+			if installedName, ok := workspace.SDKNameForModule(cfg, name); ok {
+				if args.AsSdkName != "" && installedName != sdkName {
+					return plan, fmt.Errorf(
+						"module %q already provides SDK %q (new SDK name %q)",
+						name,
+						installedName,
+						sdkName,
+					)
+				}
+				return plan, workspace.ValidateSDKs(cfg)
 			}
-			cfg.Modules[name] = existing
+			if cfg.SDKs == nil {
+				cfg.SDKs = map[string]workspace.SDKEntry{}
+			}
+			if sdk, exists := cfg.SDKs[sdkName]; exists {
+				return plan, fmt.Errorf("SDK %q is already provided by module %q", sdkName, sdk.Module)
+			}
+			cfg.SDKs[sdkName] = workspace.SDKEntry{Module: name}
+			if err := workspace.ValidateSDKs(cfg); err != nil {
+				return plan, err
+			}
 			plan.Changed = true
-			return plan, nil
-		}
-		if args.AsSdk && args.AsSdkName != "" && existing.AsSDK.Name != args.AsSdkName {
-			return plan, fmt.Errorf(
-				"module %q is already marked as SDK %q (new SDK name %q)",
-				name,
-				existing.AsSDK.Name,
-				args.AsSdkName,
-			)
 		}
 		return plan, nil
 	}
 
 	entry := workspace.ModuleEntry{Source: sourcePath}
 	if args.AsSdk {
-		entry.AsSDK = &workspace.ModuleAsSDK{Name: args.AsSdkName}
+		sdkName := args.AsSdkName
+		if sdkName == "" {
+			sdkName = workspace.ConventionalSDKName(name)
+		}
+		if cfg.SDKs == nil {
+			cfg.SDKs = map[string]workspace.SDKEntry{}
+		}
+		if sdk, exists := cfg.SDKs[sdkName]; exists {
+			return plan, fmt.Errorf("SDK %q is already provided by module %q", sdkName, sdk.Module)
+		}
+		cfg.Modules[name] = entry
+		cfg.SDKs[sdkName] = workspace.SDKEntry{Module: name}
+		if err := workspace.ValidateSDKs(cfg); err != nil {
+			return plan, err
+		}
+	} else {
+		cfg.Modules[name] = entry
 	}
-	cfg.Modules[name] = entry
 	plan.Changed = true
 	plan.Added = true
 	return plan, nil
@@ -103,7 +151,7 @@ func planWorkspaceEnvInstallConfig(
 		return plan, fmt.Errorf("SDKs cannot be installed in env %q; install SDKs in the base workspace config", envName)
 	}
 
-	if base, ok := cfg.Modules[name]; ok && base.AsSDK != nil {
+	if _, ok := workspace.SDKNameForModule(cfg, name); ok {
 		return plan, fmt.Errorf("module %q is an SDK; SDKs cannot be installed in env %q", name, envName)
 	}
 

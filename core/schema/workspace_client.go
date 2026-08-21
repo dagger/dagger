@@ -54,7 +54,7 @@ func (s *workspaceSchema) initClientChanges(
 		return res, scope, err
 	}
 	cfg := staged.Config
-	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
+	sdkName, _, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, scope, err
 	}
@@ -66,11 +66,10 @@ func (s *workspaceSchema) initClientChanges(
 			return res, scope, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	targetModule, err := s.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, "")
+	_, err = s.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef)
 	if err != nil {
 		return res, scope, err
 	}
-	modulePin := targetModule.Self().Pin()
 
 	// dagger.toml records paths relative to the directory holding it, while
 	// everything downstream of here is workspace-root-relative.
@@ -82,13 +81,12 @@ func (s *workspaceSchema) initClientChanges(
 	if err := removeClientEntryAtPath(cfg, staged.ConfigDir, clientPath); err != nil {
 		return res, scope, err
 	}
-	sdkEntry = cfg.Modules[sdkName]
-	sdkEntry.AsSDK.Clients = append(sdkEntry.AsSDK.Clients, workspace.SDKManagedClient{
+	sdkEntry := cfg.SDKs[sdkName]
+	sdkEntry.Claimed.Clients = append(sdkEntry.Claimed.Clients, workspace.SDKManagedClient{
 		Path:   configClientPath,
 		Module: configModuleRef,
-		Pin:    modulePin,
 	})
-	cfg.Modules[sdkName] = sdkEntry
+	cfg.SDKs[sdkName] = sdkEntry
 
 	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, cfg)
 	if err != nil {
@@ -160,7 +158,6 @@ func (s *workspaceSchema) resolveClientTargetModule(
 	ctx context.Context,
 	ws *core.Workspace,
 	ref string,
-	pin string,
 ) (dagql.ObjectResult[*core.ModuleSource], error) {
 	var src dagql.ObjectResult[*core.ModuleSource]
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -180,7 +177,7 @@ func (s *workspaceSchema) resolveClientTargetModule(
 		}); err != nil {
 			return src, fmt.Errorf("load module source: %w", err)
 		}
-	} else if err := srv.Select(ctx, srv.Root(), &src, workspaceClientModuleSourceSelector(ref, pin)); err != nil {
+	} else if err := srv.Select(ctx, srv.Root(), &src, workspaceClientModuleSourceSelector(ref)); err != nil {
 		return src, fmt.Errorf("load module source: %w", err)
 	}
 	if src.Self() == nil {
@@ -195,8 +192,8 @@ func (s *workspaceSchema) resolveClientTargetModule(
 // resolveWorkspaceClientPath resolves the client's output directory the way
 // module init resolves --path, and every other workspace path a user types:
 // relative to where they are standing, with a leading "/" meaning the
-// workspace root. The result is workspace-root-relative, which is what the
-// as-sdk client entry records and what generation is scoped to.
+// workspace root. The result is workspace-root-relative, which is what the SDK
+// client claim records and what generation is scoped to.
 func resolveWorkspaceClientPath(pathArg, cwd string) (string, error) {
 	resolved, err := resolveWorkspacePath(pathArg, cwd)
 	if err != nil {
@@ -251,7 +248,7 @@ func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref, configDir string) 
 }
 
 // resolveSDKManagedClientModule reads back what resolveWorkspaceClientModuleRef
-// stored: a local ref anchors like every other as-sdk path, a canonical ref has
+// stored: a local ref anchors like every other SDK claim path, a canonical ref has
 // no anchor and stays verbatim.
 func resolveSDKManagedClientModule(configDir, ref string) (string, error) {
 	if !workspace.IsLocalRef(ref, "") {
@@ -260,17 +257,13 @@ func resolveSDKManagedClientModule(configDir, ref string) (string, error) {
 	return workspace.ResolveSDKManagedPath(configDir, ref)
 }
 
-func workspaceClientModuleSourceSelector(ref string, pin string) dagql.Selector {
-	args := []dagql.NamedInput{
-		{Name: "refString", Value: dagql.String(ref)},
-		{Name: "disableFindUp", Value: dagql.Boolean(true)},
-	}
-	if pin != "" {
-		args = append(args, dagql.NamedInput{Name: "refPin", Value: dagql.String(pin)})
-	}
+func workspaceClientModuleSourceSelector(ref string) dagql.Selector {
 	return dagql.Selector{
 		Field: "moduleSource",
-		Args:  args,
+		Args: []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(ref)},
+			{Name: "disableFindUp", Value: dagql.Boolean(true)},
+		},
 	}
 }
 
@@ -283,23 +276,23 @@ func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string
 		return nil
 	}
 	cleanPath := filepath.ToSlash(cleanWorkspaceRelPath(clientPath))
-	for moduleName, entry := range cfg.Modules {
-		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
+	for sdkName, entry := range cfg.SDKs {
+		if len(entry.Claimed.Clients) == 0 {
 			continue
 		}
-		kept := make([]workspace.SDKManagedClient, 0, len(entry.AsSDK.Clients))
-		for _, client := range entry.AsSDK.Clients {
+		kept := make([]workspace.SDKManagedClient, 0, len(entry.Claimed.Clients))
+		for _, client := range entry.Claimed.Clients {
 			resolved, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
 			if err != nil {
-				return fmt.Errorf("client managed by %q: %w", moduleName, err)
+				return fmt.Errorf("client managed by %q: %w", sdkName, err)
 			}
 			if resolved == cleanPath {
 				continue
 			}
 			kept = append(kept, client)
 		}
-		entry.AsSDK.Clients = kept
-		cfg.Modules[moduleName] = entry
+		entry.Claimed.Clients = kept
+		cfg.SDKs[sdkName] = entry
 	}
 	return nil
 }
