@@ -3361,6 +3361,56 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.Same(t, existing, child.workspace)
 }
 
+func TestSpecificClientAttachableConnFallsBackForSyntheticClient(t *testing.T) {
+	t.Parallel()
+
+	// Builtin Dang agent tools execute through a synthetic nested client with no
+	// attachable connection of its own. Secret and socket values bind that client
+	// as their source, so specific-client access must follow its explicit proxy
+	// instead of waiting forever for an attachable that will never be registered.
+	parentConn := &grpc.ClientConn{}
+	parentCaller := &sessionAttachableCaller{
+		ctx:       context.Background(),
+		conn:      parentConn,
+		supported: map[string]struct{}{},
+	}
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{
+		clientID:                 "child",
+		hostServiceProxyClientID: parent.clientID,
+		parentClientIDs:          []string{parent.clientID},
+	}
+	attachables := newSessionAttachableManager()
+	attachables.callers[parent.clientID] = parentCaller
+	sess := &daggerSession{
+		sessionID:   "session",
+		attachables: attachables,
+		clientRecords: map[string]*clientRecord{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+	}
+	parent.daggerSession = sess
+	child.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	for _, ifAvailable := range []bool{false, true} {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			SessionID: sess.sessionID,
+			ClientID:  child.clientID,
+		})
+		conn, ok, err := srv.SpecificClientAttachableConn(ctx, child.clientID, core.SpecificClientAttachableConnOpts{
+			IfAvailable: ifAvailable,
+		})
+		cancel()
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Same(t, parentConn, conn)
+	}
+}
+
 func TestResolveHostServiceCallerFallsBackToParentRecordWithoutRuntime(t *testing.T) {
 	t.Parallel()
 
