@@ -128,6 +128,19 @@ func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
 	accepting, _, childLeases := sess.clientLifecycleSnapshot(child)
 	require.False(t, accepting)
 	require.Empty(t, childLeases, "double close must release transport ownership exactly once")
+	require.Equal(t, clientStateReclaimed, child.state)
+	sess.clientMu.RLock()
+	_, runtimeRetained := sess.clientRuntimes[metadata.ClientID]
+	_, recordRetained := sess.clientRecords[metadata.ClientID]
+	sess.clientMu.RUnlock()
+	require.False(t, runtimeRetained, "idle close must reclaim the child runtime")
+	require.True(t, recordRetained, "quiescence must keep the session-long identity record")
+	debug := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, 2, debug.Records)
+	require.Equal(t, 1, debug.Runtimes)
+	require.Equal(t, "quiescent", debug.Sessions[0].Clients[0].RuntimeState)
+	require.NotNil(t, debug.Sessions[0].Clients[0].ClosedAt)
+	require.NotNil(t, debug.Sessions[0].Clients[0].QuiescentAt)
 
 	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
 	require.ErrorContains(t, err, "permanently closed")
@@ -136,14 +149,11 @@ func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{version}"}`))
 	srv.ServeHTTPToNestedClient(recorder, req, transport, metadata, parent.clientID, false, nil, nil)
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	require.Equal(t, clientStateUninitialized, child.state, "close before first request must leave a permanent cold tombstone")
+	require.Equal(t, clientStateReclaimed, child.state, "close before first request must leave a permanent record tombstone")
 
-	// Child quiescence is deliberately not guessed yet: its parent-retention
-	// lease remains visible after transport close and is released at teardown.
+	// The child's serialized quiescent transition releases the exact child edge
+	// it cloned from the parent.
 	_, _, parentLeases := sess.clientLifecycleSnapshot(parent)
-	require.Contains(t, parentLeases, clientLifecycleLeaseRecord{kind: engine.ClientLeaseChild, ownerID: metadata.ClientID})
-	sess.beginClientScopeTeardown()
-	_, _, parentLeases = sess.clientLifecycleSnapshot(parent)
 	for _, lease := range parentLeases {
 		require.NotEqual(t, engine.ClientLeaseChild, lease.kind)
 	}
@@ -202,6 +212,77 @@ func TestHeldParentScopeDelegatesWhileParentClosing(t *testing.T) {
 	transport.Close()
 }
 
+func TestClosedClientWaitsForAcceptedBootstrapRequest(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("child")
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes[metadata.ClientID]
+
+	_, cleanup, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  metadata,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err)
+
+	transport.Close()
+	sess.clientMu.RLock()
+	require.Same(t, child, sess.clientRuntimes[child.clientID],
+		"an accepted bootstrap request must retain the closed runtime")
+	sess.clientMu.RUnlock()
+	_, _, leases := sess.clientLifecycleSnapshot(child)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseRequest, ownerID: "client connection"}}, leases)
+
+	require.NoError(t, cleanup())
+	require.NoError(t, cleanup(), "connection cleanup must be idempotent")
+	sess.clientMu.RLock()
+	_, runtimeRetained := sess.clientRuntimes[child.clientID]
+	record := sess.clientRecords[child.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, runtimeRetained)
+	require.NotNil(t, record)
+	sess.scopeMu.Lock()
+	require.False(t, record.quiescentAt.IsZero())
+	sess.scopeMu.Unlock()
+	child.stateMu.RLock()
+	require.Zero(t, child.activeCount, "idempotent cleanup must decrement the request count once")
+	child.stateMu.RUnlock()
+}
+
+func TestChildQuiescenceReleasesClosingParent(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	sess.closeClientScope(parent)
+	childTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err, "the already accepted request may delegate while its parent closes")
+
+	requestScope.Lease().Release()
+	sess.clientMu.RLock()
+	_, parentRetained := sess.clientRuntimes[parent.clientID]
+	sess.clientMu.RUnlock()
+	require.True(t, parentRetained, "the live child lease must retain its closing parent")
+	_, _, parentLeases := sess.clientLifecycleSnapshot(parent)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseChild, ownerID: "child"}}, parentLeases)
+
+	childTransport.Close()
+	sess.clientMu.RLock()
+	_, childRetained := sess.clientRuntimes["child"]
+	_, parentRetained = sess.clientRuntimes[parent.clientID]
+	_, childRecordRetained := sess.clientRecords["child"]
+	_, parentRecordRetained := sess.clientRecords[parent.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, childRetained)
+	require.False(t, parentRetained, "the child's quiescent transition must wake parent reclamation")
+	require.True(t, childRecordRetained)
+	require.True(t, parentRecordRetained)
+}
+
 func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
 	t.Parallel()
 
@@ -210,6 +291,9 @@ func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
 	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
 	require.NoError(t, err)
 	child := sess.clientRuntimes["child"]
+	sess.scopeMu.Lock()
+	shutdownLease := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseRequest, "POST /shutdown")
+	sess.scopeMu.Unlock()
 
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil)
@@ -218,7 +302,12 @@ func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
 	transport.Close()
 	accepting, _, leases := sess.clientLifecycleSnapshot(child)
 	require.False(t, accepting)
-	require.Empty(t, leases)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseRequest, ownerID: "POST /shutdown"}}, leases)
+	shutdownLease.Release()
+	sess.clientMu.RLock()
+	_, retained := sess.clientRuntimes[child.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, retained, "the accepted shutdown request must be the final owner")
 
 	retry := httptest.NewRecorder()
 	srv.ServeHTTPToNestedClient(
@@ -262,8 +351,25 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 		transport.Close()
 		close(closed)
 	}()
+	deadline := time.NewTimer(10 * time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	for !transport.Closed() {
+		select {
+		case <-deadline.C:
+			ticker.Stop()
+			close(release)
+			<-initialized
+			<-closed
+			t.Fatal("transport close did not publish its proxy-side marker")
+		case <-ticker.C:
+		}
+	}
+	deadline.Stop()
+	ticker.Stop()
 	select {
 	case <-closed:
+		close(release)
+		<-initialized
 		t.Fatal("transport close crossed in-progress initialization serialization")
 	default:
 	}
@@ -276,14 +382,14 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 	// Run the opposite deterministic ordering: close wins before initialization.
 	second, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("second"), parent.clientID)
 	require.NoError(t, err)
-	second.Close()
 	secondChild := sess.clientRuntimes["second"]
+	second.Close()
 	sess.scopeMu.Lock()
 	if secondChild.accepting {
 		secondChild.state = clientStateInitialized
 	}
 	sess.scopeMu.Unlock()
-	require.Equal(t, clientStateUninitialized, secondChild.state)
+	require.Equal(t, clientStateReclaimed, secondChild.state)
 }
 
 func TestNestedBootstrapRequestsMergeBeforeSeal(t *testing.T) {
@@ -677,7 +783,13 @@ func TestClientRecordLookupsAreIndependentFromExecutableRuntime(t *testing.T) {
 	sess.clientMu.RLock()
 	retained := sess.clientRuntimes[child.clientID]
 	sess.clientMu.RUnlock()
-	require.Same(t, runtime, retained, "zero leases must not enable runtime reclamation")
+	require.Same(t, runtime, retained, "an open transport keeps its runtime reachable even with no request leases")
+	sess.closeClientScope(runtime)
+	sess.clientMu.RLock()
+	_, retainedAfterClose := sess.clientRuntimes[child.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, retainedAfterClose, "closing a zero-lease runtime must reclaim it")
+	require.Contains(t, sess.clientRecords, child.clientID)
 }
 
 func TestWorkspaceHostAccessDoesNotRequireOwnerRuntime(t *testing.T) {
@@ -782,7 +894,10 @@ func TestClientScopeRequiresSealedMetadata(t *testing.T) {
 		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client", ClientSecretToken: "token"},
 		accepting:      true},
 		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
-	sess := &daggerSession{sessionID: "session"}
+	sess := &daggerSession{
+		sessionID:      "session",
+		clientRuntimes: map[string]*clientRuntime{client.clientID: client},
+	}
 	client.daggerSession = sess
 	installTestClientRecords(sess)
 	sess.state.Store(sessionStateInitialized)
@@ -804,6 +919,9 @@ func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 		metadataSealed: true,
 		accepting:      true},
 		state:           clientStateInitialized,
+		dagqlRoot:       &core.Query{},
+		workspace:       &core.Workspace{},
+		failedModules:   map[string]error{"old": errors.New("old")},
 		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
 	sess := &daggerSession{
 		sessionID:          "session",
@@ -828,6 +946,10 @@ func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 	// closing and may still delegate terminal/background work.
 	agentScope, err := requestScope.Clone(engine.ClientLeaseAgent, "agent-1")
 	require.NoError(t, err)
+	tombstoneScope, err := requestScope.Clone(engine.ClientLeaseAgentTombstone, "agent-tombstone-1")
+	require.NoError(t, err)
+	serviceScope, err := requestScope.Clone(engine.ClientLeaseService, "service-1")
+	require.NoError(t, err)
 	sharedScope, err := requestScope.Clone(engine.ClientLeaseSharedWork, "call-1")
 	require.NoError(t, err)
 
@@ -835,14 +957,16 @@ func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 	snapshot := srv.ClientLifecycleDebugSnapshot()
 	require.Equal(t, []LifecycleRetentionReason{
 		{Kind: "agent", OwnerID: "agent-1", Count: 1},
+		{Kind: "agent-tombstone", OwnerID: "agent-tombstone-1", Count: 1},
 		{Kind: "request", OwnerID: "POST /query", Count: 1},
+		{Kind: "service", OwnerID: "service-1", Count: 1},
 		{Kind: "shared-work", OwnerID: "call-1", Count: 1},
 	}, snapshot.LeaseCounts)
 	require.Equal(t, 1, snapshot.ActiveRequests)
 
 	var wg sync.WaitGroup
 	for range 64 {
-		wg.Add(3)
+		wg.Add(5)
 		go func() {
 			defer wg.Done()
 			requestScope.Lease().Release()
@@ -853,11 +977,29 @@ func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
+			tombstoneScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			serviceScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
 			sharedScope.Lease().Release()
 		}()
 	}
 	wg.Wait()
 	require.Empty(t, srv.ClientLifecycleDebugSnapshot().LeaseCounts)
+	sess.clientMu.RLock()
+	_, runtimeRetained := sess.clientRuntimes[client.clientID]
+	_, recordRetained := sess.clientRecords[client.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, runtimeRetained)
+	require.True(t, recordRetained)
+	require.Equal(t, clientStateReclaimed, client.state)
+	require.Nil(t, client.dagqlRoot, "reclamation must clear execution graph roots from stale lease shells")
+	require.Nil(t, client.workspace)
+	require.Nil(t, client.failedModules)
 	_, err = requestScope.Clone(engine.ClientLeaseChild, "late-child")
 	require.ErrorContains(t, err, "not held")
 }
@@ -902,7 +1044,7 @@ func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		sess.state.Store(sessionStateRemoved)
+		sess.markSessionRemoved()
 		sess.beginClientScopeTeardown()
 	}()
 	close(start)
@@ -913,6 +1055,87 @@ func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
 	require.ErrorContains(t, err, "session")
 	_, _, leases := sess.clientLifecycleSnapshot(client)
 	require.Empty(t, leases)
+}
+
+func TestClientRuntimeReclamationRacesCloseLeasesChildAndTeardown(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		srv, sess, parent, ctx, parentRequest := newNestedTransportTestFixture(t)
+		childTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+		require.NoError(t, err)
+		child := sess.clientRuntimes["child"]
+
+		sess.scopeMu.Lock()
+		childRequest := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseRequest, "request")
+		childService := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseService, "service")
+		childShared := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseSharedWork, "shared")
+		sess.scopeMu.Unlock()
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for _, action := range []func(){
+			func() { childTransport.Close() },
+			func() { sess.closeClientScope(parent) },
+			func() { parentRequest.Lease().Release() },
+			func() { childRequest.Release() },
+			func() { childService.Release() },
+			func() { childShared.Release() },
+			func() {
+				sess.lifecycleMu.Lock()
+				if sess.state.Load() == sessionStateInitialized {
+					sess.markSessionRemoved()
+					sess.beginClientScopeTeardown()
+				}
+				sess.lifecycleMu.Unlock()
+			},
+		} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				action()
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		sess.scopeMu.Lock()
+		quiescentBeforeRepeat := map[*clientRuntime]time.Time{
+			parent: parent.quiescentAt,
+			child:  child.quiescentAt,
+		}
+		sess.scopeMu.Unlock()
+
+		// Repeat every idempotent edge after the race. No lease may remain and a
+		// runtime that won live-session reclamation must have exactly one stable
+		// quiescent timestamp; teardown is allowed to retain runtime shells until
+		// the session object itself is dropped.
+		childTransport.Close()
+		sess.closeClientScope(parent)
+		parentRequest.Lease().Release()
+		childRequest.Release()
+		childService.Release()
+		childShared.Release()
+		sess.beginClientScopeTeardown()
+
+		for _, runtime := range []*clientRuntime{parent, child} {
+			_, _, leases := sess.clientLifecycleSnapshot(runtime)
+			require.Empty(t, leases)
+			sess.scopeMu.Lock()
+			quiescentAt := runtime.quiescentAt
+			sess.scopeMu.Unlock()
+			if !quiescentAt.IsZero() {
+				require.Equal(t, quiescentBeforeRepeat[runtime], quiescentAt,
+					"idempotent cleanup must not repeat the quiescent transition")
+				runtime.stateMu.RLock()
+				require.Equal(t, clientStateReclaimed, runtime.state)
+				runtime.stateMu.RUnlock()
+			}
+		}
+		require.Contains(t, sess.clientRecords, parent.clientID)
+		require.Contains(t, sess.clientRecords, child.clientID)
+	}
 }
 
 func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T) {
@@ -974,10 +1197,9 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 		"client runtimes must not report metric provider ownership")
 	require.Zero(t, gotParent.Telemetry.ConfiguredMetricReaders)
 	require.False(t, gotParent.MetadataSealed)
-	require.ElementsMatch(t, []string{"session-lifetime", "request", "descendant"}, []string{
+	require.ElementsMatch(t, []string{"lifecycle-transition", "request"}, []string{
 		gotParent.RetentionReasons[0].Kind,
 		gotParent.RetentionReasons[1].Kind,
-		gotParent.RetentionReasons[2].Kind,
 	})
 }
 

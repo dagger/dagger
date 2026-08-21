@@ -90,7 +90,7 @@ type daggerSession struct {
 	scopeAuthority *engine.ClientScopeAuthority
 
 	clientRecords  map[string]*clientRecord  // clientID -> stable identity and routing record
-	clientRuntimes map[string]*clientRuntime // clientID -> retained executable runtime
+	clientRuntimes map[string]*clientRuntime // clientID -> published non-quiescent execution runtime
 	clientMu       sync.RWMutex
 
 	attachables *sessionAttachableManager
@@ -236,23 +236,27 @@ type clientRecord struct {
 
 	// accepting is protected by the session scopeMu and changes monotonically
 	// from true to false. The opaque transport handle is stable record identity;
-	// its typed lease remains on the retained runtime.
+	// its typed lease is owned by the currently published runtime.
 	accepting       bool
 	nestedTransport *engine.NestedClientTransport
 
-	// shutdownAt records the first /shutdown signal for lifecycle diagnostics.
-	// It does not drive reclamation.
-	shutdownAt time.Time
+	// closedAt records the serialized reachability close from any source.
+	// quiescentAt records the one transition that atomically unpublished the
+	// runtime. shutdownAt separately records the first /shutdown signal for
+	// diagnostics; none of these fields drive reclamation.
+	closedAt    time.Time
+	quiescentAt time.Time
+	shutdownAt  time.Time
 
 	// Host attachables and resources remain session-owned and keyed by clientID.
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
 }
 
-// clientRuntime is the retained executable state for a client record. Runtime
-// reclamation is deliberately disabled: every published runtime remains in the
-// session runtime map until authoritative session teardown, including when it
-// has no leases.
+// clientRuntime is reclaimable executable state for a client record. A runtime
+// is published only while reachability or a typed executable/durable lease can
+// still use it. Its record remains session-long after the runtime is atomically
+// unpublished at the client's quiescent transition.
 type clientRuntime struct {
 	*clientRecord
 
@@ -361,10 +365,49 @@ type clientRuntimeState string
 const (
 	clientStateUninitialized clientRuntimeState = "uninitialized"
 	clientStateInitialized   clientRuntimeState = "initialized"
+	clientStateReclaimed     clientRuntimeState = "reclaimed"
 )
 
 func (client *clientRuntime) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
+}
+
+// releaseHeavyState drops every execution-only edge after the runtime has been
+// atomically unpublished. Released lease handles may remain in stale contexts,
+// and their callbacks intentionally still point at this small shell, so clearing
+// the fields here ensures those harmless handles cannot retain a DagQL/schema
+// graph. Zero typed leases proves no legitimate execution can race these writes.
+func (client *clientRuntime) releaseHeavyState() {
+	client.stateMu.Lock()
+	client.state = clientStateReclaimed
+	client.dag = nil
+	client.dagqlRoot = nil
+	client.mod = dagql.ObjectResult[*core.Module]{}
+	client.servedMods = nil
+	client.defaultDeps = nil
+	client.fnCall = nil
+	client.spanExporter = nil
+	client.logExporter = nil
+	client.stateMu.Unlock()
+
+	client.workspaceMu.Lock()
+	client.pendingWorkspaceLoad = false
+	client.workspaceLoaded = false
+	client.workspaceErr = nil
+	client.workspace = nil
+	client.workspaceMu.Unlock()
+
+	client.modulesMu.Lock()
+	client.pendingModules = nil
+	client.pendingExtraModules = nil
+	client.extraModulesLoaded = false
+	client.extraModulesErr = nil
+	client.failedModules = nil
+	client.entrypointServed = false
+	client.servedModuleKeys = nil
+	client.servedWorkspaceModuleNames = nil
+	client.workspaceModuleScopeConsumed = false
+	client.modulesMu.Unlock()
 }
 
 // parentClientIDsForRegistration validates a client's requested place in the
@@ -764,7 +807,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// immediately and skip/bail instead of using a tearing-down session. The
 	// session is intentionally left in srv.daggerSessions as a tombstone until
 	// the caller retires it after lifecycleMu is released.
-	sess.state.Store(sessionStateRemoved)
+	sess.markSessionRemoved()
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 
@@ -985,6 +1028,11 @@ type ClientInitOpts struct {
 	// requests to reconcile metadata without constructing the executable runtime.
 	// The first non-bootstrap request seals metadata before initialization.
 	BootstrapOnly bool
+
+	// requestOwner and requestLeaseOut connect HTTP admission to the request
+	// scope without opening a second lease after the serialization point.
+	requestOwner    string
+	requestLeaseOut **engine.ClientLifecycleLease
 
 	// If set, host-backed services for this client may proxy through this
 	// ancestor when this client has no session attachables of its own.
@@ -1387,7 +1435,7 @@ func (srv *Server) getOrInitClient(
 			return
 		}
 		if createdSession {
-			sess.state.Store(sessionStateRemoved)
+			sess.markSessionRemoved()
 		}
 		unlockLifecycle()
 		rerr = errors.Join(rerr, failureCleanups.Run())
@@ -1421,8 +1469,14 @@ func (srv *Server) getOrInitClient(
 	record, recordExists := sess.clientRecords[clientID]
 	client, runtimeExists := sess.clientRuntimes[clientID]
 	sess.clientMu.RUnlock()
-	if recordExists != runtimeExists {
-		return nil, nil, fmt.Errorf("client %q record/runtime publication is inconsistent", clientID)
+	if recordExists && !runtimeExists {
+		// Quiescent records remain session-long and are permanent closed-ID
+		// tombstones. They can route metadata/telemetry but can never republish an
+		// executable runtime.
+		return nil, nil, fmt.Errorf("client %q is permanently closed", clientID)
+	}
+	if !recordExists && runtimeExists {
+		return nil, nil, fmt.Errorf("client %q runtime is published without its record", clientID)
 	}
 	clientExists := recordExists
 	if clientExists && client.clientRecord != record {
@@ -1514,11 +1568,24 @@ func (srv *Server) getOrInitClient(
 	}
 
 	if opts.NestedTransport != nil && opts.NestedTransport.Closed() {
-		// Close marks the opaque handle before waiting for scopeMu. Detect a close
-		// that began while first-request initialization held scopeMu and never
-		// return an accepting runtime or request scope.
-		client.accepting = false
+		// The proxy-side marker may win while its serialized callback is waiting
+		// for scopeMu. Publish the same monotonic record transition before
+		// rejecting; the callback will idempotently release transport ownership.
+		sess.markClientClosedLocked(client.clientRecord)
 		return nil, nil, fmt.Errorf("nested client %q transport closed during initialization", clientID)
+	}
+
+	// Every admitted HTTP connection, including bootstrap-only requests, owns a
+	// typed request lease before the serialization lock is released. Executable
+	// requests install this exact lease in ClientScope; there is no close/new-
+	// acquire gap in which a runtime could be reclaimed under an accepted handler.
+	requestOwner := opts.requestOwner
+	if requestOwner == "" {
+		requestOwner = "client connection"
+	}
+	requestLease := sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseRequest, requestOwner)
+	if opts.requestLeaseOut != nil {
+		*opts.requestLeaseOut = requestLease
 	}
 
 	// increment the number of active connections from this client
@@ -1531,8 +1598,16 @@ func (srv *Server) getOrInitClient(
 		sess.state.Store(sessionStateInitialized)
 	}
 
+	var (
+		cleanupOnce sync.Once
+		cleanupErr  error
+	)
 	return client, func() error {
-		return srv.releaseClientConnection(ctx, sess, client)
+		cleanupOnce.Do(func() {
+			cleanupErr = srv.releaseClientConnection(ctx, sess, client)
+			requestLease.Release()
+		})
+		return cleanupErr
 	}, nil
 }
 
@@ -1816,6 +1891,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
 	default:
 		requestOpts := *opts
+		requestOpts.requestOwner = r.Method + " " + r.URL.Path
+		var requestLease *engine.ClientLifecycleLease
+		requestOpts.requestLeaseOut = &requestLease
 		switch r.URL.Path {
 		case engine.SessionAttachablesEndpoint, engine.InitEndpoint, engine.ShutdownEndpoint:
 			requestOpts.BootstrapOnly = true
@@ -1832,26 +1910,26 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			return err
 		}
 
-		var requestLease *engine.ClientLifecycleLease
+		if requestLease == nil || !requestLease.Held() {
+			_ = cleanup()
+			return httpErr(fmt.Errorf("accepted request for client %q has no lifecycle lease", client.clientID), http.StatusInternalServerError)
+		}
 		if client.daggerSession.clientMetadataSealed(client.clientRecord) {
-			requestScope, err := client.daggerSession.acquireRootClientScope(client, engine.ClientLeaseRequest, r.Method+" "+r.URL.Path)
+			requestScope, err := engine.NewClientScope(client.clientMetadata, requestLease)
 			if err != nil {
 				_ = cleanup()
-				return httpErr(fmt.Errorf("acquire request client scope: %w", err), http.StatusServiceUnavailable)
+				return httpErr(fmt.Errorf("create request client scope: %w", err), http.StatusInternalServerError)
 			}
 			ctx, err = engine.ContextWithClientScope(ctx, requestScope)
 			if err != nil {
-				requestScope.Lease().Release()
 				_ = cleanup()
 				return httpErr(fmt.Errorf("install request client scope: %w", err), http.StatusInternalServerError)
 			}
-			requestLease = requestScope.Lease()
 		} else if !requestOpts.BootstrapOnly {
 			_ = cleanup()
 			return httpErr(fmt.Errorf("client %q metadata was not sealed for executable request", client.clientID), http.StatusInternalServerError)
 		}
 		defer func() {
-			requestLease.Release()
 			err := cleanup()
 			if err != nil {
 				bklog.G(ctx).WithError(err).Error("client serve cleanup failed")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/dagger/dagger/engine"
 )
@@ -238,19 +239,70 @@ func (sess *daggerSession) clientMetadataSnapshot(record *clientRecord) (*engine
 }
 
 func (sess *daggerSession) closeNestedClientTransport(record *clientRecord) {
+	var transport *engine.ClientLifecycleLease
+	sess.scopeMu.Lock()
+	sess.markClientClosedLocked(record)
 	sess.clientMu.RLock()
 	client := sess.clientRuntimes[record.clientID]
 	sess.clientMu.RUnlock()
-
-	sess.scopeMu.Lock()
-	record.accepting = false
-	var transport *engine.ClientLifecycleLease
 	if client != nil && client.clientRecord == record {
 		transport = client.transportLease
 		client.transportLease = nil
 	}
+	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
 	sess.scopeMu.Unlock()
+
 	transport.Release()
+	sess.finishClientRuntimeReclamation(reclamation)
+}
+
+// markClientClosedLocked performs the monotonic reachability transition. The
+// session scope lock is the acceptance serialization point.
+func (sess *daggerSession) markClientClosedLocked(record *clientRecord) {
+	if record == nil || !record.accepting {
+		return
+	}
+	record.accepting = false
+	record.closedAt = time.Now()
+}
+
+type clientRuntimeReclamation struct {
+	runtime     *clientRuntime
+	parentLease *engine.ClientLifecycleLease
+}
+
+// maybeUnpublishClientRuntimeLocked performs one serialized quiescent
+// transition. sess.scopeMu must be held. The runtime map deletion and parent-
+// lease detachment are one operation, so a child can release its parent only
+// after it is no longer executable and can do so only once.
+func (sess *daggerSession) maybeUnpublishClientRuntimeLocked(client *clientRuntime) clientRuntimeReclamation {
+	if client == nil || sess.state.Load() != sessionStateInitialized || client.accepting || len(client.lifecycleLeases) != 0 {
+		return clientRuntimeReclamation{}
+	}
+
+	sess.clientMu.Lock()
+	if sess.clientRuntimes[client.clientID] != client {
+		sess.clientMu.Unlock()
+		return clientRuntimeReclamation{}
+	}
+	delete(sess.clientRuntimes, client.clientID)
+	client.quiescentAt = time.Now()
+	parentLease := client.parentClientScopeLease
+	client.parentClientScopeLease = nil
+	sess.clientMu.Unlock()
+
+	return clientRuntimeReclamation{runtime: client, parentLease: parentLease}
+}
+
+// finishClientRuntimeReclamation runs outside session locks. Heavy state is
+// dropped before releasing the parent's child lease; that release may
+// recursively reclaim a closed parent.
+func (sess *daggerSession) finishClientRuntimeReclamation(reclamation clientRuntimeReclamation) {
+	if reclamation.runtime == nil {
+		return
+	}
+	reclamation.runtime.releaseHeavyState()
+	reclamation.parentLease.Release()
 }
 
 // acquireRootClientScope acquires work directly from a reachable client. Root
@@ -264,8 +316,14 @@ func (sess *daggerSession) acquireRootClientScope(
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
 
-	if sess.state.Load() == sessionStateRemoved {
-		return engine.ClientScope{}, fmt.Errorf("session %q is closed", sess.sessionID)
+	if sess.state.Load() != sessionStateInitialized {
+		return engine.ClientScope{}, fmt.Errorf("session %q is not initialized", sess.sessionID)
+	}
+	sess.clientMu.RLock()
+	published := sess.clientRuntimes[client.clientID] == client
+	sess.clientMu.RUnlock()
+	if !published {
+		return engine.ClientScope{}, fmt.Errorf("client runtime %q is not retained", client.clientID)
 	}
 	if !client.accepting {
 		return engine.ClientScope{}, fmt.Errorf("client %q is closed", client.clientID)
@@ -352,18 +410,32 @@ func (sess *daggerSession) delegateClientLifecycleLease(
 func (sess *daggerSession) releaseClientLifecycleLease(client *clientRuntime, leaseID uint64) {
 	sess.scopeMu.Lock()
 	delete(client.lifecycleLeases, leaseID)
+	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
 	sess.scopeMu.Unlock()
+	sess.finishClientRuntimeReclamation(reclamation)
 }
 
 // closeClientScope closes root acquisition and releases reachability. Existing
 // scopes remain cloneable until their own leases are released.
 func (sess *daggerSession) closeClientScope(client *clientRuntime) {
 	sess.scopeMu.Lock()
-	client.accepting = false
+	sess.markClientClosedLocked(client.clientRecord)
 	transport := client.transportLease
 	client.transportLease = nil
+	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
 	sess.scopeMu.Unlock()
+
 	transport.Release()
+	sess.finishClientRuntimeReclamation(reclamation)
+}
+
+// markSessionRemoved gives authoritative teardown the same serialization point
+// as acquisition and reclamation: whichever takes scopeMu first owns the final
+// live-session transition.
+func (sess *daggerSession) markSessionRemoved() {
+	sess.scopeMu.Lock()
+	sess.state.Store(sessionStateRemoved)
+	sess.scopeMu.Unlock()
 }
 
 // beginClientScopeTeardown prevents every client from accepting new root work.
@@ -380,7 +452,7 @@ func (sess *daggerSession) beginClientScopeTeardown() {
 	var parentScopes []*engine.ClientLifecycleLease
 	sess.scopeMu.Lock()
 	for _, client := range clients {
-		client.accepting = false
+		sess.markClientClosedLocked(client.clientRecord)
 		if client.transportLease != nil {
 			transports = append(transports, client.transportLease)
 			client.transportLease = nil
@@ -394,9 +466,10 @@ func (sess *daggerSession) beginClientScopeTeardown() {
 	for _, transport := range transports {
 		transport.Release()
 	}
-	// Child quiescence is not implemented yet. Keep each parent's child lease
-	// visible for the whole child record lifetime and release it only at the
-	// authoritative session teardown boundary.
+	// Session teardown is authoritative and disables independent reclamation by
+	// publishing sessionStateRemoved first. Release any remaining child edges
+	// here so teardown cannot strand a typed lease even if a child never reached
+	// its live-session quiescent transition.
 	for _, parentScope := range parentScopes {
 		parentScope.Release()
 	}
