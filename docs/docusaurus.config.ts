@@ -8,6 +8,7 @@ import path from "path";
 import { daggerDarkPrismTheme } from "./src/prism/theme";
 
 import { daggerVersion } from "./current_docs/partials/version";
+import versions from "./versions.json";
 
 const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
@@ -51,7 +52,7 @@ function daggerWebFontsPlugin() {
 const config: Config = {
   title: "Dagger",
   tagline:
-    "Open-source runtime for composable workflows, powering AI agents and CI/CD with modular, repeatable, and observable pipelines.",
+    "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale.",
   favicon: "img/favicon.svg",
 
   // Set the production url of your site here
@@ -107,17 +108,25 @@ const config: Config = {
           // No lastVersion: the default (served at /) is the newest snapshot,
           // i.e. versions.json[0], which docs:version prepends on each cut.
           versions: {
-            // Keep the old-version banner suppressed; path/label are derived
-            // (non-default versions are served at /<version>/).
+            // Only the default version (versions.json[0], served at /) should
+            // be indexed by search engines; archived snapshots and the
+            // unreleased docs otherwise compete with it in search results.
+            ...Object.fromEntries(
+              versions.slice(1).map((v) => [v, { noIndex: true }]),
+            ),
+            // Path/label are derived (non-default versions are served at
+            // /<version>/); the default "unmaintained" banner points readers
+            // at the 1.0 docs.
             "0.21.4": {
-              banner: "none",
               badge: false,
+              noIndex: true,
             },
             current: {
               label: "Next",
               path: "next",
               banner: "unreleased",
               badge: false,
+              noIndex: true,
             },
           },
           sidebarPath: "./sidebars.ts",
@@ -294,7 +303,7 @@ const config: Config = {
       copyright: `
         <hr />
         <div class="flex justify-between">
-          <small>© Dagger 2022-2025</small>
+          <small>© Dagger 2022-${new Date().getFullYear()}</small>
           <div class="flex gap-8">
               <a target="_blank" class="footer-discord-link" href="https://discord.gg/dagger-io">
               </a>
