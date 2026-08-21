@@ -1336,14 +1336,15 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 }
 
 // changesetContent is a changeset reduced to its file-level content: a diff
-// directory holding its added and modified files, plus the computed paths
-// describing removals and empty added directories. Unlike a patch, this
-// content can be applied onto any base — content the base already contains
-// overlays as a no-op instead of double-applying or failing a hunk.
+// directory to copy from, plus the computed paths saying which of it to copy
+// and what to remove. Unlike a patch, this content can be applied onto any
+// base — content the base already contains overlays as a no-op instead of
+// double-applying or failing a hunk.
 type changesetContent struct {
-	// diff is the materialized Before.diff(After) directory — the same
-	// content Directory.WithChanges and Changeset.Export apply. Zero when the
-	// changeset adds and modifies nothing.
+	// diff is the materialized Before.diff(After) directory. Applying it is
+	// narrowed to paths, the same way Directory.WithChanges narrows it: the
+	// structural diff is metadata-sensitive and so spans more than the
+	// changeset reports. Zero when the changeset adds and modifies nothing.
 	diff  dagql.ObjectResult[*Directory]
 	paths *ChangesetPaths
 }
@@ -1432,13 +1433,15 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 		if diffPath == "" {
 			diffPath = "/"
 		}
-		if diffRef != nil {
+		only := changesetWrittenPaths(content.paths)
+		if diffRef != nil && len(only) > 0 {
 			err = MountRef(ctx, diffRef, func(srcRoot string, srcMnt *mount.Mount) error {
 				return copier.Copy(ctx,
 					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
 					diffPath,
 					ws.dir,
 					layercopy.CopyOptions{
+						Filter:          layercopy.Filter{Only: only},
 						CopyDirContents: true,
 						ReplaceExisting: true,
 						// Linking from the diff snapshot into the mounted
