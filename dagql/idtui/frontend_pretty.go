@@ -1365,6 +1365,7 @@ func frontendFormTheme() *huh.Theme {
 	// the inactive button's theme background in place makes both choices look
 	// selected, especially in terminals where their colors are similar.
 	theme.Focused.BlurredButton = theme.Focused.BlurredButton.UnsetBackground().Bold(false)
+	theme.Blurred.FocusedButton = theme.Blurred.FocusedButton.UnsetBackground().Bold(false)
 	theme.Blurred.BlurredButton = theme.Blurred.BlurredButton.UnsetBackground().Bold(false)
 	return theme
 }

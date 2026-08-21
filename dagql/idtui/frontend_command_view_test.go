@@ -20,6 +20,9 @@ func TestFrontendFormThemeOnlyHighlightsFocusedButton(t *testing.T) {
 	if _, ok := theme.Focused.BlurredButton.GetBackground().(lipgloss.NoColor); !ok {
 		t.Fatal("inactive button still has a background")
 	}
+	if _, ok := theme.Blurred.FocusedButton.GetBackground().(lipgloss.NoColor); !ok {
+		t.Fatal("button in an unfocused confirmation still has a background")
+	}
 }
 
 type commandViewFixture struct {

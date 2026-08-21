@@ -611,17 +611,26 @@ func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []re
 		selected = append(selected, r.Module.Repo)
 	}
 
+	install := true
 	form := idtui.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Description("Space toggles · Enter installs").
+				Description("Space toggles · Enter continues").
 				Options(options...).
 				Value(&selected).
 				Filterable(false),
+			huh.NewConfirm().
+				Affirmative("Install selected").
+				Negative("Skip").
+				Value(&install).
+				Inline(true),
 		),
 	)
 	if err := Frontend.HandleForm(ctx, form); err != nil {
 		return nil, err
+	}
+	if !install {
+		return nil, nil
 	}
 	return filterRecommendations(recs, selected), nil
 }
