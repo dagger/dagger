@@ -10,8 +10,8 @@ explains the modeling rules, and every action's comment names the Go code
 it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
-violations reproduce known deficiencies in the current code, so the check
-fails if a deficiency silently disappears or changes shape.
+violations are reserved for deliberately accepted model findings; the
+current configuration set consists entirely of green regression gates.
 
 Run the check:
 

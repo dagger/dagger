@@ -107,10 +107,30 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 }
 
 func (c *Cache) LoadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
-	return c.loadResultByResultID(ctx, sessionID, dag, resultID)
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load result %d: %w", resultID, err)
+	}
+	res, loadErr := c.loadResultByResultID(ctx, sessionID, dag, resultID)
+	if op.finish(loadErr == nil && res != nil) {
+		return nil, fmt.Errorf("load result %d: %w: %q", resultID, ErrCacheSessionReleased, sessionID)
+	}
+	return res, loadErr
 }
 
 func (c *Cache) ResultCallByResultID(ctx context.Context, sessionID string, resultID uint64) (*ResultCall, error) {
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve result %d call frame: %w", resultID, err)
+	}
+	frame, callErr := c.loadResultCallByResultID(ctx, sessionID, resultID)
+	if op.finish(callErr == nil && frame != nil) {
+		return nil, fmt.Errorf("resolve result %d call frame: %w: %q", resultID, ErrCacheSessionReleased, sessionID)
+	}
+	return frame, callErr
+}
+
+func (c *Cache) loadResultCallByResultID(ctx context.Context, sessionID string, resultID uint64) (*ResultCall, error) {
 	mode := sharedResultLookupExact
 	if sessionID != "" {
 		mode = sharedResultLookupCanonicalEquivalent
@@ -125,6 +145,35 @@ func (c *Cache) ResultCallByResultID(ctx context.Context, sessionID string, resu
 		return nil, fmt.Errorf("resolve result %d call frame: missing result call frame", resultID)
 	}
 	return frame.clone(), nil
+}
+
+func (c *Cache) resultCallRefByResultID(ctx context.Context, sessionID string, resultID uint64) (*ResultCallRef, error) {
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve result %d call ref: %w", resultID, err)
+	}
+	shared, _, _, lookupErr := c.sharedResultByResultID(
+		ctx,
+		sessionID,
+		sharedResultID(resultID),
+		sharedResultLookupCanonicalEquivalent,
+	)
+	var ref *ResultCallRef
+	if lookupErr == nil {
+		frame := shared.loadResultCall()
+		if frame == nil {
+			lookupErr = fmt.Errorf("resolve result %d call ref: missing result call frame", resultID)
+		} else if frame.Type == nil || frame.Type.NamedType != "Query" {
+			ref = &ResultCallRef{ResultID: uint64(shared.id), shared: shared}
+		}
+	}
+	if op.finish(lookupErr == nil && ref != nil) {
+		return nil, fmt.Errorf("resolve result %d call ref: %w: %q", resultID, ErrCacheSessionReleased, sessionID)
+	}
+	if lookupErr != nil {
+		return nil, lookupErr
+	}
+	return ref, nil
 }
 
 func (c *Cache) WalkResultCall(rootCall *ResultCall, visit func(*ResultCallRef, *ResultCall) error) error {

@@ -244,6 +244,74 @@ func TestCacheEvaluateRetiresFinishedAttemptBeforeWaitersDrain(t *testing.T) {
 	})
 }
 
+func TestCacheLazyAttemptDefersSessionCleanupUntilCallbackExit(t *testing.T) {
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	allowCallbackExit := make(chan struct{})
+	released := make(chan struct{})
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = ContextWithCache(ctx, c)
+	srv := cacheTestServer(t)
+	sessionID := cacheTestSessionID(t, ctx)
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "lazy-attempt-release",
+	}
+	resAny, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+			Value: 1,
+			lazyEval: func(callbackCtx context.Context) error {
+				close(started)
+				<-callbackCtx.Done()
+				close(canceled)
+				<-allowCallbackExit
+				return context.Cause(callbackCtx)
+			},
+			onRelease: func(context.Context) error {
+				close(released)
+				return nil
+			},
+		}), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := resAny.(ObjectResult[*cacheTestObject])
+
+	evalCtx, cancelEval := context.WithCancelCause(ctx)
+	evalDone := make(chan error, 1)
+	go func() { evalDone <- c.Evaluate(evalCtx, result) }()
+	waitLazyRetrySignal(t, started, "the lazy callback to start")
+
+	evalCause := errors.New("lazy waiter canceled")
+	cancelEval(evalCause)
+	if err := waitLazyRetryError(t, evalDone, "the lazy waiter to return"); !errors.Is(err, evalCause) {
+		t.Fatalf("Evaluate error = %v, want %v", err, evalCause)
+	}
+	waitLazyRetrySignal(t, canceled, "the lazy callback to observe cancellation")
+
+	if err := c.ReleaseSession(ctx, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-released:
+		t.Fatal("session cleanup ran before the lazy callback exited")
+	default:
+	}
+
+	close(allowCallbackExit)
+	waitLazyRetrySignal(t, released, "session cleanup after lazy callback exit")
+	if got := c.Size(); got != 0 {
+		t.Fatalf("cache size after lazy attempt cleanup = %d, want 0", got)
+	}
+}
+
 func TestCacheEvaluateOwnCancellationOnlyCancelsOwnWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var calls atomic.Int32

@@ -1301,7 +1301,26 @@ func (s *Server) loadNthValue(
 	return res, nil
 }
 
-func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr error) {
+func beginLoadTypeCacheOperation(ctx context.Context, id *call.ID) (*Cache, cacheOperation, string, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, cacheOperation{}, "", fmt.Errorf("load %s: current client metadata: %w", id.Display(), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, cacheOperation{}, "", fmt.Errorf("load %s: empty session ID", id.Display())
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, cacheOperation{}, "", fmt.Errorf("load %s: current dagql cache: %w", id.Display(), err)
+	}
+	cacheOp, err := cache.beginSessionOperation(clientMetadata.SessionID)
+	if err != nil {
+		return nil, cacheOperation{}, "", fmt.Errorf("load %s: %w", id.Display(), err)
+	}
+	return cache, cacheOp, clientMetadata.SessionID, nil
+}
+
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr error) {
 	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
@@ -1324,19 +1343,18 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 		}
 	}()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	cache, cacheOp, sessionID, err := beginLoadTypeCacheOperation(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load %s: current client metadata: %w", id.Display(), err)
+		return nil, err
 	}
-	if clientMetadata.SessionID == "" {
-		return nil, fmt.Errorf("load %s: empty session ID", id.Display())
-	}
-	cache, err := EngineCache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load %s: current dagql cache: %w", id.Display(), err)
-	}
+	defer func() {
+		if cacheOp.finish(rerr == nil && ret != nil) {
+			ret = nil
+			rerr = fmt.Errorf("load %s: %w: %q", id.Display(), ErrCacheSessionReleased, sessionID)
+		}
+	}()
 	if id.IsHandle() {
-		res, err := cache.LoadResultByResultID(ctx, clientMetadata.SessionID, s, id.EngineResultID())
+		res, err := cache.loadResultByResultID(ctx, sessionID, s, id.EngineResultID())
 		if err != nil {
 			return nil, err
 		}
@@ -1363,7 +1381,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 		ctx:       ctx,
 		srv:       s,
 		cache:     cache,
-		sessionID: clientMetadata.SessionID,
+		sessionID: sessionID,
 		loads:     make(map[string]*recipeLoadFuture),
 
 		notReplayableMemo: make(map[string]bool),

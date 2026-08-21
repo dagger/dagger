@@ -24,6 +24,7 @@ type TlaCheck struct { // tla-check (../../../../../:0:0)
 
 	cacheLifecycle *Void
 	id             *ID
+	one            *string
 }
 
 func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
@@ -90,6 +91,49 @@ func (r *TlaCheck) UnmarshalJSON(bs []byte) error {
 	}
 	*r = TlaCheck{query: selectNode(dag.query, id, "TlaCheck")}
 	return nil
+}
+
+// TlaCheckOneOpts contains options for TlaCheck.One
+type TlaCheckOneOpts struct {
+	// invariant to check instead of the configuration's INVARIANTS line
+	Invariant string
+	// TLA+ operator definition to append to the spec, e.g. "ProbeX == ..."
+	Define string
+}
+
+// One runs a single TLC configuration and returns the raw TLC output,
+// using the same pinned jar and invocation as the CacheLifecycle check.
+// Unlike the check, it applies no expectation: violations come back in
+// the output for the caller to read.
+//
+// With invariant set, the configuration's INVARIANTS line is replaced by
+// that single invariant, the specification is forced to the safety-only
+// Spec, and PROPERTY lines are dropped, so one question runs in
+// isolation. With define also set, the given TLA+ operator definition is
+// appended to the spec first; that runs a scratch probe invariant (for
+// example a reachability probe expected to violate) without editing the
+// repository.
+func (r *TlaCheck) One(ctx context.Context, config string, opts ...TlaCheckOneOpts) (string, error) {
+	if r.one != nil {
+		return *r.one, nil
+	}
+	q := r.query.Select("one")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `invariant` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Invariant) {
+			q = q.Arg("invariant", opts[i].Invariant)
+		}
+		// `define` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Define) {
+			q = q.Arg("define", opts[i].Define)
+		}
+	}
+	q = q.Arg("config", config)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The dagql/tla spec directory.

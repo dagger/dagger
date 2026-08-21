@@ -660,9 +660,12 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
-	// (queries were already drained above, before the completeness stamp + telemetry
-	// shutdown, so dagql is quiescent here for the cache release.)
+	// Handler-origin queries were drained above for telemetry completeness. A
+	// canceled handler's detached cache executor may still be unwinding, so the
+	// cache provides its own operation accounting and deferred cleanup safety.
 
+	// ReleaseSession may assign cleanup to an active detached cache operation,
+	// so these immediate before/after values are an approximate debug snapshot.
 	beforeDagqlEntries := srv.engineCache.Size()
 	beforeDagqlStats := srv.engineCache.EntryStats()
 	if err := srv.engineCache.ReleaseSession(ctx, sess.sessionID); err != nil {
