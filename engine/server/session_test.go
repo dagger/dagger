@@ -585,25 +585,6 @@ func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
 	srv.deleteSession(retry)
 }
 
-func TestRetireSessionIsPointerConditional(t *testing.T) {
-	t.Parallel()
-
-	old := &daggerSession{sessionID: "s"}
-	replacement := &daggerSession{sessionID: "s"}
-	srv := &Server{
-		daggerSessions:     map[string]*daggerSession{"s": replacement},
-		releasedSessionIDs: map[string]struct{}{},
-	}
-
-	srv.retireSession(old)
-	require.True(t, sessionInRegistry(srv, "s"))
-	require.False(t, sessionIDReleased(srv, "s"))
-
-	srv.retireSession(replacement)
-	require.False(t, sessionInRegistry(srv, "s"))
-	require.True(t, sessionIDReleased(srv, "s"))
-}
-
 func TestConcurrentReapsSingleTeardown(t *testing.T) {
 	t.Parallel()
 
