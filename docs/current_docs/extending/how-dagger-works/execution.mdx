@@ -28,7 +28,7 @@ A call moves through this path:
 8. The engine runs only the needed work.
 9. Dagger returns a value, error, trace, or check result.
 
-Steps 3 and 4 are prepare. The engine is already on. A short-lived helper fetches packages and builds the function list. Until that list exists, there is nothing to invoke.
+Steps 3 and 4 happen in the engine and a short-lived helper, not in the terminal. Your function has not started.
 
 <HelperPrepareWalk />
 

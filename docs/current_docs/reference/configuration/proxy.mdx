@@ -27,8 +27,7 @@ As well as the custom environment variable:
   (`https://proxy.golang.org`) is unreachable and you need a mirror such as
   `https://goproxy.cn,direct`.
 
-Go module downloads happen while Dagger prepares the module. Not when the
-engine starts. Not in your function.
+Go downloads happen at generate, or on a first build if the cache is empty. Call uses files that already exist.
 
 <CallStages />
 
