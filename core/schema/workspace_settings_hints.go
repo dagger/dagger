@@ -115,6 +115,7 @@ func constructorHintsFromModule(mod *core.Module) []constructorArgHint {
 
 var addressSupportedObjectSettingExamples = map[string]string{ //nolint:gosec
 	"Container":     `"alpine:latest"`,
+	"Volume":        `"engine-volume://data"`,
 	"Directory":     `"./path"`,
 	"File":          `"./file"`,
 	"Secret":        `"env://MY_SECRET"`,

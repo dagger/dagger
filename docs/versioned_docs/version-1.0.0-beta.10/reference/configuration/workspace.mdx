@@ -1,0 +1,152 @@
+---
+title: "Workspace configuration"
+slug: /reference/configuration/workspace
+description: "The dagger.toml workspace configuration file schema."
+---
+
+# Workspace configuration
+
+A workspace is configured by a `dagger.toml` file. It records the modules installed in the workspace, their settings, and any per-environment overrides. Unlike a module's [`dagger-module.toml`](./modules.mdx), `dagger.toml` is the consumer side: it's what `dagger check`, `dagger generate`, `dagger up`, and `dagger api call` load.
+
+For more information, refer to the [schema for the Dagger workspace configuration file](https://docs.dagger.io/reference/dagger-workspace.schema.json).
+
+`dagger install` creates `dagger.toml` on first install if it doesn't already exist. To convert a legacy `dagger.json` project, run `dagger setup` — its workspace-migration step handles the conversion. See [Workspace Setup](../../adopting/workspace-setup.mdx) to get started.
+
+## Modules
+
+Each installed module is a `[modules.<name>]` table:
+
+```toml
+[modules.eslint]
+source = "github.com/dagger/eslint@v0.3.0"
+
+[modules.eslint.settings]
+packageManager = "yarn"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `source` | string | The module address — a local path or a Git ref such as `github.com/org/mod@version`. |
+| `entrypoint` | bool | Marks this module as the workspace entrypoint. |
+| `settings` | table | Module settings (see [Settings](#settings)). |
+
+Discover and manage modules with the catalog commands (see [Workspace Setup](../../adopting/workspace-setup.mdx)): `dagger search` to find modules, `dagger install <ref>` and `dagger uninstall <name>` to add or remove them. Dagger may also record additional managed keys (for example, migration-compatibility flags).
+
+### Settings
+
+Module settings live in `[modules.<name>.settings]`. List and set them with `dagger settings`:
+
+```shell
+dagger settings                              # list every module's settings
+dagger settings eslint packageManager yarn   # set one
+```
+
+`dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. List values can be passed as separate arguments (`dagger settings eslint paths src lib`), which are stored verbatim as TOML array elements; a single comma-separated value (`src,lib`) also splits into an array. `dagger workspace config <key> <value>` is the lower-level key/value interface to the same file.
+
+#### Module wiring
+
+A setting value may be a **module reference**: a plain `"<module>:<function>"` string that resolves to the value returned by a function on another module, wiring it into this module's constructor argument. This is how modules that don't know about each other compose:
+
+```toml
+[modules.playwright.settings]
+app = "docusaurus:serve"      # Service returned by docusaurus's serve
+base = "base-images:chromium" # Container returned by base-images
+```
+
+A module reference injects the value a function evaluates to, not a lifecycle action. The string reads left to right — the leading segment is a module's **install name** (the `[modules.X]` config key in this `dagger.toml`, which usually matches the module's type name but wins when they differ), and the second segment is a zero-arg function on it. Any function whose return type matches the target argument is valid. For `Service` arguments, a `+up` function is the usual target and `dagger up -l` a convenient place to copy its path from, but `+up` is a discovery convention, not a requirement — `Container` references have no verb at all.
+
+**Precedence (commit-on-match).** A string is treated as a module reference if — and only if — its first segment names a module installed in this workspace. That match is decisive: once the first segment matches an install name, the string is a module reference, and a missing function or a return type that doesn't match the argument is a hard error, never a silent fallback to image or URL interpretation. If no install name matches, the string keeps its ordinary address meaning (an OCI ref for a `Container` argument, a `tcp://` URL for a `Service` argument). A small set of core field names (`host`, `git`, `secret`, `container`, `http`, `module`, …) are reserved and never resolve as module references, so a value like `git:2.40` always keeps its ordinary address meaning.
+
+**Escaping a shadowed image.** Because the module name is matched first, installing a module whose name collides with an image name shadows that image. For `Container` arguments, use a fully-qualified registry path, which never matches a module name:
+
+```toml
+[modules.playwright.settings]
+base = "docker.io/library/chromium"   # the image, even if a module is named chromium
+```
+
+**Two segments only.** Exactly `<module>:<function>` is supported today. A deeper path (extra colons) is rejected with a clear error.
+
+Module references are validated at runtime when the consuming module is constructed, not at config parse time. The target constructor argument is typically declared optional by the module author.
+
+Because a module reference is an ordinary address string, it works everywhere addresses do — not only in settings, but also as a CLI flag and through the `dagger settings` command:
+
+```shell
+dagger call playwright --app=docusaurus:serve test
+dagger settings playwright app docusaurus:serve
+```
+
+(The string form is why `dagger settings` can now express these references at all; the earlier table form could not be set from the command line.) See [Running Services](../../using-dagger/services.mdx) for a worked example.
+
+### Skipping functions for a verb
+
+A module can opt specific functions out of a verb with a `skip` list:
+
+```toml
+[modules.eslint.check]
+skip = ["someCheck"]
+```
+
+The same applies to `[modules.<name>.generate]` and `[modules.<name>.up]`.
+
+## Environments
+
+An [environment](../../using-dagger/environments.mdx) is a named overlay applied with the global `--env` flag. Overrides are stored under `[env.<name>...]` and layered on top of the base configuration:
+
+```toml
+[env.staging.modules.eslint.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+An environment can also **add** a module that only exists when that environment is selected, by giving it a `source` (and optional `pin`) — the same fields as a base `[modules.<name>]` entry:
+
+```toml
+[env.dev.modules.debugger]
+source = "modules/debugger"
+```
+
+Write settings overlays with `dagger settings --env <name> <module> <key> <value>` (or `dagger workspace config --env <name> …` for raw access). Reads with `--env` show the effective view — the base configuration with the overlay applied — and the base is what every environment inherits.
+
+## User-level configuration
+
+Personal overrides that shouldn't be committed — private account profiles, local paths, personal environments — live in the user-level Dagger config file: `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`. The file is shared with other Dagger subsystems (such as `[llm]`); workspace overrides sit in a `[workspaces.*]` section keyed by the workspace's Git remote:
+
+```toml
+# Always applied when working in this workspace:
+[workspaces."github.com/acme/api".modules.eslint.settings]
+packageManager = "pnpm"
+
+# A personal environment, selected with `dagger --env dev ...`:
+[workspaces."github.com/acme/api".env.dev.modules.eslint.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+The effective configuration is merged in a fixed order: base `dagger.toml`, then the matching user-level overrides, then the selected `--env` overlay. User-level values shadow repository values key by key, and user-level environments are added to (and merge over) the repository's, all without modifying `dagger.toml`.
+
+**Workspace key.** The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match — `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config. A repository with multiple remotes is keyed by `origin` only; a repository with no remote (or a purely local one) matches no user-level overrides. Remote workspaces selected with `-W` are keyed by their clone address.
+
+**Writing.** Pass `-g/--global` to `dagger settings` or `dagger workspace config` to store a value user-level instead of in the repository:
+
+```shell
+dagger settings -g eslint packageManager pnpm
+dagger settings -g --env dev eslint baseImageAddress node:22-alpine
+dagger settings -g -u eslint packageManager        # remove the override
+dagger workspace config -g modules.eslint.settings.packageManager pnpm
+```
+
+`--global` selects where a write is stored; reads always show the effective merged view. Unsetting with `-g` removes only the user-level value — the repository value underneath is untouched.
+
+`-g` also composes with `-W`: a remote workspace is a readable target whose repository config can't be written, but its user-level overrides live in your local config file, so `dagger -W https://github.com/acme/api settings -g aws profile alice-dev` works and keys the entry by the clone address.
+
+**Scope and safety.** Only module settings can be stored user-level: `modules.<name>.settings.*`, optionally under `env.<name>.*`. Because one key spans every branch and clone of a repository, an always-applied user entry for a module that doesn't exist in the current checkout is ignored there rather than being an error. User-level environments are validated normally when selected with `--env`.
+
+## Other keys
+
+| Key | Description |
+| --- | --- |
+| `ignore` | Path patterns excluded when loading the workspace. |
+| `defaults_from_dotenv` | When `true`, module constructor defaults are read from a `.env` file. |
+| `[ports.<name>]` | Maps a host port to a service backend (`backendService`, `backendPort`) for services exposed by `dagger up`. |
+
+## Lockfile
+
+Resolved runtime lookups, such as container image references and Git references, are pinned automatically in `dagger.lock` alongside the config. Module loading follows the same lookup behavior and does not add a separate `modules.resolve` entry. Refresh recorded entries with `dagger update`. See [Lockfiles](../cli/lockfiles.mdx) for format and compatibility details.

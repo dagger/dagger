@@ -143,9 +143,23 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	// the module field, then the function field. dagql's typed Select enforces
 	// that the function's return type matches dest, producing a clear
 	// type-mismatch error.
+	//
+	// Both selectors are built by hand, so a required Workspace! on the
+	// constructor or the function has to be supplied here: dagql rejects a
+	// missing non-null argument in preselect, before the injection hook that
+	// fills workspace args runs (see core.WithBoundWorkspaceArgs). The value
+	// resolves the same way it does everywhere else — the workspace bound into
+	// the context, else the session's current one.
+	ctorArgs := core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil)
+	var fnArgs []dagql.NamedInput
+	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
+		if fnSpec, ok := objType.FieldSpec(functionField, srv.View); ok {
+			fnArgs = core.WithBoundWorkspaceArgs(ctx, srv, fnSpec.Args.Inputs(srv.View), nil)
+		}
+	}
 	selectors := []dagql.Selector{
-		{Field: moduleField},
-		{Field: functionField},
+		{Field: moduleField, Args: ctorArgs},
+		{Field: functionField, Args: fnArgs},
 	}
 	if err := srv.Select(ctx, root, dest, selectors...); err != nil {
 		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)

@@ -264,6 +264,39 @@ settings.base = "container-provider:image"
 		require.Contains(t, out, "container-provider")
 	})
 
+	t.Run("provider with required Workspace arg", func(ctx context.Context, t *testctx.T) {
+		// The referenced module declares a required Workspace! — on its
+		// constructor (image) and on the function itself (image-for). The
+		// engine builds the <module>:<function> call by hand, so it must
+		// supply that workspace before dagql's non-null check; the injection
+		// hook that fills optional Workspace args runs too late to help
+		// (see core/schema/address.go resolveModuleRef). Regression: after
+		// Workspace args stopped being published as nullable, this failed
+		// with `missing required argument: "ws"`.
+		//
+		// The provider bakes the workspace's marker.txt into PROVIDED_BY,
+		// proving it received the caller's workspace and not just any one.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("marker.txt", "app-workspace")
+		for _, fn := range []string{"image", "image-for"} {
+			t.Run(fn, func(ctx context.Context, t *testctx.T) {
+				out, err := ctr.
+					WithNewFile("dagger.toml", `[modules.workspace-container-provider]
+source = "../workspace-container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "workspace-container-provider:`+fn+`"
+`).
+					With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "workspace-container-provider:app-workspace")
+			})
+		}
+	})
+
 	t.Run("service ref via CLI flag", func(ctx context.Context, t *testctx.T) {
 		// The consumer's constructor arg (app *dagger.Service) is settable as a
 		// flag on the call; the flag value routes through the same Address

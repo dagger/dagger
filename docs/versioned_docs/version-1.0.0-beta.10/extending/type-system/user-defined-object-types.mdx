@@ -1,0 +1,47 @@
+---
+title: "User-Defined Object Types"
+slug: /extending/type-system/user-defined-object-types
+description: "Model durable workflow concepts with module object types."
+---
+
+# User-Defined Object Types
+
+Modules can define their own object types. Use them when a workflow has a durable concept that deserves methods, documentation, and a stable contract.
+
+Good object types represent concepts callers already understand:
+
+- A build target.
+- A deploy environment.
+- A release candidate.
+- A test suite.
+- A generated artifact.
+- A service bundle.
+
+Objects should carry meaning. Do not create objects just to imitate classes in an SDK language.
+
+## When to introduce an object
+
+Introduce an object when:
+
+- Several functions share the same context, and threading it through every call is repetitive.
+- The caller benefits from chaining related methods.
+- A returned value should expose more behavior than a single result.
+- The concept appears in traces, docs, or errors often enough to deserve a name.
+- Another module may want to consume the concept.
+
+Keep a plain function when the workflow has one obvious input and one obvious output. An object that holds one field and exposes one method is just a function with extra ceremony.
+
+## Object names
+
+Name objects after domain concepts, not implementation details. A caller should understand why an object exists before they know which SDK implemented it. The name is the first thing that shows up in help, traces, and generated clients — it should describe the concept, not the mechanism.
+
+| Implementation-shaped name | Caller-shaped name | Why the second is better |
+| --- | --- | --- |
+| `BuildState` | `Release` | Names the concept the caller cares about, not the module's internal bookkeeping. |
+| `PythonContainerWrapper` | `App` | Drops the language and the "wrapper" mechanics; describes what it is. |
+| `TestRunnerContext` | `TestSuite` | A suite is a thing callers reason about; a "runner context" is an implementation detail. |
+| `DeployConfigStruct` | `Environment` | Names the domain concept; "config struct" describes the code, not the workflow. |
+| `GeneratedFilesResult` | `Changeset` | Describes the reviewable outcome, not the fact that some files were produced. |
+| `KubeManifestBundleV2` | `Deployment` | Version numbers and serialization formats are implementation noise. |
+
+The same rule applies to fields and methods: name them for what the caller wants, not for the intermediate values the module happens to hold.

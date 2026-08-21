@@ -25,7 +25,7 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Check the docs website build
-func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:52:1)
+func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:96:1)
 	if r.check != nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../..
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:126:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:170:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -101,13 +101,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:159:2)
+	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:203:2)
 
-	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:161:2)
+	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:205:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:155:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:199:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -133,17 +133,17 @@ type DocsDevReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:74:2)
+	Version string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:118:2)
 	//
 	// Workspace forwarded to engine-dev for VCS stamping (References is the
 	// only docs-dev method that builds). Auto-injected on a direct call;
 	// dependencies don't inherit it.
 	//
-	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:80:2)
+	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:124:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:71:1)
+func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:115:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -162,7 +162,7 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 }
 
 // Build the docs server
-func (r *DocsDev) Server() *Container { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:58:1)
+func (r *DocsDev) Server() *Container { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:102:1)
 	q := r.query.Select("server")
 
 	return &Container{
@@ -175,6 +175,21 @@ func (r *DocsDev) Site() *Directory { // docs-dev (../../../../../.dagger/module
 	q := r.query.Select("site")
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Freeze a released version's docs as a versioned snapshot. The docs are pulled
+// from the version's git tag -- not the in-development docs on the current
+// branch -- so the snapshot reflects what actually shipped. Runs docusaurus
+// docs:version and returns a Changeset that adds
+// versioned_docs/version-<version>/ (plus its sidebar) and prepends the version
+// to docs/versions.json, for review before applying.
+func (r *DocsDev) SnapshotRelease(version string) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:56:1)
+	q := r.query.Select("snapshotRelease")
+	q = q.Arg("version", version)
+
+	return &Changeset{
 		query: q,
 	}
 }
