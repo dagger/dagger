@@ -2,7 +2,8 @@
 
 ## Status
 
-Draft.
+In progress. The command-screen host, reusable span lists, and `dagger setup`
+screen are implemented; broader frontend extraction remains follow-up work.
 
 ## Summary
 
@@ -329,25 +330,25 @@ guards against disappearing or interleaved output.
 
 - [ ] Split `frontendPretty` into a frontend host and the default generic trace
       screen without changing existing command output.
-- [ ] Add a frontend-owned screen slot with the generic trace screen as its
+- [x] Add a frontend-owned screen slot with the generic trace screen as its
       default component.
-- [ ] Define the internal `ViewFactory`, `CommandView`, `ViewContext`, and
+- [x] Define the internal `ViewFactory`, `CommandView`, `ViewContext`, and
       `ViewHandle` contracts.
 - [ ] Extract `SpanTreeView` dependencies from `frontendPretty` into a reusable
       trace-view context.
-- [ ] Generalize `TestSpanChildrenView` into reusable `Span` and `SpanList`
-      components.
-- [ ] Add mount and dismount registration for trace-backed components.
-- [ ] Replace hard-coded trace component updates with database-driven
+- [x] Generalize the `TestSpanChildrenView` pattern into a reusable `SpanList`
+      component.
+- [x] Add mount and dismount registration for trace-backed components.
+- [x] Replace hard-coded trace component updates with database-driven
       invalidation of mounted views.
-- [ ] Route semantic model mutations through the Tuist event loop.
-- [ ] Preserve descendant focus across renders and restore focus after forms
+- [x] Route semantic model mutations through the Tuist event loop.
+- [x] Preserve descendant focus across renders and restore focus after forms
       and overlays close.
-- [ ] Add an explicit live-to-final transition for custom command screens.
-- [ ] Support deterministic final rendering for non-interactive output.
-- [ ] Implement `SetupView` with semantic workspace guidance and an embedded
+- [x] Add an explicit live-to-final transition for custom command screens.
+- [x] Support deterministic final rendering for non-interactive output.
+- [x] Implement `SetupView` with semantic workspace guidance and an embedded
       installation span checklist.
-- [ ] Remove setup-specific UI-message and span-surfacing workarounds that are
+- [x] Remove setup-specific UI-message and span-surfacing workarounds that are
       no longer needed for local presentation.
 - [ ] Add component, focus, exporter-update, final-render, and fallback tests.
 - [ ] Add end-to-end TUI coverage for `dagger setup` success and failure flows.
