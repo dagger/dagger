@@ -1362,12 +1362,17 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 func frontendFormTheme() *huh.Theme {
 	theme := huh.ThemeBase16()
 	theme.Focused.Base = theme.Focused.Base.BorderLeft(false)
-	// A background is the structural focus marker for confirm buttons. Leaving
-	// the inactive button's theme background in place makes both choices look
-	// selected, especially in terminals where their colors are similar.
-	theme.Focused.BlurredButton = theme.Focused.BlurredButton.UnsetBackground().Bold(false)
-	theme.Blurred.FocusedButton = theme.Blurred.FocusedButton.UnsetBackground().Bold(false)
-	theme.Blurred.BlurredButton = theme.Blurred.BlurredButton.UnsetBackground().Bold(false)
+	// ThemeBase16 copies its focused selectors into the blurred field styles,
+	// which leaves a stale caret behind after focus moves to another field.
+	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.SetString("  ")
+	theme.Blurred.MultiSelectSelector = theme.Blurred.MultiSelectSelector.SetString("  ")
+	// Give both choices the same strong treatment. ExplicitConfirm supplies the
+	// structural focus marker, so color and background carry no meaning here.
+	button := theme.Focused.FocusedButton.UnsetBackground().Bold(true).Faint(false)
+	theme.Focused.FocusedButton = button
+	theme.Focused.BlurredButton = button
+	theme.Blurred.FocusedButton = button
+	theme.Blurred.BlurredButton = button
 	return theme
 }
 
@@ -6020,7 +6025,13 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 			// leading space.
 		}
 	} else if !fe.finalRender {
-		fe.renderToggler(out, row, focused)
+		if fe.formWrap != nil {
+			// The form owns input focus, so don't imply that its host span is also
+			// selected. Preserve the column so the title doesn't jump sideways.
+			fmt.Fprint(out, " ")
+		} else {
+			fe.renderToggler(out, row, focused)
+		}
 		fmt.Fprint(out, " ")
 	}
 

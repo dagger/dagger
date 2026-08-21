@@ -12,10 +12,10 @@ import (
 	"github.com/vito/tuist"
 )
 
-func TestFrontendFormThemeOnlyHighlightsFocusedButton(t *testing.T) {
+func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	theme := frontendFormTheme()
-	if _, ok := theme.Focused.FocusedButton.GetBackground().(lipgloss.NoColor); ok {
-		t.Fatal("focused button has no background")
+	if _, ok := theme.Focused.FocusedButton.GetBackground().(lipgloss.NoColor); !ok {
+		t.Fatal("focused button still has a background")
 	}
 	if _, ok := theme.Focused.BlurredButton.GetBackground().(lipgloss.NoColor); !ok {
 		t.Fatal("inactive button still has a background")
@@ -26,19 +26,34 @@ func TestFrontendFormThemeOnlyHighlightsFocusedButton(t *testing.T) {
 	if theme.Focused.Base.GetBorderLeft() {
 		t.Fatal("focused form field still has a left border")
 	}
+	if !theme.Focused.FocusedButton.GetBold() || !theme.Focused.BlurredButton.GetBold() {
+		t.Fatal("confirmation choices are not strongly styled")
+	}
+	if strings.Contains(theme.Blurred.MultiSelectSelector.String(), ">") {
+		t.Fatal("blurred multi-select still has a selection caret")
+	}
 }
 
 func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
 	selected := true
 	field := NewExplicitConfirm("Install selected", "Skip", &selected)
 	field.WithTheme(frontendFormTheme())
-	if got := field.View(); !strings.Contains(got, "▶ Install selected") || strings.Contains(got, "▶ Skip") {
+	if got := field.View(); strings.Contains(got, "▶") {
+		t.Fatalf("unfocused confirmation has a selection caret:\n%s", got)
+	}
+
+	field.Focus()
+	if got := field.View(); !strings.Contains(got, "▶ [ Install selected ]") || strings.Contains(got, "▶ [ Skip ]") {
 		t.Fatalf("affirmative selection is not explicit:\n%s", got)
 	}
 
 	selected = false
-	if got := field.View(); !strings.Contains(got, "▶ Skip") || strings.Contains(got, "▶ Install selected") {
+	if got := field.View(); !strings.Contains(got, "▶ [ Skip ]") || strings.Contains(got, "▶ [ Install selected ]") {
 		t.Fatalf("negative selection is not explicit:\n%s", got)
+	}
+	field.Blur()
+	if got := field.View(); strings.Contains(got, "▶") {
+		t.Fatalf("blurred confirmation retained its selection caret:\n%s", got)
 	}
 
 	var output bytes.Buffer

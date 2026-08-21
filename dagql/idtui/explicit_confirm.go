@@ -18,6 +18,7 @@ type ExplicitConfirm struct {
 	value       *bool
 	affirmative string
 	negative    string
+	focused     bool
 }
 
 var _ huh.Field = (*ExplicitConfirm)(nil)
@@ -49,10 +50,14 @@ func (field *ExplicitConfirm) Inline(inline bool) *ExplicitConfirm {
 }
 
 func (field *ExplicitConfirm) syncLabels() {
-	if field.value != nil && *field.value {
-		field.confirm.Affirmative("▶ " + field.affirmative).Negative("  " + field.negative)
+	affirmative := "[ " + field.affirmative + " ]"
+	negative := "[ " + field.negative + " ]"
+	if !field.focused {
+		field.confirm.Affirmative("  " + affirmative).Negative("  " + negative)
+	} else if field.value != nil && *field.value {
+		field.confirm.Affirmative("▶ " + affirmative).Negative("  " + negative)
 	} else {
-		field.confirm.Affirmative("  " + field.affirmative).Negative("▶ " + field.negative)
+		field.confirm.Affirmative("  " + affirmative).Negative("▶ " + negative)
 	}
 }
 
@@ -70,11 +75,20 @@ func (field *ExplicitConfirm) View() string {
 	return field.confirm.View()
 }
 
-func (field *ExplicitConfirm) Blur() tea.Cmd  { return field.confirm.Blur() }
-func (field *ExplicitConfirm) Focus() tea.Cmd { return field.confirm.Focus() }
-func (field *ExplicitConfirm) Error() error   { return field.confirm.Error() }
-func (field *ExplicitConfirm) Skip() bool     { return field.confirm.Skip() }
-func (field *ExplicitConfirm) Zoom() bool     { return field.confirm.Zoom() }
+func (field *ExplicitConfirm) Blur() tea.Cmd {
+	field.focused = false
+	field.syncLabels()
+	return field.confirm.Blur()
+}
+
+func (field *ExplicitConfirm) Focus() tea.Cmd {
+	field.focused = true
+	field.syncLabels()
+	return field.confirm.Focus()
+}
+func (field *ExplicitConfirm) Error() error { return field.confirm.Error() }
+func (field *ExplicitConfirm) Skip() bool   { return field.confirm.Skip() }
+func (field *ExplicitConfirm) Zoom() bool   { return field.confirm.Zoom() }
 func (field *ExplicitConfirm) KeyBinds() []key.Binding {
 	return field.confirm.KeyBinds()
 }
@@ -94,10 +108,11 @@ func (field *ExplicitConfirm) RunAccessible(w io.Writer, r io.Reader) error {
 
 func (field *ExplicitConfirm) WithTheme(theme *huh.Theme) huh.Field {
 	local := *theme
-	local.Focused.FocusedButton = local.Focused.FocusedButton.UnsetBackground().Bold(true)
-	local.Focused.BlurredButton = local.Focused.BlurredButton.UnsetBackground().Bold(false)
-	local.Blurred.FocusedButton = local.Blurred.FocusedButton.UnsetBackground().Bold(false)
-	local.Blurred.BlurredButton = local.Blurred.BlurredButton.UnsetBackground().Bold(false)
+	button := local.Focused.FocusedButton.UnsetBackground().Bold(true).Faint(false)
+	local.Focused.FocusedButton = button
+	local.Focused.BlurredButton = button
+	local.Blurred.FocusedButton = button
+	local.Blurred.BlurredButton = button
 	field.confirm.WithTheme(&local)
 	return field
 }
