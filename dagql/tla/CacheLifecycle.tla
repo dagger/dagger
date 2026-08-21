@@ -1477,10 +1477,12 @@ LatchEvalOutcomes(r, outcome) ==
 \* A new Evaluate caller appears, demanding some registered result it
 \* holds. A caller can only hold a result whose attachment barrier is not
 \* open and not errored: every result-returning API waits at the barrier
-\* and returns errors instead of values, and lazy callbacks are registered
-\* only at attachment completion (registerLazyEvaluation, immediately
-\* before the barrier closes). "none" covers results that never armed a
-\* fresh barrier, such as imported rows and adopted cache-backed values.
+\* and returns errors instead of values. Lazy callbacks are registered at
+\* attachment completion (registerLazyEvaluation, immediately before the
+\* barrier closes) and again when a persisted hit's value is loaded; both
+\* sites run after the barrier settles. "none" covers results that never
+\* armed a fresh barrier, such as imported rows and adopted cache-backed
+\* values.
 EvalSpawn ==
     /\ ModelLazy
     /\ Len(evals) < MaxEvals

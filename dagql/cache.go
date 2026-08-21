@@ -2995,16 +2995,22 @@ func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 	if shared == nil || val == nil {
 		return
 	}
-	lazyEval := lazyEvalFuncOfResult(val)
-	if lazyEval == nil {
-		return
-	}
 
 	shared.lazyMu.Lock()
-	if shared.lazyEval == nil && !shared.lazyEvalComplete {
+	defer shared.lazyMu.Unlock()
+	// Read object-side lazy state only when no attempt is in flight, for the
+	// same reason evaluateOne does: callback bodies clear their object-side
+	// pointer without holding lazyMu, and attempt retirement under lazyMu
+	// orders those writes before a reader that observes no attempt. With an
+	// attempt published, a stored callback, pending bookkeeping, or completed
+	// evaluation, there is nothing to register.
+	if shared.lazyEval != nil || shared.lazyEvalComplete ||
+		shared.lazyEvalAttempt != nil || shared.lazySyncPending {
+		return
+	}
+	if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
 		shared.lazyEval = lazyEval
 	}
-	shared.lazyMu.Unlock()
 }
 
 func lazyEvalStackFromContext(ctx context.Context) *lazyEvalStackNode {
