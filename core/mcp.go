@@ -1184,9 +1184,37 @@ func stableIDDigest(id *call.ID) digest.Digest {
 const llmLogsMaxLineLen = 2000
 const llmLogsBatchSize = 1000
 
-// captureLogs returns nicely Heroku-formatted lines of all logs seen since the
-// last capture.
-func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) {
+// captureLogs returns nicely Heroku-formatted lines of all logs emitted
+// beneath the given span. When excludeServiceLogs is set, logs from
+// long-lived service exec spans are skipped — they enter tool-call subtrees
+// via cause links and would otherwise drown out deliberate print output.
+func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
+	lines, err := m.captureLogLines(ctx, spanID, excludeServiceLogs)
+	if err != nil {
+		return nil, err
+	}
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	texts := make([]string, len(lines))
+	for i, line := range lines {
+		texts[i] = line.text
+	}
+	return texts, nil
+}
+
+// capturedLine is one assembled log line, tagged with whether it was printed
+// by the captured span itself (or one of its direct children — where a tool
+// function's own print output lands) rather than by nested work deeper in the
+// subtree. Tool results keep direct output in full and abridge the rest.
+type capturedLine struct {
+	text   string
+	direct bool
+}
+
+// captureLogLines is captureLogs' structured form: the same filtering and
+// line assembly, but each line retains its direct/nested provenance.
+func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs bool) ([]capturedLine, error) {
 	root, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1201,7 +1229,17 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 	}
 	defer q.Close()
 
-	buf := new(strings.Builder)
+	// segments accumulates log bodies in arrival order — one per record, each
+	// tagged with its provenance; lines are assembled from them afterwards,
+	// since a single log record needn't be line-aligned. Records are NOT
+	// coalesced here: appending onto an accumulated string goes quadratic on
+	// long same-provenance runs, and assembleLines merges across record
+	// boundaries anyway.
+	var segments []capturedLine
+
+	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
+	// roll-up behavior.
+	internalSpans := newInternalSpanFilter(q, spanID, excludeServiceLogs)
 
 	var lastLogID int64
 
@@ -1217,6 +1255,9 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 		if len(logs) == 0 {
 			break
 		}
+		// The batch was selected against the subtree as of a moment ago; make
+		// sure the filter classifies against a set at least that fresh.
+		internalSpans.refresh()
 
 		for _, log := range logs {
 			lastLogID = log.ID
@@ -1242,33 +1283,21 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 				continue
 			}
 
+			// Logs we can't locate are treated as nested work: abridging them is
+			// the conservative default.
+			var direct bool
 			if log.SpanID.Valid {
 				if !log.TraceID.Valid {
 					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
 				}
-				span, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
-					TraceID: log.TraceID.String,
-					SpanID:  log.SpanID.String,
-				})
+				hidden, d, err := internalSpans.classifyLogSpan(ctx, log.TraceID.String, log.SpanID.String)
 				if err != nil {
 					return nil, err
 				}
-				var spanAttrs []*otlpcommonv1.KeyValue
-				if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
-					slog.Warn("failed to unmarshal span attributes", "error", err)
+				if hidden {
 					continue
 				}
-				var isNoise bool
-				for _, attr := range spanAttrs {
-					if attr.Key == telemetry.LLMRoleAttr || attr.Key == telemetry.LLMToolAttr {
-						isNoise = true
-						break
-					}
-				}
-				if isNoise {
-					// don't show logs from the LLM spans themselves
-					continue
-				}
+				direct = d
 			}
 
 			var bodyPb otlpcommonv1.AnyValue
@@ -1276,25 +1305,262 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 				slog.Warn("failed to unmarshal log body", "error", err, "client", mainMeta.ClientID, "log", log.ID)
 				continue
 			}
+			var text string
 			switch x := bodyPb.GetValue().(type) {
 			case *otlpcommonv1.AnyValue_StringValue:
-				fmt.Fprint(buf, x.StringValue)
+				text = x.StringValue
 			case *otlpcommonv1.AnyValue_BytesValue:
-				buf.Write(x.BytesValue)
+				text = string(x.BytesValue)
 			default:
 				// default to something troubleshootable
-				fmt.Fprintf(buf, "UNHANDLED: %+v", x)
+				text = fmt.Sprintf("UNHANDLED: %+v", x)
+			}
+			if text == "" {
+				continue
+			}
+			segments = append(segments, capturedLine{text: text, direct: direct})
+		}
+	}
+	return assembleLines(segments), nil
+}
+
+// assembleLines splits accumulated log segments into lines, carrying a line
+// that straddles segments across the boundary. A line's provenance is that of
+// the segment that started it — log records aren't guaranteed to be
+// line-aligned, though a Dang `print` (Fprintln to the span's stdout) is.
+func assembleLines(segments []capturedLine) []capturedLine {
+	var lines []capturedLine
+	// pending accumulates a line across segment boundaries; its provenance is
+	// claimed by the first segment to contribute actual text, so the empty
+	// chunk that trails a newline-terminated record doesn't hand the next
+	// record's line to the wrong span.
+	var pending strings.Builder
+	var pendingDirect, pendingSet bool
+	for _, seg := range segments {
+		chunks := strings.Split(seg.text, "\n")
+		for i, chunk := range chunks {
+			if chunk != "" {
+				if !pendingSet {
+					pendingDirect = seg.direct
+					pendingSet = true
+				}
+				pending.WriteString(chunk)
+			}
+			if i < len(chunks)-1 {
+				// a "\n" followed this chunk: the line is complete
+				direct := seg.direct
+				if pendingSet {
+					direct = pendingDirect
+				}
+				lines = append(lines, capturedLine{text: pending.String(), direct: direct})
+				pending.Reset()
+				pendingDirect, pendingSet = false, false
 			}
 		}
 	}
-	if buf.Len() == 0 {
-		return nil, nil
+	if pending.Len() > 0 {
+		lines = append(lines, capturedLine{text: pending.String(), direct: pendingDirect})
 	}
-	return strings.Split(
-		// ensure trailing linebreaks don't contribute to line limits
-		strings.TrimRight(buf.String(), "\n"),
-		"\n",
-	), nil
+	// ensure trailing linebreaks don't contribute to line limits
+	for len(lines) > 0 && lines[len(lines)-1].text == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+// internalSpanFilter classifies the spans of a log capture (classifyLogSpan),
+// chiefly by whether they sit within a subtree marked internal
+// (dagger.io/ui.internal) beneath the captured root span, so their logs can
+// be skipped — mirroring how the TUI refuses to roll logs up across an
+// internal span. When skipServices is set, service exec spans
+// (dagger.io/service) are filtered the same way, keeping long-lived service
+// noise out of tool-result captures. Results are memoized per span so
+// captureLogs doesn't re-walk the parent chain for every log line.
+type internalSpanFilter struct {
+	db           *clientdb.DB
+	root         string
+	skipServices bool
+	memo         map[string]bool
+	// subtree is the set of spans the capture scopes to — the same walk the
+	// log selection uses (the captured root, its cause-link targets, and both
+	// sets' subtrees). It bounds beneathInternal's ancestor walk: spans join
+	// the capture via cause links (e.g. a service exec span parented under
+	// whatever call triggered the start), so their parent chains leave the
+	// subtree without ever passing through the root, and internal-ness out
+	// there is not between the log and the capture root.
+	subtree map[string]struct{}
+}
+
+func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool) *internalSpanFilter {
+	return &internalSpanFilter{
+		db:           db,
+		root:         rootSpanID,
+		skipServices: skipServices,
+		memo:         map[string]bool{},
+		subtree:      db.SpanLogScope(rootSpanID),
+	}
+}
+
+// refresh re-snapshots the captured subtree, so spans that arrived since the
+// last batch (the set only grows) are classified against current containment.
+// Call it after each log-batch fetch: the filter's set must be at least as
+// fresh as the selection that produced the batch, or a batch's own log spans
+// could read as outside the capture. Memoized answers survive a refresh that
+// found nothing new; a grown subtree drops them, since a walk that previously
+// stopped at the subtree's edge may now continue further.
+func (f *internalSpanFilter) refresh() {
+	subtree := f.db.SpanLogScope(f.root)
+	if len(subtree) == len(f.subtree) {
+		return
+	}
+	f.subtree = subtree
+	f.memo = map[string]bool{}
+}
+
+// classifyLogSpan locates a log record's span and decides how the capture
+// treats its logs: hidden entirely (an LLM span's own prompt/response noise,
+// or a span beneath one hidden as internal), or kept — and, when kept,
+// whether the record counts as the captured root's direct output (the root
+// itself or one of its direct children, where a tool function's own print
+// output lands).
+func (f *internalSpanFilter) classifyLogSpan(ctx context.Context, traceID, spanID string) (hidden, direct bool, err error) {
+	span, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+	if err != nil {
+		return false, false, err
+	}
+	var spanAttrs []*otlpcommonv1.KeyValue
+	if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+		slog.Warn("failed to unmarshal span attributes", "error", err)
+		return true, false, nil
+	}
+	for _, attr := range spanAttrs {
+		if attr.Key == telemetry.LLMRoleAttr || attr.Key == telemetry.LLMToolAttr {
+			// don't show logs from the LLM spans themselves
+			return true, false, nil
+		}
+	}
+	internal, err := f.beneathInternal(ctx, traceID, spanID)
+	if err != nil {
+		return false, false, err
+	}
+	if internal {
+		// don't surface logs from spans hidden as internal
+		return true, false, nil
+	}
+	direct = spanID == f.root ||
+		(span.ParentSpanID.Valid && span.ParentSpanID.String == f.root)
+	return false, direct, nil
+}
+
+// beneathInternal reports whether the given span, or any ancestor within the
+// captured subtree, is marked internal. Internal-ness outside the subtree
+// doesn't hide the logs beneath it — neither at or above the root
+// (explicitly capturing an internal span's subtree still returns its logs)
+// nor on the unrelated ancestors of a cause-linked span (a service exec
+// span's parent chain runs through whatever call triggered the start, never
+// through the capture root; an internal span up there is not between the log
+// and the capture).
+func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanID string) (bool, error) {
+	if spanID == "" || spanID == f.root {
+		return false, nil
+	}
+	if _, ok := f.subtree[spanID]; !ok {
+		// The walk has left the captured subtree: same rule as reaching the
+		// root, whatever is out here doesn't hide the capture's logs.
+		return false, nil
+	}
+	if internal, ok := f.memo[spanID]; ok {
+		return internal, nil
+	}
+	span, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// span not stored; nothing to hide
+			f.memo[spanID] = false
+			return false, nil
+		}
+		return false, err
+	}
+	var spanAttrs []*otlpcommonv1.KeyValue
+	if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+		slog.Warn("failed to unmarshal span attributes", "error", err)
+		f.memo[spanID] = false
+		return false, nil
+	}
+	var internal bool
+	for _, attr := range spanAttrs {
+		if attr.Key == telemetry.UIInternalAttr && attr.Value.GetBoolValue() {
+			internal = true
+			break
+		}
+		if f.skipServices && attr.Key == telemetryattrs.ServiceAttr && attr.Value.GetBoolValue() {
+			internal = true
+			break
+		}
+	}
+	if !internal && f.skipServices {
+		// Service stdio log records are tied to the *install* span
+		// (Container.asService and friends) rather than the service's exec
+		// span itself: core/service.go routes them there via the executor
+		// cause context (logTargetCtx). Detect install spans by their
+		// cause-linked service exec child and filter them the same way.
+		internal, err = f.serviceInstallSpan(ctx, traceID, spanID)
+		if err != nil {
+			return false, err
+		}
+	}
+	if !internal && span.ParentSpanID.Valid {
+		internal, err = f.beneathInternal(ctx, traceID, span.ParentSpanID.String)
+		if err != nil {
+			return false, err
+		}
+	}
+	f.memo[spanID] = internal
+	return internal, nil
+}
+
+// serviceInstallSpan reports whether a service's long-lived exec span
+// (dagger.io/service) cause-links to the given span — i.e. whether the span
+// is one of the API spans that installed a Service value. Service stdio log
+// records are tied to those install spans (see core/service.go), so
+// filtering service logs means filtering the install spans' subtrees.
+//
+// That is deliberately coarse: when a Service comes from a module function
+// call, that call is the install span, so the function's own construction
+// logs are filtered along with the service stdio. Acceptable for a
+// tool-result capture — the tool's own prints sit outside the install span,
+// and ReadLogs remains the deliberate path to anything filtered.
+func (f *internalSpanFilter) serviceInstallSpan(ctx context.Context, traceID, spanID string) (bool, error) {
+	for _, childID := range f.db.CausalChildren(spanID) {
+		child, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+			TraceID: traceID,
+			SpanID:  childID,
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// linking span not stored (or in another trace); can't tell
+				continue
+			}
+			return false, err
+		}
+		var childAttrs []*otlpcommonv1.KeyValue
+		if err := clientdb.UnmarshalProtoJSONs(child.Attributes, &otlpcommonv1.KeyValue{}, &childAttrs); err != nil {
+			slog.Warn("failed to unmarshal span attributes", "error", err)
+			continue
+		}
+		for _, attr := range childAttrs {
+			if attr.Key == telemetryattrs.ServiceAttr && attr.Value.GetBoolValue() {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func toolErrorMessage(err error) string {
@@ -1339,9 +1605,9 @@ func toolErrorMessage(err error) string {
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: "ReadLogs",
-		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines." + "\n" +
-			"When you see traceparent:traceID-spanID in an error, use ReadLogs to read the logs for spanID",
-		ReadOnly: true, // Read-only operation
+		Description: "Read the logs beneath a span: exec output, service logs, prints. Can filter with grep pattern or read the last N lines." + "\n" +
+			"Span IDs come from tool results, ListServices, or [traceparent:traceID-spanID] markers in errors (pasting the whole marker works).",
+		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1371,6 +1637,97 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Strict: false,
 		Call:   m.readLogsTool(srv),
 	})
+	allTools.Add(LLMTool{
+		Name: "ListServices",
+		Description: "List the services in this session: hostname, exposed ports, state (running or exited), and span IDs." + "\n" +
+			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
+			"Services that exited — crashes included — stay listed with state \"exited\" and any exit code/error, so their logs remain reachable via ReadLogs." + "\n" +
+			"installSpanIDs are the API calls that produced the service (e.g. Container.asService); they work with ReadLogs too.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Strict: false,
+		Call:   m.listServicesTool(srv),
+	})
+}
+
+func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, _ struct{}) (any, error) {
+		root, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mainMeta, err := root.MainClientCallerMetadata(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get main client caller metadata: %w", err)
+		}
+		svcs, err := root.Services(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		type serviceInfo struct {
+			Hostname       string   `json:"hostname"`
+			Ports          []string `json:"ports,omitempty"`
+			SpanID         string   `json:"spanID,omitempty"`
+			InstallSpanIDs []string `json:"installSpanIDs,omitempty"`
+			State          string   `json:"state"`
+			ExitCode       *int     `json:"exitCode,omitempty"`
+			ExitError      string   `json:"exitError,omitempty"`
+		}
+		// makeInfo renders the fields running and exited services share; both
+		// expose the same span-context accessors.
+		type spannedService interface {
+			ServiceSpanContext() trace.SpanContext
+			InstallSpanContexts() []trace.SpanContext
+		}
+		makeInfo := func(host string, ports []Port, state string, svc spannedService) serviceInfo {
+			info := serviceInfo{Hostname: host, State: state}
+			for _, port := range ports {
+				desc := fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())
+				if port.Description != nil && *port.Description != "" {
+					desc += " (" + *port.Description + ")"
+				}
+				info.Ports = append(info.Ports, desc)
+			}
+			if spanCtx := svc.ServiceSpanContext(); spanCtx.HasSpanID() {
+				info.SpanID = spanCtx.SpanID().String()
+			}
+			for _, installCtx := range svc.InstallSpanContexts() {
+				if !installCtx.HasSpanID() {
+					continue
+				}
+				info.InstallSpanIDs = append(info.InstallSpanIDs, installCtx.SpanID().String())
+			}
+			return info
+		}
+		running := svcs.RunningServices(mainMeta.SessionID)
+		exited := svcs.ExitedServices(mainMeta.SessionID)
+		infos := make([]serviceInfo, 0, len(running)+len(exited))
+		for _, svc := range running {
+			infos = append(infos, makeInfo(svc.Host, svc.Ports, "running", svc))
+		}
+		// Exited services follow the running ones: they stay listed so their
+		// span handles remain usable (e.g. for ReadLogs) after a crash.
+		for _, svc := range exited {
+			info := makeInfo(svc.Host, svc.Ports, "exited", svc)
+			if svc.ExitErr != nil {
+				info.ExitError = svc.ExitErr.Error()
+			}
+			if svc.ExitCode >= 0 {
+				exitCode := svc.ExitCode
+				info.ExitCode = &exitCode
+			}
+			infos = append(infos, info)
+		}
+		return toolStructuredResponse(map[string]any{
+			"services": infos,
+		})
+	})
 }
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
@@ -1380,41 +1737,137 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		Limit  int    `default:"100"`
 		Grep   string `default:""`
 	}) (any, error) {
-		logs, err := m.captureLogs(ctx, args.Span)
+		spanID := normalizeSpanArg(args.Span)
+		// Include service logs: ReadLogs is the deliberate affordance for
+		// reading them (e.g. via span IDs from ListServices).
+		logs, err := m.captureLogs(ctx, spanID, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
-
-		// Trim the last Offset lines
-		if args.Offset >= len(logs) {
-			return nil, fmt.Errorf("offset %d is beyond log length %d", args.Offset, len(logs))
-		}
-		logs = logs[:len(logs)-args.Offset]
-
-		// Apply grep filter if specified
-		if args.Grep != "" {
-			re, err := regexp.Compile(args.Grep)
+		if len(logs) == 0 {
+			// An empty capture is only an error when the span itself is
+			// unknown: a known span with nothing logged yet is a normal
+			// answer (e.g. tailing a service that hasn't printed).
+			known, err := m.spanKnown(ctx, spanID)
 			if err != nil {
-				return nil, fmt.Errorf("invalid grep pattern %q: %w", args.Grep, err)
+				slog.Warn("failed to check span existence", "span", spanID, "error", err)
+			} else if !known {
+				return nil, fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
 			}
-			var filteredLogs []string
-			for i, line := range logs {
-				if re.MatchString(line) {
-					filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
-				}
-			}
-			logs = filteredLogs
-		} else {
-			for i, line := range logs {
-				logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
+			return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
+		}
+		return renderReadLogs(spanID, logs, args.Offset, args.Limit, args.Grep)
+	})
+}
+
+// normalizeSpanArg extracts a span ID from the forms agents actually paste:
+// a bare hex ID, the "span=<hex>" rendering from reports, or a traceparent
+// ("[traceparent:<traceID>-<spanID>]" error-origin markers, or the W3C
+// 00-<traceID>-<spanID>-<flags> form). Unrecognized input passes through
+// untouched, to be reported as not found.
+func normalizeSpanArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	arg = strings.Trim(arg, "[]")
+	arg = strings.TrimPrefix(arg, "traceparent:")
+	arg = strings.TrimPrefix(arg, "span=")
+	if isHexID(arg, 16) {
+		return arg
+	}
+	parts := strings.Split(arg, "-")
+	for i, part := range parts {
+		if isHexID(part, 16) && i > 0 && isHexID(parts[i-1], 32) {
+			return part
+		}
+	}
+	return arg
+}
+
+func isHexID(s string, length int) bool {
+	if len(s) != length {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+// spanKnown reports whether the span ID appears in the session's recorded
+// telemetry, so an empty ReadLogs capture can distinguish a quiet span from a
+// mistyped one.
+func (m *MCP) spanKnown(ctx context.Context, spanID string) (bool, error) {
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		// no trace to check against; treat the span as plausible
+		return true, nil
+	}
+	root, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	mainMeta, err := root.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get main client caller metadata: %w", err)
+	}
+	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	if err != nil {
+		return false, err
+	}
+	defer q.Close()
+	if _, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+		TraceID: traceID.String(),
+		SpanID:  spanID,
+	}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// renderReadLogs shapes captured log lines into a ReadLogs result: trims the
+// last offset lines, applies the grep filter, numbers the lines, and caps the
+// output. The error and empty cases carry the numbers an agent needs to
+// recover — how many lines exist, how many were searched.
+func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern string) (string, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	// Trim the last offset lines
+	if offset >= len(logs) {
+		return "", fmt.Errorf("offset %d skips all %d available lines; retry with a smaller offset (0 reads the tail)", offset, len(logs))
+	}
+	logs = logs[:len(logs)-offset]
+
+	// Apply grep filter if specified
+	if grepPattern != "" {
+		re, err := regexp.Compile(grepPattern)
+		if err != nil {
+			return "", fmt.Errorf("invalid grep pattern %q: %w", grepPattern, err)
+		}
+		var filteredLogs []string
+		for i, line := range logs {
+			if re.MatchString(line) {
+				filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
 			}
 		}
+		if len(filteredLogs) == 0 {
+			return fmt.Sprintf("(no matches for %q in the %d lines beneath span %s)", grepPattern, len(logs), spanID), nil
+		}
+		logs = filteredLogs
+	} else {
+		for i, line := range logs {
+			logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
+		}
+	}
 
-		// Apply line limit if specified
-		logs = limitLines(args.Span, logs, args.Limit, llmLogsMaxLineLen)
+	// Apply line limit if specified
+	logs = limitLines(spanID, logs, limit, llmLogsMaxLineLen)
 
-		return strings.Join(logs, "\n"), nil
-	})
+	return strings.Join(logs, "\n"), nil
 }
 
 // describeObject renders an object result for the model: its type plus any
@@ -1491,6 +1944,122 @@ func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
 		}
 	}
 	return logs
+}
+
+// limitIndirectLines abridges a captured log stream for a tool result: lines
+// the tool printed itself survive in full, while logs from nested work
+// underneath it are limited to the last `limit` lines, with each dropped run
+// replaced by a count. A tool's report is deliberate output and stays intact
+// no matter how noisy the work beneath it was; nested logs remain fully
+// readable via ReadLogs. "In full" still answers to the last-resort total
+// byte cap (llmToolLogsMaxBytes) — deliberate output is unbounded by lines,
+// not by bytes.
+func limitIndirectLines(spanID string, lines []capturedLine, limit, maxLineLen int) []string {
+	// Indirect lines are kept from the tail: the most recent nested output is
+	// the most relevant (e.g. the error that ended a build).
+	keepFrom := 0
+	if limit > 0 {
+		var indirect int
+		for _, line := range lines {
+			if !line.direct {
+				indirect++
+			}
+		}
+		if indirect > limit {
+			keepFrom = indirect - limit
+		}
+	}
+
+	var out []string
+	var seen, dropped int
+	flush := func() {
+		if dropped == 0 {
+			return
+		}
+		out = append(out, fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...",
+			dropped, spanID))
+		dropped = 0
+	}
+	for _, line := range lines {
+		if line.direct {
+			flush()
+			out = append(out, line.text)
+			continue
+		}
+		if seen < keepFrom {
+			seen++
+			dropped++
+			continue
+		}
+		seen++
+		flush()
+		out = append(out, line.text)
+	}
+	flush()
+
+	for i, line := range out {
+		if len(line) > maxLineLen {
+			out[i] = line[:maxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-maxLineLen)
+		}
+	}
+	return capLinesBytes(spanID, out, llmToolLogsMaxBytes)
+}
+
+// llmToolLogsMaxBytes is the total byte budget for a tool result's captured
+// logs. Direct output survives line-based abridging by design — a tool's
+// report is the point of the call — but a runaway print (a cat'd file,
+// megabytes of dumped state) shouldn't ride into the model's context
+// wholesale. 16 KiB is roughly 4k tokens: far above any deliberate report,
+// low enough that an accident can't crowd out the conversation.
+const llmToolLogsMaxBytes = 16 * 1024
+
+// capLinesBytes bounds the total size of a tool-log capture as a last-resort
+// safeguard, by bytes so that long lines count for what they cost. The
+// middle is dropped rather than the tail — a report's opening and its
+// conclusion both carry signal — behind the usual counted ReadLogs marker,
+// with the head taking the larger share. At least one line survives on each
+// side; the per-line char cap upstream keeps that from busting the budget.
+func capLinesBytes(spanID string, lines []string, maxBytes int) []string {
+	if maxBytes <= 0 {
+		return lines
+	}
+	total := 0
+	for _, line := range lines {
+		total += len(line) + 1 // +1 for the newline that rejoins it
+	}
+	if total <= maxBytes {
+		return lines
+	}
+	headBudget := maxBytes * 2 / 3
+	tailBudget := maxBytes - headBudget
+	head, spent := 0, 0
+	for head < len(lines) {
+		cost := len(lines[head]) + 1
+		if spent+cost > headBudget && head > 0 {
+			break
+		}
+		spent += cost
+		head++
+	}
+	tail, spent := len(lines), 0
+	for tail > head {
+		cost := len(lines[tail-1]) + 1
+		if spent+cost > tailBudget && tail < len(lines) {
+			break
+		}
+		spent += cost
+		tail--
+	}
+	if head >= tail {
+		// the kept head and tail already meet; nothing left to drop
+		return lines
+	}
+	out := make([]string, 0, head+(len(lines)-tail)+1)
+	out = append(out, lines[:head]...)
+	out = append(out, fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...",
+		tail-head, spanID))
+	out = append(out, lines[tail:]...)
+	return out
 }
 
 // Hide functions from the largest and most commonly used core types, to prevent
