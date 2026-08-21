@@ -1541,22 +1541,27 @@ EvalCallbackFinish(r) ==
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* A canceled callback may still succeed after ignoring cancellation. A
-\* cancellation-shaped failure attributable to its shared callback context
-\* is latched as foreign cancellation, which healthy waiters retry.
+\* A canceled callback may still succeed after ignoring cancellation. The
+\* retry decision in Go is per-error (lazyEvalErrorCausedByContext), not
+\* per-phase: a failure attributable to the attempt's canceled callback
+\* context is latched as foreign cancellation, which healthy waiters
+\* retry, while a genuine failure of the callback's own work (LazyCanFail)
+\* still propagates to every waiter even though cancellation was
+\* requested.
 EvalCallbackFinishCanceled(r) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase = "cancelRequested"
     /\ res[r].lazyRunning > 0
-    /\ \E ok \in {TRUE, FALSE} :
+    /\ \E outcome \in ({"latchedDone", "latchedCancel"} \cup
+                       (IF LazyCanFail THEN {"latchedFail"} ELSE {})) :
+        LET ok == outcome = "latchedDone" IN
         /\ res' = [res EXCEPT
              ![r].lazyRunning = @ - 1,
              ![r].lazyComplete = @ \/ ok,
              ![r].lazyCb = IF ok THEN "none" ELSE @,
              ![r].lazyPhase = "idle",
              ![r].lazyWaiters = 0]
-        /\ evals' = LatchEvalOutcomes(r,
-             IF ok THEN "latchedDone" ELSE "latchedCancel")
+        /\ evals' = LatchEvalOutcomes(r, outcome)
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
