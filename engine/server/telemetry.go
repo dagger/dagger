@@ -87,6 +87,16 @@ func spanOriginClientID(span sdktrace.ReadOnlySpan) string {
 	return ""
 }
 
+func withoutSpanOrigin(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
+	attrs := make([]attribute.KeyValue, 0, len(span.Attributes()))
+	for _, attr := range span.Attributes() {
+		if string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr {
+			attrs = append(attrs, attr)
+		}
+	}
+	return originReadOnlySpan{ReadOnlySpan: span, attrs: attrs}
+}
+
 func logOriginClientID(rec sdklog.Record) string {
 	var origin string
 	rec.WalkAttributes(func(attr log.KeyValue) bool {
@@ -97,6 +107,34 @@ func logOriginClientID(rec sdklog.Record) string {
 		return true
 	})
 	return origin
+}
+
+func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
+	clean := rec.Clone()
+	attrs := make([]log.KeyValue, 0, rec.AttributesLen())
+	rec.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key != telemetryattrs.TelemetryOriginClientIDAttr {
+			attrs = append(attrs, attr)
+		}
+		return true
+	})
+	clean.SetAttributes(attrs...)
+	return clean
+}
+
+// dagCallPayloadDigest centralizes recognition of call-payload records so the
+// router is independent of the current log encoding. A raw callpb body can
+// replace this attribute extraction without changing claim or fan-out logic.
+func dagCallPayloadDigest(rec sdklog.Record) (string, bool) {
+	var digest string
+	rec.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key == telemetryattrs.DagCallPayloadDigestAttr && attr.Value.Kind() == log.KindString {
+			digest = attr.Value.AsString()
+			return false
+		}
+		return true
+	})
+	return digest, digest != ""
 }
 
 type sessionSpanExporter struct {
@@ -115,6 +153,7 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		if err != nil {
 			return err
 		}
+		span = withoutSpanOrigin(span)
 		for _, target := range route {
 			byTarget[target] = append(byTarget[target], span)
 		}
@@ -149,6 +188,13 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if err != nil {
 			return err
 		}
+		if digest, ok := dagCallPayloadDigest(rec); ok {
+			route = exp.sess.callPayloadMissingTargets(digest, route, true)
+		}
+		if len(route) == 0 {
+			continue
+		}
+		rec = withoutLogOrigin(rec)
 		for _, target := range route {
 			byTarget[target] = append(byTarget[target], rec)
 		}
@@ -219,7 +265,10 @@ func (exp sessionMetricExporter) Export(ctx context.Context, metrics *metricdata
 				return attrs, false, err
 			}
 			_, include := targetOrigins[origin]
-			return attrs, include, nil
+			filtered, _ := attrs.Filter(func(attr attribute.KeyValue) bool {
+				return string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr
+			})
+			return filtered, include, nil
 		})
 		if err != nil {
 			return err

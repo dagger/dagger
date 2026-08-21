@@ -19,51 +19,37 @@ func (s *testSeenKeyStore) StoreTelemetrySeenKey(key string) {
 	s.keys.Store(key, struct{}{})
 }
 
-// A payload crosses the wire at most once per claim-store delivery domain.
-func TestShouldEmitCallPayloadIsOncePerStore(t *testing.T) {
-	store := &testSeenKeyStore{}
-	if !ShouldEmitCallPayload(store, "xxh3:a") {
-		t.Fatal("first claim of a digest must emit")
-	}
-	if ShouldEmitCallPayload(store, "xxh3:a") {
-		t.Fatal("second claim of the same digest must not emit")
-	}
-	if !ShouldEmitCallPayload(store, "xxh3:b") {
-		t.Fatal("a different digest must still emit")
-	}
-	// No store means no delivery-domain dedupe. Emitting every closure on every
-	// selection would be unbounded, so the producer stays quiet.
-	if ShouldEmitCallPayload(nil, "xxh3:a") {
-		t.Fatal("emitted without a seen-key store")
-	}
+type testCallPayloadSeenKeyStore struct {
+	keys sync.Map
 }
 
-// The two users of the seen-key store must be blind to each other. Payload
-// claims cover a chain's WHOLE closure, so a shared key space would suppress
-// the spans of every frame in it; and the span dedupe spending a digest must
-// not spend that digest's payload, which is precisely the gap the payload
-// channel exists to fill.
+func (s *testCallPayloadSeenKeyStore) CallPayloadNeedsEmission(digest string) bool {
+	_, seen := s.keys.LoadOrStore(digest, struct{}{})
+	return !seen
+}
+
+// The two telemetry dedupe stores must be blind to each other. Payload
+// decisions cover a chain's whole closure and must neither suppress spans nor
+// be suppressed by the session-wide span cache.
 func TestCallPayloadDedupeCannotSuppressSpans(t *testing.T) {
 	ctx := context.Background()
-	store := &testSeenKeyStore{}
+	spanStore := &testSeenKeyStore{}
+	payloadStore := &testCallPayloadSeenKeyStore{}
 
-	// A payload claimed first (e.g. as part of some other chain's closure)
-	// leaves the span decision untouched.
-	if !ShouldEmitCallPayload(store, "xxh3:a") {
-		t.Fatal("first payload claim must emit")
+	if !payloadStore.CallPayloadNeedsEmission("xxh3:a") {
+		t.Fatal("first payload decision must emit")
 	}
-	if !ShouldEmitTelemetry(ctx, store, "xxh3:a", false) {
-		t.Fatal("payload claim suppressed the call's span")
+	if !ShouldEmitTelemetry(ctx, spanStore, "xxh3:a", false) {
+		t.Fatal("payload decision suppressed the call's span")
 	}
 
-	// And the span dedupe spending a digest leaves the payload claimable.
-	if !ShouldEmitTelemetry(ctx, store, "xxh3:b", false) {
+	if !ShouldEmitTelemetry(ctx, spanStore, "xxh3:b", false) {
 		t.Fatal("first span must emit")
 	}
-	if ShouldEmitTelemetry(ctx, store, "xxh3:b", false) {
+	if ShouldEmitTelemetry(ctx, spanStore, "xxh3:b", false) {
 		t.Fatal("second span must be deduplicated")
 	}
-	if !ShouldEmitCallPayload(store, "xxh3:b") {
+	if !payloadStore.CallPayloadNeedsEmission("xxh3:b") {
 		t.Fatal("span dedupe suppressed the payload of a call it hid")
 	}
 }

@@ -1342,8 +1342,8 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 		}
 		return ""
 	}
-	metricOrigins := func(rows []clientdb.Metric) []string {
-		var origins []string
+	metricPointCount := func(rows []clientdb.Metric) int {
+		count := 0
 		for _, resourceMetricsPB := range clientdb.MetricsToPB(rows) {
 			resourceMetrics, err := telemetry.ResourceMetricsFromPB(resourceMetricsPB)
 			require.NoError(t, err)
@@ -1352,14 +1352,14 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 					gauge, ok := metrics.Data.(metricdata.Gauge[int64])
 					require.True(t, ok, "unexpected metric aggregation %T", metrics.Data)
 					for _, point := range gauge.DataPoints {
-						origin, err := metricDataOriginClientID(point.Attributes)
-						require.NoError(t, err)
-						origins = append(origins, origin)
+						_, hasOrigin := point.Attributes.Value(attribute.Key(telemetryattrs.TelemetryOriginClientIDAttr))
+						require.False(t, hasOrigin, "routing-only origin must not be persisted")
+						count++
 					}
 				}
 			}
 		}
-		return origins
+		return count
 	}
 
 	rootSpans, rootLogs, rootMetrics := load("root")
@@ -1376,16 +1376,15 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	require.Len(t, rootLogs, 2)
 	require.Len(t, parentLogs, 1)
 	require.Len(t, childLogs, 1)
-	require.ElementsMatch(t, []string{"root", "child"}, metricOrigins(rootMetrics))
-	require.Equal(t, []string{"child"}, metricOrigins(parentMetrics))
-	require.Equal(t, []string{"child"}, metricOrigins(childMetrics))
-	for _, span := range childSpans {
-		require.Equal(t, "child", originAttr(span.Attributes))
+	require.Equal(t, 2, metricPointCount(rootMetrics))
+	require.Equal(t, 1, metricPointCount(parentMetrics))
+	require.Equal(t, 1, metricPointCount(childMetrics))
+	for _, span := range append(append(rootSpans, parentSpans...), childSpans...) {
+		require.Empty(t, originAttr(span.Attributes), "routing-only span origin must not be persisted")
 	}
-	require.Equal(t, "child", originAttr(parentLogs[0].Attributes))
-	require.ElementsMatch(t, []string{"root", "child"}, []string{
-		originAttr(rootLogs[0].Attributes), originAttr(rootLogs[1].Attributes),
-	})
+	for _, row := range append(append(rootLogs, parentLogs...), childLogs...) {
+		require.Empty(t, originAttr(row.Attributes), "routing-only log origin must not be persisted")
+	}
 
 	// Incoming OTLP/cloud telemetry has no emission context. Its authenticated
 	// origin adapter must overwrite any payload claim and use the same route.
@@ -1415,10 +1414,10 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	require.Len(t, rootLogs, 3)
 	require.Len(t, parentLogs, 2)
 	require.Len(t, childLogs, 1)
-	require.ElementsMatch(t, []string{"root", "child", "parent"}, metricOrigins(rootMetrics))
-	require.ElementsMatch(t, []string{"child", "parent"}, metricOrigins(parentMetrics))
-	require.Equal(t, []string{"child"}, metricOrigins(childMetrics))
-	require.Equal(t, "parent", originAttr(rootLogs[len(rootLogs)-1].Attributes))
+	require.Equal(t, 3, metricPointCount(rootMetrics))
+	require.Equal(t, 2, metricPointCount(parentMetrics))
+	require.Equal(t, 1, metricPointCount(childMetrics))
+	require.Empty(t, originAttr(rootLogs[len(rootLogs)-1].Attributes))
 
 	require.Equal(t, 0, dbs.OpenStats().Stores, "exports and reads must release DB handles")
 
@@ -2527,35 +2526,114 @@ func TestCallPayloadDeliveryStore(t *testing.T) {
 	t.Parallel()
 
 	sess := &daggerSession{}
-
-	// Client A (top-level, no parents) claims a digest: unseen the first
-	// time, seen for A afterwards.
 	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
-	require.False(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
-	require.True(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
+	require.Equal(t, []string{"clientA"}, sess.callPayloadMissingTargets("xxh3:abc", storeA.targets, true))
+	require.False(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
 
-	// Client B attaches later: A's claim must not satisfy B's delivery
-	// domain — B's DB never received the payload.
 	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
-	require.False(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
-		"a digest claimed by another client's emission must stay claimable for a late-attaching client")
-	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeB.CallPayloadNeedsEmission("xxh3:abc"),
+		"a digest claimed by another client's emission must stay needed for a late client")
 
-	// A module client under B: its emissions deliver to itself AND B, so a
-	// claim from its context marks both — and it is only "seen" when every
-	// target already has it. B has the digest, the module client does not,
-	// so the first probe still publishes (marking both).
-	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB", "modClient"}}
-	require.False(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
-		"an emission must not be skipped while any target in its delivery domain still needs it")
-	require.True(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
-	// And now B's own store agrees the digest is spent for B.
-	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA", "modClient"}}
+	require.True(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"),
+		"an emission must not be skipped while any route target still needs it")
+	require.Equal(t, []string{"modClient"},
+		sess.callPayloadMissingTargets("xxh3:abc", storeMod.targets, true),
+		"only the missing target must be claimed")
+	require.False(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"))
+}
 
-	// StoreTelemetrySeenKey marks every target unconditionally.
-	storeC := &callPayloadDeliveryStore{session: sess, targets: []string{"clientC", "clientD"}}
-	storeC.StoreTelemetrySeenKey("dag.call.payload:xxh3:def")
-	require.True(t, storeC.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:def"))
+func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	routes := [][]string{{"parent", "childA"}, {"parent", "childB"}}
+	start := make(chan struct{})
+	results := make(chan []string, len(routes))
+	var ready sync.WaitGroup
+	ready.Add(len(routes))
+	for _, route := range routes {
+		go func() {
+			ready.Done()
+			<-start
+			results <- sess.callPayloadMissingTargets("xxh3:overlap", route, true)
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	counts := map[string]int{}
+	for range routes {
+		for _, target := range <-results {
+			counts[target]++
+		}
+	}
+	require.Equal(t, map[string]int{"parent": 1, "childA": 1, "childB": 1}, counts,
+		"overlapping decisions must atomically assign each target exactly once")
+	require.Empty(t, sess.callPayloadMissingTargets("xxh3:overlap", []string{"parent", "childA", "childB"}, true))
+}
+
+func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
+	t.Parallel()
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	srv.telemetryPubSub = NewPubSub(srv)
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	parent := &clientRecord{daggerSession: sess, clientID: "parent"}
+	child := &clientRecord{daggerSession: sess, clientID: "child", parentClientIDs: []string{"parent"}}
+	sess.clientRecords[parent.clientID] = parent
+	sess.clientRecords[child.clientID] = child
+	exporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	logger := provider.Logger("test")
+
+	emitPayload := func(origin string) {
+		rec := otellog.Record{}
+		rec.SetTimestamp(time.Now())
+		rec.SetBody(otellog.StringValue(""))
+		rec.AddAttributes(
+			otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
+			otellog.String(telemetryattrs.DagCallPayloadDigestAttr, "xxh3:partial"),
+			otellog.String(telemetryattrs.DagCallPayloadAttr, "payload"),
+		)
+		logger.Emit(t.Context(), rec)
+	}
+
+	// Parent receives the payload first. Re-exporting it from the child route
+	// must fill only the child gap instead of persisting a second parent row.
+	emitPayload("parent")
+	emitPayload("child")
+	emitPayload("child")
+
+	load := func(target string) []clientdb.Log {
+		db, err := dbs.Open(t.Context(), target)
+		require.NoError(t, err)
+		defer db.Close()
+		logs, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		return logs
+	}
+	parentLogs := load("parent")
+	childLogs := load("child")
+	require.Len(t, parentLogs, 1)
+	require.Len(t, childLogs, 1)
+
+	for _, row := range append(parentLogs, childLogs...) {
+		var attrs []*otlpcommonv1.KeyValue
+		require.NoError(t, clientdb.UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
+		var hasDigest, hasPayload bool
+		for _, attr := range attrs {
+			require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,
+				"routing-only origin must not be persisted or streamed")
+			hasDigest = hasDigest || attr.Key == telemetryattrs.DagCallPayloadDigestAttr
+			hasPayload = hasPayload || attr.Key == telemetryattrs.DagCallPayloadAttr
+		}
+		require.True(t, hasDigest, "routing must preserve the call payload wire representation")
+		require.True(t, hasPayload, "routing must preserve the call payload wire representation")
+	}
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {

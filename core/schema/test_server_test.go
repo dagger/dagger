@@ -85,7 +85,7 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	return nil, nil
 }
 

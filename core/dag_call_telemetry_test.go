@@ -4,7 +4,7 @@ package core
 // silently: the root and complete closure have to ride logs, including frames
 // buried inside an ID-literal argument — those are the ones LiteralID.pb
 // flattens to a bare digest, so they can never ride a span attribute — and a
-// digest must cross the wire at most once per session, or an LLM loop
+// digest must cross the wire at most once per delivery target, or an LLM loop
 // re-sending the same chain drowns the log stream.
 
 import (
@@ -76,13 +76,9 @@ type testSeenKeys struct {
 	keys sync.Map
 }
 
-func (s *testSeenKeys) LoadOrStoreTelemetrySeenKey(key string) bool {
+func (s *testSeenKeys) CallPayloadNeedsEmission(key string) bool {
 	_, seen := s.keys.LoadOrStore(key, struct{}{})
-	return seen
-}
-
-func (s *testSeenKeys) StoreTelemetrySeenKey(key string) {
-	s.keys.Store(key, struct{}{})
+	return !seen
 }
 
 // payloadRecorderCtx returns a context whose logger provider records every
@@ -146,7 +142,7 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.Equal(t, "agent", rootCall.Field)
 }
 
-func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
+func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, _, _ := skillsChain()
 	rootDigest, err := agent.RecipeDigest(ctx)
@@ -157,9 +153,8 @@ func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
 	first := rec.len()
 	require.Greater(t, first, 0)
 
-	// A second selection of the same call publishes nothing: the digest was
-	// claimed, and reachability is transitive, so the first walk covered
-	// everything this one would.
+	// A second selection of the same call publishes nothing in this synchronous
+	// delivery fixture: the first walk covered the whole transitive closure.
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	require.Equal(t, first, rec.len())
 

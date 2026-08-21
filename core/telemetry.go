@@ -75,7 +75,7 @@ func AroundFunc(
 		return ctx, dagql.NoopDone
 	}
 	var q *Query
-	var payloadKeys dagql.TelemetrySeenKeyStore
+	var payloadKeys dagql.CallPayloadSeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
 		q = currentQuery
 		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {

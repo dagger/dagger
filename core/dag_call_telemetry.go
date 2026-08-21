@@ -29,16 +29,11 @@ import (
 // but producers no longer write it. Root and transitive frames share this one
 // log transport and claim digests from the same delivery-domain store.
 //
-// The claim store is scoped to the emitting client's DELIVERY DOMAIN — the
-// client and its ancestors, exactly the per-client DBs telemetry fans out to
-// (Query.CallPayloadSeenKeyStore) — NOT to the session. A session-wide claim
-// let one client's emission permanently satisfy the claim for clients that
-// never received it: a client attaching to the session later (e.g. a nested
-// `dagger agent`) could then never obtain the payloads for frames claimed
-// before it existed, leaving every agent whose chain crossed such a frame
-// unaddressable there. Delivery-domain claims mean a later client's first
-// closure walk re-publishes into its own domain; consumers dedupe by digest,
-// so the bounded re-publication is harmless.
+// The delivery state is scoped per target — the client and its ancestors,
+// exactly the per-client DBs telemetry fans out to — NOT to the session. A
+// session-wide decision could let one client's emission permanently satisfy a
+// client that never received it. Producer checks avoid needless recipe work;
+// the session log exporter atomically claims only the missing route targets.
 
 // CallPayloadInstrumentationScope names the logger emitting call payloads.
 const CallPayloadInstrumentationScope = "dagger.io/dag.call"
@@ -48,25 +43,24 @@ const CallPayloadInstrumentationScope = "dagger.io/dag.call"
 // arguments (ID literals inside lists and objects included) and implicit
 // inputs — minus digests already claimed in the client's delivery domain.
 //
-// It is called after the call's span starts and claims the root digest before
-// rebuilding the recipe. A second selection of that root short-circuits the
-// whole walk; reachability is transitive, so the first walk already published
-// every frame in its closure. This makes the cost at most one closure walk per
-// distinct root digest in the emitting client's delivery domain.
+// It is called after the call's span starts and first checks whether the root
+// is missing anywhere on the route before rebuilding the recipe. The check is
+// only an optimization: sessionLogExporter atomically claims the exact missing
+// targets for each emitted record, so concurrent closure walks remain safe.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
 // cannot rebuild that one chain, which is exactly the status quo.
 func recordCallPayloads(
 	ctx context.Context,
-	store dagql.TelemetrySeenKeyStore,
+	store dagql.CallPayloadSeenKeyStore,
 	callDigest string,
 	frame *dagql.ResultCall,
 ) {
 	if store == nil || frame == nil {
 		return
 	}
-	if !dagql.ShouldEmitCallPayload(store, callDigest) {
+	if !store.CallPayloadNeedsEmission(callDigest) {
 		// Someone already published this call's payload, and whoever did also
 		// walked its closure — reachability is transitive, so that walk
 		// covered everything this one would.
@@ -96,9 +90,9 @@ func recordCallPayloads(
 
 	logger := telemetry.Logger(ctx, CallPayloadInstrumentationScope)
 	for dgst, callPB := range recipe.GetCallsByDigest() {
-		// The root was claimed before rebuilding. Claim every other frame before
-		// encoding so repeated closure walks skip work already delivered.
-		if dgst != callDigest && !dagql.ShouldEmitCallPayload(store, dgst) {
+		// The root was checked before rebuilding. Check every other frame before
+		// encoding so closure walks avoid work already delivered everywhere.
+		if dgst != callDigest && !store.CallPayloadNeedsEmission(dgst) {
 			continue
 		}
 		payload, err := callPB.Encode()

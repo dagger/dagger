@@ -139,6 +139,13 @@ type daggerSession struct {
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
 
+	// callPayloadTargets tracks which client delivery targets have claimed each
+	// immutable call payload digest. Checks may race harmlessly; the log exporter
+	// claims all missing targets for one record under callPayloadMu so overlapping
+	// routes can never persist the same digest twice to a target.
+	callPayloadMu      sync.Mutex
+	callPayloadTargets map[string]map[string]struct{}
+
 	services *core.Services
 	agents   *core.AgentRuntimes
 	resolver *serverresolver.Resolver
@@ -3116,21 +3123,11 @@ func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySe
 	return record.daggerSession, nil
 }
 
-// CallPayloadSeenKeyStore returns the claim store for call-payload telemetry
-// (core/dag_call_telemetry.go), scoped to the current client's DELIVERY
-// domain rather than the whole session.
-//
-// Telemetry emitted in a client's context is delivered to that client's DB
-// and every ancestor's (PubSub's fan-out in engine/server/telemetry.go), so a
-// session-wide claim would let one client's emission permanently satisfy the
-// claim for clients that never received it: a client attaching to the session
-// later — a nested `dagger agent`, a sibling joining via a shared session ID —
-// could then never obtain the payloads its ID rebuilds need, and every agent
-// referenced through an already-claimed frame would be unaddressable there.
-// Claiming per delivery target instead marks a digest "seen" exactly where it
-// actually landed, so a later client's first closure walk re-publishes into
-// its own domain.
-func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {
+// CallPayloadSeenKeyStore returns the delivery-aware producer filter for the
+// current client. The filter is only a best-effort early check: the session log
+// exporter owns the atomic claim because only it can couple a payload record to
+// the exact route targets that still need the digest.
+func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	record, err := srv.clientRecordFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -3145,34 +3142,52 @@ func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.Telemetry
 	}, nil
 }
 
-// callPayloadDeliveryStore marks seen-keys per delivery target — the emitting
-// client and its ancestors, exactly the DBs PubSub fans this telemetry out to —
-// backed by the session's seen-key map with a per-target suffix. A key counts
-// as seen only when EVERY target has it, so an emission is skipped only when
-// nobody in the delivery domain still needs it. The NUL separator cannot occur
-// in a digest or client ID, keeping the suffixed key space disjoint from the
-// session store's other keys by construction.
+// callPayloadDeliveryStore suppresses the producer's recipe walk when every
+// target on its route already has a digest. It deliberately does not claim:
+// checks can overlap while records are queued, and sessionLogExporter settles
+// the exact per-target decision atomically immediately before persistence.
 type callPayloadDeliveryStore struct {
 	session *daggerSession
 	targets []string
 }
 
-var _ dagql.TelemetrySeenKeyStore = (*callPayloadDeliveryStore)(nil)
+var _ dagql.CallPayloadSeenKeyStore = (*callPayloadDeliveryStore)(nil)
 
-func (s *callPayloadDeliveryStore) LoadOrStoreTelemetrySeenKey(key string) bool {
-	seenEverywhere := true
-	for _, target := range s.targets {
-		if !s.session.LoadOrStoreTelemetrySeenKey(key + "\x00" + target) {
-			seenEverywhere = false
-		}
-	}
-	return seenEverywhere
+func (s *callPayloadDeliveryStore) CallPayloadNeedsEmission(digest string) bool {
+	return len(s.session.callPayloadMissingTargets(digest, s.targets, false)) > 0
 }
 
-func (s *callPayloadDeliveryStore) StoreTelemetrySeenKey(key string) {
-	for _, target := range s.targets {
-		s.session.StoreTelemetrySeenKey(key + "\x00" + target)
+// callPayloadMissingTargets returns the route members that have not claimed
+// digest. When claim is true, observing and marking the whole missing subset is
+// one critical section, making concurrent overlapping multi-target routes
+// linearizable. Returned targets preserve the caller's route order.
+func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []string, claim bool) []string {
+	if digest == "" || len(targets) == 0 {
+		return nil
 	}
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+
+	seen := sess.callPayloadTargets[digest]
+	missing := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if _, ok := seen[target]; !ok {
+			missing = append(missing, target)
+		}
+	}
+	if claim && len(missing) > 0 {
+		if seen == nil {
+			if sess.callPayloadTargets == nil {
+				sess.callPayloadTargets = map[string]map[string]struct{}{}
+			}
+			seen = map[string]struct{}{}
+			sess.callPayloadTargets[digest] = seen
+		}
+		for _, target := range missing {
+			seen[target] = struct{}{}
+		}
+	}
+	return missing
 }
 
 // The DagQL server for the current client's session
