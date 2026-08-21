@@ -489,3 +489,71 @@ func TestCacheEvaluateSettlesBookkeepingBeforeReportingComplete(t *testing.T) {
 		}
 	})
 }
+
+// An ordinary cache hit re-registers lazy evaluation through
+// ensurePersistedHitValueLoaded while another caller's callback body may be
+// clearing the same object-side lazy pointer. Registration must therefore
+// consult the published attempt under lazyMu before reading any object-side
+// state. This test drives hits concurrently with a running callback and is
+// meaningful under the race detector: with the object-side read unordered,
+// -race reports the write in the callback against the read in registration.
+func TestCacheHitRegistrationDoesNotRaceLazyCallback(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = ContextWithCache(ctx, c)
+	srv := cacheTestServer(t)
+	sessionID := cacheTestSessionID(t, ctx)
+
+	blockCallback := make(chan struct{})
+	var obj *cacheTestObject
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "lazy-hit-registration-race",
+	}
+	resAny, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		obj = &cacheTestObject{Value: 1}
+		obj.lazyEval = func(context.Context) error {
+			obj.lazyEval = nil
+			<-blockCallback
+			return nil
+		}
+		return cacheTestObjectResultWithValue(t, srv, frame, obj), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := resAny.(ObjectResult[*cacheTestObject])
+
+	evalDone := make(chan error, 1)
+	go func() { evalDone <- c.Evaluate(ctx, res) }()
+
+	hit := func() {
+		hitRes, hitErr := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			t.Error("hit-path call unexpectedly re-executed")
+			return nil, errors.New("unexpected re-execution")
+		})
+		if hitErr != nil {
+			t.Error(hitErr)
+		}
+		_ = hitRes
+	}
+	// Hits race the callback body's object-side clear while it runs, then
+	// keep going through completion so registration is exercised against
+	// every attempt state.
+	for range 50 {
+		hit()
+	}
+	close(blockCallback)
+	if err := waitLazyRetryError(t, evalDone, "evaluate outcome"); err != nil {
+		t.Fatal(err)
+	}
+	for range 10 {
+		hit()
+	}
+}
