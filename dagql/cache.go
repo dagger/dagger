@@ -739,6 +739,13 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	if shared.lazyEvalComplete {
 		return false
 	}
+	// Attempt and pending-bookkeeping checks come before object-side state:
+	// a callback body clears its object-side pointer while its attempt is
+	// still running cache-side bookkeeping, so object-side state is only
+	// trustworthy when no attempt is in flight.
+	if shared.lazyEvalAttempt != nil || shared.lazySyncPending {
+		return true
+	}
 	if shared.lazyEval != nil {
 		return true
 	}
@@ -1460,6 +1467,7 @@ type Cache struct {
 	testAfterSessionArbitraryRecord func()
 	testAfterSessionReleaseRecord   func()
 	testAfterHandoffHoldAcquired    func(*ongoingCall)
+	testAfterLazyEvalFinish         func(*lazyEvalAttempt)
 
 	closeOnce sync.Once
 	closeErr  error
@@ -1473,6 +1481,27 @@ type callConcurrencyKeys struct {
 type OnReleaseFunc = func(context.Context) error
 
 type sharedResultID uint64
+
+// lazyEvalAttempt is one execution of a shared result's lazy callback. The
+// shared result publishes the current attempt under lazyMu while its callback
+// is running. Waiters keep this record after callback completion so they can
+// consume that attempt's outcome without reading or decrementing a later
+// attempt's state. All fields except the immutable done channel are read or
+// written under the shared result's lazyMu.
+type lazyEvalAttempt struct {
+	done    chan struct{}
+	cancel  context.CancelCauseFunc
+	waiters int
+	err     error
+	retry   bool // err came from cancellation of this attempt's callback context
+
+	// profOpID and spanCtx are the native and OTel wait targets for this
+	// attempt. They are minted under lazyMu before the attempt is published.
+	// Their zero values mean that the corresponding telemetry source did not
+	// record this attempt.
+	profOpID uint64
+	spanCtx  trace.SpanContext
+}
 
 type sessionResourceBindings struct {
 	latestClientID string
@@ -1628,20 +1657,13 @@ type sharedResult struct {
 	lazyMu           sync.Mutex
 	lazyEval         LazyEvalFunc
 	lazyEvalComplete bool
-	lazyEvalWaitCh   chan struct{}
-	lazyEvalCancel   context.CancelCauseFunc
-	lazyEvalWaiters  int
-	lazyEvalErr      error
-	// lazyEvalProfOpID is the wcprof op for the in-flight lazy evaluation
-	// (guarded by lazyMu alongside lazyEvalWaitCh). Waiters record wait
-	// events against it.
-	lazyEvalProfOpID uint64
-	// lazyEvalSpanCtx is the OTel `lazy` op span for the in-flight lazy
-	// evaluation, the analog of lazyEvalProfOpID for the OTel
-	// profiling source. Minted and stashed under lazyMu before lazyEvalWaitCh is
-	// published so every joiner has a valid wait target (target-before-primitive).
-	// Invalid when telemetry is off.
-	lazyEvalSpanCtx trace.SpanContext
+	lazyEvalAttempt  *lazyEvalAttempt
+	// lazySyncPending records that a callback body already consumed its
+	// object-side lazy state but the attempt's cache-side bookkeeping
+	// (snapshot-lease sync, lease release) has not yet succeeded. The next
+	// attempt then retries only that bookkeeping instead of treating the nil
+	// object-side callback as completed evaluation.
+	lazySyncPending bool
 }
 
 type resultAttachmentState uint8
@@ -2973,16 +2995,22 @@ func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 	if shared == nil || val == nil {
 		return
 	}
-	lazyEval := lazyEvalFuncOfResult(val)
-	if lazyEval == nil {
-		return
-	}
 
 	shared.lazyMu.Lock()
-	if shared.lazyEval == nil && !shared.lazyEvalComplete {
+	defer shared.lazyMu.Unlock()
+	// Read object-side lazy state only when no attempt is in flight, for the
+	// same reason evaluateOne does: callback bodies clear their object-side
+	// pointer without holding lazyMu, and attempt retirement under lazyMu
+	// orders those writes before a reader that observes no attempt. With an
+	// attempt published, a stored callback, pending bookkeeping, or completed
+	// evaluation, there is nothing to register.
+	if shared.lazyEval != nil || shared.lazyEvalComplete ||
+		shared.lazyEvalAttempt != nil || shared.lazySyncPending {
+		return
+	}
+	if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
 		shared.lazyEval = lazyEval
 	}
-	shared.lazyMu.Unlock()
 }
 
 func lazyEvalStackFromContext(ctx context.Context) *lazyEvalStackNode {
@@ -3013,41 +3041,51 @@ func (s resumedCallbackSpan) TracerProvider() trace.TracerProvider {
 	return s.tp
 }
 
-func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, waitCh chan struct{}) error {
-	var waitErr error
+func lazyEvalErrorCausedByContext(ctx context.Context, err error) bool {
+	if err == nil || ctx == nil || ctx.Err() == nil {
+		return false
+	}
+	cause := context.Cause(ctx)
+	return (cause != nil && errors.Is(err, cause)) || errors.Is(err, ctx.Err())
+}
+
+// waitForLazyEvaluation waits for one attempt and reports whether its outcome
+// should be retried. A retry is only requested when the callback returned the
+// cancellation of its own shared callback context while this caller remains
+// healthy. The caller's own cancellation always returns its own cause.
+func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, attempt *lazyEvalAttempt) (error, bool) {
 	select {
-	case <-waitCh:
+	case <-attempt.done:
 		shared.lazyMu.Lock()
-		waitErr = shared.lazyEvalErr
-		shared.lazyEvalWaiters--
-		if shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh {
-			shared.lazyEvalWaitCh = nil
-			shared.lazyEvalCancel = nil
-			shared.lazyEvalErr = nil
-			// Clear the joiner wait targets alongside lazyEvalWaitCh so they share
-			// its lifecycle (valid only while an attempt is in flight).
-			shared.lazyEvalProfOpID = 0
-			shared.lazyEvalSpanCtx = trace.SpanContext{}
-		}
+		waitErr := attempt.err
+		retry := attempt.retry
+		attempt.waiters--
 		shared.lazyMu.Unlock()
+		if retry {
+			if ownCause := context.Cause(ctx); ownCause != nil {
+				return ownCause, false
+			}
+			return nil, true
+		}
 		// Tag the failure with the result it belongs to so that an enclosing
 		// lazy callback's resume span can tell "a prerequisite failed" apart
 		// from "my own deferred work failed". See blockedOnPrerequisite.
 		if waitErr != nil {
 			waitErr = &prerequisiteEvalError{err: waitErr, resultID: shared.id}
 		}
+		return waitErr, false
 	case <-ctx.Done():
-		waitErr = context.Cause(ctx)
+		waitErr := context.Cause(ctx)
 		shared.lazyMu.Lock()
-		shared.lazyEvalWaiters--
-		lastWaiter := shared.lazyEvalWaiters == 0
-		cancel := shared.lazyEvalCancel
+		attempt.waiters--
+		lastWaiter := attempt.waiters == 0
+		cancel := attempt.cancel
 		shared.lazyMu.Unlock()
 		if lastWaiter && cancel != nil {
 			cancel(waitErr)
 		}
+		return waitErr, false
 	}
-	return waitErr
 }
 
 // prerequisiteEvalError wraps a lazy-evaluation failure with the identity of
@@ -3115,205 +3153,203 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		parent: stack,
 	})
 
-	// Fast path: if evaluation is already complete or there is nothing to do,
-	// skip preflight entirely.
-	shared.lazyMu.Lock()
-	if shared.lazyEvalComplete || lazyEvalFuncOfResult(res) == nil {
-		shared.lazyMu.Unlock()
-		return nil
-	}
-	shared.lazyMu.Unlock()
+	for {
+		shared.lazyMu.Lock()
+		if shared.lazyEvalComplete {
+			shared.lazyMu.Unlock()
+			return nil
+		}
+		// Consult the published attempt before any object-side lazy state.
+		// Callback bodies clear their object-side callback pointer while the
+		// attempt is still running its cache-side bookkeeping, so object-side
+		// state is only trustworthy once no attempt is in flight: retirement
+		// happens under lazyMu after the callback returns, ordering the body's
+		// writes before a reader that observes no attempt.
+		if attempt := shared.lazyEvalAttempt; attempt != nil {
+			lazyOpID := attempt.profOpID
+			// The leader initializes this attempt's OTel wait target under
+			// lazyMu before publishing shared.lazyEvalAttempt
+			// (target-before-primitive). A recording leader stores a valid target;
+			// an unrecorded leader leaves this fresh attempt record's zero value
+			// invalid. A joiner therefore cannot inherit a target from an earlier
+			// attempt, and mixed-recording waits remain gate-observable rather than
+			// silently linking to the wrong lazy operation.
+			lazyOpSpanCtx := attempt.spanCtx
+			attempt.waiters++
+			shared.lazyMu.Unlock()
+			// producerSkip drives ONLY the OTel joiner wait below; native is full
+			// detail and emits its wait unconditionally.
+			producerSkip := shared.profileSkip()
+			profWait := wcprof.BeginWait(stackCtx, lazyOpID, wcprof.WaitReasonLazy)
+			otelWaitStartNS := time.Now().UnixNano()
+			waitErr, retry := c.waitForLazyEvaluation(stackCtx, shared, attempt)
+			profWait.End()
+			// OTel joiner wait edge: the load-bearing edge — the lazy op is in the
+			// leader's subtree, not this joiner's, so this wait is the joiner's only
+			// causal link to the eval. EmitOTelWait is a no-op when the waiter is
+			// non-recording, and gate-observable (targetless) when the target is
+			// genuinely invalid (a non-uniform cross-session trace).
+			//
+			// LOAD-BEARING: gate this on the PRODUCER's stored skip flag, never the
+			// joiner's own bit. Elsewhere the profile-skip decision is safe to read
+			// off the waiter because a call and its singleflight joiners share one
+			// recipe and agree on it; a lazy forcer is a DIFFERENT recipe than the
+			// producer, so that agreement does NOT hold here. Gating on the
+			// producer's flag keeps a non-skipped forcer of a skipped-producer value
+			// from emitting an OTel wait into the deliberately absent producer span.
+			// Do NOT "simplify" this to the waiter's bit; that creates a dangling
+			// cross-recipe wait. Native keeps the full edge.
+			if !producerSkip {
+				EmitOTelWait(stackCtx, lazyOpSpanCtx, wcprof.WaitReasonLazy, otelWaitStartNS, time.Now().UnixNano())
+			}
+			if retry {
+				continue
+			}
+			return waitErr
+		}
 
-	shared.lazyMu.Lock()
-	currentLazyEval := lazyEvalFuncOfResult(res)
-	if currentLazyEval == nil {
-		shared.lazyEval = nil
-		shared.lazyEvalComplete = true
-		shared.lazyMu.Unlock()
-		return nil
-	}
-	if shared.lazyEvalComplete {
-		shared.lazyMu.Unlock()
-		return nil
-	}
-	shared.lazyEval = currentLazyEval
-	if shared.lazyEval == nil {
-		shared.lazyMu.Unlock()
-		return nil
-	}
-	if shared.lazyEvalWaitCh != nil {
-		waitCh := shared.lazyEvalWaitCh
-		lazyOpID := shared.lazyEvalProfOpID
-		// OTel wait target for this joiner. The leader stashes it under lazyMu
-		// before publishing lazyEvalWaitCh (target-before-primitive) — valid when the
-		// current leader was recording. In a mixed-recording trace (an untraced
-		// leader on the in-flight attempt) it is the reset-to-invalid zero value
-		// (reset per attempt before publish), and EmitOTelWait below emits a
-		// gate-observable targetless wait rather than a stale link to a prior
-		// attempt's op.
-		lazyOpSpanCtx := shared.lazyEvalSpanCtx
-		shared.lazyEvalWaiters++
-		shared.lazyMu.Unlock()
-		// producerSkip drives ONLY the OTel joiner wait below; native is full detail
-		// and emits its wait unconditionally.
-		producerSkip := shared.profileSkip()
-		profWait := wcprof.BeginWait(stackCtx, lazyOpID, wcprof.WaitReasonLazy)
-		otelWaitStartNS := time.Now().UnixNano()
-		waitErr := c.waitForLazyEvaluation(stackCtx, shared, waitCh)
-		profWait.End()
-		// OTel joiner wait edge: the load-bearing edge — the
-		// lazy op is in the leader's subtree, not this joiner's, so this wait is the
-		// joiner's only causal link to the eval. EmitOTelWait is a no-op when the
-		// waiter is non-recording, and gate-observable (targetless) when the target is
-		// genuinely invalid (a non-uniform cross-session trace).
+		// No attempt is in flight, so object-side lazy state is settled and
+		// safe to read. A nil object-side callback with no pending bookkeeping
+		// means nothing deferred remains anywhere; a nil callback with pending
+		// bookkeeping leads an attempt that retries only the bookkeeping.
+		currentLazyEval := lazyEvalFuncOfResult(res)
+		if currentLazyEval == nil && !shared.lazySyncPending {
+			shared.lazyEval = nil
+			shared.lazyEvalComplete = true
+			shared.lazyMu.Unlock()
+			return nil
+		}
+		shared.lazyEval = currentLazyEval
+
+		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
+		evalCtx := attemptCtx
+		lazyEval := shared.lazyEval
+		resultCall := shared.loadResultCall()
+		if resultCall != nil {
+			evalCtx = ContextWithCall(evalCtx, resultCall)
+		}
+		attempt := &lazyEvalAttempt{
+			done:    make(chan struct{}),
+			cancel:  cancel,
+			waiters: 1,
+		}
+		// profOpID and spanCtx start invalid on every fresh attempt record. Mint
+		// either target below, while lazyMu is still held, before publishing the
+		// attempt pointer. A retry whose telemetry source is disabled therefore
+		// cannot expose a stale target from a recording attempt.
 		//
-		// LOAD-BEARING: gate this on the PRODUCER's stored skip flag, never the
-		// joiner's own bit. Elsewhere the profile-skip decision is safe to read off the
-		// waiter because a call and its singleflight joiners share one recipe and so
-		// agree on it; a lazy forcer is a DIFFERENT recipe than the producer, so that
-		// agreement does NOT hold here. Gating on the producer's flag keeps a
-		// non-skipped forcer of a skipped-producer value from emitting an OTel wait
-		// into the (deliberately) absent producer span — which the structural gate
-		// would otherwise count as unresolved. Do NOT "simplify" this to the waiter's
-		// bit; that reopens a cross-recipe dangle. (Accepted coarsening, OTel
-		// side only: such a forcer loses its OTel wait edge, folding the blocked time
-		// into its own self-time. Rare — metadata is computed eagerly. Native keeps
-		// the full edge.)
-		if !producerSkip {
-			EmitOTelWait(stackCtx, lazyOpSpanCtx, wcprof.WaitReasonLazy, otelWaitStartNS, time.Now().UnixNano())
+		// producerSkip drives ONLY the OTel lazy span and OTel lazy waits. When
+		// the producer is a reflection/introspection recipe, the OTel source mints
+		// no lazy span and all waiters use the same producer-derived gate. Native
+		// profiling remains full detail and mints its operation unconditionally.
+		producerSkip := frameProfileSkip(resultCall)
+		var lazyOp *wcprof.Op
+		if wcprof.Enabled(evalCtx) {
+			// The run of this result's lazy callback; the class ties the cost back
+			// to the call that created the lazy value.
+			evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
+				ClientID: profClientID(stackCtx),
+			})
+			attempt.profOpID = lazyOp.ID()
+		}
+		// Mint the OTel lazy span under lazyMu before publishing the attempt, so
+		// every joiner sees this attempt's valid target or its deliberate invalid
+		// zero value. The callback goroutine adopts and ends the span.
+		var (
+			lazySpan        trace.Span
+			lazyCallbackCtx = evalCtx
+			lazyIsResume    bool
+		)
+		if OTelProfActive(evalCtx) && !producerSkip {
+			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, resultCall)
+			attempt.spanCtx = lazySpan.SpanContext()
+		}
+		shared.lazyEvalAttempt = attempt
+		shared.lazyMu.Unlock()
+
+		go func() {
+			// The lazy op span and re-pointed callback context were minted under
+			// lazyMu before this attempt was published. A span created on one
+			// goroutine and ended on another is safe.
+			callbackCtx := lazyCallbackCtx
+
+			var err error
+			// bodyDone means the callback body (if this attempt had one) has
+			// succeeded and consumed its object-side state; any later error in
+			// this attempt is cache-side bookkeeping, which stays retryable.
+			bodyDone := false
+			// End lazySpan before closing attempt.done so callers observe the span
+			// as ended and exported, and every joiner's target span is closed.
+			runEval := func() {
+				if lazySpan != nil {
+					defer func() {
+						endOTelLazyOp(lazySpan, lazyIsResume, shared.id, &err)
+					}()
+				}
+
+				leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+				if leaseErr != nil {
+					err = fmt.Errorf("acquire operation lease: %w", leaseErr)
+					return
+				}
+				callbackCtx = leaseCtx
+
+				if lazyEval != nil {
+					err = lazyEval(callbackCtx)
+				}
+				if err == nil {
+					bodyDone = true
+					err = c.syncResultSnapshotLeases(callbackCtx, shared)
+				}
+				if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+					err = releaseErr
+				}
+			}
+			runEval()
+			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
+
+			shared.lazyMu.Lock()
+			attempt.err = err
+			attempt.retry = lazyEvalErrorCausedByContext(attemptCtx, err)
+			attempt.cancel = nil
+			if err == nil {
+				shared.lazyEvalComplete = true
+				shared.lazyEval = nil
+				shared.lazySyncPending = false
+			} else if bodyDone {
+				shared.lazySyncPending = true
+			}
+			// Retire the shared pointer only after the callback has finished. Old
+			// waiters retain attempt, so they cannot read or decrement a retry's
+			// state; new callers may now safely lead a fresh callback. The pointer
+			// still names this attempt: publishing a successor requires it to be
+			// nil, and only this path clears it.
+			shared.lazyEvalAttempt = nil
+			shared.lazyMu.Unlock()
+
+			if c.testAfterLazyEvalFinish != nil {
+				c.testAfterLazyEvalFinish(attempt)
+			}
+			close(attempt.done)
+		}()
+
+		// Native profiling is full detail and emits the leader wait
+		// unconditionally. The OTel leader wait follows lazySpan != nil, which the
+		// producer's profile-skip gate above already controls.
+		profWait := wcprof.BeginWait(stackCtx, lazyOp.ID(), wcprof.WaitReasonLazy)
+		otelWaitStartNS := time.Now().UnixNano()
+		waitErr, retry := c.waitForLazyEvaluation(stackCtx, shared, attempt)
+		profWait.End()
+		if lazySpan != nil {
+			// The leader's wait on its own lazy op is redundant with nesting but is
+			// emitted for parity with native profiling and executor waits.
+			EmitOTelWait(stackCtx, lazySpan.SpanContext(), wcprof.WaitReasonLazy, otelWaitStartNS, time.Now().UnixNano())
+		}
+		if retry {
+			continue
 		}
 		return waitErr
 	}
-
-	waitCh := make(chan struct{})
-	evalCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
-	lazyEval := shared.lazyEval
-	resultCall := shared.loadResultCall()
-	if resultCall != nil {
-		evalCtx = ContextWithCall(evalCtx, resultCall)
-	}
-	// Reset both per-attempt joiner wait targets before this attempt mints (or
-	// doesn't) and publishes lazyEvalWaitCh below. A failed lazy eval is retryable
-	// (lazyEvalComplete is set only on success), and these fields are read by
-	// joiners whenever lazyEvalWaitCh is set. If a later retry leader does not
-	// re-mint — its wcprof/telemetry is off — a stale target left by a prior
-	// recording attempt must NOT leak to a joiner: it would silently mis-link the
-	// wait to the old op instead of being gate-observable as an unresolved target
-	// (the mixed-recording rule). Each is overwritten just below
-	// only when this attempt actually mints it. (lazyEvalProfOpID is native's
-	// analog and had the same not-reset hazard; reset together to keep the two
-	// sources aligned and both honest under non-uniform recording.)
-	shared.lazyEvalProfOpID = 0
-	shared.lazyEvalSpanCtx = trace.SpanContext{}
-	// producerSkip drives ONLY the OTel lazy span (and the OTel lazy waits) below:
-	// when the producer is a reflection/introspection recipe the OTel source mints no
-	// lazy span, so its eval span context stays the reset-invalid zero and every OTel
-	// lazy waiter (gated on the same flag) emits no wait — keeping the OTel mint and
-	// OTel waits consistent across a cross-recipe forcer. Native is full detail and
-	// mints its lazy op unconditionally.
-	producerSkip := frameProfileSkip(resultCall)
-	var lazyOp *wcprof.Op
-	if wcprof.Enabled(evalCtx) {
-		// the run of this result's lazy evaluation callback; the class ties
-		// the cost back to the call that created the lazy value
-		evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
-			ClientID: profClientID(stackCtx),
-		})
-		shared.lazyEvalProfOpID = lazyOp.ID()
-	}
-	// OTel `lazy` op: mint its span here — under lazyMu, before
-	// lazyEvalWaitCh is published below — so every joiner has a valid wait target
-	// (target-before-primitive). The goroutine adopts it to run + end the callback,
-	// and the stamping processor re-homes the re-pointed work spans to it causally
-	// without moving any span (UI unchanged). Gated on telemetry being active (not
-	// wcprof.Enabled) so the OTel source reconstructs from a Cloud trace alone.
-	var (
-		lazySpan        trace.Span
-		lazyCallbackCtx = evalCtx
-		lazyIsResume    bool
-	)
-	if OTelProfActive(evalCtx) && !producerSkip {
-		lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, resultCall)
-		shared.lazyEvalSpanCtx = lazySpan.SpanContext()
-	}
-	shared.lazyEvalWaitCh = waitCh
-	shared.lazyEvalCancel = cancel
-	shared.lazyEvalWaiters = 1
-	shared.lazyEvalErr = nil
-	shared.lazyMu.Unlock()
-
-	go func() {
-		// The lazy op span and the re-pointed callback context were minted under
-		// lazyMu above (beginOTelLazyOp, before lazyEvalWaitCh is published); adopt
-		// them here. A span created on one goroutine and ended on another is fine.
-		callbackCtx := lazyCallbackCtx
-
-		var err error
-		// End lazySpan before close(waitCh) so that callers awaiting evaluation
-		// observe the span as ended (and exported, via sync processors), and so a
-		// joiner's wait target span is closed. Deferring would fire only after
-		// close(waitCh) and race with the caller's flush/read of exported spans.
-		runEval := func() {
-			if lazySpan != nil {
-				defer func() {
-					endOTelLazyOp(lazySpan, lazyIsResume, shared.id, &err)
-				}()
-			}
-
-			leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
-			if leaseErr != nil {
-				err = fmt.Errorf("acquire operation lease: %w", leaseErr)
-				return
-			}
-			callbackCtx = leaseCtx
-
-			err = lazyEval(callbackCtx)
-			if err == nil {
-				err = c.syncResultSnapshotLeases(callbackCtx, shared)
-			}
-			if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
-				err = releaseErr
-			}
-		}
-		runEval()
-		lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
-
-		shared.lazyMu.Lock()
-		shared.lazyEvalErr = err
-		if err == nil {
-			shared.lazyEvalComplete = true
-			shared.lazyEval = nil
-		}
-		clearState := shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh
-		if clearState {
-			shared.lazyEvalWaitCh = nil
-			shared.lazyEvalCancel = nil
-			shared.lazyEvalErr = nil
-			// Clear the joiner wait targets alongside lazyEvalWaitCh (they are valid
-			// only while an attempt is in flight).
-			shared.lazyEvalProfOpID = 0
-			shared.lazyEvalSpanCtx = trace.SpanContext{}
-		}
-		shared.lazyMu.Unlock()
-
-		close(waitCh)
-	}()
-
-	// native: full detail, emits its leader wait unconditionally (lazyOp is minted
-	// whenever wcprof is enabled). The OTel leader wait below follows lazySpan != nil,
-	// which the OTel lazy span gate above already keyed on producerSkip.
-	profWait := wcprof.BeginWait(stackCtx, lazyOp.ID(), wcprof.WaitReasonLazy)
-	otelWaitStartNS := time.Now().UnixNano()
-	waitErr := c.waitForLazyEvaluation(stackCtx, shared, waitCh)
-	profWait.End()
-	if lazySpan != nil {
-		// The leader's OTel wait on its own lazy op: the lazy
-		// op nests under the leader, so the implicit join already serializes it and
-		// this edge is redundant-but-harmless — emitted for oracle parity with
-		// native's leader wait (just above) and matching the executor's own wait.
-		EmitOTelWait(stackCtx, lazySpan.SpanContext(), wcprof.WaitReasonLazy, otelWaitStartNS, time.Now().UnixNano())
-	}
-	return waitErr
 }
 
 func (c *Cache) Close(ctx context.Context) error {

@@ -75,10 +75,8 @@ Attached results carry cache-owned lazy state in `dagql.sharedResult`:
 
 - `lazyEval`
 - `lazyEvalComplete`
-- `lazyEvalWaitCh`
-- `lazyEvalCancel`
-- `lazyEvalWaiters`
-- `lazyEvalErr`
+- `lazyEvalAttempt`
+- `lazySyncPending`
 
 This state is guarded by `lazyMu`.
 
@@ -86,9 +84,13 @@ Conceptually:
 
 - `lazyEval` is the callback the cache should run
 - `lazyEvalComplete` means the attached result is fully materialized
-- `lazyEvalWaitCh` means evaluation is currently in flight
-- `lazyEvalWaiters` tracks how many callers are waiting on that in-flight evaluation
-- `lazyEvalCancel` lets the cache cancel the in-flight evaluation if the last waiter goes away
+- `lazyEvalAttempt` is the currently running callback attempt, including its completion channel, cancel function, waiter count, outcome, and telemetry wait targets
+- `lazySyncPending` means a previous attempt's callback body succeeded but the attempt's cache-side bookkeeping (snapshot-lease sync, lease release) did not; the next attempt retries only that bookkeeping
+
+Waiters retain the particular attempt record they joined. When its callback
+finishes, the cache stores the outcome on that record and removes it as the
+current attempt. Existing waiters can then consume the old outcome without
+reading or changing a newer attempt's state.
 
 ## How Lazy Callbacks Get Registered
 
@@ -110,10 +112,10 @@ For a single result, `Cache.evaluateOne` works roughly like this:
 1. Validate that the cache and result are non-nil.
 2. Require that the result is attached to a real `sharedResult`.
 3. Detect recursive lazy evaluation using a stack of `sharedResultID`s stored in context.
-4. Re-read the current `LazyEvalFunc` from the wrapped value.
-5. If the result is already fully materialized, return.
-6. If another goroutine is already evaluating this result, wait on its channel.
-7. Otherwise start the lazy callback in a background goroutine and wait for it.
+4. If the result is already fully materialized, return.
+5. If another goroutine is already evaluating this result, retain its attempt record and wait on its channel. This check comes before reading any object-side lazy state: callback bodies (Directory, File, Container) clear their object-side `Lazy` pointer while their attempt is still running cache-side bookkeeping, so object-side state is only trustworthy once no attempt is published.
+6. With no attempt in flight, re-read the current `LazyEvalFunc` from the wrapped value. If it is nil and no bookkeeping is pending, mark the result complete and return.
+7. Otherwise start an attempt in a background goroutine and wait for it: the callback body if one is armed, then the cache-side bookkeeping; or only the bookkeeping when `lazySyncPending` is set.
 
 Two details are especially important.
 
@@ -132,7 +134,9 @@ The actual callback runs under a context built from `context.WithoutCancel(stack
 That means one impatient caller does not immediately tear down the shared lazy callback for everyone else. Instead:
 
 - each waiter can independently cancel its own wait
-- if the last waiter goes away, the cache invokes the stored cancel func with that cause
+- if the last waiter goes away, the cache invokes that attempt's cancel func with the waiter's cause
+- the callback attempt remains current until the callback actually finishes, so a replacement callback never overlaps it
+- if a healthy waiter receives a cancellation caused by the shared callback context, it transparently retries instead of returning another waiter's cancellation
 
 This is a shared-work model, not a per-caller callback model.
 
@@ -184,12 +188,18 @@ After the lazy callback returns successfully, the cache:
 2. marks `lazyEvalComplete = true`
 3. clears the stored `lazyEval`
 
-If the callback fails, the cache does not mark the result complete. Future `Evaluate` calls can try again.
+If the callback genuinely fails, the cache does not mark the result complete.
+Every caller waiting on that attempt receives the failure, and a future
+`Evaluate` call can try again. If the callback instead returns cancellation
+caused by its shared callback context, a still-healthy waiter retries
+immediately. A waiter's own context cancellation still ends only that
+waiter's call with its own cancellation cause.
 
 So the rule is simple:
 
 - success permanently materializes the attached result
-- failure leaves it pending
+- genuine failure is returned and leaves the result pending
+- cancellation caused by abandoned shared work is retried for healthy callers
 
 ## The Second Layer: `core.Lazy[T]`
 
