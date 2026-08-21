@@ -612,17 +612,14 @@ func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []re
 	}
 
 	install := true
-	form := idtui.NewForm(
+	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Description("Space toggles · Enter continues").
 				Options(options...).
 				Value(&selected).
 				Filterable(false),
-			huh.NewConfirm().
-				Affirmative("Install selected").
-				Negative("Skip").
-				Value(&install).
+			idtui.NewExplicitConfirm("Install selected", "Skip", &install).
 				Inline(true),
 		),
 	)

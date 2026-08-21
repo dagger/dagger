@@ -1361,6 +1361,7 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 
 func frontendFormTheme() *huh.Theme {
 	theme := huh.ThemeBase16()
+	theme.Focused.Base = theme.Focused.Base.BorderLeft(false)
 	// A background is the structural focus marker for confirm buttons. Leaving
 	// the inactive button's theme background in place makes both choices look
 	// selected, especially in terminals where their colors are similar.
@@ -6765,15 +6766,14 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
-			NewForm(
+			huh.NewForm(
 				huh.NewGroup(
-					huh.NewConfirm().
+					NewExplicitConfirm("Yes", "No", dest).
 						Title(title).
 						Description(strings.TrimSpace((&Markdown{
 							Content: message,
 							Width:   fe.window.Width,
-						}).View())).
-						Value(dest),
+						}).View())),
 				),
 			),
 			func(f *huh.Form) { close(done) },

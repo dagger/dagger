@@ -23,6 +23,31 @@ func TestFrontendFormThemeOnlyHighlightsFocusedButton(t *testing.T) {
 	if _, ok := theme.Blurred.FocusedButton.GetBackground().(lipgloss.NoColor); !ok {
 		t.Fatal("button in an unfocused confirmation still has a background")
 	}
+	if theme.Focused.Base.GetBorderLeft() {
+		t.Fatal("focused form field still has a left border")
+	}
+}
+
+func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
+	selected := true
+	field := NewExplicitConfirm("Install selected", "Skip", &selected)
+	field.WithTheme(frontendFormTheme())
+	if got := field.View(); !strings.Contains(got, "▶ Install selected") || strings.Contains(got, "▶ Skip") {
+		t.Fatalf("affirmative selection is not explicit:\n%s", got)
+	}
+
+	selected = false
+	if got := field.View(); !strings.Contains(got, "▶ Skip") || strings.Contains(got, "▶ Install selected") {
+		t.Fatalf("negative selection is not explicit:\n%s", got)
+	}
+
+	var output bytes.Buffer
+	if err := field.RunAccessible(&output, strings.NewReader("n\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); !strings.Contains(got, "Install selected") || !strings.Contains(got, "Skip") {
+		t.Fatalf("accessible prompt does not name both actions:\n%s", got)
+	}
 }
 
 type commandViewFixture struct {
