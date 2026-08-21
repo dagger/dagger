@@ -117,6 +117,78 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	return nil
 }
 
+// One runs a single TLC configuration and returns the raw TLC output,
+// using the same pinned jar and invocation as the CacheLifecycle check.
+// Unlike the check, it applies no expectation: violations come back in
+// the output for the caller to read.
+//
+// With invariant set, the configuration's INVARIANTS line is replaced by
+// that single invariant, the specification is forced to the safety-only
+// Spec, and PROPERTY lines are dropped, so one question runs in
+// isolation. With define also set, the given TLA+ operator definition is
+// appended to the spec first; that runs a scratch probe invariant (for
+// example a reachability probe expected to violate) without editing the
+// repository.
+func (m *TlaCheck) One(
+	ctx context.Context,
+	// configuration name without the CacheLifecycle_ prefix, e.g. "lazy"
+	config string,
+	// +optional
+	// invariant to check instead of the configuration's INVARIANTS line
+	invariant string,
+	// +optional
+	// TLA+ operator definition to append to the spec, e.g. "ProbeX == ..."
+	define string,
+) (string, error) {
+	if define != "" && invariant == "" {
+		return "", fmt.Errorf("define requires invariant: name which invariant to check")
+	}
+	ctr := m.base()
+
+	if define != "" {
+		spec, err := m.Source.File("CacheLifecycle.tla").Contents(ctx)
+		if err != nil {
+			return "", fmt.Errorf("read spec: %w", err)
+		}
+		// The module body ends at the last ==== line; definitions must sit
+		// above it.
+		term := strings.LastIndex(spec, "\n====")
+		if term < 0 {
+			return "", fmt.Errorf("spec terminator not found")
+		}
+		spec = spec[:term] + "\n" + define + "\n" + spec[term:]
+		ctr = ctr.WithNewFile("/spec/CacheLifecycle.tla", spec)
+	}
+
+	cfgPath := fmt.Sprintf("CacheLifecycle_%s.cfg", config)
+	if invariant != "" {
+		cfg, err := m.Source.File(cfgPath).Contents(ctx)
+		if err != nil {
+			return "", fmt.Errorf("read config %s: %w", cfgPath, err)
+		}
+		lines := strings.Split(cfg, "\n")
+		kept := lines[:0]
+		for _, line := range lines {
+			switch {
+			case strings.HasPrefix(line, "SPECIFICATION"):
+				kept = append(kept, "SPECIFICATION Spec")
+			case strings.HasPrefix(line, "INVARIANTS"):
+				kept = append(kept, "INVARIANTS "+invariant)
+			case strings.HasPrefix(line, "PROPERTY"):
+				// dropped: a lone invariant is a safety question
+			default:
+				kept = append(kept, line)
+			}
+		}
+		ctr = ctr.WithNewFile("/spec/"+cfgPath, strings.Join(kept, "\n"))
+	}
+
+	cmd := fmt.Sprintf(
+		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s CacheLifecycle.tla 2>&1; true",
+		cfgPath)
+	return ctr.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
+}
+
 // runOne executes one TLC configuration and returns "" on the expected
 // outcome, or a human-readable failure line. TLC exits nonzero on
 // violations, so the exec swallows the exit code and the output is parsed

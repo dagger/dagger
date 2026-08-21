@@ -205,6 +205,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*TlaCheck).CacheLifecycle(&parent, ctx)
+		case "One":
+			var parent TlaCheck
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var config string
+			if inputArgs["config"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["config"]), &config)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg config", err))
+				}
+			}
+			var invariant string
+			if inputArgs["invariant"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["invariant"]), &invariant)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg invariant", err))
+				}
+			}
+			var define string
+			if inputArgs["define"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["define"]), &define)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg define", err))
+				}
+			}
+			return (*TlaCheck).One(&parent, ctx, config, invariant, define)
 		case "":
 			var parent TlaCheck
 			err = json.Unmarshal(parentJSON, &parent)
@@ -233,6 +261,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.").
 							WithSourceMap(dag.SourceMap("main.go", 84, 1)).
 							WithCheck()).
+					WithFunction(
+						dag.Function("One",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("One runs a single TLC configuration and returns the raw TLC output,\nusing the same pinned jar and invocation as the CacheLifecycle check.\nUnlike the check, it applies no expectation: violations come back in\nthe output for the caller to read.\n\nWith invariant set, the configuration's INVARIANTS line is replaced by\nthat single invariant, the specification is forced to the safety-only\nSpec, and PROPERTY lines are dropped, so one question runs in\nisolation. With define also set, the given TLA+ operator definition is\nappended to the spec first; that runs a scratch probe invariant (for\nexample a reachability probe expected to violate) without editing the\nrepository.").
+							WithSourceMap(dag.SourceMap("main.go", 132, 1)).
+							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 135, 2)}).
+							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 138, 2)}).
+							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 141, 2)})).
 					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The dagql/tla spec directory.", SourceMap: dag.SourceMap("main.go", 61, 2)}).
 					WithConstructor(
 						dag.Function("New",
