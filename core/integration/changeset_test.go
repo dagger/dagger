@@ -852,6 +852,51 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 	s.testWithChangesSymlinks(t)
 }
 
+// A changeset's before/after structural diff is metadata-sensitive: a file
+// rewritten with identical bytes but a fresh mtime shows up in it, even though
+// the changeset does not report it as changed. Every surface that projects a
+// changeset back into content has to narrow the diff to the reported paths, or
+// it writes over content the changeset never claimed. Regenerating a module
+// hits this every time, since codegen rewrites its whole context and only some
+// files actually change.
+func (ChangesetSuite) TestChangesetProjectsOnlyReportedPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	before := c.Directory().
+		WithNewFile("keep.txt", "same").
+		WithNewFile("nested/other.txt", "same too")
+	after := before.
+		WithTimestamps(1234567890).
+		WithNewFile("added.txt", "new")
+
+	changes := after.Changes(before)
+
+	added, err := changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"added.txt"}, added)
+	modified, err := changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, modified)
+	removed, err := changes.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, removed)
+
+	t.Run("withChanges", func(ctx context.Context, t *testctx.T) {
+		applied := c.Directory().
+			WithNewFile("keep.txt", "local edit").
+			WithChanges(changes)
+
+		entries, err := applied.Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Contains(t, entries, "added.txt")
+		require.NotContains(t, entries, "nested/other.txt")
+
+		keep, err := applied.File("keep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "local edit", keep)
+	})
+}
+
 // Regression test for a snapshot use-after-release: Directory.withChanges with
 // an empty changeset used to store the parent's snapshot ref instance on the
 // derived directory instead of opening its own handle. Once the derived cache

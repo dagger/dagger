@@ -1,0 +1,49 @@
+type Reporter {
+  """
+  Report the paths added by applying a changeset that also rewrites a file the
+  workspace already has, byte for byte.
+  """
+  pub rewrittenBaseline(ws: Workspace!): [String!]! {
+    let before = Dagger.directory.withNewFile("generated.txt", "generated")
+    let after = before
+      .withTimestamps(1234567890)
+      .withNewFile("added.txt", "added")
+    ws.withChanges(after.changes(before)).changes(ws).addedPaths
+  }
+
+  """
+  Report the paths changed by applying a changeset that edits a file the
+  workspace already has.
+  """
+  pub modifiedBaseline(ws: Workspace!): [String!]! {
+    let before = Dagger.directory.withNewFile("generated.txt", "generated")
+    let after = before
+      .withTimestamps(1234567890)
+      .withNewFile("generated.txt", "regenerated")
+    let changes = ws.withChanges(after.changes(before)).changes(ws)
+    changes.modifiedPaths + changes.addedPaths
+  }
+
+  """
+  Generate the module at mod/ and return the changes, for the CLI to apply.
+  """
+  pub apply(ws: Workspace!): Changeset! {
+    ws.moduleSource("mod").generate(ws).changes(ws)
+  }
+
+  """
+  The paths the module's own generated-context changeset reports.
+  """
+  pub reported(ws: Workspace!): [String!]! {
+    let gen = ws.moduleSource("mod").generatedContextChangeset
+    gen.addedPaths + gen.modifiedPaths
+  }
+
+  """
+  The paths the generate-then-compare idiom reports for the same generation.
+  """
+  pub roundTrip(ws: Workspace!): [String!]! {
+    let changes = ws.moduleSource("mod").generate(ws).changes(ws)
+    changes.addedPaths + changes.modifiedPaths
+  }
+}

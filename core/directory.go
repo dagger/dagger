@@ -3111,13 +3111,15 @@ func (dir *Directory) applyChangesToSnapshot(
 			return err
 		}
 
-		if diffSnapshot != nil {
+		only := changesetWrittenPaths(paths)
+		if diffSnapshot != nil && len(only) > 0 {
 			err = MountRef(ctx, diffSnapshot, func(srcRoot string, srcMnt *mount.Mount) error {
 				return copier.Copy(ctx,
 					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
 					diffPath,
 					targetDir,
 					layercopy.CopyOptions{
+						Filter:          layercopy.Filter{Only: only},
 						CopyDirContents: true,
 						ReplaceExisting: true,
 					},
@@ -3148,6 +3150,25 @@ func (dir *Directory) applyChangesToSnapshot(
 
 func changesetPathsEmpty(paths *ChangesetPaths) bool {
 	return paths == nil || (len(paths.Added) == 0 && len(paths.Modified) == 0 && len(paths.Removed) == 0)
+}
+
+// changesetWrittenPaths returns the paths a changeset writes when applied, for
+// use as a copy filter over its before/after structural diff. The diff is
+// metadata-sensitive, so it also carries paths whose content never changed —
+// a regenerated file rewritten with the same bytes but a fresh mtime, say —
+// while ComputePaths compares content and leaves them out. Copying the whole
+// diff would then apply edits the changeset does not report, overwriting the
+// target's own content at those paths and, for a Workspace overlay, inflating
+// the delta root beyond the touched paths its baseline is built from.
+func changesetWrittenPaths(paths *ChangesetPaths) map[string]struct{} {
+	only := make(map[string]struct{}, len(paths.Added)+len(paths.Modified))
+	for _, p := range paths.Added {
+		only[strings.TrimSuffix(p, "/")] = struct{}{}
+	}
+	for _, p := range paths.Modified {
+		only[p] = struct{}{}
+	}
+	return only
 }
 
 func removeChangesetPaths(root, targetDir string, removed []string) error {

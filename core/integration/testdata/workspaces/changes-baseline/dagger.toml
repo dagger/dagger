@@ -1,0 +1,2 @@
+[modules.reporter]
+source = ".dagger/modules/reporter"
