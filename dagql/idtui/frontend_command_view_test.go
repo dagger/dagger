@@ -7,9 +7,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
 )
+
+func TestFrontendFormThemeOnlyHighlightsFocusedButton(t *testing.T) {
+	theme := frontendFormTheme()
+	if _, ok := theme.Focused.FocusedButton.GetBackground().(lipgloss.NoColor); ok {
+		t.Fatal("focused button has no background")
+	}
+	if _, ok := theme.Focused.BlurredButton.GetBackground().(lipgloss.NoColor); !ok {
+		t.Fatal("inactive button still has a background")
+	}
+}
 
 type commandViewFixture struct {
 	tuist.Compo

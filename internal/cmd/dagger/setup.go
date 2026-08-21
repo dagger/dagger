@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
@@ -558,11 +557,11 @@ func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, 
 		return nil, false, nil
 	}
 
-	install, err = confirmInstallRecommended(ctx, cmd, recs, ui)
+	recs, err = selectRecommendedModules(ctx, cmd, recs, ui)
 	if err != nil {
 		return nil, false, err
 	}
-	if !install {
+	if len(recs) == 0 {
 		setupRecommendMessage(ui, messageCtx, "recommendations skipped", "Skipped.")
 		return nil, false, nil
 	}
@@ -592,44 +591,54 @@ func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommen
 	return nil
 }
 
-// confirmInstallRecommended asks whether to install the recommended modules.
-// It prompts through the Frontend (a huh confirm with the recommendation table
-// as its description) so it renders inside the live progress TUI — the same
-// mechanism the migrate step uses for its apply prompt. With --auto-apply it
-// returns true without prompting; in non-interactive mode it skips (the safe
-// default — don't mutate state without a TTY).
-func confirmInstallRecommended(ctx context.Context, cmd *cobra.Command, recs []recommendation, ui *setupUI) (bool, error) {
+// selectRecommendedModules lets the user choose recommendations individually.
+// Every recommendation starts selected, preserving the old affirmative path
+// while allowing irrelevant modules to be toggled off before installation.
+func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []recommendation, ui *setupUI) ([]recommendation, error) {
 	if autoApply {
-		return true, nil
+		return recs, nil
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
 		setupRecommendMessage(ui, ctx, "recommendations skipped", "Install recommended modules? Skipped in non-interactive mode; use `--auto-apply` to accept.")
-		return false, nil
+		return nil, nil
 	}
 
-	var table strings.Builder
-	w := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "ADDRESS\tDESCRIPTION\tMATCHED")
+	options := make([]huh.Option[string], 0, len(recs))
+	selected := make([]string, 0, len(recs))
 	for _, r := range recs {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Module.Repo, r.Module.Description, r.Match)
+		label := fmt.Sprintf("%s — matched %s", r.Module.Repo, r.Match)
+		options = append(options, huh.NewOption(label, r.Module.Repo).Selected(true))
+		selected = append(selected, r.Module.Repo)
 	}
-	_ = w.Flush()
 
-	var install bool
 	form := idtui.NewForm(
 		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Install recommended modules?").
-				Description(table.String()).
-				Affirmative("Install").
-				Negative("Skip").
-				Value(&install),
+			huh.NewMultiSelect[string]().
+				Title("Select recommended modules to install").
+				Description("Space toggles a module. Enter installs the selected modules.").
+				Options(options...).
+				Value(&selected).
+				Filterable(false),
 		),
 	)
 	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return false, err
+		return nil, err
 	}
-	return install, nil
+	return filterRecommendations(recs, selected), nil
+}
+
+func filterRecommendations(recs []recommendation, selected []string) []recommendation {
+	wanted := make(map[string]struct{}, len(selected))
+	for _, repo := range selected {
+		wanted[repo] = struct{}{}
+	}
+	filtered := make([]recommendation, 0, len(selected))
+	for _, rec := range recs {
+		if _, ok := wanted[rec.Module.Repo]; ok {
+			filtered = append(filtered, rec)
+		}
+	}
+	return filtered
 }
 
 // currentWorkspaceExportPath derives the local workspace root from its file

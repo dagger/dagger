@@ -40,3 +40,16 @@ func TestSetupStepLogin(t *testing.T) {
 func TestSetupShowsFinalProgress(t *testing.T) {
 	require.True(t, commandShowsFinalProgress(setupCmd))
 }
+
+func TestFilterRecommendations(t *testing.T) {
+	recs := []recommendation{
+		{Module: registryModule{Name: "eslint", Repo: "github.com/dagger/eslint"}},
+		{Module: registryModule{Name: "go", Repo: "github.com/dagger/go"}},
+		{Module: registryModule{Name: "vitest", Repo: "github.com/dagger/vitest"}},
+	}
+	got := filterRecommendations(recs, []string{
+		"github.com/dagger/vitest",
+		"github.com/dagger/eslint",
+	})
+	require.Equal(t, []recommendation{recs[0], recs[2]}, got)
+}

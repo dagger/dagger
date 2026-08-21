@@ -1326,7 +1326,7 @@ func (*blankLine) Render(ctx tuist.Context) {
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
-	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	fe.formModel = form.WithTheme(frontendFormTheme()).WithShowHelp(false)
 	// Cap the form at half the screen so a tall field (e.g. the .resume session
 	// picker's long Select) stays scrollable instead of dominating — or
 	// overflowing — the terminal. huh propagates this to its Selects, which then
@@ -1357,6 +1357,16 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.formWrap)
 	return wrap
+}
+
+func frontendFormTheme() *huh.Theme {
+	theme := huh.ThemeBase16()
+	// A background is the structural focus marker for confirm buttons. Leaving
+	// the inactive button's theme background in place makes both choices look
+	// selected, especially in terminals where their colors are similar.
+	theme.Focused.BlurredButton = theme.Focused.BlurredButton.UnsetBackground().Bold(false)
+	theme.Blurred.BlurredButton = theme.Blurred.BlurredButton.UnsetBackground().Bold(false)
+	return theme
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
