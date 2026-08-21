@@ -552,10 +552,9 @@ func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Contex
 //
 // removeDaggerSession does NOT remove the session from srv.daggerSessions; it
 // leaves it in place as a "removed" tombstone so observers see the removed state
-// and a concurrent same-id getOrInitClient bails out instead of resurrecting the
-// session while its cache is still being released. The caller must call
-// deleteSession (after releasing lifecycleMu) to drop the tombstone once
-// teardown is complete.
+// and a concurrent same-ID getOrInitClient fails instead of using the session
+// while its cache is being released. The caller must call retireSession after
+// releasing lifecycleMu.
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
 	slog := slog.With("session", sess.sessionID)
 
@@ -566,7 +565,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// snapshot pointer, and any concurrent same-id getOrInitClient, observe it
 	// immediately and skip/bail instead of using a tearing-down session. The
 	// session is intentionally left in srv.daggerSessions as a tombstone until
-	// the caller drops it via deleteSession after lifecycleMu is released.
+	// the caller retires it after lifecycleMu is released.
 	sess.state.Store(sessionStateRemoved)
 	sess.beginClosing()
 
@@ -696,16 +695,50 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	return errs
 }
 
-// deleteSession drops a session from the registry, but only if the map entry is
-// still this exact session pointer. Pointer-conditional deletion ensures a slow
-// teardown can't delete a freshly created same-id session. Call only after the
-// session's teardown is complete and lifecycleMu has been released.
+// deleteSession drops a session from the registry only when the map entry is
+// still this exact session pointer. It is used for failed initialization, which
+// does not make the session ID single-use.
 func (srv *Server) deleteSession(sess *daggerSession) {
 	srv.daggerSessionsMu.Lock()
 	if srv.daggerSessions[sess.sessionID] == sess {
 		delete(srv.daggerSessions, sess.sessionID)
 	}
 	srv.daggerSessionsMu.Unlock()
+}
+
+// retireSession records a successfully initialized session ID as released and
+// atomically removes that session's registry tombstone. Call only after teardown
+// is complete and lifecycleMu has been released.
+func (srv *Server) retireSession(sess *daggerSession) {
+	srv.daggerSessionsMu.Lock()
+	if srv.daggerSessions[sess.sessionID] == sess {
+		if srv.releasedSessionIDs == nil {
+			srv.releasedSessionIDs = make(map[string]struct{})
+		}
+		srv.releasedSessionIDs[sess.sessionID] = struct{}{}
+		delete(srv.daggerSessions, sess.sessionID)
+	}
+	srv.daggerSessionsMu.Unlock()
+}
+
+// getOrCreateSessionLocked returns the registry session for sessionID. A newly
+// created session is published with lifecycleMu held so its caller is the sole
+// initializer. The caller must hold daggerSessionsMu.
+func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*daggerSession, bool, error) {
+	if sess := srv.daggerSessions[sessionID]; sess != nil {
+		return sess, false, nil
+	}
+	if _, released := srv.releasedSessionIDs[sessionID]; released {
+		return nil, false, fmt.Errorf("session %q was already used and released; session IDs cannot be reused within one engine lifetime", sessionID)
+	}
+	sess := &daggerSession{
+		sessionID:          sessionID,
+		mainClientCallerID: clientID,
+		clients:            map[string]*daggerClient{},
+	}
+	sess.lifecycleMu.Lock()
+	srv.daggerSessions[sessionID] = sess
+	return sess, true, nil
 }
 
 // stampSessionComplete declares the EXACT engine span total for the session's trace
@@ -1130,34 +1163,21 @@ func (srv *Server) getOrInitClient(
 		srv.daggerSessionsMu.Unlock()
 		return nil, nil, errServerShuttingDown
 	}
-	sess, sessionExists := srv.daggerSessions[sessionID]
-	createdSession := false
-	if !sessionExists {
-		// Construct with immutable identity and a non-nil clients map, and lock
-		// the new session's lifecycleMu BEFORE publishing it, so this goroutine
-		// is guaranteed to be the session's initializer: any concurrent caller
-		// that finds the published-but-uninitialized session blocks on
-		// lifecycleMu until initialization completes (or sees the removed
-		// tombstone if init fails). The session is still unreachable here, so this
-		// acquisition never contends and can't invert the lock order even though
-		// we currently hold daggerSessionsMu (the one "unpublished object"
-		// exception to "lifecycleMu and daggerSessionsMu are never nested").
-		sess = &daggerSession{
-			sessionID:          sessionID,
-			mainClientCallerID: clientID,
-			clients:            map[string]*daggerClient{},
-		}
-		sess.lifecycleMu.Lock()
-		createdSession = true
-		srv.daggerSessions[sessionID] = sess
+	// A newly constructed session is still unreachable when lifecycleMu is
+	// acquired, so this is the one unpublished-object exception to the rule that
+	// lifecycleMu and daggerSessionsMu are not nested.
+	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
+	if err != nil {
+		srv.daggerSessionsMu.Unlock()
+		return nil, nil, err
 	}
 	srv.daggerSessionsMu.Unlock()
 
 	if !createdSession {
 		// Fast, lock-free check: if the session is already a removed tombstone,
 		// bail immediately rather than blocking on lifecycleMu for the (possibly
-		// ~60s) teardown. A same-id reconnect then retries and gets a fresh
-		// session once the tombstone is dropped.
+		// ~60s) teardown. Once teardown finishes, future attempts with this ID
+		// receive a permanent error from the released-session registry.
 		if sess.state.Load() == sessionStateRemoved {
 			return nil, nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q removed", sessionID)}
 		}
@@ -1366,7 +1386,7 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 	// The teardown decision itself is (re-)made inside reapDaggerSession under
 	// lifecycleMu, so a concurrent getOrInitClient (which bumps activeCount
 	// under lifecycleMu) either lands before the reap and aborts it, or
-	// observes the removed tombstone and retries against a fresh session.
+	// observes the removed tombstone and returns a retryable teardown error.
 	go srv.reapDaggerSession(context.WithoutCancel(ctx), sess, client)
 	return nil
 }
@@ -1398,10 +1418,9 @@ func (srv *Server) reapDaggerSession(ctx context.Context, sess *daggerSession, m
 
 	err := srv.removeDaggerSession(ctx, sess)
 	sess.lifecycleMu.Unlock()
-	// Drop the tombstone now that teardown is complete and lifecycleMu is
-	// released (pointer-conditional, so a fresh same-id session is never
-	// deleted).
-	srv.deleteSession(sess)
+	// Retire the ID and drop the registry tombstone in one operation now that
+	// teardown is complete and lifecycleMu is released.
+	srv.retireSession(sess)
 	if err != nil {
 		slog.Error("session teardown failed",
 			"sessionID", sess.sessionID,
