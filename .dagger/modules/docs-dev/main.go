@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"dagger/docs/internal/dagger"
+	"dagger/docs/internal/releaseversion"
 
 	"github.com/netlify/open-api/v2/go/models"
 )
@@ -48,22 +49,37 @@ func (d DocsDev) Site() *dagger.Directory {
 }
 
 // Freeze a released version's docs as a versioned snapshot. The docs are pulled
-// from the version's git tag -- not the in-development docs on the current
+// from the release ref -- not the in-development docs on the current
 // branch -- so the snapshot reflects what actually shipped. Runs docusaurus
 // docs:version and returns a Changeset that adds
 // versioned_docs/version-<version>/ (plus its sidebar) and prepends the version
 // to docs/versions.json, for review before applying.
 func (d DocsDev) SnapshotRelease(
-	// Release version to snapshot, e.g. v1.0.0-beta.10. A leading "v" is dropped
-	// so the snapshot name matches docs/versions.json (bare semver).
-	version string,
+	ctx context.Context,
+	// Git ref for the release to snapshot, e.g.
+	// https://github.com/dagger/dagger#v1.0.0-beta.10.
+	release *dagger.GitRef,
 ) (*dagger.Changeset, error) {
-	version = strings.TrimPrefix(version, "v")
-	// The released docs, straight from the tag.
-	tagDocs := dag.Git("https://github.com/dagger/dagger").
-		Tag("v" + version).
-		Tree().
-		Directory("docs")
+	ref, err := release.Ref(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get release ref name: %w", err)
+	}
+	version, err := releaseversion.Parse(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	versionDir := "docs/versioned_docs/version-" + version
+	exists, err := d.Source.Exists(ctx, versionDir)
+	if err != nil {
+		return nil, fmt.Errorf("check for existing docs snapshot: %w", err)
+	}
+	if exists {
+		return d.Source.Changes(d.Source), nil
+	}
+
+	// The released docs, straight from the supplied ref.
+	releaseDocs := release.Tree().Directory("docs")
 	// Run docs:version against the current docs tree, but with current_docs and
 	// its sidebar swapped for the release's, so the snapshot captures the
 	// release rather than whatever is in development on this branch.
@@ -73,8 +89,8 @@ func (d DocsDev) SnapshotRelease(
 	}
 	built := dag.Docusaurus(
 		d.Source.
-			WithDirectory("docs/current_docs", tagDocs.Directory("current_docs")).
-			WithFile("docs/sidebars.ts", tagDocs.File("sidebars.ts")),
+			WithDirectory("docs/current_docs", releaseDocs.Directory("current_docs")).
+			WithFile("docs/sidebars.ts", releaseDocs.File("sidebars.ts")),
 		opts,
 	).
 		Base().
@@ -82,7 +98,6 @@ func (d DocsDev) SnapshotRelease(
 		Directory("/src")
 	// Keep only the new snapshot artifacts; don't leak the swapped current_docs
 	// or sidebar into the changeset.
-	versionDir := "docs/versioned_docs/version-" + version
 	sidebar := "docs/versioned_sidebars/version-" + version + "-sidebars.json"
 	return d.Source.
 		WithDirectory(versionDir, built.Directory(versionDir)).
