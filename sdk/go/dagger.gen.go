@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -22,6 +24,35 @@ func Tracer() trace.Tracer {
 
 // reassigned at runtime after the span is initialized
 var marshalCtx = context.Background()
+
+// marshalMu serializes swaps of the package-level marshaling state
+// (marshalCtx) performed by MarshalJSON.
+var marshalMu sync.Mutex
+
+// IDClient is the minimal client surface needed to reconstruct Dagger
+// objects from their IDs. *Client implements it.
+type IDClient interface {
+	// QueryBuilder returns the root query builder, bound to the client's
+	// underlying GraphQL client.
+	QueryBuilder() *querybuilder.Selection
+	// GraphQLClient returns the underlying graphql.Client.
+	GraphQLClient() graphql.Client
+}
+
+// MarshalJSON serializes v to JSON, resolving any Dagger objects it contains
+// to their IDs using the given ctx.
+//
+// Prefer this over calling json.Marshal directly on values containing Dagger
+// objects: their MarshalJSON implementations must query the API to resolve
+// IDs, and this function makes the context used for those queries explicit.
+func MarshalJSON(ctx context.Context, v any) ([]byte, error) {
+	marshalMu.Lock()
+	defer marshalMu.Unlock()
+	prevCtx := marshalCtx
+	marshalCtx = ctx
+	defer func() { marshalCtx = prevCtx }()
+	return json.Marshal(v)
+}
 
 // assertNotNil panic if the given value is nil.
 // This function is used to validate that input with pointer type are not nil.
@@ -216,6 +247,14 @@ func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
 	return &Address{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Address) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Load a container from the address.
@@ -432,6 +471,14 @@ func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Agent) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The description of the agent
 func (r *Agent) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -535,6 +582,14 @@ func (r *AgentGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentGroup {
 	return &AgentGroup{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *AgentGroup) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // AgentGroupComposeOpts contains options for AgentGroup.Compose
@@ -652,6 +707,14 @@ func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *CacheVolume) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this CacheVolume.
 func (r *CacheVolume) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -722,6 +785,14 @@ func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
 	return &Changeset{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Changeset) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Files and directories that were added in the newer directory.
@@ -1008,6 +1079,14 @@ func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Check) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
 func (r *Check) CheckType(ctx context.Context) (string, error) {
 	if r.checkType != nil {
@@ -1199,6 +1278,14 @@ func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *CheckGroup) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this CheckGroup.
 func (r *CheckGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -1323,6 +1410,14 @@ func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *Clie
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ClientFilesyncMirror) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this ClientFilesyncMirror.
 func (r *ClientFilesyncMirror) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -1383,6 +1478,14 @@ func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 	return &Cloud{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Cloud) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // A unique identifier for this Cloud.
@@ -1481,6 +1584,14 @@ func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
 	return &Container{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Container) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // ContainerAsServiceOpts contains options for Container.AsService
@@ -3681,6 +3792,14 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *CurrentModule) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
 //
 // Errors if the current module is not installed as an SDK in this workspace.
@@ -3887,6 +4006,14 @@ func (r *CurrentModuleAsSDK) WithGraphQLQuery(q *querybuilder.Selection) *Curren
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *CurrentModuleAsSDK) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The generated clients this SDK produces in the workspace.
 func (r *CurrentModuleAsSDK) Clients(ctx context.Context) ([]CurrentModuleAsSDKClient, error) {
 	q := r.query.Select("clients")
@@ -4030,6 +4157,14 @@ func (r *CurrentModuleAsSDKClient) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *CurrentModuleAsSDKClient) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this CurrentModuleAsSDKClient.
 func (r *CurrentModuleAsSDKClient) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -4140,6 +4275,14 @@ func (r *CurrentModuleAsSDKModule) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *CurrentModuleAsSDKModule) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this CurrentModuleAsSDKModule.
 func (r *CurrentModuleAsSDKModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -4216,6 +4359,14 @@ func (r *DiffStat) WithGraphQLQuery(q *querybuilder.Selection) *DiffStat {
 	return &DiffStat{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *DiffStat) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Number of added lines for this path.
@@ -4356,6 +4507,14 @@ func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Directory) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Converts this directory to a local git repository
@@ -5272,6 +5431,14 @@ func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Engine) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The list of connected client IDs
 func (r *Engine) Clients(ctx context.Context) ([]string, error) {
 	q := r.query.Select("clients")
@@ -5368,6 +5535,14 @@ func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
 	return &EngineCache{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EngineCache) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // EngineCacheEntrySetOpts contains options for EngineCache.EntrySet
@@ -5568,6 +5743,14 @@ func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCa
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EngineCacheEntry) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // Whether the cache entry is actively being used.
 func (r *EngineCacheEntry) ActivelyUsed(ctx context.Context) (bool, error) {
 	if r.activelyUsed != nil {
@@ -5732,6 +5915,14 @@ func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *Engin
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EngineCacheEntrySet) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The total disk space used by the cache entries in this set.
 func (r *EngineCacheEntrySet) DiskSpaceBytes(ctx context.Context) (int, error) {
 	if r.diskSpaceBytes != nil {
@@ -5853,6 +6044,14 @@ func (r *EnumTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumTypeDef {
 	return &EnumTypeDef{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EnumTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // A doc string for the enum, if any.
@@ -6044,6 +6243,14 @@ func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValu
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EnumValueTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The reason this enum member is deprecated, if any.
 func (r *EnumValueTypeDef) Deprecated(ctx context.Context) (string, error) {
 	if r.deprecated != nil {
@@ -6182,6 +6389,14 @@ func (r *EnvFile) WithGraphQLQuery(q *querybuilder.Selection) *EnvFile {
 	return &EnvFile{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EnvFile) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Return as a file
@@ -6372,6 +6587,14 @@ func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *EnvVariable) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this EnvVariable.
 func (r *EnvVariable) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -6465,6 +6688,14 @@ func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Error) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // A unique identifier for this Error.
@@ -6586,6 +6817,14 @@ func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ErrorValue) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this ErrorValue.
 func (r *ErrorValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -6676,6 +6915,14 @@ func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef
 	return &FieldTypeDef{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *FieldTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // The reason this enum member is deprecated, if any.
@@ -6816,6 +7063,14 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	return &File{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *File) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // FileAsEnvFileOpts contains options for File.AsEnvFile
@@ -7247,6 +7502,14 @@ func (r *Function) WithGraphQLQuery(q *querybuilder.Selection) *Function {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Function) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // Arguments accepted by the function, if any.
 func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	q := r.query.Select("args")
@@ -7587,6 +7850,14 @@ func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *FunctionArg) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
 func (r *FunctionArg) DefaultAddress(ctx context.Context) (string, error) {
 	if r.defaultAddress != nil {
@@ -7767,6 +8038,14 @@ func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *FunctionCall) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this FunctionCall.
 func (r *FunctionCall) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -7925,6 +8204,14 @@ func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *Func
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *FunctionCallArgValue) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this FunctionCallArgValue.
 func (r *FunctionCallArgValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -8018,6 +8305,14 @@ func (r *GeneratedCode) WithGraphQLQuery(q *querybuilder.Selection) *GeneratedCo
 	return &GeneratedCode{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *GeneratedCode) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // The directory containing the generated code.
@@ -8139,6 +8434,14 @@ func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	return &Generator{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Generator) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // The generated changeset from the last run
@@ -8297,6 +8600,14 @@ func (r *GeneratorGroup) WithGraphQLQuery(q *querybuilder.Selection) *GeneratorG
 	return &GeneratorGroup{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *GeneratorGroup) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // GeneratorGroupChangesOpts contains options for GeneratorGroup.Changes
@@ -8463,6 +8774,14 @@ func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
 	return &GitCommit{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *GitCommit) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // GitCommitAncestorReleaseTagOpts contains options for GitCommit.AncestorReleaseTag
@@ -8784,6 +9103,14 @@ func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *GitRef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // GitRefAsWorkspaceOpts contains options for GitRef.AsWorkspace
 type GitRefAsWorkspaceOpts struct {
 	// Current working directory inside the workspace root. Defaults to the workspace root.
@@ -9039,6 +9366,14 @@ func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitReposito
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *GitRepository) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // GitRepositoryAsWorkspaceOpts contains options for GitRepository.AsWorkspace
 type GitRepositoryAsWorkspaceOpts struct {
 	// Current working directory inside the workspace root. Defaults to the workspace root.
@@ -9247,6 +9582,14 @@ func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *HTTPState) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this HTTPState.
 func (r *HTTPState) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -9312,6 +9655,14 @@ func (r *HealthcheckConfig) WithGraphQLQuery(q *querybuilder.Selection) *Healthc
 	return &HealthcheckConfig{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *HealthcheckConfig) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Healthcheck command arguments.
@@ -9462,6 +9813,14 @@ func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
 	return &Host{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Host) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Accesses a container image on the host.
@@ -9697,6 +10056,14 @@ func (r *InputTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InputTypeDef
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *InputTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // Static fields defined on this input object, if any.
 func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q := r.query.Select("fields")
@@ -9805,6 +10172,14 @@ func (r *InterfaceTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *Interfac
 	return &InterfaceTypeDef{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *InterfaceTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // The doc string for the interface, if any.
@@ -9966,6 +10341,14 @@ func (r *JSONValue) WithGraphQLQuery(q *querybuilder.Selection) *JSONValue {
 	return &JSONValue{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *JSONValue) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Decode an array from json
@@ -10224,6 +10607,14 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	return &LLM{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *LLM) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
@@ -10804,6 +11195,14 @@ func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMConten
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *LLMContentBlock) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
 func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
 	if r.arguments != nil {
@@ -10957,6 +11356,14 @@ func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *LLMMessage) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The message's content blocks, in the order the model produced them.
 func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
 	q := r.query.Select("content")
@@ -11075,6 +11482,14 @@ func (r *LLMSkill) WithGraphQLQuery(q *querybuilder.Selection) *LLMSkill {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *LLMSkill) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The one-line description from the SKILL.md frontmatter.
 func (r *LLMSkill) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -11165,6 +11580,14 @@ func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsa
 	return &LLMTokenUsage{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *LLMTokenUsage) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Input tokens served from the provider's prompt cache.
@@ -11295,6 +11718,14 @@ func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Label) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this Label.
 func (r *Label) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -11382,6 +11813,14 @@ func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ListTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The type of the elements in the list.
 func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	q := r.query.Select("elementTypeDef")
@@ -11462,6 +11901,14 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	return &Module{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Module) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Return the check defined by the module with the given name. Must match to exactly one check.
@@ -11960,6 +12407,14 @@ func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *Module
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ModuleConfigClient) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The directory the client is generated in.
 func (r *ModuleConfigClient) Directory(ctx context.Context) (string, error) {
 	if r.directory != nil {
@@ -12072,6 +12527,14 @@ func (r *ModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSource
 	return &ModuleSource{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ModuleSource) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
@@ -12841,6 +13304,14 @@ func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeD
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ObjectTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The function used to construct new instances of this object, if any.
 func (r *ObjectTypeDef) Constructor(ctx context.Context) (*Function, error) {
 	q := r.query.Select("constructor")
@@ -13058,6 +13529,14 @@ func (r *Port) WithGraphQLQuery(q *querybuilder.Selection) *Port {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Port) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The port description.
 func (r *Port) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -13171,6 +13650,14 @@ func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
 	return &Query{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Query) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // initialize an address to load directories, containers, secrets or other object types.
@@ -13887,6 +14374,14 @@ func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGit
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *RemoteGitMirror) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this RemoteGitMirror.
 func (r *RemoteGitMirror) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -13948,6 +14443,14 @@ func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
 	return &SDKConfig{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *SDKConfig) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Whether to start the SDK runtime in debug mode with an interactive terminal.
@@ -14038,6 +14541,14 @@ func (r *ScalarTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ScalarTypeD
 	return &ScalarTypeDef{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ScalarTypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // A doc string for the scalar, if any.
@@ -14149,6 +14660,14 @@ func (r *Schema) WithGraphQLQuery(q *querybuilder.Selection) *Schema {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Schema) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // Serialize the schema back to introspection JSON.
 func (r *Schema) Contents(ctx context.Context) (JSON, error) {
 	if r.contents != nil {
@@ -14235,6 +14754,14 @@ func (r *SearchResult) WithGraphQLQuery(q *querybuilder.Selection) *SearchResult
 	return &SearchResult{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *SearchResult) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // The byte offset of this line within the file.
@@ -14385,6 +14912,14 @@ func (r *SearchSubmatch) WithGraphQLQuery(q *querybuilder.Selection) *SearchSubm
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *SearchSubmatch) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The match's end offset within the matched lines.
 func (r *SearchSubmatch) End(ctx context.Context) (int, error) {
 	if r.end != nil {
@@ -14486,6 +15021,14 @@ func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 	return &Secret{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Secret) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // A unique identifier for this Secret.
@@ -14600,6 +15143,14 @@ func (r *Service) WithGraphQLQuery(q *querybuilder.Selection) *Service {
 	return &Service{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Service) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // ServiceEndpointOpts contains options for Service.Endpoint
@@ -14864,6 +15415,14 @@ func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Socket) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this Socket.
 func (r *Socket) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -14928,6 +15487,14 @@ func (r *SourceMap) WithGraphQLQuery(q *querybuilder.Selection) *SourceMap {
 	return &SourceMap{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *SourceMap) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // The column number within the line.
@@ -15060,6 +15627,14 @@ func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Stat) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // file type
 func (r *Stat) FileType(ctx context.Context) (FileType, error) {
 	if r.fileType != nil {
@@ -15174,6 +15749,14 @@ func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Terminal) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this Terminal.
 func (r *Terminal) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -15267,6 +15850,14 @@ func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	return &TypeDef{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *TypeDef) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
@@ -15758,6 +16349,14 @@ func (r *Up) WithGraphQLQuery(q *querybuilder.Selection) *Up {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Up) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The description of the service
 func (r *Up) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -15880,6 +16479,14 @@ func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *UpGroup) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this UpGroup.
 func (r *UpGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -15983,6 +16590,14 @@ func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Volume) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // A unique identifier for this Volume.
 func (r *Volume) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -16056,6 +16671,14 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *Workspace) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
@@ -17124,6 +17747,14 @@ func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *WorkspaceGit) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The checked-out HEAD of this workspace.
 func (r *WorkspaceGit) Head() *GitRef {
 	q := r.query.Select("head")
@@ -17201,6 +17832,14 @@ func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *Worksp
 	return &WorkspaceMigration{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *WorkspaceMigration) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Filesystem changes for the full migration plan.
@@ -17306,6 +17945,14 @@ func (r *WorkspaceMigrationStep) WithGraphQLQuery(q *querybuilder.Selection) *Wo
 	return &WorkspaceMigrationStep{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *WorkspaceMigrationStep) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Filesystem changes for this step.
@@ -17415,6 +18062,14 @@ func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *Workspace
 	return &WorkspaceModule{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *WorkspaceModule) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Whether the module is the workspace entrypoint (functions aliased to Query root).
@@ -17554,6 +18209,14 @@ func (r *WorkspaceModuleSetting) WithGraphQLQuery(q *querybuilder.Selection) *Wo
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *WorkspaceModuleSetting) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 // The constructor argument description.
 func (r *WorkspaceModuleSetting) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -17667,6 +18330,14 @@ func (r *WorkspaceSDK) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceSDK
 	return &WorkspaceSDK{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *WorkspaceSDK) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 // Clients generated with this SDK.
@@ -17838,6 +18509,14 @@ func (r *ExportableClient) WithGraphQLQuery(q *querybuilder.Selection) *Exportab
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *ExportableClient) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 func (r *ExportableClient) Export(ctx context.Context, path string) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
@@ -17937,6 +18616,14 @@ func (r *NodeClient) WithGraphQLQuery(q *querybuilder.Selection) *NodeClient {
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *NodeClient) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 func (r *NodeClient) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -18002,6 +18689,14 @@ func (r *SyncerClient) WithGraphQLQuery(q *querybuilder.Selection) *SyncerClient
 	return &SyncerClient{
 		query: q,
 	}
+}
+
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *SyncerClient) GraphQLQuery() *querybuilder.Selection {
+	return r.query
 }
 
 func (r *SyncerClient) ID(ctx context.Context) (ID, error) {

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -34,11 +35,65 @@ func Tracer() trace.Tracer {
 // reassigned at runtime after the span is initialized
 var marshalCtx = context.Background()
 
+// marshalMu serializes swaps of the package-level marshaling state
+// (marshalCtx{{ if IsModuleCode }} and dag{{ end }}) performed by MarshalJSON{{ if IsModuleCode }} and UnmarshalJSON{{ end }}.
+var marshalMu sync.Mutex
+
 {{ if IsModuleCode }}
 // SetMarshalContext is a hack that lets us set the ctx to use for
 // MarshalJSON implementations that get an object's ID.
+//
+// Deprecated: use MarshalJSON, which scopes the context to a single
+// marshaling operation instead of mutating package-level state.
 func SetMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
+}
+{{ end }}
+
+// IDClient is the minimal client surface needed to reconstruct Dagger
+// objects from their IDs. *Client implements it.
+type IDClient interface {
+	// QueryBuilder returns the root query builder, bound to the client's
+	// underlying GraphQL client.
+	QueryBuilder() *querybuilder.Selection
+	// GraphQLClient returns the underlying graphql.Client.
+	GraphQLClient() graphql.Client
+}
+
+// MarshalJSON serializes v to JSON, resolving any Dagger objects it contains
+// to their IDs using the given ctx.
+//
+// Prefer this over calling json.Marshal directly on values containing Dagger
+// objects: their MarshalJSON implementations must query the API to resolve
+// IDs, and this function makes the context used for those queries explicit.
+func MarshalJSON(ctx context.Context, v any) ([]byte, error) {
+	marshalMu.Lock()
+	defer marshalMu.Unlock()
+	prevCtx := marshalCtx
+	marshalCtx = ctx
+	defer func() { marshalCtx = prevCtx }()
+	return json.Marshal(v)
+}
+
+{{ if IsModuleCode }}
+// UnmarshalJSON deserializes JSON data into v, reconstructing any Dagger
+// objects it contains from their IDs using the given client.
+//
+// Prefer this over calling json.Unmarshal directly on data containing Dagger
+// object IDs: their UnmarshalJSON implementations need a client to
+// reconstruct objects, and this function makes that client explicit.
+func UnmarshalJSON(c IDClient, data []byte, v any) error {
+	marshalMu.Lock()
+	defer marshalMu.Unlock()
+	prevDag := dag
+	dag = &Client{
+		Query: &Query{
+			query: c.QueryBuilder(),
+		},
+		client: c.GraphQLClient(),
+	}
+	defer func() { dag = prevDag }()
+	return json.Unmarshal(data, v)
 }
 {{ end }}
 
