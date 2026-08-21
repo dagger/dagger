@@ -1045,7 +1045,6 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	svc.clientScopeLease = nil
 	svc.refsMu.Unlock()
 
-	clientScopeLease.Release()
 	var errs error
 	for _, ref := range refs {
 		errs = stderrors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
@@ -1053,6 +1052,10 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	if snapshotManager != nil && leaseID != "" {
 		errs = stderrors.Join(errs, snapshotManager.RemoveLease(context.WithoutCancel(ctx), leaseID))
 	}
+	// Keep executable ownership through resource cleanup: releasing the service
+	// lease is the terminal transition and may immediately reclaim a closed
+	// client runtime.
+	clientScopeLease.Release()
 	return errs
 }
 

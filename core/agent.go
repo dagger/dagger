@@ -567,9 +567,9 @@ type AgentRuntime struct {
 	// agent — the Agent! argument injection.
 	// self and last are intentionally retained DagQL results, not
 	// self-contained snapshots. Their shared payloads may retain object classes,
-	// module values, and schema state, so every addressable tombstone keeps its
-	// durable scopeLease until relaunch replaces it or session teardown releases
-	// it.
+	// module values, and schema state, so every addressable tombstone swaps its
+	// executable agent lease for an explicit durable agent-tombstone lease until
+	// relaunch replaces it or session teardown releases it.
 	self dagql.ObjectResult[*Agent]
 
 	mu sync.Mutex
@@ -587,7 +587,7 @@ type AgentRuntime struct {
 	last          dagql.ObjectResult[*LLM]     // last committed conversation (initially the seed)
 	cancel        context.CancelCauseFunc      // kills the loop context (set on start)
 	stepCancel    context.CancelCauseFunc      // cancels the in-flight step's context (set while stepping)
-	scopeLease    *engine.ClientLifecycleLease // launching scope; retained by tombstones until relaunch/teardown
+	scopeLease    *engine.ClientLifecycleLease // live agent or durable tombstone scope
 
 	// Mailbox, guarded by mu. mailbox is the FIFO of pending (not yet
 	// consumed) message IDs; messages holds every record ever enqueued —
@@ -1031,8 +1031,8 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 // them into one entry by construction.
 func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr string) error {
 	// A restored snapshot is not yet demonstrably independent of its DagQL
-	// runtime, so retain a visible durable agent lease even without a loop.
-	scopeCtx, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgent, rt.key)
+	// runtime, so retain a visible durable tombstone lease even without a loop.
+	scopeCtx, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgentTombstone, rt.key)
 	if err != nil {
 		return fmt.Errorf("retain rehydrated agent scope: %w", err)
 	}
@@ -1153,6 +1153,18 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 
 	var loopErr error
 	defer func() {
+		// A live session converts executable loop ownership into a durable typed
+		// lease before publishing the tombstone. The retained DagQL results are not
+		// self-contained yet, so zero leases must remain impossible while they are
+		// addressable. During authoritative session teardown cloning is rejected;
+		// in that ordering the existing agent lease stays held until KillAll drops it.
+		var tombstoneLease *engine.ClientLifecycleLease
+		if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+			if tombstoneScope, err := scope.Clone(engine.ClientLeaseAgentTombstone, rt.key); err == nil {
+				tombstoneLease = tombstoneScope.Lease()
+			}
+		}
+
 		// Make a final failure part of the permanent conversation before waking
 		// message awaiters. This gives the focused-agent TUI a durable error line
 		// to render instead of racing the await's transient prompt error.
@@ -1160,6 +1172,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		tombstoneSpanCtx := agentTombstoneTelemetryContext(ctx)
 
 		rt.mu.Lock()
+		previousLease := rt.scopeLease
 		rt.transitionLocked(func() {
 			// Settle the mailbox in the same transition that makes the
 			// tombstone observable, so no awaiter sees a terminal state
@@ -1194,10 +1207,19 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			rt.done = true
 			rt.loopErr = loopErr
 		})
+		replacedLease := tombstoneLease != nil && rt.scopeLease == previousLease
+		if replacedLease {
+			rt.scopeLease = tombstoneLease
+		}
 		// The final transition publishes through the live resolver context; once
 		// the tombstone facts are committed, retain only telemetry attribution.
 		rt.spanCtx = tombstoneSpanCtx
 		rt.mu.Unlock()
+		if replacedLease {
+			previousLease.Release()
+		} else {
+			tombstoneLease.Release()
+		}
 		if loopErr != nil {
 			span.SetStatus(codes.Error, loopErr.Error())
 		}
