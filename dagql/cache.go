@@ -774,6 +774,13 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	}
 
 	c.sessionMu.Lock()
+	// A detached writer arriving after release must not recreate the session
+	// maps ReleaseSession deleted: session IDs are single-use, so nothing
+	// would ever delete the recreated entry again.
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		c.sessionMu.Unlock()
+		return
+	}
 	if c.sessionLazySpansBySession == nil {
 		c.sessionLazySpansBySession = make(map[string]map[sharedResultID]trace.SpanContext)
 	}
@@ -848,6 +855,11 @@ type sessionResultInstallSpan struct {
 func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
+	// Same released-session refusal as the lazy-span writer: never recreate
+	// a single-use session's telemetry maps after release deleted them.
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return
+	}
 	if c.sessionResultInstallSpans == nil {
 		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]sessionResultInstallSpan)
 	}
