@@ -614,8 +614,7 @@ func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []re
 	form := idtui.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Select recommended modules to install").
-				Description("Space toggles a module. Enter installs the selected modules.").
+				Description("Space toggles · Enter installs").
 				Options(options...).
 				Value(&selected).
 				Filterable(false),
