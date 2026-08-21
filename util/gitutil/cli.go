@@ -36,6 +36,9 @@ type GitCLI struct {
 	ignoreError bool
 	config      map[string]string
 
+	snapshotBackedRepo bool
+	stallTimeouts      bool
+
 	indexFile string
 }
 
@@ -172,6 +175,31 @@ func WithStreams(streams StreamFunc) Option {
 	}
 }
 
+// WithSnapshotBackedRepo marks the repository as living on a snapshot-backed
+// mount, where a file's ctime, inode and device can all change without its
+// content changing because snapshots share content via hardlinks. Left alone,
+// git treats those files as changed underneath it -- that is what
+// "fatal: shallow file has changed since we read it" reports about .git/shallow.
+// mtime + size is all that can be trusted there. See gitEphemeralConfig in
+// core/changeset.go, which disables the same stat fields for the same reason.
+func WithSnapshotBackedRepo() Option {
+	return func(b *GitCLI) {
+		b.snapshotBackedRepo = true
+	}
+}
+
+// WithStallTimeouts makes a connection that stops making progress fail instead
+// of hanging forever. Git has no network deadline of its own: an HTTP transfer
+// that stalls, or an SSH connection to a host that stops answering, blocks until
+// the caller's context is cancelled -- and callers that hold a lock for the
+// duration block everyone else behind them too. Failing gives the caller
+// something it can classify and retry.
+func WithStallTimeouts() Option {
+	return func(b *GitCLI) {
+		b.stallTimeouts = true
+	}
+}
+
 // WithIndexFile sets the GIT_INDEX_FILE environment variable for the git commands.
 func WithIndexFile(indexFile string) Option {
 	return func(b *GitCLI) {
@@ -233,6 +261,29 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 
 	// Block sneaky repositories from using repos from the filesystem as submodules.
 	cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")
+	// Auto-maintenance detaches by default, so it outlives the command that
+	// spawned it: it escapes whatever lock the caller held, and for engine-managed
+	// repos it can still be rewriting refs (including .git/shallow, which the next
+	// fetch stat-checks) after the snapshot it lives in has been unmounted. Running
+	// it synchronously is enough to close that; disabling it outright would leave
+	// the long-lived shared mirrors accumulating a pack per fetch forever.
+	cmd.Args = append(cmd.Args,
+		"-c", "gc.autoDetach=false",
+		"-c", "maintenance.autoDetach=false",
+	)
+	if cli.snapshotBackedRepo {
+		cmd.Args = append(cmd.Args,
+			"-c", "core.checkStat=minimal",
+			"-c", "core.trustctime=false",
+		)
+	}
+	if cli.stallTimeouts {
+		// Give up on a transfer that has moved less than 1KB/s for a minute.
+		cmd.Args = append(cmd.Args,
+			"-c", "http.lowSpeedLimit=1000",
+			"-c", "http.lowSpeedTime=60",
+		)
+	}
 	if cli.workTree != "" {
 		cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
 	}
@@ -267,7 +318,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	cmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"GIT_TERMINAL_PROMPT=0",
-		"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.sshKnownHosts),
+		"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.sshKnownHosts, cli.stallTimeouts),
 		//	"GIT_TRACE=1",
 		"GIT_ASKPASS=echo",      // Ensure git does not ask for a password (avoids cryptic error message)
 		"GIT_CONFIG_NOSYSTEM=1", // Disable reading from system gitconfig.
@@ -312,17 +363,22 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 			}
 		default:
 		}
-		return buf.Bytes(), fmt.Errorf("git error: %w", translateError(err, errbuf.String()))
+		return buf.Bytes(), fmt.Errorf("git error: %w", annotateWithStderr(translateError(err, errbuf.String()), errbuf.String()))
 	}
 	return buf.Bytes(), nil
 }
 
-func getGitSSHCommand(knownHosts string) string {
+func getGitSSHCommand(knownHosts string, stallTimeouts bool) string {
 	gitSSHCommand := "ssh -F /dev/null"
 	if knownHosts != "" {
 		gitSSHCommand += " -o UserKnownHostsFile=" + knownHosts
 	} else {
 		gitSSHCommand += " -o StrictHostKeyChecking=no"
+	}
+	if stallTimeouts {
+		// ssh waits on the TCP stack by default, which never gives up on a host
+		// that accepted the connection and then went silent.
+		gitSSHCommand += " -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
 	}
 	return gitSSHCommand
 }

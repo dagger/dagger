@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
 )
 
@@ -2208,4 +2210,123 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	)
 	require.NoError(t, err)
 	return res
+}
+
+func TestTelemetryFlushTargets(t *testing.T) {
+	// main -> up (a nested CLI) -> runtime (the module runtime it loaded) ->
+	// exec, plus an unrelated sibling of up with a child of its own. parents
+	// holds the whole ancestor chain, root-first, as newDaggerClient builds it.
+	main := &daggerClient{clientID: "main"}
+	up := &daggerClient{clientID: "up", parents: []*daggerClient{main}}
+	runtime := &daggerClient{clientID: "runtime", parents: []*daggerClient{main, up}}
+	exec := &daggerClient{clientID: "exec", parents: []*daggerClient{main, up, runtime}}
+	sibling := &daggerClient{clientID: "sibling", parents: []*daggerClient{main}}
+	siblingChild := &daggerClient{clientID: "siblingChild", parents: []*daggerClient{main, sibling}}
+
+	sess := &daggerSession{
+		sessionID:          "sess",
+		mainClientCallerID: "main",
+		clients: map[string]*daggerClient{
+			"main": main, "up": up, "runtime": runtime, "exec": exec,
+			"sibling": sibling, "siblingChild": siblingChild,
+		},
+	}
+
+	ids := func(clients []*daggerClient) []string {
+		out := make([]string, 0, len(clients))
+		for _, c := range clients {
+			out = append(out, c.clientID)
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	whole := []string{"exec", "main", "runtime", "sibling", "siblingChild", "up"}
+	require.Equal(t, whole, ids(sess.telemetryFlushTargets(nil)))
+
+	// Rooting at the main client covers the same set: every other client
+	// descends from it.
+	require.Equal(t, whole, ids(sess.telemetryFlushTargets(main)))
+
+	// A nested client must sweep every descendant whose records its own
+	// telemetry store is still waiting on, however deep -- but not a sibling's
+	// subtree, which exports into the sibling's store and main's, not into up's.
+	require.Equal(t, []string{"exec", "runtime", "up"}, ids(sess.telemetryFlushTargets(up)))
+	require.Equal(t, []string{"exec", "runtime"}, ids(sess.telemetryFlushTargets(runtime)))
+	require.Equal(t, []string{"sibling", "siblingChild"}, ids(sess.telemetryFlushTargets(sibling)))
+
+	// A leaf only has itself.
+	require.Equal(t, []string{"exec"}, ids(sess.telemetryFlushTargets(exec)))
+}
+
+// recordingSpanExporter stands in for a client's telemetry store.
+type recordingSpanExporter struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (e *recordingSpanExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, span := range spans {
+		e.names = append(e.names, span.Name())
+	}
+	return nil
+}
+
+func (e *recordingSpanExporter) Shutdown(context.Context) error { return nil }
+
+func (e *recordingSpanExporter) exported() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := slices.Clone(e.names)
+	slices.Sort(out)
+	return out
+}
+
+func TestFlushTelemetrySubtreeDeliversDescendantRecords(t *testing.T) {
+	ctx := t.Context()
+
+	// A descendant's records reach an ancestor's store through the descendant's
+	// own provider, so only flushing that provider delivers them. Batch timeout
+	// long enough that nothing is exported unless a ForceFlush drives it.
+	batchTo := sdktrace.WithBatchTimeout(time.Hour)
+	upStore := &recordingSpanExporter{}
+	siblingStore := &recordingSpanExporter{}
+
+	main := &daggerClient{clientID: "main"}
+	up := &daggerClient{clientID: "up", parents: []*daggerClient{main}}
+	runtime := &daggerClient{clientID: "runtime", parents: []*daggerClient{main, up}}
+	sibling := &daggerClient{clientID: "sibling", parents: []*daggerClient{main}}
+
+	runtime.tracerProvider = sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(sdktrace.NewBatchSpanProcessor(upStore, batchTo)),
+	)
+	sibling.tracerProvider = sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(sdktrace.NewBatchSpanProcessor(siblingStore, batchTo)),
+	)
+	t.Cleanup(func() {
+		require.NoError(t, runtime.tracerProvider.Shutdown(context.WithoutCancel(ctx)))
+		require.NoError(t, sibling.tracerProvider.Shutdown(context.WithoutCancel(ctx)))
+	})
+
+	sess := &daggerSession{
+		sessionID:          "sess",
+		mainClientCallerID: "main",
+		clients: map[string]*daggerClient{
+			"main": main, "up": up, "runtime": runtime, "sibling": sibling,
+		},
+	}
+
+	_, span := runtime.tracerProvider.Tracer("test").Start(ctx, "runtime-work")
+	span.End()
+	_, siblingSpan := sibling.tracerProvider.Tracer("test").Start(ctx, "sibling-work")
+	siblingSpan.End()
+
+	require.Empty(t, upStore.exported(), "queued, not yet exported")
+
+	require.NoError(t, sess.flushTelemetry(ctx, "test", up))
+
+	require.Equal(t, []string{"runtime-work"}, upStore.exported())
+	require.Empty(t, siblingStore.exported(), "a sibling's provider must not be flushed")
 }
