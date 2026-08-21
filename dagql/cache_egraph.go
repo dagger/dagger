@@ -1058,10 +1058,11 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	// Digest derivation above is outside egraphMu. Release can collect the
-	// result and an empty e-graph reset can reuse its numeric ID in that gap.
-	if c.resultsByID[shared.id] != shared {
-		return fmt.Errorf("teach call equivalence: result %d was already collected or replaced", shared.id)
+	// Digest derivation above is outside egraphMu, so release can collect
+	// the result in that gap. Numeric result IDs are engine-lifetime unique,
+	// so registration under the ID means it is still this exact result.
+	if _, found := c.resultsByID[shared.id]; !found {
+		return fmt.Errorf("teach call equivalence: result %d was already collected", shared.id)
 	}
 	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
 }
@@ -1124,11 +1125,11 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		}
 
 		c.egraphMu.Lock()
-		// Keep the caller's pointer stable across retries. Rebinding by numeric
-		// ID could silently select a newer result after an empty-cache reset.
-		if c.resultsByID[shared.id] != shared {
+		// Numeric result IDs are engine-lifetime unique, so a registered ID
+		// still names the caller's result across retries.
+		if _, found := c.resultsByID[shared.id]; !found {
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %d was already collected or replaced", shared.id)
+			return fmt.Errorf("teach content digest: result %d was already collected", shared.id)
 		}
 		if shared.loadResultCall() == nil {
 			c.egraphMu.Unlock()

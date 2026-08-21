@@ -2619,17 +2619,15 @@ func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 
-	// A collected result's numeric ID can be reused after an empty e-graph
-	// reset. Match the exact pointers supplied by the caller before mutating.
-	parentRes := c.resultsByID[parentShared.id]
-	if parentRes != parentShared {
-		return fmt.Errorf("add explicit dependency: parent result %d was already collected or replaced", parentShared.id)
+	// Numeric result IDs are engine-lifetime unique, so registration under
+	// the ID means release has not collected the result in the meantime.
+	if _, found := c.resultsByID[parentShared.id]; !found {
+		return fmt.Errorf("add explicit dependency: parent result %d was already collected", parentShared.id)
 	}
-	depRes := c.resultsByID[depShared.id]
-	if depRes != depShared {
-		return fmt.Errorf("add explicit dependency: dep result %d was already collected or replaced", depShared.id)
+	if _, found := c.resultsByID[depShared.id]; !found {
+		return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
 	}
-	return c.addExplicitDependencyLocked(ctx, parentRes, depRes, reason)
+	return c.addExplicitDependencyLocked(ctx, parentShared, depShared, reason)
 }
 
 func (c *Cache) addExplicitDependencyLocked(
@@ -3107,13 +3105,13 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		cache.egraphMu.Lock()
 		defer cache.egraphMu.Unlock()
 
-		// The numeric ID can name a newer result after collection and reset.
-		cached := cache.resultsByID[r.shared.id]
-		if cached != r.shared {
-			return r, fmt.Errorf("set session resource handle on %T: result %d was already collected or replaced", r.Self(), r.shared.id)
+		// Numeric result IDs are engine-lifetime unique, so a registered ID
+		// still names this exact result.
+		if _, found := cache.resultsByID[r.shared.id]; !found {
+			return r, fmt.Errorf("set session resource handle on %T: result %d was already collected", r.Self(), r.shared.id)
 		}
-		cached.sessionResourceHandle = handle
-		if err := cache.recomputeRequiredSessionResourcesLocked(cached); err != nil {
+		r.shared.sessionResourceHandle = handle
+		if err := cache.recomputeRequiredSessionResourcesLocked(r.shared); err != nil {
 			return r, err
 		}
 		return r, nil
