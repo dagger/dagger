@@ -739,6 +739,13 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	if shared.lazyEvalComplete {
 		return false
 	}
+	// Attempt and pending-bookkeeping checks come before object-side state:
+	// a callback body clears its object-side pointer while its attempt is
+	// still running cache-side bookkeeping, so object-side state is only
+	// trustworthy when no attempt is in flight.
+	if shared.lazyEvalAttempt != nil || shared.lazySyncPending {
+		return true
+	}
 	if shared.lazyEval != nil {
 		return true
 	}
@@ -1651,6 +1658,12 @@ type sharedResult struct {
 	lazyEval         LazyEvalFunc
 	lazyEvalComplete bool
 	lazyEvalAttempt  *lazyEvalAttempt
+	// lazySyncPending records that a callback body already consumed its
+	// object-side lazy state but the attempt's cache-side bookkeeping
+	// (snapshot-lease sync, lease release) has not yet succeeded. The next
+	// attempt then retries only that bookkeeping instead of treating the nil
+	// object-side callback as completed evaluation.
+	lazySyncPending bool
 }
 
 type resultAttachmentState uint8
@@ -3135,33 +3148,17 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	})
 
 	for {
-		// Fast path: if evaluation is already complete or there is nothing to do,
-		// skip preflight entirely. A retry returns here after another attempt
-		// completed successfully despite cancellation.
 		shared.lazyMu.Lock()
-		if shared.lazyEvalComplete || lazyEvalFuncOfResult(res) == nil {
-			shared.lazyMu.Unlock()
-			return nil
-		}
-		shared.lazyMu.Unlock()
-
-		shared.lazyMu.Lock()
-		currentLazyEval := lazyEvalFuncOfResult(res)
-		if currentLazyEval == nil {
-			shared.lazyEval = nil
-			shared.lazyEvalComplete = true
-			shared.lazyMu.Unlock()
-			return nil
-		}
 		if shared.lazyEvalComplete {
 			shared.lazyMu.Unlock()
 			return nil
 		}
-		shared.lazyEval = currentLazyEval
-		if shared.lazyEval == nil {
-			shared.lazyMu.Unlock()
-			return nil
-		}
+		// Consult the published attempt before any object-side lazy state.
+		// Callback bodies clear their object-side callback pointer while the
+		// attempt is still running its cache-side bookkeeping, so object-side
+		// state is only trustworthy once no attempt is in flight: retirement
+		// happens under lazyMu after the callback returns, ordering the body's
+		// writes before a reader that observes no attempt.
 		if attempt := shared.lazyEvalAttempt; attempt != nil {
 			lazyOpID := attempt.profOpID
 			// The leader initializes this attempt's OTel wait target under
@@ -3204,6 +3201,19 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 			return waitErr
 		}
+
+		// No attempt is in flight, so object-side lazy state is settled and
+		// safe to read. A nil object-side callback with no pending bookkeeping
+		// means nothing deferred remains anywhere; a nil callback with pending
+		// bookkeeping leads an attempt that retries only the bookkeeping.
+		currentLazyEval := lazyEvalFuncOfResult(res)
+		if currentLazyEval == nil && !shared.lazySyncPending {
+			shared.lazyEval = nil
+			shared.lazyEvalComplete = true
+			shared.lazyMu.Unlock()
+			return nil
+		}
+		shared.lazyEval = currentLazyEval
 
 		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
 		evalCtx := attemptCtx
@@ -3258,6 +3268,10 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			callbackCtx := lazyCallbackCtx
 
 			var err error
+			// bodyDone means the callback body (if this attempt had one) has
+			// succeeded and consumed its object-side state; any later error in
+			// this attempt is cache-side bookkeeping, which stays retryable.
+			bodyDone := false
 			// End lazySpan before closing attempt.done so callers observe the span
 			// as ended and exported, and every joiner's target span is closed.
 			runEval := func() {
@@ -3274,8 +3288,11 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 				}
 				callbackCtx = leaseCtx
 
-				err = lazyEval(callbackCtx)
+				if lazyEval != nil {
+					err = lazyEval(callbackCtx)
+				}
 				if err == nil {
+					bodyDone = true
 					err = c.syncResultSnapshotLeases(callbackCtx, shared)
 				}
 				if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
@@ -3292,6 +3309,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			if err == nil {
 				shared.lazyEvalComplete = true
 				shared.lazyEval = nil
+				shared.lazySyncPending = false
+			} else if bodyDone {
+				shared.lazySyncPending = true
 			}
 			// Retire the shared pointer only after the callback has finished. Old
 			// waiters retain attempt, so they cannot read or decrement a retry's

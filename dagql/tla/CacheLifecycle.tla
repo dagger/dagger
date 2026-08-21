@@ -322,6 +322,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      laundered |-> launderedFlag,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
+     lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
      lazyWaiters |-> 0, lazyRunning |-> 0]
 
 \* A collected result's ID is never reused, so after a restart the slots of
@@ -335,6 +336,7 @@ DeadHusk ==
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      laundered |-> FALSE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
+     lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
      lazyWaiters |-> 0, lazyRunning |-> 0]
 
 \* The candidate import rows for position pos: any call, persisted or not,
@@ -772,6 +774,8 @@ PubIndexFresh(o) ==
                        lazyCb |-> lazyCb,        \* lazyEval callback stored?
                        lazyComplete |-> FALSE,   \* lazyEvalComplete
                        lazyPhase |-> "idle",     \* published attempt lifecycle
+                       lazyCancel |-> FALSE,     \* attempt cancel requested
+                       lazySyncPending |-> FALSE, \* lazySyncPending
                        lazyWaiters |-> 0,        \* current attempt's waiters
                        lazyRunning |-> 0]        \* callbacks actually running
         IN /\ res' = Append(withDeps, newRes)
@@ -1439,12 +1443,22 @@ Restart ==
 (* when a result is collected while its callback runs belongs with the     *)
 (* release-during-in-flight investigations, not here.                      *)
 (*                                                                         *)
-(* Model phases of one attempt (res[r].lazyPhase):                         *)
-(*   "idle"            no attempt is published                            *)
-(*   "running"         callback running, waiters waiting                   *)
-(*   "cancelRequested" every waiter abandoned; the last one invoked the    *)
-(*                     cancel; the callback has not finished yet. A new    *)
-(*                     waiter may still join this published attempt.       *)
+(* One attempt has two stages, and evaluateOne consults them before any    *)
+(* object-side lazy state: callback bodies (Directory/File/Container)      *)
+(* clear their object-side callback pointer while the attempt is still     *)
+(* running its cache-side bookkeeping (snapshot-lease sync, lease          *)
+(* release), so object-side state is only trustworthy when no attempt is   *)
+(* published. Model phases of one attempt (res[r].lazyPhase):              *)
+(*   "idle"     no attempt is published                                    *)
+(*   "running"  the callback body is running (lazyCb still armed)          *)
+(*   "syncing"  the body succeeded and consumed the object-side callback   *)
+(*              (lazyCb now "none"); the same goroutine is running the     *)
+(*              cache-side bookkeeping                                     *)
+(* res[r].lazyCancel means every waiter abandoned and the last one         *)
+(* invoked the attempt's cancel; the attempt keeps running and remains     *)
+(* joinable. res[r].lazySyncPending means a previous attempt's body        *)
+(* succeeded but its bookkeeping did not: the next attempt starts in       *)
+(* "syncing" with no body, retrying only the bookkeeping.                  *)
 (*                                                                         *)
 (* Evaluator latched phases mean callback finish stored an attempt-local   *)
 (* outcome and retired the attempt, but that attempt's done-channel close  *)
@@ -1472,29 +1486,42 @@ EvalSpawn ==
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* Fast path: evaluation already completed, or the value carries no callback.
+\* Fast path under lazyMu: evaluation already completed, or nothing
+\* deferred remains anywhere - no published attempt, no object-side
+\* callback, no pending bookkeeping. Go latches lazyEvalComplete on that
+\* second shape. Requiring the attempt and bookkeeping checks is the fix
+\* for the bypass bug: trusting the consumed object-side callback while
+\* its attempt was still running bookkeeping reported success early.
 EvalNoWork(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
-       res[r].lazyComplete \/ res[r].lazyCb = "none"
+       /\ \/ res[r].lazyComplete
+          \/ /\ res[r].lazyPhase = "idle"
+             /\ res[r].lazyCb = "none"
+             /\ ~res[r].lazySyncPending
+       /\ res' = [res EXCEPT ![r].lazyComplete = TRUE]
     /\ evals' = [evals EXCEPT ![e].phase = "done",
                               ![e].foreignCancel = FALSE]
-    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* Start the callback: no attempt is published, so this caller becomes the
+\* Start an attempt: no attempt is published, so this caller becomes the
 \* leader. One lazyMu critical section publishes a fresh attempt record whose
 \* wait targets, done channel, cancel function, and waiter count are already
-\* initialized.
+\* initialized. An armed callback leads a full attempt ("running"); a nil
+\* object-side callback with pending bookkeeping leads a bookkeeping-only
+\* attempt that starts directly in "syncing".
 EvalStartAttempt(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
-       /\ res[r].lazyCb = "armed"
        /\ ~res[r].lazyComplete
        /\ res[r].lazyPhase = "idle"
+       /\ res[r].lazyCb = "armed" \/ res[r].lazySyncPending
        /\ res' = [res EXCEPT
-            ![r].lazyPhase = "running",
+            ![r].lazyPhase = IF res[r].lazyCb = "armed"
+                             THEN "running" ELSE "syncing",
+            ![r].lazyCancel = FALSE,
             ![r].lazyWaiters = @ + 1,
             ![r].lazyRunning = @ + 1]
        /\ evals' = [evals EXCEPT ![e].phase = "waiting",
@@ -1503,15 +1530,15 @@ EvalStartAttempt(e) ==
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* Join a published attempt. cancelRequested remains joinable because
-\* callback cancellation is cooperative; the joiner retains this attempt
-\* record and retries if its outcome is foreign cancellation.
+\* Join a published attempt in either stage, canceled or not: Go's join
+\* checks only that an attempt is published, and cancellation is
+\* cooperative. The joiner retains this attempt record and retries if its
+\* outcome is foreign cancellation.
 EvalJoin(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
-       /\ res[r].lazyCb = "armed"
        /\ ~res[r].lazyComplete
-       /\ res[r].lazyPhase \in {"running", "cancelRequested"}
+       /\ res[r].lazyPhase \in {"running", "syncing"}
        /\ res' = [res EXCEPT ![r].lazyWaiters = @ + 1]
        /\ evals' = [evals EXCEPT ![e].phase = "waiting",
                                  ![e].foreignCancel = FALSE]
@@ -1519,49 +1546,66 @@ EvalJoin(e) ==
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* The callback finishes under lazyMu: latch the outcome on the attempt,
-\* retire the result's current-attempt pointer, and make the result idle.
-\* Success also marks permanent completion and clears the callback. Waiters
-\* move to an attempt-local latched phase; they no longer contribute to the
-\* result's current-attempt waiter count.
-EvalCallbackFinish(r) ==
+\* The callback body finishes while the attempt keeps running. Success
+\* consumes the object-side callback (Directory, File, and Container clear
+\* their Lazy pointer inside the body) and the same goroutine proceeds to
+\* the cache-side bookkeeping stage. Failure ends the whole attempt: the
+\* outcome is latched on the retained waiters and the attempt is retired,
+\* with the body left armed for a later attempt. The retry decision is
+\* per-error (lazyEvalErrorCausedByContext), not per-stage: a failure
+\* attributable to the attempt's canceled callback context latches as
+\* foreign cancellation, which healthy waiters retry, while a genuine body
+\* failure (LazyCanFail) propagates even when cancellation was requested.
+EvalBodyFinish(r) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase = "running"
     /\ res[r].lazyRunning > 0
-    /\ \E ok \in IF LazyCanFail THEN {TRUE, FALSE} ELSE {TRUE} :
-        /\ res' = [res EXCEPT
-             ![r].lazyRunning = @ - 1,
-             ![r].lazyComplete = @ \/ ok,
-             ![r].lazyCb = IF ok THEN "none" ELSE @,
-             ![r].lazyPhase = "idle",
-             ![r].lazyWaiters = 0]
-        /\ evals' = LatchEvalOutcomes(r,
-             IF ok THEN "latchedDone" ELSE "latchedFail")
+    /\ \E outcome \in ({"bodyOk"}
+            \cup (IF LazyCanFail THEN {"bodyFail"} ELSE {})
+            \cup (IF res[r].lazyCancel THEN {"bodyCancel"} ELSE {})) :
+        IF outcome = "bodyOk"
+        THEN /\ res' = [res EXCEPT ![r].lazyCb = "none",
+                                   ![r].lazyPhase = "syncing"]
+             /\ UNCHANGED evals
+        ELSE /\ res' = [res EXCEPT
+                  ![r].lazyRunning = @ - 1,
+                  ![r].lazyPhase = "idle",
+                  ![r].lazyCancel = FALSE,
+                  ![r].lazyWaiters = 0]
+             /\ evals' = LatchEvalOutcomes(r,
+                  IF outcome = "bodyFail"
+                  THEN "latchedFail" ELSE "latchedCancel")
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
-\* A canceled callback may still succeed after ignoring cancellation. The
-\* retry decision in Go is per-error (lazyEvalErrorCausedByContext), not
-\* per-phase: a failure attributable to the attempt's canceled callback
-\* context is latched as foreign cancellation, which healthy waiters
-\* retry, while a genuine failure of the callback's own work (LazyCanFail)
-\* still propagates to every waiter even though cancellation was
-\* requested.
-EvalCallbackFinishCanceled(r) ==
+\* The cache-side bookkeeping finishes and the attempt is retired under
+\* lazyMu. Success marks evaluation complete. Any failure here records
+\* lazySyncPending: the body's object-side state is already consumed, so
+\* only the bookkeeping remains retryable and the next attempt starts in
+\* "syncing" with no body. LazyCanFail doubles as the fault switch for
+\* bookkeeping failure (in Go it is environment failure, such as the
+\* snapshot manager, rather than the callback's own work); a
+\* cancellation-shaped bookkeeping failure latches as foreign cancellation
+\* exactly like a canceled body.
+EvalSyncFinish(r) ==
     /\ r \in ResultIds
-    /\ res[r].lazyPhase = "cancelRequested"
+    /\ res[r].lazyPhase = "syncing"
     /\ res[r].lazyRunning > 0
-    /\ \E outcome \in ({"latchedDone", "latchedCancel"} \cup
-                       (IF LazyCanFail THEN {"latchedFail"} ELSE {})) :
-        LET ok == outcome = "latchedDone" IN
+    /\ \E outcome \in ({"syncOk"}
+            \cup (IF LazyCanFail THEN {"syncFail"} ELSE {})
+            \cup (IF res[r].lazyCancel THEN {"syncCancel"} ELSE {})) :
         /\ res' = [res EXCEPT
              ![r].lazyRunning = @ - 1,
-             ![r].lazyComplete = @ \/ ok,
-             ![r].lazyCb = IF ok THEN "none" ELSE @,
              ![r].lazyPhase = "idle",
-             ![r].lazyWaiters = 0]
-        /\ evals' = LatchEvalOutcomes(r, outcome)
+             ![r].lazyCancel = FALSE,
+             ![r].lazyWaiters = 0,
+             ![r].lazyComplete = @ \/ outcome = "syncOk",
+             ![r].lazySyncPending = outcome # "syncOk"]
+        /\ evals' = LatchEvalOutcomes(r,
+             CASE outcome = "syncOk" -> "latchedDone"
+               [] outcome = "syncFail" -> "latchedFail"
+               [] OTHER -> "latchedCancel")
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
@@ -1604,13 +1648,11 @@ EvalAbandon(e) ==
     /\ LET r == evals[e].target
            current == evals[e].phase = "waiting"
            last == current /\ res[r].lazyWaiters = 1
-       IN /\ ~current \/ res[r].lazyPhase \in {"running", "cancelRequested"}
+       IN /\ ~current \/ res[r].lazyPhase \in {"running", "syncing"}
           /\ res' = IF current
                     THEN [res EXCEPT
                          ![r].lazyWaiters = @ - 1,
-                         ![r].lazyPhase =
-                              IF last /\ @ = "running"
-                              THEN "cancelRequested" ELSE @]
+                         ![r].lazyCancel = @ \/ last]
                     ELSE res
           /\ evals' = [evals EXCEPT ![e].phase = "abandoned",
                                      ![e].foreignCancel = FALSE]
@@ -1650,7 +1692,7 @@ Next ==
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalJoin(e)
          \/ EvalCallbackClose(e) \/ EvalWake(e) \/ EvalAbandon(e)
     \/ \E r \in 1..Len(res) :
-         EvalCallbackFinish(r) \/ EvalCallbackFinishCanceled(r)
+         EvalBodyFinish(r) \/ EvalSyncFinish(r)
     \/ Flush
     \/ Restart
 
@@ -1717,7 +1759,7 @@ LazyCallbackCloseProgress(e) == EvalCallbackClose(e)
 \* same reason it does for attachment: weak fairness on the success arm
 \* alone would wrongly forbid persistent failure.
 LazyCallbackProgress(r) ==
-    EvalCallbackFinish(r) \/ EvalCallbackFinishCanceled(r)
+    EvalBodyFinish(r) \/ EvalSyncFinish(r)
 
 LiveSpec ==
     /\ Spec
@@ -1762,6 +1804,10 @@ TypeOK ==
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
     /\ \A r \in ResultIds :
          /\ res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
+         /\ res[r].lazyPhase \in {"idle", "running", "syncing"}
+         /\ res[r].lazyCb \in {"none", "armed"}
+         /\ res[r].lazyCancel \in BOOLEAN
+         /\ res[r].lazySyncPending \in BOOLEAN
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
@@ -1882,6 +1928,26 @@ NoErroredLookupSelection ==
 \* point of the per-result singleflight in evaluateOne.
 LazyMutualExclusion ==
     \A r \in ResultIds : res[r].lazyRunning <= 1
+
+\* A successful Evaluate return implies the result's evaluation is
+\* complete. The pre-fix fast path violated this: it trusted the consumed
+\* object-side callback while that callback's attempt was still running
+\* its cache-side bookkeeping, and reported success early.
+EvalDoneComplete ==
+    \A e \in EvalIds :
+        evals[e].phase = "done" => res[evals[e].target].lazyComplete
+
+\* Completion is only ever recorded with every stage settled: the
+\* object-side callback consumed, no bookkeeping pending, no attempt in
+\* flight. The pre-fix preflight violated this by converting a consumed
+\* object-side callback into lazyEvalComplete while bookkeeping had
+\* failed or was still running.
+LazyCompleteSettled ==
+    \A r \in ResultIds :
+        res[r].lazyComplete =>
+            /\ res[r].lazyCb = "none"
+            /\ ~res[r].lazySyncPending
+            /\ res[r].lazyPhase = "idle"
 
 \* Success is permanent: once a result's evaluation completed, no callback
 \* for it is running or can start again (the callback is cleared and every

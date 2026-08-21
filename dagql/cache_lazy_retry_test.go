@@ -358,3 +358,134 @@ func TestCacheEvaluatePropagatesCallbackFailure(t *testing.T) {
 		}
 	})
 }
+
+// lazyBookkeepingSnapshotManager blocks AttachLease until the test supplies
+// an outcome, so the window between a callback body finishing and the
+// attempt's bookkeeping settling can be held open deterministically.
+type lazyBookkeepingSnapshotManager struct {
+	fakeSnapshotManager
+	attachEntered chan struct{}
+	attachResult  chan error
+}
+
+func (m *lazyBookkeepingSnapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
+	_ = m.fakeSnapshotManager.AttachLease(ctx, leaseID, snapshotID)
+	m.attachEntered <- struct{}{}
+	return <-m.attachResult
+}
+
+func lazySyncState(shared *sharedResult) (pending, complete bool) {
+	shared.lazyMu.Lock()
+	defer shared.lazyMu.Unlock()
+	return shared.lazySyncPending, shared.lazyEvalComplete
+}
+
+// A callback body consumes its object-side lazy state (mirroring how core
+// types clear their Lazy pointer) before the attempt's snapshot-lease
+// bookkeeping settles. During that window a second Evaluate must join the
+// running attempt rather than observe the nil object-side callback and
+// report success. A failed bookkeeping step must stay retryable instead of
+// being swallowed as completed evaluation, and the retry must not re-run
+// the already-consumed body.
+func TestCacheEvaluateSettlesBookkeepingBeforeReportingComplete(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mgr := &lazyBookkeepingSnapshotManager{
+			attachEntered: make(chan struct{}),
+			attachResult:  make(chan error),
+		}
+
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", mgr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx = ContextWithCache(ctx, c)
+		srv := cacheTestServer(t)
+		sessionID := cacheTestSessionID(t, ctx)
+
+		var bodyRuns atomic.Int32
+		var obj *cacheTestObject
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-bookkeeping-settle",
+		}
+		resAny, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			obj = &cacheTestObject{Value: 1}
+			obj.lazyEval = func(context.Context) error {
+				bodyRuns.Add(1)
+				obj.snapshotLinks = []PersistedSnapshotRefLink{{
+					RefKey: "lazy-produced-snapshot",
+					Role:   "snapshot",
+				}}
+				obj.lazyEval = nil
+				return nil
+			}
+			return cacheTestObjectResultWithValue(t, srv, frame, obj), nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := resAny.(ObjectResult[*cacheTestObject])
+		shared := res.cacheSharedResult()
+
+		eval1 := make(chan error, 1)
+		go func() { eval1 <- c.Evaluate(ctx, res) }()
+
+		// The body has finished and cleared the object-side callback; the
+		// attempt is now blocked inside its snapshot-lease bookkeeping.
+		waitLazyRetrySignal(t, mgr.attachEntered, "first bookkeeping attach")
+
+		eval2 := make(chan error, 1)
+		go func() { eval2 <- c.Evaluate(ctx, res) }()
+		synctest.Wait()
+		select {
+		case err := <-eval2:
+			t.Fatalf("second Evaluate returned (%v) while the attempt's bookkeeping was still in flight", err)
+		case err := <-eval1:
+			t.Fatalf("first Evaluate returned (%v) while its bookkeeping was still in flight", err)
+		default:
+		}
+
+		injected := errors.New("attach owner lease failed")
+		mgr.attachResult <- injected
+		if err := waitLazyRetryError(t, eval1, "first Evaluate outcome"); !errors.Is(err, injected) {
+			t.Fatalf("first Evaluate error = %v, want the injected bookkeeping failure", err)
+		}
+		if err := waitLazyRetryError(t, eval2, "second Evaluate outcome"); !errors.Is(err, injected) {
+			t.Fatalf("second Evaluate error = %v, want the injected bookkeeping failure", err)
+		}
+
+		pending, complete := lazySyncState(shared)
+		if !pending || complete {
+			t.Fatalf("after failed bookkeeping: pending=%v complete=%v, want pending and not complete", pending, complete)
+		}
+		if !HasPendingLazyEvaluation(res) {
+			t.Fatal("pending bookkeeping must still report as pending lazy evaluation")
+		}
+
+		// The retry leads a bookkeeping-only attempt: no body re-run, one
+		// more attach, then completion.
+		eval3 := make(chan error, 1)
+		go func() { eval3 <- c.Evaluate(ctx, res) }()
+		waitLazyRetrySignal(t, mgr.attachEntered, "retried bookkeeping attach")
+		mgr.attachResult <- nil
+		if err := waitLazyRetryError(t, eval3, "third Evaluate outcome"); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := bodyRuns.Load(); got != 1 {
+			t.Fatalf("callback body ran %d times, want exactly 1", got)
+		}
+		if got := len(mgr.fakeSnapshotManager.attachCalls); got != 2 {
+			t.Fatalf("AttachLease called %d times, want 2 (failed then retried)", got)
+		}
+		pending, complete = lazySyncState(shared)
+		if pending || !complete {
+			t.Fatalf("after settled bookkeeping: pending=%v complete=%v, want complete and not pending", pending, complete)
+		}
+		if HasPendingLazyEvaluation(res) {
+			t.Fatal("settled evaluation must not report as pending")
+		}
+	})
+}
