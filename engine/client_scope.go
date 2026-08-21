@@ -15,12 +15,13 @@ import (
 type ClientLeaseKind string
 
 const (
-	ClientLeaseTransport  ClientLeaseKind = "transport"
-	ClientLeaseRequest    ClientLeaseKind = "request"
-	ClientLeaseAgent      ClientLeaseKind = "agent"
-	ClientLeaseService    ClientLeaseKind = "service"
-	ClientLeaseSharedWork ClientLeaseKind = "shared-work"
-	ClientLeaseChild      ClientLeaseKind = "child"
+	ClientLeaseTransport      ClientLeaseKind = "transport"
+	ClientLeaseRequest        ClientLeaseKind = "request"
+	ClientLeaseAgent          ClientLeaseKind = "agent"
+	ClientLeaseAgentTombstone ClientLeaseKind = "agent-tombstone"
+	ClientLeaseService        ClientLeaseKind = "service"
+	ClientLeaseSharedWork     ClientLeaseKind = "shared-work"
+	ClientLeaseChild          ClientLeaseKind = "child"
 )
 
 // ClientScopeAuthority is an opaque session identity used for strict
@@ -237,8 +238,11 @@ func NewNestedClientTransport(close func()) *NestedClientTransport {
 	return &NestedClientTransport{close: close}
 }
 
-// Close marks nested reachability closed and relinquishes transport ownership
-// exactly once. It is safe to call concurrently and is also used by /shutdown.
+// Close first marks nested reachability closed so proxy-side admission stops
+// monotonically, then serializes transport ownership release with the server.
+// It is safe to call concurrently and is also used by /shutdown. A request that
+// already won the server's acceptance serialization may finish; every later
+// admission observes either the closed handle or the closed record.
 func (transport *NestedClientTransport) Close() {
 	if transport == nil {
 		return
