@@ -813,37 +813,51 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	return file, nil
 }
 
-func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
+// ChangesetLayer materializes a changeset's content: the files it adds and
+// modifies, and the directories it adds, with nothing else. It backs the
+// public layer field, and export writes it (removals travel separately, as
+// paths). The before/after structural diff underneath is metadata-sensitive,
+// so on its own it also spans paths whose content never changed; applying the
+// changeset to an empty directory reuses the one place that narrowing lives.
+func ChangesetLayer(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Directory], error) {
+	var layer dagql.ObjectResult[*Directory]
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return layer, err
+	}
+	changesID, err := changes.ID()
+	if err != nil {
+		return layer, err
+	}
+	var scratch dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
+		return layer, err
+	}
+	if err := srv.Select(ctx, scratch, &layer, dagql.Selector{
+		Field: "withChanges",
+		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*Changeset](changesID)}},
+	}); err != nil {
+		return layer, fmt.Errorf("build changeset content directory: %w", err)
+	}
+	return layer, nil
+}
+
+func (ch *Changeset) Export(ctx context.Context, self dagql.ObjectResult[*Changeset], destPath string) (rerr error) {
 	paths, err := ch.ComputePaths(ctx)
 	if err != nil {
 		return fmt.Errorf("compute paths: %w", err)
 	}
 
-	srv, err := CurrentDagqlServer(ctx)
+	dir, err := ChangesetLayer(ctx, self)
 	if err != nil {
 		return err
-	}
-	var dir dagql.ObjectResult[*Directory]
-	afterID, err := ch.After.ID()
-	if err != nil {
-		return fmt.Errorf("after ID: %w", err)
-	}
-	if err := srv.Select(ctx, ch.Before, &dir,
-		dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
-			},
-		},
-	); err != nil {
-		return fmt.Errorf("get changeset diff directory: %w", err)
 	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
 	}
 	if err := cache.Evaluate(ctx, dir); err != nil {
-		return fmt.Errorf("evaluate changeset diff directory: %w", err)
+		return fmt.Errorf("evaluate changeset content directory: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -860,11 +874,11 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 
 	dirSnapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
 	if err != nil {
-		return fmt.Errorf("failed to evaluate changeset diff snapshot: %w", err)
+		return fmt.Errorf("failed to evaluate changeset content snapshot: %w", err)
 	}
 	dirSelector, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
 	if err != nil {
-		return fmt.Errorf("failed to evaluate changeset diff selector: %w", err)
+		return fmt.Errorf("failed to evaluate changeset content selector: %w", err)
 	}
 
 	return MountRef(ctx, dirSnapshot, func(root string, _ *mount.Mount) error {
