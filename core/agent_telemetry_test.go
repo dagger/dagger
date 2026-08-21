@@ -173,11 +173,25 @@ func TestAgentTombstoneTelemetryContextIsCompact(t *testing.T) {
 	require.Equal(t, "xxh3:compact", recorder.records[1].digest)
 }
 
-func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
+func TestAgentReplacesLaunchingScopeWithDurableTombstoneLease(t *testing.T) {
 	t.Parallel()
 
 	var acquired atomic.Int32
 	var released atomic.Int32
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, ownerID string) *engine.ClientLifecycleLease {
+		return engine.NewClientLifecycleLease(
+			kind,
+			ownerID,
+			func() { released.Add(1) },
+			func(cloneKind engine.ClientLeaseKind, cloneOwnerID string) (*engine.ClientLifecycleLease, error) {
+				require.Equal(t, engine.ClientLeaseAgentTombstone, cloneKind)
+				require.Equal(t, "agent-scope", cloneOwnerID)
+				acquired.Add(1)
+				return newLease(cloneKind, cloneOwnerID), nil
+			},
+		)
+	}
 	rootLease := engine.NewClientLifecycleLease(
 		engine.ClientLeaseRequest,
 		"request",
@@ -186,7 +200,7 @@ func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
 			require.Equal(t, engine.ClientLeaseAgent, kind)
 			require.Equal(t, "agent-scope", ownerID)
 			acquired.Add(1)
-			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+			return newLease(kind, ownerID), nil
 		},
 	)
 	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
@@ -209,8 +223,8 @@ func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
 	_, err = runtimes.Start(ctx, agent)
 	require.NoError(t, err)
 	require.NoError(t, runtime.WaitFor(ctx, AgentStateStopped))
-	require.Equal(t, int32(1), acquired.Load())
-	require.Zero(t, released.Load())
+	require.Equal(t, int32(2), acquired.Load())
+	require.Equal(t, int32(1), released.Load(), "the executable loop lease must be replaced")
 	runtime.mu.Lock()
 	tombstoneCtx := runtime.spanCtx
 	durableLease := runtime.scopeLease
@@ -220,9 +234,10 @@ func TestAgentRetainsLaunchingScopeThroughTombstoneUntilTeardown(t *testing.T) {
 	_, ok = engine.ClientScopeFromContext(tombstoneCtx)
 	require.False(t, ok)
 	require.True(t, durableLease.Held(), "snapshot retention still requires its explicit lease")
+	require.Equal(t, engine.ClientLeaseAgentTombstone, durableLease.Kind())
 
 	require.NoError(t, runtimes.KillAll(ctx, errors.New("session closed")))
-	require.Equal(t, int32(1), released.Load())
+	require.Equal(t, int32(2), released.Load())
 }
 
 // TestPublishStateEdgeTriggered covers the core contract: one record per
