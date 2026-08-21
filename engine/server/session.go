@@ -1208,49 +1208,71 @@ func (srv *Server) initializeClientRuntime(
 	return nil
 }
 
+func (sess *daggerSession) resolveClientAttachableCaller(
+	ctx context.Context,
+	record *clientRecord,
+	ifAvailable bool,
+	wait func(context.Context, string) (engineutil.SessionCaller, error),
+) (engineutil.SessionCaller, bool, error) {
+	if sess.attachables != nil {
+		if caller, ok := sess.attachables.Lookup(record.clientID); ok {
+			return caller, true, nil
+		}
+	}
+
+	// Synthetic nested clients (for example builtin Dang evaluation) do not
+	// establish their own session attachables. Follow only their explicit host-
+	// service proxy route; normal nested clients must keep waiting for their own
+	// exact attachable so an initialization race cannot accidentally use a parent.
+	sess.scopeMu.Lock()
+	hostServiceProxyClientID := record.hostServiceProxyClientID
+	parentClientIDs := slices.Clone(record.parentClientIDs)
+	sess.scopeMu.Unlock()
+	if hostServiceProxyClientID != "" {
+		if !slices.Contains(parentClientIDs, hostServiceProxyClientID) {
+			return nil, false, fmt.Errorf("host service proxy client %q not found for client %q", hostServiceProxyClientID, record.clientID)
+		}
+		sess.clientMu.RLock()
+		proxyRecord := sess.clientRecords[hostServiceProxyClientID]
+		sess.clientMu.RUnlock()
+		if proxyRecord == nil {
+			return nil, false, fmt.Errorf("host service proxy client %q not found for client %q", hostServiceProxyClientID, record.clientID)
+		}
+		return sess.resolveClientAttachableCaller(ctx, proxyRecord, ifAvailable, wait)
+	}
+
+	if ifAvailable {
+		return nil, false, nil
+	}
+	if wait == nil {
+		return nil, false, fmt.Errorf("session client caller gateway is not initialized")
+	}
+	caller, err := wait(ctx, record.clientID)
+	if err != nil {
+		return nil, false, err
+	}
+	if caller == nil {
+		return nil, false, fmt.Errorf("session attachable caller for client %q was nil", record.clientID)
+	}
+	return caller, true, nil
+}
+
 func (sess *daggerSession) resolveHostServiceCaller(
 	ctx context.Context,
 	id string,
 ) (engineutil.SessionCaller, error) {
-	// Synthetic nested clients (for example builtin Dang evaluation) do not
-	// establish their own session attachables. Resolve their explicit proxy
-	// through immutable ancestry records so this routing does not retain or
-	// require any client runtime.
 	sess.clientMu.RLock()
 	record := sess.clientRecords[id]
 	sess.clientMu.RUnlock()
-
-	var hostServiceProxyClientID string
-	var parentClientIDs []string
-	if record != nil {
-		// hostServiceProxyClientID is initialized under scopeMu. Do not hold
-		// clientMu while taking scopeMu: runtime publication takes them in the
-		// opposite order.
-		sess.scopeMu.Lock()
-		hostServiceProxyClientID = record.hostServiceProxyClientID
-		parentClientIDs = slices.Clone(record.parentClientIDs)
-		sess.scopeMu.Unlock()
-	}
-
-	if hostServiceProxyClientID != "" {
-		if sess.attachables != nil {
-			if caller, ok := sess.attachables.Lookup(id); ok {
-				return caller, nil
-			}
+	if record == nil {
+		if sess.getClientCaller == nil {
+			return nil, fmt.Errorf("session client caller gateway is not initialized")
 		}
-
-		for i := len(parentClientIDs) - 1; i >= 0; i-- {
-			if parentClientIDs[i] == hostServiceProxyClientID {
-				return sess.resolveHostServiceCaller(ctx, hostServiceProxyClientID)
-			}
-		}
-		return nil, fmt.Errorf("host service proxy client %q not found for client %q", hostServiceProxyClientID, id)
+		return sess.getClientCaller(ctx, id)
 	}
 
-	if sess.getClientCaller == nil {
-		return nil, fmt.Errorf("session client caller gateway is not initialized")
-	}
-	return sess.getClientCaller(ctx, id)
+	caller, _, err := sess.resolveClientAttachableCaller(ctx, record, false, sess.getClientCaller)
+	return caller, err
 }
 
 func (srv *Server) sessionFromID(sessID string) (*daggerSession, error) {
@@ -3000,7 +3022,15 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 	if err != nil {
 		return nil, false, err
 	}
-	caller, ok, err := srv.clientAttachableCaller(ctx, record.daggerSession.sessionID, clientID, opts.IfAvailable)
+	requested, err := srv.clientRecordFromIDs(record.daggerSession.sessionID, clientID)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
+	}
+	wait := func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		caller, _, err := srv.clientAttachableCaller(ctx, record.daggerSession.sessionID, id, false)
+		return caller, err
+	}
+	caller, ok, err := record.daggerSession.resolveClientAttachableCaller(ctx, requested, opts.IfAvailable, wait)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
 	}
