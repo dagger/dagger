@@ -249,6 +249,12 @@ type frontendPretty struct {
 	logPager       *LogPagerView
 	logPagerReturn func()
 	logSearchInput *tuist.TextInput
+
+	// commandView replaces the generic trace screen when a command wants to
+	// own the semantic layout while embedding reusable trace components.
+	commandView       CommandView
+	commandViewHandle *commandViewHandle
+	spanLists         map[*SpanListView]struct{}
 }
 
 // Verify interface compliance at compile time.
@@ -257,6 +263,56 @@ var (
 	_ tuist.Interactive = (*frontendPretty)(nil)
 	_ tuist.Mounter     = (*frontendPretty)(nil)
 )
+
+var _ CommandFrontend = (*frontendPretty)(nil)
+
+type commandViewContext struct {
+	fe *frontendPretty
+}
+
+func (ctx commandViewContext) SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView {
+	return newSpanListView(ctx.fe, root, include)
+}
+
+type commandViewHandle struct {
+	fe *frontendPretty
+}
+
+func (h *commandViewHandle) Update(fn func()) {
+	if h == nil || h.fe == nil {
+		return
+	}
+	h.fe.dispatch(func() {
+		if fn != nil {
+			fn()
+		}
+		if h.fe.commandView != nil {
+			h.fe.commandView.Update()
+		}
+		h.fe.Update()
+	})
+}
+
+// SetView installs a command-owned body in the pretty frontend. Calls are
+// serialized with telemetry updates and rendering by the Tuist event loop.
+func (fe *frontendPretty) SetView(factory ViewFactory) ViewHandle {
+	handle := &commandViewHandle{fe: fe}
+	fe.dispatch(func() {
+		fe.commandViewHandle = handle
+		if factory == nil {
+			fe.commandView = nil
+		} else {
+			fe.commandView = factory(commandViewContext{fe: fe})
+		}
+		if fe.commandView != nil {
+			if _, interactive := fe.commandView.(tuist.Interactive); interactive {
+				fe.tui.SetFocus(fe.commandView)
+			}
+		}
+		fe.Update()
+	})
+	return handle
+}
 
 // treePrefix holds pre-computed prefix strings for a SpanTreeView.
 // These are set by the parent SpanTreeView when rendering its children.
@@ -1441,6 +1497,10 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// SpanTreeView and marks any changed tree dirty.
 	if !fe.finalRender {
 		fe.finalRender = true
+		if fe.commandView != nil {
+			fe.commandView.SetFinal(true)
+			fe.commandView.Update()
+		}
 		fe.Update()
 	}
 
@@ -1865,7 +1925,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasGenerateReport() {
+	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -1963,6 +2023,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 			}
 		}
 		fe.updateTestViews()
+		for view := range fe.spanLists {
+			view.UpdateAll()
+		}
+		if fe.commandView != nil {
+			fe.commandView.Update()
+		}
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -2035,6 +2101,12 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			fe.updateLogPagerForLogs(spanID)
 		}
 		fe.updateTestViews()
+		for view := range fe.spanLists {
+			view.UpdateAll()
+		}
+		if fe.commandView != nil {
+			fe.commandView.Update()
+		}
 		fe.Update()
 	})
 	return nil
@@ -2319,6 +2391,10 @@ func isEscapeKey(keyStr string) bool {
 // Render implements tuist.Component. It produces the full TUI output as lines.
 func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
+		return
+	}
+	if fe.commandView != nil {
+		fe.RenderChild(ctx, fe.commandView)
 		return
 	}
 	fe.claims = newRenderClaims()
@@ -3368,6 +3444,18 @@ func (fe *frontendPretty) applyTuistFocus() {
 	}
 	if fe.testsMode && fe.fullscreenTests != nil {
 		fe.tui.SetFocus(fe.fullscreenTests)
+		return
+	}
+	if fe.commandView != nil {
+		if fe.FocusedSpan.IsValid() {
+			for view := range fe.spanLists {
+				if tree := view.scope.spanTrees[fe.FocusedSpan]; tree != nil {
+					fe.tui.SetFocus(tree)
+					return
+				}
+			}
+		}
+		fe.tui.SetFocus(fe.commandView)
 		return
 	}
 	if fe.FocusedSpan.IsValid() {
