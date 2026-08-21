@@ -76,6 +76,7 @@ Attached results carry cache-owned lazy state in `dagql.sharedResult`:
 - `lazyEval`
 - `lazyEvalComplete`
 - `lazyEvalAttempt`
+- `lazySyncPending`
 
 This state is guarded by `lazyMu`.
 
@@ -84,6 +85,7 @@ Conceptually:
 - `lazyEval` is the callback the cache should run
 - `lazyEvalComplete` means the attached result is fully materialized
 - `lazyEvalAttempt` is the currently running callback attempt, including its completion channel, cancel function, waiter count, outcome, and telemetry wait targets
+- `lazySyncPending` means a previous attempt's callback body succeeded but the attempt's cache-side bookkeeping (snapshot-lease sync, lease release) did not; the next attempt retries only that bookkeeping
 
 Waiters retain the particular attempt record they joined. When its callback
 finishes, the cache stores the outcome on that record and removes it as the
@@ -110,10 +112,10 @@ For a single result, `Cache.evaluateOne` works roughly like this:
 1. Validate that the cache and result are non-nil.
 2. Require that the result is attached to a real `sharedResult`.
 3. Detect recursive lazy evaluation using a stack of `sharedResultID`s stored in context.
-4. Re-read the current `LazyEvalFunc` from the wrapped value.
-5. If the result is already fully materialized, return.
-6. If another goroutine is already evaluating this result, retain its attempt record and wait on its channel.
-7. Otherwise start the lazy callback in a background goroutine and wait for it.
+4. If the result is already fully materialized, return.
+5. If another goroutine is already evaluating this result, retain its attempt record and wait on its channel. This check comes before reading any object-side lazy state: callback bodies (Directory, File, Container) clear their object-side `Lazy` pointer while their attempt is still running cache-side bookkeeping, so object-side state is only trustworthy once no attempt is published.
+6. With no attempt in flight, re-read the current `LazyEvalFunc` from the wrapped value. If it is nil and no bookkeeping is pending, mark the result complete and return.
+7. Otherwise start an attempt in a background goroutine and wait for it: the callback body if one is armed, then the cache-side bookkeeping; or only the bookkeeping when `lazySyncPending` is set.
 
 Two details are especially important.
 
