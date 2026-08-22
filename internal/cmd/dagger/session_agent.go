@@ -238,7 +238,38 @@ var errAgentRewound = errors.New("rewound for editing")
 // agentInterruptGrace bounds how long an interrupt waits for the preempted
 // step to land (the agent parks PAUSED once it does) before giving up and
 // snapshotting whatever prefix is committed so far.
-const agentInterruptGrace = 15 * time.Second
+const (
+	agentInterruptGrace = 15 * time.Second
+	sessionTitleTimeout = 15 * time.Second
+)
+
+// GenerateSessionTitle asks a stripped, lightweight copy of the conversation's
+// LLM to name the session from its first request. It deliberately excludes the
+// conversation's history and system prompts, caps the loop to one short step,
+// and never mutates the real conversation.
+func (a *sessionAgent) GenerateSessionTitle(ctx context.Context, initialPrompt string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionTitleTimeout)
+	defer cancel()
+
+	titleLLM := a.llm.
+		WithoutMessageHistory().
+		WithoutSystemPrompts().
+		WithoutDefaultSystemPrompt().
+		WithSmallModel()
+
+	prompt := fmt.Sprintf(`Create a concise title describing this Dagger agent session.
+Use 3-7 words and no more than 60 characters. Return only the plain-text title,
+with no quotation marks, label, explanation, or punctuation. Do not call tools.
+
+<user-request>
+%s
+</user-request>`, initialPrompt)
+	return titleLLM.
+		WithSystemPrompt("You name coding-agent sessions. Follow the requested output format exactly.").
+		WithPrompt(prompt).
+		Loop(dagger.LLMLoopOpts{MaxSteps: 1, MaxTokens: 32}).
+		LastReply(ctx)
+}
 
 func (s *LLMSession) newAgent(name string) *sessionAgent {
 	return &sessionAgent{
