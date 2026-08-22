@@ -35,7 +35,7 @@
 (*   - Lookup may miss even when a candidate exists. This over-            *)
 (*     approximates the candidate/session filtering that is not modeled,   *)
 (*     and it exercises the engine's accepted duplicate-execution window   *)
-(*     (cache.go:3889-3893).                                               *)
+(*     (getOrInitCallInner, cache.go:4468).                                *)
 (*   - MODEL AXIOM, assumed and never verified here: results the cache     *)
 (*     considers equivalent are interchangeable.                           *)
 (*   - Not modeled: session resources, TTL/expiry, DoNotCache,             *)
@@ -129,8 +129,8 @@ CONSTANTS
                         \* publishing shared state.
     ReaderCanCancel,    \* a caller's context may cancel while it waits at
                         \* the read barrier (ensurePersistedHitValueLoaded's
-                        \* ctx.Done arms, cache_persistence_import.go:562,
-                        \* :598). Go's select picks nondeterministically
+                        \* ctx.Done arms, cache_persistence_import.go:567,
+                        \* :603). Go's select picks nondeterministically
                         \* even when the barrier is already closed, so a
                         \* canceled caller can fail on a healthy result.
                         \* Also enables the persisted-decode arms: a parked
@@ -139,12 +139,13 @@ CONSTANTS
                         \* decode itself runs on (DecodeLeadCancel).
     LazyCanFail,        \* the lazy callback may fail. Failure must leave
                         \* the result retryable (lazyEvalComplete is set
-                        \* only on success, cache.go:3187-3191).
+                        \* only on success, evaluateOne, cache.go:3639, 3744).
     DecodeCanFail       \* decoding a persisted payload may fail. Failure
                         \* must leave the entry retryable: the decode wait
                         \* channel is cleared at finish, so the next
                         \* demand leads a fresh attempt
-                        \* (cache_persistence_import.go:611-619). Two
+                        \* (finishPersistDecode in ensurePersistedHitValueLoaded,
+                        \* cache_persistence_import.go:620-627). Two
                         \* failure sites: DecodeResult itself (payload
                         \* stays encoded, retried on the next demand) and
                         \* the lease sync after the decoded value was
@@ -186,7 +187,7 @@ VARIABLES
                         \* the mirror of the Cache.ongoingCalls map. The
                         \* key includes the session because the default
                         \* concurrency key is the session ID
-                        \* (dagql/objects.go:607)
+                        \* (preselect, dagql/objects.go:607)
     sessionEdges,       \* session->result pairs RECORDED in the session's
                         \* map (Cache.sessionResultIDsBySession)
     countedEdges,       \* the session edges whose ownership units are still
@@ -285,7 +286,7 @@ ProtectedReturn(s, r) ==
 (* The release cascade: collect every registered result whose count is     *)
 (* zero, drop its dependency edges, decrement the dependencies, repeat.    *)
 (*                                                                         *)
-(* Mirrors collectUnownedResultsLocked (cache.go:979-1026), which runs     *)
+(* Mirrors collectUnownedResultsLocked (cache.go:1360-1406), which runs    *)
 (* inside the same egraphMu critical section as whatever decrement         *)
 (* triggered it. released=TRUE conservatively means cleanup hooks are now  *)
 (* eligible to have run; Go invokes them just after dropping egraphMu.     *)
@@ -468,7 +469,7 @@ SpawnNested ==
 (* refuses the claim without adding an edge. Persistable hits commit their *)
 (* edge only after the read barrier and payload load succeed.               *)
 (*                                                                         *)
-(* Go: lookupCacheForRequest, cache_egraph.go:950-1001. Inside the one     *)
+(* Go: lookupCacheForRequest, cache_egraph.go:954-1007. Inside the one     *)
 (* lock hold:                                                              *)
 (*   - a candidate in the request's equivalence class is selected          *)
 (*   - the session record and ownership unit are added together             *)
@@ -500,7 +501,7 @@ LookupHit(i) ==
 \* LookupMiss: the lookup finds nothing usable; fall through to the
 \* singleflight. A miss is allowed even when a candidate exists - that
 \* over-approximates the filtering this model leaves out, and exercises
-\* the engine's accepted duplicate-execution window (cache.go:3889-3893).
+\* the engine's accepted duplicate-execution window (getOrInitCallInner, cache.go:4468).
 LookupMiss(i) ==
     /\ invocations[i].phase = "lookup"
     /\ invocations' = [invocations EXCEPT ![i].phase = "join"]
@@ -511,7 +512,7 @@ LookupMiss(i) ==
 (* Join: an ongoing call for this (call, session) already exists - become  *)
 (* one of its waiters instead of executing again.                          *)
 (*                                                                         *)
-(* Go: getOrInitCallInner, cache.go:3864-3887, one callsMu critical        *)
+(* Go: getOrInitCallInner, cache.go:4448-4463, one callsMu critical        *)
 (* section: bump oc.waiters, and stamp the persistence intent (the         *)
 (* atomic.Bool oc.isPersistable) onto the shared ongoingCall.              *)
 (*                                                                         *)
@@ -538,13 +539,13 @@ Join(i) ==
 (***************************************************************************)
 (* CreateOc: no ongoing call exists - create one and start executing.      *)
 (*                                                                         *)
-(* Go: getOrInitCallInner miss path, cache.go:3895-3958, still the same    *)
+(* Go: getOrInitCallInner miss path, cache.go:4465-4547, still the same    *)
 (* callsMu hold:                                                           *)
-(*   - the WithCancelCause cancel is created (:3897)                       *)
-(*   - the operation lease is acquired (:3917)                             *)
-(*   - the ongoingCall is registered (:3950-3952; always, because the      *)
+(*   - the WithCancelCause cancel is created (:4476)                       *)
+(*   - the operation lease is acquired (:4496)                             *)
+(*   - the ongoingCall is registered (:4530-4531; always, because the      *)
 (*     default concurrency key - the session ID - is never empty)          *)
-(*   - the fn goroutine starts (:3954)                                     *)
+(*   - the fn goroutine starts (:4534)                                     *)
 (***************************************************************************)
 CreateOc(i) ==
     /\ invocations[i].phase = "join"
@@ -579,7 +580,7 @@ CreateOcLeaseFail(i) ==
 
 (***************************************************************************)
 (* FnComplete: the executing fn finishes (the goroutine started at         *)
-(* cache.go:3954). Three possible outcomes:                                *)
+(* cache.go:4534). Three possible outcomes:                                *)
 (*   - "fresh": fn computed a new detached value                           *)
 (*   - "reuse": fn returned an already-attached result (for example, an    *)
 (*     inner call hit cache). This drives publication's canonical-         *)
@@ -608,7 +609,7 @@ FnComplete(o) ==
 (* WaiterCancel: a waiter's own context is canceled while the fn is still  *)
 (* running.                                                                *)
 (*                                                                         *)
-(* Go: wait's !completed branch, cache.go:4164-4182. Notes:                *)
+(* Go: wait's !completed branch, cache.go:4717-4733. Notes:                *)
 (*   - the LAST canceling waiter removes the entry from the Cache.ongoingCalls index and   *)
 (*     cancels the fn's context. Cancellation is COOPERATIVE: the fn       *)
 (*     goroutine keeps executing until it notices - fnState "canceled"     *)
@@ -667,7 +668,7 @@ PersistThenDropHold(o) ==
 (* WaiterCancelLate: the select takes ctx.Done even though waitCh is       *)
 (* already closed - Go picks among ready select arms nondeterministically, *)
 (* so this is an ordinary code path, not an anomaly. The waiter departs    *)
-(* through the same !completed branch (cache.go:4164-4182): waiters--,     *)
+(* through the same !completed branch (cache.go:4717-4733): waiters--,     *)
 (* and the LAST departing waiter removes a still-indexed entry,            *)
 (* discharges the fn cancel, and then releases the handoff hold - with     *)
 (* the final persistence commit - in a separate egraphMu section (see      *)
@@ -725,7 +726,7 @@ WaiterDropHoldCanceled(i) ==
 
 \* WaiterObserveFnErr: the fn failed; each waiter observes the error and
 \* returns it. The last waiter removes the Cache.ongoingCalls index entry.
-\* Go: wait's completionErr path, cache.go:4183-4193.
+\* Go: wait's completionErr path, cache.go:4735-4745.
 WaiterObserveFnErr(i) ==
     /\ invocations[i].phase = "waiting"
     /\ LET o == invocations[i].oc
@@ -743,13 +744,13 @@ WaiterObserveFnErr(i) ==
 
 (***************************************************************************)
 (* PUBLICATION - initCompletedResult, entered through the sync.Once in     *)
-(* wait (cache.go:4196). The next several actions form its state machine,  *)
+(* wait (cache.go:4747). The next several actions form its state machine,  *)
 (* driven by oc.pubState. The publishing waiter runs it to completion      *)
 (* regardless of its own caller's context (the publication context is      *)
-(* WithoutCancel, cache.go:4216).                                     *)
+(* WithoutCancel, cache.go:4767).                                     *)
 (*                                                                         *)
 (* PubBegin: entering the Once, plus the lock-free prologue - oc.res is    *)
-(* set to a fresh empty &sharedResult{} at cache.go:4333 before any lock   *)
+(* set to a fresh empty &sharedResult{} at cache.go:4891 before any lock   *)
 (* is taken. sync.Once.Do blocks every other waiter until publication      *)
 (* returns, and that blocking is what makes the later                      *)
 (* initCompletedResultErr reads safe.                                      *)
@@ -769,7 +770,7 @@ PubBegin(o) ==
 
 (***************************************************************************)
 (* PubIndexFresh: publish a freshly computed value. One egraphMu critical  *)
-(* section (ending at cache.go:4633) that does, in order:                  *)
+(* section (ending at cache.go:5193) that does, in order:                  *)
 (*   1. allocate and register the sharedResult - it is lookup-visible      *)
 (*      from this instant, before attachment completes                     *)
 (*   2. add exact dependency edges from the result-call refs, each         *)
@@ -783,7 +784,7 @@ PubIndexFresh(o) ==
     /\ Len(res) < MaxResults
     \* A fresh result may carry deferred lazy work (a value implementing
     \* HasLazyEvaluation, whose callback registerLazyEvaluation stores on
-    \* the sharedResult at cache.go:2878). Which results are lazy is the
+    \* the sharedResult at cache.go:3412). Which results are lazy is the
     \* producer's business, so the model picks nondeterministically.
     /\ \E lazyCb \in IF ModelLazy THEN {"none", "armed"} ELSE {"none"} :
        \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds : res[r].registered}} :
@@ -803,7 +804,7 @@ PubIndexFresh(o) ==
                        decodeGen |-> 0, persistSyncPending |-> FALSE,
                        laundered |-> FALSE,
                        \* lazy-evaluation state, mirroring the lazyMu block
-                       \* on sharedResult (cache.go:1584-1597):
+                       \* on sharedResult (cache.go:2013-2022):
                        imported |-> FALSE,       \* fresh, not from the store
                        lazyCb |-> lazyCb,        \* lazyEval callback stored?
                        lazyComplete |-> FALSE,   \* lazyEvalComplete
@@ -885,11 +886,11 @@ PubIndexReuse(o) ==
 
 (***************************************************************************)
 (* ATTACHMENT PHASE for fresh results. attachDependencyResults runs        *)
-(* OUTSIDE egraphMu (cache.go:4635) while the result is already            *)
+(* OUTSIDE egraphMu (cache.go:5195) while the result is already            *)
 (* lookup-visible - that is why the barrier exists. Steps:                 *)
 (*   - PubAttachAddDep: attachment discovers an embedded child result and  *)
 (*     records the dependency edge; each such AddExplicitDependency is     *)
-(*     its own egraphMu critical section (cache.go:2137)              *)
+(*     its own egraphMu critical section (cache.go:2631)              *)
 (*   - PubFinishOk: attachment succeeded; close the barrier clean          *)
 (*   - PubAttachFailDropHold: attachment failed; release the hold and      *)
 (*     cascade in one egraphMu critical section                            *)
@@ -897,7 +898,7 @@ PubIndexReuse(o) ==
 (*     following attachDepsMu critical section                             *)
 (*                                                                         *)
 (* STATED ASSUMPTION: dependency edges never form a cycle. The Go cache    *)
-(* does not enforce this - addExplicitDependencyLocked (cache.go:2168)     *)
+(* does not enforce this - addExplicitDependencyLocked (cache.go:2654)     *)
 (* rejects only self-edges - but cycles cannot arise in practice:          *)
 (* structural (call-ref) deps always point from a newer result ID to       *)
 (* older ones (a fresh result gets the highest ID after its refs already   *)
@@ -963,7 +964,7 @@ PubAttachFailCloseBarrier(o) ==
                    sessionRelease, evals, epoch, flushed>>
 
 \* PubUnregister: the entry leaves the Cache.ongoingCalls index - the tail of the Once
-\* (wait, cache.go:4225-4231), in its own callsMu critical section AFTER
+\* (wait, cache.go:4776-4781), in its own callsMu critical section AFTER
 \* publication finished. Joining stays possible until this fires. This is
 \* also where admission closes, so final persistence intent is snapshotted:
 \* publication must have succeeded, a result must exist, and some admitted
@@ -985,7 +986,7 @@ PubUnregister(o) ==
 \* departing waiter is the last one and the handoff hold is still active
 \* (the failed-adoption path keeps it held), it goes on to release the
 \* hold in a separate egraphMu section - see WaiterDropHoldPubErr.
-\* Go: wait's initCompletedResultErr path, cache.go:4232-4245.
+\* Go: wait's initCompletedResultErr path, cache.go:4783-4794.
 WaiterObservePubErr(i) ==
     /\ invocations[i].phase = "waiting"
     /\ LET o == invocations[i].oc
@@ -1002,7 +1003,7 @@ WaiterObservePubErr(i) ==
 
 \* WaiterDropHoldPubErr: the last waiter of a failed publication drops the
 \* handoff hold in its own egraphMu section (releaseOngoingCallHandoff,
-\* cache.go:4289-4306). The persistence arm is vacuous here because
+\* cache.go:4847-4865). The persistence arm is vacuous here because
 \* needsPersistedEdge requires a successful publication.
 WaiterDropHoldPubErr(i) ==
     /\ invocations[i].phase = "pubErrDropHold"
@@ -1014,7 +1015,7 @@ WaiterDropHoldPubErr(i) ==
                    evals, epoch, flushed>>
 
 (***************************************************************************)
-(* WAITER SUCCESS PATH. In code order (wait, cache.go:4259-4281):          *)
+(* WAITER SUCCESS PATH. In code order (wait, cache.go:4809-4841):          *)
 (*   1. claim the session edge while the handoff                           *)
 (*      hold still pins the result                                         *)
 (*   2. waiters--                                                          *)
@@ -1050,7 +1051,7 @@ WaiterClaim(i) ==
                    evals, epoch, flushed>>
 
 \* WaiterDepart: waiters--, under callsMu. The last waiter goes on to
-\* release the handoff hold. Go: wait, cache.go:4267-4270.
+\* release the handoff hold. Go: wait, cache.go:4819-4822.
 WaiterDepart(i) ==
     /\ invocations[i].phase \in {"depart", "refusedDepart"}
     /\ LET o == invocations[i].oc
@@ -1068,7 +1069,7 @@ WaiterDepart(i) ==
 \* in its own egraphMu section - releaseOngoingCallHandoff, which first
 \* commits the admission-close persistence intent. From here on, only real
 \* edges (session, dependency, persisted) keep the result alive.
-\* Go: wait, cache.go:4271-4275 -> releaseOngoingCallHandoff.
+\* Go: wait, cache.go:4824-4827 -> releaseOngoingCallHandoff.
 WaiterReleaseHold(i) ==
     /\ invocations[i].phase \in {"releaseHold", "refusedReleaseHold"}
     /\ LET o == invocations[i].oc
@@ -1084,7 +1085,7 @@ WaiterReleaseHold(i) ==
 (* THE READ BARRIER: every return path waits for the result's dependency   *)
 (* attachment to finish before handing the result out.                     *)
 (*                                                                         *)
-(* Go: ensurePersistedHitValueLoaded, cache_persistence_import.go:545-571. *)
+(* Go: ensurePersistedHitValueLoaded, cache_persistence_import.go:550-576. *)
 (* Outcomes: a clean barrier returns the result; an error returns the      *)
 (* error. In either case the claimed session edge remains until session    *)
 (* release.                                                               *)
@@ -1149,8 +1150,8 @@ ReadBarrierErrWait(i) ==
 (***************************************************************************)
 (* READER CANCELLATION (ReaderCanCancel). ensurePersistedHitValueLoaded    *)
 (* waits with a select in two places: on the attach barrier               *)
-(* (cache_persistence_import.go:560-563) and on another caller's decode    *)
-(* (:596-599). Each has a ctx.Done arm, and Go's select picks among ready  *)
+(* (cache_persistence_import.go:565-568) and on another caller's decode    *)
+(* (:601-604). Each has a ctx.Done arm, and Go's select picks among ready  *)
 (* arms nondeterministically, so a canceled caller can fail here even on   *)
 (* a healthy result whose barrier is already closed. Cancellation leaves   *)
 (* the session edge in place for release.                                  *)
@@ -1177,7 +1178,7 @@ ReadBarrierCancelHit(i) ==
                    sessionRelease, evals, epoch, flushed>>
 
 \* The WAIT-path twin: the error propagates and the claimed session edge
-\* simply remains (wait, cache.go:4277-4281) - same as ReadBarrierErrWait.
+\* simply remains (wait, cache.go:4835-4840) - same as ReadBarrierErrWait.
 ReadBarrierCancelWait(i) ==
     /\ ReaderCanCancel
     /\ invocations[i].phase = "readBarrier"
@@ -1192,13 +1193,13 @@ ReadBarrierCancelWait(i) ==
 (* PERSISTED-PAYLOAD DECODE. An imported result can exist                  *)
 (* with its payload still encoded as a persisted envelope; the read        *)
 (* barrier decodes it on first use (ensurePersistedHitValueLoaded's        *)
-(* decode loop, cache_persistence_import.go:573-701). Per result:          *)
+(* decode loop, cache_persistence_import.go:578-700). Per result:          *)
 (*   - one caller becomes the decode leader (publishes                     *)
-(*     persistDecodeWaitCh, :611-612) and performs the decode itself:      *)
+(*     persistDecodeWaitCh, :616) and performs the decode itself:          *)
 (*     DecodeResult, then the install of the decoded value under           *)
 (*     payloadMu (DecodeInstall), then syncResultSnapshotLeases            *)
 (*   - later callers wait on that channel                                  *)
-(*   - the finish (:615-621) latches the error, CLEARS the channel, and    *)
+(*   - the finish (:620-627) latches the error, CLEARS the channel, and    *)
 (*     closes it - so unlike the lazy singleflight there is no lingering   *)
 (*     published channel: after any finish, the next demand leads a        *)
 (*     fresh attempt. A failure before the install leaves the payload      *)
@@ -1427,7 +1428,7 @@ DecodeFailHit(i) ==
                    evals, epoch, flushed>>
 
 \* Decode failed for a WAIT-path caller: the error just propagates; the
-\* session edge claimed after publication remains (wait, cache.go:4271-4275).
+\* session edge claimed after publication remains (wait, cache.go:4824-4827).
 DecodeFailWait(i) ==
     /\ invocations[i].phase = "decodeErr"
     /\ invocations[i].path = "wait"
@@ -1546,9 +1547,9 @@ ReleaseSessionDelete(s) ==
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
 (* collect whatever that leaves unowned. Fireable at any time.             *)
 (*                                                                         *)
-(* Go: removePersistedEdge, cache.go:913-942. This one action is the only  *)
-(* way either prune mode (disk-policy or structural) touches the live      *)
-(* kernel; all prune planning happens outside the lock and is not          *)
+(* Go: removePersistedEdge, cache.go:1294-1321. This one action is the     *)
+(* only way either prune mode (disk-policy or structural) touches the      *)
+(* live kernel; all prune planning happens outside the lock and is not     *)
 (* modeled.                                                                *)
 (***************************************************************************)
 PruneCut(r) ==
