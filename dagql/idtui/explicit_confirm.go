@@ -131,9 +131,7 @@ func (field *ExplicitConfirm) KeyBinds() []key.Binding {
 	reject.SetHelp("n", field.negative)
 	return []key.Binding{
 		field.keymap.Toggle,
-		field.keymap.Prev,
 		field.keymap.Submit,
-		field.keymap.Next,
 		accept,
 		reject,
 	}

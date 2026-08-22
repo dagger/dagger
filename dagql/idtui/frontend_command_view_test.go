@@ -78,6 +78,9 @@ func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
 	if got := help.String(); strings.ContainsAny(got, "[]▶") || !strings.Contains(got, "Install selected") || !strings.Contains(got, "Skip") {
 		t.Fatalf("confirmation keymap labels are not semantic: %q", got)
 	}
+	if strings.Contains(help.String(), "back") || strings.Contains(help.String(), "next") {
+		t.Fatalf("confirmation keymap includes redundant field navigation: %q", help.String())
+	}
 
 	var output bytes.Buffer
 	if err := field.RunAccessible(&output, strings.NewReader("n\n")); err != nil {

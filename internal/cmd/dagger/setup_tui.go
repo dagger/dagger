@@ -186,24 +186,22 @@ func (view *setupView) Render(ctx tuist.Context) {
 		return
 	}
 
-	ctx.Line("Setting up this workspace")
-	ctx.Line("")
 	ctx.Line("Cloud account")
 	view.renderLogin(ctx)
-	ctx.Line("")
-	ctx.Line("Workspace")
-	if view.migrationMessage == "" && view.migrationID.IsValid() && view.workspace != nil {
-		view.RenderChild(ctx, view.workspace)
-	} else if view.loginState == setupLoginPending {
-		ctx.Line("○ Waiting for Cloud account")
-	} else if view.workSpinner != nil {
-		view.workSpinner.Label = "Starting workspace setup..."
-		view.RenderChild(ctx, view.workSpinner)
-	}
-	if view.migrationMessage == "Nothing to migrate." || view.migrationMessage == "No migration needed." {
-		view.renderSuccess(ctx, view.migrationMessage)
-	} else {
-		lines(ctx, view.migrationMessage)
+	if view.loginState != setupLoginPending {
+		ctx.Line("")
+		ctx.Line("Workspace")
+		if view.migrationMessage == "" && view.migrationID.IsValid() && view.workspace != nil {
+			view.RenderChild(ctx, view.workspace)
+		} else if view.workSpinner != nil {
+			view.workSpinner.Label = "Starting workspace setup..."
+			view.RenderChild(ctx, view.workSpinner)
+		}
+		if view.migrationMessage == "Nothing to migrate." || view.migrationMessage == "No migration needed." {
+			view.renderSuccess(ctx, view.migrationMessage)
+		} else {
+			lines(ctx, view.migrationMessage)
+		}
 	}
 
 	if view.recommendID.IsValid() || len(view.installIDs) > 0 || view.recommendMessage != "" {
@@ -219,8 +217,10 @@ func (view *setupView) Render(ctx tuist.Context) {
 func (view *setupView) renderLogin(ctx tuist.Context) {
 	switch view.loginState {
 	case setupLoginPending:
-		view.loginSpinner.Label = view.loginMessage
-		view.RenderChild(ctx, view.loginSpinner)
+		if view.loginMessage != "Waiting for login choice..." {
+			view.loginSpinner.Label = view.loginMessage
+			view.RenderChild(ctx, view.loginSpinner)
+		}
 	case setupLoginComplete:
 		view.renderSuccess(ctx, view.loginMessage)
 	case setupLoginSkipped:

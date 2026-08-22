@@ -63,6 +63,32 @@ func TestSetupViewRendersConciseCompletedStates(t *testing.T) {
 	}
 }
 
+func TestSetupViewLoginChoiceHasNoTransitionalCruft(t *testing.T) {
+	view := &setupView{
+		loginState:   setupLoginPending,
+		loginMessage: "Waiting for login choice...",
+		loginSpinner: tuist.NewSpinner(),
+		workSpinner:  tuist.NewSpinner(),
+	}
+	tui := tuist.New(tuist.NewHeadlessTerminal(100, 20))
+	tui.AddChild(view)
+
+	rendered := ansi.Strip(strings.Join(tui.RenderLines(), "\n"))
+	for _, unwanted := range []string{
+		"Setting up this workspace",
+		"Waiting for login choice",
+		"Workspace",
+		"Waiting for Cloud account",
+	} {
+		if strings.Contains(rendered, unwanted) {
+			t.Fatalf("setup login choice retained %q:\n%s", unwanted, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "Cloud account") {
+		t.Fatalf("setup login choice lost section title:\n%s", rendered)
+	}
+}
+
 type immediateViewHandle struct{}
 
 func (immediateViewHandle) Update(fn func()) { fn() }
