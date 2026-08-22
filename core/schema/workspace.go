@@ -4804,16 +4804,35 @@ func (s *workspaceSchema) checks(
 	},
 ) (*core.CheckGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
 		return &core.CheckGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
 	skip := workspaceIncludePatterns(args.Skip)
 
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
+	var mods []dagql.ObjectResult[*core.Module]
+	if parent.IsModuleBearingValue() {
+		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(nil, overlayMods)
+	} else {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
+
+		// check is strict: a module that can't load is a failure, by design.
+		if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
+			return nil, err
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	noGenerate := args.NoGenerate.GetOr(false).Bool()
@@ -4826,15 +4845,6 @@ func (s *workspaceSchema) checks(
 	// Apply the workspace default only when no generate flag was passed.
 	if !args.NoGenerate.Valid && !args.OnlyGenerate.Valid && cfg.CheckGenerated != nil && !*cfg.CheckGenerated {
 		noGenerate = true
-	}
-
-	// check is strict: a module that can't load is a failure, by design.
-	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
-		return nil, err
-	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	ignoreChecks := workspaceConfigSkipPatternsFromConfig(cfg, func(e workspace.ModuleEntry) []string {
@@ -4931,30 +4941,44 @@ func (s *workspaceSchema) generators(
 	},
 ) (*core.GeneratorGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
 		return &core.GeneratorGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
 
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
+	var (
+		mods         []dagql.ObjectResult[*core.Module]
+		loadFailures []string
+	)
+	if parent.IsModuleBearingValue() {
+		overlayMods, failures, err := s.workspaceOverlayModulesBestEffort(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(nil, overlayMods)
+		loadFailures = failures
+	} else {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
 
-	// Best-effort: generate is often what repairs a module that can't load —
-	// e.g. a dagger-module.toml module whose committed generated files don't
-	// exist yet gets them from its SDK's generator. A module that fails to load
-	// is skipped with a warning instead of failing the whole run, and its
-	// failure message is carried on loadFailures so the CLI can honor
-	// --require-load.
-	loadFailures, err := ensureWorkspaceModulesLoaded(ctx, include, true)
-	if err != nil {
-		return nil, err
-	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
-	if err != nil {
-		return nil, err
+		// Best-effort: generate is often what repairs a module that can't load —
+		// e.g. a dagger-module.toml module whose committed generated files don't
+		// exist yet gets them from its SDK's generator. A module that fails to load
+		// is skipped with a warning instead of failing the whole run, and its
+		// failure message is carried on loadFailures so the CLI can honor
+		// --require-load.
+		loadFailures, err = ensureWorkspaceModulesLoaded(ctx, include, true)
+		if err != nil {
+			return nil, err
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ignoreGenerators, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
