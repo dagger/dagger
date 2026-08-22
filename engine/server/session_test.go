@@ -261,6 +261,75 @@ func TestClosedClientWaitsForAcceptedBootstrapRequest(t *testing.T) {
 	child.stateMu.RUnlock()
 }
 
+func TestClientInitializationDoesNotHoldScopeLock(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("child")
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes[metadata.ClientID]
+
+	// Stop first initialization at the core-schema boundary. initializeClientRuntime
+	// holds stateMu there, giving the test a deterministic signal that it has
+	// crossed request admission and reached slow DagQL/schema work.
+	sess.engineUtilClient = new(engineutil.Client)
+	srv.coreSchemaBaseMu.Lock()
+	coreSchemaLocked := true
+	defer func() {
+		if coreSchemaLocked {
+			srv.coreSchemaBaseMu.Unlock()
+		}
+	}()
+
+	initCtx, cancelInit := context.WithCancel(context.Background())
+	defer cancelInit()
+	initDone := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(initCtx, &ClientInitOpts{
+			ClientMetadata:  metadata,
+			NestedTransport: transport,
+			ParentClientID:  parent.clientID,
+		})
+		initDone <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		if child.stateMu.TryLock() {
+			child.stateMu.Unlock()
+			return false
+		}
+		return true
+	}, time.Second, time.Millisecond, "client initialization did not reach the blocked schema boundary")
+
+	// The lifecycle regression held scopeMu across the blocked initializer. That
+	// inverted against schema construction, whose detached DagQL work clones a
+	// ClientScope and must acquire scopeMu. Admission must leave the lock available.
+	require.True(t, sess.scopeMu.TryLock(), "slow client initialization retained scopeMu")
+	sess.scopeMu.Unlock()
+
+	// Closing reachability during initialization must not reclaim the runtime:
+	// the provisional request lease owns it until initialization returns.
+	transport.Close()
+	sess.clientMu.RLock()
+	require.Same(t, child, sess.clientRuntimes[child.clientID])
+	sess.clientMu.RUnlock()
+	_, _, leases := sess.clientLifecycleSnapshot(child)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseRequest, ownerID: "client connection"}}, leases)
+
+	cancelInit()
+	srv.coreSchemaBaseMu.Unlock()
+	coreSchemaLocked = false
+	require.Error(t, <-initDone)
+	require.Eventually(t, func() bool {
+		sess.clientMu.RLock()
+		defer sess.clientMu.RUnlock()
+		_, retained := sess.clientRuntimes[child.clientID]
+		return !retained
+	}, time.Second, time.Millisecond, "failed initialization did not release its provisional request lease")
+}
+
 func TestChildQuiescenceReleasesClosingParent(t *testing.T) {
 	t.Parallel()
 
@@ -330,7 +399,7 @@ func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, retry.Code)
 }
 
-func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
+func TestNestedTransportCloseRacesAdmissionSerialization(t *testing.T) {
 	t.Parallel()
 
 	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
@@ -341,16 +410,16 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	initialized := make(chan struct{})
+	admitted := make(chan struct{})
 	go func() {
 		sess.scopeMu.Lock()
 		close(started)
 		<-release
 		if child.accepting {
-			child.state = clientStateInitialized
+			child.metadataSealed = true
 		}
 		sess.scopeMu.Unlock()
-		close(initialized)
+		close(admitted)
 	}()
 	<-started
 	closed := make(chan struct{})
@@ -365,7 +434,7 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 		case <-deadline.C:
 			ticker.Stop()
 			close(release)
-			<-initialized
+			<-admitted
 			<-closed
 			t.Fatal("transport close did not publish its proxy-side marker")
 		case <-ticker.C:
@@ -376,12 +445,12 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 	select {
 	case <-closed:
 		close(release)
-		<-initialized
-		t.Fatal("transport close crossed in-progress initialization serialization")
+		<-admitted
+		t.Fatal("transport close crossed in-progress request-admission serialization")
 	default:
 	}
 	close(release)
-	<-initialized
+	<-admitted
 	<-closed
 	accepting, _, _ := sess.clientLifecycleSnapshot(child)
 	require.False(t, accepting)
@@ -393,7 +462,7 @@ func TestNestedTransportCloseRacesInitializationSerialization(t *testing.T) {
 	second.Close()
 	sess.scopeMu.Lock()
 	if secondChild.accepting {
-		secondChild.state = clientStateInitialized
+		secondChild.metadataSealed = true
 	}
 	sess.scopeMu.Unlock()
 	require.Equal(t, clientStateReclaimed, secondChild.state)

@@ -1102,7 +1102,6 @@ func (srv *Server) initializeClientRuntime(
 		"mainClientID", client.daggerSession.mainClientCallerID,
 	)
 	slog.Info("initializing new client")
-	client.hostServiceProxyClientID = opts.HostServiceProxyClientID
 	if err := srv.initializeSessionEngineClient(ctx, client.daggerSession); err != nil {
 		return err
 	}
@@ -1508,9 +1507,12 @@ func (srv *Server) getOrInitClient(
 	}
 
 	// Nested clients must already have an explicitly registered transport. The
-	// scope lock is also the metadata bootstrap/seal serialization point for all
-	// clients. Holding it through first initialization makes metadata seal,
-	// runtime publication, transport close, and session teardown one ordering.
+	// scope lock is the metadata bootstrap/seal and request-admission
+	// serialization point, but runtime initialization must run outside it:
+	// initialization can perform DagQL work that clones a ClientScope and therefore
+	// needs to acquire this same lock. A provisional request lease, published below
+	// before releasing scopeMu, keeps the runtime alive if its transport closes
+	// while initialization is in progress.
 	if !opts.RootClient {
 		if opts.NestedTransport == nil {
 			return nil, nil, fmt.Errorf("nested client %q has no registered transport handle", clientID)
@@ -1521,7 +1523,15 @@ func (srv *Server) getOrInitClient(
 	}
 
 	sess.scopeMu.Lock()
-	defer sess.scopeMu.Unlock()
+	scopeHeld := true
+	unlockScope := func() {
+		if !scopeHeld {
+			return
+		}
+		scopeHeld = false
+		sess.scopeMu.Unlock()
+	}
+	defer unlockScope()
 
 	if !clientExists {
 		record = &clientRecord{
@@ -1554,31 +1564,73 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, fmt.Errorf("client %q registered with different secret token", clientID)
 	}
 	if opts.HostServiceProxyClientID != "" && client.hostServiceProxyClientID != "" && client.hostServiceProxyClientID != opts.HostServiceProxyClientID {
+		unlockScope()
 		return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
+	}
+	if opts.HostServiceProxyClientID != "" {
+		client.hostServiceProxyClientID = opts.HostServiceProxyClientID
 	}
 
 	client.stateMu.Lock()
-	defer client.stateMu.Unlock()
+	initializeRuntime := false
 	switch client.state {
 	case clientStateUninitialized:
 		if !opts.BootstrapOnly {
 			if err := sess.sealClientMetadataLocked(client.clientRecord); err != nil {
+				client.stateMu.Unlock()
+				unlockScope()
 				return nil, nil, fmt.Errorf("seal client metadata: %w", err)
 			}
-			if err := srv.initializeClientRuntime(ctx, client, opts); err != nil {
-				return nil, nil, fmt.Errorf("initialize client: %w", err)
-			}
+			initializeRuntime = true
 		}
 	case clientStateInitialized:
 		// Metadata was reconciled above against the sealed snapshot. Identical
 		// replay is accepted; completion or conflict after seal is rejected.
 	}
 
+	// Every admitted HTTP connection, including bootstrap-only requests, owns a
+	// typed request lease before the serialization lock is released. During first
+	// initialization this is a provisional owner: transport close may mark the
+	// record closed, but cannot reclaim its runtime until initialization returns
+	// and this lease is either handed to the request or released on error.
+	requestOwner := opts.requestOwner
+	if requestOwner == "" {
+		requestOwner = "client connection"
+	}
+	requestLease := sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseRequest, requestOwner)
+	requestAdmitted := false
+	defer func() {
+		if !requestAdmitted {
+			requestLease.Release()
+		}
+	}()
+	unlockScope()
+
+	if initializeRuntime {
+		if err := srv.initializeClientRuntime(ctx, client, opts); err != nil {
+			client.stateMu.Unlock()
+			return nil, nil, fmt.Errorf("initialize client: %w", err)
+		}
+	}
+	client.stateMu.Unlock()
+
+	// Re-enter the admission serialization point after slow initialization. A
+	// transport whose proxy-side close marker won meanwhile must not return an
+	// executable request scope. The provisional request lease kept its runtime
+	// retained so this check and the close callback can finish in either order.
+	sess.scopeMu.Lock()
+	scopeHeld = true
+	if opts.NestedTransport != nil && opts.NestedTransport.Closed() {
+		sess.markClientClosedLocked(client.clientRecord)
+		unlockScope()
+		return nil, nil, fmt.Errorf("nested client %q transport closed during initialization", clientID)
+	}
+
 	if opts.RootClient && !clientExists {
 		// Root records and transport ownership are published on their first
-		// bootstrap request. Unlike executable request scopes, the transport lease
-		// carries no metadata snapshot, so adjacent /init metadata may still merge
-		// before the first query seals the record.
+		// request. Unlike executable request scopes, the transport lease carries no
+		// metadata snapshot, so adjacent bootstrap metadata may still merge before
+		// the first executable request seals the record.
 		sess.clientMu.Lock()
 		sess.clientRecords[clientID] = record
 		sess.clientRuntimes[clientID] = client
@@ -1586,29 +1638,10 @@ func (srv *Server) getOrInitClient(
 		client.transportLease = sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseTransport, clientID)
 	}
 
-	if opts.NestedTransport != nil && opts.NestedTransport.Closed() {
-		// The proxy-side marker may win while its serialized callback is waiting
-		// for scopeMu. Publish the same monotonic record transition before
-		// rejecting; the callback will idempotently release transport ownership.
-		sess.markClientClosedLocked(client.clientRecord)
-		return nil, nil, fmt.Errorf("nested client %q transport closed during initialization", clientID)
-	}
-
-	// Every admitted HTTP connection, including bootstrap-only requests, owns a
-	// typed request lease before the serialization lock is released. Executable
-	// requests install this exact lease in ClientScope; there is no close/new-
-	// acquire gap in which a runtime could be reclaimed under an accepted handler.
-	requestOwner := opts.requestOwner
-	if requestOwner == "" {
-		requestOwner = "client connection"
-	}
-	requestLease := sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseRequest, requestOwner)
-	if opts.requestLeaseOut != nil {
-		*opts.requestLeaseOut = requestLease
-	}
-
 	// increment the number of active connections from this client
+	client.stateMu.Lock()
 	client.activeCount++
+	client.stateMu.Unlock()
 
 	// If this call initialized the session, mark it initialized now — as the
 	// LAST step, after the main client record has been published — so observers
@@ -1616,6 +1649,11 @@ func (srv *Server) getOrInitClient(
 	if sess.state.Load() == sessionStateUninitialized {
 		sess.state.Store(sessionStateInitialized)
 	}
+	if opts.requestLeaseOut != nil {
+		*opts.requestLeaseOut = requestLease
+	}
+	requestAdmitted = true
+	unlockScope()
 
 	var (
 		cleanupOnce sync.Once
