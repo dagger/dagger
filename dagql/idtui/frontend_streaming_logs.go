@@ -34,7 +34,7 @@ type streamingLogExporter struct {
 func renderableLogRecords(records []sdklog.Record) []sdklog.Record {
 	var filtered []sdklog.Record
 	for i, record := range records {
-		if record.Body().Kind() != log.KindString || dagui.IsCallPayloadRecord(record) {
+		if record.Body().Kind() != log.KindString || dagui.IsCallPayloadRecord(record) || dagui.IsSpanNameRecord(record) {
 			if filtered == nil {
 				filtered = make([]sdklog.Record, 0, len(records)-1)
 				filtered = append(filtered, records[:i]...)
@@ -77,7 +77,7 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 	for spanID, records := range spanGroups {
 		// Check if span exists in DB
 		dbSpan := s.db.Spans.Map[spanID]
-		if dbSpan != nil && dbSpan.Name != "" {
+		if dbSpan != nil && dbSpan.Received && dbSpan.Name != "" {
 			// Span exists, flush immediately
 			s.flushLogsForSpan(spanID, records)
 		} else {
