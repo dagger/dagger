@@ -58,17 +58,25 @@ func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
 	}
 
 	field.Focus()
-	if got := field.View(); !strings.Contains(got, "▶ [ Install selected ]") || strings.Contains(got, "▶ [ Skip ]") {
+	if got := field.View(); !strings.Contains(got, "▶ Install selected") || strings.Contains(got, "▶ Skip") || strings.Contains(got, "[") {
 		t.Fatalf("affirmative selection is not explicit:\n%s", got)
 	}
 
 	selected = false
-	if got := field.View(); !strings.Contains(got, "▶ [ Skip ]") || strings.Contains(got, "▶ [ Install selected ]") {
+	if got := field.View(); !strings.Contains(got, "▶ Skip") || strings.Contains(got, "▶ Install selected") || strings.Contains(got, "[") {
 		t.Fatalf("negative selection is not explicit:\n%s", got)
 	}
 	field.Blur()
 	if got := field.View(); strings.Contains(got, "▶") {
 		t.Fatalf("blurred confirmation retained its selection caret:\n%s", got)
+	}
+	var help strings.Builder
+	for _, binding := range field.KeyBinds() {
+		help.WriteString(binding.Help().Key)
+		help.WriteString(binding.Help().Desc)
+	}
+	if got := help.String(); strings.ContainsAny(got, "[]▶") || !strings.Contains(got, "Install selected") || !strings.Contains(got, "Skip") {
+		t.Fatalf("confirmation keymap labels are not semantic: %q", got)
 	}
 
 	var output bytes.Buffer

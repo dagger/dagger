@@ -1378,6 +1378,8 @@ func frontendFormTheme() *huh.Theme {
 	button := theme.Focused.FocusedButton.
 		UnsetBackground().
 		Foreground(lipglossv1.Color("8")).
+		Padding(0).
+		MarginRight(0).
 		Bold(false).
 		Faint(false)
 	theme.Focused.FocusedButton = button.Bold(true)

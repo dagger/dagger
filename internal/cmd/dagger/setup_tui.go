@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -191,7 +192,7 @@ func (view *setupView) Render(ctx tuist.Context) {
 	view.renderLogin(ctx)
 	ctx.Line("")
 	ctx.Line("Workspace")
-	if view.migrationID.IsValid() && view.workspace != nil {
+	if view.migrationMessage == "" && view.migrationID.IsValid() && view.workspace != nil {
 		view.RenderChild(ctx, view.workspace)
 	} else if view.loginState == setupLoginPending {
 		ctx.Line("○ Waiting for Cloud account")
@@ -199,7 +200,11 @@ func (view *setupView) Render(ctx tuist.Context) {
 		view.workSpinner.Label = "Starting workspace setup..."
 		view.RenderChild(ctx, view.workSpinner)
 	}
-	lines(ctx, view.migrationMessage)
+	if view.migrationMessage == "Nothing to migrate." || view.migrationMessage == "No migration needed." {
+		view.renderSuccess(ctx, view.migrationMessage)
+	} else {
+		lines(ctx, view.migrationMessage)
+	}
 
 	if view.recommendID.IsValid() || len(view.installIDs) > 0 || view.recommendMessage != "" {
 		ctx.Line("")
@@ -217,7 +222,7 @@ func (view *setupView) renderLogin(ctx tuist.Context) {
 		view.loginSpinner.Label = view.loginMessage
 		view.RenderChild(ctx, view.loginSpinner)
 	case setupLoginComplete:
-		ctx.Line("✓ " + view.loginMessage)
+		view.renderSuccess(ctx, view.loginMessage)
 	case setupLoginSkipped:
 		ctx.Line("○ " + view.loginMessage)
 	case setupLoginFailed:
@@ -226,6 +231,11 @@ func (view *setupView) renderLogin(ctx tuist.Context) {
 	if detail := strings.TrimSpace(view.loginDetail); detail != "" {
 		ctx.Lines(strings.Split(detail, "\n")...)
 	}
+}
+
+func (view *setupView) renderSuccess(ctx tuist.Context, message string) {
+	check := lipgloss.NewStyle().Foreground(lipgloss.Green).Render("✔")
+	ctx.Line("  " + check + " " + message)
 }
 
 func (view *setupView) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) bool {

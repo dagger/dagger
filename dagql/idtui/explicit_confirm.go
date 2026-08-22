@@ -3,6 +3,7 @@ package idtui
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +21,11 @@ type ExplicitConfirm struct {
 	affirmative string
 	negative    string
 	focused     bool
+	inline      bool
+	title       string
+	description string
+	theme       *huh.Theme
+	keymap      huh.ConfirmKeyMap
 }
 
 var _ huh.Field = (*ExplicitConfirm)(nil)
@@ -30,36 +36,28 @@ func NewExplicitConfirm(affirmative, negative string, value *bool) *ExplicitConf
 		value:       value,
 		affirmative: affirmative,
 		negative:    negative,
+		keymap:      huh.NewDefaultKeyMap().Confirm,
 	}
-	field.syncLabels()
+	field.confirm.Affirmative(affirmative).Negative(negative)
 	return field
 }
 
 func (field *ExplicitConfirm) Title(title string) *ExplicitConfirm {
+	field.title = title
 	field.confirm.Title(title)
 	return field
 }
 
 func (field *ExplicitConfirm) Description(description string) *ExplicitConfirm {
+	field.description = description
 	field.confirm.Description(description)
 	return field
 }
 
 func (field *ExplicitConfirm) Inline(inline bool) *ExplicitConfirm {
+	field.inline = inline
 	field.confirm.Inline(inline)
 	return field
-}
-
-func (field *ExplicitConfirm) syncLabels() {
-	affirmative := "[ " + field.affirmative + " ]"
-	negative := "[ " + field.negative + " ]"
-	if !field.focused {
-		field.confirm.Affirmative("  " + affirmative).Negative("  " + negative)
-	} else if field.value != nil && *field.value {
-		field.confirm.Affirmative("▶ " + affirmative).Negative("  " + negative)
-	} else {
-		field.confirm.Affirmative("  " + affirmative).Negative("▶ " + negative)
-	}
 }
 
 func (field *ExplicitConfirm) Init() tea.Cmd { return field.confirm.Init() }
@@ -70,42 +68,84 @@ func (field *ExplicitConfirm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	model, cmd := field.confirm.Update(msg)
 	field.confirm = model.(*huh.Confirm)
-	field.syncLabels()
 	return field, cmd
 }
 
 func (field *ExplicitConfirm) View() string {
-	field.syncLabels()
-	return field.confirm.View()
+	theme := field.theme
+	if theme == nil {
+		theme = huh.ThemeBase16()
+	}
+	styles := &theme.Blurred
+	if field.focused {
+		styles = &theme.Focused
+	}
+
+	var view strings.Builder
+	if field.title != "" {
+		view.WriteString(styles.Title.Render(field.title))
+	}
+	if field.description != "" {
+		if !field.inline {
+			view.WriteByte('\n')
+		}
+		view.WriteString(styles.Description.Render(field.description))
+	}
+	if !field.inline && view.Len() > 0 {
+		view.WriteString("\n\n")
+	}
+
+	selected := field.value != nil && *field.value
+	view.WriteString(field.renderChoice(styles, field.affirmative, selected))
+	view.WriteString("     ")
+	view.WriteString(field.renderChoice(styles, field.negative, !selected))
+	return styles.Base.Render(view.String())
+}
+
+func (field *ExplicitConfirm) renderChoice(styles *huh.FieldStyles, label string, selected bool) string {
+	marker := "  "
+	style := styles.BlurredButton
+	if field.focused && selected {
+		marker = "▶ "
+		style = styles.FocusedButton
+	}
+	return marker + style.Render(label)
 }
 
 func (field *ExplicitConfirm) Blur() tea.Cmd {
 	field.focused = false
-	field.syncLabels()
 	return field.confirm.Blur()
 }
 
 func (field *ExplicitConfirm) Focus() tea.Cmd {
 	field.focused = true
-	field.syncLabels()
 	return field.confirm.Focus()
 }
 func (field *ExplicitConfirm) Error() error { return field.confirm.Error() }
 func (field *ExplicitConfirm) Skip() bool   { return field.confirm.Skip() }
 func (field *ExplicitConfirm) Zoom() bool   { return field.confirm.Zoom() }
 func (field *ExplicitConfirm) KeyBinds() []key.Binding {
-	return field.confirm.KeyBinds()
+	accept := field.keymap.Accept
+	accept.SetHelp("y", field.affirmative)
+	reject := field.keymap.Reject
+	reject.SetHelp("n", field.negative)
+	return []key.Binding{
+		field.keymap.Toggle,
+		field.keymap.Prev,
+		field.keymap.Submit,
+		field.keymap.Next,
+		accept,
+		reject,
+	}
 }
 func (field *ExplicitConfirm) GetKey() string { return field.confirm.GetKey() }
 func (field *ExplicitConfirm) GetValue() any  { return field.confirm.GetValue() }
 
 func (field *ExplicitConfirm) Run() error {
-	field.syncLabels()
 	return field.confirm.Run()
 }
 
 func (field *ExplicitConfirm) RunAccessible(w io.Writer, r io.Reader) error {
-	field.syncLabels()
 	field.confirm.Title(fmt.Sprintf("%s? (No: %s)", field.affirmative, field.negative))
 	return field.confirm.RunAccessible(w, r)
 }
@@ -115,12 +155,15 @@ func (field *ExplicitConfirm) WithTheme(theme *huh.Theme) huh.Field {
 	button := local.Focused.FocusedButton.
 		UnsetBackground().
 		Foreground(lipgloss.Color("8")).
+		Padding(0).
+		MarginRight(0).
 		Bold(false).
 		Faint(false)
 	local.Focused.FocusedButton = button.Bold(true)
 	local.Focused.BlurredButton = button
 	local.Blurred.FocusedButton = button
 	local.Blurred.BlurredButton = button
+	field.theme = &local
 	field.confirm.WithTheme(&local)
 	return field
 }
@@ -131,6 +174,7 @@ func (field *ExplicitConfirm) WithAccessible(accessible bool) huh.Field {
 }
 
 func (field *ExplicitConfirm) WithKeyMap(keymap *huh.KeyMap) huh.Field {
+	field.keymap = keymap.Confirm
 	field.confirm.WithKeyMap(keymap)
 	return field
 }

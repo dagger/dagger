@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func TestSetupViewFinalSummary(t *testing.T) {
 	tui := tuist.New(tuist.NewHeadlessTerminal(100, 20))
 	tui.AddChild(view)
 
-	rendered := strings.Join(tui.RenderLines(), "\n")
+	rendered := ansi.Strip(strings.Join(tui.RenderLines(), "\n"))
 	for _, want := range []string{
 		"Cloud account: Already logged in.",
 		"Setup complete.",
@@ -36,6 +37,29 @@ func TestSetupViewFinalSummary(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.TrimSpace(rendered), "Setup complete.") {
 		t.Fatalf("completion message was not last:\n%s", rendered)
+	}
+}
+
+func TestSetupViewRendersConciseCompletedStates(t *testing.T) {
+	view := &setupView{
+		loginState:       setupLoginComplete,
+		loginMessage:     "Already logged in.",
+		migrationMessage: "Nothing to migrate.",
+	}
+	tui := tuist.New(tuist.NewHeadlessTerminal(100, 20))
+	tui.AddChild(view)
+
+	rendered := ansi.Strip(strings.Join(tui.RenderLines(), "\n"))
+	for _, want := range []string{
+		"  ✔ Already logged in.",
+		"  ✔ Nothing to migrate.",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("setup view missing %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "Workspace migration") || strings.Contains(rendered, "No workspace loaded") {
+		t.Fatalf("setup view retained verbose migration detail:\n%s", rendered)
 	}
 }
 

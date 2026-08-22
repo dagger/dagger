@@ -276,7 +276,7 @@ func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) boo
 		return false
 	}
 	var accepted bool
-	if err := Frontend.HandlePrompt(ctx, "Cloud account", "Log in to Dagger Cloud?", &accepted); err != nil {
+	if err := Frontend.HandlePrompt(ctx, "", "Log in to Dagger Cloud?", &accepted); err != nil {
 		ui.setLoginFailed(err)
 		return false
 	}
@@ -360,7 +360,11 @@ func setupStepMigrate(ctx context.Context, dag *dagger.Client, ui *setupUI) (app
 			// Nothing to migrate and no workspace config yet — don't seed an empty
 			// dagger.toml; guide the user to get started instead.
 			if !silent {
-				setupHumanMessage(ui, messageCtx, "workspace not loaded", emptyWorkspaceSetupHint)
+				if ui != nil {
+					ui.setMigrationMessage("Nothing to migrate.")
+				} else {
+					setupHumanMessage(nil, messageCtx, "workspace not loaded", emptyWorkspaceSetupHint)
+				}
 			}
 			return false, false, nil, nil
 		}
