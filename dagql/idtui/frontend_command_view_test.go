@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
 )
@@ -98,6 +99,27 @@ func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
 	}
 	if got := output.String(); !strings.Contains(got, "Install selected") || !strings.Contains(got, "Skip") {
 		t.Fatalf("accessible prompt does not name both actions:\n%s", got)
+	}
+}
+
+func TestExplicitConfirmTitleIsSubtleHeader(t *testing.T) {
+	theme := frontendFormTheme()
+	style := explicitConfirmTitleStyle(&theme.Focused)
+	if !style.GetBold() || !style.GetItalic() {
+		t.Fatal("confirmation title is not bold and italic")
+	}
+	if got := style.GetForeground(); got != lipgloss.Color("8") {
+		t.Fatalf("confirmation title foreground = %v, want ANSI bright black", got)
+	}
+}
+
+func TestExplicitConfirmTitleLink(t *testing.T) {
+	selected := true
+	field := NewExplicitConfirm("Yes", "No", &selected).
+		Title("Log in to Dagger Cloud?").
+		TitleLink("https://dagger.io/cloud")
+	if got := field.View(); !strings.Contains(got, ansi.SetHyperlink("https://dagger.io/cloud")) {
+		t.Fatalf("confirmation title is not linked: %q", got)
 	}
 }
 

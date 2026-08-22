@@ -289,7 +289,13 @@ func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (bo
 		return false, nil
 	}
 	var accepted bool
-	if err := Frontend.HandlePrompt(ctx, "", "Log in to Dagger Cloud?", &accepted); err != nil {
+	form := huh.NewForm(huh.NewGroup(
+		idtui.NewExplicitConfirm("Yes", "No", &accepted).
+			Title("Log in to Dagger Cloud?").
+			TitleLink("https://dagger.io/cloud").
+			Description("Observability · compute · persistence"),
+	))
+	if err := Frontend.HandleForm(ctx, form); err != nil {
 		return false, err
 	}
 	return accepted, nil
@@ -642,22 +648,18 @@ func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []re
 		return nil, err
 	}
 	if !install {
-		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations(recs))
+		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations())
 		return nil, nil
 	}
 	selectedRecs := filterRecommendations(recs, selected)
 	if len(selectedRecs) == 0 {
-		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations(recs))
+		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations())
 	}
 	return selectedRecs, nil
 }
 
-func skippedRecommendations(recs []recommendation) string {
-	modules := make([]string, 0, len(recs))
-	for _, rec := range recs {
-		modules = append(modules, rec.Module.Repo)
-	}
-	return "Recommended modules skipped: " + strings.Join(modules, ", ") + "."
+func skippedRecommendations() string {
+	return "Recommended modules skipped."
 }
 
 func filterRecommendations(recs []recommendation, selected []string) []recommendation {

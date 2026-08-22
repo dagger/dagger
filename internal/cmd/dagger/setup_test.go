@@ -55,12 +55,5 @@ func TestFilterRecommendations(t *testing.T) {
 }
 
 func TestSkippedRecommendations(t *testing.T) {
-	recs := []recommendation{
-		{Module: registryModule{Repo: "github.com/dagger/eslint"}},
-		{Module: registryModule{Repo: "github.com/dagger/go"}},
-	}
-	require.Equal(t,
-		"Recommended modules skipped: github.com/dagger/eslint, github.com/dagger/go.",
-		skippedRecommendations(recs),
-	)
+	require.Equal(t, "Recommended modules skipped.", skippedRecommendations())
 }

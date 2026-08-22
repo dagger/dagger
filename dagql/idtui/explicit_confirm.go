@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ExplicitConfirm wraps huh.Confirm with a textual focus marker. Huh's stock
@@ -23,6 +24,7 @@ type ExplicitConfirm struct {
 	focused     bool
 	inline      bool
 	title       string
+	titleLink   string
 	description string
 	theme       *huh.Theme
 	keymap      huh.ConfirmKeyMap
@@ -45,6 +47,11 @@ func NewExplicitConfirm(affirmative, negative string, value *bool) *ExplicitConf
 func (field *ExplicitConfirm) Title(title string) *ExplicitConfirm {
 	field.title = title
 	field.confirm.Title(title)
+	return field
+}
+
+func (field *ExplicitConfirm) TitleLink(url string) *ExplicitConfirm {
+	field.titleLink = url
 	return field
 }
 
@@ -83,7 +90,11 @@ func (field *ExplicitConfirm) View() string {
 
 	var view strings.Builder
 	if field.title != "" {
-		view.WriteString(styles.Title.Render(field.title))
+		title := explicitConfirmTitleStyle(styles).Render(field.title)
+		if field.titleLink != "" {
+			title = ansi.SetHyperlink(field.titleLink) + title + ansi.ResetHyperlink()
+		}
+		view.WriteString(title)
 	}
 	if field.description != "" {
 		if !field.inline {
@@ -100,6 +111,13 @@ func (field *ExplicitConfirm) View() string {
 	view.WriteString("     ")
 	view.WriteString(field.renderChoice(styles, field.negative, !selected))
 	return styles.Base.Render(view.String())
+}
+
+func explicitConfirmTitleStyle(styles *huh.FieldStyles) lipgloss.Style {
+	return styles.Title.
+		Foreground(lipgloss.Color("8")).
+		Bold(true).
+		Italic(true)
 }
 
 func (field *ExplicitConfirm) renderChoice(styles *huh.FieldStyles, label string, selected bool) string {
