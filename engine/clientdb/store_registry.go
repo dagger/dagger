@@ -1,6 +1,7 @@
 package clientdb
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -17,21 +18,34 @@ import (
 // CollectGarbageAfter is the time after which a store is considered garbage.
 const CollectGarbageAfter = time.Hour
 
-// DBs owns the refcounted set of open per-client telemetry stores.
-// Stream files persist after the final Close and are recovered on the next
-// Open, including their ID sequences and span lookup maps.
+// idleStoreLimit keeps at most 96 idle stream files open (three per store),
+// enough to cover a typical fan-out batch without retaining too many sizable
+// recovered span and log indexes.
+const idleStoreLimit = 32
+
+var errDBsClosed = errors.New("telemetry store registry is closed")
+
+// DBs owns the refcounted set of open per-client telemetry stores. Stores stay
+// open in a bounded LRU after their final Close so a later Open can reuse their
+// recovered indexes without replaying the spill files.
 type DBs struct {
 	Root string
 
-	open map[string]*DB
-	mu   sync.RWMutex
+	open        map[string]*DB
+	idle        *list.List
+	idleByID    map[string]*list.Element
+	idleLimit   int
+	opening     int
+	closed      bool
+	mu          sync.RWMutex
+	openingCond *sync.Cond
 
 	perStoreLock *locker.Locker
 	tailBudget   int64
 }
 
-// OpenStats is a measured snapshot of currently referenced telemetry stores.
-// Each open store owns exactly three stream handles (spans, logs, metrics).
+// OpenStats is a measured snapshot of currently open telemetry stores.
+// Each store owns exactly three stream handles, including idle cached stores.
 type OpenStats struct {
 	Stores  int
 	Streams int
@@ -49,12 +63,17 @@ func (r *DBs) OpenStats() OpenStats {
 }
 
 func NewDBs(root string) *DBs {
-	return &DBs{
+	r := &DBs{
 		Root:         root,
 		open:         make(map[string]*DB),
+		idle:         list.New(),
+		idleByID:     make(map[string]*list.Element),
+		idleLimit:    idleStoreLimit,
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
 	}
+	r.openingCond = sync.NewCond(&r.mu)
+	return r
 }
 
 func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
@@ -62,50 +81,99 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 	defer r.perStoreLock.Unlock(clientID)
 
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return nil, errDBsClosed
+	}
 	if store := r.open[clientID]; store != nil {
+		if idle := r.idleByID[clientID]; idle != nil {
+			r.idle.Remove(idle)
+			delete(r.idleByID, clientID)
+		}
 		store.refCount++
 		r.mu.Unlock()
 		return store, nil
 	}
+	r.opening++
 	r.mu.Unlock()
 
 	store, err := openStore(ctx, r.Root, clientID, r.tailBudget)
+
+	r.mu.Lock()
+	r.opening--
+	r.openingCond.Broadcast()
 	if err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
+	if r.closed {
+		err = errors.Join(errDBsClosed, store.closeStreams())
+		r.mu.Unlock()
 		return nil, err
 	}
 	store.refCount = 1
 	store.closeFn = func() error {
 		return r.close(store)
 	}
-	r.mu.Lock()
 	r.open[clientID] = store
 	r.mu.Unlock()
 	return store, nil
 }
 
-// close assumes no registry mutex is held. The per-client lock covers the
-// refcount and prevents a reopen from racing the final stream flush.
+// close assumes no registry mutex is held. The per-client lock serializes the
+// refcount. Idle eviction closes streams while holding the registry mutex, so
+// a concurrent Open cannot observe an evicted store as absent until its old
+// writer handles have closed.
 func (r *DBs) close(store *DB) error {
 	r.perStoreLock.Lock(store.clientID)
 	defer r.perStoreLock.Unlock(store.clientID)
 
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if store.refCount <= 0 {
-		r.mu.Unlock()
 		return errStoreClosed
 	}
 	store.refCount--
 	if store.refCount > 0 {
-		r.mu.Unlock()
 		return nil
 	}
-	r.mu.Unlock()
 
-	err := store.closeStreams()
+	idle := r.idle.PushBack(store)
+	r.idleByID[store.clientID] = idle
+	limit := r.idleLimit
+	if r.closed {
+		limit = 0
+	}
+	return r.evictIdleLocked(limit)
+}
+
+// evictIdleLocked closes the oldest idle stores until limit is met. Keeping
+// mu held across closeStreams prevents Open from creating a new writer for an
+// evicted client before the previous writer has closed.
+func (r *DBs) evictIdleLocked(limit int) error {
+	var result error
+	for r.idle.Len() > limit {
+		idle := r.idle.Front()
+		store := idle.Value.(*DB)
+		r.idle.Remove(idle)
+		delete(r.idleByID, store.clientID)
+		delete(r.open, store.clientID)
+		result = errors.Join(result, store.closeStreams())
+	}
+	return result
+}
+
+// Close closes all idle cached stores and prevents new stores from opening.
+// Actively referenced stores remain usable and close their streams when their
+// final handle is released.
+func (r *DBs) Close() error {
 	r.mu.Lock()
-	delete(r.open, store.clientID)
-	r.mu.Unlock()
-	return err
+	defer r.mu.Unlock()
+	r.closed = true
+	for r.opening > 0 {
+		r.openingCond.Wait()
+	}
+	return r.evictIdleLocked(0)
 }
 
 type storeGCGroup struct {
@@ -155,14 +223,28 @@ func (r *DBs) GC(keep map[string]bool) error {
 		}
 
 		r.perStoreLock.Lock(group.clientID)
-		r.mu.RLock()
-		_, open := r.open[group.clientID]
-		r.mu.RUnlock()
-		if open {
-			slog.Warn("skipping garbage collection of client telemetry store that is still open", "clientID", group.clientID)
+		r.mu.Lock()
+		store := r.open[group.clientID]
+		if store != nil && store.refCount > 0 {
+			slog.Warn("skipping garbage collection of referenced client telemetry store", "clientID", group.clientID)
+			r.mu.Unlock()
 			r.perStoreLock.Unlock(group.clientID)
 			continue
 		}
+		if store != nil {
+			if idle := r.idleByID[group.clientID]; idle != nil {
+				r.idle.Remove(idle)
+				delete(r.idleByID, group.clientID)
+			}
+			delete(r.open, group.clientID)
+			if err := store.closeStreams(); err != nil {
+				result = errors.Join(result, fmt.Errorf("close telemetry store %s: %w", group.clientID, err))
+				r.mu.Unlock()
+				r.perStoreLock.Unlock(group.clientID)
+				continue
+			}
+		}
+		r.mu.Unlock()
 		for _, name := range group.names {
 			if err := os.RemoveAll(filepath.Join(r.Root, name)); err != nil {
 				result = errors.Join(result, fmt.Errorf("remove %s: %w", name, err))
