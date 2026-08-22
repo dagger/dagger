@@ -25,8 +25,10 @@ import (
 // payloadRecorder captures the call payloads emitted through a context,
 // decoding each back into the frame a client would file under its digest.
 type payloadRecorder struct {
-	mu    sync.Mutex
-	calls map[string]*callpbv1.Call
+	mu        sync.Mutex
+	calls     map[string]*callpbv1.Call
+	order     []string
+	emissions int
 }
 
 func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
@@ -53,6 +55,8 @@ func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error 
 		r.calls = map[string]*callpbv1.Call{}
 	}
 	r.calls[digest] = &call
+	r.order = append(r.order, digest)
+	r.emissions++
 	return nil
 }
 
@@ -72,6 +76,21 @@ func (r *payloadRecorder) len() int {
 	return len(r.calls)
 }
 
+func (r *payloadRecorder) emissionCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.emissions
+}
+
+func (r *payloadRecorder) firstDigest() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.order) == 0 {
+		return ""
+	}
+	return r.order[0]
+}
+
 type testSeenKeys struct {
 	keys sync.Map
 }
@@ -79,6 +98,24 @@ type testSeenKeys struct {
 func (s *testSeenKeys) CallPayloadNeedsEmission(key string) bool {
 	_, seen := s.keys.LoadOrStore(key, struct{}{})
 	return !seen
+}
+
+type alreadySeenTelemetryStore struct{}
+
+func (alreadySeenTelemetryStore) LoadOrStoreTelemetrySeenKey(string) bool { return true }
+func (alreadySeenTelemetryStore) StoreTelemetrySeenKey(string)            {}
+
+type payloadRoutingTestServer struct {
+	*mockServer
+	payloadStore dagql.CallPayloadSeenKeyStore
+}
+
+func (s *payloadRoutingTestServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return alreadySeenTelemetryStore{}, nil
+}
+
+func (s *payloadRoutingTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
+	return s.payloadStore, nil
 }
 
 // payloadRecorderCtx returns a context whose logger provider records every
@@ -110,6 +147,35 @@ func skillsChain() (agent, withSkills, dir *dagql.ResultCall) {
 	return agent, withSkills, dir
 }
 
+func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
+	agent, _, _ := skillsChain()
+	req := &dagql.CallRequest{ResultCall: agent}
+
+	runRoute := func(store dagql.CallPayloadSeenKeyStore) (*payloadRecorder, context.Context) {
+		recorder, ctx := payloadRecorderCtx(t)
+		ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+			mockServer:   &mockServer{},
+			payloadStore: store,
+		}})
+		AroundFunc(ctx, req)
+		return recorder, ctx
+	}
+
+	routeA := &testSeenKeys{}
+	recorderA, ctxA := runRoute(routeA)
+	require.Greater(t, recorderA.emissionCount(), 0,
+		"a session-deduped span must still enqueue its route's call closure")
+
+	firstRouteA := recorderA.emissionCount()
+	AroundFunc(ctxA, req)
+	require.Equal(t, firstRouteA, recorderA.emissionCount(),
+		"revisiting the same delivery domain must remain idempotent")
+
+	recorderB, _ := runRoute(&testSeenKeys{})
+	require.Equal(t, firstRouteA, recorderB.emissionCount(),
+		"a sibling delivery domain must receive the closure despite session-wide span dedupe")
+}
+
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, withSkills, dir := skillsChain()
@@ -118,6 +184,7 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent)
+	require.Equal(t, rootDigest.String(), rec.firstDigest(), "the requested root must lead its closure")
 
 	// The frame behind the ID-literal argument is the whole point: a span
 	// payload flattens it to a bare digest, so this channel is the only way
@@ -150,13 +217,13 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 
 	seen := &testSeenKeys{}
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
-	first := rec.len()
+	first := rec.emissionCount()
 	require.Greater(t, first, 0)
 
 	// A second selection of the same call publishes nothing in this synchronous
 	// delivery fixture: the first walk covered the whole transitive closure.
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
-	require.Equal(t, first, rec.len())
+	require.Equal(t, first, rec.emissionCount())
 
 	// A LONGER chain over the same frames publishes only what is NEW: its own
 	// root frame and the newly referenced prompt; the receiver spine below it
@@ -173,7 +240,7 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	longerDigest, err := longer.RecipeDigest(ctx)
 	require.NoError(t, err)
 	recordCallPayloads(ctx, seen, longerDigest.String(), longer)
-	require.Equal(t, first+2, rec.len(), "only the new root and referenced frame should be published")
+	require.Equal(t, first+2, rec.emissionCount(), "only the new root and referenced frame should be published")
 	require.NotNil(t, rec.get(longerDigest.String()), "the new root frame was not published")
 	promptDigest, err := prompt.RecipeDigest(ctx)
 	require.NoError(t, err)

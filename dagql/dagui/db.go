@@ -946,7 +946,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
-		db.CallPayloads[span.CallDigest] = span.CallPayload
+		db.addCallPayload(span.CallDigest, span.CallPayload)
 	}
 
 	if !span.ParentID.IsValid() && span.Received {

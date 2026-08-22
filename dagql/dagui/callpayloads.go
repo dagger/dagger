@@ -47,15 +47,31 @@ func (db *DB) ingestCallPayload(record sdklog.Record) bool {
 		// than rendering half a protobuf as log text.
 		return true
 	}
-	if _, ok := db.CallPayloads[digest]; ok {
+	if !db.addCallPayload(digest, payload) {
 		// Already have it, from either channel. Payloads are keyed by their
 		// own digest, so a second copy carries nothing new.
 		return true
 	}
-	db.CallPayloads[digest] = payload
-	// Views memoized on db.mutations (and the per-span call caches keyed off
-	// them) can go from "chain not rebuildable" to rebuildable on this record
-	// alone, so a payload is a DB mutation like a span update.
+	// Views memoized on db.mutations can go from "chain not rebuildable" to
+	// rebuildable on this record alone, so a payload is a DB mutation like a
+	// span update.
 	db.mutations++
+	return true
+}
+
+// addCallPayload installs an immutable exact payload and invalidates any span
+// views that provisionally resolved the digest through an output creator while
+// the payload was absent. Logs and spans are independently batched, so those
+// provisional views may already have been rendered by the time this runs.
+func (db *DB) addCallPayload(digest, payload string) bool {
+	if _, ok := db.CallPayloads[digest]; ok {
+		return false
+	}
+	db.CallPayloads[digest] = payload
+	delete(db.Calls, digest)
+	for _, span := range db.Intervals[digest] {
+		span.callCache = nil
+		span.baseCache = nil
+	}
 	return true
 }

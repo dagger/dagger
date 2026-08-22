@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -43,10 +44,11 @@ const CallPayloadInstrumentationScope = "dagger.io/dag.call"
 // arguments (ID literals inside lists and objects included) and implicit
 // inputs — minus digests already claimed in the client's delivery domain.
 //
-// It is called after the call's span starts and first checks whether the root
-// is missing anywhere on the route before rebuilding the recipe. The check is
-// only an optimization: sessionLogExporter atomically claims the exact missing
-// targets for each emitted record, so concurrent closure walks remain safe.
+// It is called even when presentation-span deduplication suppresses the call,
+// and first checks whether the root is missing anywhere on the route before
+// rebuilding the recipe. The check is only an optimization: sessionLogExporter
+// atomically claims the exact missing targets for each emitted record, so
+// concurrent closure walks remain safe.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
@@ -89,16 +91,16 @@ func recordCallPayloads(
 	}
 
 	logger := telemetry.Logger(ctx, CallPayloadInstrumentationScope)
-	for dgst, callPB := range recipe.GetCallsByDigest() {
+	emit := func(dgst string, callPB *callpbv1.Call) {
 		// The root was checked before rebuilding. Check every other frame before
 		// encoding so closure walks avoid work already delivered everywhere.
 		if dgst != callDigest && !store.CallPayloadNeedsEmission(dgst) {
-			continue
+			return
 		}
 		payload, err := callPB.Encode()
 		if err != nil {
 			slog.WarnContext(ctx, "failed to encode call payload", "digest", dgst, "err", err)
-			continue
+			return
 		}
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
@@ -111,5 +113,18 @@ func recordCallPayloads(
 			log.String(telemetryattrs.DagCallPayloadAttr, payload),
 		)
 		logger.Emit(ctx, rec)
+	}
+
+	// Emit the requested root first so it is never delayed behind a closure
+	// larger than the fast payload transport's bounded exporter batch.
+	calls := recipe.GetCallsByDigest()
+	rootDigest := recipe.GetRootDigest()
+	if root := calls[rootDigest]; root != nil {
+		emit(rootDigest, root)
+	}
+	for dgst, callPB := range calls {
+		if dgst != rootDigest {
+			emit(dgst, callPB)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -98,6 +99,92 @@ func TestIngestCallPayloadResolvesCallWithNoSpan(t *testing.T) {
 	// invisible until some unrelated span happened to bump it.
 	if db.MutationCount() == before {
 		t.Error("ingesting a payload did not bump the mutation counter")
+	}
+}
+
+func TestLateExactCallPayloadInvalidatesProvisionalSpanCaches(t *testing.T) {
+	db := NewDB()
+	provisional := &callpbv1.Call{
+		Digest:         "xxh3:provisional-withExec",
+		Field:          "withExec",
+		Type:           &callpbv1.Type{NamedType: "Container"},
+		ReceiverDigest: "xxh3:provisional-container",
+	}
+	provisionalPayload, err := provisional.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const exactDigest = "xxh3:exact-withExec"
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:          spanID(1),
+			Name:        "Container.withExec",
+			StartTime:   time.Unix(1, 0),
+			EndTime:     time.Unix(2, 0),
+			CallDigest:  provisional.Digest,
+			CallPayload: provisionalPayload,
+			Output:      exactDigest,
+		},
+		{
+			ID:         spanID(2),
+			Name:       "Container.withExec",
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: exactDigest,
+		},
+	})
+
+	span := db.Spans.Map[spanID(2)]
+	if got := span.Call(); got != provisional {
+		// DB.Call decodes payloads, so compare the identity that matters rather
+		// than the fixture pointer.
+		if got == nil || got.Digest != provisional.Digest {
+			t.Fatalf("initial call did not provisionally resolve through its creator: %+v", got)
+		}
+	}
+	if got := span.Base(); got == nil || got.Digest != provisional.ReceiverDigest {
+		t.Fatalf("initial base cache = %+v, want provisional receiver", got)
+	}
+	if line := renderCallLine(span.Call()); strings.Contains(line, "echo exact") {
+		t.Fatalf("provisional call unexpectedly contained the exact command: %s", line)
+	}
+
+	exact := &callpbv1.Call{
+		Digest:         exactDigest,
+		Field:          "withExec",
+		Type:           &callpbv1.Type{NamedType: "Container"},
+		ReceiverDigest: "xxh3:exact-container",
+		Args: []*callpbv1.Argument{{
+			Name: "args",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{
+				Values: []*callpbv1.Literal{
+					{Value: &callpbv1.Literal_String_{String_: "sh"}},
+					{Value: &callpbv1.Literal_String_{String_: "-c"}},
+					{Value: &callpbv1.Literal_String_{String_: "echo exact"}},
+				},
+			}}},
+		}},
+	}
+	exportCallPayloads(t, db, spanID(2), exact)
+
+	if got := span.Call(); got == nil || got.Digest != exactDigest {
+		t.Fatalf("late exact payload did not replace provisional call cache: %+v", got)
+	}
+	if line := renderCallLine(span.Call()); !strings.Contains(line, "echo exact") {
+		t.Fatalf("late exact payload did not restore command-bearing rendering: %s", line)
+	}
+	if got := span.Base(); got == nil || got.Digest != exact.ReceiverDigest {
+		t.Fatalf("base cache was not rebuilt from the exact call: %+v", got)
+	}
+
+	cachedCall, cachedBase := span.callCache, span.baseCache
+	mutations := db.MutationCount()
+	exportCallPayloads(t, db, spanID(2), exact)
+	if db.MutationCount() != mutations {
+		t.Fatal("duplicate payload changed the DB mutation count")
+	}
+	if span.callCache != cachedCall || span.baseCache != cachedBase {
+		t.Fatal("duplicate payload invalidated already-exact span caches")
 	}
 }
 

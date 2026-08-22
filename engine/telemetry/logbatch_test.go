@@ -8,6 +8,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -16,9 +17,12 @@ import (
 // countingLogExporter records how many log records arrive and when the first
 // batch lands.
 type countingLogExporter struct {
-	mu       sync.Mutex
-	exported int
-	firstAt  time.Time
+	mu        sync.Mutex
+	exported  int
+	batches   int
+	flushes   int
+	shutdowns int
+	firstAt   time.Time
 }
 
 var _ sdklog.Exporter = (*countingLogExporter)(nil)
@@ -29,17 +33,43 @@ func (e *countingLogExporter) Export(_ context.Context, recs []sdklog.Record) er
 	if e.exported == 0 && len(recs) > 0 {
 		e.firstAt = time.Now()
 	}
+	if len(recs) > 0 {
+		e.batches++
+	}
 	e.exported += len(recs)
 	return nil
 }
 
-func (e *countingLogExporter) Shutdown(context.Context) error   { return nil }
-func (e *countingLogExporter) ForceFlush(context.Context) error { return nil }
+func (e *countingLogExporter) Shutdown(context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.shutdowns++
+	return nil
+}
+
+func (e *countingLogExporter) ForceFlush(context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.flushes++
+	return nil
+}
 
 func (e *countingLogExporter) count() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.exported
+}
+
+func (e *countingLogExporter) batchCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.batches
+}
+
+func (e *countingLogExporter) lifecycleCounts() (int, int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.flushes, e.shutdowns
 }
 
 // TestLogBatchProcessorIdleChurnBounded guards the property that motivated
@@ -161,4 +191,85 @@ func TestLogBatchProcessorTrickleDelivery(t *testing.T) {
 	require.Eventually(t, func() bool { return exp.count() >= 1 },
 		2*LogExportInterval, 5*time.Millisecond,
 		"a single sparse record must arrive within ~one export interval")
+}
+
+func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
+	t.Parallel()
+
+	exp := &countingLogExporter{}
+	proc := NewCallPayloadBatchProcessor(exp)
+
+	var ordinary sdklog.Record
+	ordinary.SetBody(logapi.StringValue("ordinary"))
+	require.NoError(t, proc.OnEmit(t.Context(), &ordinary))
+
+	var payload sdklog.Record
+	payload.SetAttributes(logapi.String(telemetryattrs.DagCallPayloadAttr, "payload"))
+	const records = 2*LogExportMaxBatchSize + 1
+	for range records {
+		require.NoError(t, proc.OnEmit(t.Context(), &payload))
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.ForceFlush(ctx))
+	require.Equal(t, records, exp.count())
+	require.Equal(t, 3, exp.batchCount(), "the full queued closure must drain in back-to-back bounded batches")
+
+	// The worker has no idle poll loop, so draining leaves no delayed empty or
+	// duplicate exports behind.
+	time.Sleep(2 * CallPayloadExportDelay)
+	require.Equal(t, records, exp.count())
+
+	require.NoError(t, proc.Shutdown(ctx))
+	flushes, shutdowns := exp.lifecycleCounts()
+	require.Zero(t, flushes, "the payload processor does not own the shared exporter")
+	require.Zero(t, shutdowns, "the payload processor does not own the shared exporter")
+}
+
+type blockingLogExporter struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *blockingLogExporter) Export(context.Context, []sdklog.Record) error {
+	e.once.Do(func() { close(e.started) })
+	<-e.release
+	return nil
+}
+
+func (*blockingLogExporter) Shutdown(context.Context) error   { return nil }
+func (*blockingLogExporter) ForceFlush(context.Context) error { return nil }
+
+func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
+	t.Parallel()
+
+	exp := &blockingLogExporter{started: make(chan struct{}), release: make(chan struct{})}
+	proc := NewCallPayloadBatchProcessor(exp)
+	var payload sdklog.Record
+	payload.SetAttributes(logapi.String(telemetryattrs.DagCallPayloadAttr, "payload"))
+	require.NoError(t, proc.OnEmit(t.Context(), &payload))
+
+	select {
+	case <-exp.started:
+	case <-time.After(time.Second):
+		t.Fatal("payload batch did not reach exporter")
+	}
+
+	returned := make(chan struct{})
+	go func() {
+		_ = proc.OnEmit(context.Background(), &payload)
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("OnEmit blocked behind the exporter")
+	}
+
+	close(exp.release)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.Shutdown(ctx))
 }

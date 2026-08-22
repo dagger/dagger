@@ -78,18 +78,18 @@ func AroundFunc(
 	var payloadKeys dagql.CallPayloadSeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
 		q = currentQuery
-		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
-			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
-				return ctx, dagql.NoopDone
-			}
-		}
-		// Payload claims are scoped to the client's delivery domain, NOT the
-		// session: the span dedupe above may be session-wide (display volume),
-		// but a payload claimed where a client never received it would leave
-		// that client's ID rebuilds permanently unservable (see
-		// core/dag_call_telemetry.go).
+		// Payload delivery is scoped per route, unlike the session-wide span
+		// dedupe below. Resolve the route first so a sibling client still receives
+		// exact call data even when another client already spent the presentation
+		// span for this digest.
 		if store, payloadKeysErr := q.CallPayloadSeenKeyStore(ctx); payloadKeysErr == nil {
 			payloadKeys = store
+		}
+		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
+				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
+				return ctx, dagql.NoopDone
+			}
 		}
 	}
 
@@ -153,10 +153,8 @@ func AroundFunc(
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
 
-	// Publish this call and its complete recipe closure over the log channel.
-	// The span retains only the call digest and presentation metadata; keeping
-	// payloads out of span attributes gives every frame one transport path while
-	// legacy consumers may still ingest old span-carried payloads.
+	// Keep normally visible calls associated with their presentation span while
+	// using the same batched log transport as deduplicated calls above.
 	recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
