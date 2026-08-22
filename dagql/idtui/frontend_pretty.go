@@ -1364,6 +1364,8 @@ func frontendFormTheme() *huh.Theme {
 	theme := huh.ThemeBase16()
 	theme.Focused.Base = theme.Focused.Base.BorderLeft(false)
 	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false)
+	theme.Focused.SelectSelector = theme.Focused.SelectSelector.SetString("▶ ")
+	theme.Focused.MultiSelectSelector = theme.Focused.MultiSelectSelector.SetString("▶ ")
 	// ThemeBase16 copies its focused selectors into the blurred field styles,
 	// which leaves a stale caret behind after focus moves to another field.
 	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.SetString("  ")

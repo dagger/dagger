@@ -37,6 +37,9 @@ func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	if strings.Contains(theme.Blurred.MultiSelectSelector.String(), ">") {
 		t.Fatal("blurred multi-select still has a selection caret")
 	}
+	if got := theme.Focused.MultiSelectSelector.String(); got != "▶ " {
+		t.Fatalf("focused multi-select selector = %q, want %q", got, "▶ ")
+	}
 }
 
 func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
