@@ -709,7 +709,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 		ConfiguredLogProcessors:  3,
 		ConfiguredMetricReaders:  1,
 		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
-		ConfiguredLogQueueSlots:  enginetel.LogQueueSize + enginetel.CallPayloadQueueSize,
+		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 	}
 }
 

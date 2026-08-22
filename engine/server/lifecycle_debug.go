@@ -24,7 +24,8 @@ type LifecycleDebugSnapshot struct {
 
 // LifecycleTelemetryCounts reports configured provider, processor, reader, and
 // queue cardinality. All provider and reader counts are session-owned. Queue
-// capacity is configured fact, never measured occupancy.
+// slots count configured bounded capacity; lossless unbounded queues contribute
+// no finite slot count. This is configured fact, never measured occupancy.
 type LifecycleTelemetryCounts struct {
 	TracerProviders          int `json:"tracer_providers"`
 	LoggerProviders          int `json:"logger_providers"`

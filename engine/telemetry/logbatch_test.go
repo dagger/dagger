@@ -3,15 +3,18 @@ package telemetry
 import (
 	"context"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"google.golang.org/protobuf/proto"
 )
 
 // countingLogExporter records how many log records arrive and when the first
@@ -306,28 +309,59 @@ type blockingLogExporter struct {
 	started chan struct{}
 	release chan struct{}
 	once    sync.Once
+
+	mu       sync.Mutex
+	exported int
+	batches  []int
 }
 
-func (e *blockingLogExporter) Export(context.Context, []sdklog.Record) error {
+func (e *blockingLogExporter) Export(_ context.Context, records []sdklog.Record) error {
 	e.once.Do(func() { close(e.started) })
 	<-e.release
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.exported += len(records)
+	e.batches = append(e.batches, len(records))
 	return nil
+}
+
+func (e *blockingLogExporter) stats() (int, []int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.exported, append([]int(nil), e.batches...)
 }
 
 func (*blockingLogExporter) Shutdown(context.Context) error   { return nil }
 func (*blockingLogExporter) ForceFlush(context.Context) error { return nil }
 
-func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
+func TestCallPayloadBatchProcessorLosslessWhileExporterBlocked(t *testing.T) {
 	t.Parallel()
 
 	exp := &blockingLogExporter{started: make(chan struct{}), release: make(chan struct{})}
 	proc := NewCallPayloadBatchProcessor(exp)
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
 	logger := provider.Logger(telemetryattrs.CallPayloadInstrumentationScope)
-	var payload logapi.Record
-	payload.SetBody(logapi.BytesValue([]byte("payload")))
-	payload.AddAttributes(logapi.Bool(telemetryattrs.DagCallPayloadAttr, true))
-	logger.Emit(t.Context(), payload)
+
+	// Build distinct, valid raw call payloads so the burst models a real recipe
+	// closure rather than duplicate log traffic.
+	const records = 2*LogQueueSize + 1
+	payloads := make([]logapi.Record, records+1)
+	for i := range payloads {
+		body, err := proto.Marshal(&callpbv1.Call{
+			Field: "dependency",
+			Type:  &callpbv1.Type{NamedType: "Thing"},
+			Args: []*callpbv1.Argument{{
+				Name: "index",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
+					String_: strconv.Itoa(i),
+				}},
+			}},
+		})
+		require.NoError(t, err)
+		payloads[i].SetBody(logapi.BytesValue(body))
+		payloads[i].AddAttributes(logapi.Bool(telemetryattrs.DagCallPayloadAttr, true))
+	}
+	logger.Emit(t.Context(), payloads[0])
 
 	select {
 	case <-exp.started:
@@ -335,19 +369,35 @@ func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
 		t.Fatal("payload batch did not reach exporter")
 	}
 
+	// Hold the exporter while enqueueing more than the old 2048-record cap.
+	// Agent recipes can be tens of thousands of calls; dropping the tail from
+	// both this fast path and the ordinary bounded log processor left the root
+	// claimed while nested ID arguments such as Directory.withChanges(changes:)
+	// never reached the spawning client. OnEmit must stay nonblocking, but this
+	// dedicated immutable-payload queue must retain the entire burst.
 	returned := make(chan struct{})
 	go func() {
-		logger.Emit(context.Background(), payload)
+		for i := 1; i < len(payloads); i++ {
+			logger.Emit(context.Background(), payloads[i])
+		}
 		close(returned)
 	}()
 	select {
 	case <-returned:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("OnEmit blocked behind the exporter")
 	}
 
 	close(exp.release)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
+	require.NoError(t, proc.ForceFlush(ctx))
+	exported, batches := exp.stats()
+	require.Equal(t, records+1, exported,
+		"every dependency in an oversized call-payload closure must reach the exporter")
+	for _, size := range batches {
+		require.LessOrEqual(t, size, LogExportMaxBatchSize,
+			"lossless ingress must still use bounded exporter batches")
+	}
 	require.NoError(t, proc.Shutdown(ctx))
 }

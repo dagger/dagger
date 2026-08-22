@@ -1172,7 +1172,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 			ConfiguredLogProcessors:  3,
 			ConfiguredMetricReaders:  1,
 			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
-			ConfiguredLogQueueSlots:  enginetel.LogQueueSize + enginetel.CallPayloadQueueSize,
+			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 		},
 	}
 	installTestClientRecords(sess)
@@ -1437,7 +1437,7 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	require.Equal(t, 1, snapshot.Providers.MeterProviders)
 	require.Equal(t, 1, snapshot.Providers.ConfiguredMetricReaders)
 	require.Equal(t, enginetel.LargeSpanQueueSize, snapshot.Providers.ConfiguredSpanQueueSlots)
-	require.Equal(t, enginetel.LogQueueSize+enginetel.CallPayloadQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
+	require.Equal(t, enginetel.LogQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
 	for _, clientSnapshot := range snapshot.Sessions[0].Clients {
 		require.Zero(t, clientSnapshot.Telemetry.MeterProviders)
 		require.Zero(t, clientSnapshot.Telemetry.ConfiguredMetricReaders)
