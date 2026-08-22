@@ -10,8 +10,10 @@ explains the modeling rules, and every action's comment names the Go code
 it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
-violations are reserved for deliberately accepted model findings; the
-current configuration set consists entirely of green regression gates.
+violations are reserved for deliberately accepted model findings. One
+such finding is tracked today: `decode_cancel` reproduces a decode
+leader's own cancellation failing its joiners (see the config header);
+every other configuration is a green regression gate.
 
 Run the check:
 
