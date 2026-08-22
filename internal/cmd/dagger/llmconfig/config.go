@@ -67,6 +67,7 @@ type Provider struct {
 	APIKey           string `toml:"api_key"`
 	BaseURL          string `toml:"base_url,omitempty"`
 	Model            string `toml:"model,omitempty"`
+	SmallModel       string `toml:"small_model,omitempty"`
 	AzureVersion     string `toml:"azure_version,omitempty"`
 	DisableStreaming bool   `toml:"disable_streaming,omitempty"`
 	Enabled          bool   `toml:"enabled"`

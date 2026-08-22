@@ -909,6 +909,43 @@ func (LLMSuite) TestDefaultModelPinnedInID(ctx context.Context, t *testctx.T) {
 		"llm() must pin the default model's routed provider alongside it")
 }
 
+func (LLMSuite) TestSmallModelPinnedInID(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := workspaceBase(t, c).
+		WithEnvVariable("OPENAI_MODEL", "gpt-main-model-test").
+		WithEnvVariable("OPENAI_SMALL_MODEL", "small-model-test").
+		With(daggerShell(`llm | with-small-model | portable-id`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(strings.TrimSpace(out)))
+
+	var llmCall *call.ID
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		require.NotEqual(t, "withSmallModel", cur.Field(),
+			"the durable recipe must not retain the semantic selector")
+		if cur.Field() == "llm" {
+			llmCall = cur
+		}
+	}
+	// PortableRecipe follows the repository's flat-LLM convention: a final
+	// withModel state is folded into the root llm(model:, provider:) selector
+	// rather than retaining the mutator in the spine. Either representation is
+	// concrete; importantly, withSmallModel itself is absent.
+	require.NotNil(t, llmCall,
+		"withSmallModel must pin its resolved route into the flat LLM recipe")
+	pinned := map[string]string{}
+	for _, arg := range llmCall.Args() {
+		if lit, ok := arg.Value().(*call.LiteralString); ok {
+			pinned[arg.Name()] = lit.Value()
+		}
+	}
+	require.Equal(t, "small-model-test", pinned["model"])
+	require.Equal(t, "openai", pinned["provider"])
+}
+
 // TestPortableIDDropsSupersededWorkspaceBindings verifies that portableID
 // re-emits the session as a flat, data-only recipe: the conversation survives
 // byte-for-byte, but the workspace overlays recorded during the session

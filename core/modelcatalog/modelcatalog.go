@@ -24,13 +24,15 @@ var providerCatalogIDs = map[string]catwalk.InferenceProvider{
 }
 
 var (
-	catalogOnce sync.Once
-	catalog     map[catwalk.InferenceProvider]map[string]catwalk.Model
+	catalogOnce        sync.Once
+	catalog            map[catwalk.InferenceProvider]map[string]catwalk.Model
+	defaultSmallModels map[catwalk.InferenceProvider]string
 )
 
 func load() map[catwalk.InferenceProvider]map[string]catwalk.Model {
 	catalogOnce.Do(func() {
 		catalog = make(map[catwalk.InferenceProvider]map[string]catwalk.Model)
+		defaultSmallModels = make(map[catwalk.InferenceProvider]string)
 		for _, p := range embedded.GetAll() {
 			models := make(map[string]catwalk.Model, len(p.Models))
 			for _, m := range p.Models {
@@ -42,6 +44,7 @@ func load() map[catwalk.InferenceProvider]map[string]catwalk.Model {
 				}
 			}
 			catalog[p.ID] = models
+			defaultSmallModels[p.ID] = p.DefaultSmallModelID
 		}
 	})
 	return catalog
@@ -76,6 +79,19 @@ func Lookup(provider, model string) (catwalk.Model, bool) {
 	}
 	m, ok := load()[cwID][NormalizeModelID(model)]
 	return m, ok
+}
+
+// DefaultSmallModel returns Catwalk's recommended small model for a Dagger
+// provider. Providers without a reliable catalog mapping (local, other, ...)
+// return no model so callers can safely retain their current route.
+func DefaultSmallModel(provider string) (string, bool) {
+	cwID, ok := providerCatalogIDs[provider]
+	if !ok {
+		return "", false
+	}
+	load()
+	model := defaultSmallModels[cwID]
+	return model, model != ""
 }
 
 // costPerMillion is the denominator for catwalk's per-1M-token prices.

@@ -14,13 +14,16 @@ var envMapping = []struct {
 	{"ANTHROPIC_API_KEY", "anthropic", func(p *Provider, v string) { p.APIKey = v }},
 	{"ANTHROPIC_BASE_URL", "anthropic", func(p *Provider, v string) { p.BaseURL = v }},
 	{"ANTHROPIC_MODEL", "anthropic", func(p *Provider, v string) { p.Model = v }},
+	{"ANTHROPIC_SMALL_MODEL", "anthropic", func(p *Provider, v string) { p.SmallModel = v }},
 	{"OPENAI_API_KEY", "openai", func(p *Provider, v string) { p.APIKey = v }},
 	{"OPENAI_BASE_URL", "openai", func(p *Provider, v string) { p.BaseURL = v }},
 	{"OPENAI_MODEL", "openai", func(p *Provider, v string) { p.Model = v }},
+	{"OPENAI_SMALL_MODEL", "openai", func(p *Provider, v string) { p.SmallModel = v }},
 	{"OPENAI_AZURE_VERSION", "openai", func(p *Provider, v string) { p.AzureVersion = v }},
 	{"GEMINI_API_KEY", "google", func(p *Provider, v string) { p.APIKey = v }},
 	{"GEMINI_BASE_URL", "google", func(p *Provider, v string) { p.BaseURL = v }},
 	{"GEMINI_MODEL", "google", func(p *Provider, v string) { p.Model = v }},
+	{"GEMINI_SMALL_MODEL", "google", func(p *Provider, v string) { p.SmallModel = v }},
 }
 
 // MergeEnvVars reads LLM-related environment variables and merges them
