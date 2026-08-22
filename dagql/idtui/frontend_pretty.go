@@ -297,6 +297,9 @@ func (h *commandViewHandle) Update(fn func()) {
 		if h.fe.commandView != nil {
 			h.fe.commandView.Update()
 		}
+		if h.fe.keymapBar != nil {
+			h.fe.keymapBar.Update()
+		}
 		h.fe.Update()
 	})
 }
@@ -1257,12 +1260,12 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 		return ErrNonInteractive
 	}
 
-	done := make(chan struct{}, 1)
+	done := make(chan error, 1)
 	wrapCh := make(chan *teav1.Wrap, 1)
 
 	fe.dispatch(func() {
 		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
-			close(done)
+			done <- formCompletionError(f)
 		})
 		fe.Update()
 	})
@@ -1276,9 +1279,16 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 			fe.removeForm(wrap)
 		})
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
+}
+
+func formCompletionError(form *huh.Form) error {
+	if form.State == huh.StateAborted {
+		return errors.Join(ErrInterrupted, huh.ErrUserAborted)
+	}
+	return nil
 }
 
 // removeForm tears the given prompt form out of the TUI. It no-ops unless wrap
@@ -1346,6 +1356,12 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 		model := fe.formModel
 		fe.removeForm(wrap)
 		result(model)
+		if model.State == huh.StateAborted {
+			// A form owns input focus, so Ctrl+C reaches Huh instead of the
+			// frontend's navigation handler. Preserve the frontend-wide interrupt
+			// contract rather than treating the form's default value as a choice.
+			fe.quitAction(ErrInterrupted)
+		}
 	})
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
@@ -2232,6 +2248,9 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	if fe.formModel != nil {
 		return fe.formModel.KeyBinds()
+	}
+	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
+		return nil
 	}
 
 	if fe.editlineFocused {
@@ -6786,7 +6805,7 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
@@ -6800,7 +6819,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 						}).View())),
 				),
 			),
-			func(f *huh.Form) { close(done) },
+			func(f *huh.Form) { done <- formCompletionError(f) },
 		)
 		fe.Update()
 	})
@@ -6808,13 +6827,13 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
@@ -6829,7 +6848,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 						Value(dest),
 				),
 			),
-			func(f *huh.Form) { close(done) },
+			func(f *huh.Form) { done <- formCompletionError(f) },
 		)
 		fe.Update()
 	})
@@ -6837,8 +6856,8 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 

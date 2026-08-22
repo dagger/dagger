@@ -89,6 +89,20 @@ func TestSetupViewLoginChoiceHasNoTransitionalCruft(t *testing.T) {
 	}
 }
 
+func TestSetupViewHidesKeymapDuringAuthentication(t *testing.T) {
+	view := &setupView{
+		loginState:   setupLoginPending,
+		loginMessage: "Waiting for authentication...",
+	}
+	if !view.HideKeymap() {
+		t.Fatal("authentication wait did not hide keymap")
+	}
+	view.loginMessage = "Checking Cloud account..."
+	if view.HideKeymap() {
+		t.Fatal("ordinary setup progress hid keymap")
+	}
+}
+
 type immediateViewHandle struct{}
 
 func (immediateViewHandle) Update(fn func()) { fn() }

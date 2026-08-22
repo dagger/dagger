@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -46,6 +47,15 @@ func TestFrontendFormKeymapNamesSpaceToggle(t *testing.T) {
 	keymap := frontendFormKeyMap()
 	if got := keymap.MultiSelect.Toggle.Help().Key; got != "space" {
 		t.Fatalf("multi-select toggle key = %q, want space", got)
+	}
+}
+
+func TestAbortedFormInterrupts(t *testing.T) {
+	form := huh.NewForm(huh.NewGroup(huh.NewConfirm()))
+	form.State = huh.StateAborted
+	err := formCompletionError(form)
+	if !errors.Is(err, ErrInterrupted) || !errors.Is(err, huh.ErrUserAborted) {
+		t.Fatalf("aborted form returned %v", err)
 	}
 }
 

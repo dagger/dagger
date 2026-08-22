@@ -180,6 +180,10 @@ func (view *setupView) SetFinal(final bool) {
 	}
 }
 
+func (view *setupView) HideKeymap() bool {
+	return view.loginState == setupLoginPending && view.loginMessage == "Waiting for authentication..."
+}
+
 func (view *setupView) Render(ctx tuist.Context) {
 	if view.final {
 		view.renderFinal(ctx)
@@ -217,7 +221,7 @@ func (view *setupView) Render(ctx tuist.Context) {
 func (view *setupView) renderLogin(ctx tuist.Context) {
 	switch view.loginState {
 	case setupLoginPending:
-		if view.loginMessage != "Waiting for login choice..." {
+		if view.loginMessage != "Waiting for login choice..." && view.loginMessage != "Waiting for authentication..." {
 			view.loginSpinner.Label = view.loginMessage
 			view.RenderChild(ctx, view.loginSpinner)
 		}

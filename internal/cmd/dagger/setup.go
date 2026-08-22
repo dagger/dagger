@@ -74,17 +74,26 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 	// run in a FRESH engine session: the per-client workspace is detected once
 	// and cached for a session's lifetime, so install must not reuse the
 	// migrate session or it would still see the legacy dagger.json.
-	var setupUI *setupUI
+	var (
+		setupUI       *setupUI
+		setupLoginErr error
+	)
 	return withSetupSessions(cmd.Context(), func(ctx context.Context) {
 		setupUI = newSetupUI(Frontend)
-		if err := setupStepLogin(ctx, cmd, cloudauth.GetCloudAuth, setupUI); err != nil {
-			setupUI.setLoginFailed(err)
+		setupLoginErr = setupStepLogin(ctx, cmd, cloudauth.GetCloudAuth, setupUI)
+		if setupLoginErr != nil {
+			if !errors.Is(setupLoginErr, idtui.ErrInterrupted) {
+				setupUI.setLoginFailed(setupLoginErr)
+			}
 			if setupUI == nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", err)
+				fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", setupLoginErr)
 			}
 			// Login failures shouldn't block migration/recommend.
 		}
 	}, func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) (rerr error) {
+		if errors.Is(setupLoginErr, idtui.ErrInterrupted) {
+			return setupLoginErr
+		}
 		defer func() {
 			if rerr != nil {
 				setupUI.fail(rerr)
@@ -239,7 +248,11 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 	if ui != nil {
 		ui.setLoginPending("Waiting for login choice...")
 	}
-	if !confirmSetupLogin(ctx, cmd, ui) {
+	accepted, err := confirmSetupLogin(ctx, cmd, ui)
+	if err != nil {
+		return err
+	}
+	if !accepted {
 		if ui == nil {
 			fmt.Fprintln(out, "  Skipped.")
 		} else {
@@ -253,7 +266,7 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 		ui.setLoginPending("Waiting for authentication...")
 		loginOut = setupLoginWriter{ui: ui}
 	}
-	if err := cloudauth.Login(ctx, loginOut, cloudauth.WithAuthGate()); err != nil {
+	if err := cloudauth.Login(ctx, loginOut); err != nil {
 		return err
 	}
 	if ui == nil {
@@ -264,23 +277,22 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 	return nil
 }
 
-func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) bool {
+func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (bool, error) {
 	if ui == nil || !ui.live {
-		return confirm(cmd, "  Log in to Dagger Cloud?")
+		return confirm(cmd, "  Log in to Dagger Cloud?"), nil
 	}
 	if autoApply {
-		return true
+		return true, nil
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
 		ui.setLoginSkipped("Skipped in non-interactive mode; use --auto-apply to accept.")
-		return false
+		return false, nil
 	}
 	var accepted bool
 	if err := Frontend.HandlePrompt(ctx, "", "Log in to Dagger Cloud?", &accepted); err != nil {
-		ui.setLoginFailed(err)
-		return false
+		return false, err
 	}
-	return accepted
+	return accepted, nil
 }
 
 type setupLoginWriter struct{ ui *setupUI }
@@ -566,7 +578,6 @@ func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, 
 		return nil, false, err
 	}
 	if len(recs) == 0 {
-		setupRecommendMessage(ui, messageCtx, "recommendations skipped", "Skipped.")
 		return nil, false, nil
 	}
 	return recs, true, nil
@@ -631,9 +642,22 @@ func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []re
 		return nil, err
 	}
 	if !install {
+		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations(recs))
 		return nil, nil
 	}
-	return filterRecommendations(recs, selected), nil
+	selectedRecs := filterRecommendations(recs, selected)
+	if len(selectedRecs) == 0 {
+		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations(recs))
+	}
+	return selectedRecs, nil
+}
+
+func skippedRecommendations(recs []recommendation) string {
+	modules := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		modules = append(modules, rec.Module.Repo)
+	}
+	return "Recommended modules skipped: " + strings.Join(modules, ", ") + "."
 }
 
 func filterRecommendations(recs []recommendation, selected []string) []recommendation {
