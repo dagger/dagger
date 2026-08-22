@@ -1328,7 +1328,10 @@ func (*blankLine) Render(ctx tuist.Context) {
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
-	fe.formModel = form.WithTheme(frontendFormTheme()).WithShowHelp(false)
+	fe.formModel = form.
+		WithTheme(frontendFormTheme()).
+		WithKeyMap(frontendFormKeyMap()).
+		WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
 	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
@@ -1352,6 +1355,12 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	fe.keymapBar.Update()
 	fe.tui.SetFocus(fe.formWrap)
 	return wrap
+}
+
+func frontendFormKeyMap() *huh.KeyMap {
+	keymap := huh.NewDefaultKeyMap()
+	keymap.MultiSelect.Toggle.SetHelp("space", "toggle")
+	return keymap
 }
 
 func frontendFormTheme() *huh.Theme {

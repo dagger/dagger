@@ -613,7 +613,6 @@ func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []re
 
 	install := true
 	multiSelect := huh.NewMultiSelect[string]().
-		Description("Space toggles · Enter continues").
 		Options(options...).
 		Value(&selected).
 		Filterable(false)

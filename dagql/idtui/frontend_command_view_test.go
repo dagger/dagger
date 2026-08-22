@@ -42,6 +42,13 @@ func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	}
 }
 
+func TestFrontendFormKeymapNamesSpaceToggle(t *testing.T) {
+	keymap := frontendFormKeyMap()
+	if got := keymap.MultiSelect.Toggle.Help().Key; got != "space" {
+		t.Fatalf("multi-select toggle key = %q, want space", got)
+	}
+}
+
 func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
 	selected := true
 	field := NewExplicitConfirm("Install selected", "Skip", &selected)
