@@ -155,7 +155,10 @@ func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySee
 func (ms *mockServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	return nil, nil
 }
-func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
+func (ms *mockServer) Server(context.Context) (*dagql.Server, error) { return nil, nil }
+func (ms *mockServer) ExecHTTPHandlers(context.Context) (ExecHTTPHandlerRegistry, error) {
+	return nil, nil
+}
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
 
 func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) { return nil, nil }

@@ -40,6 +40,10 @@ func (handler *nestedTransportSessionHandler) ServeHTTPToNestedClient(
 	handler.served.Add(1)
 }
 
+func (handler *nestedTransportSessionHandler) ServeExecHTTP(string, string, http.ResponseWriter, *http.Request) {
+	handler.served.Add(1)
+}
+
 func TestContainerNestedTransportClosesWithoutRequest(t *testing.T) {
 	t.Parallel()
 

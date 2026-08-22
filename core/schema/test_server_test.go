@@ -94,6 +94,10 @@ func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, erro
 	return s.dag, nil
 }
 
+func (s *currentTypeDefsTestServer) ExecHTTPHandlers(context.Context) (core.ExecHTTPHandlerRegistry, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Handler) error {
 	return nil
 }

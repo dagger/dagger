@@ -110,6 +110,7 @@ type Client struct {
 type sessionHandler interface {
 	RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error)
 	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	ServeExecHTTP(string, string, http.ResponseWriter, *http.Request)
 }
 
 func NewOpts(opts Opts) (*Opts, error) {

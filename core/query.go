@@ -49,6 +49,13 @@ type SpecificClientAttachableConnOpts struct {
 	IfAvailable bool
 }
 
+// ExecHTTPHandlerRegistry routes container-local HTTP requests to handlers
+// owned by the current engine session.
+type ExecHTTPHandlerRegistry interface {
+	Register(http.Handler) (token string, unregister func())
+	ServeHTTP(token string, response http.ResponseWriter, request *http.Request)
+}
+
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Register a unique nested transport using the creating context's held
@@ -120,6 +127,10 @@ type Server interface {
 
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)
+
+	// The runtime-scoped HTTP handlers exposed to container executions in this
+	// session.
+	ExecHTTPHandlers(context.Context) (ExecHTTPHandlerRegistry, error)
 
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error

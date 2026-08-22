@@ -70,6 +70,10 @@ const (
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
 
+	// DaggerExecHTTPPath is the container-local endpoint forwarded to the
+	// session-scoped handler selected by ExecutionMetadata.
+	DaggerExecHTTPPath = "/_dagger/exec-http"
+
 	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
 
 	cgroupSampleInterval     = 5 * time.Second
@@ -1135,6 +1139,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == DaggerExecHTTPPath && state.execMD.ExecHTTPHandlerToken != "" {
+				c.SessionHandler.ServeExecHTTP(state.sessionID, state.execMD.ExecHTTPHandlerToken, resp, req)
+				return
+			}
 			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
