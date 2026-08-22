@@ -458,29 +458,71 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	return srv
 }
 
-// TestBoundToolsUseTheirDefiningSchemaAsFallback covers recovery after a
-// workspace overlay stops compiling. The recovery schema may not contain a
-// bound object that came from another module, but withTools already resolved
-// that object's defining schema from its ID provenance. Its tools must remain
-// renderable from that schema so the agent can repair the overlay.
-func TestBoundToolsUseTheirDefiningSchemaAsFallback(t *testing.T) {
+// TestBoundToolsUseTheirDefiningSchemaAuthoritatively covers both lazy bindings
+// restored from IDs and eager bindings created by workspace module discovery.
+// Even when the current workspace schema has a valid replacement definition for
+// the same type, the binding must keep the methods from the schema it was
+// composed with. The eager method call also proves dispatch remains callable
+// through the captured receiver after the workspace schema changes.
+func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	defining := newAddressLiftTestServer(t)
 	objType, ok := defining.ObjectType("LiftTestRunner")
 	require.True(t, ok)
 
-	// Deliberately omit LiftTestRunner from the current workspace schema.
+	// Install a different, valid definition of the same type in the current
+	// schema. Treating definingSchema as a missing-type fallback would silently
+	// replace the active tools with this method.
 	current := newCoreDagqlServerForTest(t, &Query{})
-	mcp := newMCP().WithLazyTools(nil, objType, defining.Schema(), nil)
-	toolsets, err := mcp.boundToolsets(current)
-	require.NoError(t, err)
-	require.Len(t, toolsets, 1)
-	require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+	current.InstallObject(dagql.NewClass(current, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
+	dagql.Fields[*liftTestRunner]{
+		dagql.Func("replacement", func(_ context.Context, _ *liftTestRunner, _ struct{}) (dagql.String, error) {
+			return "replacement", nil
+		}),
+	}.Install(current)
 
-	names := make([]string, 0, len(toolsets[0].tools))
-	for _, tool := range toolsets[0].tools {
-		names = append(names, tool.Name)
+	assertDefiningTools := func(t *testing.T, mcp *MCP) []LLMTool {
+		t.Helper()
+		toolsets, err := mcp.boundToolsets(current)
+		require.NoError(t, err)
+		require.Len(t, toolsets, 1)
+		require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+
+		names := make([]string, 0, len(toolsets[0].tools))
+		for _, tool := range toolsets[0].tools {
+			names = append(names, tool.Name)
+		}
+		require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+		require.NotContains(t, names, "replacement")
+		return toolsets[0].tools
 	}
-	require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+
+	t.Run("lazy", func(t *testing.T) {
+		assertDefiningTools(t, newMCP().WithLazyTools(nil, objType, defining.Schema(), nil))
+	})
+
+	t.Run("eager", func(t *testing.T) {
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+			ClientID:  "defining-schema-test",
+			SessionID: "defining-schema-test",
+		})
+		cache, err := dagql.NewCache(ctx, "", nil, nil)
+		require.NoError(t, err)
+		ctx = dagql.ContextWithCache(ctx, cache)
+
+		var runner dagql.AnyObjectResult
+		require.NoError(t, defining.Select(ctx, defining.Root(), &runner, dagql.Selector{Field: "runner"}))
+		tools := assertDefiningTools(t, newMCP().WithTools(runner, defining.Schema(), nil))
+		for _, tool := range tools {
+			if tool.Name != "nullable" {
+				continue
+			}
+			out, err := tool.Call(ctx, map[string]any{"date": "still active"})
+			require.NoError(t, err)
+			require.Equal(t, "still active", out)
+			return
+		}
+		t.Fatal("nullable tool not found")
+	})
 }
 
 // TestBuildObjectMethodSelector covers argument dispatch against a real dagql

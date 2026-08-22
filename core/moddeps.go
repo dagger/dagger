@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -33,14 +32,6 @@ type modDepEntry struct {
 	opts InstallOpts
 }
 
-type schemaBuilderIdentity struct{ id uint64 }
-
-var nextSchemaBuilderIdentity atomic.Uint64
-
-func newSchemaBuilderIdentity() *schemaBuilderIdentity {
-	return &schemaBuilderIdentity{id: nextSchemaBuilderIdentity.Add(1)}
-}
-
 // SchemaBuilder lazily constructs a dagql server from a set of modules with
 // per-module install policy. It is used both for a module's own dependency
 // graph and for the set of modules served to a client session.
@@ -51,12 +42,6 @@ type SchemaBuilder struct {
 	// captured by the builder.
 	root    *Query
 	entries []modDepEntry
-
-	// workspaceCacheIdentity is preserved by read-only Clone/WithRoot calls so
-	// Query-owned overlay schema caching reuses work across fresh DefaultDeps
-	// clones. Composition-changing methods mint a new identity.
-	workspaceCacheIdentityMu sync.Mutex
-	workspaceCacheIdentity   *schemaBuilderIdentity
 
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
@@ -69,32 +54,18 @@ func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
 		entries[i] = modDepEntry{mod: m}
 	}
 	return &SchemaBuilder{
-		root:                   root,
-		entries:                entries,
-		workspaceCacheIdentity: newSchemaBuilderIdentity(),
+		root:    root,
+		entries: entries,
 	}
-}
-
-func (b *SchemaBuilder) workspaceSchemaIdentity() *schemaBuilderIdentity {
-	b.workspaceCacheIdentityMu.Lock()
-	defer b.workspaceCacheIdentityMu.Unlock()
-	if b.workspaceCacheIdentity == nil {
-		// Defensive initialization for tests or legacy constructors using a
-		// struct literal instead of NewSchemaBuilder.
-		b.workspaceCacheIdentity = newSchemaBuilderIdentity()
-	}
-	return b.workspaceCacheIdentity
 }
 
 func (b *SchemaBuilder) Clone() *SchemaBuilder {
 	if b == nil {
 		return nil
 	}
-	identity := b.workspaceSchemaIdentity()
 	return &SchemaBuilder{
-		root:                   b.root,
-		entries:                slices.Clone(b.entries),
-		workspaceCacheIdentity: identity,
+		root:    b.root,
+		entries: slices.Clone(b.entries),
 	}
 }
 
@@ -110,9 +81,8 @@ func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 		extra[i] = modDepEntry{mod: m}
 	}
 	return &SchemaBuilder{
-		root:                   b.root,
-		entries:                append(extra, b.entries...),
-		workspaceCacheIdentity: newSchemaBuilderIdentity(),
+		root:    b.root,
+		entries: append(extra, b.entries...),
 	}
 }
 
@@ -122,15 +92,13 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 		extra[i] = modDepEntry{mod: m}
 	}
 	return &SchemaBuilder{
-		root:                   b.root,
-		entries:                append(slices.Clone(b.entries), extra...),
-		workspaceCacheIdentity: newSchemaBuilderIdentity(),
+		root:    b.root,
+		entries: append(slices.Clone(b.entries), extra...),
 	}
 }
 
 func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 	cp := b.Clone()
-	cp.workspaceCacheIdentity = newSchemaBuilderIdentity()
 	for i, e := range cp.entries {
 		if e.mod.Name() == mod.Name() {
 			promoted := e.opts
@@ -145,31 +113,6 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 		}
 	}
 	cp.entries = append(cp.entries, modDepEntry{mod: mod, opts: opts})
-	return cp
-}
-
-// Replacing returns a builder in which each given mod REPLACES the same-named
-// entry — keeping that entry's install opts and position — or is appended when
-// no entry matches. Unlike With, which keeps the existing mod on a name match
-// (its callers only promote install opts), Replacing swaps the module itself:
-// it exists for serving a fresher build of an already-served module, e.g. one
-// re-resolved through a workspace overlay.
-func (b *SchemaBuilder) Replacing(mods ...Mod) *SchemaBuilder {
-	cp := b.Clone()
-	cp.workspaceCacheIdentity = newSchemaBuilderIdentity()
-	for _, mod := range mods {
-		replaced := false
-		for i, e := range cp.entries {
-			if e.mod.Name() == mod.Name() {
-				cp.entries[i].mod = mod
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			cp.entries = append(cp.entries, modDepEntry{mod: mod})
-		}
-	}
 	return cp
 }
 

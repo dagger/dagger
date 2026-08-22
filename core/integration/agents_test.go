@@ -308,8 +308,8 @@ func (AgentsSuite) TestOverlayModuleSourceIsResolvedThroughOverlay(ctx context.C
 // with nothing exported to disk. The edit is staged and the toolset selected in
 // a single query, off the Workspace returned by withNewFile. Two layers
 // cooperate: workspaceOverlayModules re-resolves the module through the overlay
-// for composition (Workspace.agents), and WorkspaceServedSchema layers the same
-// overlay modules onto the served schema LLM.tools renders from.
+// for composition (Workspace.agents), and withTools retains the freshly resolved
+// module's defining schema on the composed LLM.
 func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor")
@@ -337,11 +337,10 @@ func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T
 	require.NotContains(t, out, marker)
 }
 
-// TestComposedToolsRecoverFromBrokenOverlayModule reproduces the next-turn
-// failure mode: the LLM was composed while its tool module was valid, then its
-// bound workspace acquired a staged syntax error. Schema derivation must retain
-// the served tool module so the LLM can repair the file, while explicit
-// recomposition stays strict and a subsequent valid edit takes effect.
+// TestComposedToolsRecoverFromBrokenOverlayModule pins active-tool reload
+// semantics. An LLM keeps the module schemas it was composed with across both
+// invalid and valid workspace edits; only explicit strict recomposition adopts
+// the edited module and returns a new LLM.
 func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
@@ -370,9 +369,9 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	require.Contains(t, baseline, "## readFile")
 	require.Contains(t, baseline, "Read a file (stub).")
 
-	// A tool edit advances the bound Workspace without recomposing the LLM. If
-	// the edited module does not compile, schema derivation must retain the
-	// session's served snapshot so the existing tools can repair the file.
+	// A tool edit advances the bound Workspace without recomposing the LLM. An
+	// invalid edit must not be compiled by ordinary tool listing, so all tools
+	// from the composed schema remain available for repair.
 	broken := c.CurrentWorkspace().WithNewFile("modules/editor/main.dang", "type Editor {")
 	tools, err := composed.WithWorkspace(broken).Tools(ctx)
 	require.NoError(t, err)
@@ -384,15 +383,21 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	require.Error(t, err)
 	require.ErrorContains(t, err, "load from workspace overlay")
 
-	// Replacing the bad edit produces a new workspace ID, so overlay loading is
-	// retried and the repaired module becomes visible instead of the fallback
-	// being sticky for the rest of the session.
+	// A valid replacement is equally inert for the active LLM: changing source
+	// does not implicitly change the listed tool docs before an explicit reload.
 	const marker = "REPAIRED OVERLAY DOC MARKER"
 	repaired := broken.WithNewFile("modules/editor/main.dang", editorSourceWithDoc(marker))
 	tools, err = composed.WithWorkspace(repaired).Tools(ctx)
 	require.NoError(t, err)
-	require.Contains(t, tools, marker)
-	require.NotContains(t, tools, "Read a file (stub).")
+	require.Equal(t, baseline, tools)
+	require.NotContains(t, tools, marker)
+
+	// Explicit recomposition is the reload boundary. It strictly resolves the
+	// repaired overlay and binds the edited module schema into the returned LLM.
+	reloaded, err := repaired.Agents().Compose().Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, reloaded, marker)
+	require.NotContains(t, reloaded, "Read a file (stub).")
 }
 
 // TestOverlayWithModule covers the other half: a module installed into the

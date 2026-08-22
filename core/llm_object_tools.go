@@ -62,10 +62,9 @@ type boundTool struct {
 	// objType is the bound object's GraphQL type, known without loading, so the
 	// toolset can be built from a lazy binding.
 	objType dagql.ObjectType
-	// definingSchema is the schema that originally defined objType. The bound
-	// Workspace normally supplies the tool schema, so overlay edits can replace
-	// it; this is only the fallback when that schema does not contain the bound
-	// type (for example while recovering from a broken overlay module).
+	// definingSchema is the schema that defined objType when this binding was
+	// composed. It is authoritative for the lifetime of the binding: workspace
+	// edits only affect tools after explicit recomposition creates a new LLM.
 	definingSchema *ast.Schema
 	Except         []string
 }
@@ -81,16 +80,23 @@ func (b boundTool) typeName() string {
 	return ""
 }
 
-// WithTools binds obj's methods as tools, carrying except. At most one binding
-// per object type is kept: binding an object whose type is already bound replaces
-// it in place. That is the state-update shape — a method returning the bound type
-// rebinds through here — so the binding list stays bounded and a recorded
-// withTools selector replays to the same state deterministically.
-func (m *MCP) WithTools(obj dagql.AnyObjectResult, except []string) *MCP {
+// WithTools binds obj's methods as tools, carrying the schema that defined the
+// receiver at composition time and except. At most one binding per object type
+// is kept: binding an object whose type is already bound replaces it in place.
+// That is the state-update shape — a method returning the bound type rebinds
+// through here — so the binding list stays bounded and a recorded withTools
+// selector replays to the same state deterministically.
+func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *MCP {
 	m = m.Clone()
 	typeName := obj.Type().Name()
 	id, _ := obj.ID()
-	binding := boundTool{object: obj, id: id, objType: obj.ObjectType(), Except: except}
+	binding := boundTool{
+		object:         obj,
+		id:             id,
+		objType:        obj.ObjectType(),
+		definingSchema: definingSchema,
+		Except:         except,
+	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			m.boundTools[i] = binding
@@ -106,8 +112,8 @@ func (m *MCP) WithTools(obj dagql.AnyObjectResult, except []string) *MCP {
 // object is only loaded if and when a tool is actually invoked on it (see
 // MCP.boundToolObject), so restoring the conversation never re-runs the call
 // that produced the object. objType and definingSchema describe the object's
-// GraphQL type without loading it, so the toolset can still be built even if a
-// later Workspace schema does not contain that type.
+// GraphQL type without loading it. The defining schema stays authoritative even
+// if the bound Workspace later contains another definition of the same type.
 func (m *MCP) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *MCP {
 	m = m.Clone()
 	typeName := objType.TypeName()
@@ -279,7 +285,7 @@ func (m *MCP) bindWorkspaceModuleTools(ctx context.Context) (*MCP, error) {
 		}); err != nil {
 			return nil, fmt.Errorf("construct workspace module %q: %w", mod.Name(), err)
 		}
-		m = m.WithTools(obj, nil)
+		m = m.WithTools(obj, canonical.Schema(), nil)
 	}
 	return m, nil
 }
@@ -321,10 +327,9 @@ func (m *MCP) boundToolsets(srv *dagql.Server) ([]bindingToolset, error) {
 	if len(bindings) == 0 {
 		return nil, nil
 	}
-	schema := srv.Schema()
 	toolsets := make([]bindingToolset, 0, len(bindings))
 	for _, b := range bindings {
-		tools, err := m.toolsForBoundObject(srv, schema, b)
+		tools, err := m.toolsForBoundObject(srv, b)
 		if err != nil {
 			return nil, err
 		}
@@ -417,22 +422,15 @@ func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, erro
 
 // toolsForBoundObject generates the tools for a single bound object: one per
 // eligible field of its schema type.
-func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b boundTool) ([]LLMTool, error) {
+func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, error) {
 	typeName := b.typeName()
-	def := schema.Types[typeName]
-	toolSchema := schema
-	if (def == nil || (def.Kind != ast.Object && def.Kind != ast.Interface)) && b.definingSchema != nil {
-		// A broken Workspace overlay falls back to the served schema so existing
-		// repair tools remain callable. That schema may legitimately omit a bound
-		// object from another module (nested agents are a common source). Use the
-		// schema captured when withTools resolved the object's module provenance,
-		// but only when the Workspace schema has no usable definition: valid
-		// overlays must continue to replace tool signatures and documentation.
-		def = b.definingSchema.Types[typeName]
-		toolSchema = b.definingSchema
+	toolSchema := b.definingSchema
+	if toolSchema == nil {
+		return nil, fmt.Errorf("bound object type %q has no defining schema", typeName)
 	}
+	def := toolSchema.Types[typeName]
 	if def == nil || (def.Kind != ast.Object && def.Kind != ast.Interface) {
-		return nil, fmt.Errorf("bound object type %q is not an object in the workspace schema", typeName)
+		return nil, fmt.Errorf("bound object type %q is not an object in its defining schema", typeName)
 	}
 	var tools []LLMTool
 	for _, field := range def.Fields {
