@@ -16,8 +16,12 @@ fail, and for deliberately accepted model findings.
 `CacheLifecycle_orphaned_lease.cfg` restores the release rule under
 which a completed call's operation and client leases were orphaned when
 its last waiter left through cancellation, and must violate
-`SharedLeaseReleasedWhenRetired`. No accepted finding is tracked today:
-every other configuration is a green regression gate. (The last one,
+`SharedLeaseReleasedWhenRetired`. One accepted finding is tracked today:
+`resources_restart` reproduces the stored session-resource requirement
+set drifting from the true transitive requirement at import and at
+decode (see the config header). The `expectedOutcome` map is the
+authoritative list; every other configuration is a green regression
+gate. (The previous finding,
 `decode_cancel` — a decode leader's own cancellation failing its parked
 joiners — was fixed by making the joiners retry a departed leader's
 cancellation and by retrying the post-install lease sync on the next
