@@ -17,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -69,8 +70,10 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 	// A bytes body with no content type: not a call payload at all, but still
 	// binary data that must never render as log text.
 	untypedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNTYPED-BYTES")))
+	spanName := frontendTestLogRecord(spanID, otellog.StringValue("updated span name"),
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
 	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
-	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, after}
+	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, spanName, after}
 }
 
 func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
@@ -80,7 +83,7 @@ func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
 	require.Equal(t, "after\n", records[1].Body().AsString())
 }
 
-func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
+func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 	knownSpanID := trace.SpanID{1}
 	unknownSpanID := trace.SpanID{2}
 	knownRecords := frontendMixedLogRecords(t, knownSpanID)
@@ -134,6 +137,53 @@ func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
 		require.NotNil(t, spanLogs)
 		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
 	})
+}
+
+func TestTerminalTitleFollowsPrimaryZoomAndLiveName(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	childID := prettyTestSpanID(2)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, Name: "root title"},
+		{ID: childID, ParentID: rootID, Name: "child title"},
+	})
+
+	term := tuist.NewHeadlessTerminal(120, 20)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("root title"))
+
+	term.Reset()
+	fe.ZoomToSpan(childID)
+	fe.tui.Step()
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("child title"))
+
+	term.Reset()
+	nameRecord := frontendTestLogRecord(
+		childID.SpanID,
+		otellog.StringValue("renamed live"),
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+	)
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{nameRecord}))
+	fe.tui.Step()
+	require.Equal(t, "renamed live", db.Spans.Map[childID].Name)
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("renamed live"))
+	require.Nil(t, fe.logs.Logs[childID], "span name record rendered as log output")
+
+	term.Reset()
+	fe.Update()
+	fe.tui.Step()
+	require.NotContains(t, term.Output(), "\x1b]2;", "unchanged title was written again")
+
+	term.Reset()
+	fe.ZoomToSpan(rootID)
+	fe.tui.Step()
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("root title"))
+}
+
+func TestSanitizeTerminalTitle(t *testing.T) {
+	require.Equal(t, "safename", sanitizeTerminalTitle("safe\x1b]2;injected\x07\nname"))
 }
 
 func TestRenderDigestedLiteralIsOpaque(t *testing.T) {
