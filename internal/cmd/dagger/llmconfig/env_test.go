@@ -12,14 +12,17 @@ func TestMergeEnvVars(t *testing.T) {
 		"ANTHROPIC_API_KEY":        "ak-test",
 		"ANTHROPIC_BASE_URL":       "https://anthropic.example.com",
 		"ANTHROPIC_MODEL":          "claude-test",
+		"ANTHROPIC_SMALL_MODEL":    "claude-small-test",
 		"OPENAI_API_KEY":           "sk-test",
 		"OPENAI_BASE_URL":          "https://openai.example.com",
 		"OPENAI_MODEL":             "gpt-test",
+		"OPENAI_SMALL_MODEL":       "gpt-small-test",
 		"OPENAI_AZURE_VERSION":     "2024-01-01",
 		"OPENAI_DISABLE_STREAMING": "true",
 		"GEMINI_API_KEY":           "gem-test",
 		"GEMINI_BASE_URL":          "https://gemini.example.com",
 		"GEMINI_MODEL":             "gemini-test",
+		"GEMINI_SMALL_MODEL":       "gemini-small-test",
 	} {
 		t.Setenv(k, v)
 	}
@@ -30,11 +33,13 @@ func TestMergeEnvVars(t *testing.T) {
 	assert.Equal(t, "ak-test", anthropic.APIKey)
 	assert.Equal(t, "https://anthropic.example.com", anthropic.BaseURL)
 	assert.Equal(t, "claude-test", anthropic.Model)
+	assert.Equal(t, "claude-small-test", anthropic.SmallModel)
 
 	openai := cfg.LLM.Providers["openai"]
 	assert.Equal(t, "sk-test", openai.APIKey)
 	assert.Equal(t, "https://openai.example.com", openai.BaseURL)
 	assert.Equal(t, "gpt-test", openai.Model)
+	assert.Equal(t, "gpt-small-test", openai.SmallModel)
 	assert.Equal(t, "2024-01-01", openai.AzureVersion)
 	assert.True(t, openai.DisableStreaming)
 
@@ -42,6 +47,7 @@ func TestMergeEnvVars(t *testing.T) {
 	assert.Equal(t, "gem-test", google.APIKey)
 	assert.Equal(t, "https://gemini.example.com", google.BaseURL)
 	assert.Equal(t, "gemini-test", google.Model)
+	assert.Equal(t, "gemini-small-test", google.SmallModel)
 }
 
 func TestMergeEnvVarsOverridesConfig(t *testing.T) {
