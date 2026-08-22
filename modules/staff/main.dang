@@ -6,9 +6,10 @@
 # hack/designs/async-agents.md), so the chief keeps working while they do.
 # The chief steers by name — sendTo/ask/status/read/collect/interruptWorker/
 # dismiss — harvests their work — logOf/diffOf/pull/pullConflicted/
-# pullPending, reaching the worker's own Workspace through
-# member(name).snapshot.workspace — and each worker gets a private line home
-# (askChief) whose answers ride the chief's own conversation record.
+# pullPending, reaching each agent's own Workspace through its live snapshot.
+# Spawned workers get a frozen, pull-only roster view of the chief and peers
+# already present when they start, plus a private line home (askChief) whose
+# answers ride the chief's own conversation record.
 #
 # State: `members` holds live Agent handles in module state, evolved by tools
 # returning Staff! (the modules/editor pattern — engine-object handles in
@@ -35,10 +36,11 @@ type Staff {
   # so they can never address a corpse.
   let tombstones: Map[Agent!]! = [:]
 
-  # Not really tools: chiefLine is spawn's plumbing, and workerPrompt is a
-  # public constant (tests build worker recordings against its exact text).
-  # Excluded from the chief's binding; workers never bind Staff at all.
-  let plumbing = ["chiefLine", "workerPrompt"]
+  # Not really tools: chiefLine/pullTools are spawn's plumbing, and
+  # workerPrompt is a public constant (tests build worker recordings against
+  # its exact text). Excluded from the chief's binding. Workers bind only the
+  # dedicated PullTools object, never this full Staff object.
+  let plumbing = ["chiefLine", "pullTools", "workerPrompt"]
 
   """
   Compose the staff-chief tools onto a base LLM.
@@ -56,7 +58,12 @@ type Staff {
   Returns immediately — the worker runs its opening turn asynchronously.
   Check on it with status/read, steer it with sendTo/ask, harvest it with
   collect, let it go with dismiss. The worker has your same workspace tools,
-  none of your staff tools, and one extra: askChief, its line back to you.
+  a pull-only view of the chief and workers already on staff, and one extra:
+  askChief, its line back to you. It cannot spawn or steer workers.
+
+  The chief is always available to that pull-only view under the reserved
+  target name `chief`; existing workers keep their staff names. The roster is
+  a snapshot: workers hired later are not added retroactively.
 
   Its copy is a sandbox: whatever it edits, breaks or commits stays there
   until you harvest it, and reaches neither you nor any other worker. So
@@ -80,6 +87,9 @@ type Staff {
   ): Dagger.Staff! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): composes, starts, and messages a real agent runtime —
     # side effects that must actually run, never replay from cache.
+    if (name == "chief") {
+      raise `staff member name "chief" is reserved for the chief in worker pull rosters`
+    }
     if (members.has(name)) {
       raise `staff member "${name}" already exists — dismiss it first or pick another name`
     }
@@ -89,7 +99,13 @@ type Staff {
     # module isn't installed there).
     let composed = source.agents(exclude: ["staff"])
     let base = composed.compose
+    # Snapshot the peers that exist BEFORE this spawn and add the chief under
+    # a stable reserved alias. PullTools exposes only the five harvest methods,
+    # so future Staff orchestration methods cannot leak into workers by accident.
+    let roster = currentNode.{{... on Dagger.Staff!}}.withWorker("chief", chief)
+    let pulls = roster.pullTools
     let worker = base
+      .withTools(pulls)
       # The line home, minted via a real self-call; the boss handle itself
       # stays out of the tool schema.
       .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
@@ -716,6 +732,15 @@ type Staff {
   }
 
   """
+  Mint the dedicated pull-only tool object workers receive. The receiver is a
+  frozen Staff roster view assembled by spawn; wrapping it in a secondary type
+  keeps every orchestration method structurally out of the worker's toolset.
+  """
+  pullTools: PullTools! {
+    PullTools(currentNode.{{... on Dagger.Staff!}})
+  }
+
+  """
   Mint a worker's line back to its chief. Used by spawn via a self-call (a
   module-call result has the engine identity withTools needs); not part of
   the chief's or the workers' toolset.
@@ -935,6 +960,13 @@ type Staff {
     COMMIT what it finishes: a commit is the clean handoff, and uncommitted
     work is only the fallback.
 
+    Each worker receives a pull-only view of `chief` plus the workers already
+    present when it is spawned. It can inspect and take their committed or
+    pending work, but cannot spawn, steer, interrupt, or dismiss anyone. The
+    roster is a capability snapshot: hire producers before consumers when a
+    worker should pull directly from another worker; otherwise relay through
+    your own workspace.
+
     Harvesting is how their work reaches you:
 
     - `logOf` lists a worker's staged commits, each annotated with what
@@ -1000,6 +1032,14 @@ type Staff {
     pending edits. Say in your final report what you changed and which
     commits carry it.
 
+    You also have pull-only access to work from agents that existed when you
+    were spawned. Use `chief` for the chief and staff names for older workers.
+    `logOf` and `diffOf` inspect their work; `pull`, `pullPending`, and
+    `pullConflicted` take it into your workspace. You cannot spawn, steer, or
+    dismiss agents. The roster is a frozen capability snapshot, so agents
+    hired after you are not visible directly; the chief can relay their work
+    when needed.
+
     You have one line home: `askChief` sends the chief a question and BLOCKS
     until the chief's turn that absorbs it ends, returning that turn's
     closing reply. Use it sparingly — it stalls your own work and puts your
@@ -1007,6 +1047,116 @@ type Staff {
     blocked waiting on you, which would deadlock. Prefer working with what
     you have.
   """
+}
+
+"""
+Pull-only access to another agent's workspace.
+
+Workers receive this narrow tool object instead of Staff itself, so they can
+inspect and take work without gaining orchestration capabilities such as spawn,
+steering, interruption, or dismissal.
+"""
+type PullTools {
+  # A frozen Staff roster containing the chief and workers that already existed
+  # when this worker was spawned. Private so the full Staff object never enters
+  # the tool schema.
+  let staff: Dagger.Staff!
+
+  new(staff: Dagger.Staff!) {
+    self.staff = staff
+    self
+  }
+
+  """
+  List an agent's staged commits, oldest first, and show which can be pulled.
+
+  Use `chief` for the chief agent; workers keep their staff names.
+  """
+  logOf(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Maximum number of commits to show, counting back from the newest.
+    """
+    limit: Int! = 10,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    staff.logOf(source: source, name: name, limit: limit)
+  }
+
+  """
+  Show an agent's staged commit or uncommitted work as a unified diff.
+  """
+  diffOf(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Relative paths to limit the diff to. Empty shows everything.
+    """
+    paths: [String!]! = [],
+    """
+    A staged commit to show. Empty shows uncommitted work.
+    """
+    commit: String = null,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    staff.diffOf(source: source, name: name, paths: paths, commit: commit)
+  }
+
+  """
+  Pull an agent's staged commits into your workspace, preserving authorship.
+  """
+  pull(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Commits to pull, as full or short SHAs from logOf. Empty takes all new.
+    """
+    commits: [String!]! = [],
+  ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    staff.pull(source: source, name: name, commits: commits)
+  }
+
+  """
+  Apply one conflicting commit as uncommitted edits with conflict markers.
+  """
+  pullConflicted(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    The commit to take, as a full or short SHA from logOf.
+    """
+    commit: String!,
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    staff.pullConflicted(source: source, name: name, commit: commit)
+  }
+
+  """
+  Take an agent's uncommitted work as edits in your workspace.
+  """
+  pullPending(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Leave conflict markers where a hunk no longer applies.
+    """
+    markers: Boolean! = false,
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    staff.pullPending(source: source, name: name, markers: markers)
+  }
 }
 
 """
