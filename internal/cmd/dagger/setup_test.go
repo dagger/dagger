@@ -62,6 +62,15 @@ func TestDisableSetupCloudLoginPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), "[unrelated]")
 	require.Contains(t, string(data), `cloud_login = "never"`)
+
+	require.NoError(t, clearSetupCloudLoginPromptPreference())
+	disabled, err = setupCloudLoginPromptDisabled()
+	require.NoError(t, err)
+	require.False(t, disabled)
+	data, err = os.ReadFile(llmconfig.ConfigFile)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "[unrelated]")
+	require.NotContains(t, string(data), "[setup]")
 }
 
 func TestSetupShowsFinalProgress(t *testing.T) {

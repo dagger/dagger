@@ -223,7 +223,12 @@ func (view *setupView) renderLogin(ctx tuist.Context) {
 	case setupLoginComplete:
 		view.renderSuccess(ctx, view.loginMessage)
 	case setupLoginSkipped:
-		ctx.Line("○ " + view.loginMessage)
+		message := strings.ReplaceAll(
+			view.loginMessage,
+			"dagger login",
+			lipgloss.NewStyle().Bold(true).Render("dagger login"),
+		)
+		ctx.Line("○ " + message)
 	case setupLoginFailed:
 		ctx.Line("✗ " + view.loginMessage)
 	}

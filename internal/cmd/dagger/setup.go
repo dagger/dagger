@@ -253,9 +253,9 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 		}
 		if disabled {
 			if ui == nil {
-				fmt.Fprintln(out, "  Skipped.")
+				fmt.Fprintln(out, "  "+setupLoginSkippedHint)
 			} else {
-				ui.setLoginSkipped("Skipped.")
+				ui.setLoginSkipped(setupLoginSkippedHint)
 			}
 			return nil
 		}
@@ -274,10 +274,14 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 		}
 	}
 	if choice != setupLogin {
+		message := "Skipped."
+		if choice == setupLoginNever {
+			message = setupLoginSkippedHint
+		}
 		if ui == nil {
-			fmt.Fprintln(out, "  Skipped.")
+			fmt.Fprintln(out, "  "+message)
 		} else {
-			ui.setLoginSkipped("Skipped.")
+			ui.setLoginSkipped(message)
 		}
 		return nil
 	}
@@ -304,6 +308,8 @@ const (
 	setupLogin       setupLoginChoice = "login"
 	setupLoginNotNow setupLoginChoice = "not-now"
 	setupLoginNever  setupLoginChoice = "never"
+
+	setupLoginSkippedHint = "Skipped. (dagger login to log in)"
 )
 
 func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (setupLoginChoice, error) {
@@ -359,6 +365,34 @@ func disableSetupCloudLoginPrompt() error {
 			return nil, fmt.Errorf("parse Dagger config: %w", err)
 		}
 		tree.SetPath([]string{"setup", "cloud_login"}, string(setupLoginNever))
+		out, err := tree.ToTomlString()
+		if err != nil {
+			return nil, fmt.Errorf("serialize Dagger config: %w", err)
+		}
+		return []byte(out), nil
+	})
+}
+
+func clearSetupCloudLoginPromptPreference() error {
+	if _, err := os.Stat(llmconfig.ConfigFile); os.IsNotExist(err) {
+		return nil
+	}
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		tree, err := toml.LoadBytes(existing)
+		if err != nil {
+			return nil, fmt.Errorf("parse Dagger config: %w", err)
+		}
+		path := []string{"setup", "cloud_login"}
+		if tree.HasPath(path) {
+			if err := tree.DeletePath(path); err != nil {
+				return nil, fmt.Errorf("clear setup Cloud login preference: %w", err)
+			}
+		}
+		if setup, ok := tree.Get("setup").(*toml.Tree); ok && len(setup.Keys()) == 0 {
+			if err := tree.Delete("setup"); err != nil {
+				return nil, fmt.Errorf("clear empty setup config: %w", err)
+			}
+		}
 		out, err := tree.ToTomlString()
 		if err != nil {
 			return nil, fmt.Errorf("serialize Dagger config: %w", err)
