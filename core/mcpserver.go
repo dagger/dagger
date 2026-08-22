@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
+	"net/http"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -23,14 +24,40 @@ func genMcpTool(tool LLMTool) (mcp.Tool, error) {
 	return mcp.NewToolWithRawSchema(tool.Name, tool.Description, schema), nil
 }
 
-type mcpServer struct {
-	*mcpserver.MCPServer
-	dag  *dagql.Server
-	env  *MCP
-	pipe io.ReadWriteCloser
+type llmToolSource interface {
+	DefaultSystemPrompt(context.Context) (string, error)
+	Tools(context.Context) ([]LLMTool, error)
 }
 
-func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
+// LLMToolServer exposes an MCP tool set independently of its transport.
+type LLMToolServer struct {
+	*mcpserver.MCPServer
+	env llmToolSource
+}
+
+// NewLLMToolServer initializes an MCP server from the tools in env.
+func NewLLMToolServer(ctx context.Context, env *MCP) (*LLMToolServer, error) {
+	return newLLMToolServer(ctx, env)
+}
+
+func newLLMToolServer(ctx context.Context, env llmToolSource) (*LLMToolServer, error) {
+	instructions, err := env.DefaultSystemPrompt(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get MCP instructions: %w", err)
+	}
+
+	s := &LLMToolServer{
+		MCPServer: mcpserver.NewMCPServer("Dagger", "0.0.1",
+			mcpserver.WithInstructions(instructions)),
+		env: env,
+	}
+	if err := s.setTools(ctx); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *LLMToolServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// should never happen
 		if request.Method != "tools/call" {
@@ -61,7 +88,7 @@ func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 	}
 }
 
-func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool, error) {
+func (s *LLMToolServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool, error) {
 	mcpTools := make([]mcpserver.ServerTool, 0, len(llmTools))
 	for _, tool := range llmTools {
 		// Skipping methods that return ID
@@ -78,7 +105,7 @@ func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool
 	return mcpTools, nil
 }
 
-func (s mcpServer) setTools(ctx context.Context) error {
+func (s *LLMToolServer) setTools(ctx context.Context) error {
 	tools, err := s.env.Tools(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get tools: %w", err)
@@ -91,26 +118,35 @@ func (s mcpServer) setTools(ctx context.Context) error {
 	return nil
 }
 
-func (s mcpServer) run(ctx context.Context) error {
+// StreamableHTTPHandler returns a stateful Streamable HTTP MCP handler.
+func (s *LLMToolServer) StreamableHTTPHandler() http.Handler {
+	return mcpserver.NewStreamableHTTPServer(
+		s.MCPServer,
+		mcpserver.WithStateful(true),
+	)
+}
+
+func (s *LLMToolServer) stdioServer(ctx context.Context) *mcpserver.StdioServer {
+	stdioSrv := mcpserver.NewStdioServer(s.MCPServer)
+
+	// MCP library requires standard log package.
+	logger := stdlog.New(bklog.G(ctx).Writer(), "", 0)
+	stdioSrv.SetErrorLogger(logger)
+	return stdioSrv
+}
+
+// ServeStdio serves MCP over pipe until it closes or ctx is canceled.
+func (s *LLMToolServer) ServeStdio(ctx context.Context, pipe io.ReadWriteCloser) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := s.setTools(ctx); err != nil {
-		return err
-	}
-
 	errCh := make(chan error)
+	stdioSrv := s.stdioServer(ctx)
 
-	stdioSrv := mcpserver.NewStdioServer(s.MCPServer)
-
-	// MCP library requires standard log package
-	logger := stdlog.New(bklog.G(ctx).Writer(), "", 0)
-	stdioSrv.SetErrorLogger(logger)
-
-	// Start MCP server in a goroutine
+	// Start MCP server in a goroutine.
 	go func() {
 		defer close(errCh)
-		err := stdioSrv.Listen(ctx, s.pipe, s.pipe)
+		err := stdioSrv.Listen(ctx, pipe, pipe)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 			select {
 			case <-ctx.Done():
@@ -127,7 +163,7 @@ func (s mcpServer) run(ctx context.Context) error {
 	}
 }
 
-func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
+func (llm *LLM) MCP(ctx context.Context, _ *dagql.Server) error {
 	// Under the object-tools scheme the LLM only acts through explicitly
 	// bound objects. `dagger mcp` exposes the workspace: when nothing was
 	// bound, bind each workspace module's main object so its methods are the
@@ -155,18 +191,9 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("open pipe error: %w", err)
 	}
 
-	instructions, err := llm.mcp.DefaultSystemPrompt(ctx)
+	s, err := NewLLMToolServer(ctx, llm.mcp)
 	if err != nil {
 		return err
 	}
-
-	s := mcpServer{
-		mcpserver.NewMCPServer("Dagger", "0.0.1",
-			mcpserver.WithInstructions(instructions)),
-		dag,
-		llm.mcp,
-		rwc,
-	}
-
-	return s.run(ctx)
+	return s.ServeStdio(ctx, rwc)
 }
