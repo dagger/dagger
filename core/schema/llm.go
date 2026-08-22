@@ -392,7 +392,7 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithTools(obj, args.Except), nil
+	return llm.WithTools(obj, srv.Schema(), args.Except), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {

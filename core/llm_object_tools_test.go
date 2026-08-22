@@ -394,23 +394,55 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	return srv
 }
 
-func TestBoundToolsUseTheirDefiningSchemaAsFallback(t *testing.T) {
+func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	defining := newAddressLiftTestServer(t)
 	objType, ok := defining.ObjectType("LiftTestRunner")
 	require.True(t, ok)
 
 	current := newCoreDagqlServerForTest(t, &Query{})
-	mcp := newMCP().WithLazyTools(nil, objType, defining.Schema(), nil)
-	toolsets, err := mcp.boundToolsets(current)
-	require.NoError(t, err)
-	require.Len(t, toolsets, 1)
-	require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+	current.InstallObject(dagql.NewClass(current, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
+	dagql.Fields[*liftTestRunner]{
+		dagql.Func("replacement", func(_ context.Context, _ *liftTestRunner, _ struct{}) (dagql.String, error) {
+			return "replacement", nil
+		}),
+	}.Install(current)
 
-	names := make([]string, 0, len(toolsets[0].tools))
-	for _, tool := range toolsets[0].tools {
-		names = append(names, tool.Name)
+	assertDefiningTools := func(t *testing.T, mcp *MCP) []LLMTool {
+		t.Helper()
+		toolsets, err := mcp.boundToolsets(current)
+		require.NoError(t, err)
+		require.Len(t, toolsets, 1)
+		require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+		names := make([]string, 0, len(toolsets[0].tools))
+		for _, tool := range toolsets[0].tools {
+			names = append(names, tool.Name)
+		}
+		require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+		require.NotContains(t, names, "replacement")
+		return toolsets[0].tools
 	}
-	require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+
+	t.Run("lazy", func(t *testing.T) {
+		assertDefiningTools(t, newMCP().WithLazyTools(nil, objType, defining.Schema(), nil))
+	})
+	t.Run("eager", func(t *testing.T) {
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "defining-schema-test", SessionID: "defining-schema-test"})
+		cache, err := dagql.NewCache(ctx, "", nil, nil)
+		require.NoError(t, err)
+		ctx = dagql.ContextWithCache(ctx, cache)
+		var runner dagql.AnyObjectResult
+		require.NoError(t, defining.Select(ctx, defining.Root(), &runner, dagql.Selector{Field: "runner"}))
+		tools := assertDefiningTools(t, newMCP().WithTools(runner, defining.Schema(), nil))
+		for _, tool := range tools {
+			if tool.Name == "nullable" {
+				out, err := tool.Call(ctx, map[string]any{"date": "still active"})
+				require.NoError(t, err)
+				require.Equal(t, "still active", out)
+				return
+			}
+		}
+		t.Fatal("nullable tool not found")
+	})
 }
 
 // TestBuildObjectMethodSelectorAddressLift covers dispatch: a model-supplied
