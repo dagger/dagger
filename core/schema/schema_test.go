@@ -48,6 +48,53 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
 }
 
+func TestLLMHarnessSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "llm-harness-schema-client",
+		SessionID: "llm-harness-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+
+	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	require.NoError(t, err)
+	schema := decodeSchemaResponse(t, fullJSON).Schema
+
+	kind := schema.Types.Get("LLMHarnessKind")
+	require.NotNil(t, kind)
+	require.Len(t, kind.EnumValues, 2)
+	require.ElementsMatch(t, []string{"CLAUDE", "CODEX"}, []string{
+		kind.EnumValues[0].Name,
+		kind.EnumValues[1].Name,
+	})
+
+	field := schemaField(schema.Types.Get("LLM"), "withHarness")
+	require.NotNil(t, field)
+	require.False(t, field.TypeRef.IsOptional())
+	require.True(t, field.TypeRef.ReferencesType("LLM"))
+	harnessArg := schemaArgument(t, field, "harness")
+	require.False(t, harnessArg.TypeRef.IsOptional())
+	require.True(t, harnessArg.TypeRef.ReferencesType("ID"))
+	require.Equal(t, "Container", harnessArg.Directives.ExpectedType())
+	kindArg := schemaArgument(t, field, "kind")
+	require.False(t, kindArg.TypeRef.IsOptional())
+	require.True(t, kindArg.TypeRef.ReferencesType("LLMHarnessKind"))
+
+	baseJSON, err := getSchemaJSON(nil, nil, baseSchemaView(), dag)
+	require.NoError(t, err)
+	baseSchema := decodeSchemaResponse(t, baseJSON).Schema
+	require.Nil(t, baseSchema.Types.Get("LLMHarnessKind"))
+	require.Nil(t, schemaField(baseSchema.Types.Get("LLM"), "withHarness"))
+}
+
 func TestGitBundleSchema(t *testing.T) {
 	ctx := context.Background()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)

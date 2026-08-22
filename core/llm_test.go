@@ -719,3 +719,71 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
 }
+
+func TestLLMWithHarnessConfiguration(t *testing.T) {
+	srv := newCoreDagqlServerForTest(t, LLMTestQuery{})
+	srv.InstallObject(dagql.NewClass[*Container](srv))
+
+	harnessResult := func(workdir string) dagql.ObjectResult[*Container] {
+		t.Helper()
+		container := new(Container)
+		container.Config.WorkingDir = workdir
+		res, err := dagql.NewObjectResultForCall(container, srv, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "test llm harness",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "test-provider")
+	require.NoError(t, err)
+	base.harnessCheckpoint = &LLMHarnessCheckpoint{
+		MessageCount: 1,
+		Correlations: []LLMHarnessMessageCorrelation{{
+			DaggerMessageID: "dagger-message",
+			VendorMessageID: "vendor-message",
+		}},
+	}
+
+	configured, err := base.WithHarness(harnessResult("/work"), LLMHarnessCodex)
+	require.NoError(t, err)
+	require.NotSame(t, base, configured)
+	require.NotNil(t, base.harnessCheckpoint, "the receiver must remain unchanged")
+	require.Nil(t, configured.harnessCheckpoint, "a new cold seed must clear the prior cursor")
+	require.Equal(t, "/work", configured.harness.Self().Config.WorkingDir)
+	require.Equal(t, LLMHarnessCodex, configured.harnessKind)
+
+	for _, workdir := range []string{"", "/", "//"} {
+		_, err := base.WithHarness(harnessResult(workdir), LLMHarnessClaude)
+		require.ErrorContains(t, err, "working directory must be non-empty and not root (/)")
+	}
+	_, err = base.WithHarness(harnessResult("/work"), LLMHarnessKind("OTHER"))
+	require.ErrorContains(t, err, "unsupported LLM harness kind")
+}
+
+func TestLLMCloneCopiesHarnessCheckpoint(t *testing.T) {
+	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "test-provider")
+	require.NoError(t, err)
+	base.harnessKind = LLMHarnessClaude
+	base.harnessCheckpoint = &LLMHarnessCheckpoint{
+		Kind:          LLMHarnessClaude,
+		MessageCount:  2,
+		HistoryDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		NativeSession: "session",
+		Protocol:      "v1",
+		Correlations: []LLMHarnessMessageCorrelation{{
+			DaggerMessageID: "dagger-message",
+			VendorMessageID: "vendor-message",
+		}},
+	}
+
+	clone := base.Clone()
+	require.NotSame(t, base.harnessCheckpoint, clone.harnessCheckpoint)
+	require.Equal(t, base.harnessCheckpoint, clone.harnessCheckpoint)
+
+	clone.harnessCheckpoint.MessageCount = 3
+	clone.harnessCheckpoint.Correlations[0].VendorMessageID = "changed"
+	require.Equal(t, 2, base.harnessCheckpoint.MessageCount)
+	require.Equal(t, "vendor-message", base.harnessCheckpoint.Correlations[0].VendorMessageID)
+}
