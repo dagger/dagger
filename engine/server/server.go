@@ -802,6 +802,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		srv.deleteSession(s)
 	}
 
+	if srv.clientDBs != nil {
+		err = errors.Join(err, srv.clientDBs.Close())
+	}
+
 	if srv.engineCache != nil && srv.localCacheGCEnabled {
 		if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
