@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
@@ -280,15 +281,18 @@ type frontendPretty struct {
 	pinnedZoom dagui.SpanID
 
 	// TUI state/config
-	spinnerEpoch time.Time // shared epoch so all spinners animate in sync
-	profile      termenv.Profile
-	window       windowSize // terminal dimensions
-	contentWidth int
-	browserBuf   *strings.Builder // logs if browser fails
-	finalRender  bool             // whether we're doing the final render
-	claims       *renderClaims
-	stdin        io.Reader // used by backgroundMsg for running terminal
-	writer       io.Writer
+	spinnerEpoch     time.Time // shared epoch so all spinners animate in sync
+	profile          termenv.Profile
+	window           windowSize // terminal dimensions
+	contentWidth     int
+	browserBuf       *strings.Builder // logs if browser fails
+	finalRender      bool             // whether we're doing the final render
+	claims           *renderClaims
+	stdin            io.Reader // used by backgroundMsg for running terminal
+	writer           io.Writer
+	tuiTerm          tuist.Terminal
+	terminalTitle    string
+	terminalTitleSet bool
 
 	// notification bubbles (single overlay with a Container of bubbles)
 	notifications         map[string]*NotificationBubble // keyed by section title
@@ -954,6 +958,7 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		browserBuf:    new(strings.Builder),
 		notifications: make(map[string]*NotificationBubble),
 		writer:        w,
+		tuiTerm:       term,
 		claims:        newRenderClaims(),
 	}
 	tui.AddChild(fe)
@@ -1702,6 +1707,44 @@ func (fe *frontendPretty) primarySpan() dagui.SpanID {
 		return fe.reportPrimary
 	}
 	return fe.db.PrimarySpan
+}
+
+// syncTerminalTitle keeps the terminal's OSC 2 title aligned with the span the
+// live frontend is scoped to. It runs from Render on the UI goroutine, so its
+// direct terminal write is serialized with Tuist's frame writes without
+// smuggling OSC into the rendered line model.
+func (fe *frontendPretty) syncTerminalTitle() {
+	if fe.reportOnly || fe.tuiTerm == nil || fe.db == nil {
+		return
+	}
+	spanID := fe.ZoomedSpan
+	if !spanID.IsValid() {
+		spanID = fe.primarySpan()
+	}
+	span := fe.db.Spans.Map[spanID]
+	if span == nil {
+		return
+	}
+
+	title := sanitizeTerminalTitle(span.Name)
+	if fe.terminalTitleSet && title == fe.terminalTitle {
+		return
+	}
+	fe.tuiTerm.WriteString(ansi.SetWindowTitle(title))
+	fe.terminalTitle = title
+	fe.terminalTitleSet = true
+}
+
+// sanitizeTerminalTitle prevents a telemetry-provided name from terminating
+// OSC 2 early or injecting other terminal controls.
+func sanitizeTerminalTitle(title string) string {
+	title = ansi.Strip(title)
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, title)
 }
 
 func (fe *frontendPretty) SetTelemetryError(err error) {
@@ -2904,6 +2947,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		fe.viewDirty = false
 		fe.recalculateViewLocked()
 	}
+	fe.syncTerminalTitle()
 
 	// Refresh search on every frame — picks up new log output via
 	// midterm's incremental search (only re-scans changed rows).
