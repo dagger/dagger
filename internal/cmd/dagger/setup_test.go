@@ -3,14 +3,21 @@ package daggercmd
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSetupStepLogin(t *testing.T) {
+	configFile := llmconfig.ConfigFile
+	llmconfig.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
+	t.Cleanup(func() { llmconfig.ConfigFile = configFile })
+
 	for _, tt := range []struct {
 		name        string
 		auth        *cloudauth.Cloud
@@ -35,6 +42,26 @@ func TestSetupStepLogin(t *testing.T) {
 			require.Equal(t, tt.wantAlready, bytes.Contains(out.Bytes(), []byte("Already logged in.")))
 		})
 	}
+}
+
+func TestDisableSetupCloudLoginPrompt(t *testing.T) {
+	configFile := llmconfig.ConfigFile
+	llmconfig.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
+	t.Cleanup(func() { llmconfig.ConfigFile = configFile })
+
+	require.NoError(t, os.WriteFile(llmconfig.ConfigFile, []byte("[unrelated]\nvalue = 42\n"), 0o600))
+	disabled, err := setupCloudLoginPromptDisabled()
+	require.NoError(t, err)
+	require.False(t, disabled)
+
+	require.NoError(t, disableSetupCloudLoginPrompt())
+	disabled, err = setupCloudLoginPromptDisabled()
+	require.NoError(t, err)
+	require.True(t, disabled)
+	data, err := os.ReadFile(llmconfig.ConfigFile)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "[unrelated]")
+	require.Contains(t, string(data), `cloud_login = "never"`)
 }
 
 func TestSetupShowsFinalProgress(t *testing.T) {

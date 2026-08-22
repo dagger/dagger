@@ -123,6 +123,30 @@ func TestExplicitConfirmTitleLink(t *testing.T) {
 	}
 }
 
+func TestExplicitChoiceHasOneTextualSelection(t *testing.T) {
+	choice := "login"
+	field := NewExplicitChoice(&choice,
+		huh.NewOption("Log in", "login"),
+		huh.NewOption("Not now", "not-now"),
+		huh.NewOption("Never ask again", "never"),
+	)
+	field.WithTheme(frontendFormTheme())
+	field.WithKeyMap(huh.NewDefaultKeyMap())
+	field.Focus()
+	if got := field.View(); strings.Count(got, "▶") != 1 || !strings.Contains(got, "▶ Log in") {
+		t.Fatalf("choice does not identify exactly one selection:\n%s", got)
+	}
+
+	field.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if got := field.View(); strings.Count(got, "▶") != 1 || !strings.Contains(got, "▶ Not now") {
+		t.Fatalf("right did not move the explicit selection:\n%s", got)
+	}
+	field.Blur()
+	if got := field.View(); strings.Contains(got, "▶") {
+		t.Fatalf("blurred choice retained its selection caret:\n%s", got)
+	}
+}
+
 func TestFormFieldsFlowWithVerticalKeys(t *testing.T) {
 	var selected []string
 	multi := NewFlowMultiSelect(

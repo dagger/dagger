@@ -18,8 +18,10 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mattn/go-isatty"
+	toml "github.com/pelletier/go-toml"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -244,15 +246,34 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 		}
 		return nil
 	}
+	if !autoApply {
+		disabled, err := setupCloudLoginPromptDisabled()
+		if err != nil {
+			return err
+		}
+		if disabled {
+			if ui == nil {
+				fmt.Fprintln(out, "  Skipped.")
+			} else {
+				ui.setLoginSkipped("Skipped.")
+			}
+			return nil
+		}
+	}
 
 	if ui != nil {
 		ui.setLoginPending("Waiting for login choice...")
 	}
-	accepted, err := confirmSetupLogin(ctx, cmd, ui)
+	choice, err := confirmSetupLogin(ctx, cmd, ui)
 	if err != nil {
 		return err
 	}
-	if !accepted {
+	if choice == setupLoginNever {
+		if err := disableSetupCloudLoginPrompt(); err != nil {
+			return err
+		}
+	}
+	if choice != setupLogin {
 		if ui == nil {
 			fmt.Fprintln(out, "  Skipped.")
 		} else {
@@ -277,28 +298,73 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 	return nil
 }
 
-func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (bool, error) {
+type setupLoginChoice string
+
+const (
+	setupLogin       setupLoginChoice = "login"
+	setupLoginNotNow setupLoginChoice = "not-now"
+	setupLoginNever  setupLoginChoice = "never"
+)
+
+func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (setupLoginChoice, error) {
 	if ui == nil || !ui.live {
-		return confirm(cmd, "  Log in to Dagger Cloud?"), nil
+		if confirm(cmd, "  Log in to Dagger Cloud?") {
+			return setupLogin, nil
+		}
+		return setupLoginNotNow, nil
 	}
 	if autoApply {
-		return true, nil
+		return setupLogin, nil
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
 		ui.setLoginSkipped("Skipped in non-interactive mode; use --auto-apply to accept.")
-		return false, nil
+		return setupLoginNotNow, nil
 	}
-	var accepted bool
+	choice := setupLogin
 	form := huh.NewForm(huh.NewGroup(
-		idtui.NewExplicitConfirm("Yes", "No", &accepted).
+		idtui.NewExplicitChoice(&choice,
+			huh.NewOption("Log in", setupLogin),
+			huh.NewOption("Not now", setupLoginNotNow),
+			huh.NewOption("Never ask again", setupLoginNever),
+		).
 			Title("Log in to Dagger Cloud?").
 			TitleLink("https://dagger.io/cloud").
 			Description("For observability, compute, and persistence (ish).\nMore info: https://dagger.io/cloud"),
 	))
 	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return false, err
+		return "", err
 	}
-	return accepted, nil
+	return choice, nil
+}
+
+func setupCloudLoginPromptDisabled() (bool, error) {
+	data, err := os.ReadFile(llmconfig.ConfigFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read Dagger config: %w", err)
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return false, fmt.Errorf("parse Dagger config: %w", err)
+	}
+	return tree.GetPath([]string{"setup", "cloud_login"}) == string(setupLoginNever), nil
+}
+
+func disableSetupCloudLoginPrompt() error {
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		tree, err := toml.LoadBytes(existing)
+		if err != nil {
+			return nil, fmt.Errorf("parse Dagger config: %w", err)
+		}
+		tree.SetPath([]string{"setup", "cloud_login"}, string(setupLoginNever))
+		out, err := tree.ToTomlString()
+		if err != nil {
+			return nil, fmt.Errorf("serialize Dagger config: %w", err)
+		}
+		return []byte(out), nil
+	})
 }
 
 type setupLoginWriter struct{ ui *setupUI }
