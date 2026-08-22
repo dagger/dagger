@@ -215,7 +215,7 @@ func (tv *TestView) Render(ctx tuist.Context) {
 		} else {
 			// Leave room for the keymap sibling. Filling the rest of the
 			// screen keeps Tuist's mouse coordinates aligned with rows.
-			viewportHeight = max(ctx.ScreenHeight()-1, 1)
+			viewportHeight = max(ctx.ScreenHeight()-2, 1)
 		}
 	} else if tv.MaxHeight > 0 {
 		viewportHeight = min(viewportHeight, tv.MaxHeight)

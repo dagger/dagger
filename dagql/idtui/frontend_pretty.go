@@ -199,9 +199,8 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	formWrap   *teav1.Wrap // bubbletea v1 adapter for huh.Form
-	formModel  *huh.Form   // direct reference for KeyBinds()
-	formSpacer *blankLine  // spacer beneath the form, removed alongside it
+	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
+	formModel *huh.Form   // direct reference for KeyBinds()
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -1299,10 +1298,6 @@ func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
 		return
 	}
 	fe.tui.RemoveChild(fe.formWrap)
-	if fe.formSpacer != nil {
-		fe.tui.RemoveChild(fe.formSpacer)
-		fe.formSpacer = nil
-	}
 	fe.formWrap = nil
 	fe.formModel = nil
 	fe.keymapBar.Update()
@@ -1328,13 +1323,6 @@ func (fe *frontendPretty) OpenBrowser(url string) error {
 	return browser.OpenURL(url)
 }
 
-// blankLine is a trivial component that renders a single empty line.
-type blankLine struct{ tuist.Compo }
-
-func (*blankLine) Render(ctx tuist.Context) {
-	ctx.Line("")
-}
-
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
@@ -1343,13 +1331,12 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 		WithKeyMap(frontendFormKeyMap()).
 		WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
-	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
 	fe.formWrap.OnQuit(func() {
 		// Remove this form BEFORE invoking result: the callback may
 		// synchronously install a replacement form (e.g. branch()'s "custom
 		// prompt" path chains a second form via handlePromptForm), which
-		// reassigns fe.formWrap/fe.formModel/fe.formSpacer. Removing afterwards
+		// reassigns fe.formWrap/fe.formModel. Removing afterwards
 		// would then see the replacement, hit removeForm's guard and no-op,
 		// leaking this form (and its spacer) on screen. Capture the model first
 		// since removeForm nils fe.formModel.
@@ -1366,7 +1353,6 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
-	fe.tui.AddChild(fe.formSpacer)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.keymapBar.Update()
 	fe.tui.SetFocus(fe.formWrap)
@@ -2536,7 +2522,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Lines the TUI renders as siblings outside this component, which are
 	// always shown and so must be reserved out of the screen height: the keymap
 	// bar, error label, text input, form, and search input.
-	reserved := 1 // keymap bar
+	reserved := 2 // keymap bar and its separating blank line
 	reserved += fe.errorLabelHeight()
 	reserved += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
 	reserved += fe.statusLineHeight()    // statusLine is a sibling, not rendered here

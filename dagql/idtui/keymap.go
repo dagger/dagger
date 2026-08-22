@@ -61,6 +61,7 @@ func (kb *KeymapBar) Render(ctx tuist.Context) {
 	if view == "" {
 		return
 	}
+	ctx.Line("")
 	ctx.Line(view)
 }
 
