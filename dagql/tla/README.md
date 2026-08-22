@@ -11,15 +11,16 @@ it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
 violations are reserved for deliberately accepted model findings. One
-is tracked today: `resources_restart` reproduces the stored
-session-resource requirement set drifting from the true transitive
-requirement at import and at decode (see the config header). The
-`expectedOutcome` map is the authoritative list; every other
-configuration is a green regression gate. (The previous finding,
-`decode_cancel` — a decode leader's own cancellation failing its parked
-joiners — was fixed by making the joiners retry a departed leader's
-cancellation and by retrying the post-install lease sync on the next
-demand; the configuration now holds that contract green.)
+finding is tracked today: the stored session-resource requirement set
+drifting from the true transitive requirement at import and at decode
+(`resources_restart` for the accounting, `resources_restart_gated` for
+the harm); see each config header. The `expectedOutcome` map is the
+authoritative list; every configuration with an empty entry there is a
+green regression gate. (The previous finding, `decode_cancel` — a decode
+leader's own cancellation failing its parked joiners — was fixed by
+making the joiners retry a departed leader's cancellation and by
+retrying the post-install lease sync on the next demand; the
+configuration now holds that contract green.)
 
 Run the check:
 
