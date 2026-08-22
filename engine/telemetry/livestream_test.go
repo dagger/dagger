@@ -37,6 +37,20 @@ func TestLiveFrameRoundTrip(t *testing.T) {
 	require.True(t, terminal)
 }
 
+func TestLiveErrorRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	var stream bytes.Buffer
+	require.NoError(t, WriteLiveError(&stream, 42, errors.New("row too large")))
+
+	cursor, payload, terminal, err := ReadLiveFrame(&stream)
+	require.ErrorIs(t, err, ErrLiveStream)
+	require.ErrorContains(t, err, "row too large")
+	require.Equal(t, int64(42), cursor)
+	require.Nil(t, payload)
+	require.False(t, terminal)
+}
+
 func TestLiveFrameBoundsChecks(t *testing.T) {
 	t.Parallel()
 
@@ -62,7 +76,7 @@ func TestLiveFrameBoundsChecks(t *testing.T) {
 	t.Run("oversized read payload", func(t *testing.T) {
 		frame := make([]byte, liveFrameHeaderSize)
 		copy(frame[:4], liveFrameMagic[:])
-		binary.BigEndian.PutUint32(frame[12:16], maxLivePayloadSize+1)
+		binary.BigEndian.PutUint32(frame[12:16], MaxLivePayloadSize+1)
 		_, _, _, err := ReadLiveFrame(bytes.NewReader(frame))
 		require.ErrorIs(t, err, ErrInvalidLiveFrame)
 	})

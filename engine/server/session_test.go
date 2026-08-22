@@ -1587,15 +1587,15 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
 	req.Header.Set(enginetel.LiveCursorHeader, "4")
 	resp := httptest.NewRecorder()
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
 		switch since {
 		case 4, 5:
 			next := since + 1
 			return next, &collogspb.ExportLogsServiceRequest{
 				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: fmt.Sprintf("batch-%d", next)}},
-			}, true, nil
+			}, 1, nil
 		default:
-			return since, nil, false, nil
+			return since, nil, 0, nil
 		}
 	})
 	require.NoError(t, err)
@@ -1620,6 +1620,109 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	require.Nil(t, payload)
 	require.True(t, terminal)
 	require.Empty(t, resp.Body.Bytes())
+}
+
+func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	batch := func(since int64, rows int) *collogspb.ExportLogsServiceRequest {
+		logs := make([]*otlplogsv1.ResourceLogs, rows)
+		for i := range logs {
+			logs[i] = &otlplogsv1.ResourceLogs{
+				SchemaUrl: fmt.Sprintf("row-%d-%s", since+int64(i)+1, strings.Repeat("x", 80)),
+			}
+		}
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: logs}
+	}
+	maxPayloadSize := proto.Size(batch(0, 2))
+	require.Greater(t, proto.Size(batch(0, 4)), maxPayloadSize)
+
+	type fetchCall struct {
+		since int64
+		limit int
+	}
+	var calls []fetchCall
+	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+		calls = append(calls, fetchCall{since: since, limit: limit})
+		remaining := 4 - int(since)
+		if remaining == 0 {
+			return since, nil, 0, nil
+		}
+		rows := min(limit, remaining)
+		return since + int64(rows), batch(since, rows), rows, nil
+	}
+
+	resp := httptest.NewRecorder()
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		httptest.NewRequest(http.MethodGet, "/v1/logs", nil),
+		record,
+		fetcher,
+		maxPayloadSize,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []fetchCall{
+		{since: 0, limit: otlpBatchSize},
+		{since: 0, limit: 2},
+		{since: 2, limit: otlpBatchSize},
+		{since: 4, limit: otlpBatchSize},
+		{since: 4, limit: otlpBatchSize},
+	}, calls)
+
+	for _, expectedCursor := range []int64{2, 4} {
+		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedCursor, cursor)
+		require.LessOrEqual(t, len(payload), maxPayloadSize)
+		require.False(t, terminal)
+	}
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), cursor)
+	require.Nil(t, payload)
+	require.True(t, terminal)
+}
+
+func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    make(chan struct{}),
+	}
+
+	fetches := 0
+	resp := httptest.NewRecorder()
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		httptest.NewRequest(http.MethodGet, "/v1/logs", nil),
+		record,
+		func(_ context.Context, _ *clientdb.DB, _ int64, _ int) (int64, proto.Message, int, error) {
+			fetches++
+			return 1, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
+			}, 1, nil
+		},
+		16,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, fetches, "an oversized row must not be fetched repeatedly")
+
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.ErrorIs(t, err, enginetel.ErrLiveStream)
+	require.ErrorContains(t, err, "telemetry row at cursor 1")
+	require.Equal(t, int64(0), cursor)
+	require.Nil(t, payload)
+	require.False(t, terminal)
 }
 
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {

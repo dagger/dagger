@@ -942,7 +942,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 			if complete || ctx.Err() != nil {
 				return nil
 			}
-			if errors.Is(err, enginetel.ErrInvalidLiveFrame) {
+			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return fmt.Errorf("decode OTLP stream: %w", err)
 			}
 			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)

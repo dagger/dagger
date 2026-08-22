@@ -713,16 +713,16 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
 		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 			ID:    since,
-			Limit: otlpBatchSize,
+			Limit: int64(limit),
 		})
 		if err != nil {
-			return 0, nil, false, fmt.Errorf("select spans: %w", err)
+			return 0, nil, 0, fmt.Errorf("select spans: %w", err)
 		}
 		if len(spans) == 0 {
-			return since, nil, false, nil
+			return since, nil, 0, nil
 		}
 		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
 		for i, span := range spans {
@@ -731,47 +731,47 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 		}
 		return since, &coltracepb.ExportTraceServiceRequest{
 			ResourceSpans: telemetry.SpansToPB(roSpans),
-		}, true, nil
+		}, len(spans), nil
 	})
 }
 
 //nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
 		logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    since,
-			Limit: otlpBatchSize,
+			Limit: int64(limit),
 		})
 		if err != nil {
-			return 0, nil, false, fmt.Errorf("select logs: %w", err)
+			return 0, nil, 0, fmt.Errorf("select logs: %w", err)
 		}
 		if len(logs) == 0 {
-			return since, nil, false, nil
+			return since, nil, 0, nil
 		}
 		since = logs[len(logs)-1].ID
 		return since, &collogspb.ExportLogsServiceRequest{
 			ResourceLogs: clientdb.LogsToPB(logs),
-		}, true, nil
+		}, len(logs), nil
 	})
 }
 
 //nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
-			Limit: otlpBatchSize,
+			Limit: int64(limit),
 		})
 		if err != nil {
-			return 0, nil, false, fmt.Errorf("select metrics: %w", err)
+			return 0, nil, 0, fmt.Errorf("select metrics: %w", err)
 		}
 		if len(metrics) == 0 {
-			return since, nil, false, nil
+			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
 		return since, &colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: clientdb.MetricsToPB(metrics),
-		}, true, nil
+		}, len(metrics), nil
 	})
 }
 
@@ -1049,10 +1049,17 @@ func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
-type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64) (int64, proto.Message, bool, error)
+type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, message proto.Message, rows int, err error)
 
 func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
+	return ps.streamHandlerWithPayloadLimit(w, r, record, fetcher, enginetel.MaxLivePayloadSize)
+}
+
+func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int) error {
 	logger := slog.With("client", record.clientID, "path", r.URL.Path)
+	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
+		return fmt.Errorf("invalid live telemetry payload limit %d", maxPayloadSize)
+	}
 
 	var flush func()
 	if flusher, ok := w.(http.Flusher); ok {
@@ -1084,16 +1091,28 @@ func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *
 	flush()
 
 	terminating := false
+	batchLimit := otlpBatchSize
+	failStream := func(streamErr error) error {
+		logger.Error("terminating OTLP stream", "cursor", since, "err", streamErr)
+		if err := enginetel.WriteLiveError(w, since, streamErr); err != nil {
+			return fmt.Errorf("%w; write live stream error: %v", streamErr, err)
+		}
+		flush()
+		return nil
+	}
 	for {
 		fetchStart := time.Now()
-		next, message, hasData, err := fetcher(r.Context(), db, since)
+		next, message, rows, err := fetcher(r.Context(), db, since, batchLimit)
 		if elapsed := time.Since(fetchStart); elapsed > slowTelemetryOp {
-			logger.Warn("slow OTLP stream fetch", "duration", elapsed, "hasData", hasData, "error", err)
+			logger.Warn("slow OTLP stream fetch", "duration", elapsed, "rows", rows, "limit", batchLimit, "error", err)
 		}
 		if err != nil {
-			return fmt.Errorf("fetch: %w", err)
+			if r.Context().Err() != nil {
+				return nil
+			}
+			return failStream(fmt.Errorf("fetch: %w", err))
 		}
-		if !hasData {
+		if rows == 0 {
 			if terminating {
 				if err := enginetel.WriteLiveTerminal(w, since); err != nil {
 					return fmt.Errorf("write terminal frame: %w", err)
@@ -1114,18 +1133,37 @@ func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *
 			}
 			continue
 		}
+		if rows < 0 || rows > batchLimit {
+			return failStream(fmt.Errorf("fetch returned invalid row count %d for limit %d", rows, batchLimit))
+		}
+		if message == nil {
+			return failStream(fmt.Errorf("fetch returned %d rows without an OTLP batch", rows))
+		}
 		if next <= since {
-			return fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since)
+			return failStream(fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since))
+		}
+
+		payloadSize := proto.Size(message)
+		if payloadSize > maxPayloadSize {
+			if rows == 1 {
+				return failStream(fmt.Errorf("telemetry row at cursor %d is %d bytes (maximum frame payload %d)", next, payloadSize, maxPayloadSize))
+			}
+			// Refetch a strictly smaller prefix at the same cursor. The row count,
+			// rather than the previous query limit, bounds this to logarithmically
+			// many attempts even when the tail contains fewer rows than requested.
+			batchLimit = max(1, rows/2)
+			continue
 		}
 
 		payload, err := proto.Marshal(message)
 		if err != nil {
-			return fmt.Errorf("marshal OTLP batch: %w", err)
+			return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
 		}
 		if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
 			return fmt.Errorf("write OTLP frame: %w", err)
 		}
 		since = next
+		batchLimit = otlpBatchSize
 		flush()
 	}
 }

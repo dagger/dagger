@@ -168,6 +168,51 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 	require.Equal(t, 2, requests)
 }
 
+func TestOTLPConsumerDoesNotReconnectStreamErrors(t *testing.T) {
+	t.Parallel()
+
+	var requests int
+	httpClient := &httpClient{
+		inner: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				var stream bytes.Buffer
+				if err := enginetel.WriteLiveError(&stream, 0, errors.New("oversized telemetry row")); err != nil {
+					return nil, err
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header: http.Header{
+						"Content-Type": []string{enginetel.LiveContentType},
+					},
+					Body:    io.NopCloser(bytes.NewReader(stream.Bytes())),
+					Request: req,
+				}, nil
+			}),
+		},
+	}
+
+	telemetryGroup := new(errgroup.Group)
+	consumer := &otlpConsumer{
+		httpClient: httpClient,
+		path:       "/v1/traces",
+		eg:         telemetryGroup,
+	}
+	require.NoError(t, consumer.Consume(context.Background(), func([]byte) error {
+		return errors.New("unexpected telemetry event")
+	}))
+
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- telemetryGroup.Wait() }()
+	select {
+	case err := <-waitDone:
+		require.ErrorIs(t, err, enginetel.ErrLiveStream)
+	case <-time.After(time.Second):
+		t.Fatal("telemetry consumer retried a non-reconnectable stream error")
+	}
+	require.Equal(t, 1, requests)
+}
+
 func TestClientMetadataUsesExplicitModuleInsteadOfWorkspaceModules(t *testing.T) {
 	t.Parallel()
 
