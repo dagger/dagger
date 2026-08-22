@@ -1278,7 +1278,8 @@ DecodeInstall(i) ==
 \*     parked read the latched error. The sync removes and attaches leases
 \*     one at a time and returns on the first error, so the desired lease
 \*     set may be left incompletely synchronized (earlier attaches and
-\*     imported leases may already exist), and nothing retries it.
+\*     imported leases may already exist), and the decode path does not
+\*     retry it.
 DecodeLeadFinish(i) ==
     /\ invocations[i].phase = "decoding"
     /\ LET r == invocations[i].resId
