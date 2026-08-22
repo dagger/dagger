@@ -1381,8 +1381,8 @@ func frontendFormKeyMap() *huh.KeyMap {
 
 func frontendFormTheme() *huh.Theme {
 	theme := huh.ThemeBase16()
-	theme.Focused.Base = theme.Focused.Base.BorderLeft(false)
-	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false)
+	theme.Focused.Base = theme.Focused.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false).PaddingLeft(0)
 	theme.Focused.SelectSelector = theme.Focused.SelectSelector.SetString("▶ ")
 	theme.Focused.MultiSelectSelector = theme.Focused.MultiSelectSelector.SetString("▶ ")
 	// ThemeBase16 copies its focused selectors into the blurred field styles,

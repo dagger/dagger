@@ -228,7 +228,8 @@ func (view *setupView) renderLogin(ctx tuist.Context) {
 			"dagger login",
 			lipgloss.NewStyle().Bold(true).Render("dagger login"),
 		)
-		ctx.Line("○ " + message)
+		canceled := lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render(idtui.IconSkipped)
+		ctx.Line("  " + canceled + " " + message)
 	case setupLoginFailed:
 		ctx.Line("✗ " + view.loginMessage)
 	}

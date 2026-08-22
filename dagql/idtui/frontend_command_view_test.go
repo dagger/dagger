@@ -33,6 +33,9 @@ func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	if theme.Blurred.Base.GetBorderLeft() {
 		t.Fatal("blurred form field still reserves a left border")
 	}
+	if theme.Focused.Base.GetPaddingLeft() != 0 || theme.Blurred.Base.GetPaddingLeft() != 0 {
+		t.Fatal("form fields still reserve a leading padding column")
+	}
 	if !theme.Focused.FocusedButton.GetBold() || theme.Focused.BlurredButton.GetBold() {
 		t.Fatal("only the focused confirmation choice should be bold")
 	}
@@ -198,6 +201,11 @@ func TestMountedFormUpdatesKeymapAndUsesNaturalHeight(t *testing.T) {
 	after := strings.Join(fe.tui.RenderLines(), "\n")
 	if !strings.Contains(after, "toggle") || strings.Contains(after, "verbosity") {
 		t.Fatalf("form keymap did not replace navigation keys:\n%s", after)
+	}
+	plainAfter := ansi.Strip(after)
+	flushTitle := strings.HasPrefix(plainAfter, "Apply changes?") || strings.Contains(plainAfter, "\nApply changes?")
+	if !flushTitle || strings.HasPrefix(plainAfter, " Apply changes?") || strings.Contains(plainAfter, "\n Apply changes?") {
+		t.Fatalf("form retained a leading padding column:\n%s", plainAfter)
 	}
 	if height := strings.Count(fe.formModel.View(), "\n") + 1; height > 8 {
 		t.Fatalf("compact confirmation reserved %d lines", height)

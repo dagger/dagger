@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dagger/dagger/dagql/idtui"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -60,6 +61,20 @@ func TestSetupViewRendersConciseCompletedStates(t *testing.T) {
 	}
 	if strings.Contains(rendered, "Workspace migration") || strings.Contains(rendered, "No workspace loaded") {
 		t.Fatalf("setup view retained verbose migration detail:\n%s", rendered)
+	}
+}
+
+func TestSetupViewIndentsSkippedLoginAsCanceled(t *testing.T) {
+	view := &setupView{
+		loginState:   setupLoginSkipped,
+		loginMessage: setupLoginSkippedHint,
+	}
+	tui := tuist.New(tuist.NewHeadlessTerminal(100, 20))
+	tui.AddChild(view)
+
+	rendered := ansi.Strip(strings.Join(tui.RenderLines(), "\n"))
+	if !strings.Contains(rendered, "  "+idtui.IconSkipped+" Skipped. (dagger login to log in)") {
+		t.Fatalf("skipped login is not indented and canceled:\n%s", rendered)
 	}
 }
 
