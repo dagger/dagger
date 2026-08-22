@@ -142,8 +142,7 @@ type DB struct {
 
 	Resources map[attribute.Distinct]*resource.Resource
 
-	CallPayloads map[string]string
-	Calls        map[string]*callpbv1.Call
+	Calls map[string]*callpbv1.Call
 
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
@@ -226,8 +225,7 @@ func NewDB() *DB {
 		Spans:     NewSpanSet(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
-		CallPayloads: make(map[string]string),
-		Calls:        make(map[string]*callpbv1.Call),
+		Calls: make(map[string]*callpbv1.Call),
 
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
@@ -931,7 +929,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
-		db.CallPayloads[span.CallDigest] = span.CallPayload
+		// Legacy channel: older engines carry a base64 payload on the span
+		// itself. Decode eagerly into the same store the log channel fills so
+		// nothing downstream has to know which channel carried a call.
+		var legacy callpbv1.Call
+		if err := legacy.Decode(span.CallPayload); err == nil {
+			db.addCall(span.CallDigest, &legacy)
+		} else {
+			slog.Warn("failed to decode legacy call payload", "digest", span.CallDigest, "err", err)
+		}
 	}
 
 	if !span.ParentID.IsValid() && span.Received {
@@ -1201,27 +1207,12 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 }
 
 func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
-	// First, check if we already have the call cached
-	if cached, ok := db.Calls[dig]; ok {
-		return cached
+	// First, check if we have the exact call.
+	if decoded, ok := db.Calls[dig]; ok {
+		return decoded
 	}
 
-	// Next, try to decode from the call payload
-	if callPayload, ok := db.CallPayloads[dig]; ok {
-		var call callpbv1.Call
-		if err := call.Decode(callPayload); err != nil {
-			slog.Warn("failed to decode call", "err", err)
-			// Cache nil so we don't keep retrying and spamming warnings
-			// on every render cycle.
-			db.Calls[dig] = nil
-			return nil
-		}
-		// Cache the decoded call for future use
-		db.Calls[dig] = &call
-		return &call
-	}
-
-	// Finally, try to find the call through creator spans
+	// Otherwise, try to find the call through creator spans.
 	if creators, ok := db.CreatorSpans[dig]; ok {
 		if seen == nil {
 			seen = map[string]bool{}

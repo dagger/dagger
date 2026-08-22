@@ -90,11 +90,6 @@ const (
 const (
 	CallPayloadInstrumentationScope = "dagger.io/dag.call.payload"
 	DagCallPayloadAttr              = "dagger.io/dag.call.payload"
-
-	// DagCallPayloadDigestAttr identified the frame carried by a legacy
-	// attribute-encoded payload record. Only the transitional consumer still
-	// reads it; producers no longer write it.
-	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
 )
 
 // wcprof × OTel vocabulary.
