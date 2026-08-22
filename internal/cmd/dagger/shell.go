@@ -142,6 +142,10 @@ type shellCallHandler struct {
 	sessionUUID   string
 	promptL       sync.Mutex
 
+	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
+	// mode and function-returned LLMs retain their command span names.
+	generateSessionTitle bool
+
 	// queuedMsg carries a message the user submitted while a non-prompt turn
 	// (e.g. a shell command or a prompt-mode /command) was running, to be run
 	// as a new turn once the current one finishes. Messages submitted while a
@@ -275,9 +279,12 @@ func (h *shellCallHandler) saveIdentity() (initialPrompt, sessionUUID string) {
 // fresh one (used after branching or resuming).
 func (h *shellCallHandler) resetSaveIdentity() {
 	h.promptL.Lock()
-	defer h.promptL.Unlock()
 	h.initialPrompt = ""
 	h.sessionUUID = ""
+	h.promptL.Unlock()
+	if h.generateSessionTitle && h.llmSession != nil {
+		h.llmSession.resetTitle()
+	}
 }
 
 // QueueMessage stores a message submitted while a non-prompt turn was running,
@@ -881,7 +888,13 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	// first prompt (e.g. ctrl+s on a freshly loaded session).
 	s.onStep = func(a *sessionAgent) {
 		initialPrompt, sessionUUID := h.saveIdentity()
-		savedUUID, err := a.AutoSaveSession(ctx, initialPrompt, sessionUUID)
+		sessionName := initialPrompt
+		if h.generateSessionTitle {
+			if title := s.ensureTitle(a, initialPrompt); title != "" {
+				sessionName = title
+			}
+		}
+		savedUUID, err := a.AutoSaveSession(ctx, sessionName, sessionUUID)
 		if err != nil {
 			slog.Warn("failed to auto-save session", "error", err)
 			return

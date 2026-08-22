@@ -110,7 +110,12 @@ Examples:
 					agent:   agentFocus,
 					partial: agentPartial,
 				}
-				return startInteractivePromptModeWithResume(ctx, dag, llmID, sessionID, resume, restore)
+				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
+					sessionID:            sessionID,
+					resume:               resume,
+					restore:              restore,
+					generateSessionTitle: true,
+				})
 			},
 		)
 	},
