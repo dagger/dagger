@@ -48,10 +48,9 @@ func newSetupUI(frontend idtui.Frontend) *setupUI {
 		view.recommend = ctx.SpanList(
 			func() dagui.SpanID { return view.rootID },
 			func() []dagui.SpanID {
-				if len(view.installIDs) > 0 {
-					return append([]dagui.SpanID(nil), view.installIDs...)
-				}
-				return validSpanIDs(view.recommendID)
+				// Discovery is an implementation detail: retain its span for
+				// telemetry, but only render the resulting install actions.
+				return append([]dagui.SpanID(nil), view.installIDs...)
 			},
 		)
 		return view
