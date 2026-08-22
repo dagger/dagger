@@ -280,8 +280,10 @@ func (m *TlaCheck) One(
 		ctr = ctr.WithNewFile("/spec/"+cfgPath, strings.Join(kept, "\n"))
 	}
 
+	// -Xmx8g: the JVM's default heap is a quarter of host memory, so four
+	// concurrent configurations could still overcommit a 64 GiB host.
 	cmd := fmt.Sprintf(
-		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s CacheLifecycle.tla 2>&1; true",
+		"java -Xmx8g -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s CacheLifecycle.tla 2>&1; true",
 		cfgPath)
 	return ctr.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 }
@@ -333,8 +335,10 @@ func runOne(
 	name,
 	expect string,
 ) *runFailure {
+	// -Xmx8g: the JVM's default heap is a quarter of host memory, so four
+	// concurrent configurations could still overcommit a 64 GiB host.
 	cmd := fmt.Sprintf(
-		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1; true",
+		"java -Xmx8g -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1; true",
 		configPrefix, name, specName)
 	out, err := base.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 	if err != nil {
