@@ -68,7 +68,6 @@ func TestSetupViewLoginChoiceHasNoTransitionalCruft(t *testing.T) {
 		loginState:   setupLoginPending,
 		loginMessage: "Waiting for login choice...",
 		loginSpinner: tuist.NewSpinner(),
-		workSpinner:  tuist.NewSpinner(),
 	}
 	tui := tuist.New(tuist.NewHeadlessTerminal(100, 20))
 	tui.AddChild(view)

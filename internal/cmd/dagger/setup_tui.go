@@ -38,7 +38,6 @@ func newSetupUI(frontend idtui.Frontend) *setupUI {
 		loginState:   setupLoginPending,
 		loginMessage: "Checking Cloud account...",
 		loginSpinner: tuist.NewSpinner(),
-		workSpinner:  tuist.NewSpinner(),
 	}
 	ui := &setupUI{view: view, live: host.Live()}
 	ui.handle = host.SetView(func(ctx idtui.ViewContext) idtui.CommandView {
@@ -155,7 +154,6 @@ type setupView struct {
 	loginMessage string
 	loginDetail  string
 	loginSpinner *tuist.Spinner
-	workSpinner  *tuist.Spinner
 
 	rootID           dagui.SpanID
 	migrationID      dagui.SpanID
@@ -197,9 +195,6 @@ func (view *setupView) Render(ctx tuist.Context) {
 		ctx.Line("Workspace")
 		if view.migrationMessage == "" && view.migrationID.IsValid() && view.workspace != nil {
 			view.RenderChild(ctx, view.workspace)
-		} else if view.workSpinner != nil {
-			view.workSpinner.Label = "Starting workspace setup..."
-			view.RenderChild(ctx, view.workSpinner)
 		}
 		if view.migrationMessage == "Nothing to migrate." || view.migrationMessage == "No migration needed." {
 			view.renderSuccess(ctx, view.migrationMessage)
