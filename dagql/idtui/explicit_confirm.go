@@ -114,7 +114,7 @@ func (field *ExplicitConfirm) WithTheme(theme *huh.Theme) huh.Field {
 	local := *theme
 	button := local.Focused.FocusedButton.
 		UnsetBackground().
-		Foreground(lipgloss.Color("15")).
+		Foreground(lipgloss.Color("8")).
 		Bold(false).
 		Faint(false)
 	local.Focused.FocusedButton = button.Bold(true)

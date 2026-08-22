@@ -1372,7 +1372,7 @@ func frontendFormTheme() *huh.Theme {
 	// structural focus marker, so color and background carry no meaning here.
 	button := theme.Focused.FocusedButton.
 		UnsetBackground().
-		Foreground(lipglossv1.Color("15")).
+		Foreground(lipglossv1.Color("8")).
 		Bold(false).
 		Faint(false)
 	theme.Focused.FocusedButton = button.Bold(true)
