@@ -150,7 +150,8 @@ func (field *ExplicitChoice[T]) WithTheme(theme *huh.Theme) huh.Field {
 }
 
 func (field *ExplicitChoice[T]) WithAccessible(accessible bool) huh.Field {
-	field.selectField.WithAccessible(accessible)
+	// Huh calls RunAccessible directly; its old WithAccessible toggle is
+	// deprecated and no longer needs to be forwarded.
 	return field
 }
 

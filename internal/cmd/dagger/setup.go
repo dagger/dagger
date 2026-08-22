@@ -146,7 +146,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 				// here — even when the migration was declined.
 				return nil
 			}
-			recs, install, err = planRecommend(ctx, cmd, dag, setupUI)
+			recs, install, err = planRecommend(ctx, dag, setupUI)
 			if err != nil {
 				return fmt.Errorf("step 3 (recommend): %w", err)
 			}
@@ -286,7 +286,7 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 		return nil
 	}
 
-	loginOut := io.Writer(cmd.ErrOrStderr())
+	loginOut := cmd.ErrOrStderr()
 	if ui != nil && ui.live {
 		ui.setLoginPending("Waiting for authentication...")
 		loginOut = setupLoginWriter{ui: ui}
@@ -657,7 +657,7 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 // form) whether to install them. It runs in the same session as migrate and
 // returns the modules plus the user's decision; the actual install runs later
 // in a fresh session (see runSetup) so it re-detects the migrated workspace.
-func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, ui *setupUI) (recs []recommendation, install bool, rerr error) {
+func planRecommend(ctx context.Context, dag *dagger.Client, ui *setupUI) (recs []recommendation, install bool, rerr error) {
 	messageCtx := ctx
 	ctx, span := Tracer().Start(ctx, "Find recommended modules", telemetry.Reveal(), telemetry.Encapsulate())
 	ui.setRecommend(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
@@ -679,7 +679,7 @@ func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, 
 		return nil, false, nil
 	}
 
-	recs, err = selectRecommendedModules(ctx, cmd, recs, ui)
+	recs, err = selectRecommendedModules(ctx, recs, ui)
 	if err != nil {
 		return nil, false, err
 	}
@@ -715,7 +715,7 @@ func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommen
 // selectRecommendedModules lets the user choose recommendations individually.
 // Every recommendation starts selected, preserving the old affirmative path
 // while allowing irrelevant modules to be toggled off before installation.
-func selectRecommendedModules(ctx context.Context, cmd *cobra.Command, recs []recommendation, ui *setupUI) ([]recommendation, error) {
+func selectRecommendedModules(ctx context.Context, recs []recommendation, ui *setupUI) ([]recommendation, error) {
 	if autoApply {
 		return recs, nil
 	}

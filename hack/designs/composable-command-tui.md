@@ -118,15 +118,15 @@ normal Tuist component created with a frontend-owned view context:
 type ViewFactory func(ViewContext) CommandView
 
 type CommandView interface {
-	tuist.Component
+ tuist.Component
 
-	// SetFinal switches from transient progress to durable terminal output.
-	SetFinal(bool)
+ // SetFinal switches from transient progress to durable terminal output.
+ SetFinal(bool)
 }
 
 type Frontend interface {
-	// Existing methods omitted.
-	SetView(ViewFactory) ViewHandle
+ // Existing methods omitted.
+ SetView(ViewFactory) ViewHandle
 }
 ```
 
@@ -142,9 +142,9 @@ internals:
 
 ```go
 type ViewContext interface {
-	Trace() TraceStore
-	Span(id dagui.SpanID, opts SpanViewOpts) tuist.Component
-	SpanList(ids func() []dagui.SpanID, opts SpanListOpts) tuist.Component
+ Trace() TraceStore
+ Span(id dagui.SpanID, opts SpanViewOpts) tuist.Component
+ SpanList(ids func() []dagui.SpanID, opts SpanListOpts) tuist.Component
 }
 ```
 
@@ -177,9 +177,9 @@ For example:
 
 ```go
 type SpanListOpts struct {
-	ShowChildren   bool
-	CollapseOnDone bool
-	MaxDepth       int
+ ShowChildren   bool
+ CollapseOnDone bool
+ MaxDepth       int
 }
 ```
 
@@ -216,13 +216,13 @@ that dispatches onto the Tuist event loop:
 
 ```go
 type SetupModel struct {
-	Migration MigrationState
-	Installs  []dagui.SpanID
-	Result    SetupResult
+ Migration MigrationState
+ Installs  []dagui.SpanID
+ Result    SetupResult
 }
 
 view.Update(func(model *SetupModel) {
-	model.Migration = MigrationNotNeeded
+ model.Migration = MigrationNotNeeded
 })
 ```
 

@@ -185,7 +185,8 @@ func (field *ExplicitConfirm) WithTheme(theme *huh.Theme) huh.Field {
 }
 
 func (field *ExplicitConfirm) WithAccessible(accessible bool) huh.Field {
-	field.confirm.WithAccessible(accessible)
+	// Huh calls RunAccessible directly; its old WithAccessible toggle is
+	// deprecated and no longer needs to be forwarded.
 	return field
 }
 
