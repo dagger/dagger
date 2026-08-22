@@ -23,12 +23,29 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 type fakeSessionCaller struct {
 	id   string
 	conn *grpc.ClientConn
+}
+
+func TestLogRecordRowPreservesBytesBody(t *testing.T) {
+	payload := []byte{0, 1, 2, 0xff}
+	var record sdklog.Record
+	record.SetBody(otellog.BytesValue(payload))
+
+	row, err := logRecordRow(&record)
+	require.NoError(t, err)
+
+	var body otlpcommonv1.AnyValue
+	require.NoError(t, proto.Unmarshal(row.Body, &body))
+	require.Equal(t, payload, body.GetBytesValue())
 }
 
 func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
