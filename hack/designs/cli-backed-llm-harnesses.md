@@ -53,10 +53,12 @@ constraints:
    APIs cannot become the source of truth because lifecycle, pause, restore, and
    `AgentMessage.await` must have one consistent meaning across harnesses.
 3. **Delivery must be proved.** A local observation that a turn looked active
-   is not enough to label a message `STEERED`. Every Dagger `AgentMessage` ID is
-   carried as Codex `clientUserMessageId` or a Claude user-frame UUID. Native
-   acknowledgements and lifecycle events determine whether the message joined
-   the active turn, remained queued, was cancelled, or opened a later turn.
+   is not enough to label a message `STEERED`. Every Dagger `AgentMessage` has a
+   stable vendor correlation entry: Codex can carry its opaque Dagger ID as
+   `clientUserMessageId`, while Claude requires a separate valid UUID. Command
+   acknowledgement proves only native acceptance; correlated item/message
+   lifecycle proves whether input joined the active turn, remained queued, was
+   cancelled, or opened a later turn.
 4. **The CLI owns opaque continuation state.** Native thread/session files and
    some accepted input may exist only inside the running program. Their location
    and format can change by CLI version. Dagger may retain them but must not
@@ -106,10 +108,10 @@ The driver translates the Dagger Agent protocol onto the native control plane:
   input when supported.
 
 The Agent mailbox is drained in FIFO order by exactly one dispatcher. The
-adapter never infers delivery from timing. It records vendor acknowledgement and
-lifecycle evidence against the Dagger message ID, then resolves
-`AgentMessage.delivery` and, when the consuming native turn terminates,
-`AgentMessage.await`.
+adapter never infers delivery from timing. It records command acknowledgement as
+pending transport state, then uses definitive vendor lifecycle evidence through
+the per-record correlation mapping to resolve `AgentMessage.delivery` and, when
+the consuming native turn terminates, `AgentMessage.await`.
 
 The live process is deliberately absent from `LLM`. At checkpoint boundaries the
 runtime projects observable vendor events into ordinary `LLMMessage` selectors,
@@ -195,17 +197,23 @@ turn can finish between enqueue and steer acceptance, so that prediction can be
 wrong. The message record instead has a pending delivery state and a
 `deliveryReady` notification. `send` still returns immediately after durable
 FIFO enqueue. Reading `delivery` waits for conclusive native evidence and is
-`DoNotCache`; once recorded, the result is immutable. A pause or failure is
-itself conclusive local `QUEUED` evidence because the dispatcher has not written
-the record to native stdin. Provider-backed agents can confirm classification
+`DoNotCache`; once recorded, the result is immutable. A record definitively
+cancelled before consumption resolves `delivery` with that cancellation error
+rather than fabricating `STARTED` or `STEERED`. A pause or failure is itself
+conclusive local `QUEUED` evidence because the dispatcher has not written the
+record to native stdin. Provider-backed agents can confirm classification
 synchronously at their existing step boundary. The handle carries only agent
 identity and message ID; lookup reads the permanent runtime record rather than
 freezing a predicted delivery into the handle.
 
 Message handles remain pinned by the existing `Agent.message(id:)` lookup.
-Message IDs are minted under the runtime-entry mutex before mailbox insertion,
-and the same ID is sent to the native protocol. No turn-completion callback may
-resolve a record by FIFO position alone.
+Dagger IDs are minted under the runtime-entry mutex with
+`internal/buildkit/identity.NewID`; they are opaque 25-character base36 strings,
+not UUIDs. Each permanent record also stores a stable vendor correlation ID.
+Codex may use the Dagger string directly as `clientUserMessageId`. Claude gets a
+valid UUID generated once or deterministically derived from a stable namespace
+and the Dagger ID. No callback resolves a record by FIFO position or attempts to
+parse one identifier out of the other.
 
 The harness container must have a non-empty working directory other than `/`.
 That directory becomes the workspace mount point. Rejecting `/` prevents the
@@ -249,9 +257,9 @@ network or pipe operation occurs while holding the Agent mutex.
 
 `Agent.send` performs these steps atomically under the runtime lock:
 
-1. mint a unique Dagger message ID;
-2. create the permanent message record;
-3. append its ID to the canonical FIFO mailbox; and
+1. mint a unique opaque Dagger message ID;
+2. create the permanent message record and its stable vendor correlation ID;
+3. append the Dagger ID to the canonical FIFO mailbox; and
 4. wake the dispatcher.
 
 Signal-with-start remains the current core contract: sending to a never-started
@@ -260,10 +268,14 @@ Agent instance from its last checkpoint. Sending while paused or failed commits
 local `QUEUED` delivery and waits for `resume`; it never writes ahead into a
 native queue.
 
-The dispatcher processes one head record at a time. It assigns the identical
-native correlation ID, writes the command, and waits for the acknowledgement
-which determines disposition before advancing to the next record. Vendor
-notifications may arrive concurrently, but cannot reorder Dagger records.
+The dispatcher processes one head record at a time. It writes the record's
+vendor correlation ID and records the response only as accepted/pending. The
+record stays at the Dagger mailbox head until a correlated user-message/item
+lifecycle event definitively proves consumption or cancellation. Consumption
+finalizes delivery and moves the record into the logical turn; cancellation
+resolves it without `STARTED`/`STEERED`. Only then does the dispatcher advance
+to the next record. Vendor notifications may arrive concurrently, but cannot
+reorder Dagger records.
 
 Codex's experimental `thread/queue/*` facilities may be used as a transport
 optimization only if every entry carries the Dagger ID and startup/reconnect
@@ -276,26 +288,34 @@ native queue is never restored as authoritative state.
 
 If Codex reports an active regular turn, the dispatcher sends `turn/steer` with
 that turn's ID as `expectedTurnId` and the Dagger message ID as
-`clientUserMessageId`. Acceptance proves `STEERED`. An expected-turn mismatch
-means the observed turn ended during the race; the message remains at the head
-of Dagger's mailbox and is retried with `turn/start`, preserving order. No
-message is relabeled or dropped based on a stale `activeTurn` flag.
+`clientUserMessageId`. A successful RPC response proves only that Core accepted
+the input into its pending queue. The record remains at the mailbox head with
+pending delivery until a correlated `userMessage`/item lifecycle notification,
+or equivalent definitive event, proves the input was consumed by that active
+turn; only that evidence finalizes `STEERED`. An expected-turn mismatch means the
+observed turn ended during the race, so the same head record is retried with
+`turn/start` and can finalize as `STARTED` only after its correlated consumption
+event. If interrupt wins after acceptance but before consumption, reconciliation
+classifies the record as unconsumed/cancelled, never `STEERED`.
 
-For Claude, an active command permits a user stream-JSON frame whose UUID is the
-Dagger message ID. Supported default/next-priority input may be folded into the
-current turn at the next agent-loop or tool boundary; if that boundary has
-already passed, it runs subsequently. It cannot alter a model response already
-streaming or a tool already executing. `command_lifecycle` and input/control
-acknowledgements, not write success, establish whether the UUID was started in
+For Claude, an active command permits a user stream-JSON frame whose valid UUID
+comes from the record's Dagger-ID-to-UUID correlation mapping. Supported
+default/next-priority input may be folded into the current turn at the next
+agent-loop or tool boundary; if that boundary has already passed, it runs
+subsequently. It cannot alter a model response already streaming or a tool
+already executing. Correlated `command_lifecycle` evidence, not write success or
+an input acknowledgement, establishes whether the mapped UUID was started in
 the active command or remains queued. An initial `queued` event is provisional:
 the adapter waits for `started` in the active command or for that command to end
-with the UUID still queued before finalizing `STEERED` or `QUEUED`.
+with the mapped UUID still queued before finalizing `STEERED` or `QUEUED`.
 
 `STARTED`, `STEERED`, and `QUEUED` continue to describe how a Dagger message
 actually landed:
 
-- `STARTED`: it opened a native turn/command from idle;
-- `STEERED`: the native protocol confirmed it joined the active regular turn;
+- `STARTED`: definitive lifecycle proves it opened and was consumed by a new
+  native turn/command;
+- `STEERED`: definitive lifecycle proves it was consumed by the active regular
+  turn, rather than merely accepted into a pending queue;
 - `QUEUED`: pause/failure prevented dispatch, or native lifecycle confirmed it
   remained queued rather than joining the active turn.
 
@@ -360,11 +380,11 @@ by an unrelated turn. Canceling the GraphQL await only detaches that waiter; the
 runtime record and native correlation remain.
 
 `Agent.snapshot` returns `AgentRuntime.last`, exactly as it does today: the last
-atomic committed conversation. A harness-backed runtime stages a mailbox prompt
-after native input acknowledgement and materializes it only once lifecycle
-proves which turn consumed it; until then the permanent Agent message record,
-not the snapshot, carries it. Streamed deltas and mutable filesystem state are
-staged with the prompt until a terminal or interrupted checkpoint. Branching the
+atomic committed conversation. A harness-backed runtime may stage a mailbox
+prompt after dispatch but materializes it only once definitive lifecycle proves
+which turn consumed it; until then the permanent Agent message record, not the
+snapshot, carries it. Streamed deltas and mutable filesystem state are staged
+with the prompt until a terminal or interrupted checkpoint. Branching the
 snapshot cannot affect the live process.
 
 `rehydrate` restores an Agent runtime from its immutable `LLM` snapshot without
@@ -394,7 +414,8 @@ Hot, session-scoped state includes:
 - the current native thread/session and active turn/command IDs;
 - accepted input still held only in a native in-memory pending queue;
 - Dagger's canonical mailbox and unresolved `AgentMessage` records;
-- correlation and command-lifecycle state;
+- a hot correlation ledger mapping each opaque Dagger ID to its Codex string or
+  generated/derived Claude UUID, plus acknowledgement and lifecycle evidence;
 - the HTTP MCP listener and bearer token;
 - the live `*MCP`, workspace bridge, and mutable working directory; and
 - staged events and filesystem changes not yet checkpointed.
@@ -410,6 +431,11 @@ const (
     LLMHarnessCodex  LLMHarnessKind = "CODEX"
 )
 
+type LLMHarnessMessageCorrelation struct {
+    DaggerMessageID string
+    VendorMessageID string // Codex string or valid Claude UUID
+}
+
 type LLMHarnessCheckpoint struct {
     Harness       dagql.ObjectResult[*Container]
     Kind          LLMHarnessKind
@@ -417,8 +443,16 @@ type LLMHarnessCheckpoint struct {
     HistoryDigest digest.Digest
     NativeSession string // opaque adapter metadata, not a public path
     Protocol      string // adapter/version compatibility discriminator
+    Correlations  []LLMHarnessMessageCorrelation
 }
 ```
+
+The hot ledger is authoritative while a process lives. Any mapping referenced by
+opaque native checkpoint state, or needed to reconcile after recreating that
+process, is included in `Correlations` in the same atomic checkpoint; a generated
+Claude UUID is never regenerated differently after restart. Deterministic UUID
+derivation may reduce stored data but does not remove the explicit mapping or
+its validation.
 
 The checkpoint's container contains opaque native session files and the
 program/configuration needed to resume. The separately mounted workspace is not
@@ -492,8 +526,9 @@ A hot Agent performs the following sequence:
 3. Start the native control process with stdin kept open.
 4. Resume/fork native state when the checkpoint is valid, otherwise create a
    native session and import the portable history.
-5. Drain Dagger mailbox records in FIFO order, assigning the Dagger ID as the
-   native client message ID and waiting for disposition evidence.
+5. Drain Dagger mailbox records in FIFO order using the record's stable vendor
+   correlation ID; keep each record at the head through command acceptance until
+   definitive lifecycle proves consumption or cancellation.
 6. Translate typed native notifications into live display events and staged
    `LLMMessage` values while native and MCP tools execute.
 7. At each Dagger MCP call, pull native workspace edits, execute the tool, and
@@ -523,17 +558,21 @@ Startup chooses one thread operation:
 - `thread/fork` before diverging from an existing checkpoint.
 
 An idle message uses `turn/start`. While the same regular turn is active,
-additional input uses `turn/steer` with `expectedTurnId`. The input carries
-`clientUserMessageId = AgentMessage.MessageID`. A successful response identifies
-the accepted turn; a stale expected ID causes reconciliation and retry as a new
-turn without removing the message from Dagger's FIFO.
+additional input uses `turn/steer` with `expectedTurnId`. In both cases the input
+carries `clientUserMessageId = AgentMessage.MessageID`. A successful response
+records the target turn and pending native acceptance only. Correlated
+`userMessage`/item lifecycle, or an equivalent definitive consumption event,
+finalizes `STARTED` or `STEERED` and moves the record out of Dagger's mailbox. A
+stale expected ID leaves the head record untouched and retries it through
+`turn/start`; interruption before consumption reconciles an accepted record as
+unconsumed/cancelled.
 
 `turn/interrupt` terminates the active turn with interrupted status. Its aborted
 turn remains in native history. Completed item notifications, partial deltas,
 workspace changes, and spawned background processes are reconciled before the
-next checkpoint. An accepted steer is not considered cold-durable merely because
-the RPC returned: until item/turn notifications show consumption, it may exist
-only in the app-server process's pending queue.
+next checkpoint. An accepted steer is neither delivered nor cold-durable merely
+because the RPC returned: until its correlated lifecycle proves consumption, it
+may exist only in the app-server process's pending queue.
 
 Experimental thread queue APIs do not change this model. They are optional
 adapter internals subject to exact client-ID correlation and reconciliation.
@@ -549,21 +588,25 @@ claude -p --input-format stream-json --output-format stream-json --verbose
 ```
 
 Its stdin remains open. User frames may be written while Claude is running.
-Each carries a UUID equal to the Dagger `AgentMessage` ID. Default/next-priority
-messages can be folded into the current turn at the next agent-loop or tool
-boundary and otherwise execute subsequently. They do not rewrite an assistant
-response already streaming and do not preempt a tool already executing.
+Each carries the valid UUID stored in the Dagger message record's vendor
+correlation entry; the opaque 25-character Dagger ID is not a UUID and is not
+placed in that field. Default/next-priority messages can be folded into the
+current turn at the next agent-loop or tool boundary and otherwise execute
+subsequently. They do not rewrite an assistant response already streaming and do
+not preempt a tool already executing.
 
 The adapter consumes `command_lifecycle` events (`queued`, `started`,
 `completed`, `cancelled`, `discarded`, and `refused`) to correlate disposition
 and completion. A successful stdin write alone is never delivery evidence.
 
 The control protocol supports interrupt. When the negotiated
-`interrupt_receipt_v1` capability is present, the receipt's `still_queued` UUIDs
-are compared exactly with Dagger's records. With
-`interrupt_cancel_queued_v1`, Dagger requests `cancel_queued`; individual queued
-input can be removed with `cancel_async_message` by UUID. Any disagreement keeps
-Dagger's record unresolved and forces explicit recovery rather than guessing.
+`interrupt_receipt_v1` capability is present, each receipt `still_queued` UUID is
+resolved through the correlation ledger and the resulting Dagger record set is
+compared exactly with Dagger's queue. With `interrupt_cancel_queued_v1`, Dagger
+requests `cancel_queued`; individual queued input can be removed with
+`cancel_async_message` by its mapped UUID. An unknown or duplicate UUID is a
+correlation failure, and any disagreement keeps the Dagger record unresolved and
+forces explicit recovery rather than guessing.
 Partial assistant messages reported as aborted are preserved as partial output
 but do not resolve an await as a successful completed reply.
 
@@ -596,13 +639,15 @@ necessarily lossy: provider-private continuation tokens, unexposed reasoning,
 and signed thinking blocks cannot be recreated. Once imported, later turns use
 native continuation and opaque state.
 
-Agent mailbox messages are simpler: each is one native user input carrying its
-Dagger ID. Dispatch stages the corresponding `withPrompt`; native lifecycle must
-prove that a turn consumed the ID before the prompt is materialized in the
-atomic checkpoint. This is the harness form of async-agents'
-influence-implies-append rule: queued or cancelled input is not transcript
-history, while every message which influenced native execution is recorded. The
-cursor advances with the same commit.
+Agent mailbox messages are simpler: each is one native user input carrying the
+record's vendor correlation ID (the Dagger string for Codex, a mapped UUID for
+Claude). Dispatch stages the corresponding `withPrompt`; definitive native
+lifecycle must prove that a turn consumed the correlated record before the
+prompt is materialized in the atomic checkpoint. This is the harness form of
+async-agents' influence-implies-append rule: queued or cancelled input is not
+transcript history, while every message which influenced native execution is
+recorded. The cursor and any required correlation mapping advance with the same
+commit.
 
 ### Output
 
@@ -618,9 +663,10 @@ type LLMHarnessTurn struct {
 }
 
 type LLMHarnessMessageLifecycle struct {
-    MessageID   string // Dagger ID / Codex clientUserMessageId / Claude UUID
-    NativeTurn  string
-    State       string
+    DaggerMessageID string // resolved through the correlation ledger
+    VendorMessageID string // Codex clientUserMessageId or Claude UUID
+    NativeTurn      string
+    State           string
 }
 
 type LLMHarnessTextDelta struct {
@@ -856,8 +902,9 @@ type LLMHarnessAdapter interface {
 }
 
 type LLMHarnessInput struct {
-    MessageID string
-    Content   []*LLMMessage
+    DaggerMessageID string
+    VendorMessageID string // Codex string or valid Claude UUID
+    Content         []*LLMMessage
 }
 
 type LLMHarnessStart struct {
@@ -871,10 +918,11 @@ type LLMHarnessStart struct {
 }
 ```
 
-Codex implements this with app-server JSON-RPC request IDs distinct from, but
-mapped to, Dagger message IDs. Claude implements it with persistent stream-JSON
-user/control frames and UUID lifecycle. Exact vendor schemas are versioned
-adapter code and fixture-tested because they can change independently of Dagger.
+Codex implements this with app-server JSON-RPC request IDs distinct from its
+`clientUserMessageId`, which may be the Dagger ID. Claude implements it with
+persistent stream-JSON user/control frames and a valid UUID allocated through
+the correlation ledger. Exact vendor schemas are versioned adapter code and
+fixture-tested because they can change independently of Dagger.
 
 ### LLM and Agent evaluation
 
@@ -962,16 +1010,18 @@ that ambiguity; retry policy belongs to the tool/caller.
 
 Codex interruption waits for the interrupted terminal turn event, records its
 aborted marker, and queries/reconciles any available queue state. A steer which
-was acknowledged but not consumed stays pending in Dagger unless a terminal
-item/lifecycle event proves otherwise. Partial workspace effects are pulled only
-after remaining writers are quiesced.
+was acknowledged but lacks definitive correlated consumption remains at the
+Dagger mailbox head and is reconciled as unconsumed/cancelled; it never acquires
+`STEERED` delivery from the acknowledgement. Partial workspace effects are
+pulled only after remaining writers are quiesced.
 
 Claude interruption uses the control protocol. With
-`interrupt_receipt_v1`, `still_queued` UUIDs must match known Dagger records.
-With `interrupt_cancel_queued_v1`, `cancel_queued` requests cancellation and
-lifecycle must report `cancelled`/`discarded`; `cancel_async_message` targets one
-UUID. A `refused` command resolves that message with an error. Missing or extra
-UUIDs are a reconciliation failure.
+`interrupt_receipt_v1`, every `still_queued` UUID must reverse-map to exactly one
+known Dagger record and the resulting record set must match Dagger's queue. With
+`interrupt_cancel_queued_v1`, `cancel_queued` requests cancellation and lifecycle
+must report `cancelled`/`discarded`; `cancel_async_message` targets the record's
+mapped UUID. A `refused` command resolves that mapped Dagger message with an
+error. Missing, duplicate, or extra UUID mappings are a reconciliation failure.
 
 Unconsumed mailbox records discarded by Dagger `interrupt` are cancelled in the
 native queue by correlated ID before their Agent records resolve with the
@@ -1050,10 +1100,15 @@ Focused unit, fixture, and integration coverage must prove:
   accepts user frames while running;
 - concurrent `Agent.send` calls receive unique IDs and reach native input in the
   exact Dagger FIFO order;
-- Codex `clientUserMessageId` and Claude UUID equal the Dagger message ID on
-  every path, including retry after reconnect;
-- a Codex steer accepted with the expected turn ID is `STEERED`, while a stale
-  expected ID starts the same head message in the next turn without reordering;
+- Dagger message IDs are opaque 25-character base36 strings; Codex uses that
+  string as `clientUserMessageId`, while Claude receives a distinct valid UUID
+  which reverse-maps to the same record after reconnect and checkpoint restore;
+- a successful Codex `turn/steer` response leaves delivery pending and the
+  record at the mailbox head until correlated user-message/item lifecycle proves
+  consumption and finalizes `STEERED`;
+- a Codex expected-turn mismatch retries the same head record with `turn/start`,
+  which finalizes `STARTED` only after definitive consumption and without
+  reordering;
 - Claude lifecycle distinguishes a message folded at an agent/tool boundary
   from one queued for a subsequent command;
 - no message changes an already-streaming model response or executing native
@@ -1065,10 +1120,13 @@ Focused unit, fixture, and integration coverage must prove:
   messages, and resume drains them in order;
 - Codex interrupt records interrupted status and an aborted-turn marker while
   preserving completed output and detected side effects;
-- an acknowledged Codex steer still in the in-memory pending queue is not
-  falsely included in a cold cursor;
-- Claude interrupt receipts reconcile every `still_queued` UUID;
-  `cancel_queued` and `cancel_async_message` produce matching lifecycle states;
+- an acknowledged Codex steer interrupted before correlated consumption stays
+  at the mailbox head until cancellation evidence, then reconciles as
+  unconsumed/cancelled without ever becoming `STEERED` or entering a cold cursor;
+- Claude interrupt receipts reverse-map every `still_queued` UUID, reject
+  unknown/duplicate UUIDs, and reconcile the resulting Dagger record set;
+  `cancel_queued` and `cancel_async_message` use the mapped UUID and produce
+  matching lifecycle states;
 - Claude partial assistant output is marked aborted and does not masquerade as a
   successful complete reply;
 - stop is atomic under races with send and terminal native notifications;
