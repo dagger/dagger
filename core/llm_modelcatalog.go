@@ -20,6 +20,10 @@ func lookupCatalogModel(provider LLMProvider, model string) (catwalk.Model, bool
 	return modelcatalog.Lookup(string(provider), model)
 }
 
+func defaultSmallModel(provider LLMProvider) (string, bool) {
+	return modelcatalog.DefaultSmallModel(string(provider))
+}
+
 const (
 	// llmCharsPerToken is the rough chars-per-token ratio used to estimate
 	// how much of the context window the conversation occupies.
