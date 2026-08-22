@@ -293,7 +293,7 @@ func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (bo
 		idtui.NewExplicitConfirm("Yes", "No", &accepted).
 			Title("Log in to Dagger Cloud?").
 			TitleLink("https://dagger.io/cloud").
-			Description("Observability · compute · persistence"),
+			Description("For observability, compute, and persistence. More info: https://dagger.io/cloud"),
 	))
 	if err := Frontend.HandleForm(ctx, form); err != nil {
 		return false, err
