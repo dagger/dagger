@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -340,6 +341,17 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 			// predates it
 			snapshot.Progress = span.Progress
 		}
+		if span.hasNameFromLog && snapshot.EndTime.Before(snapshot.StartTime) {
+			// Live name updates arrive on logs because repeated in-flight span
+			// exports retain their start-time name. Do not let one roll the newer
+			// name back.
+			snapshot.Name = span.nameFromLog
+		} else if !snapshot.EndTime.Before(snapshot.StartTime) {
+			// A completed snapshot carries the span's actual ending name and
+			// becomes authoritative over the live-log bridge.
+			span.nameFromLog = ""
+			span.hasNameFromLog = false
+		}
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
 		spans[i] = span
@@ -424,12 +436,59 @@ func (db *DB) LogExporter() sdklog.Exporter {
 	return DBLogExporter{db}
 }
 
+// IsSpanNameRecord reports whether record's semantic role says its body is an
+// updated display name for the span it is attributed to. These records are
+// metadata and must not also be rendered as ordinary log output.
+func IsSpanNameRecord(record sdklog.Record) bool {
+	var isSpanName bool
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetryattrs.LogRoleAttr {
+			isSpanName = kv.Value.AsString() == telemetryattrs.LogRoleSpanName
+			return false
+		}
+		return true
+	})
+	return isSpanName
+}
+
+// ingestSpanName folds a span.name role record into the attributed span. A
+// name record may arrive before the span's first snapshot, so the override is
+// retained on the stub and reapplied when frozen live snapshots arrive later.
+func (db *DB) ingestSpanName(record sdklog.Record) bool {
+	if !IsSpanNameRecord(record) {
+		return false
+	}
+	if record.Body().Kind() != otellog.KindString {
+		// It is still a reserved metadata record; consume a malformed body rather
+		// than leaking it into command output.
+		return true
+	}
+
+	spanID := SpanID{SpanID: record.SpanID()}
+	if !spanID.IsValid() {
+		return true
+	}
+	span := db.initSpan(spanID)
+	name := record.Body().AsString()
+	span.nameFromLog = name
+	span.hasNameFromLog = true
+	if span.Name != name {
+		span.Name = name
+		db.update(span)
+	}
+	return true
+}
+
 type DBLogExporter struct {
 	*DB
 }
 
 func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
+		if db.ingestSpanName(log) {
+			// live span metadata, not log text
+			continue
+		}
 		if db.ingestProgress(log) {
 			// streaming progress data, not log text
 			continue
@@ -675,6 +734,13 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
 	spanData.Name = span.Name()
+	if spanData.hasNameFromLog && span.StartTime().After(span.EndTime()) {
+		spanData.Name = spanData.nameFromLog
+	} else if !span.StartTime().After(span.EndTime()) {
+		// The completed span's final export carries its actual ending name.
+		spanData.nameFromLog = ""
+		spanData.hasNameFromLog = false
+	}
 	spanData.StartTime = span.StartTime()
 	spanData.EndTime = span.EndTime()
 	spanData.Status = span.Status()

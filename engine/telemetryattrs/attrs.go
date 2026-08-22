@@ -17,6 +17,13 @@ const (
 
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
+	// LogRoleAttr describes a semantic role for an OTLP log record whose body
+	// carries data rather than ordinary log output. LogRoleSpanName means the
+	// body is the latest display name for the span the record is attributed to;
+	// frontends fold it into the live span instead of rendering it as text.
+	LogRoleAttr     = "dagger.io/log.role"
+	LogRoleSpanName = "span.name"
+
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
 	// TUI collects these into a persisted "SKIPPED MODULES" final-report section

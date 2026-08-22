@@ -105,6 +105,12 @@ type Span struct {
 	// render it.
 	ProgressSpans SpanSet `json:"-"`
 
+	// A span name can change while the span is live. The OTel SDK's start
+	// snapshot cannot carry that later mutation, so a semantic log record keeps
+	// the latest name authoritative over repeated frozen live snapshots.
+	nameFromLog    string
+	hasNameFromLog bool
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
