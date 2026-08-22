@@ -15,8 +15,15 @@ import (
 // deliberately includes malformed records so no downstream renderer treats
 // their bodies as log text.
 func IsCallPayloadRecord(record sdklog.Record) bool {
-	reservedByScope, markerPresent, _ := callPayloadRecordReservation(record)
-	return reservedByScope || markerPresent
+	_, markerPresent, _ := callPayloadRecordReservation(record)
+	return IsCallPayloadRecordMetadata(record.InstrumentationScope().Name, markerPresent)
+}
+
+// IsCallPayloadRecordMetadata applies the call-payload channel reservation to
+// decoded record metadata. It exists for consumers of persisted OTLP records,
+// which no longer have an sdklog.Record to classify directly.
+func IsCallPayloadRecordMetadata(instrumentationScope string, markerPresent bool) bool {
+	return instrumentationScope == telemetryattrs.CallPayloadInstrumentationScope || markerPresent
 }
 
 func callPayloadRecordReservation(record sdklog.Record) (reservedByScope, markerPresent, markerValid bool) {
