@@ -68,6 +68,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					`The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.`).
 					View(AfterVersion("v1.0.0-0")),
 			),
+		dagql.NodeFunc("withSmallModel", s.withSmallModel).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model."),
 		dagql.Func("reasoningEffort", s.reasoningEffort).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.`),
@@ -325,6 +328,24 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Provider dagql.Optional[dagql.String]
 }) (*core.LLM, error) {
 	return llm.WithModel(args.Model, args.Provider.Value.String()), nil
+}
+
+func (s *llmSchema) withSmallModel(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {
+	model, provider, err := parent.Self().SmallModelRoute(ctx)
+	if err != nil {
+		return res, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	return res, srv.Select(ctx, parent, &res, dagql.Selector{
+		Field: "withModel",
+		Args: []dagql.NamedInput{
+			{Name: "model", Value: dagql.NewString(model)},
+			{Name: "provider", Value: dagql.Opt(dagql.NewString(provider))},
+		},
+	})
 }
 
 func (s *llmSchema) reasoningEffort(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {

@@ -590,23 +590,27 @@ type LLMRouter struct {
 	AnthropicIsOAuth         bool
 	AnthropicBaseURL         string
 	AnthropicModel           string
+	AnthropicSmallModel      string
 	AnthropicReasoningEffort string
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
 	OpenAIBaseURL          string
 	OpenAIModel            string
+	OpenAISmallModel       string
 	OpenAIDisableStreaming bool
 
 	// OpenAI Codex uses the Responses API against the ChatGPT backend with a
 	// ChatGPT subscription OAuth token.
 	OpenAICodexAuthToken       string
 	OpenAICodexModel           string
+	OpenAICodexSmallModel      string
 	OpenAICodexReasoningEffort string
 
 	GeminiAPIKey          string
 	GeminiBaseURL         string
 	GeminiModel           string
+	GeminiSmallModel      string
 	GeminiReasoningEffort string
 
 	// Local is a self-hosted, OpenAI- or Anthropic-compatible endpoint (e.g.
@@ -614,10 +618,11 @@ type LLMRouter struct {
 	// tunneled to the engine through the client's session, since the engine may
 	// not be able to reach the endpoint directly. APICompat selects the wire
 	// protocol ("openai" or "anthropic"); APIKey is optional.
-	LocalBaseURL   string
-	LocalModel     string
-	LocalAPICompat string
-	LocalAPIKey    string
+	LocalBaseURL    string
+	LocalModel      string
+	LocalSmallModel string
+	LocalAPICompat  string
+	LocalAPIKey     string
 
 	// localClient is the client whose configuration supplied LocalBaseURL.
 	// A local endpoint is reachable from that client's host, so the tunnel
@@ -815,6 +820,30 @@ func (r *LLMRouter) DefaultModel() string {
 	return ""
 }
 
+// SmallModel returns the user-configured small model for provider, falling
+// back to Catwalk's recommendation. Unknown and local providers without an
+// explicit small model return no route, allowing the caller to retain the
+// concrete model it is already using.
+func (r *LLMRouter) SmallModel(provider LLMProvider) (string, bool) {
+	var configured string
+	switch provider {
+	case Anthropic:
+		configured = r.AnthropicSmallModel
+	case OpenAI:
+		configured = r.OpenAISmallModel
+	case OpenAICodex:
+		configured = r.OpenAICodexSmallModel
+	case Google:
+		configured = r.GeminiSmallModel
+	case Local:
+		configured = r.LocalSmallModel
+	}
+	if configured != "" {
+		return configured, true
+	}
+	return defaultSmallModel(provider)
+}
+
 // routeProvider dispatches directly to the named provider, bypassing
 // model-name pattern matching.
 func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
@@ -935,6 +964,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return save("ANTHROPIC_MODEL", &r.AnthropicModel)
 	})
 	eg.Go(func() error {
+		return save("ANTHROPIC_SMALL_MODEL", &r.AnthropicSmallModel)
+	})
+	eg.Go(func() error {
 		// OAuth (Claude Code subscription) bearer token, exported client-side
 		// from the persisted llmconfig by `dagger llm`.
 		var v string
@@ -964,6 +996,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	eg.Go(func() error {
 		return save("OPENAI_MODEL", &r.OpenAIModel)
 	})
+	eg.Go(func() error {
+		return save("OPENAI_SMALL_MODEL", &r.OpenAISmallModel)
+	})
 
 	eg.Go(func() error {
 		// OAuth (ChatGPT subscription) bearer token for the Codex Responses API,
@@ -982,6 +1017,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return save("OPENAI_CODEX_MODEL", &r.OpenAICodexModel)
 	})
 	eg.Go(func() error {
+		return save("OPENAI_CODEX_SMALL_MODEL", &r.OpenAICodexSmallModel)
+	})
+	eg.Go(func() error {
 		return save("OPENAI_CODEX_REASONING_EFFORT", &r.OpenAICodexReasoningEffort)
 	})
 
@@ -993,6 +1031,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 	eg.Go(func() error {
 		return save("GEMINI_MODEL", &r.GeminiModel)
+	})
+	eg.Go(func() error {
+		return save("GEMINI_SMALL_MODEL", &r.GeminiSmallModel)
 	})
 	eg.Go(func() error {
 		return save("GEMINI_REASONING_EFFORT", &r.GeminiReasoningEffort)
@@ -1011,6 +1052,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 	eg.Go(func() error {
 		return save("LOCAL_MODEL", &r.LocalModel)
+	})
+	eg.Go(func() error {
+		return save("LOCAL_SMALL_MODEL", &r.LocalSmallModel)
 	})
 	eg.Go(func() error {
 		return save("LOCAL_API_COMPAT", &r.LocalAPICompat)
@@ -1243,6 +1287,35 @@ func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, s
 		provider = string(endpoint.Provider)
 	}
 	return model, provider, nil
+}
+
+// SmallModelRoute resolves this conversation's current concrete route, then
+// selects that provider's configured or catalog-recommended small model. If the
+// provider has neither (as with an arbitrary local or unknown provider), the
+// current concrete route is returned unchanged.
+func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	router, err := loadLLMRouter(ctx, query)
+	if err != nil {
+		return "", "", err
+	}
+	current, err := router.Route(llm.model, llm.provider)
+	if err != nil {
+		return "", "", err
+	}
+	provider := current.Provider
+	small, ok := router.SmallModel(provider)
+	if !ok {
+		return current.Model, string(provider), nil
+	}
+	resolved, err := router.Route(small, string(provider))
+	if err != nil {
+		return "", "", err
+	}
+	return resolved.Model, string(resolved.Provider), nil
 }
 
 func (*LLM) Type() *ast.Type {

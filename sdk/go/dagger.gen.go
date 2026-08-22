@@ -11182,6 +11182,15 @@ func (r *LLM) WithSkills(directory *Directory) *LLM {
 	}
 }
 
+// Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+func (r *LLM) WithSmallModel() *LLM {
+	q := r.query.Select("withSmallModel")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Add a system prompt, instructing the model across the whole conversation.
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")

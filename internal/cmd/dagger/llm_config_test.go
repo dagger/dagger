@@ -372,7 +372,7 @@ func TestApplyLLMConfigEnvKeepsDefaultModel(t *testing.T) {
 	llmconfig.ConfigRoot = filepath.Join(tempDir, "dagger")
 	llmconfig.ConfigFile = filepath.Join(llmconfig.ConfigRoot, llmconfig.ConfigFileName)
 
-	for _, key := range []string{"ANTHROPIC_MODEL", "ANTHROPIC_API_KEY"} {
+	for _, key := range []string{"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_MODEL", "ANTHROPIC_API_KEY"} {
 		if val, ok := os.LookupEnv(key); ok {
 			t.Cleanup(func() { os.Setenv(key, val) })
 			os.Unsetenv(key)
@@ -387,7 +387,7 @@ func TestApplyLLMConfigEnvKeepsDefaultModel(t *testing.T) {
 			DefaultModel:    "claude-sonnet-4.5",
 			Providers: map[string]llmconfig.Provider{
 				// No Model of its own, which is the common case.
-				"anthropic": {APIKey: "sk-ant", Enabled: true},
+				"anthropic": {APIKey: "sk-ant", SmallModel: "claude-haiku-test", Enabled: true},
 			},
 		},
 	}
@@ -399,6 +399,9 @@ func TestApplyLLMConfigEnvKeepsDefaultModel(t *testing.T) {
 
 	if got := os.Getenv("ANTHROPIC_MODEL"); got != "claude-sonnet-4.5" {
 		t.Errorf("ANTHROPIC_MODEL = %q, want the configured default %q", got, "claude-sonnet-4.5")
+	}
+	if got := os.Getenv("ANTHROPIC_SMALL_MODEL"); got != "claude-haiku-test" {
+		t.Errorf("ANTHROPIC_SMALL_MODEL = %q, want %q", got, "claude-haiku-test")
 	}
 }
 
