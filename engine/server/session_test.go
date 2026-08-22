@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,6 +31,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -42,6 +44,7 @@ import (
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1600,6 +1603,7 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
 	req.Header.Set(enginetel.LiveCursorHeader, "4")
 	resp := httptest.NewRecorder()
 	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
@@ -1635,6 +1639,58 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	require.Nil(t, payload)
 	require.True(t, terminal)
 	require.Empty(t, resp.Body.Bytes())
+}
+
+func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	rawBody := []byte{0, 1, 2, 0xff}
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set(enginetel.LegacyLiveCursorHeader, "4")
+	resp := httptest.NewRecorder()
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		if since != 4 {
+			return since, nil, 0, nil
+		}
+		return 5, &collogspb.ExportLogsServiceRequest{
+			ResourceLogs: []*otlplogsv1.ResourceLogs{{
+				ScopeLogs: []*otlplogsv1.ScopeLogs{{
+					LogRecords: []*otlplogsv1.LogRecord{{
+						Body: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: rawBody}},
+					}},
+				}},
+			}},
+		}, 1, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, enginetel.LegacyLiveContentType, resp.Header().Get("Content-Type"))
+	require.Equal(t, "keep-alive", resp.Header().Get("Connection"))
+	require.True(t, resp.Flushed)
+
+	reader := sse.NewReadCloser(io.NopCloser(resp.Body))
+	event, err := reader.Next()
+	require.NoError(t, err)
+	require.Equal(t, "subscribed", event.Name)
+
+	event, err = reader.Next()
+	require.NoError(t, err)
+	require.Equal(t, "logs", event.Name)
+	require.Equal(t, "5", event.ID)
+	var batch collogspb.ExportLogsServiceRequest
+	require.NoError(t, protojson.Unmarshal(event.Data, &batch))
+	require.Equal(t, rawBody, batch.ResourceLogs[0].ScopeLogs[0].LogRecords[0].Body.GetBytesValue())
+
+	_, err = reader.Next()
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
@@ -1676,9 +1732,11 @@ func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
 	err := ps.streamHandlerWithPayloadLimit(
 		resp,
-		httptest.NewRequest(http.MethodGet, "/v1/logs", nil),
+		req,
 		record,
 		fetcher,
 		maxPayloadSize,
@@ -1717,9 +1775,11 @@ func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
 
 	fetches := 0
 	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
 	err := ps.streamHandlerWithPayloadLimit(
 		resp,
-		httptest.NewRequest(http.MethodGet, "/v1/logs", nil),
+		req,
 		record,
 		func(_ context.Context, _ *clientdb.DB, _ int64, _ int) (int64, proto.Message, int, error) {
 			fetches++

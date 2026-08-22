@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
+	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -45,6 +46,7 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"dagger.io/dagger"
@@ -913,7 +915,14 @@ type otlpConsumer struct {
 
 const telemetryReconnectDelay = time.Second
 
-func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
+type liveTelemetryEncoding uint8
+
+const (
+	liveTelemetryBinary liveTelemetryEncoding = iota
+	liveTelemetryProtoJSON
+)
+
+func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetryEncoding) error) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "consuming "+c.path)
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -981,9 +990,12 @@ func (c *otlpConsumer) connect(ctx context.Context, cursor int64) (*http.Respons
 		},
 		Header: make(http.Header),
 	}).WithContext(ctx)
-	req.Header.Set("Accept", enginetel.LiveContentType)
+	req.Header.Set("Accept", enginetel.LiveContentType+", "+enginetel.LegacyLiveContentType)
 	if cursor > 0 {
-		req.Header.Set(enginetel.LiveCursorHeader, strconv.FormatInt(cursor, 10))
+		value := strconv.FormatInt(cursor, 10)
+		req.Header.Set(enginetel.LiveCursorHeader, value)
+		req.Header.Set(enginetel.LegacyLiveCursorHeader, value)
+		req.Header.Set("Last-Event-ID", value)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -995,21 +1007,44 @@ func (c *otlpConsumer) connect(ctx context.Context, cursor int64) (*http.Respons
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
 	}
-	contentType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || contentType != enginetel.LiveContentType {
+	if _, err := liveTelemetryResponseEncoding(resp); err != nil {
 		resp.Body.Close()
-		return nil, fmt.Errorf("unexpected content type %q", resp.Header.Get("Content-Type"))
+		return nil, err
 	}
 	return resp, nil
+}
+
+func liveTelemetryResponseEncoding(resp *http.Response) (liveTelemetryEncoding, error) {
+	contentType := resp.Header.Get("Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return 0, fmt.Errorf("unexpected content type %q", contentType)
+	}
+	switch mediaType {
+	case enginetel.LiveContentType:
+		return liveTelemetryBinary, nil
+	case enginetel.LegacyLiveContentType:
+		return liveTelemetryProtoJSON, nil
+	default:
+		return 0, fmt.Errorf("unexpected content type %q", contentType)
+	}
 }
 
 func (c *otlpConsumer) consumeResponse(
 	resp *http.Response,
 	cursor *int64,
-	cb func([]byte) error,
+	cb func([]byte, liveTelemetryEncoding) error,
 	span trace.Span,
 	logger *slog.Logger,
 ) (bool, error) {
+	encoding, err := liveTelemetryResponseEncoding(resp)
+	if err != nil {
+		return false, err
+	}
+	if encoding == liveTelemetryProtoJSON {
+		return c.consumeSSEResponse(resp, cursor, cb, span, logger)
+	}
+
 	for {
 		next, data, terminal, err := enginetel.ReadLiveFrame(resp.Body)
 		if err != nil {
@@ -1021,22 +1056,73 @@ func (c *otlpConsumer) consumeResponse(
 			}
 			return true, nil
 		}
-		if next <= *cursor {
-			return false, fmt.Errorf("%w: non-increasing cursor %d after %d", enginetel.ErrInvalidLiveFrame, next, *cursor)
-		}
-		*cursor = next
-
-		span.AddEvent("data", trace.WithAttributes(
-			attribute.Int64("cursor", next),
-			attribute.Int("bytes", len(data)),
-		))
-		if err := cb(data); err != nil {
-			logger.Warn("consume error", "err", err)
-			span.AddEvent("consume error", trace.WithAttributes(
-				attribute.String("error", err.Error()),
-			))
+		if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
+			return false, err
 		}
 	}
+}
+
+func (c *otlpConsumer) consumeSSEResponse(
+	resp *http.Response,
+	cursor *int64,
+	cb func([]byte, liveTelemetryEncoding) error,
+	span trace.Span,
+	logger *slog.Logger,
+) (bool, error) {
+	reader := sse.NewReadCloser(resp.Body)
+	for {
+		event, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if event.Name == "subscribed" || len(event.Data) == 0 {
+			continue
+		}
+		next, err := strconv.ParseInt(event.ID, 10, 64)
+		if err != nil || next < 0 {
+			return false, fmt.Errorf("%w: invalid SSE cursor %q", enginetel.ErrInvalidLiveFrame, event.ID)
+		}
+		if err := consumeTelemetryPayload(next, event.Data, liveTelemetryProtoJSON, cursor, cb, span, logger); err != nil {
+			return false, err
+		}
+	}
+}
+
+func consumeTelemetryPayload(
+	next int64,
+	data []byte,
+	encoding liveTelemetryEncoding,
+	cursor *int64,
+	cb func([]byte, liveTelemetryEncoding) error,
+	span trace.Span,
+	logger *slog.Logger,
+) error {
+	if next <= *cursor {
+		return fmt.Errorf("%w: non-increasing cursor %d after %d", enginetel.ErrInvalidLiveFrame, next, *cursor)
+	}
+	*cursor = next
+
+	span.AddEvent("data", trace.WithAttributes(
+		attribute.Int64("cursor", next),
+		attribute.Int("bytes", len(data)),
+	))
+	if err := cb(data, encoding); err != nil {
+		logger.Warn("consume error", "err", err)
+		span.AddEvent("consume error", trace.WithAttributes(
+			attribute.String("error", err.Error()),
+		))
+	}
+	return nil
+}
+
+func unmarshalLiveTelemetry(data []byte, encoding liveTelemetryEncoding, message proto.Message) error {
+	if encoding == liveTelemetryProtoJSON {
+		return protojson.Unmarshal(data, message)
+	}
+	return proto.Unmarshal(data, message)
 }
 
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
@@ -1048,9 +1134,9 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte) error {
+	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req coltracepb.ExportTraceServiceRequest
-		if err := proto.Unmarshal(data, &req); err != nil {
+		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
 		}
 
@@ -1079,9 +1165,9 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte) error {
+	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req collogspb.ExportLogsServiceRequest
-		if err := proto.Unmarshal(data, &req); err != nil {
+		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
 		if err := telemetry.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
@@ -1100,9 +1186,9 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte) error {
+	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req colmetricspb.ExportMetricsServiceRequest
-		if err := proto.Unmarshal(data, &req); err != nil {
+		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal metrics: %w", err)
 		}
 		if err := enginetel.ReexportMetricsFromPB(ctx, c.EngineMetrics, &req); err != nil {

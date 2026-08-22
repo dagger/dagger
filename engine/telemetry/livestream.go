@@ -10,8 +10,12 @@ import (
 const (
 	// LiveContentType identifies the framed binary OTLP subscription protocol.
 	LiveContentType = "application/vnd.dagger.otlp.stream"
-	// LiveCursorHeader resumes a subscription after the last consumed row ID.
+	// LegacyLiveContentType identifies the original SSE OTLP subscription protocol.
+	LegacyLiveContentType = "text/event-stream"
+	// LiveCursorHeader resumes a binary subscription after the last consumed row ID.
 	LiveCursorHeader = "X-Dagger-Telemetry-Cursor"
+	// LegacyLiveCursorHeader resumes an SSE subscription after the last event ID.
+	LegacyLiveCursorHeader = "X-Last-Event-ID"
 
 	liveFrameHeaderSize = 16
 	// MaxLivePayloadSize bounds each protobuf frame while allowing a stream to

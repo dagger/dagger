@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
@@ -31,6 +33,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/vito/go-sse/sse"
 )
 
 type Topic struct {
@@ -1094,11 +1097,36 @@ func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *
 	return ps.streamHandlerWithPayloadLimit(w, r, record, fetcher, enginetel.MaxLivePayloadSize)
 }
 
+func acceptsBinaryTelemetry(accept string) bool {
+	for _, value := range strings.Split(accept, ",") {
+		mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(value))
+		if err != nil || mediaType != enginetel.LiveContentType {
+			continue
+		}
+		if quality, ok := params["q"]; ok {
+			q, err := strconv.ParseFloat(quality, 64)
+			if err != nil || q <= 0 {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func legacyTelemetryEventName(path string) string {
+	if path == "/v1/traces" {
+		return "spans"
+	}
+	return strings.TrimPrefix(path, "/v1/")
+}
+
 func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int) error {
 	logger := slog.With("client", record.clientID, "path", r.URL.Path)
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid live telemetry payload limit %d", maxPayloadSize)
 	}
+	binary := acceptsBinaryTelemetry(r.Header.Get("Accept"))
 
 	var flush func()
 	if flusher, ok := w.(http.Flusher); ok {
@@ -1107,8 +1135,16 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		flush = func() { logger.Warn("response flushing is not supported") }
 	}
 
+	cursorHeader := enginetel.LegacyLiveCursorHeader
+	if binary {
+		cursorHeader = enginetel.LiveCursorHeader
+	}
+	cursor := r.Header.Get(cursorHeader)
+	if !binary && cursor == "" {
+		cursor = r.Header.Get("Last-Event-ID")
+	}
 	var since int64
-	if cursor := r.Header.Get(enginetel.LiveCursorHeader); cursor != "" {
+	if cursor != "" {
 		var err error
 		since, err = strconv.ParseInt(cursor, 10, 64)
 		if err != nil || since < 0 {
@@ -1122,17 +1158,30 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	}
 	defer db.Close()
 
-	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-cache")
+	if binary {
+		w.Header().Set("Content-Type", enginetel.LiveContentType)
+	} else {
+		w.Header().Set("Content-Type", enginetel.LegacyLiveContentType)
+		w.Header().Set("Connection", "keep-alive")
+	}
 	w.WriteHeader(http.StatusOK)
 	// Commit and flush the response before waiting for the first batch so the
 	// client can distinguish an attached subscription from pending headers.
+	if !binary {
+		if err := (sse.Event{Name: "subscribed"}).Write(w); err != nil {
+			return fmt.Errorf("write subscribed event: %w", err)
+		}
+	}
 	flush()
 
 	terminating := false
 	batchLimit := otlpBatchSize
 	failStream := func(streamErr error) error {
 		logger.Error("terminating OTLP stream", "cursor", since, "err", streamErr)
+		if !binary {
+			return streamErr
+		}
 		if err := enginetel.WriteLiveError(w, since, streamErr); err != nil {
 			return fmt.Errorf("%w; write live stream error: %v", streamErr, err)
 		}
@@ -1153,10 +1202,12 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		}
 		if rows == 0 {
 			if terminating {
-				if err := enginetel.WriteLiveTerminal(w, since); err != nil {
-					return fmt.Errorf("write terminal frame: %w", err)
+				if binary {
+					if err := enginetel.WriteLiveTerminal(w, since); err != nil {
+						return fmt.Errorf("write terminal frame: %w", err)
+					}
+					flush()
 				}
-				flush()
 				return nil
 			}
 			select {
@@ -1182,24 +1233,40 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			return failStream(fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since))
 		}
 
-		payloadSize := proto.Size(message)
-		if payloadSize > maxPayloadSize {
-			if rows == 1 {
-				return failStream(fmt.Errorf("telemetry row at cursor %d is %d bytes (maximum frame payload %d)", next, payloadSize, maxPayloadSize))
+		if binary {
+			payloadSize := proto.Size(message)
+			if payloadSize > maxPayloadSize {
+				if rows == 1 {
+					return failStream(fmt.Errorf("telemetry row at cursor %d is %d bytes (maximum frame payload %d)", next, payloadSize, maxPayloadSize))
+				}
+				// Refetch a strictly smaller prefix at the same cursor. The row count,
+				// rather than the previous query limit, bounds this to logarithmically
+				// many attempts even when the tail contains fewer rows than requested.
+				batchLimit = max(1, rows/2)
+				continue
 			}
-			// Refetch a strictly smaller prefix at the same cursor. The row count,
-			// rather than the previous query limit, bounds this to logarithmically
-			// many attempts even when the tail contains fewer rows than requested.
-			batchLimit = max(1, rows/2)
-			continue
 		}
 
-		payload, err := proto.Marshal(message)
-		if err != nil {
-			return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
-		}
-		if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
-			return fmt.Errorf("write OTLP frame: %w", err)
+		if binary {
+			payload, err := proto.Marshal(message)
+			if err != nil {
+				return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
+			}
+			if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
+				return fmt.Errorf("write OTLP frame: %w", err)
+			}
+		} else {
+			payload, err := protojson.Marshal(message)
+			if err != nil {
+				return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
+			}
+			if err := (sse.Event{
+				Name: legacyTelemetryEventName(r.URL.Path),
+				ID:   strconv.FormatInt(next, 10),
+				Data: payload,
+			}).Write(w); err != nil {
+				return fmt.Errorf("write SSE event: %w", err)
+			}
 		}
 		since = next
 		batchLimit = otlpBatchSize

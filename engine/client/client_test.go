@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,7 +15,12 @@ import (
 	"github.com/dagger/dagger/engine"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/go-sse/sse"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestTelemetryContextUsesClientLifetime(t *testing.T) {
@@ -78,7 +84,7 @@ func TestOTLPConsumerStopsOnContextCancellation(t *testing.T) {
 		eg:         telemetry,
 	}
 
-	require.NoError(t, consumer.Consume(ctx, func([]byte) error {
+	require.NoError(t, consumer.Consume(ctx, func([]byte, liveTelemetryEncoding) error {
 		return errors.New("unexpected telemetry event")
 	}))
 
@@ -123,6 +129,12 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 					if cursor := req.Header.Get(enginetel.LiveCursorHeader); cursor != "7" {
 						return nil, fmt.Errorf("resume cursor = %q, want 7", cursor)
 					}
+					if cursor := req.Header.Get(enginetel.LegacyLiveCursorHeader); cursor != "7" {
+						return nil, fmt.Errorf("legacy resume cursor = %q, want 7", cursor)
+					}
+					if cursor := req.Header.Get("Last-Event-ID"); cursor != "7" {
+						return nil, fmt.Errorf("standard SSE resume cursor = %q, want 7", cursor)
+					}
 					if err := enginetel.WriteLiveFrame(&stream, 9, []byte("batch two")); err != nil {
 						return nil, err
 					}
@@ -151,7 +163,7 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 		eg:         telemetryGroup,
 	}
 	var batches [][]byte
-	require.NoError(t, consumer.Consume(context.Background(), func(payload []byte) error {
+	require.NoError(t, consumer.Consume(context.Background(), func(payload []byte, _ liveTelemetryEncoding) error {
 		batches = append(batches, bytes.Clone(payload))
 		return nil
 	}))
@@ -166,6 +178,64 @@ func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {
 	}
 	require.Equal(t, [][]byte{[]byte("batch one"), []byte("batch two")}, batches)
 	require.Equal(t, 2, requests)
+}
+
+func TestOTLPConsumerDecodesLegacySSEProtoJSON(t *testing.T) {
+	t.Parallel()
+
+	rawBody := []byte{0, 1, 2, 0xff}
+	batch := &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: []*logsv1.ResourceLogs{{
+			ScopeLogs: []*logsv1.ScopeLogs{{
+				LogRecords: []*logsv1.LogRecord{{
+					Body: &commonv1.AnyValue{Value: &commonv1.AnyValue_BytesValue{BytesValue: rawBody}},
+				}},
+			}},
+		}},
+	}
+	payload, err := protojson.Marshal(batch)
+	require.NoError(t, err)
+	var stream bytes.Buffer
+	require.NoError(t, (sse.Event{Name: "subscribed"}).Write(&stream))
+	require.NoError(t, (sse.Event{Name: "logs", ID: "4", Data: payload}).Write(&stream))
+
+	httpClient := &httpClient{
+		inner: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				accept := req.Header.Get("Accept")
+				if !strings.Contains(accept, enginetel.LiveContentType) || !strings.Contains(accept, enginetel.LegacyLiveContentType) {
+					return nil, fmt.Errorf("Accept = %q", accept)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header: http.Header{
+						"Content-Type": []string{enginetel.LegacyLiveContentType + "; charset=utf-8"},
+					},
+					Body:    io.NopCloser(bytes.NewReader(stream.Bytes())),
+					Request: req,
+				}, nil
+			}),
+		},
+	}
+
+	telemetryGroup := new(errgroup.Group)
+	consumer := &otlpConsumer{
+		httpClient: httpClient,
+		path:       "/v1/logs",
+		eg:         telemetryGroup,
+	}
+	var got collogspb.ExportLogsServiceRequest
+	var gotEncoding liveTelemetryEncoding
+	var decodeErr error
+	require.NoError(t, consumer.Consume(context.Background(), func(data []byte, encoding liveTelemetryEncoding) error {
+		gotEncoding = encoding
+		decodeErr = unmarshalLiveTelemetry(data, encoding, &got)
+		return decodeErr
+	}))
+	require.NoError(t, telemetryGroup.Wait())
+	require.NoError(t, decodeErr)
+	require.Equal(t, liveTelemetryProtoJSON, gotEncoding)
+	require.Equal(t, rawBody, got.ResourceLogs[0].ScopeLogs[0].LogRecords[0].Body.GetBytesValue())
 }
 
 func TestOTLPConsumerDoesNotReconnectStreamErrors(t *testing.T) {
@@ -198,7 +268,7 @@ func TestOTLPConsumerDoesNotReconnectStreamErrors(t *testing.T) {
 		path:       "/v1/traces",
 		eg:         telemetryGroup,
 	}
-	require.NoError(t, consumer.Consume(context.Background(), func([]byte) error {
+	require.NoError(t, consumer.Consume(context.Background(), func([]byte, liveTelemetryEncoding) error {
 		return errors.New("unexpected telemetry event")
 	}))
 
