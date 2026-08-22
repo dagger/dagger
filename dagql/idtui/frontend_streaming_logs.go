@@ -26,6 +26,29 @@ type streamingLogExporter struct {
 	testLogs    map[dagui.SpanID]*Vterm
 }
 
+// withoutCallPayloadRecords returns records with the reserved call-payload
+// channel removed. The DB consumes those records during ingestion, but
+// frontends still hold the original exporter batch and must not render it.
+func withoutCallPayloadRecords(records []sdklog.Record) []sdklog.Record {
+	var filtered []sdklog.Record
+	for i, record := range records {
+		if dagui.IsCallPayloadRecord(record) {
+			if filtered == nil {
+				filtered = make([]sdklog.Record, 0, len(records)-1)
+				filtered = append(filtered, records[:i]...)
+			}
+			continue
+		}
+		if filtered != nil {
+			filtered = append(filtered, record)
+		}
+	}
+	if filtered == nil {
+		return records
+	}
+	return filtered
+}
+
 // Export processes log records: exports to the DB, groups by span, and either
 // flushes immediately (if the span exists) or buffers for later.
 // The caller must hold the mutex.
@@ -34,6 +57,7 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 		return err
 	}
 
+	records = withoutCallPayloadRecords(records)
 	if len(records) == 0 {
 		return nil
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -12,19 +13,123 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/proto"
 )
+
+func frontendTestLogRecord(spanID trace.SpanID, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	var record sdklog.Record
+	record.SetSpanID(spanID)
+	record.SetBody(body)
+	record.SetAttributes(attrs...)
+	return record
+}
+
+func setFrontendTestLogScope(record *sdklog.Record, name string) {
+	rf := reflect.ValueOf(record).Elem()
+	scope := rf.FieldByName("scope")
+	scope = reflect.NewAt(scope.Type(), unsafe.Pointer(scope.UnsafeAddr())).Elem()
+	scope.Set(reflect.ValueOf(&instrumentation.Scope{Name: name}))
+}
+
+func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record {
+	t.Helper()
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&callpbv1.Call{
+		Field: "loadTypeDefs",
+		Type:  &callpbv1.Type{NamedType: "TypeDef"},
+	})
+	require.NoError(t, err)
+
+	before := frontendTestLogRecord(spanID, otellog.StringValue("before\n"))
+	markedBytes := frontendTestLogRecord(spanID, otellog.BytesValue(payload),
+		otellog.Bool(telemetryattrs.DagCallPayloadAttr, true))
+	setFrontendTestLogScope(&markedBytes, telemetryattrs.CallPayloadInstrumentationScope)
+	scopedText := frontendTestLogRecord(spanID, otellog.StringValue("reserved malformed payload\n"))
+	setFrontendTestLogScope(&scopedText, telemetryattrs.CallPayloadInstrumentationScope)
+	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
+	return []sdklog.Record{before, markedBytes, scopedText, after}
+}
+
+func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
+	t.Helper()
+	require.Len(t, records, 2)
+	require.Equal(t, "before\n", records[0].Body().AsString())
+	require.Equal(t, "after\n", records[1].Body().AsString())
+}
+
+func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
+	knownSpanID := trace.SpanID{1}
+	unknownSpanID := trace.SpanID{2}
+	knownRecords := frontendMixedLogRecords(t, knownSpanID)
+	unknownRecords := frontendMixedLogRecords(t, unknownSpanID)
+
+	t.Run("filter preserves ordinary order", func(t *testing.T) {
+		requireOnlyOrdinaryFrontendLogs(t, withoutCallPayloadRecords(knownRecords))
+	})
+
+	t.Run("streaming", func(t *testing.T) {
+		var output strings.Builder
+		fe := NewLogs(&output).(*frontendLogs)
+		fe.db.ImportSnapshots([]dagui.SpanSnapshot{{ID: dagui.SpanID{SpanID: knownSpanID}, Name: "known"}})
+		records := append(append([]sdklog.Record{}, knownRecords...), unknownRecords...)
+
+		require.NoError(t, fe.LogExporter().Export(context.Background(), records))
+		require.NotContains(t, output.String(), "reserved malformed payload")
+		knownLogs := fe.logs.testLogs[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, knownLogs)
+		require.Equal(t, "before\nafter\n", knownLogs.rawBuf.String())
+		requireOnlyOrdinaryFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
+		require.Len(t, fe.logs.pendingLogs, 1, "reserved records remained buffered for missing spans")
+	})
+
+	t.Run("plain", func(t *testing.T) {
+		fe := NewPlain(io.Discard).(*frontendPlain)
+		t.Cleanup(fe.ticker.Stop)
+
+		require.NoError(t, fe.LogExporter().Export(context.Background(), knownRecords))
+		spanData := fe.data[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, spanData)
+		require.Len(t, spanData.logs, 2)
+		require.Equal(t, "before", spanData.logs[0].line.String())
+		require.Equal(t, "after", spanData.logs[1].line.String())
+	})
+
+	t.Run("pretty", func(t *testing.T) {
+		fe := NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+
+		require.NoError(t, fe.LogExporter().Export(context.Background(), knownRecords))
+		spanLogs := fe.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, spanLogs)
+		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+		require.Empty(t, fe.logs.ToolArgs)
+	})
+
+	t.Run("report", func(t *testing.T) {
+		session := NewReportSession(dagui.NewDB())
+
+		require.NoError(t, session.LogExporter().Export(context.Background(), knownRecords))
+		spanLogs := session.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, spanLogs)
+		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+		require.Empty(t, session.logs.ToolArgs)
+	})
+}
 
 func TestRenderDigestedLiteralIsOpaque(t *testing.T) {
 	const canary = "CHECKPOINT-CANARY-tui-raw-only"

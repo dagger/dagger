@@ -166,6 +166,9 @@ func TestCallPayloadRecordReservationAndValidation(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if got := IsCallPayloadRecord(test.record); got != test.reserved {
+				t.Fatalf("IsCallPayloadRecord = %v, want %v", got, test.reserved)
+			}
 			db := NewDB()
 			if got := db.ingestCallPayload(test.record); got != test.reserved {
 				t.Fatalf("reserved = %v, want %v", got, test.reserved)
