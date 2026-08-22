@@ -670,8 +670,8 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 	sess.metricExporter = metricExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue, one bounded log queue, and one periodic metric reader serve the
-	// entire session.
+	// queue, one ordinary log queue plus a payload-only on-demand queue, and one
+	// periodic metric reader serve the entire session.
 	spanLimits := sdktrace.NewSpanLimits()
 	spanLimits.LinkCountLimit = 16384
 	tracerOpts := []sdktrace.TracerProviderOption{
@@ -684,8 +684,12 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 	}
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		// Stamp origin before the batch processor copies the record.
+		// Stamp origin before either batch processor copies the record. Payloads
+		// take a short on-demand batch path so sparse closures reach clients before
+		// fast calls finish; the ordinary 250ms batch remains the transport for all
+		// logs and its later payload copies are dropped by per-target claims.
 		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
+		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
 		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logExporter)),
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
@@ -702,10 +706,10 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 		LoggerProviders:          1,
 		MeterProviders:           1,
 		ConfiguredSpanProcessors: 4,
-		ConfiguredLogProcessors:  2,
+		ConfiguredLogProcessors:  3,
 		ConfiguredMetricReaders:  1,
 		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
-		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
+		ConfiguredLogQueueSlots:  enginetel.LogQueueSize + enginetel.CallPayloadQueueSize,
 	}
 }
 

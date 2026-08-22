@@ -43,7 +43,8 @@ import (
 //
 // rootOnSpan means the root payload rides a recording span: its delivery route
 // is claimed here and the walk skips its log while still visiting the closure.
-// Otherwise the root is emitted as a log. Producer checks avoid needless recipe
+// Otherwise, including when presentation-span deduplication suppresses the
+// call, the root is emitted as a log. Producer checks avoid needless recipe
 // work; span delivery and sessionLogExporter atomically claim their exact route
 // targets, so concurrent closure walks remain safe.
 //
