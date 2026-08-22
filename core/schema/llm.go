@@ -379,12 +379,12 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 	// persisted session restore a binding whose object has side effects or is no
 	// longer reproducible without re-running its construction.
 	if id.Type() != nil {
-		objType, ok, err := srv.ObjectTypeForID(ctx, id)
+		objType, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			return llm.WithLazyTools(id, objType, args.Except), nil
+			return llm.WithLazyTools(id, objType, definingServer.Schema(), args.Except), nil
 		}
 	}
 	// Fall back to eager loading if the type isn't resolvable structurally.

@@ -53,9 +53,10 @@ func TestObjectTypeForIDUsesModuleProvenance(t *testing.T) {
 	objectID := call.New().Append((&moduleToolSet{}).Type(), "missingConstructor",
 		call.WithModule(call.NewModule(moduleRefID, "tools", "", "")),
 	)
-	objType, ok, err := bootstrap.ObjectTypeForID(ctx, objectID)
+	objType, definingServer, ok, err := bootstrap.ObjectTypeAndServerForID(ctx, objectID)
 	assert.NilError(t, err)
 	assert.Assert(t, ok)
+	assert.Equal(t, moduleSchema, definingServer)
 	assert.Equal(t, "ModuleToolSet", objType.TypeName())
 	_, ok = objType.FieldSpec("check", "")
 	assert.Assert(t, ok)

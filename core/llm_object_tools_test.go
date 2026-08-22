@@ -394,6 +394,25 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	return srv
 }
 
+func TestBoundToolsUseTheirDefiningSchemaAsFallback(t *testing.T) {
+	defining := newAddressLiftTestServer(t)
+	objType, ok := defining.ObjectType("LiftTestRunner")
+	require.True(t, ok)
+
+	current := newCoreDagqlServerForTest(t, &Query{})
+	mcp := newMCP().WithLazyTools(nil, objType, defining.Schema(), nil)
+	toolsets, err := mcp.boundToolsets(current)
+	require.NoError(t, err)
+	require.Len(t, toolsets, 1)
+	require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+
+	names := make([]string, 0, len(toolsets[0].tools))
+	for _, tool := range toolsets[0].tools {
+		names = append(names, tool.Name)
+	}
+	require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+}
+
 // TestBuildObjectMethodSelectorAddressLift covers dispatch: a model-supplied
 // string for a liftable object arg first tries the ID decode (IDs from
 // previous tool results keep working), then falls back to lifting the string

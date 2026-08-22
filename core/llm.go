@@ -1480,11 +1480,11 @@ func (llm *LLM) WithTools(obj dagql.AnyObjectResult, except []string) *LLM {
 }
 
 // WithLazyTools binds an object's methods as tools from its unevaluated ID,
-// without loading it — the object is loaded only when a tool is invoked on it.
+// preserving the schema that defined its type without loading the object.
 // See MCP.WithLazyTools.
-func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, except []string) *LLM {
+func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithLazyTools(id, objType, except)
+	llm.mcp = llm.mcp.WithLazyTools(id, objType, definingSchema, except)
 	return llm
 }
 
