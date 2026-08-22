@@ -69,8 +69,8 @@ func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Co
 // WorkspaceServedSchema returns the stable served GraphQL schema for a specific
 // Workspace. Client-local workspaces stamp their owner's metadata for host
 // routing, while runtime-backed schema operations remain authorized by the
-// caller's held ClientScope. Module-bearing value workspaces have no served
-// module snapshot and therefore use the default core schema.
+// caller's held ClientScope. Value workspaces have no served module snapshot
+// and therefore use the default core schema.
 //
 // Pending workspace overlays are deliberately not resolved here. An LLM's
 // bound object tools retain the schemas that defined them when the LLM was
@@ -88,7 +88,7 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 		return nil, err
 	}
 	var deps *SchemaBuilder
-	if ws.Self().IsModuleBearingValue() {
+	if ws.Self().IsValueWorkspace() {
 		deps, err = query.DefaultDeps(wsCtx)
 	} else {
 		deps, err = query.CurrentServedDeps(wsCtx)
@@ -102,14 +102,14 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 // WorkspaceServedContext stamps client-local workspace owner metadata for host
 // routing and forces the caller's leased runtime to load its served modules.
 // It never treats owner metadata as authority to execute against another
-// runtime. Module-bearing values have no owner metadata or served snapshot, so
+// runtime. Value workspaces have no owner metadata or served snapshot, so
 // their tool bindings supply module schemas captured during composition.
 func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
 	wsCtx, err := workspaceHostRoutingContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
 	}
-	if ws.Self().IsModuleBearingValue() {
+	if ws.Self().IsValueWorkspace() {
 		return wsCtx, nil
 	}
 	query, err := CurrentQuery(ctx)

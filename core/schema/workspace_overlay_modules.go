@@ -56,11 +56,10 @@ func (s *workspaceSchema) overlayModuleLoader(
 // ID, so a further edit yields a further reload and an unchanged overlay is a
 // cache hit.
 //
-// A module-bearing value workspace has no served-module snapshot at all. Its
-// complete configured set is therefore resolved from its value-backed tree,
-// even when it has no pending overlay. GitRef.asWorkspace and portable
-// checkpoints use this path; Directory.asWorkspace remains intentionally
-// module-less.
+// A value workspace has no served-module snapshot at all. Its complete
+// configured set is therefore resolved from its own tree, even when it has no
+// pending overlay. Directory.asWorkspace, GitRef.asWorkspace, and workspaces
+// derived from them all use this path.
 //
 // For client-local workspaces, only entries the overlay actually touches are
 // re-resolved; everything else keeps using the served module, so a clean
@@ -100,7 +99,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	if ws == nil || ws.ConfigFile == "" {
 		return nil, nil, nil
 	}
-	if _, ok := ws.OverlayChanges(); !ok && !ws.IsModuleBearingValue() {
+	if _, ok := ws.OverlayChanges(); !ok && !ws.IsValueWorkspace() {
 		return nil, nil, nil
 	}
 
@@ -112,10 +111,10 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	if err != nil {
 		return nil, nil, err
 	}
-	// A module-bearing value owns the complete config tree, so every entry must
+	// A value workspace owns the complete config tree, so every entry must
 	// resolve from it. For a client-local overlay, a config edit can add, remove
 	// or repoint any entry; otherwise only edited source trees are suspect.
-	configTouched := ws.IsModuleBearingValue() || ws.OverlayPathTouched(configFile)
+	configTouched := ws.IsValueWorkspace() || ws.OverlayPathTouched(configFile)
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {

@@ -158,7 +158,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.True(t, empty)
 }
 
-func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceLoadsModulesFromTree(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -183,6 +183,14 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceLoadsModulesFromTree(ctx
 
   generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
     workdir.withNewFile("generated.txt", "generated").changes(workdir)
+  }
+
+  web: Service! @up {
+    container.from("nginx:alpine").asService
+  }
+
+  sandbox: Container! {
+    container.from("alpine")
   }
 }
 `)
@@ -269,18 +277,47 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceLoadsModulesFromTree(ctx
 	require.Len(t, checkpointed.Node.Checkpoint.Generators.List, 1)
 	require.Equal(t, "git-agent:generate", checkpointed.Node.Checkpoint.Generators.List[0].Name)
 
-	// The same tree wrapped by Directory.asWorkspace remains intentionally
-	// module-less; only GitRef values own and serve the modules in their tree.
+	// Directory.asWorkspace owns the supplied tree just like GitRef.asWorkspace,
+	// so it discovers and loads the same configured modules from that tree.
 	directoryWorkspace := source.AsWorkspace()
+	directoryModules, err := directoryWorkspace.Modules(ctx)
+	require.NoError(t, err)
+	require.Len(t, directoryModules, 1)
+	directoryModuleName, err := directoryModules[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent", directoryModuleName)
+
 	directoryTools, err := directoryWorkspace.Agents().Compose().Tools(ctx)
 	require.NoError(t, err)
-	require.NotContains(t, directoryTools, "## fromGit")
-	directoryChecks, err := directoryWorkspace.Checks().List(ctx)
+	require.Contains(t, directoryTools, "## fromGit")
+
+	directoryChecks, err := directoryWorkspace.Checks(dagger.WorkspaceChecksOpts{NoGenerate: true}).List(ctx)
 	require.NoError(t, err)
-	require.Empty(t, directoryChecks)
+	require.Len(t, directoryChecks, 1)
+	directoryCheckName, err := directoryChecks[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent:verify", directoryCheckName)
+
 	directoryGenerators, err := directoryWorkspace.Generators().List(ctx)
 	require.NoError(t, err)
-	require.Empty(t, directoryGenerators)
+	require.Len(t, directoryGenerators, 1)
+	directoryGeneratorName, err := directoryGenerators[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent:generate", directoryGeneratorName)
+
+	directoryServices, err := directoryWorkspace.Services().List(ctx)
+	require.NoError(t, err)
+	require.Len(t, directoryServices, 1)
+	directoryServiceName, err := directoryServices[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent:web", directoryServiceName)
+
+	directoryAddresses, err := directoryWorkspace.Addresses(ctx, "Container")
+	require.NoError(t, err)
+	require.Len(t, directoryAddresses, 1)
+	directoryAddress, err := directoryAddresses[0].Value(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent:sandbox", directoryAddress)
 }
 
 func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceGeneratorLoadingIsBestEffort(ctx context.Context, t *testctx.T) {

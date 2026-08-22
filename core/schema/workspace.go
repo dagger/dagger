@@ -517,7 +517,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxUntrackedTotalBytes").Doc("Maximum aggregate bytes allowed for untracked files."),
 				dagql.Arg("maxUntrackedFiles").Doc("Maximum number of untracked files allowed."),
 			),
-		dagql.Func("addresses", s.addresses).
+		dagql.NodeFunc("addresses", s.addresses).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare \"module:function\" references.").
 			Args(
@@ -1641,10 +1641,6 @@ func requireLocalWorkspace(ws *core.Workspace, operation string) error {
 		return fmt.Errorf("%s is local-only", operation)
 	}
 	return nil
-}
-
-func isSyntheticWorkspace(ws *core.Workspace) bool {
-	return ws != nil && ws.IsValueWorkspace()
 }
 
 func workspaceFilterWithDirectoryArgs(dirID *call.ID, filter core.CopyFilter, gitignore bool) []dagql.NamedInput {
@@ -4804,15 +4800,12 @@ func (s *workspaceSchema) checks(
 	},
 ) (*core.CheckGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
-		return &core.CheckGroup{}, nil
-	}
 
 	include := workspaceIncludePatterns(args.Include)
 	skip := workspaceIncludePatterns(args.Skip)
 
 	var mods []dagql.ObjectResult[*core.Module]
-	if parent.IsModuleBearingValue() {
+	if parent.IsValueWorkspace() {
 		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
 		if err != nil {
 			return nil, err
@@ -4941,9 +4934,6 @@ func (s *workspaceSchema) generators(
 	},
 ) (*core.GeneratorGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
-		return &core.GeneratorGroup{}, nil
-	}
 
 	include := workspaceIncludePatterns(args.Include)
 
@@ -4951,7 +4941,7 @@ func (s *workspaceSchema) generators(
 		mods         []dagql.ObjectResult[*core.Module]
 		loadFailures []string
 	)
-	if parent.IsModuleBearingValue() {
+	if parent.IsValueWorkspace() {
 		overlayMods, failures, err := s.workspaceOverlayModulesBestEffort(ctx, parentResult, include)
 		if err != nil {
 			return nil, err
@@ -5088,24 +5078,30 @@ func (s *workspaceSchema) services(
 	},
 ) (*core.UpGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
-		return &core.UpGroup{}, nil
-	}
-
 	include := workspaceIncludePatterns(args.Include)
 
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
+	var mods []dagql.ObjectResult[*core.Module]
+	if parent.IsValueWorkspace() {
+		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(nil, overlayMods)
+	} else {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
 
-	// up is strict: a module that can't load is a failure, by design.
-	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
-		return nil, err
-	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
-	if err != nil {
-		return nil, err
+		// up is strict: a module that can't load is a failure, by design.
+		if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
+			return nil, err
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ignoreServices, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
@@ -5184,16 +5180,13 @@ func (s *workspaceSchema) agents(
 	},
 ) (*core.AgentMiddlewareGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
-		return &core.AgentMiddlewareGroup{}, nil
-	}
 
 	include := workspaceIncludePatterns(args.Include)
 	exclude := workspaceIncludePatterns(args.Exclude)
 
 	var mods []dagql.ObjectResult[*core.Module]
-	if parent.IsModuleBearingValue() {
-		// A module-bearing value has no owning client or served-module snapshot.
+	if parent.IsValueWorkspace() {
+		// A value workspace has no owning client or served-module snapshot.
 		// Resolve every configured module from its own value-backed tree;
 		// workspaceOverlayModules treats this as a config-wide invalidation and
 		// therefore includes untouched local modules too.
@@ -5273,31 +5266,38 @@ func (s *workspaceSchema) agents(
 // (beyond an auto-injected Workspace) are none.
 func (s *workspaceSchema) addresses(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Type string
 	},
 ) ([]*core.WorkspaceAddress, error) {
-	if isSyntheticWorkspace(parent) {
-		return []*core.WorkspaceAddress{}, nil
-	}
+	parent := parentResult.Self()
+	var mods []dagql.ObjectResult[*core.Module]
+	if parent.IsValueWorkspace() {
+		overlayMods, _, err := s.workspaceOverlayModulesBestEffort(ctx, parentResult, nil)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(nil, overlayMods)
+	} else {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
 
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	// Best-effort, like generators: discovery lists what is loadable, and a
-	// module that fails to load contributes no loadable addresses anyway
-	// (resolveModuleRef hard-errors on it). A broken module must not hide the
-	// rest of the workspace's addresses; its load failure surfaces as a
-	// warning from EnsureWorkspaceModules.
-	if _, err := ensureWorkspaceModulesLoaded(ctx, nil, true); err != nil {
-		return nil, err
-	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
-	if err != nil {
-		return nil, err
+		// Best-effort, like generators: discovery lists what is loadable, and a
+		// module that fails to load contributes no loadable addresses anyway
+		// (resolveModuleRef hard-errors on it). A broken module must not hide the
+		// rest of the workspace's addresses; its load failure surfaces as a
+		// warning from EnsureWorkspaceModules.
+		if _, err := ensureWorkspaceModulesLoaded(ctx, nil, true); err != nil {
+			return nil, err
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// An entrypoint module's functions are hoisted onto the Query root and no
