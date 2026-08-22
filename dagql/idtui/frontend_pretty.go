@@ -1295,6 +1295,7 @@ func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
 	}
 	fe.formWrap = nil
 	fe.formModel = nil
+	fe.keymapBar.Update()
 	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 	fe.Update()
 }
@@ -1328,14 +1329,6 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
 	fe.formModel = form.WithTheme(frontendFormTheme()).WithShowHelp(false)
-	// Cap the form at half the screen so a tall field (e.g. the .resume session
-	// picker's long Select) stays scrollable instead of dominating — or
-	// overflowing — the terminal. huh propagates this to its Selects, which then
-	// scroll within the allotted height. Only applied when the window height is
-	// known (>0); otherwise huh sizes to content as before.
-	if h := fe.window.Height; h > 0 {
-		fe.formModel = fe.formModel.WithHeight(max(h/2, 3))
-	}
 	fe.formWrap = teav1.New(fe.formModel)
 	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
@@ -1356,6 +1349,7 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	fe.tui.AddChild(fe.formWrap)
 	fe.tui.AddChild(fe.formSpacer)
 	fe.tui.AddChild(fe.keymapBar)
+	fe.keymapBar.Update()
 	fe.tui.SetFocus(fe.formWrap)
 	return wrap
 }

@@ -107,6 +107,29 @@ func TestFormFieldsFlowWithVerticalKeys(t *testing.T) {
 	}
 }
 
+func TestMountedFormUpdatesKeymapAndUsesNaturalHeight(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.setupTUI()
+	if before := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(before, "verbosity") {
+		t.Fatalf("initial keymap did not render navigation keys:\n%s", before)
+	}
+
+	apply := true
+	form := NewForm(huh.NewGroup(
+		NewExplicitConfirm("Apply", "Discard", &apply).Title("Apply changes?"),
+	))
+	fe.window.Height = 40
+	fe.handlePromptForm(form, func(*huh.Form) {})
+	after := strings.Join(fe.tui.RenderLines(), "\n")
+	if !strings.Contains(after, "toggle") || strings.Contains(after, "verbosity") {
+		t.Fatalf("form keymap did not replace navigation keys:\n%s", after)
+	}
+	if height := strings.Count(fe.formModel.View(), "\n") + 1; height > 8 {
+		t.Fatalf("compact confirmation reserved %d lines", height)
+	}
+}
+
 type commandViewFixture struct {
 	tuist.Compo
 	final bool

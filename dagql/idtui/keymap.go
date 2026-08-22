@@ -69,7 +69,10 @@ func RenderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding, press
 	w := new(strings.Builder)
 	var showedKey bool
 	for _, k := range keys {
-		mainKey := k.Keys()[0]
+		mainKey := k.Help().Key
+		if mainKey == "" {
+			mainKey = k.Keys()[0]
+		}
 		var pressed bool
 		if time.Since(pressedKeyAt) < keypressDuration {
 			pressed = slices.Contains(k.Keys(), pressedKey)
