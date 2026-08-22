@@ -193,21 +193,96 @@ func TestLogBatchProcessorTrickleDelivery(t *testing.T) {
 		"a single sparse record must arrive within ~one export interval")
 }
 
+func TestCallPayloadBatchProcessorFastPathRecordShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		scope string
+		body  logapi.Value
+		attrs []logapi.KeyValue
+		want  bool
+	}{
+		{
+			name:  "valid raw payload",
+			scope: telemetryattrs.CallPayloadInstrumentationScope,
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.Bool(telemetryattrs.DagCallPayloadAttr, true)},
+			want:  true,
+		},
+		{
+			name:  "false marker",
+			scope: telemetryattrs.CallPayloadInstrumentationScope,
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.Bool(telemetryattrs.DagCallPayloadAttr, false)},
+		},
+		{
+			name:  "wrong marker type",
+			scope: telemetryattrs.CallPayloadInstrumentationScope,
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.String(telemetryattrs.DagCallPayloadAttr, "true")},
+		},
+		{
+			name:  "missing marker",
+			scope: telemetryattrs.CallPayloadInstrumentationScope,
+			body:  logapi.BytesValue([]byte("payload")),
+		},
+		{
+			name:  "wrong scope",
+			scope: "wrong.scope",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.Bool(telemetryattrs.DagCallPayloadAttr, true)},
+		},
+		{
+			name:  "wrong body kind",
+			scope: telemetryattrs.CallPayloadInstrumentationScope,
+			body:  logapi.StringValue("payload"),
+			attrs: []logapi.KeyValue{logapi.Bool(telemetryattrs.DagCallPayloadAttr, true)},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			exp := &countingLogExporter{}
+			proc := NewCallPayloadBatchProcessor(exp)
+			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+
+			var record logapi.Record
+			record.SetBody(test.body)
+			record.AddAttributes(test.attrs...)
+			provider.Logger(test.scope).Emit(t.Context(), record)
+
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.NoError(t, proc.ForceFlush(ctx))
+			if test.want {
+				require.Equal(t, 1, exp.count())
+			} else {
+				require.Zero(t, exp.count(), "malformed reserved record must remain on the normal batch path")
+			}
+			require.NoError(t, proc.Shutdown(ctx))
+		})
+	}
+}
+
 func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	t.Parallel()
 
 	exp := &countingLogExporter{}
 	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
 
 	var ordinary sdklog.Record
 	ordinary.SetBody(logapi.StringValue("ordinary"))
 	require.NoError(t, proc.OnEmit(t.Context(), &ordinary))
 
-	var payload sdklog.Record
-	payload.SetAttributes(logapi.String(telemetryattrs.DagCallPayloadAttr, "payload"))
+	var payload logapi.Record
+	payload.SetBody(logapi.BytesValue([]byte("payload")))
+	payload.AddAttributes(logapi.Bool(telemetryattrs.DagCallPayloadAttr, true))
+	logger := provider.Logger(telemetryattrs.CallPayloadInstrumentationScope)
 	const records = 2*LogExportMaxBatchSize + 1
 	for range records {
-		require.NoError(t, proc.OnEmit(t.Context(), &payload))
+		logger.Emit(t.Context(), payload)
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -247,9 +322,12 @@ func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
 
 	exp := &blockingLogExporter{started: make(chan struct{}), release: make(chan struct{})}
 	proc := NewCallPayloadBatchProcessor(exp)
-	var payload sdklog.Record
-	payload.SetAttributes(logapi.String(telemetryattrs.DagCallPayloadAttr, "payload"))
-	require.NoError(t, proc.OnEmit(t.Context(), &payload))
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger(telemetryattrs.CallPayloadInstrumentationScope)
+	var payload logapi.Record
+	payload.SetBody(logapi.BytesValue([]byte("payload")))
+	payload.AddAttributes(logapi.Bool(telemetryattrs.DagCallPayloadAttr, true))
+	logger.Emit(t.Context(), payload)
 
 	select {
 	case <-exp.started:
@@ -259,7 +337,7 @@ func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
 
 	returned := make(chan struct{})
 	go func() {
-		_ = proc.OnEmit(context.Background(), &payload)
+		logger.Emit(context.Background(), payload)
 		close(returned)
 	}()
 	select {

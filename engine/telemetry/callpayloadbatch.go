@@ -187,12 +187,24 @@ func (processor *CallPayloadBatchProcessor) exportQueued(ctx context.Context) er
 }
 
 func isCallPayloadRecord(record sdklog.Record) bool {
-	payload := false
+	if record.InstrumentationScope().Name != telemetryattrs.CallPayloadInstrumentationScope ||
+		record.Body().Kind() != log.KindBytes {
+		return false
+	}
+
+	marker := false
 	record.WalkAttributes(func(attr log.KeyValue) bool {
-		payload = attr.Key == telemetryattrs.DagCallPayloadAttr
-		return !payload
+		if attr.Key != telemetryattrs.DagCallPayloadAttr {
+			return true
+		}
+		if attr.Value.Kind() != log.KindBool || !attr.Value.AsBool() {
+			marker = false
+			return false
+		}
+		marker = true
+		return true
 	})
-	return payload
+	return marker
 }
 
 func stopTimer(timer *time.Timer) {
