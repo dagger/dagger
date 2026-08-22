@@ -14,18 +14,20 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-const (
-	CallPayloadQueueSize   = LogQueueSize
-	CallPayloadExportDelay = 5 * time.Millisecond
-)
+const CallPayloadExportDelay = 5 * time.Millisecond
 
 // CallPayloadBatchProcessor gives immutable call payloads a short, on-demand
 // path to the session exporter while the ordinary log processor retains its
 // lower-frequency batching. OnEmit only clones and enqueues matching records;
 // one worker wakes on the first payload, briefly coalesces its recipe closure,
-// then drains it in bounded exporter batches. The ordinary processor later
-// exports the same records, but the session exporter's per-target claims make
-// those copies no-ops.
+// then drains it in bounded exporter batches. The ingress queue is deliberately
+// lossless and therefore unbounded: dropping any one record can leave a client
+// with a call whose nested recipe dependency can never be rebuilt, while the
+// root's per-target claim suppresses every later closure walk that could repair
+// it. Recipe bursts are finite and deduplicated per delivery target; bounding
+// exporter batches, rather than ingress, keeps each persistence operation
+// bounded. The ordinary processor later exports the same records, but the
+// session exporter's per-target claims make those copies no-ops.
 type CallPayloadBatchProcessor struct {
 	exporter sdklog.Exporter
 
@@ -64,7 +66,7 @@ func (processor *CallPayloadBatchProcessor) OnEmit(_ context.Context, record *sd
 
 	cloned := record.Clone()
 	processor.mu.Lock()
-	if processor.stopped || len(processor.queue) >= CallPayloadQueueSize {
+	if processor.stopped {
 		processor.mu.Unlock()
 		return nil
 	}
@@ -189,6 +191,9 @@ func (processor *CallPayloadBatchProcessor) exportQueued(ctx context.Context) er
 }
 
 func isCallPayloadRecord(record sdklog.Record) bool {
+	if record.Body().Kind() != log.KindBytes {
+		return false
+	}
 	payload := false
 	record.WalkAttributes(func(attr log.KeyValue) bool {
 		if attr.Key == otelgo.ContentTypeAttr {

@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -27,7 +28,9 @@ import (
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	otelgo "github.com/dagger/otel-go"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
@@ -1170,7 +1173,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 			ConfiguredLogProcessors:  3,
 			ConfiguredMetricReaders:  1,
 			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
-			ConfiguredLogQueueSlots:  enginetel.LogQueueSize + enginetel.CallPayloadQueueSize,
+			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 		},
 	}
 	installTestClientRecords(sess)
@@ -1435,7 +1438,7 @@ func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
 	require.Equal(t, 1, snapshot.Providers.MeterProviders)
 	require.Equal(t, 1, snapshot.Providers.ConfiguredMetricReaders)
 	require.Equal(t, enginetel.LargeSpanQueueSize, snapshot.Providers.ConfiguredSpanQueueSlots)
-	require.Equal(t, enginetel.LogQueueSize+enginetel.CallPayloadQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
+	require.Equal(t, enginetel.LogQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
 	for _, clientSnapshot := range snapshot.Sessions[0].Clients {
 		require.Zero(t, clientSnapshot.Telemetry.MeterProviders)
 		require.Zero(t, clientSnapshot.Telemetry.ConfiguredMetricReaders)
@@ -2856,6 +2859,178 @@ func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
 	require.Empty(t, sess.callPayloadMissingTargets("xxh3:overlap", []string{"parent", "childA", "childB"}, true))
 }
 
+type callPayloadRecordCapture struct {
+	records []sdklog.Record
+}
+
+func (capture *callPayloadRecordCapture) Export(_ context.Context, records []sdklog.Record) error {
+	for _, record := range records {
+		capture.records = append(capture.records, record.Clone())
+	}
+	return nil
+}
+
+func (*callPayloadRecordCapture) ForceFlush(context.Context) error { return nil }
+func (*callPayloadRecordCapture) Shutdown(context.Context) error   { return nil }
+
+func scopedLogRecord(t *testing.T, scope string, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	t.Helper()
+
+	capture := new(callPayloadRecordCapture)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)))
+	record := otellog.Record{}
+	record.SetTimestamp(time.Now())
+	record.SetBody(body)
+	record.AddAttributes(attrs...)
+	ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	}))
+	provider.Logger(scope).Emit(ctx, record)
+	require.NoError(t, provider.Shutdown(context.Background()))
+	require.Len(t, capture.records, 1)
+	return capture.records[0]
+}
+
+func serverCallPayload(t *testing.T, field, value string) ([]byte, string) {
+	t.Helper()
+
+	callPB := &callpbv1.Call{
+		Field: field,
+		Type:  &callpbv1.Type{NamedType: "Thing"},
+		Args: []*callpbv1.Argument{{
+			Name:  "value",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: value}},
+		}},
+	}
+	callPB.Digest = digest.FromString(callPB.String()).String()
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(callPB)
+	require.NoError(t, err)
+	return payload, callPB.Digest
+}
+
+func TestClassifyCallPayloadRecord(t *testing.T) {
+	payload, digest := serverCallPayload(t, "original", "value")
+	digestless := &callpbv1.Call{Field: "embedded"}
+	digestlessPayload, err := proto.Marshal(digestless)
+	require.NoError(t, err)
+
+	callType := otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
+	for _, test := range []struct {
+		name       string
+		scope      string
+		body       otellog.Value
+		attrs      []otellog.KeyValue
+		payload    bool
+		wantDigest string
+		wantError  string
+	}{
+		{
+			name:       "call content type and bytes body",
+			scope:      "test.core",
+			body:       otellog.BytesValue(payload),
+			attrs:      []otellog.KeyValue{callType},
+			payload:    true,
+			wantDigest: digest,
+		},
+		{
+			name:  "other content type",
+			scope: "test.core",
+			body:  otellog.BytesValue(payload),
+			attrs: []otellog.KeyValue{otellog.String(otelgo.ContentTypeAttr, "application/json")},
+		},
+		{
+			name:      "wrong body kind",
+			scope:     "test.core",
+			body:      otellog.StringValue(string(payload)),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "body must be bytes",
+		},
+		{
+			name:      "malformed protobuf",
+			scope:     "test.core",
+			body:      otellog.BytesValue([]byte{0xff}),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "decode call payload",
+		},
+		{
+			name:      "missing embedded digest",
+			scope:     "test.core",
+			body:      otellog.BytesValue(digestlessPayload),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "missing embedded digest",
+		},
+		{
+			name:    "ordinary log",
+			scope:   "test.log",
+			body:    otellog.StringValue("hello"),
+			payload: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := scopedLogRecord(t, test.scope, test.body, test.attrs...)
+			gotDigest, gotPayload, err := classifyCallPayloadRecord(record)
+			require.Equal(t, test.payload, gotPayload)
+			require.Equal(t, test.wantDigest, gotDigest)
+			if test.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestClassifyCallPayloadRecordReadsEmbeddedAddress(t *testing.T) {
+	original, originalDigest := serverCallPayload(t, "lookup", "original")
+	tampered, tamperedDigest := serverCallPayload(t, "lookup", "tampered")
+	require.NotEqual(t, originalDigest, tamperedDigest)
+
+	for _, test := range []struct {
+		body []byte
+		want string
+	}{
+		{body: original, want: originalDigest},
+		{body: tampered, want: tamperedDigest},
+	} {
+		record := scopedLogRecord(t,
+			"test.core",
+			otellog.BytesValue(test.body),
+			otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		)
+		got, payload, err := classifyCallPayloadRecord(record)
+		require.NoError(t, err)
+		require.True(t, payload)
+		require.Equal(t, test.want, got)
+	}
+}
+
+func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
+	payload, _ := serverCallPayload(t, "lookup", "value")
+	record := scopedLogRecord(t,
+		"test.core",
+		otellog.BytesValue(payload),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "origin"),
+		otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String("test.keep", "value"),
+	)
+
+	clean := withoutLogOrigin(record)
+	require.Equal(t, otellog.KindBytes, clean.Body().Kind())
+	require.Equal(t, payload, clean.Body().AsBytes())
+	attrs := map[string]otellog.Value{}
+	clean.WalkAttributes(func(attr otellog.KeyValue) bool {
+		attrs[attr.Key] = attr.Value
+		return true
+	})
+	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
+	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[otelgo.ContentTypeAttr].AsString())
+	require.Equal(t, "value", attrs["test.keep"].AsString())
+}
+
 func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 	t.Parallel()
 
@@ -2868,27 +3043,36 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 	sess.clientRecords[parent.clientID] = parent
 	sess.clientRecords[child.clientID] = child
 	exporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
-	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)))
-	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
-	logger := provider.Logger("test")
 
-	emitPayload := func(origin string) {
-		rec := otellog.Record{}
-		rec.SetTimestamp(time.Now())
-		rec.SetBody(otellog.StringValue(""))
-		rec.AddAttributes(
+	original, originalDigest := serverCallPayload(t, "lookup", "original")
+	tampered, tamperedDigest := serverCallPayload(t, "lookup", "tampered")
+	require.NotEqual(t, originalDigest, tamperedDigest)
+
+	payloadRecord := func(origin string, body []byte) sdklog.Record {
+		return scopedLogRecord(t,
+			"test.core",
+			otellog.BytesValue(body),
 			otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
-			otellog.String(telemetryattrs.DagCallPayloadDigestAttr, "xxh3:partial"),
-			otellog.String(telemetryattrs.DagCallPayloadAttr, "payload"),
+			otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			otellog.String("test.keep", "value"),
 		)
-		logger.Emit(t.Context(), rec)
 	}
 
-	// Parent receives the payload first. Re-exporting it from the child route
-	// must fill only the child gap instead of persisting a second parent row.
-	emitPayload("parent")
-	emitPayload("child")
-	emitPayload("child")
+	digestless := &callpbv1.Call{Field: "invalid"}
+	digestlessPayload, err := proto.Marshal(digestless)
+	require.NoError(t, err)
+
+	// The parent receives the original first. The same payload from the child
+	// then fills only the child gap, while the tampered payload is independently
+	// addressed and delivered to both. The invalid reserved record in the middle
+	// is consumed without aborting either valid record in the mixed batch.
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{
+		payloadRecord("parent", original),
+		payloadRecord("child", digestlessPayload),
+		payloadRecord("child", original),
+		payloadRecord("child", original),
+		payloadRecord("child", tampered),
+	}))
 
 	load := func(target string) []clientdb.Log {
 		db, err := dbs.Open(t.Context(), target)
@@ -2900,21 +3084,40 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 	}
 	parentLogs := load("parent")
 	childLogs := load("child")
-	require.Len(t, parentLogs, 1)
-	require.Len(t, childLogs, 1)
+	require.Len(t, parentLogs, 2)
+	require.Len(t, childLogs, 2)
 
-	for _, row := range append(parentLogs, childLogs...) {
-		var attrs []*otlpcommonv1.KeyValue
-		require.NoError(t, clientdb.UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
-		var hasDigest, hasPayload bool
-		for _, attr := range attrs {
-			require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,
-				"routing-only origin must not be persisted or streamed")
-			hasDigest = hasDigest || attr.Key == telemetryattrs.DagCallPayloadDigestAttr
-			hasPayload = hasPayload || attr.Key == telemetryattrs.DagCallPayloadAttr
+	for _, rows := range [][]clientdb.Log{parentLogs, childLogs} {
+		seenBodies := map[string]bool{}
+		for _, row := range rows {
+			var attrs []*otlpcommonv1.KeyValue
+			require.NoError(t, clientdb.UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
+			var hasPayload, hasExtra bool
+			for _, attr := range attrs {
+				require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,
+					"routing-only origin must not be persisted or streamed")
+				hasPayload = hasPayload || attr.Key == otelgo.ContentTypeAttr && attr.Value.GetStringValue() == telemetryattrs.CallPayloadContentType
+				hasExtra = hasExtra || attr.Key == "test.keep" && attr.Value.GetStringValue() == "value"
+			}
+			require.True(t, hasPayload, "routing must preserve the call payload marker")
+			require.True(t, hasExtra, "routing must strip only the origin attribute")
+
+			var body otlpcommonv1.AnyValue
+			require.NoError(t, proto.Unmarshal(row.Body, &body))
+			seenBodies[string(body.GetBytesValue())] = true
 		}
-		require.True(t, hasDigest, "routing must preserve the call payload wire representation")
-		require.True(t, hasPayload, "routing must preserve the call payload wire representation")
+		require.Equal(t, map[string]bool{string(original): true, string(tampered): true}, seenBodies)
+
+		resourceLogs := clientdb.LogsToPB(rows)
+		require.Len(t, resourceLogs, 1)
+		require.Len(t, resourceLogs[0].ScopeLogs, 1)
+		scopeLogs := resourceLogs[0].ScopeLogs[0]
+		require.Equal(t, "test.core", scopeLogs.Scope.Name)
+		require.Len(t, scopeLogs.LogRecords, 2)
+		for _, record := range scopeLogs.LogRecords {
+			require.Contains(t, [][]byte{original, tampered}, record.Body.GetBytesValue(),
+				"byte bodies must survive client DB to binary OTLP reconstruction")
+		}
 	}
 }
 

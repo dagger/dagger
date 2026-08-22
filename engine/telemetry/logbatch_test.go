@@ -3,15 +3,20 @@ package telemetry
 import (
 	"context"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	otelgo "github.com/dagger/otel-go"
+
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"google.golang.org/protobuf/proto"
 )
 
 // countingLogExporter records how many log records arrive and when the first
@@ -193,21 +198,90 @@ func TestLogBatchProcessorTrickleDelivery(t *testing.T) {
 		"a single sparse record must arrive within ~one export interval")
 }
 
+func TestCallPayloadBatchProcessorFastPathRecordShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		scope string
+		body  logapi.Value
+		attrs []logapi.KeyValue
+		want  bool
+	}{
+		{
+			name:  "valid raw payload",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
+			want:  true,
+		},
+		{
+			name:  "other content type",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, "application/json")},
+		},
+		{
+			name:  "wrong content type kind",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+			attrs: []logapi.KeyValue{logapi.Bool(otelgo.ContentTypeAttr, true)},
+		},
+		{
+			name:  "missing content type",
+			scope: "test.core",
+			body:  logapi.BytesValue([]byte("payload")),
+		},
+		{
+			name:  "wrong body kind",
+			scope: "test.core",
+			body:  logapi.StringValue("payload"),
+			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			exp := &countingLogExporter{}
+			proc := NewCallPayloadBatchProcessor(exp)
+			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+
+			var record logapi.Record
+			record.SetBody(test.body)
+			record.AddAttributes(test.attrs...)
+			provider.Logger(test.scope).Emit(t.Context(), record)
+
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.NoError(t, proc.ForceFlush(ctx))
+			if test.want {
+				require.Equal(t, 1, exp.count())
+			} else {
+				require.Zero(t, exp.count(), "malformed reserved record must remain on the normal batch path")
+			}
+			require.NoError(t, proc.Shutdown(ctx))
+		})
+	}
+}
+
 func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	t.Parallel()
 
 	exp := &countingLogExporter{}
 	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
 
 	var ordinary sdklog.Record
 	ordinary.SetBody(logapi.StringValue("ordinary"))
 	require.NoError(t, proc.OnEmit(t.Context(), &ordinary))
 
-	var payload sdklog.Record
-	payload.SetAttributes(logapi.String(telemetryattrs.DagCallPayloadAttr, "payload"))
+	var payload logapi.Record
+	payload.SetBody(logapi.BytesValue([]byte("payload")))
+	payload.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	logger := provider.Logger("test.core")
 	const records = 2*LogExportMaxBatchSize + 1
 	for range records {
-		require.NoError(t, proc.OnEmit(t.Context(), &payload))
+		logger.Emit(t.Context(), payload)
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -231,25 +305,59 @@ type blockingLogExporter struct {
 	started chan struct{}
 	release chan struct{}
 	once    sync.Once
+
+	mu       sync.Mutex
+	exported int
+	batches  []int
 }
 
-func (e *blockingLogExporter) Export(context.Context, []sdklog.Record) error {
+func (e *blockingLogExporter) Export(_ context.Context, records []sdklog.Record) error {
 	e.once.Do(func() { close(e.started) })
 	<-e.release
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.exported += len(records)
+	e.batches = append(e.batches, len(records))
 	return nil
+}
+
+func (e *blockingLogExporter) stats() (int, []int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.exported, append([]int(nil), e.batches...)
 }
 
 func (*blockingLogExporter) Shutdown(context.Context) error   { return nil }
 func (*blockingLogExporter) ForceFlush(context.Context) error { return nil }
 
-func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
+func TestCallPayloadBatchProcessorLosslessWhileExporterBlocked(t *testing.T) {
 	t.Parallel()
 
 	exp := &blockingLogExporter{started: make(chan struct{}), release: make(chan struct{})}
 	proc := NewCallPayloadBatchProcessor(exp)
-	var payload sdklog.Record
-	payload.SetAttributes(logapi.String(telemetryattrs.DagCallPayloadAttr, "payload"))
-	require.NoError(t, proc.OnEmit(t.Context(), &payload))
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger("test.core")
+
+	// Build distinct, valid raw call payloads so the burst models a real recipe
+	// closure rather than duplicate log traffic.
+	const records = 2*LogQueueSize + 1
+	payloads := make([]logapi.Record, records+1)
+	for i := range payloads {
+		body, err := proto.Marshal(&callpbv1.Call{
+			Field: "dependency",
+			Type:  &callpbv1.Type{NamedType: "Thing"},
+			Args: []*callpbv1.Argument{{
+				Name: "index",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
+					String_: strconv.Itoa(i),
+				}},
+			}},
+		})
+		require.NoError(t, err)
+		payloads[i].SetBody(logapi.BytesValue(body))
+		payloads[i].AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	}
+	logger.Emit(t.Context(), payloads[0])
 
 	select {
 	case <-exp.started:
@@ -257,19 +365,35 @@ func TestCallPayloadBatchProcessorOnEmitDoesNotWaitForExport(t *testing.T) {
 		t.Fatal("payload batch did not reach exporter")
 	}
 
+	// Hold the exporter while enqueueing more than the old 2048-record cap.
+	// Agent recipes can be tens of thousands of calls; dropping the tail from
+	// both this fast path and the ordinary bounded log processor left the root
+	// claimed while nested ID arguments such as Directory.withChanges(changes:)
+	// never reached the spawning client. OnEmit must stay nonblocking, but this
+	// dedicated immutable-payload queue must retain the entire burst.
 	returned := make(chan struct{})
 	go func() {
-		_ = proc.OnEmit(context.Background(), &payload)
+		for i := 1; i < len(payloads); i++ {
+			logger.Emit(context.Background(), payloads[i])
+		}
 		close(returned)
 	}()
 	select {
 	case <-returned:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("OnEmit blocked behind the exporter")
 	}
 
 	close(exp.release)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
+	require.NoError(t, proc.ForceFlush(ctx))
+	exported, batches := exp.stats()
+	require.Equal(t, records+1, exported,
+		"every dependency in an oversized call-payload closure must reach the exporter")
+	for _, size := range batches {
+		require.LessOrEqual(t, size, LogExportMaxBatchSize,
+			"lossless ingress must still use bounded exporter batches")
+	}
 	require.NoError(t, proc.Shutdown(ctx))
 }

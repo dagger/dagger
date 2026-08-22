@@ -127,27 +127,34 @@ func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
 	return clean
 }
 
-// dagCallPayloadDigest centralizes recognition of call-payload records so the
-// router is independent of consumers: a record whose content type declares an
-// encoded call carries its own recipe digest embedded in the protobuf body.
-func dagCallPayloadDigest(rec sdklog.Record) (string, bool) {
-	payload := false
+// classifyCallPayloadRecord identifies the call-payload log channel and
+// returns the payload's embedded recipe digest. Any record whose content type
+// declares an encoded call belongs to this channel, even when malformed, so it
+// can never fall through as an ordinary log record.
+func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, err error) {
+	claimed := false
 	rec.WalkAttributes(func(attr log.KeyValue) bool {
 		if attr.Key == telemetry.ContentTypeAttr {
-			payload = attr.Value.Kind() == log.KindString &&
+			claimed = attr.Value.Kind() == log.KindString &&
 				attr.Value.AsString() == telemetryattrs.CallPayloadContentType
 			return false
 		}
 		return true
 	})
-	if !payload || rec.Body().Kind() != log.KindBytes {
-		return "", false
+	if !claimed {
+		return "", false, nil
+	}
+	if rec.Body().Kind() != log.KindBytes {
+		return "", true, fmt.Errorf("body must be bytes, got %s", rec.Body().Kind())
 	}
 	decoded := new(callpbv1.Call)
 	if err := proto.Unmarshal(rec.Body().AsBytes(), decoded); err != nil {
-		return "", false
+		return "", true, fmt.Errorf("decode call payload: %w", err)
 	}
-	return decoded.GetDigest(), decoded.GetDigest() != ""
+	if decoded.GetDigest() == "" {
+		return "", true, fmt.Errorf("missing embedded digest")
+	}
+	return decoded.GetDigest(), true, nil
 }
 
 type sessionSpanExporter struct {
@@ -193,6 +200,12 @@ type sessionLogExporter struct {
 func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	byTarget := map[string][]sdklog.Record{}
 	for _, rec := range records {
+		digest, payload, err := classifyCallPayloadRecord(rec)
+		if err != nil {
+			slog.Warn("dropping malformed call payload record", "err", err)
+			continue
+		}
+
 		origin := logOriginClientID(rec)
 		if origin == "" {
 			return fmt.Errorf("log record is missing telemetry origin client ID")
@@ -201,7 +214,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if err != nil {
 			return err
 		}
-		if digest, ok := dagCallPayloadDigest(rec); ok {
+		if payload {
 			route = exp.sess.callPayloadMissingTargets(digest, route, true)
 		}
 		if len(route) == 0 {
