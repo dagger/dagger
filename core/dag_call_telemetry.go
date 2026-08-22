@@ -6,8 +6,10 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -35,9 +37,6 @@ import (
 // session-wide decision could let one client's emission permanently satisfy a
 // client that never received it. Producer checks avoid needless recipe work;
 // the session log exporter atomically claims only the missing route targets.
-
-// CallPayloadInstrumentationScope names the logger emitting call payloads.
-const CallPayloadInstrumentationScope = "dagger.io/dag.call"
 
 // recordCallPayloads publishes the transitive closure of a call's ID over the
 // log channel — every frame the chain references, through receivers, modules,
@@ -90,28 +89,35 @@ func recordCallPayloads(
 		return
 	}
 
-	logger := telemetry.Logger(ctx, CallPayloadInstrumentationScope)
+	logger := telemetry.Logger(ctx, telemetryattrs.CallPayloadInstrumentationScope)
 	emit := func(dgst string, callPB *callpbv1.Call) {
 		// The root was checked before rebuilding. Check every other frame before
 		// encoding so closure walks avoid work already delivered everywhere.
 		if dgst != callDigest && !store.CallPayloadNeedsEmission(dgst) {
 			return
 		}
-		payload, err := callPB.Encode()
+
+		canonical, err := call.CanonicalDigest(callPB)
 		if err != nil {
-			slog.WarnContext(ctx, "failed to encode call payload", "digest", dgst, "err", err)
+			slog.WarnContext(ctx, "failed to compute canonical call payload digest", "digest", dgst, "err", err)
+			return
+		}
+		if canonical.String() != dgst || callPB.GetDigest() != dgst {
+			slog.WarnContext(ctx, "call payload digest mismatch", "map_digest", dgst, "embedded_digest", callPB.GetDigest(), "canonical_digest", canonical.String())
+			return
+		}
+
+		payloadCall := *callPB
+		payloadCall.Digest = ""
+		payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&payloadCall)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to marshal call payload", "digest", dgst, "err", err)
 			return
 		}
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
-		// Explicit empty body: an unset body does not survive the OTLP
-		// round-trip, and consumers skip empty-bodied records as text — this
-		// record is call data, not output. (Same contract as EmitAgentState.)
-		rec.SetBody(log.StringValue(""))
-		rec.AddAttributes(
-			log.String(telemetryattrs.DagCallPayloadDigestAttr, dgst),
-			log.String(telemetryattrs.DagCallPayloadAttr, payload),
-		)
+		rec.SetBody(log.BytesValue(payload))
+		rec.AddAttributes(log.Bool(telemetryattrs.DagCallPayloadAttr, true))
 		logger.Emit(ctx, rec)
 	}
 

@@ -104,7 +104,7 @@ const (
 	ProgressUnitAttr = "dagger.io/progress.unit"
 )
 
-// Call payloads over OTel logs (dagger.io/dag.call.payload.*).
+// Call payloads over OTel logs.
 //
 // A client rebuilds a dagql call ID by walking the chain a call references
 // and looking up a payload for EVERY frame it reaches (dagui's
@@ -112,29 +112,13 @@ const (
 // transitive closure as log records when they emit that call's span, minus
 // frames already sent to the same delivery domain.
 //
-// Older engines carried the root frame in dagger.io/dag.call on the span and
-// used logs only for frames that structurally had no span. Consumers continue
-// to ingest that legacy attribute, but new producers use logs exclusively so
-// every call protobuf has one transport path. A payload record is call data,
-// not log text, and may arrive before or after the span that references its
-// digest because the two pipelines batch independently.
+// CallPayloadInstrumentationScope names the logger dedicated to these records.
+// DagCallPayloadAttr marks a record whose body is one deterministic protobuf
+// encoding of callpbv1.Call. The payload omits Call.Digest; consumers compute
+// the canonical digest from the body instead. (bool)
 const (
-	// DagCallPayloadDigestAttr is the call digest the payload belongs to —
-	// the same key dagger.io/dag.digest carries on a span, and the map key a
-	// consumer files the payload under without having to decode it. (string)
-	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
-
-	// DagCallPayloadAttr is one protobuf-encoded callpbv1.Call (a single
-	// frame, not a DAG), base64-encoded — the same encoding legacy
-	// dagger.io/dag.call span attributes used, so both decode through
-	// Call.Decode.
-	//
-	// Base64 rather than the log data model's native Bytes value, which does
-	// NOT survive the trip: the engine persists each client's records via
-	// telemetry.LogValueToPB (engine/server/telemetry.go), whose switch has
-	// no log.KindBytes case and silently encodes such a value as the string
-	// "INVALID". (string)
-	DagCallPayloadAttr = "dagger.io/dag.call.payload"
+	CallPayloadInstrumentationScope = "dagger.io/dag.call.payload"
+	DagCallPayloadAttr              = "dagger.io/dag.call.payload"
 )
 
 // Agent directory (dagger.io/agent.*).

@@ -16,47 +16,76 @@ import (
 	"github.com/stretchr/testify/require"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// payloadRecorder captures the call payloads emitted through a context,
-// decoding each back into the frame a client would file under its digest.
+// recordedPayload is one call-payload record as it crossed the logger API.
+type recordedPayload struct {
+	scope         string
+	bodyKind      otellog.Kind
+	body          []byte
+	marker        bool
+	markerKind    otellog.Kind
+	hasDigestAttr bool
+	call          *callpbv1.Call
+	digest        string
+	err           error
+}
+
+// payloadRecorder captures call payload records and indexes decoded calls by
+// the canonical digest a consumer must derive from the raw body.
 type payloadRecorder struct {
-	mu        sync.Mutex
-	calls     map[string]*callpbv1.Call
-	order     []string
-	emissions int
+	mu      sync.Mutex
+	calls   map[string]*callpbv1.Call
+	order   []string
+	records []recordedPayload
 }
 
 func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	var digest, payload string
+	got := recordedPayload{
+		scope:    rec.InstrumentationScope().Name,
+		bodyKind: rec.Body().Kind(),
+		body:     append([]byte(nil), rec.Body().AsBytes()...),
+	}
 	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
 		switch kv.Key {
-		case telemetryattrs.DagCallPayloadDigestAttr:
-			digest = kv.Value.AsString()
 		case telemetryattrs.DagCallPayloadAttr:
-			payload = kv.Value.AsString()
+			got.markerKind = kv.Value.Kind()
+			got.marker = kv.Value.AsBool()
+		case "dagger.io/dag.call.payload.digest":
+			got.hasDigestAttr = true
 		}
 		return true
 	})
-	if digest == "" {
-		return nil
+
+	decoded := new(callpbv1.Call)
+	got.err = proto.Unmarshal(got.body, decoded)
+	if got.err == nil {
+		var digest string
+		canonical, err := call.CanonicalDigest(decoded)
+		got.err = err
+		if err == nil {
+			digest = canonical.String()
+			got.call = decoded
+			got.digest = digest
+		}
 	}
-	var call callpbv1.Call
-	if err := call.Decode(payload); err != nil {
-		return err
-	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.calls == nil {
 		r.calls = map[string]*callpbv1.Call{}
 	}
-	r.calls[digest] = &call
-	r.order = append(r.order, digest)
-	r.emissions++
+	if got.digest != "" {
+		r.calls[got.digest] = got.call
+		r.order = append(r.order, got.digest)
+	}
+	r.records = append(r.records, got)
 	return nil
 }
 
@@ -79,7 +108,7 @@ func (r *payloadRecorder) len() int {
 func (r *payloadRecorder) emissionCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.emissions
+	return len(r.records)
 }
 
 func (r *payloadRecorder) firstDigest() string {
@@ -89,6 +118,12 @@ func (r *payloadRecorder) firstDigest() string {
 		return ""
 	}
 	return r.order[0]
+}
+
+func (r *payloadRecorder) snapshot() []recordedPayload {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]recordedPayload(nil), r.records...)
 }
 
 type testSeenKeys struct {
@@ -163,8 +198,8 @@ func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
 
 	routeA := &testSeenKeys{}
 	recorderA, ctxA := runRoute(routeA)
-	require.Greater(t, recorderA.emissionCount(), 0,
-		"a session-deduped span must still enqueue its route's call closure")
+	require.Equal(t, 5, recorderA.emissionCount(),
+		"a session-deduped span must still enqueue its route's complete call closure")
 
 	firstRouteA := recorderA.emissionCount()
 	AroundFunc(ctxA, req)
@@ -186,6 +221,29 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent)
 	require.Equal(t, rootDigest.String(), rec.firstDigest(), "the requested root must lead its closure")
 
+	records := rec.snapshot()
+	require.Len(t, records, 5, "the root and every transitive frame must each be emitted once")
+	fields := make([]string, 0, len(records))
+	for _, record := range records {
+		require.NoError(t, record.err)
+		require.Equal(t, telemetryattrs.CallPayloadInstrumentationScope, record.scope)
+		require.Equal(t, otellog.KindBytes, record.bodyKind)
+		require.Equal(t, otellog.KindBool, record.markerKind)
+		require.True(t, record.marker)
+		require.False(t, record.hasDigestAttr)
+		require.NotNil(t, record.call)
+		require.Empty(t, record.call.Digest, "the canonical digest must not be embedded in the payload")
+
+		canonical, err := call.CanonicalDigest(record.call)
+		require.NoError(t, err)
+		require.Equal(t, canonical.String(), record.digest)
+		deterministic, err := (proto.MarshalOptions{Deterministic: true}).Marshal(record.call)
+		require.NoError(t, err)
+		require.Equal(t, deterministic, record.body)
+		fields = append(fields, record.call.Field)
+	}
+	require.ElementsMatch(t, []string{"llm", "withSkills", "agent", "host", "directory"}, fields)
+
 	// The frame behind the ID-literal argument is the whole point: a span
 	// payload flattens it to a bare digest, so this channel is the only way
 	// it can ever reach a client.
@@ -194,7 +252,7 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	dirCall := rec.get(dirDigest.String())
 	require.NotNil(t, dirCall, "the ID-literal argument's frame was not published")
 	require.Equal(t, "directory", dirCall.Field)
-	require.Equal(t, dirDigest.String(), dirCall.Digest)
+	require.Empty(t, dirCall.Digest)
 
 	// ... and so is everything on the receiver spine below it, since any of
 	// those may equally have gone unspanned.
@@ -218,7 +276,7 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	seen := &testSeenKeys{}
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	first := rec.emissionCount()
-	require.Greater(t, first, 0)
+	require.Equal(t, 5, first, "the initial root and its complete closure must be emitted")
 
 	// A second selection of the same call publishes nothing in this synchronous
 	// delivery fixture: the first walk covered the whole transitive closure.
