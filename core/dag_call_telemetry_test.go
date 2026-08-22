@@ -4,7 +4,7 @@ package core
 // silently: the root and complete closure have to ride logs, including frames
 // buried inside an ID-literal argument — those are the ones LiteralID.pb
 // flattens to a bare digest, so they can never ride a span attribute — and a
-// digest must cross the wire at most once per session, or an LLM loop
+// digest must cross the wire at most once per delivery target, or an LLM loop
 // re-sending the same chain drowns the log stream.
 
 import (
@@ -16,43 +16,69 @@ import (
 	"github.com/stretchr/testify/require"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// payloadRecorder captures the call payloads emitted through a context,
-// decoding each back into the frame a client would file under its digest.
+// recordedPayload is one call-payload record as it crossed the logger API.
+type recordedPayload struct {
+	scope         string
+	bodyKind      otellog.Kind
+	body          []byte
+	marker        bool
+	markerKind    otellog.Kind
+	hasDigestAttr bool
+	call          *callpbv1.Call
+	digest        string
+	err           error
+}
+
+// payloadRecorder captures call payload records and indexes decoded calls by
+// the canonical digest a consumer must derive from the raw body.
 type payloadRecorder struct {
-	mu    sync.Mutex
-	calls map[string]*callpbv1.Call
+	mu      sync.Mutex
+	calls   map[string]*callpbv1.Call
+	order   []string
+	records []recordedPayload
 }
 
 func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	var digest, payload string
+	got := recordedPayload{
+		scope:    rec.InstrumentationScope().Name,
+		bodyKind: rec.Body().Kind(),
+		body:     append([]byte(nil), rec.Body().AsBytes()...),
+	}
 	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
 		switch kv.Key {
-		case telemetryattrs.DagCallPayloadDigestAttr:
-			digest = kv.Value.AsString()
 		case telemetryattrs.DagCallPayloadAttr:
-			payload = kv.Value.AsString()
+			got.markerKind = kv.Value.Kind()
+			got.marker = kv.Value.AsBool()
+		case "dagger.io/dag.call.payload.digest":
+			got.hasDigestAttr = true
 		}
 		return true
 	})
-	if digest == "" {
-		return nil
+
+	decoded := new(callpbv1.Call)
+	got.err = proto.Unmarshal(got.body, decoded)
+	if got.err == nil {
+		got.call = decoded
+		got.digest = decoded.GetDigest()
 	}
-	var call callpbv1.Call
-	if err := call.Decode(payload); err != nil {
-		return err
-	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.calls == nil {
 		r.calls = map[string]*callpbv1.Call{}
 	}
-	r.calls[digest] = &call
+	if got.digest != "" {
+		r.calls[got.digest] = got.call
+		r.order = append(r.order, got.digest)
+	}
+	r.records = append(r.records, got)
 	return nil
 }
 
@@ -70,6 +96,27 @@ func (r *payloadRecorder) len() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.calls)
+}
+
+func (r *payloadRecorder) emissionCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.records)
+}
+
+func (r *payloadRecorder) firstDigest() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.order) == 0 {
+		return ""
+	}
+	return r.order[0]
+}
+
+func (r *payloadRecorder) snapshot() []recordedPayload {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]recordedPayload(nil), r.records...)
 }
 
 type testSeenKeys struct {
@@ -122,6 +169,27 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent)
+	require.Equal(t, rootDigest.String(), rec.firstDigest(), "the requested root must lead its closure")
+
+	records := rec.snapshot()
+	require.Len(t, records, 5, "the root and every transitive frame must each be emitted once")
+	fields := make([]string, 0, len(records))
+	for _, record := range records {
+		require.NoError(t, record.err)
+		require.Equal(t, telemetryattrs.CallPayloadInstrumentationScope, record.scope)
+		require.Equal(t, otellog.KindBytes, record.bodyKind)
+		require.Equal(t, otellog.KindBool, record.markerKind)
+		require.True(t, record.marker)
+		require.False(t, record.hasDigestAttr)
+		require.NotNil(t, record.call)
+		require.NotEmpty(t, record.call.Digest, "the payload must carry its own digest")
+
+		deterministic, err := (proto.MarshalOptions{Deterministic: true}).Marshal(record.call)
+		require.NoError(t, err)
+		require.Equal(t, deterministic, record.body)
+		fields = append(fields, record.call.Field)
+	}
+	require.ElementsMatch(t, []string{"llm", "withSkills", "agent", "host", "directory"}, fields)
 
 	// The frame behind the ID-literal argument is the whole point: a span
 	// payload flattens it to a bare digest, so this channel is the only way
@@ -146,7 +214,7 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.Equal(t, "agent", rootCall.Field)
 }
 
-func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
+func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, _, _ := skillsChain()
 	rootDigest, err := agent.RecipeDigest(ctx)
@@ -154,14 +222,13 @@ func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
 
 	seen := &testSeenKeys{}
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
-	first := rec.len()
-	require.Greater(t, first, 0)
+	first := rec.emissionCount()
+	require.Equal(t, 5, first, "the initial root and its complete closure must be emitted")
 
-	// A second selection of the same call publishes nothing: the digest was
-	// claimed, and reachability is transitive, so the first walk covered
-	// everything this one would.
+	// A second selection of the same call publishes nothing in this synchronous
+	// delivery fixture: the first walk covered the whole transitive closure.
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
-	require.Equal(t, first, rec.len())
+	require.Equal(t, first, rec.emissionCount())
 
 	// A LONGER chain over the same frames publishes only what is NEW: its own
 	// root frame and the newly referenced prompt; the receiver spine below it
@@ -178,7 +245,7 @@ func TestRecordCallPayloadsDedupesPerSession(t *testing.T) {
 	longerDigest, err := longer.RecipeDigest(ctx)
 	require.NoError(t, err)
 	recordCallPayloads(ctx, seen, longerDigest.String(), longer)
-	require.Equal(t, first+2, rec.len(), "only the new root and referenced frame should be published")
+	require.Equal(t, first+2, rec.emissionCount(), "only the new root and referenced frame should be published")
 	require.NotNil(t, rec.get(longerDigest.String()), "the new root frame was not published")
 	promptDigest, err := prompt.RecipeDigest(ctx)
 	require.NoError(t, err)

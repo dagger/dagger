@@ -6,8 +6,10 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -39,9 +41,6 @@ import (
 // unaddressable there. Delivery-domain claims mean a later client's first
 // closure walk re-publishes into its own domain; consumers dedupe by digest,
 // so the bounded re-publication is harmless.
-
-// CallPayloadInstrumentationScope names the logger emitting call payloads.
-const CallPayloadInstrumentationScope = "dagger.io/dag.call"
 
 // recordCallPayloads publishes the transitive closure of a call's ID over the
 // log channel — every frame the chain references, through receivers, modules,
@@ -94,28 +93,40 @@ func recordCallPayloads(
 		return
 	}
 
-	logger := telemetry.Logger(ctx, CallPayloadInstrumentationScope)
-	for dgst, callPB := range recipe.GetCallsByDigest() {
+	logger := telemetry.Logger(ctx, telemetryattrs.CallPayloadInstrumentationScope)
+	emit := func(dgst string, callPB *callpbv1.Call) {
 		// The root was claimed before rebuilding. Claim every other frame before
 		// encoding so repeated closure walks skip work already delivered.
 		if dgst != callDigest && !dagql.ShouldEmitCallPayload(store, dgst) {
-			continue
+			return
 		}
-		payload, err := callPB.Encode()
+
+		// The payload carries its own digest: it is the key the producer files
+		// the frame under everywhere else (span attributes, other frames'
+		// references), so consumers use it verbatim rather than re-deriving it
+		// and coupling themselves to this engine version's digest scheme.
+		payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(callPB)
 		if err != nil {
-			slog.WarnContext(ctx, "failed to encode call payload", "digest", dgst, "err", err)
-			continue
+			slog.WarnContext(ctx, "failed to marshal call payload", "digest", dgst, "err", err)
+			return
 		}
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
-		// Explicit empty body: an unset body does not survive the OTLP
-		// round-trip, and consumers skip empty-bodied records as text — this
-		// record is call data, not output. (Same contract as EmitAgentState.)
-		rec.SetBody(log.StringValue(""))
-		rec.AddAttributes(
-			log.String(telemetryattrs.DagCallPayloadDigestAttr, dgst),
-			log.String(telemetryattrs.DagCallPayloadAttr, payload),
-		)
+		rec.SetBody(log.BytesValue(payload))
+		rec.AddAttributes(log.Bool(telemetryattrs.DagCallPayloadAttr, true))
 		logger.Emit(ctx, rec)
+	}
+
+	// Emit the requested root first so consumers see the frame they asked for
+	// before the rest of its closure.
+	calls := recipe.GetCallsByDigest()
+	rootDigest := recipe.GetRootDigest()
+	if root := calls[rootDigest]; root != nil {
+		emit(rootDigest, root)
+	}
+	for dgst, callPB := range calls {
+		if dgst != rootDigest {
+			emit(dgst, callPB)
+		}
 	}
 }

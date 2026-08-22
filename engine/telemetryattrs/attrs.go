@@ -75,19 +75,26 @@ const (
 	ProgressUnitAttr = "dagger.io/progress.unit"
 )
 
-// Call payloads over OTel logs (dagger.io/dag.call.payload.*).
+// Call payloads over OTel logs.
 //
-// Trace consumers need a call's root and transitive closure even when some
-// frames never receive spans. New engines publish every encoded call payload as
-// a log record, deduplicated within its delivery domain; consumers still ingest
-// legacy span-carried payloads.
+// A client rebuilds a dagql call ID by walking the chain a call references
+// and looking up a payload for EVERY frame it reaches (dagui's
+// extractIntoDAG). New engines therefore publish a call's root and complete
+// transitive closure as log records when they emit that call's span, minus
+// frames already sent to the same delivery domain.
+//
+// CallPayloadInstrumentationScope names the logger dedicated to these records.
+// DagCallPayloadAttr marks a record whose body is one deterministic protobuf
+// encoding of callpbv1.Call. The payload omits Call.Digest; consumers compute
+// the canonical digest from the body instead. (bool)
 const (
-	// DagCallPayloadDigestAttr identifies the call frame encoded by the record.
-	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
+	CallPayloadInstrumentationScope = "dagger.io/dag.call.payload"
+	DagCallPayloadAttr              = "dagger.io/dag.call.payload"
 
-	// DagCallPayloadAttr carries one base64-encoded callpbv1.Call payload, using
-	// the same encoding as the legacy dagger.io/dag.call span attribute.
-	DagCallPayloadAttr = "dagger.io/dag.call.payload"
+	// DagCallPayloadDigestAttr identified the frame carried by a legacy
+	// attribute-encoded payload record. Only the transitional consumer still
+	// reads it; producers no longer write it.
+	DagCallPayloadDigestAttr = "dagger.io/dag.call.payload.digest"
 )
 
 // wcprof × OTel vocabulary.
