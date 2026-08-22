@@ -458,6 +458,31 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	return srv
 }
 
+// TestBoundToolsUseTheirDefiningSchemaAsFallback covers recovery after a
+// workspace overlay stops compiling. The recovery schema may not contain a
+// bound object that came from another module, but withTools already resolved
+// that object's defining schema from its ID provenance. Its tools must remain
+// renderable from that schema so the agent can repair the overlay.
+func TestBoundToolsUseTheirDefiningSchemaAsFallback(t *testing.T) {
+	defining := newAddressLiftTestServer(t)
+	objType, ok := defining.ObjectType("LiftTestRunner")
+	require.True(t, ok)
+
+	// Deliberately omit LiftTestRunner from the current workspace schema.
+	current := newCoreDagqlServerForTest(t, &Query{})
+	mcp := newMCP().WithLazyTools(nil, objType, defining.Schema(), nil)
+	toolsets, err := mcp.boundToolsets(current)
+	require.NoError(t, err)
+	require.Len(t, toolsets, 1)
+	require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+
+	names := make([]string, 0, len(toolsets[0].tools))
+	for _, tool := range toolsets[0].tools {
+		names = append(names, tool.Name)
+	}
+	require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+}
+
 // TestBuildObjectMethodSelector covers argument dispatch against a real dagql
 // field: nullable scalars accept explicit null, while model-supplied strings
 // for liftable object args first try ID decoding and then address resolution.

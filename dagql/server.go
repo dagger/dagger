@@ -1254,27 +1254,36 @@ func interfaceFieldsPresent(iface *Interface, objectType ObjectType, view call.V
 // module provenance is loaded and used to rebuild the dependency-aware schema
 // that defined it.
 func (s *Server) ObjectTypeForID(ctx context.Context, id *call.ID) (ObjectType, bool, error) {
+	objType, _, ok, err := s.ObjectTypeAndServerForID(ctx, id)
+	return objType, ok, err
+}
+
+// ObjectTypeAndServerForID resolves the object type named by id and the server
+// whose schema defines it, without evaluating the object itself. The defining
+// server matters to callers that must retain the type's schema after switching
+// to another schema which may not contain the type.
+func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (ObjectType, *Server, bool, error) {
 	if id == nil || id.Type() == nil {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	typeName := id.Type().NamedType()
 	if objType, ok := s.ObjectType(typeName); ok {
-		return objType, true, nil
+		return objType, s, true, nil
 	}
 	if id.IsHandle() || id.Module() == nil || id.Module().ID() == nil || s.resultServerForCall == nil {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 
 	moduleResult, err := s.LoadType(ctx, id.Module().ID())
 	if err != nil {
-		return nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)
 	}
 	if moduleResult == nil {
-		return nil, false, fmt.Errorf("resolve object type %q module: result is null", typeName)
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is null", typeName)
 	}
 	shared := moduleResult.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
-		return nil, false, fmt.Errorf("resolve object type %q module: result is not attached", typeName)
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is not attached", typeName)
 	}
 	resultCall := &ResultCall{
 		Kind:  ResultCallKindField,
@@ -1290,13 +1299,13 @@ func (s *Server) ObjectTypeForID(ctx context.Context, id *call.ID) (ObjectType, 
 	}
 	resolved, err := s.resultServerForCall(ctx, resultCall)
 	if err != nil {
-		return nil, false, fmt.Errorf("resolve object type %q schema: %w", typeName, err)
+		return nil, nil, false, fmt.Errorf("resolve object type %q schema: %w", typeName, err)
 	}
 	if resolved == nil {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	objType, ok := resolved.ObjectType(typeName)
-	return objType, ok, nil
+	return objType, resolved, ok, nil
 }
 
 // RecipeClassification describes the structural replay properties of a recipe.
