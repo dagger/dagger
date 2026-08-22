@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
@@ -122,19 +123,40 @@ func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
 	return clean
 }
 
-// dagCallPayloadDigest centralizes recognition of call-payload records so the
-// router is independent of the current log encoding. A raw callpb body can
-// replace this attribute extraction without changing claim or fan-out logic.
-func dagCallPayloadDigest(rec sdklog.Record) (string, bool) {
-	var digest string
+// classifyCallPayloadRecord identifies the reserved call-payload log channel
+// and computes the payload's canonical address. Any record carrying the marker
+// or using the reserved scope belongs to this channel, even when malformed, so
+// it can never fall through as an ordinary log record.
+func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, err error) {
+	reservedByScope := rec.InstrumentationScope().Name == telemetryattrs.CallPayloadInstrumentationScope
+	markerPresent := false
+	markerValid := true
 	rec.WalkAttributes(func(attr log.KeyValue) bool {
-		if attr.Key == telemetryattrs.DagCallPayloadDigestAttr && attr.Value.Kind() == log.KindString {
-			digest = attr.Value.AsString()
-			return false
+		if attr.Key == telemetryattrs.DagCallPayloadAttr {
+			markerPresent = true
+			markerValid = markerValid && attr.Value.Kind() == log.KindBool && attr.Value.AsBool()
 		}
 		return true
 	})
-	return digest, digest != ""
+
+	if !markerPresent && !reservedByScope {
+		return "", false, nil
+	}
+	if !markerPresent || !markerValid {
+		return "", true, fmt.Errorf("marker must be boolean true")
+	}
+	if !reservedByScope {
+		return "", true, fmt.Errorf("wrong instrumentation scope %q", rec.InstrumentationScope().Name)
+	}
+	if rec.Body().Kind() != log.KindBytes {
+		return "", true, fmt.Errorf("body must be bytes, got %s", rec.Body().Kind())
+	}
+
+	_, dgst, err := call.DecodeCallPayload(rec.Body().AsBytes())
+	if err != nil {
+		return "", true, fmt.Errorf("decode call payload: %w", err)
+	}
+	return dgst.String(), true, nil
 }
 
 type sessionSpanExporter struct {
@@ -180,6 +202,12 @@ type sessionLogExporter struct {
 func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	byTarget := map[string][]sdklog.Record{}
 	for _, rec := range records {
+		digest, payload, err := classifyCallPayloadRecord(rec)
+		if err != nil {
+			slog.Warn("dropping malformed call payload record", "err", err)
+			continue
+		}
+
 		origin := logOriginClientID(rec)
 		if origin == "" {
 			return fmt.Errorf("log record is missing telemetry origin client ID")
@@ -188,7 +216,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if err != nil {
 			return err
 		}
-		if digest, ok := dagCallPayloadDigest(rec); ok {
+		if payload {
 			route = exp.sess.callPayloadMissingTargets(digest, route, true)
 		}
 		if len(route) == 0 {
