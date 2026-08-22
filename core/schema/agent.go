@@ -65,14 +65,15 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			),
 
 		// message is deliberately cached (no DoNotCache): the message ID
-		// argument pins the lookup to one immutable record — delivery
-		// evidence is computed once at enqueue and records are never
-		// deleted — so the same chain always denotes the same handle. And
-		// the chain is per-session by construction (every Agent descends
-		// from Query.llm's PerSessionInput), so the cached handle can never
-		// leak across sessions. Caching is also what makes send's re-exec
-		// pinning cheap: re-loading a pinned ID replays …agent(id:…)!message(…)
-		// and lands on the same cached instance.
+		// argument pins the lookup to one immutable identity-only handle and
+		// permanent runtime records are never deleted. Mutable/pending delivery
+		// evidence is read by AgentMessage.delivery, not copied onto this value,
+		// so the same chain always denotes the same handle without freezing its
+		// current runtime state. The chain is per-session by construction (every
+		// Agent descends from Query.llm's PerSessionInput), so the cached handle
+		// can never leak across sessions. Caching is also what makes send's
+		// re-exec pinning cheap: re-loading a pinned ID replays
+		// …agent(id:…)!message(…) and lands on the same cached instance.
 		dagql.NodeFunc("message", s.message).
 			Doc(`Look up a previously sent message by its message ID, returning its handle.`,
 				`This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).`,
@@ -139,8 +140,9 @@ func (s agentSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.AgentMessage]{
 		dagql.Func("delivery", s.messageDelivery).
-			Doc(`How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).`,
-				`Computed once, at enqueue time.`),
+			DoNotCache("Blocks on pending delivery evidence in live runtime state.").
+			Doc(`How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).`,
+				`Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.`),
 
 		dagql.Func("await", s.messageAwait).
 			DoNotCache("Blocks on live runtime state.").
@@ -342,7 +344,11 @@ func (s agentSchema) resume(ctx context.Context, parent dagql.ObjectResult[*core
 }
 
 func (s agentSchema) messageDelivery(ctx context.Context, msg *core.AgentMessage, _ struct{}) (core.AgentMessageDelivery, error) {
-	return msg.Delivery, nil
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return "", err
+	}
+	return agents.MessageDelivery(ctx, msg)
 }
 
 func (s agentSchema) messageAwait(ctx context.Context, msg *core.AgentMessage, _ struct{}) (string, error) {
