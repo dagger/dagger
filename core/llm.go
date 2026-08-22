@@ -1469,13 +1469,13 @@ func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
 	return llm
 }
 
-// WithTools binds an object so every eligible method becomes a tool
-// (hack/designs/workspace-agents.md). A tool that returns the bound object's own type rebinds
-// it as the new agent state; except lists method names to exclude (e.g. the
-// module's own entrypoint).
-func (llm *LLM) WithTools(obj dagql.AnyObjectResult, except []string) *LLM {
+// WithTools binds an object so every eligible method from definingSchema becomes
+// a tool (hack/designs/workspace-agents.md). A tool that returns the bound object's
+// own type rebinds it as the new agent state; except lists method names to exclude
+// (e.g. the module's own entrypoint).
+func (llm *LLM) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithTools(obj, except)
+	llm.mcp = llm.mcp.WithTools(obj, definingSchema, except)
 	return llm
 }
 

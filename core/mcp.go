@@ -202,12 +202,12 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-// Server returns the GraphQL schema the LLM sees — the schema its Dang scripts
-// evaluate against and the schema tools introspect. When the LLM is bound to a
-// Workspace (via LLM.withWorkspace), the schema derives from THAT workspace's
-// served modules, so the model sees exactly what the Dagger CLI would serve for
-// its own workspace, not the outer client's. Absent a binding it falls back to
-// the env's served deps.
+// Server returns the stable GraphQL schema used for core builtins and tool
+// dispatch. When the LLM is bound to a Workspace (via LLM.withWorkspace), it
+// uses that workspace's served snapshot but deliberately does not compile
+// pending overlay module edits. Bound object tools use the defining schemas
+// captured at composition; explicit recomposition is what adopts an overlay.
+// Without a workspace binding it falls back to the current client's served deps.
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
 	if m.workspace.Self() != nil {
 		return WorkspaceServedSchema(ctx, m.workspace)
