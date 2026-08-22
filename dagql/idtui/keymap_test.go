@@ -36,7 +36,24 @@ func TestKeymapBarAlwaysHasLeadingBlankLine(t *testing.T) {
 	tui := tuist.New(tuist.NewHeadlessTerminal(80, 10))
 	tui.AddChild(bar)
 	lines := tui.RenderLines()
-	if len(lines) != 2 || lines[0] != "" || !strings.Contains(lines[1], "enter confirm") {
+	if len(lines) != 2 || lines[0] != "" || !strings.Contains(ansi.Strip(lines[1]), "enter confirm") {
 		t.Fatalf("keymap did not render with one leading blank line: %#v", lines)
+	}
+}
+
+func TestKeymapBarCanSitSnugAgainstStatusBar(t *testing.T) {
+	binding := key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm"))
+	bar := &KeymapBar{
+		Profile: termenv.Ascii,
+		Keys: func(*termenv.Output) []key.Binding {
+			return []key.Binding{binding}
+		},
+		Snug: func() bool { return true },
+	}
+	tui := tuist.New(tuist.NewHeadlessTerminal(80, 10))
+	tui.AddChild(bar)
+	lines := tui.RenderLines()
+	if len(lines) != 1 || !strings.Contains(ansi.Strip(lines[0]), "enter confirm") {
+		t.Fatalf("snug keymap rendered a separating line: %#v", lines)
 	}
 }

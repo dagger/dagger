@@ -1843,6 +1843,7 @@ func (fe *frontendPretty) setupTUI() {
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
 		Keys:             fe.keys,
+		Snug:             fe.keymapSnug,
 	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
@@ -2404,6 +2405,17 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	}
 }
 
+func (fe *frontendPretty) keymapSnug() bool {
+	return fe.statusLine != nil && fe.formWrap == nil && fe.searchInput == nil && fe.logSearchInput == nil
+}
+
+func (fe *frontendPretty) keymapHeight() int {
+	if fe.keymapSnug() {
+		return 1
+	}
+	return 2
+}
+
 func (fe *frontendPretty) escHelp() string {
 	if fe.searchQuery != "" {
 		return "clear search"
@@ -2522,7 +2534,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Lines the TUI renders as siblings outside this component, which are
 	// always shown and so must be reserved out of the screen height: the keymap
 	// bar, error label, text input, form, and search input.
-	reserved := 2 // keymap bar and its separating blank line
+	reserved := fe.keymapHeight()
 	reserved += fe.errorLabelHeight()
 	reserved += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
 	reserved += fe.statusLineHeight()    // statusLine is a sibling, not rendered here

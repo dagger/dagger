@@ -33,6 +33,10 @@ type KeymapBar struct {
 	// Keys returns the current set of key bindings to display.
 	Keys func(out *termenv.Output) []key.Binding
 
+	// Snug reports whether the keymap should omit its usual separating line.
+	// Agent mode uses this while the status bar is directly above the keymap.
+	Snug func() bool
+
 	// PressedKey is the key string that was most recently pressed.
 	PressedKey string
 
@@ -61,7 +65,9 @@ func (kb *KeymapBar) Render(ctx tuist.Context) {
 	if view == "" {
 		return
 	}
-	ctx.Line("")
+	if kb.Snug == nil || !kb.Snug() {
+		ctx.Line("")
+	}
 	ctx.Line(view)
 }
 
