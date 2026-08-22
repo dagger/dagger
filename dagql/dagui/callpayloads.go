@@ -9,14 +9,19 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ingestCallPayload folds one reserved call-payload log record into db.Calls.
-// It reports whether the record belongs to the call-payload channel. Reserved
-// records are always consumed, including malformed ones, so protobuf bytes and
-// tampered data can never fall through to ordinary log rendering.
-func (db *DB) ingestCallPayload(record sdklog.Record) bool {
-	reservedByScope := record.InstrumentationScope().Name == telemetryattrs.CallPayloadInstrumentationScope
-	markerPresent := false
-	markerValid := true
+// IsCallPayloadRecord reports whether record belongs to the reserved
+// call-payload channel. The marker key reserves a record regardless of its
+// value, and the instrumentation scope independently reserves it. This
+// deliberately includes malformed records so no downstream renderer treats
+// their bodies as log text.
+func IsCallPayloadRecord(record sdklog.Record) bool {
+	reservedByScope, markerPresent, _ := callPayloadRecordReservation(record)
+	return reservedByScope || markerPresent
+}
+
+func callPayloadRecordReservation(record sdklog.Record) (reservedByScope, markerPresent, markerValid bool) {
+	reservedByScope = record.InstrumentationScope().Name == telemetryattrs.CallPayloadInstrumentationScope
+	markerValid = true
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		if kv.Key == telemetryattrs.DagCallPayloadAttr {
 			markerPresent = true
@@ -24,6 +29,15 @@ func (db *DB) ingestCallPayload(record sdklog.Record) bool {
 		}
 		return true
 	})
+	return reservedByScope, markerPresent, markerValid
+}
+
+// ingestCallPayload folds one reserved call-payload log record into db.Calls.
+// It reports whether the record belongs to the call-payload channel. Reserved
+// records are always consumed, including malformed ones, so protobuf bytes and
+// tampered data can never fall through to ordinary log rendering.
+func (db *DB) ingestCallPayload(record sdklog.Record) bool {
+	reservedByScope, markerPresent, markerValid := callPayloadRecordReservation(record)
 
 	if !markerPresent && !reservedByScope {
 		return false
