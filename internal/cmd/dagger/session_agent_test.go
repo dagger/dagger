@@ -8,7 +8,16 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The two policies this slice is about are policies, not plumbing: WHO a
@@ -158,6 +167,168 @@ func runtimeOf(t *testing.T, a *sessionAgent) *fakeRuntime {
 	rt, ok := a.runtime().(*fakeRuntime)
 	require.True(t, ok, "conversation has no fake runtime bound")
 	return rt
+}
+
+type sessionTitleLogRecorder struct {
+	records []sdklog.Record
+}
+
+func (r *sessionTitleLogRecorder) OnEmit(_ context.Context, rec *sdklog.Record) error {
+	r.records = append(r.records, rec.Clone())
+	return nil
+}
+
+func (*sessionTitleLogRecorder) Shutdown(context.Context) error   { return nil }
+func (*sessionTitleLogRecorder) ForceFlush(context.Context) error { return nil }
+func (*sessionTitleLogRecorder) Enabled(context.Context, sdklog.EnabledParameters) bool {
+	return true
+}
+
+func sessionTitleSpan(t *testing.T, spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
+	t.Helper()
+	for _, span := range spans {
+		if span.Name() == name {
+			return span
+		}
+	}
+	t.Fatalf("span %q not recorded", name)
+	return nil
+}
+
+func sessionTitleBoolAttr(span sdktrace.ReadOnlySpan, key attribute.Key) bool {
+	for _, attr := range span.Attributes() {
+		if attr.Key == key {
+			return attr.Value.AsBool()
+		}
+	}
+	return false
+}
+
+func TestSessionTitleGenerationTelemetryIsContained(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	t.Cleanup(func() { require.NoError(t, tracerProvider.Shutdown(context.Background())) })
+
+	previousTracerProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(tracerProvider)
+	t.Cleanup(func() { otel.SetTracerProvider(previousTracerProvider) })
+
+	ctx, plumbingSpan := Tracer().Start(context.Background(), "LLM plumbing", telemetry.Internal())
+	session := &LLMSession{
+		plumbingCtx: ctx,
+		titleGenerator: func(ctx context.Context, _ *sessionAgent, _ string) (string, error) {
+			tracer := trace.SpanFromContext(ctx).TracerProvider().Tracer("test")
+			_, promptSpan := tracer.Start(ctx, "title prompt", trace.WithAttributes(
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
+			))
+			promptSpan.End()
+			_, replySpan := tracer.Start(ctx, "title reply", trace.WithAttributes(
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+			))
+			replySpan.End()
+			return "Hide title generation", nil
+		},
+	}
+
+	require.Equal(t, "Hide title generation", session.ensureTitle(session.newAgent("agent"), "fix the title leak"))
+	plumbingSpan.End()
+
+	spans := spanRecorder.Ended()
+	generation := sessionTitleSpan(t, spans, "generate session title")
+	prompt := sessionTitleSpan(t, spans, "title prompt")
+	reply := sessionTitleSpan(t, spans, "title reply")
+
+	require.True(t, sessionTitleBoolAttr(generation, telemetry.UIInternalAttr))
+	require.True(t, sessionTitleBoolAttr(generation, telemetry.UIEncapsulateAttr))
+	require.Equal(t, plumbingSpan.SpanContext().SpanID(), generation.Parent().SpanID())
+	require.Equal(t, generation.SpanContext().SpanID(), prompt.Parent().SpanID())
+	require.Equal(t, generation.SpanContext().SpanID(), reply.Parent().SpanID())
+}
+
+func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	t.Cleanup(func() { require.NoError(t, tracerProvider.Shutdown(context.Background())) })
+	ctx, primary := tracerProvider.Tracer("test").Start(context.Background(), "dagger agent")
+
+	logRecorder := new(sessionTitleLogRecorder)
+	loggerProvider := sdklog.NewLoggerProvider(sdklog.WithProcessor(logRecorder))
+	t.Cleanup(func() { require.NoError(t, loggerProvider.Shutdown(context.Background())) })
+	ctx = telemetry.WithLoggerProvider(ctx, loggerProvider)
+
+	calls := 0
+	session := &LLMSession{
+		primaryCtx:  ctx,
+		plumbingCtx: context.Background(),
+		titleGenerator: func(context.Context, *sessionAgent, string) (string, error) {
+			calls++
+			return "Title: Fix flaky cache tests.\nExtra explanation", nil
+		},
+	}
+	agent := session.newAgent("agent")
+
+	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "please fix the cache tests"))
+	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later autosave"))
+	require.Equal(t, 1, calls)
+
+	primary.End()
+	ended := spanRecorder.Ended()
+	require.Len(t, ended, 1)
+	require.Equal(t, "Fix flaky cache tests", ended[0].Name())
+
+	require.Len(t, logRecorder.records, 1)
+	record := logRecorder.records[0]
+	require.Equal(t, "Fix flaky cache tests", record.Body().AsString())
+	require.Equal(t, primary.SpanContext().SpanID(), record.SpanID())
+	var role string
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetryattrs.LogRoleAttr {
+			role = kv.Value.AsString()
+		}
+		return true
+	})
+	require.Equal(t, telemetryattrs.LogRoleSpanName, role)
+}
+
+func TestSessionTitleFallsBackAndResetsWithSaveIdentity(t *testing.T) {
+	calls := 0
+	session := &LLMSession{
+		primaryCtx: context.Background(),
+		titleGenerator: func(context.Context, *sessionAgent, string) (string, error) {
+			calls++
+			return "", errors.New("small model unavailable")
+		},
+	}
+	agent := session.newAgent("agent")
+	prompt := "  Investigate why the telemetry exporter sometimes deadlocks while shutting down cleanly  "
+
+	first := session.ensureTitle(agent, prompt)
+	require.Equal(t, "Investigate why the telemetry exporter sometimes deadlocks…", first)
+	require.Equal(t, first, session.ensureTitle(agent, "ignored"))
+	require.Equal(t, 1, calls)
+
+	session.resetTitle()
+	require.Equal(t, "Name the resumed session", session.ensureTitle(agent, "Name the resumed session"))
+	require.Equal(t, 2, calls)
+}
+
+func TestNormalizeSessionTitle(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		input string
+		want  string
+	}{
+		"empty":      {" \n ", ""},
+		"label":      {" TITLE: Add OTLP title emission. ", "Add OTLP title emission"},
+		"quotes":     {"`Repair agent autosaves`", "Repair agent autosaves"},
+		"first line": {"Debug session restore\nThis is an explanation", "Debug session restore"},
+		"unicode":    {"Improve 🗡️ agent naming", "Improve 🗡️ agent naming"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, normalizeSessionTitle(tc.input))
+		})
+	}
 }
 
 // TestSubmitGoesToTheFocusedAgentNotTheBusyOne is the routing rule the whole

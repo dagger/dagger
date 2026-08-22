@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -89,6 +91,17 @@ type LLMSession struct {
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
 
+	// primaryCtx carries the interactive command's root span. The generated
+	// title is emitted and applied there, while the model call that derives it
+	// stays beneath plumbingCtx. Title generation is attempted once per save
+	// identity; resetTitle starts a fresh identity after branch/resume.
+	primaryCtx      context.Context
+	title           string
+	titleAttempted  bool
+	titleGeneration uint64
+	titleL          sync.Mutex
+	titleGenerator  func(context.Context, *sessionAgent, string) (string, error)
+
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
 	subscriptionLabelCache string
@@ -117,9 +130,10 @@ func NewLLMSession(
 	frontend idtui.Frontend,
 ) (*LLMSession, error) {
 	s := &LLMSession{
-		dag:      dag,
-		shell:    shellHandler,
-		frontend: frontend,
+		dag:        dag,
+		shell:      shellHandler,
+		frontend:   frontend,
+		primaryCtx: ctx,
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -343,6 +357,131 @@ func (s *LLMSession) stepped(a *sessionAgent) {
 	}()
 }
 
+// ensureTitle derives and publishes the title for the current save identity.
+// It is called at the first completed turn, before that turn is auto-saved,
+// rather than from AutoSaveSession itself so later saves do not spend another
+// model call or emit duplicate title records.
+func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
+	if strings.TrimSpace(initialPrompt) == "" {
+		return ""
+	}
+
+	s.titleL.Lock()
+	if s.titleAttempted {
+		title := s.title
+		s.titleL.Unlock()
+		return title
+	}
+	s.titleAttempted = true
+	generation := s.titleGeneration
+	s.titleL.Unlock()
+
+	ctx := s.plumbingCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	generate := s.titleGenerator
+	if generate == nil {
+		generate = func(ctx context.Context, a *sessionAgent, prompt string) (string, error) {
+			return a.GenerateSessionTitle(ctx, prompt)
+		}
+	}
+	// Internal hides the wrapper itself; Encapsulate also keeps the generator's
+	// user/reply message spans out of the interactive conversation.
+	generationCtx, generationSpan := Tracer().Start(
+		ctx, "generate session title", telemetry.Internal(), telemetry.Encapsulate())
+	generated, err := generate(generationCtx, a, initialPrompt)
+	telemetry.EndWithCause(generationSpan, &err)
+	if err != nil {
+		slog.Debug("failed to generate session title; using initial prompt", "error", err)
+	}
+	title := normalizeSessionTitle(generated)
+	if title == "" {
+		title = normalizeSessionTitle(initialPrompt)
+	}
+	if title == "" {
+		title = "Dagger agent session"
+	}
+
+	// A branch or resume may have reset the identity while the lightweight
+	// request was in flight. Do not let the old request rename the new session.
+	s.titleL.Lock()
+	if generation != s.titleGeneration {
+		title = s.title
+		s.titleL.Unlock()
+		return title
+	}
+	s.title = title
+	s.titleL.Unlock()
+
+	emitSessionTitle(s.primaryCtx, title)
+	return title
+}
+
+// resetTitle makes the next completed turn title a newly branched or resumed
+// save identity. An in-flight request from the old identity is discarded.
+func (s *LLMSession) resetTitle() {
+	s.titleL.Lock()
+	s.title = ""
+	s.titleAttempted = false
+	s.titleGeneration++
+	s.titleL.Unlock()
+}
+
+const maxSessionTitleRunes = 60
+
+// normalizeSessionTitle turns either model output or the initial-prompt
+// fallback into a single concise line suitable for span and session names.
+func normalizeSessionTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ""
+	}
+	if line, _, ok := strings.Cut(title, "\n"); ok {
+		title = line
+	}
+	title = strings.Join(strings.Fields(title), " ")
+	if len(title) >= len("title:") && strings.EqualFold(title[:len("title:")], "title:") {
+		title = strings.TrimSpace(title[len("title:"):])
+	}
+	if len(title) >= 2 {
+		first, last := title[0], title[len(title)-1]
+		if first == last && (first == '\'' || first == '"' || first == '`') {
+			title = strings.TrimSpace(title[1 : len(title)-1])
+		}
+	}
+	title = strings.TrimSuffix(title, ".")
+
+	runes := []rune(title)
+	if len(runes) <= maxSessionTitleRunes {
+		return title
+	}
+	const ellipsis = "…"
+	cut := maxSessionTitleRunes - len([]rune(ellipsis))
+	for cut > 0 && runes[cut] != ' ' {
+		cut--
+	}
+	if cut < maxSessionTitleRunes/2 {
+		cut = maxSessionTitleRunes - len([]rune(ellipsis))
+	}
+	return strings.TrimSpace(string(runes[:cut])) + ellipsis
+}
+
+// emitSessionTitle attaches the title to the primary span in both mutable live
+// span state and durable OTLP log form. The role attribute lets downstream
+// consumers recognize this record without interpreting ordinary log bodies.
+func emitSessionTitle(ctx context.Context, title string) {
+	if ctx == nil || title == "" {
+		return
+	}
+	trace.SpanFromContext(ctx).SetName(title)
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(log.StringValue(title))
+	rec.AddAttributes(log.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	telemetry.Logger(ctx, InstrumentationLibrary).Emit(ctx, rec)
+}
+
 // AgentStepped notifies the session that the trace reported a step boundary
 // (a conversation commit) for the runtime with the given instance ID. When
 // that runtime backs the TARGET conversation, the conversation-scoped
@@ -499,16 +638,16 @@ func getSessionDir() (string, error) {
 	return sessionDir, nil
 }
 
-// AutoSaveSession saves the conversation automatically, named after the
-// initial prompt, stored on disk under a UUIDv7 filename for anonymity and
-// time-sorted ordering. If existingUUID is non-empty the same file is updated
-// in-place; otherwise a new UUIDv7 is generated. Returns the UUID used.
+// AutoSaveSession saves the conversation automatically under name, stored on
+// disk under a UUIDv7 filename for anonymity and time-sorted ordering. If
+// existingUUID is non-empty the same file is updated in-place; otherwise a new
+// UUIDv7 is generated. Returns the UUID used.
 //
-// NOTE: the save identity (initialPrompt/sessionUUID) is still session-wide
-// while this saves ONE conversation, so with several conversations in a
-// session the last to step wins the file. Per-conversation save identity is
-// the follow-up (hack/designs/async-agents.md §5.1).
-func (a *sessionAgent) AutoSaveSession(ctx context.Context, initialPrompt string, existingUUID string) (string, error) {
+// NOTE: the save identity (name/sessionUUID) is still session-wide while this
+// saves ONE conversation, so with several conversations in a session the last
+// to step wins the file. Per-conversation save identity is the follow-up
+// (hack/designs/async-agents.md §5.1).
+func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existingUUID string) (string, error) {
 	if a.llm == nil {
 		return existingUUID, nil // nothing to save
 	}
@@ -551,7 +690,7 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, initialPrompt string
 	}
 
 	metadata := sessionMetadata{
-		Name:                initialPrompt,
+		Name:                name,
 		Model:               a.model,
 		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
 		LLMID:               string(llmID),
@@ -573,7 +712,7 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, initialPrompt string
 		return sessionID, fmt.Errorf("failed to restrict session file permissions: %w", err)
 	}
 
-	slog.Debug("auto-saved LLM session", "id", sessionID, "name", initialPrompt, "file", sessionFile)
+	slog.Debug("auto-saved LLM session", "id", sessionID, "name", name, "file", sessionFile)
 	return sessionID, nil
 }
 
