@@ -339,8 +339,9 @@ func runOne(
 	violated := ""
 	for _, line := range strings.Split(out, "\n") {
 		if rest, ok := strings.CutPrefix(line, "Error: Invariant "); ok {
-			violated = strings.TrimSuffix(strings.TrimSpace(rest), " is violated.")
-			violated = strings.TrimSuffix(violated, " is violated")
+			// The invariant name is the first word; the rest is either
+			// " is violated." or " is violated by the initial state:".
+			violated = strings.Fields(rest)[0]
 			break
 		}
 		if strings.HasPrefix(line, "Error: Temporal properties were violated") {
