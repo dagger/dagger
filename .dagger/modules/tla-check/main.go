@@ -143,11 +143,16 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 		mu       sync.Mutex
 		failures []runFailure
 		wg       sync.WaitGroup
+		// Each configuration is a TLC JVM of several GiB; unbounded fan-out
+		// over 30 configurations exhausted a 64 GiB host.
+		sem = make(chan struct{}, 4)
 	)
 	for _, name := range names {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			if failure := runOne(ctx, base, "CacheLifecycle", "CacheLifecycle_", name, expectedOutcome[name]); failure != nil {
 				mu.Lock()
 				failures = append(failures, *failure)
@@ -171,11 +176,15 @@ func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 		mu       sync.Mutex
 		failures []runFailure
 		wg       sync.WaitGroup
+		// The same JVM fan-out bound as CacheLifecycle.
+		sem = make(chan struct{}, 4)
 	)
 	run := func(group, specName, configPrefix, name, expect string) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			if failure := runOne(ctx, base, specName, configPrefix, name, expect); failure != nil {
 				failure.name = group + "/" + failure.name
 				mu.Lock()
