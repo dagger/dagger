@@ -416,12 +416,27 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 			return llm.WithLazyTools(id, objType, definingServer.Schema(), args.Except), nil
 		}
 	}
-	// Fall back to eager loading if the type isn't resolvable structurally.
+	// Fall back to eager loading if the type isn't resolvable structurally. This
+	// includes handle-form IDs such as currentNode: handles deliberately carry no
+	// module provenance. Once loaded, recover the semantic recipe ID and resolve
+	// its defining server so the binding still captures the module schema rather
+	// than the current bootstrap schema.
 	obj, err := srv.Load(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithTools(obj, srv.Schema(), args.Except), nil
+	recipeID, err := obj.RecipeID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bound object recipe: %w", err)
+	}
+	_, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, recipeID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("resolve defining schema for bound object type %q", obj.Type().Name())
+	}
+	return llm.WithTools(obj, definingServer.Schema(), args.Except), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {

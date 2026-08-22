@@ -70,6 +70,51 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// TestDirectoryWorkspaceHandleBoundTool keeps module tools callable when
+// withTools receives a runtime handle, as currentNode and same-type tool returns
+// do. A value-backed workspace deliberately has only the core served schema, so
+// the handle must be loaded and traced back to its recipe's module schema rather
+// than pinning the core schema as the tool's definition.
+func (LLMSuite) TestDirectoryWorkspaceHandleBoundTool(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.editor]\nsource = \"modules/editor\"\n").
+		WithNewFile("modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/editor/main.dang", `
+type Editor {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  todoWrite(item: String!): Editor! {
+    print(item)
+    self
+  }
+}
+`)
+	ws := source.AsWorkspace()
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("track it").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind:      dagger.LLMContentBlockKindToolCall,
+			CallID:    "call_1",
+			ToolName:  "todoWrite",
+			Arguments: dagger.JSON(`{"item":"tracked"}`),
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindText,
+			Text: "done",
+		}}))
+	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+	transcript, err := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
+		WithPrompt("track it").
+		Loop().
+		Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "done")
+}
+
 // TestParallelChangesetToolsMergeResults locks in that Changeset-returning tools
 // from one model response run as a batch and all of their changes are retained.
 func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *testctx.T) {
