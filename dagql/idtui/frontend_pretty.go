@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	lipglossv1 "github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
@@ -1362,14 +1363,19 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 func frontendFormTheme() *huh.Theme {
 	theme := huh.ThemeBase16()
 	theme.Focused.Base = theme.Focused.Base.BorderLeft(false)
+	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false)
 	// ThemeBase16 copies its focused selectors into the blurred field styles,
 	// which leaves a stale caret behind after focus moves to another field.
 	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.SetString("  ")
 	theme.Blurred.MultiSelectSelector = theme.Blurred.MultiSelectSelector.SetString("  ")
 	// Give both choices the same strong treatment. ExplicitConfirm supplies the
 	// structural focus marker, so color and background carry no meaning here.
-	button := theme.Focused.FocusedButton.UnsetBackground().Bold(true).Faint(false)
-	theme.Focused.FocusedButton = button
+	button := theme.Focused.FocusedButton.
+		UnsetBackground().
+		Foreground(lipglossv1.Color("15")).
+		Bold(false).
+		Faint(false)
+	theme.Focused.FocusedButton = button.Bold(true)
 	theme.Focused.BlurredButton = button
 	theme.Blurred.FocusedButton = button
 	theme.Blurred.BlurredButton = button

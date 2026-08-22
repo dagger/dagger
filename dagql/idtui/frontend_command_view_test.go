@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
@@ -26,8 +28,11 @@ func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	if theme.Focused.Base.GetBorderLeft() {
 		t.Fatal("focused form field still has a left border")
 	}
-	if !theme.Focused.FocusedButton.GetBold() || !theme.Focused.BlurredButton.GetBold() {
-		t.Fatal("confirmation choices are not strongly styled")
+	if theme.Blurred.Base.GetBorderLeft() {
+		t.Fatal("blurred form field still reserves a left border")
+	}
+	if !theme.Focused.FocusedButton.GetBold() || theme.Focused.BlurredButton.GetBold() {
+		t.Fatal("only the focused confirmation choice should be bold")
 	}
 	if strings.Contains(theme.Blurred.MultiSelectSelector.String(), ">") {
 		t.Fatal("blurred multi-select still has a selection caret")
@@ -62,6 +67,40 @@ func TestExplicitConfirmHasTextualSelectionAndAccessibleLabels(t *testing.T) {
 	}
 	if got := output.String(); !strings.Contains(got, "Install selected") || !strings.Contains(got, "Skip") {
 		t.Fatalf("accessible prompt does not name both actions:\n%s", got)
+	}
+}
+
+func TestFormFieldsFlowWithVerticalKeys(t *testing.T) {
+	var selected []string
+	multi := NewFlowMultiSelect(
+		huh.NewMultiSelect[string]().
+			Options(
+				huh.NewOption("one", "one"),
+				huh.NewOption("two", "two"),
+			).
+			Value(&selected),
+		"two",
+	)
+	multi.WithKeyMap(huh.NewDefaultKeyMap())
+	multi.Focus()
+	if hovered, ok := multi.Hovered(); !ok || hovered != "one" {
+		t.Fatalf("unexpected initial option: %q, %v", hovered, ok)
+	}
+	if _, cmd := multi.Update(tea.KeyMsg{Type: tea.KeyDown}); cmd != nil {
+		t.Fatal("down before the final option advanced to the next field")
+	}
+	if hovered, ok := multi.Hovered(); !ok || hovered != "two" {
+		t.Fatalf("down did not reach final option: %q, %v", hovered, ok)
+	}
+	if _, cmd := multi.Update(tea.KeyMsg{Type: tea.KeyDown}); cmd == nil {
+		t.Fatal("down on the final option did not advance to the next field")
+	}
+
+	install := true
+	confirm := NewExplicitConfirm("Install selected", "Skip", &install)
+	confirm.Focus()
+	if _, cmd := confirm.Update(tea.KeyMsg{Type: tea.KeyUp}); cmd == nil {
+		t.Fatal("up from the confirmation did not return to the previous field")
 	}
 }
 

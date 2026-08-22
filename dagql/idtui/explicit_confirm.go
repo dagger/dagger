@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // ExplicitConfirm wraps huh.Confirm with a textual focus marker. Huh's stock
@@ -64,6 +65,9 @@ func (field *ExplicitConfirm) syncLabels() {
 func (field *ExplicitConfirm) Init() tea.Cmd { return field.confirm.Init() }
 
 func (field *ExplicitConfirm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "up" {
+		return field, huh.PrevField
+	}
 	model, cmd := field.confirm.Update(msg)
 	field.confirm = model.(*huh.Confirm)
 	field.syncLabels()
@@ -108,8 +112,12 @@ func (field *ExplicitConfirm) RunAccessible(w io.Writer, r io.Reader) error {
 
 func (field *ExplicitConfirm) WithTheme(theme *huh.Theme) huh.Field {
 	local := *theme
-	button := local.Focused.FocusedButton.UnsetBackground().Bold(true).Faint(false)
-	local.Focused.FocusedButton = button
+	button := local.Focused.FocusedButton.
+		UnsetBackground().
+		Foreground(lipgloss.Color("15")).
+		Bold(false).
+		Faint(false)
+	local.Focused.FocusedButton = button.Bold(true)
 	local.Focused.BlurredButton = button
 	local.Blurred.FocusedButton = button
 	local.Blurred.BlurredButton = button
