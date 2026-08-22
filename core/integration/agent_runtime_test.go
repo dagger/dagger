@@ -239,9 +239,8 @@ func (h *agentHandle) sendID(ctx context.Context, t *testctx.T, message string) 
 	return out.Get("send").String(), nil
 }
 
-// sendAndWait enqueues a message and blocks until the turn that consumed it
-// ends, returning the enqueue-time delivery evidence and the turn's reply.
-// Both are selected off the loaded message handle, in one query.
+// sendAndWait enqueues a message and blocks until its delivery is conclusive
+// and the turn that consumed it ends, returning both immutable results.
 func (h *agentHandle) sendAndWait(ctx context.Context, t *testctx.T, message string) (delivery, reply string, _ error) {
 	t.Helper()
 	msgID, err := h.sendID(ctx, t, message)
@@ -255,9 +254,10 @@ func (h *agentHandle) sendAndWait(ctx context.Context, t *testctx.T, message str
 	return out.Get("delivery").String(), out.Get("await").String(), nil
 }
 
-// sendNoWait enqueues a message and returns only its delivery evidence —
-// send never blocks, so this returns immediately whatever state the agent is
-// in.
+// sendNoWait enqueues a message and waits only for conclusive delivery, not
+// for the consuming turn's reply. Paused and failed sends return immediately
+// with QUEUED; provider-backed STARTED/STEERED waits through the next drain
+// boundary.
 func (h *agentHandle) sendNoWait(ctx context.Context, t *testctx.T, message string) (string, error) {
 	t.Helper()
 	msgID, err := h.sendID(ctx, t, message)
@@ -1246,13 +1246,16 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 	waitForSlowTool(ctx, t, c, vol)
 	require.Equal(t, "RUNNING", h.state(ctx, t))
 
-	// Queue a follow-up while the tool call is in flight. It reports STEERED,
-	// but has not influenced the model until the next step boundary.
+	// Queue a follow-up while the tool call is in flight. Delivery remains
+	// pending: the provider-backed loop has not reached the next step boundary,
+	// so the enqueue-time STEERED prediction is not evidence yet. Canceling this
+	// read detaches only the waiter and does not alter the permanent record.
 	queuedID, err := h.sendID(ctx, t, steerPrompt)
 	require.NoError(t, err)
-	out, err := h.msgRun(ctx, t, queuedID, `delivery`)
-	require.NoError(t, err)
-	require.Equal(t, "STEERED", out.Get("delivery").String())
+	deliveryCtx, cancelDelivery := context.WithTimeout(ctx, 250*time.Millisecond)
+	_, err = h.msgRun(deliveryCtx, t, queuedID, `delivery`)
+	cancelDelivery()
+	require.ErrorContains(t, err, "context deadline exceeded")
 
 	// Preempt the step. The state projects RUNNING until the canceled tool
 	// result is recorded, so wait for the park rather than asserting
@@ -1265,12 +1268,15 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 
 	// The recorded prefix is protocol-valid: the assistant's tool call and its
 	// errored result are both present. The queued follow-up was unconsumed, so
-	// Ctrl-C drops it and resolves its message handle with an interrupt.
+	// Ctrl-C drops it and resolves both delivery and await with the same
+	// conclusive interrupt evidence; it is never reported as STEERED.
 	transcript, _ := h.snapshot(ctx, t)
 	require.Contains(t, transcript, slowToolPrompt)
 	require.Contains(t, transcript, "[Assistant tool calls]: stdout(")
 	require.Contains(t, transcript, "[Tool result ERROR]")
 	require.NotContains(t, transcript, steerPrompt)
+	_, err = h.msgRun(ctx, t, queuedID, `delivery`)
+	require.ErrorContains(t, err, "interrupted before consuming this message")
 	_, err = h.msgRun(ctx, t, queuedID, `await`)
 	require.ErrorContains(t, err, "interrupted before consuming this message")
 
@@ -1455,9 +1461,10 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "readdressable", toolIDs: []dagger.ID{ctrID}})
 
 	// Request 1: send returns immediately (it never blocks) with the pinned
-	// message ID — the addressable handle a detached DoNotCache result could
-	// never yield. The delivery evidence rides the record, readable through
-	// the loaded handle.
+	// message ID — the addressable identity-only handle a detached DoNotCache
+	// result could never yield. Delivery is read separately from the permanent
+	// record and is already conclusive once its prompt reaches the first drain
+	// boundary.
 	msgID, err := h.sendID(ctx, t, slowToolPrompt)
 	require.NoError(t, err)
 	require.NotEmpty(t, msgID)

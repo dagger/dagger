@@ -142,11 +142,13 @@ const (
 )
 
 // AgentMessage is the handle returned by Agent.send: it identifies one
-// message record in an agent's runtime entry, and carries the delivery
-// evidence computed at enqueue. Reply correlation rides this handle —
-// await returns the final reply of whichever turn consumed the message
-// (hack/designs/async-agents.md §3.2), which under multiple senders is the
-// only non-racy way to pair a reply with a message.
+// permanent message record in an agent's runtime entry. The handle carries
+// identity only; delivery and reply evidence stay on the runtime record and
+// are read through it, so a pending native delivery can be finalized after
+// send returns without freezing a prediction into the DagQL value. Reply
+// correlation rides this handle — await returns the final reply of whichever
+// turn consumed the message (hack/designs/async-agents.md §3.2), which under
+// multiple senders is the only non-racy way to pair a reply with a message.
 type AgentMessage struct {
 	// AgentKey is the registry key (the agent's instance ID) of the runtime
 	// entry holding the message record.
@@ -155,8 +157,6 @@ type AgentMessage struct {
 	AgentName string
 	// MessageID uniquely identifies the message record within the entry.
 	MessageID string
-	// Delivery is how the message landed, computed at enqueue time.
-	Delivery AgentMessageDelivery
 }
 
 func (*AgentMessage) Type() *ast.Type {
@@ -175,8 +175,10 @@ func (m *AgentMessage) Clone() *AgentMessage {
 	return &cp
 }
 
-// AgentMessageDelivery is the delivery evidence of a message: how it landed
-// in the agent's evaluation, computed once at enqueue and immutable after.
+// AgentMessageDelivery is conclusive delivery evidence for a message: how it
+// landed in the agent's evaluation. It is finalized once and immutable after.
+// A handle read may block while the permanent runtime record is still waiting
+// for provider or native-harness evidence.
 type AgentMessageDelivery string
 
 var AgentMessageDeliveries = dagql.NewEnum[AgentMessageDelivery]()
@@ -213,16 +215,25 @@ func (delivery AgentMessageDelivery) ToLiteral() call.Literal {
 }
 
 // agentMessageRecord is the runtime side of an AgentMessage handle: one
-// entry in the runtime entry's message table, guarded by the entry mutex.
-// Records are never deleted, so await stays idempotent for the rest of the
-// session: a canceled awaiter can re-await and read the same result, and
-// concurrent awaiters share it.
+// permanent entry in the runtime's message table, guarded by the entry mutex.
+// Records are never deleted, so delivery and await stay idempotent for the rest
+// of the session: canceled readers can retry and concurrent readers share the
+// same immutable evidence and result.
 type agentMessageRecord struct {
 	// text is the message body, recorded as a withPrompt selector when a
 	// turn consumes it.
 	text string
-	// delivery is the evidence computed at enqueue.
-	delivery AgentMessageDelivery
+	// deliveryHint preserves the provider-backed loop's enqueue-boundary
+	// classification until its existing drain boundary conclusively confirms
+	// that the message joined the promised turn. It is not exposed as evidence.
+	deliveryHint AgentMessageDelivery
+	// delivery and deliveryErr are immutable once deliveryReady is closed.
+	// A zero delivery with an error means the message conclusively failed or
+	// was canceled before consumption; neither STARTED nor STEERED is fabricated.
+	delivery    AgentMessageDelivery
+	deliveryErr error
+	// deliveryReady is closed exactly once when delivery evidence is conclusive.
+	deliveryReady chan struct{}
 	// consumed marks the record as drained into the current in-flight
 	// turn: recorded in the history, reply pending.
 	consumed bool
@@ -460,7 +471,7 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	if !found {
 		return nil, fmt.Errorf("agent %q has no runtime in this session: it was not spawned here, and an instance restored from a trace must be re-hydrated before anything can address it", agent.Self().Name)
 	}
-	msgID, delivery, err := rt.enqueue(text)
+	msgID, err := rt.enqueue(text)
 	if err != nil {
 		return nil, err
 	}
@@ -475,18 +486,17 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 		AgentKey:  rt.key,
 		AgentName: rt.name,
 		MessageID: msgID,
-		Delivery:  delivery,
 	}, nil
 }
 
-// LookupMessage returns the handle for a message already enqueued into the
-// given agent's runtime entry, populated from the entry's message record.
-// This is the runtime side of Agent.message — the lookup field send re-execs
-// through to pin its result's identity (design §9): the record is immutable
-// after enqueue (delivery evidence is computed once), so the same (agent,
-// message ID) pair always denotes the same handle. An agent with no runtime
-// entry, or an entry with no record of the ID, is a clear error: message
-// never creates anything.
+// LookupMessage returns the identity-only handle for a message already
+// enqueued into the given agent's permanent runtime record. This is the
+// runtime side of Agent.message — the lookup field send re-execs through to
+// pin its result's identity (design §9). Delivery is deliberately not copied
+// onto the value: the same (agent, message ID) pair always denotes the same
+// record while its evidence may still be pending. An agent with no runtime
+// entry, or an entry with no record of the ID, is a clear error: message never
+// creates anything.
 func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectResult[*Agent], msgID string) (*AgentMessage, error) {
 	rt, found, err := ars.Get(ctx, agent)
 	if err != nil {
@@ -497,26 +507,42 @@ func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectR
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	rec, found := rt.messages[msgID]
-	if !found {
+	if _, found := rt.messages[msgID]; !found {
 		return nil, fmt.Errorf("agent %q has no record of message %q", rt.name, msgID)
 	}
 	return &AgentMessage{
 		AgentKey:  rt.key,
 		AgentName: rt.name,
 		MessageID: msgID,
-		Delivery:  rec.delivery,
 	}, nil
+}
+
+func (ars *AgentRuntimes) runtimeForMessage(msg *AgentMessage) (*AgentRuntime, error) {
+	ars.mu.Lock()
+	rt, found := ars.entries[msg.AgentKey]
+	ars.mu.Unlock()
+	if !found {
+		return nil, fmt.Errorf("agent %q has no runtime entry in this session", msg.AgentName)
+	}
+	return rt, nil
+}
+
+// MessageDelivery blocks until the permanent runtime record has conclusive
+// delivery evidence, then returns its immutable classification or error.
+func (ars *AgentRuntimes) MessageDelivery(ctx context.Context, msg *AgentMessage) (AgentMessageDelivery, error) {
+	rt, err := ars.runtimeForMessage(msg)
+	if err != nil {
+		return "", err
+	}
+	return rt.messageDelivery(ctx, msg.MessageID)
 }
 
 // AwaitMessage blocks until the turn that consumed the given message ends,
 // returning that turn's reply (or the error the message resolved with).
 func (ars *AgentRuntimes) AwaitMessage(ctx context.Context, msg *AgentMessage) (string, error) {
-	ars.mu.Lock()
-	rt, found := ars.entries[msg.AgentKey]
-	ars.mu.Unlock()
-	if !found {
-		return "", fmt.Errorf("agent %q has no runtime entry in this session", msg.AgentName)
+	rt, err := ars.runtimeForMessage(msg)
+	if err != nil {
+		return "", err
 	}
 	return rt.awaitMessage(ctx, msg.MessageID)
 }
@@ -811,48 +837,55 @@ func (rt *AgentRuntime) Snapshot() dagql.ObjectResult[*LLM] {
 	return rt.last
 }
 
-// enqueue appends a message to the mailbox, computing its delivery evidence
-// from the entry's facts at this instant, and wakes the loop if it is idle.
+// enqueue appends a message to the mailbox with pending delivery evidence and
+// wakes the loop if it is idle. Provider-backed agents preserve the existing
+// enqueue-boundary classification as a hint, but STARTED and STEERED become
+// conclusive only when drainMailbox records the prompt at its step boundary.
+// PAUSED and FAILED are already conclusive QUEUED evidence because their loop
+// cannot dispatch the record before an explicit resume.
+//
 // A STOPPED tombstone is reopened from its preserved snapshot, so the new
-// message restarts the loop instead of being rejected. A FAILED tombstone
-// accepts with QUEUED delivery, since an explicit resume decides when to retry
-// the failed step.
-func (rt *AgentRuntime) enqueue(text string) (string, AgentMessageDelivery, error) {
+// message restarts the loop instead of being rejected.
+func (rt *AgentRuntime) enqueue(text string) (string, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	stopped := rt.stateLocked() == AgentStateStopped
 	msgID := identity.NewID()
-	var delivery AgentMessageDelivery
+	var deliveryHint AgentMessageDelivery
 	switch {
 	case stopped:
 		// A stopped loop has fully wound down before STOPPED is observable.
 		// Reopen the entry before recording the message; Send starts the fresh
 		// loop after enqueue, guaranteeing its first mailbox drain sees it.
-		delivery = AgentMessageStarted
+		deliveryHint = AgentMessageStarted
 	case rt.done:
 		// FAILED tombstone: the loop is gone until a resume retries it.
-		// Accept rather than error — never silently drop — with QUEUED
-		// evidence; awaitMessage projects the tombstone's failure until a
-		// resume consumes the message.
-		delivery = AgentMessageQueued
+		// Accept rather than error — never silently drop — with conclusive
+		// QUEUED evidence; awaitMessage projects the tombstone's failure until
+		// a resume consumes the message.
+		deliveryHint = AgentMessageQueued
 	case rt.paused:
-		// Accepting but not draining: the message waits behind the pause
-		// for a resume.
-		delivery = AgentMessageQueued
+		// Accepting but not draining: the message waits behind the pause for a
+		// resume, so QUEUED is already conclusive.
+		deliveryHint = AgentMessageQueued
 	case rt.turnOpen || rt.stepping:
-		// A turn is in flight: the message WILL be absorbed into it at
-		// the next step boundary — the loop drains the mailbox at every
-		// boundary, and turn end re-checks the mailbox before resolving,
-		// so a message enqueued while turnOpen always joins that turn.
-		delivery = AgentMessageSteered
+		// A provider-backed turn is in flight. Its loop guarantees the message
+		// joins that turn at the next boundary, but delivery remains pending
+		// until drainMailbox actually commits the prompt there.
+		deliveryHint = AgentMessageSteered
 	default:
-		// Idle or never started: the message opens a new turn.
-		delivery = AgentMessageStarted
+		// Idle or never started: the message is expected to open a new turn,
+		// confirmed when the provider-backed loop drains it.
+		deliveryHint = AgentMessageStarted
 	}
 	rec := &agentMessageRecord{
-		text:     text,
-		delivery: delivery,
-		done:     make(chan struct{}),
+		text:          text,
+		deliveryHint:  deliveryHint,
+		deliveryReady: make(chan struct{}),
+		done:          make(chan struct{}),
+	}
+	if deliveryHint == AgentMessageQueued {
+		rt.finalizeDeliveryLocked(rec, deliveryHint, nil)
 	}
 	rt.transitionLocked(func() {
 		if stopped {
@@ -867,7 +900,21 @@ func (rt *AgentRuntime) enqueue(text string) (string, AgentMessageDelivery, erro
 	case rt.wake <- struct{}{}:
 	default:
 	}
-	return msgID, delivery, nil
+	return msgID, nil
+}
+
+// finalizeDeliveryLocked records conclusive delivery evidence and wakes every
+// reader. The first conclusion wins, making the record immutable. Must be
+// called with rt.mu held.
+func (rt *AgentRuntime) finalizeDeliveryLocked(rec *agentMessageRecord, delivery AgentMessageDelivery, err error) {
+	select {
+	case <-rec.deliveryReady:
+		return
+	default:
+	}
+	rec.delivery = delivery
+	rec.deliveryErr = err
+	close(rec.deliveryReady)
 }
 
 // resolveLocked finalizes a message record: reply/err become readable and
@@ -878,6 +925,10 @@ func (rt *AgentRuntime) resolveLocked(rec *agentMessageRecord, reply string, err
 	if rec.resolved {
 		return
 	}
+	// A message resolved before consumption (interrupt, stop, prompt-recording
+	// failure) has conclusive negative delivery evidence. Do not fabricate a
+	// successful classification from its enqueue-time hint.
+	rt.finalizeDeliveryLocked(rec, "", err)
 	rec.resolved = true
 	rec.reply = reply
 	rec.err = err
@@ -896,6 +947,36 @@ func (rt *AgentRuntime) failMessage(rec *agentMessageRecord, err error) {
 		rt.resolveLocked(rec, "", err)
 	})
 	rt.mu.Unlock()
+}
+
+// messageDelivery waits for the permanent record's conclusive delivery
+// evidence. Canceling this read only detaches the waiter; the record remains
+// pending and a later request can read the eventual immutable result.
+func (rt *AgentRuntime) messageDelivery(ctx context.Context, msgID string) (AgentMessageDelivery, error) {
+	for {
+		rt.mu.Lock()
+		rec, found := rt.messages[msgID]
+		if !found {
+			rt.mu.Unlock()
+			return "", fmt.Errorf("agent %q has no record of this message", rt.name)
+		}
+		select {
+		case <-rec.deliveryReady:
+			delivery, err := rec.delivery, rec.deliveryErr
+			rt.mu.Unlock()
+			return delivery, err
+		default:
+		}
+		ready := rec.deliveryReady
+		rt.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return "", context.Cause(ctx)
+		case <-ready:
+			// Conclusive: re-read the immutable result under the lock.
+		}
+	}
 }
 
 // awaitMessage blocks until the given message record resolves, returning
@@ -1005,6 +1086,11 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			continue
 		}
 		rt.transitionLocked(func() {
+			// The provider-backed loop's successful withPrompt commit is the
+			// conclusive step-boundary evidence for the classification captured
+			// at enqueue. Harness-backed loops can use the same record helper when
+			// correlated native lifecycle evidence arrives.
+			rt.finalizeDeliveryLocked(rec, rec.deliveryHint, nil)
 			rt.commitLast(ctx, next)
 			rec.consumed = true
 			rt.consumed = append(rt.consumed, rec)
@@ -1178,14 +1264,20 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			// tombstone observable, so no awaiter sees a terminal state
 			// with records still apparently in flight.
 			if loopErr != nil {
-				// FAILED: messages consumed by the failed turn resolve
-				// with its error. Unconsumed mail stays queued for a
-				// resume to pick up; awaitMessage projects the failure
+				// FAILED: messages consumed by the failed turn resolve with its
+				// error. Unconsumed mail stays queued for a resume to pick up;
+				// failure is conclusive QUEUED evidence because this loop can no
+				// longer dispatch those records. awaitMessage projects the failure
 				// from the tombstone meanwhile.
 				for _, rec := range rt.consumed {
 					rt.resolveLocked(rec, "", fmt.Errorf("agent %q failed during the turn that consumed this message: %w", rt.name, loopErr))
 				}
 				rt.consumed = nil
+				for _, msgID := range rt.mailbox {
+					if rec := rt.messages[msgID]; rec != nil {
+						rt.finalizeDeliveryLocked(rec, AgentMessageQueued, nil)
+					}
+				}
 			} else {
 				// STOPPED: no turn will ever consume anything again, so
 				// consumed and queued messages alike resolve with a stop
