@@ -56,6 +56,21 @@
 (*     server drain controls only whether handler-origin calls are still   *)
 (*     admitted to release; executor-nested calls remain outside it. Cache *)
 (*     operation accounting covers both origins.                           *)
+(*                                                                         *)
+(* PROPERTY-ONLY STATE                                                     *)
+(* Some definitions and record fields exist only so that properties can    *)
+(* judge a state; no action guard reads them. Each encodes a documented    *)
+(* contract rather than code:                                              *)
+(*   - DerivedOwn, the ownership recount (OwnershipExact)                  *)
+(*   - the invocation ret* flags, return-time evidence (ReturnedLive,      *)
+(*     ReturnedOwned, NoHalfAttachedRead, NoLaunderedServe)                *)
+(*   - lookupBarrierAtSelection and refusedEpoch                           *)
+(*     (NoErroredLookupSelection, RefusedOnlyAfterRelease)                 *)
+(*   - res.laundered and the flushed-row verdicts dirty and ownClean       *)
+(*     (NoLaunderedServe, FlushCleanCapture)                               *)
+(*   - evals foreignCancel (NoStaleCancelError)                            *)
+(*   - the invocation ownCancel flag, set only by the actions that model   *)
+(*     that invocation's own ctx.Done arm (CancelOnlyOwn)                  *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -118,6 +133,10 @@ CONSTANTS
                         \* :598). Go's select picks nondeterministically
                         \* even when the barrier is already closed, so a
                         \* canceled caller can fail on a healthy result.
+                        \* Also enables the persisted-decode arms: a parked
+                        \* decode joiner's own ctx.Done (DecodeJoinCancel)
+                        \* and the decode leader's own context, which the
+                        \* decode itself runs on (DecodeLeadCancel).
     LazyCanFail,        \* the lazy callback may fail. Failure must leave
                         \* the result retryable (lazyEvalComplete is set
                         \* only on success, cache.go:3187-3191).
@@ -394,6 +413,9 @@ NewInvocation(s, c, p, o, admitted) ==
      \* field ties a refusal to the epoch whose lifecycle state produced it.
      refusedEpoch |-> IF admitted THEN 0 ELSE epoch,
      lookupBarrierAtSelection |-> "none",
+     \* Property-only ghost: TRUE once an action modeling THIS invocation's
+     \* own ctx.Done arm has fired. See CancelOnlyOwn.
+     ownCancel |-> FALSE,
      retLive |-> TRUE, retOwned |-> TRUE,
      retBarrierOK |-> TRUE, retClean |-> TRUE]
 
@@ -602,7 +624,8 @@ WaiterCancel(i) ==
                         THEN [ongoingCallIndex EXCEPT
                                 ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
                         ELSE ongoingCallIndex
-          /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
+          /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
+                                                 ![i].ownCancel = TRUE]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -671,7 +694,8 @@ WaiterCancelLate(i) ==
                         ELSE ongoingCallIndex
           /\ invocations' = [invocations EXCEPT ![i].phase =
                 IF last /\ postOnce /\ ongoingCalls[o].hold
-                THEN "cancelDropHold" ELSE "canceling"]
+                THEN "cancelDropHold" ELSE "canceling",
+                ![i].ownCancel = TRUE]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -1114,12 +1138,17 @@ ReadBarrierErrWait(i) ==
 (* arms nondeterministically, so a canceled caller can fail here even on   *)
 (* a healthy result whose barrier is already closed. Cancellation leaves   *)
 (* the session edge in place for release.                                  *)
+(* The two actions here are the attach-barrier arm, which also covers a    *)
+(* reader canceling before it joined or led a decode. A reader already     *)
+(* parked on a decode, or leading one, cancels through DecodeJoinCancel    *)
+(* and DecodeLeadCancel below.                                             *)
 (***************************************************************************)
 ReadBarrierCancelHit(i) ==
     /\ ReaderCanCancel
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
+                                           ![i].ownCancel = TRUE]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1129,7 +1158,8 @@ ReadBarrierCancelWait(i) ==
     /\ ReaderCanCancel
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "wait"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
+                                           ![i].ownCancel = TRUE]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1153,6 +1183,19 @@ ReadBarrierCancelWait(i) ==
 (*                                                                         *)
 (* A decode failure returns an error and leaves the claimed session edge   *)
 (* in place for session release.                                           *)
+(*                                                                         *)
+(* The decode runs on the LEADER'S OWN request context: DecodeResult is    *)
+(* called on ContextWithCall(ctx, call) and syncResultSnapshotLeases on    *)
+(* ctx, both the leader's ctx with no WithoutCancel. (Contrast the lazy    *)
+(* attempt: evaluateOne runs the callback under context.WithoutCancel plus *)
+(* an attempt-scoped cancel, and waitForLazyEvaluation retries a healthy   *)
+(* waiter on the attempt's own cancellation.) A leader canceled mid-decode *)
+(* gets a context error back, and finishPersistDecode latches it like any  *)
+(* other decode error. A parked joiner wakes, reads it, and returns it as  *)
+(* its own failure; nothing lets it tell a departed leader from a broken   *)
+(* payload. The entry itself stays retryable. DecodeLeadCancel and         *)
+(* DecodeWake model exactly that; the decode_cancel configuration records  *)
+(* it as an accepted finding under NoSpuriousErrors.                       *)
 (***************************************************************************)
 
 DecodeLead(i) ==
@@ -1194,12 +1237,69 @@ DecodeJoin(i) ==
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* DecodeWake: the joiner's select took the closed channel; it re-reads the
+\* latched error and returns it if set, else loops (the "continue" in
+\* ensurePersistedHitValueLoaded). TODAY the code returns a latched error
+\* of either origin: a broken payload ("fail") or a leader that left on its
+\* own context ("cancel", DecodeLeadCancel). A fix shaped like
+\* waitForLazyEvaluation's retry would send a healthy joiner back to
+\* readBarrier on "cancel". That is NOT modeled, because the code does not
+\* do it; modeling it here would turn decode_cancel green without a code
+\* change.
 DecodeWake(i) ==
     /\ invocations[i].phase = "decodeJoined"
     /\ LET r == invocations[i].resId IN
        /\ res[r].decodePhase = "idle"
        /\ invocations' = [invocations EXCEPT ![i].phase =
-            IF res[r].decodeErr = "fail" THEN "decodeErr" ELSE "readBarrier"]
+            IF res[r].decodeErr \in {"fail", "cancel"}
+            THEN "decodeErr" ELSE "readBarrier"]
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
+(* DECODE CANCELLATION (ReaderCanCancel).                                  *)
+(*                                                                         *)
+(* DecodeLeadCancel: the leader's own context is canceled while it         *)
+(* decodes. Go: the leader branch of ensurePersistedHitValueLoaded. The    *)
+(* decode runs on the leader's request context, so a ctx-aware step inside *)
+(* it - a snapshot reopen (loadPersistedImmutableSnapshotByResultID), a    *)
+(* referenced-result load (LoadResultByResultID), a lease call - returns   *)
+(* the context error; finishPersistDecode latches it, clears the channel,  *)
+(* and closes it; the leader returns the error as its own. A caller that   *)
+(* arrives between those steps either joins the still-published channel    *)
+(* (DecodeJoin) or, after the clear, leads afresh (DecodeLead); neither    *)
+(* is a new outcome, so the three steps are one action. The payload stays  *)
+(* encoded: the model places the cancellation inside DecodeResult, before  *)
+(* the decoded value is installed, so the next demand leads a fresh        *)
+(* attempt. (A context error from the lease sync that follows installation *)
+(* would leave the payload decoded with the error latched; that shape is   *)
+(* not modeled.) A canceled leader whose decode has no ctx-aware step      *)
+(* still succeeds, because nothing re-checks ctx after the decode:         *)
+(* DecodeLeadFinish stays enabled for it. This is the leader's own         *)
+(* cancellation, so ownCancel is set; the joiners' outcome is decided in   *)
+(* DecodeWake.                                                             *)
+(***************************************************************************)
+DecodeLeadCancel(i) ==
+    /\ ReaderCanCancel
+    /\ invocations[i].phase = "decoding"
+    /\ LET r == invocations[i].resId IN
+       /\ res' = [res EXCEPT ![r].decodePhase = "idle",
+                             ![r].decodeErr = "cancel"]
+       /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
+                                              ![i].ownCancel = TRUE]
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+\* DecodeJoinCancel: a parked joiner's select takes its own ctx.Done arm
+\* (the joiner branch of ensurePersistedHitValueLoaded, which returns
+\* context.Cause(ctx)). Go's select picks among ready arms
+\* nondeterministically, so this fires whether or not the leader has
+\* already finished. Nothing shared changes; the session edge remains.
+DecodeJoinCancel(i) ==
+    /\ ReaderCanCancel
+    /\ invocations[i].phase = "decodeJoined"
+    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
+                                           ![i].ownCancel = TRUE]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1856,6 +1956,7 @@ Next ==
          \/ ReadBarrierCancelHit(i) \/ ReadBarrierCancelWait(i)
          \/ DecodeLead(i) \/ DecodeLeadFinish(i) \/ DecodeJoin(i)
          \/ DecodeWake(i) \/ DecodeFailHit(i) \/ DecodeFailWait(i)
+         \/ DecodeLeadCancel(i) \/ DecodeJoinCancel(i)
          \/ InvocationOperationExit(i)
     \/ \E o \in OngoingCallIds :
          \/ FnComplete(o) \/ PubBegin(o)
@@ -1894,8 +1995,9 @@ Spec == Init /\ [][Next]_vars
 (*                                                                         *)
 (* NO fairness on:                                                         *)
 (*   - Spawn and SpawnNested: clients may stop arriving                    *)
-(*   - WaiterCancel, WaiterCancelLate, ReadBarrierCancelHit/Wait, and      *)
-(*     every failure-injection branch: possibilities, not obligations      *)
+(*   - WaiterCancel, WaiterCancelLate, ReadBarrierCancelHit/Wait,          *)
+(*     DecodeLeadCancel, DecodeJoinCancel, and every failure-injection     *)
+(*     branch: possibilities, not obligations                              *)
 (*   - ReleaseSession and PruneCut: external events                        *)
 (*   - FnWindDown: how long a canceled executor unwinds is external. The   *)
 (*     deferred-release property is conditional on the cache operation     *)
@@ -2022,6 +2124,8 @@ TypeOK ==
          /\ res[r].lazySyncPending \in BOOLEAN
          /\ res[r].lazyTokenSession \in Sessions \cup {0}
          /\ (res[r].lazyRunning = 0) = (res[r].lazyTokenSession = 0)
+         /\ res[r].decodePhase \in {"idle", "running"}
+         /\ res[r].decodeErr \in {"none", "fail", "cancel"}
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
@@ -2036,6 +2140,7 @@ TypeOK ==
          /\ invocations[i].refusedEpoch \in 0..epoch
          /\ invocations[i].lookupBarrierAtSelection
               \in {"none", "open", "closedOk", "closedErr"}
+         /\ invocations[i].ownCancel \in BOOLEAN
 \* Ownership accounting is exact: for every registered result, the
 \* incrementally-maintained counter equals the recount of its edges
 \* (counted session edges + dependency parents + handoff holds +
@@ -2098,6 +2203,22 @@ LeaseFailureClean ==
 NoSpuriousErrors ==
     (~FnCanFail /\ ~AttachCanFail /\ ~LeaseCanFail /\ ~DecodeCanFail) =>
         \A i \in InvocationIds : invocations[i].phase # "failed"
+
+\* An invocation reports cancellation only for its own context. Contract:
+\* the ctx.Done arms in wait and ensurePersistedHitValueLoaded return
+\* context.Cause of the caller's OWN ctx; a cancellation that originated
+\* with another caller reaches a waiter as an error (or, in the lazy
+\* singleflight, is retried by waitForLazyEvaluation), never relabeled as
+\* the waiter's own. ownCancel is a property-only ghost set by exactly the
+\* actions that model an invocation's own ctx.Done arm: WaiterCancel,
+\* WaiterCancelLate, ReadBarrierCancelHit/Wait, DecodeLeadCancel,
+\* DecodeJoinCancel. The pre-exit phases are included so that a future
+\* DecodeWake that sent a joiner to "canceling" on a latched foreign
+\* "cancel" trips this at once rather than turning decode_cancel green.
+CancelOnlyOwn ==
+    \A i \in InvocationIds :
+        invocations[i].phase \in {"cancelDropHold", "canceling", "canceled"}
+            => invocations[i].ownCancel
 
 \* Once every session is released and all activity has settled, no session
 \* ownership may remain.
