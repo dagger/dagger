@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
@@ -107,6 +108,10 @@ type RunningService struct {
 	// invoked concurrently, including with force=true to escalate an in-flight
 	// graceful stop.
 	Stop func(ctx context.Context, force bool) error
+
+	// Signal delivers an OS signal to the service process without closing its
+	// stdio. It is only supported for services with a backing container.
+	Signal func(ctx context.Context, signal syscall.Signal) error
 
 	// Wait blocks until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error

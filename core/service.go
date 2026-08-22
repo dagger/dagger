@@ -942,8 +942,6 @@ func (svc *Service) startContainer(
 		case <-exited:
 			slog.Info("service exited in signal")
 		case signal <- sig:
-			// close stdio, else we hang waiting on i/o piping goroutines
-			opts.IO.Close()
 		}
 		return nil
 	}
@@ -970,6 +968,9 @@ func (svc *Service) startContainer(
 		if err != nil {
 			return err
 		}
+		// A stopped process cannot consume stdin. Close all attached pipes so
+		// executor I/O forwarding cannot hold process teardown open.
+		_ = opts.IO.Close()
 		select {
 		case <-ctx.Done():
 			slog.Info("service stop interrupted", "err", ctx.Err())
@@ -1056,6 +1057,7 @@ func (svc *Service) startContainer(
 
 			running.Host = fullHost
 			running.Ports = ctr.Ports
+			running.Signal = signalSvc
 			running.Stop = stopSvc
 			running.Wait = waitSvc
 			running.Exec = execSvc
