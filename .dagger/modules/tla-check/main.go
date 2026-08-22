@@ -118,11 +118,16 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 		mu       sync.Mutex
 		failures []string
 		wg       sync.WaitGroup
+		// Each configuration is a TLC JVM of several GiB; unbounded fan-out
+		// over 30 configurations exhausted a 64 GiB host.
+		sem = make(chan struct{}, 4)
 	)
 	for _, name := range names {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			if msg := runOne(ctx, base, name, expectedOutcome[name]); msg != "" {
 				mu.Lock()
 				failures = append(failures, msg)
