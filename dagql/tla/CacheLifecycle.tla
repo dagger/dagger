@@ -38,7 +38,16 @@
 (*     (getOrInitCallInner, cache.go:4468).                                *)
 (*   - MODEL AXIOM, assumed and never verified here: results the cache     *)
 (*     considers equivalent are interchangeable.                           *)
-(*   - Not modeled: session resources, TTL/expiry, DoNotCache,             *)
+(*   - Session-resource gating IS modeled (the Handles constant):          *)
+(*     each result carries handle (mirrors sessionResourceHandle)          *)
+(*     and required (the STORED requiredSessionResources set,              *)
+(*     maintained where the code maintains it, including                   *)
+(*     importPersistedState's arbitrary map order and the                  *)
+(*     post-decode overwrite); each session carries a bound handle         *)
+(*     set; the lookup filter is required subset-of bound.                 *)
+(*     TrueRequired, RequiredExact and ReturnedGated encode intent -       *)
+(*     see the PROPERTIES header for their contract provenance.            *)
+(*   - Not modeled: TTL/expiry, DoNotCache,                                *)
 (*     recipe-replay taint, and the arbitrary-value cache                  *)
 (*     (acquireSessionArbitraryLocked - the same atomic record-and-count   *)
 (*     claim as the modeled result claim, under callsMu with sessionMu     *)
@@ -71,6 +80,11 @@
 (*   - evals foreignCancel (NoStaleCancelError)                            *)
 (*   - the invocation ownCancel flag, set only by the actions that model   *)
 (*     that invocation's own ctx.Done arm (CancelOnlyOwn)                  *)
+(*   - TrueRequired, the transitive session-resource recount, and the      *)
+(*     invocation retGated flag (RequiredExact, ReturnedGated); their      *)
+(*     contract is in the DerivedOwn-adjacent block and session_resources  *)
+(*     .md. res.handle, res.required and each session's bound handle set   *)
+(*     are real state the lookup filter reads, not property-only.          *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -83,6 +97,14 @@ CONSTANTS
                         \* interchangeable for cache hits
     MaxInvocations,     \* how many GetOrInitCalls may be issued in total
     MaxResults,         \* bound on allocated sharedResult records
+    Handles,            \* session-resource handles a run may involve, a set
+                        \* of opaque values (mirrors SessionResourceHandle).
+                        \* Every existing configuration sets Handles = {}:
+                        \* with no handle available BindResource never fires,
+                        \* every result's handle stays "none" and required
+                        \* stays {}, the lookup filter is vacuous, and each
+                        \* new field is constant, so distinct-state counts of
+                        \* the 25 pre-existing configurations are unchanged.
 
     \* --- external events -------------------------------------------------
     AllowRelease,       \* enable session release; off in configs that
@@ -266,6 +288,40 @@ DerivedOwn(r) ==
     SessEdgeCount(r) + DepParentCount(r)
       + HoldCount(r) + PersistedCount(r)
 
+(***************************************************************************)
+(* Recomputing session-resource requirements from scratch.                 *)
+(*                                                                         *)
+(* res[r].required is the STORED requiredSessionResources set, maintained  *)
+(* incrementally by recomputeRequiredSessionResourcesLocked (cache.go:556) *)
+(* one level deep off each dep's own stored set. TrueRequired instead      *)
+(* RECOUNTS the true transitive requirement: the own handle of every       *)
+(* handle leaf reachable from r through dependency edges, r included.       *)
+(* RequiredExact demands stored = TrueRequired in every reachable state,   *)
+(* the same relationship OwnershipExact has to DerivedOwn.                  *)
+(*                                                                         *)
+(* TrueRequired is intent-encoding, used only in properties and in the     *)
+(* retGated ghost. Its contract: the field comment calls                   *)
+(* requiredSessionResources "the flattened transitive set" (cache.go, the  *)
+(* sharedResult field block near "sessionResourceHandle is set when this   *)
+(* result is itself"), and internal-docs/session_resources.md says the     *)
+(* cache "recomputes transitive requiredSessionResources by unioning       *)
+(* dependency requirements" so that a container depending on a secret       *)
+(* propagates the handle transitively.                                     *)
+(***************************************************************************)
+
+\* All results reachable from r by following dependency edges, r included.
+DepClosureFrom(r) ==
+    LET RECURSIVE Cl(_, _)
+        Cl(frontier, seen) ==
+            LET next == UNION {res[p].deps : p \in frontier} \ seen
+            IN IF next = {} THEN seen ELSE Cl(next, seen \cup next)
+    IN Cl({r}, {r})
+
+\* The true transitive requirement of r: every handle leaf's own handle in
+\* r's dependency closure.
+TrueRequired(r) ==
+    {res[x].handle : x \in {y \in DepClosureFrom(r) : res[y].handle # "none"}}
+
 \* All registered results whose semantic call is in equivalence class k.
 LiveInClass(k) ==
     {r \in ResultIds : res[r].registered /\ ClassOf[res[r].call] = k}
@@ -324,7 +380,8 @@ DecAndCascade(rf, r) == Cascade([rf EXCEPT ![r].own = @ - 1])
 (* the edges exactly as import's increments do.                            *)
 (***************************************************************************)
 
-ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
+ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
+               handleVal, requiredVal) ==
     [call |-> c, registered |-> TRUE, released |-> FALSE,
      own |-> ownVal, deps |-> depsSet,
      persisted |-> persistedFlag, barrier |-> "none",
@@ -332,6 +389,10 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
      decodeGen |-> 0, persistSyncPending |-> FALSE,
      laundered |-> launderedFlag,
      imported |-> TRUE,
+     \* session-resource gating: handle mirrors sessionResourceHandle set by
+     \* the import row (env.SessionResourceHandle), required is the STORED set
+     \* after the import fold and, for eager-decoded rows, the decode overwrite.
+     handle |-> handleVal, required |-> requiredVal,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
      lazyWaiters |-> 0, lazyRunning |-> 0, lazyTokenSession |-> 0]
@@ -348,17 +409,59 @@ DeadHusk ==
      decodeGen |-> 0, persistSyncPending |-> FALSE,
      laundered |-> FALSE,
      imported |-> TRUE,
+     handle |-> "none", required |-> {},
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
      lazyWaiters |-> 0, lazyRunning |-> 0, lazyTokenSession |-> 0]
 
 \* The candidate import rows for position pos: any call, persisted or not,
 \* at most one dependency and only on an earlier row, payload decoded or
-\* still an envelope.
+\* still an envelope, and an own handle drawn from Handles or none. The own
+\* handle mirrors the row's env.SessionResourceHandle.
 ImportRowChoices(pos) ==
     [call : Calls, persisted : BOOLEAN,
      deps : {{}} \cup {{d} : d \in 1..(pos-1)},
-     payload : {"decoded", "envelope"}]
+     payload : {"decoded", "envelope"},
+     handle : {"none"} \cup Handles]
+
+\* Every ordering of a slot set S, as a sequence. Import fold order is the
+\* Go map-iteration order (importPersistedState's `for _, res := range
+\* c.resultsByID`, cache_persistence_import.go:359), which is arbitrary; the
+\* model explores every order. Import and restart graphs never exceed two
+\* rows under the current bounds, so |S| stays small.
+RECURSIVE SeqPermsOf(_)
+SeqPermsOf(S) ==
+    IF S = {} THEN {<<>>}
+    ELSE UNION {{<<x>> \o p : p \in SeqPermsOf(S \ {x})} : x \in S}
+
+\* Own-handle contribution of a row: {handle} unless the row has none.
+OwnHandleReq(h) == IF h = "none" THEN {} ELSE {h}
+
+\* Fold recomputeRequiredSessionResourcesLocked over the rows of D in order
+\* ord. Each row's required becomes {own handle} union the CURRENT stored
+\* sets of its deps (recompute reads dep.requiredSessionResources, one level).
+\* A row processed before a dep therefore misses that dep's contribution and
+\* is never revisited - the import-order defect the model must reproduce.
+FoldRequired(D, handleOf, depsOf, ord) ==
+    LET RECURSIVE step(_, _)
+        step(k, acc) ==
+            IF k > Len(ord) THEN acc
+            ELSE LET x == ord[k]
+                     dc == UNION {acc[d] : d \in depsOf[x]}
+                 IN step(k + 1,
+                      [acc EXCEPT ![x] = OwnHandleReq(handleOf[x]) \cup dc])
+    IN step(1, [x \in D |-> {}])
+
+\* The stored required set each row ends the import with: the fold result,
+\* then overwritten for rows whose payload was eagerly decoded at import. The
+\* eager decode (cache_persistence_import.go:423) copies required from the
+\* decoded value, which knows only its own handle - the decode-overwrite
+\* defect, applied here at import for "decoded" rows.
+ImportRequiredFinal(D, handleOf, depsOf, payloadOf, ord) ==
+    LET folded == FoldRequired(D, handleOf, depsOf, ord)
+    IN [x \in D |->
+         IF payloadOf[x] = "decoded" THEN OwnHandleReq(handleOf[x])
+         ELSE folded[x]]
 
 \* Every row must be retained: a persisted root, or a dependency of some
 \* row. (A flushed store contains only the retained graph.)
@@ -370,19 +473,29 @@ ImportOwn(g, x) ==
     (IF g[x].persisted THEN 1 ELSE 0)
       + Cardinality({y \in 1..Len(g) : x \in g[y].deps})
 
-ImportGraphState(g) ==
-    [x \in 1..Len(g) |->
+ImportGraphState(g, ord) ==
+    LET n        == Len(g)
+        handleOf == [x \in 1..n |-> g[x].handle]
+        depsOf   == [x \in 1..n |-> g[x].deps]
+        payloadOf == [x \in 1..n |-> g[x].payload]
+        required == ImportRequiredFinal(1..n, handleOf, depsOf, payloadOf, ord)
+    IN [x \in 1..n |->
         ImportedResult(g[x].call, g[x].persisted, g[x].deps,
-                       ImportOwn(g, x), g[x].payload, FALSE)]
+                       ImportOwn(g, x), g[x].payload, FALSE,
+                       g[x].handle, required[x])]
 
 InitialResStates ==
     IF ModelPersistence /\ ImportInit
-    THEN {ImportGraphState(g) :
-            g \in {h \in {<<>>}
+    \* One initial state per (retained graph, fold order): the second bound of
+    \* a TLA+ set comprehension cannot depend on the first, so the fold-order
+    \* choice is nested under the graph choice and the results unioned.
+    THEN UNION {
+           {ImportGraphState(g, ord) : ord \in SeqPermsOf(1..Len(g))} :
+             g \in {h \in {<<>>}
                         \cup {<<a>> : a \in ImportRowChoices(1)}
                         \cup {<<a, b>> : a \in ImportRowChoices(1),
                                          b \in ImportRowChoices(2)} :
-                    ImportGraphRetained(h)}}
+                    ImportGraphRetained(h)} }
     ELSE {<<>>}
 
 RegisteredResultIds == {r \in ResultIds : res[r].registered}
@@ -395,7 +508,8 @@ Init ==
     /\ sessionEdges = {}
     /\ countedEdges = {}
     /\ sessionRelease = [s \in Sessions |->
-         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0]]
+         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
+          handles |-> {}]]
     /\ evals = <<>>
     /\ epoch = 1
     /\ flushed = [closing |-> FALSE, done |-> FALSE, rows |-> <<>>]
@@ -429,7 +543,7 @@ NewInvocation(s, c, p, o, admitted) ==
      \* own ctx.Done arm has fired. See CancelOnlyOwn.
      ownCancel |-> FALSE,
      retLive |-> TRUE, retOwned |-> TRUE,
-     retBarrierOK |-> TRUE, retClean |-> TRUE]
+     retBarrierOK |-> TRUE, retClean |-> TRUE, retGated |-> TRUE]
 
 Spawn ==
     /\ Len(invocations) < MaxInvocations
@@ -478,9 +592,20 @@ SpawnNested ==
 LookupHit(i) ==
     /\ invocations[i].phase = "lookup"
     /\ \E r \in LookupEligibleInClass(ClassOf[invocations[i].call]) :
-        LET s == invocations[i].sess
-            haveEdge == <<s, r>> \in sessionEdges
-        IN IF sessionRelease[s].phase = "live"
+        \* Session-resource filter (selectLookupCandidateForSessionLocked,
+        \* cache_egraph.go:685 via sessionSatisfiesResourceRequirementsLocked,
+        \* :671): a candidate is eligible only if its STORED required set is a
+        \* subset of the session's bound handles. The direction is
+        \* required subset-of bound (available.Subset(required),
+        \* required subset-of available), confirmed by the extra-handle-still-
+        \* hits case in dagql/cache_test.go. The check reads the stored set,
+        \* not TrueRequired; any satisfying candidate may be picked, not
+        \* necessarily the lowest ID - that is the selection over-approximation
+        \* the model already makes for LookupHit.
+        /\ res[r].required \subseteq sessionRelease[invocations[i].sess].handles
+        /\ LET s == invocations[i].sess
+               haveEdge == <<s, r>> \in sessionEdges
+           IN IF sessionRelease[s].phase = "live"
            THEN /\ res' = IF haveEdge THEN res
                            ELSE [res EXCEPT ![r].own = @ + 1]
                 /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
@@ -598,6 +723,11 @@ FnComplete(o) ==
     /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
             /\ res[r].barrier \in {"none", "closedOk"}
+            \* The reused result was obtained by the fn's resolver through a
+            \* filtered lookup, so it satisfies the fn's session. The handle-ID
+            \* load fallback that can bypass the filter is excluded; see the
+            \* PROPERTIES header assumption note.
+            /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
@@ -787,7 +917,24 @@ PubIndexFresh(o) ==
     \* the sharedResult at cache.go:3412). Which results are lazy is the
     \* producer's business, so the model picks nondeterministically.
     /\ \E lazyCb \in IF ModelLazy THEN {"none", "armed"} ELSE {"none"} :
-       \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds : res[r].registered}} :
+       \* The publishing session's own handle for this result: "none", or a
+       \* handle the session has already bound. A handle leaf's resolver calls
+       \* BindSessionResource before returning the leaf, so at publication the
+       \* handle is present; PubIndexFresh mirrors initCompletedResult's
+       \* recompute. A handle the session never bound is not publishable as
+       \* this result's own.
+       \E handleChoice \in {"none"} \cup
+             {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
+       \* Structural deps are results this session obtained through filtered
+       \* lookups or created itself, so each satisfies the session's bound set.
+       \* The handle-ID load fallback that can bypass the filter is excluded
+       \* (see the PROPERTIES header assumption note). Without this restriction
+       \* the model would reach a session structurally depending on a leaf it
+       \* never obtained, which the code cannot produce.
+       \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
+                       /\ res[r].registered
+                       /\ res[r].required
+                            \subseteq sessionRelease[ongoingCalls[o].sess].handles}} :
         LET withDeps == [r \in DOMAIN res |->
                 IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
                 ELSE res[r]]
@@ -802,6 +949,13 @@ PubIndexFresh(o) ==
                        payload |-> "decoded",
                        decodePhase |-> "idle", decodeErr |-> "none",
                        decodeGen |-> 0, persistSyncPending |-> FALSE,
+                       \* session-resource gating: own handle chosen above;
+                       \* required is {own handle} union the deps' STORED
+                       \* required sets (initCompletedResult's recompute, one
+                       \* level deep off each dep's stored set).
+                       handle |-> handleChoice,
+                       required |-> OwnHandleReq(handleChoice)
+                                      \cup UNION {res[d].required : d \in deps},
                        laundered |-> FALSE,
                        \* lazy-evaluation state, mirroring the lazyMu block
                        \* on sharedResult (cache.go:2013-2022):
@@ -838,11 +992,17 @@ PubIndexFresh(o) ==
 \* pick over a registered result is never empty.
 CanonicalPick(o) ==
     LET rf == ongoingCalls[o].reuseFrom
+        s  == ongoingCalls[o].sess
     IN IF ~res[rf].registered
        THEN rf
+       \* canonicalEquivalentSharedResultLocked (cache.go:2381) gathers clean
+       \* candidates, applies the session filter, and returns the lowest-ID
+       \* survivor, else falls back to the returned result rf when none passes.
        ELSE LET live == {r \in LiveInClass(ClassOf[res[rf].call]) :
-                            res[r].barrier \in {"none", "closedOk"}}
-            IN CHOOSE r \in live : \A q \in live : r <= q
+                            /\ res[r].barrier \in {"none", "closedOk"}
+                            /\ res[r].required \subseteq sessionRelease[s].handles}
+            IN IF live = {} THEN rf
+               ELSE CHOOSE r \in live : \A q \in live : r <= q
 
 \* PubAdopt: one egraphMu critical section both picks the canonical
 \* equivalent AND takes the handoff hold (initCompletedResult's adoption
@@ -934,9 +1094,22 @@ PubAttachAddDep(o) ==
         /\ d \notin res[ongoingCalls[o].resId].deps
         \* the stated no-cycle assumption (see the comment block above)
         /\ ~DepReachable(res, d, ongoingCalls[o].resId)
-        /\ res' = [res EXCEPT
-             ![ongoingCalls[o].resId].deps = @ \cup {d},
-             ![d].own = @ + 1]
+        \* attachment deps are the value's embedded children, obtained by the
+        \* resolver through filtered lookups, so each satisfies the session -
+        \* the same assumption as the structural deps in PubIndexFresh.
+        /\ res[d].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        /\ LET p == ongoingCalls[o].resId
+               newDeps == res[p].deps \cup {d}
+           IN res' = [res EXCEPT
+                ![p].deps = newDeps,
+                ![d].own = @ + 1,
+                \* addExplicitDependencyLocked recomputes the PARENT one level
+                \* deep after adding the edge (cache.go:2668), reading each
+                \* dep's stored required set. Ancestors of p are not revisited;
+                \* that stale-ancestor gap is effort 4's (AddExplicitDependency
+                \* on an already-published result), out of scope here.
+                ![p].required = OwnHandleReq(res[p].handle)
+                                  \cup UNION {res[dd].required : dd \in newDeps}]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1273,7 +1446,19 @@ DecodeInstall(i) ==
     /\ invocations[i].phase = "decoding"
     /\ LET r == invocations[i].resId IN
        /\ res[r].payload = "envelope"
-       /\ res' = [res EXCEPT ![r].payload = "decoded"]
+       \* Session-resource decode overwrite. The install copies the decoded
+       \* value's session-resource state (cache_persistence_import.go:679-685):
+       \* the handle is the envelope's own handle, unchanged here, but required
+       \* is overwritten to just the own handle because
+       \* decodePersistedResultEnvelope.setHandle knows only the row's own
+       \* handle. A NON-LEAF row whose dependency-derived required was correct
+       \* after import loses it at this instant - the decode-overwrite defect,
+       \* served next to any session by ReadBarrierOk on the fast path. The
+       \* write runs under payloadMu while the lookup filter reads required
+       \* under egraphMu (cache_egraph.go:682) with no common lock, so the
+       \* overwrite is also a data race the model cannot express.
+       /\ res' = [res EXCEPT ![r].payload = "decoded",
+                             ![r].required = OwnHandleReq(res[r].handle)]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -1475,7 +1660,12 @@ InvocationOperationExit(i) ==
                     THEN ProtectedReturn(s, r) ELSE @,
                ![i].retBarrierOK = IF success
                     THEN res[r].barrier \in {"none", "closedOk"} ELSE @,
-               ![i].retClean = IF success THEN ~res[r].laundered ELSE @]
+               ![i].retClean = IF success THEN ~res[r].laundered ELSE @,
+               \* the true transitive requirement of the returned result is a
+               \* subset of the session's bound handles: the session was never
+               \* handed a result depending on a handle leaf it never bound.
+               ![i].retGated = IF success
+                    THEN TrueRequired(r) \subseteq sessionRelease[s].handles ELSE @]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, evals, epoch, flushed>>
 
@@ -1539,9 +1729,31 @@ ReleaseSessionDelete(s) ==
     /\ sessionRelease[s].phase = "deleting"
     /\ sessionEdges' = {e \in sessionEdges : e[1] # s}
     /\ sessionRelease' = [sessionRelease EXCEPT ![s] =
-         [sessionRelease[s] EXCEPT !.phase = "released", !.snap = {}]]
+         [sessionRelease[s] EXCEPT !.phase = "released", !.snap = {},
+                                   !.handles = {}]]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    countedEdges, evals, epoch, flushed>>
+
+(***************************************************************************)
+(* BindResource: a session binds a session-resource handle. Go:            *)
+(* BindSessionResource (cache.go:588) inserts the handle into              *)
+(* sessionHandlesBySession under sessionMu and refuses a released session  *)
+(* (the released tombstone bit). Binding is not a counted cache operation. *)
+(* A handle leaf's resolver calls this before returning the leaf (for      *)
+(* example core/schema/secret.go: WithSessionResourceHandle then           *)
+(* BindSessionResource, both before return), which is why PubIndexFresh    *)
+(* may publish a leaf whose own handle the session has already bound. The   *)
+(* per-session bound set is stored in the sessionRelease record's handles  *)
+(* field, cleared when the record is deleted (ReleaseSessionDelete).       *)
+(* Disabled for lack of a handle when Handles = {}.                        *)
+(***************************************************************************)
+BindResource ==
+    /\ \E s \in Sessions, h \in Handles :
+        /\ sessionRelease[s].phase = "live"
+        /\ h \notin sessionRelease[s].handles
+        /\ sessionRelease' = [sessionRelease EXCEPT ![s].handles = @ \cup {h}]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
@@ -1625,6 +1837,9 @@ Flush ==
           call      |-> res[r].call,
           persisted |-> res[r].persisted,
           deps      |-> res[r].deps,
+          \* the row's own session-resource handle survives the flush
+          \* (env.SessionResourceHandle); required is recomputed at import.
+          handle    |-> res[r].handle,
           dirty     |-> res[r].barrier \in {"open", "closedErr"},
           ownClean  |-> res[r].own =
               PersistedCount(r) + DepParentCount(r)]]]
@@ -1652,7 +1867,16 @@ Restart ==
     /\ flushed.done
     /\ epoch' = 2
     /\ \E pm \in [1..Len(flushed.rows) -> {"decoded", "envelope"}] :
-         res' = [x \in 1..Len(flushed.rows) |->
+       \* required is recomputed at import exactly as InitialResStates does:
+       \* the one-level fold over the kept rows in a nondeterministic order,
+       \* then the decode overwrite for rows re-imported as "decoded".
+       \E ord \in SeqPermsOf({x \in 1..Len(flushed.rows) : flushed.rows[x].keep}) :
+         LET kept     == {x \in 1..Len(flushed.rows) : flushed.rows[x].keep}
+             handleOf == [x \in kept |-> flushed.rows[x].handle]
+             depsOf   == [x \in kept |-> flushed.rows[x].deps]
+             payloadOf == [x \in kept |-> pm[x]]
+             required == ImportRequiredFinal(kept, handleOf, depsOf, payloadOf, ord)
+         IN res' = [x \in 1..Len(flushed.rows) |->
              IF flushed.rows[x].keep
              THEN ImportedResult(
                     flushed.rows[x].call, flushed.rows[x].persisted, flushed.rows[x].deps,
@@ -1660,7 +1884,9 @@ Restart ==
                       + Cardinality({y \in 1..Len(flushed.rows) :
                             flushed.rows[y].keep /\ x \in flushed.rows[y].deps}),
                     pm[x],
-                    flushed.rows[x].dirty)
+                    flushed.rows[x].dirty,
+                    flushed.rows[x].handle,
+                    required[x])
              ELSE DeadHusk]
     /\ invocations' = invocations
     /\ ongoingCalls' = [o \in OngoingCallIds |->
@@ -1684,7 +1910,8 @@ Restart ==
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
     /\ sessionRelease' = [s \in Sessions |->
-         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0]]
+         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
+          handles |-> {}]]
     /\ flushed' = [flushed EXCEPT !.closing = FALSE]
 
 ---------------------------------------------------------------------------
@@ -2085,6 +2312,7 @@ Next ==
          ReleaseSessionMark(s) \/ ReleaseSessionSnapshot(s)
            \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
     \/ \E r \in 1..Len(res) : PruneCut(r)
+    \/ BindResource
     \/ EvalSpawn
     \/ \E e \in EvalIds :
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)
@@ -2201,6 +2429,18 @@ LiveSpec ==
 (* configuration would conflate independent questions: a scenario that     *)
 (* exercises one failure could drown the property under test in violations *)
 (* of unrelated properties.                                                *)
+(*                                                                         *)
+(* ASSUMPTION (session-resource gating). A result carries its STORED       *)
+(* required set to a session only through a filtered path: a request or    *)
+(* digest lookup (LookupHit), a publication-adoption pick (CanonicalPick   *)
+(* / FnComplete's reuse), or a wait for a result the session itself        *)
+(* produced. loadResultByResultID's canonical mode falls back to the       *)
+(* exact result when nothing passes the filter                             *)
+(* (sharedResultByResultID, cache_persistence_resolver.go), which can      *)
+(* hand a session a result whose required set it does not satisfy. That    *)
+(* handle-ID load path is not modeled; the filter conjuncts in LookupHit,  *)
+(* CanonicalPick, FnComplete, PubIndexFresh and PubAttachAddDep assume     *)
+(* every result a session holds satisfies the session's bound set.         *)
 (***************************************************************************)
 
 DerivedSessionActive(s) ==
@@ -2251,6 +2491,8 @@ TypeOK ==
          \* the pending flag exists only for an installed payload: it is
          \* set by a post-install finish and the install never reverts
          /\ res[r].persistSyncPending => res[r].payload = "decoded"
+         /\ res[r].handle \in Handles \cup {"none"}
+         /\ res[r].required \subseteq Handles
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
@@ -2267,6 +2509,8 @@ TypeOK ==
               \in {"none", "open", "closedOk", "closedErr"}
          /\ invocations[i].ownCancel \in BOOLEAN
          /\ invocations[i].joinedGen \in 0..MaxInvocations
+         /\ invocations[i].retGated \in BOOLEAN
+    /\ \A s \in Sessions : sessionRelease[s].handles \subseteq Handles
 \* Ownership accounting is exact: for every registered result, the
 \* incrementally-maintained counter equals the recount of its edges
 \* (counted session edges + dependency parents + handoff holds +
@@ -2274,6 +2518,16 @@ TypeOK ==
 OwnershipExact ==
     \A r \in ResultIds :
         res[r].registered => res[r].own = DerivedOwn(r)
+
+\* Session-resource accounting is exact: for every registered result, the
+\* STORED required set equals the transitive recount. The same relationship
+\* OwnershipExact has to DerivedOwn. It fails where the code lets the stored
+\* set drift from the truth - the import fold visiting a parent before its
+\* dependency (FoldRequired) and the decode overwrite on a non-leaf row
+\* (DecodeInstall, and the eager-import overwrite in ImportRequiredFinal).
+RequiredExact ==
+    \A r \in ResultIds :
+        res[r].registered => res[r].required = TrueRequired(r)
 
 \* No ownership count ever goes below zero.
 NoUnderflow == \A r \in ResultIds : res[r].own >= 0
@@ -2292,6 +2546,16 @@ ReturnedLive ==
 \* handoff hold) - it cannot vanish out from under the caller.
 ReturnedOwned ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retOwned
+
+\* No session is ever handed a result that depends, directly or transitively,
+\* on a handle leaf it never bound: every returned invocation satisfies the
+\* transitive requirement of its result. This is the session-resource gate's
+\* purpose. It fails where a result reaches a session whose bound set does not
+\* cover the result's TrueRequired - for example the decode overwrite serving
+\* a non-leaf's dependency-derived requirement away (needs two sessions: one
+\* holds the leaf, another unbound receives the drifted result).
+ReturnedGated ==
+    \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retGated
 
 \* No reader is handed a result whose dependency attachment has not
 \* finished cleanly.
