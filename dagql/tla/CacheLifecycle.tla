@@ -33,9 +33,10 @@
 (*   - Equivalence is a static partition of call identities (ClassOf).     *)
 (*     The e-graph's class-merging machinery is not modeled.               *)
 (*   - Lookup may miss even when a candidate exists. This over-            *)
-(*     approximates the candidate/session filtering that is not modeled,   *)
-(*     and it exercises the engine's accepted duplicate-execution window   *)
-(*     (getOrInitCallInner, cache.go:4468).                                *)
+(*     approximates candidate selection (the lowest-ID pick, TTL,          *)
+(*     e-graph routing) even though session-resource filtering is now      *)
+(*     modeled, and it exercises the engine's accepted                     *)
+(*     duplicate-execution window (getOrInitCallInner, cache.go:4468).     *)
 (*   - MODEL AXIOM, assumed and never verified here: results the cache     *)
 (*     considers equivalent are interchangeable.                           *)
 (*   - Session-resource gating IS modeled (the Handles constant):          *)
@@ -104,7 +105,7 @@ CONSTANTS
                         \* every result's handle stays "none" and required
                         \* stays {}, the lookup filter is vacuous, and each
                         \* new field is constant, so distinct-state counts of
-                        \* the 25 pre-existing configurations are unchanged.
+                        \* the 28 pre-existing configurations are unchanged.
 
     \* --- external events -------------------------------------------------
     AllowRelease,       \* enable session release; off in configs that
@@ -625,8 +626,10 @@ LookupHit(i) ==
 
 \* LookupMiss: the lookup finds nothing usable; fall through to the
 \* singleflight. A miss is allowed even when a candidate exists - that
-\* over-approximates the filtering this model leaves out, and exercises
-\* the engine's accepted duplicate-execution window (getOrInitCallInner, cache.go:4468).
+\* over-approximates candidate selection (the lowest-ID pick, TTL, e-graph
+\* routing), which is not modeled even though the session-resource filter
+\* is, and exercises the engine's accepted duplicate-execution window
+\* (getOrInitCallInner, cache.go:4468).
 LookupMiss(i) ==
     /\ invocations[i].phase = "lookup"
     /\ invocations' = [invocations EXCEPT ![i].phase = "join"]
@@ -2551,9 +2554,10 @@ ReturnedOwned ==
 \* on a handle leaf it never bound: every returned invocation satisfies the
 \* transitive requirement of its result. This is the session-resource gate's
 \* purpose. It fails where a result reaches a session whose bound set does not
-\* cover the result's TrueRequired - for example the decode overwrite serving
-\* a non-leaf's dependency-derived requirement away (needs two sessions: one
-\* holds the leaf, another unbound receives the drifted result).
+\* cover the result's TrueRequired - for example a non-leaf whose stored set
+\* drifted at import (one unbound session suffices: the drifted {} passes the
+\* filter) or by a decode during the run (two sessions: one holds the leaf,
+\* another unbound receives the drifted result).
 ReturnedGated ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retGated
 
