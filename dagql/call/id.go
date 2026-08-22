@@ -815,179 +815,30 @@ func (id *ID) decode(
 }
 
 // calcDigest calculates the recipe digest for the ID.
-//
-// It includes recipe data for this call shape, explicit/implicit recipe inputs,
-// and module recipe identity.
 func (id *ID) calcDigest() (string, error) {
 	id.mustBeRecipe("calcDigest")
 	if id == nil {
 		return "", nil
 	}
 
-	var err error
-
-	h := hashutil.NewHasher()
-
-	// ReceiverDigest (recipe identity only)
-	if id.receiver != nil {
-		h = h.WithString(id.receiver.Digest().String())
-	}
-	h = h.WithDelim()
-
-	// Type
-	var curType *callpbv1.Type
-	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
-		h = h.WithString(curType.NamedType)
-		if curType.NonNull {
-			h = h.WithByte(2)
-		} else {
-			h = h.WithByte(1)
-		}
-		h = h.WithDelim()
-	}
-	h = h.WithDelim()
-
-	// Field
-	h = h.WithString(id.pb.Field).
-		WithDelim()
-
-	// Args
-	for _, arg := range id.args {
-		arg = redactedArgForID(arg)
-		if arg == nil {
-			continue
-		}
-		h, err = AppendArgumentBytes(arg, h)
-		if err != nil {
-			h.Close()
-			return "", err
-		}
-		h = h.WithDelim()
-	}
-	h = h.WithDelim()
-
-	// Implicit inputs
-	for _, input := range id.implicitInputs {
-		input = redactedArgForID(input)
-		if input == nil {
-			continue
-		}
-		h, err = AppendArgumentBytes(input, h)
-		if err != nil {
-			h.Close()
-			return "", err
-		}
-		h = h.WithDelim()
-	}
-
-	// End implicit input section.
-	h = h.WithDelim()
-
-	// Module recipe digest
-	if id.module != nil {
-		h = h.WithString(id.module.ID().Digest().String())
-	}
-	h = h.WithDelim()
-
-	// Nth
-	h = h.WithInt64(id.pb.Nth).
-		WithDelim()
-
-	// View
-	h = h.WithString(id.pb.View).
-		WithDelim()
-
-	return h.DigestAndClose(), nil
-}
-
-// AppendArgumentBytes appends a binary representation of the given argument to the given byte slice.
-func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
-	h = h.WithString(arg.pb.Name)
-
-	h, err := appendLiteralBytes(arg.value, h)
+	dgst, err := CanonicalDigest(id.pb)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
+		return "", err
 	}
-
-	return h, nil
+	return dgst.String(), nil
 }
 
-// appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
+// AppendArgumentBytes appends the canonical binary representation of arg to h.
 //
-// This is symmetric with ResultCall literal hashing; sharing would mean sprinkling branches that change the ID-digest semantics we audit.
-func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
-	var err error
-	// we use a unique prefix byte for each type to avoid collisions
-	switch v := lit.(type) {
-	case *LiteralID:
-		const prefix = '0'
-		h = h.WithByte(prefix).
-			WithString(v.id.Digest().String())
-	case *LiteralNull:
-		const prefix = '1'
-		h = h.WithByte(prefix)
-		if v.pbVal.Null {
-			h = h.WithByte(1)
-		} else {
-			h = h.WithByte(2)
-		}
-	case *LiteralBool:
-		const prefix = '2'
-		h = h.WithByte(prefix)
-		if v.pbVal.Bool {
-			h = h.WithByte(1)
-		} else {
-			h = h.WithByte(2)
-		}
-	case *LiteralEnum:
-		const prefix = '3'
-		h = h.WithByte(prefix).
-			WithString(v.pbVal.Enum)
-	case *LiteralInt:
-		const prefix = '4'
-		h = h.WithByte(prefix).
-			WithInt64(v.pbVal.Int)
-	case *LiteralFloat:
-		const prefix = '5'
-		h = h.WithByte(prefix).
-			WithFloat64(v.pbVal.Float)
-	case *LiteralString:
-		const prefix = '6'
-		h = h.WithByte(prefix).
-			WithString(v.pbVal.String_)
-	case *LiteralList:
-		const prefix = '7'
-		h = h.WithByte(prefix)
-		for _, elem := range v.values {
-			h, err = appendLiteralBytes(elem, h)
-			if err != nil {
-				return nil, err
-			}
-		}
-	case *LiteralObject:
-		const prefix = '8'
-		h = h.WithByte(prefix)
-		for _, arg := range v.values {
-			h, err = AppendArgumentBytes(arg, h)
-			if err != nil {
-				return nil, err
-			}
-			h = h.WithDelim()
-		}
-	case *LiteralDigestedString:
-		const prefix = '9'
-		h = h.WithByte(prefix)
-		if v.digest != "" {
-			h = h.WithString(v.digest.String())
-		}
-	case *LiteralBytes:
-		const prefix = 'A'
-		h = h.WithByte(prefix).
-			WithBytes(v.value...)
-	default:
-		return nil, fmt.Errorf("unknown literal type %T", v)
+// Deprecated: call digest implementations should use CanonicalDigest, which
+// hashes the protobuf representation directly.
+func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+	if arg == nil {
+		return h, fmt.Errorf("nil argument")
 	}
-	h = h.WithDelim()
+	if err := appendArgumentBytes(arg.pb, h); err != nil {
+		return h, err
+	}
 	return h, nil
 }
 
