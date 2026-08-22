@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	lipglossv1 "github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
@@ -198,9 +199,8 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	formWrap   *teav1.Wrap // bubbletea v1 adapter for huh.Form
-	formModel  *huh.Form   // direct reference for KeyBinds()
-	formSpacer *blankLine  // spacer beneath the form, removed alongside it
+	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
+	formModel *huh.Form   // direct reference for KeyBinds()
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -249,6 +249,12 @@ type frontendPretty struct {
 	logPager       *LogPagerView
 	logPagerReturn func()
 	logSearchInput *tuist.TextInput
+
+	// commandView replaces the generic trace screen when a command wants to
+	// own the semantic layout while embedding reusable trace components.
+	commandView       CommandView
+	commandViewHandle *commandViewHandle
+	spanLists         map[*SpanListView]struct{}
 }
 
 // Verify interface compliance at compile time.
@@ -257,6 +263,66 @@ var (
 	_ tuist.Interactive = (*frontendPretty)(nil)
 	_ tuist.Mounter     = (*frontendPretty)(nil)
 )
+
+var _ CommandFrontend = (*frontendPretty)(nil)
+
+// Live reports whether command components are being rendered interactively.
+// Report mode still uses their final rendering, but cannot surface forms or
+// transient login instructions.
+func (fe *frontendPretty) Live() bool {
+	return !fe.reportOnly
+}
+
+type commandViewContext struct {
+	fe *frontendPretty
+}
+
+func (ctx commandViewContext) SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView {
+	return newSpanListView(ctx.fe, root, include)
+}
+
+type commandViewHandle struct {
+	fe *frontendPretty
+}
+
+func (h *commandViewHandle) Update(fn func()) {
+	if h == nil || h.fe == nil {
+		return
+	}
+	h.fe.dispatch(func() {
+		if fn != nil {
+			fn()
+		}
+		if h.fe.commandView != nil {
+			h.fe.commandView.Update()
+		}
+		if h.fe.keymapBar != nil {
+			h.fe.keymapBar.Update()
+		}
+		h.fe.Update()
+	})
+}
+
+// SetView installs a command-owned body in the pretty frontend. Calls are
+// serialized with telemetry updates and rendering by the Tuist event loop.
+func (fe *frontendPretty) SetView(factory ViewFactory) ViewHandle {
+	handle := &commandViewHandle{fe: fe}
+	fe.dispatch(func() {
+		fe.commandViewHandle = handle
+		if factory == nil {
+			fe.commandView = nil
+		} else {
+			fe.commandView = factory(commandViewContext{fe: fe})
+		}
+		if fe.commandView != nil {
+			if _, interactive := fe.commandView.(tuist.Interactive); interactive {
+				fe.tui.SetFocus(fe.commandView)
+			}
+		}
+		fe.Update()
+	})
+	return handle
+}
 
 // treePrefix holds pre-computed prefix strings for a SpanTreeView.
 // These are set by the parent SpanTreeView when rendering its children.
@@ -1193,12 +1259,12 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 		return ErrNonInteractive
 	}
 
-	done := make(chan struct{}, 1)
+	done := make(chan error, 1)
 	wrapCh := make(chan *teav1.Wrap, 1)
 
 	fe.dispatch(func() {
 		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
-			close(done)
+			done <- formCompletionError(f)
 		})
 		fe.Update()
 	})
@@ -1212,9 +1278,16 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 			fe.removeForm(wrap)
 		})
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
+}
+
+func formCompletionError(form *huh.Form) error {
+	if form.State == huh.StateAborted {
+		return errors.Join(ErrInterrupted, huh.ErrUserAborted)
+	}
+	return nil
 }
 
 // removeForm tears the given prompt form out of the TUI. It no-ops unless wrap
@@ -1225,12 +1298,9 @@ func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
 		return
 	}
 	fe.tui.RemoveChild(fe.formWrap)
-	if fe.formSpacer != nil {
-		fe.tui.RemoveChild(fe.formSpacer)
-		fe.formSpacer = nil
-	}
 	fe.formWrap = nil
 	fe.formModel = nil
+	fe.keymapBar.Update()
 	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 	fe.Update()
 }
@@ -1253,47 +1323,72 @@ func (fe *frontendPretty) OpenBrowser(url string) error {
 	return browser.OpenURL(url)
 }
 
-// blankLine is a trivial component that renders a single empty line.
-type blankLine struct{ tuist.Compo }
-
-func (*blankLine) Render(ctx tuist.Context) {
-	ctx.Line("")
-}
-
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
-	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
-	// Cap the form at half the screen so a tall field (e.g. the .resume session
-	// picker's long Select) stays scrollable instead of dominating — or
-	// overflowing — the terminal. huh propagates this to its Selects, which then
-	// scroll within the allotted height. Only applied when the window height is
-	// known (>0); otherwise huh sizes to content as before.
-	if h := fe.window.Height; h > 0 {
-		fe.formModel = fe.formModel.WithHeight(max(h/2, 3))
-	}
+	fe.formModel = form.
+		WithTheme(frontendFormTheme()).
+		WithKeyMap(frontendFormKeyMap()).
+		WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
-	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
 	fe.formWrap.OnQuit(func() {
 		// Remove this form BEFORE invoking result: the callback may
 		// synchronously install a replacement form (e.g. branch()'s "custom
 		// prompt" path chains a second form via handlePromptForm), which
-		// reassigns fe.formWrap/fe.formModel/fe.formSpacer. Removing afterwards
+		// reassigns fe.formWrap/fe.formModel. Removing afterwards
 		// would then see the replacement, hit removeForm's guard and no-op,
 		// leaking this form (and its spacer) on screen. Capture the model first
 		// since removeForm nils fe.formModel.
 		model := fe.formModel
 		fe.removeForm(wrap)
 		result(model)
+		if model.State == huh.StateAborted {
+			// A form owns input focus, so Ctrl+C reaches Huh instead of the
+			// frontend's navigation handler. Preserve the frontend-wide interrupt
+			// contract rather than treating the form's default value as a choice.
+			fe.quitAction(ErrInterrupted)
+		}
 	})
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
-	fe.tui.AddChild(fe.formSpacer)
 	fe.tui.AddChild(fe.keymapBar)
+	fe.keymapBar.Update()
 	fe.tui.SetFocus(fe.formWrap)
 	return wrap
+}
+
+func frontendFormKeyMap() *huh.KeyMap {
+	keymap := huh.NewDefaultKeyMap()
+	keymap.MultiSelect.Toggle.SetHelp("space", "toggle")
+	return keymap
+}
+
+func frontendFormTheme() *huh.Theme {
+	theme := huh.ThemeBase16()
+	theme.Focused.Base = theme.Focused.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Focused.SelectSelector = theme.Focused.SelectSelector.SetString("▶ ")
+	theme.Focused.MultiSelectSelector = theme.Focused.MultiSelectSelector.SetString("▶ ")
+	// ThemeBase16 copies its focused selectors into the blurred field styles,
+	// which leaves a stale caret behind after focus moves to another field.
+	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.SetString("  ")
+	theme.Blurred.MultiSelectSelector = theme.Blurred.MultiSelectSelector.SetString("  ")
+	// Give both choices the same strong treatment. ExplicitConfirm supplies the
+	// structural focus marker, so color and background carry no meaning here.
+	button := theme.Focused.FocusedButton.
+		UnsetBackground().
+		Foreground(lipglossv1.Color("8")).
+		Padding(0).
+		MarginRight(0).
+		Bold(false).
+		Faint(false)
+	theme.Focused.FocusedButton = button.Bold(true)
+	theme.Focused.BlurredButton = button
+	theme.Blurred.FocusedButton = button
+	theme.Blurred.BlurredButton = button
+	return theme
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -1441,6 +1536,10 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// SpanTreeView and marks any changed tree dirty.
 	if !fe.finalRender {
 		fe.finalRender = true
+		if fe.commandView != nil {
+			fe.commandView.SetFinal(true)
+			fe.commandView.Update()
+		}
 		fe.Update()
 	}
 
@@ -1744,6 +1843,7 @@ func (fe *frontendPretty) setupTUI() {
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
 		Keys:             fe.keys,
+		Snug:             fe.keymapSnug,
 	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
@@ -1865,7 +1965,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasGenerateReport() {
+	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -1963,6 +2063,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 			}
 		}
 		fe.updateTestViews()
+		for view := range fe.spanLists {
+			view.UpdateAll()
+		}
+		if fe.commandView != nil {
+			fe.commandView.Update()
+		}
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -2035,6 +2141,12 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			fe.updateLogPagerForLogs(spanID)
 		}
 		fe.updateTestViews()
+		for view := range fe.spanLists {
+			view.UpdateAll()
+		}
+		if fe.commandView != nil {
+			fe.commandView.Update()
+		}
 		fe.Update()
 	})
 	return nil
@@ -2123,6 +2235,9 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	if fe.formModel != nil {
 		return fe.formModel.KeyBinds()
+	}
+	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
+		return nil
 	}
 
 	if fe.editlineFocused {
@@ -2290,6 +2405,17 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	}
 }
 
+func (fe *frontendPretty) keymapSnug() bool {
+	return fe.statusLine != nil && fe.formWrap == nil && fe.searchInput == nil && fe.logSearchInput == nil
+}
+
+func (fe *frontendPretty) keymapHeight() int {
+	if fe.keymapSnug() {
+		return 1
+	}
+	return 2
+}
+
 func (fe *frontendPretty) escHelp() string {
 	if fe.searchQuery != "" {
 		return "clear search"
@@ -2319,6 +2445,10 @@ func isEscapeKey(keyStr string) bool {
 // Render implements tuist.Component. It produces the full TUI output as lines.
 func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
+		return
+	}
+	if fe.commandView != nil {
+		fe.RenderChild(ctx, fe.commandView)
 		return
 	}
 	fe.claims = newRenderClaims()
@@ -2404,7 +2534,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Lines the TUI renders as siblings outside this component, which are
 	// always shown and so must be reserved out of the screen height: the keymap
 	// bar, error label, text input, form, and search input.
-	reserved := 1 // keymap bar
+	reserved := fe.keymapHeight()
 	reserved += fe.errorLabelHeight()
 	reserved += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
 	reserved += fe.statusLineHeight()    // statusLine is a sibling, not rendered here
@@ -3368,6 +3498,18 @@ func (fe *frontendPretty) applyTuistFocus() {
 	}
 	if fe.testsMode && fe.fullscreenTests != nil {
 		fe.tui.SetFocus(fe.fullscreenTests)
+		return
+	}
+	if fe.commandView != nil {
+		if fe.FocusedSpan.IsValid() {
+			for view := range fe.spanLists {
+				if tree := view.scope.spanTrees[fe.FocusedSpan]; tree != nil {
+					fe.tui.SetFocus(tree)
+					return
+				}
+			}
+		}
+		fe.tui.SetFocus(fe.commandView)
 		return
 	}
 	if fe.FocusedSpan.IsValid() {
@@ -5913,7 +6055,13 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 			// leading space.
 		}
 	} else if !fe.finalRender {
-		fe.renderToggler(out, row, focused)
+		if fe.formWrap != nil {
+			// The form owns input focus, so don't imply that its host span is also
+			// selected. Preserve the column so the title doesn't jump sideways.
+			fmt.Fprint(out, " ")
+		} else {
+			fe.renderToggler(out, row, focused)
+		}
 		fmt.Fprint(out, " ")
 	}
 
@@ -6655,22 +6803,21 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
-			NewForm(
+			huh.NewForm(
 				huh.NewGroup(
-					huh.NewConfirm().
+					NewExplicitConfirm("Yes", "No", dest).
 						Title(title).
 						Description(strings.TrimSpace((&Markdown{
 							Content: message,
 							Width:   fe.window.Width,
-						}).View())).
-						Value(dest),
+						}).View())),
 				),
 			),
-			func(f *huh.Form) { close(done) },
+			func(f *huh.Form) { done <- formCompletionError(f) },
 		)
 		fe.Update()
 	})
@@ -6678,13 +6825,13 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
@@ -6699,7 +6846,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 						Value(dest),
 				),
 			),
-			func(f *huh.Form) { close(done) },
+			func(f *huh.Form) { done <- formCompletionError(f) },
 		)
 		fe.Update()
 	})
@@ -6707,8 +6854,8 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 

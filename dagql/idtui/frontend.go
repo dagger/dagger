@@ -123,6 +123,37 @@ type Frontend interface {
 	prompt.PromptHandler
 }
 
+// CommandFrontend is implemented by frontends that can host a command-owned
+// Tuist screen. Commands should treat this as an optional capability and keep
+// a plain-output fallback for streaming frontends.
+type CommandFrontend interface {
+	SetView(ViewFactory) ViewHandle
+	Live() bool
+}
+
+// ViewFactory constructs a command screen using services owned by the pretty
+// frontend. It is invoked on the Tuist event loop.
+type ViewFactory func(ViewContext) CommandView
+
+// CommandView is the body of a command-owned pretty TUI. SetFinal switches the
+// view from transient progress to durable terminal output.
+type CommandView interface {
+	tuist.Component
+	Update()
+	SetFinal(bool)
+}
+
+// ViewContext provides reusable trace-backed components. The trace state is
+// intentionally not mutable by commands.
+type ViewContext interface {
+	SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView
+}
+
+// ViewHandle serializes command model mutations with rendering.
+type ViewHandle interface {
+	Update(func())
+}
+
 // TraceFrontend is the optional interface 'dagger trace' drives for
 // incremental loading and report zooming: snapshot import, lazy span/log
 // providers, surfaced-failure prefetch, and name-based zoom targets. Only the
