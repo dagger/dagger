@@ -941,8 +941,19 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 
 	var body []byte
 	if !rec.Body().Empty() {
+		bodyValue := telemetry.LogValueToPB(rec.Body())
+		// The currently pinned otel-go does not yet convert log.KindBytes to
+		// OTLP bytes. Preserve raw bodies explicitly until that conversion is
+		// available in the dependency.
+		if rec.Body().Kind() == log.KindBytes {
+			bodyValue = &otlpcommonv1.AnyValue{
+				Value: &otlpcommonv1.AnyValue_BytesValue{
+					BytesValue: rec.Body().AsBytes(),
+				},
+			}
+		}
 		var err error
-		body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
+		body, err = proto.Marshal(bodyValue)
 		if err != nil {
 			return clientdb.Log{}, fmt.Errorf("marshal log record body: %w", err)
 		}

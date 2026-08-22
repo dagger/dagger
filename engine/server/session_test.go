@@ -1551,6 +1551,19 @@ type fakeSessionCaller struct {
 	conn *grpc.ClientConn
 }
 
+func TestLogRecordRowPreservesBytesBody(t *testing.T) {
+	payload := []byte{0, 1, 2, 0xff}
+	var record sdklog.Record
+	record.SetBody(otellog.BytesValue(payload))
+
+	row, err := logRecordRow(&record)
+	require.NoError(t, err)
+
+	var body otlpcommonv1.AnyValue
+	require.NoError(t, proto.Unmarshal(row.Body, &body))
+	require.Equal(t, payload, body.GetBytesValue())
+}
+
 func TestTelemetryExportReleasesClientDBHandle(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	ps := &PubSub{srv: &Server{clientDBs: dbs}}
