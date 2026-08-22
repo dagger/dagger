@@ -45,8 +45,10 @@ Completed, in dependency order:
    be completed until the first runtime initialization seals one immutable
    snapshot; identical replay remains valid, while conflicts and post-seal
    completion are rejected. Scope acquisition and metadata lookup require and
-   clone that snapshot, and sealing/initialization serialize with transport close
-   and authoritative session teardown.
+   clone that snapshot. First initialization publishes a provisional request
+   lease before leaving the admission serialization point, runs slow DagQL/schema
+   construction without holding the scope lock, then re-enters admission to
+   validate transport closure and publish the executable request.
 
 7. Client identity and routing records are stored separately from execution
    runtimes. Metadata, ancestry, telemetry, attachable, and executable lookups
@@ -382,6 +384,7 @@ This prevents both resurrection and a last-release/new-acquire race.
 | Retire when no descendants remain | Parent pointers are only one retention path; agents, services, cache, and workspaces are invisible |
 | Delay retirement for a grace period | Changes race probability, not the safety condition |
 | Fix the noop-span panic and retry retirement | Prevents one symptom while leaving use-after-retirement failures elsewhere |
+| Hold the scope lock through runtime initialization | Initialization performs DagQL/schema work that clones lifecycle scopes; holding the same lock creates a lock-order cycle on cold concurrent schema builds |
 | Keep current clients but shrink queues | Reduces slope but still makes providers, readers, DB streams, and schemas proportional to historical calls |
 | Reference-count `daggerClient` directly | Makes every accidental pointer an ownership edge and cannot explain cold capabilities; split identity from execution first |
 
