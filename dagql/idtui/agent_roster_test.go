@@ -46,13 +46,13 @@ func TestAgentRosterAlwaysShowsPublishedAgents(t *testing.T) {
 	if got := roster.Height(); got != 1 {
 		t.Fatalf("visible roster height = %d, want 1", got)
 	}
-	if line := strings.TrimSpace(renderRoster(t, 80, entries)); line != "1 agent running" {
+	if line := strings.TrimSpace(renderRoster(t, 80, entries)); line != "1 agent ▶" {
 		t.Fatalf("single-agent roster rendered %q", line)
 	}
 }
 
 // TestAgentRosterRendersEveryAgent covers the strip's whole job: every agent
-// present, each with a jump number and a state flag, on one line.
+// present, each with a jump number and lifecycle indicator, on one line.
 func TestAgentRosterRendersEveryAgent(t *testing.T) {
 	line := renderRoster(t, 100, []AgentRosterEntry{
 		{Name: "chief", State: "RUNNING"},
@@ -60,14 +60,16 @@ func TestAgentRosterRendersEveryAgent(t *testing.T) {
 		{Name: "docs", State: "PAUSED"},
 		{Name: "tests", State: "WAITING_INPUT", WaitingOn: "ok to delete testdata/legacy?"},
 		{Name: "bench", State: "FAILED"},
+		{Name: "archive", State: "STOPPED"},
 	})
 
 	for _, want := range []string{
-		"1 chief running",
-		"2 scout idle",
-		"3 docs paused",
+		"1 chief ▶",
+		"2 scout ○",
+		"3 docs ⏸",
 		"4 tests needs you",
-		"5 bench failed",
+		"5 bench ✘",
+		"6 archive ⏹",
 	} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("expected %q in roster, got:\n%q", want, line)
@@ -89,7 +91,7 @@ func TestAgentRosterStylesFocusAndMarksReachability(t *testing.T) {
 	}, termenv.ANSI)
 	plain := stripANSICodes(line)
 
-	if !strings.Contains(plain, "2 scout running") || strings.Contains(plain, "*") {
+	if !strings.Contains(plain, "2 scout ▶") || strings.Contains(plain, "*") {
 		t.Fatalf("expected focus to use styling without a marker, got:\n%q", line)
 	}
 	if !strings.Contains(plain, "3 ghost·") {
@@ -114,7 +116,7 @@ func TestAgentRosterNumbersOnlyJumpableEntries(t *testing.T) {
 	if !strings.Contains(line, "9 a9") {
 		t.Fatalf("expected the ninth agent to be numbered, got:\n%q", line)
 	}
-	if strings.Contains(line, "10 a10") || !strings.Contains(line, "a10 idle") {
+	if strings.Contains(line, "10 a10") || !strings.Contains(line, "a10 ○") {
 		t.Fatalf("the tenth agent must be listed without a jump number, got:\n%q", line)
 	}
 }
@@ -123,17 +125,12 @@ func TestAgentRosterNumbersOnlyJumpableEntries(t *testing.T) {
 // span appearing and its first state record arriving: the agent is known to
 // exist but its state is not, and the strip must not invent one.
 func TestAgentRosterUnknownStateIsQuiet(t *testing.T) {
-	line := renderRoster(t, 80, []AgentRosterEntry{
+	line := strings.TrimSpace(renderRoster(t, 80, []AgentRosterEntry{
 		{Name: "chief", State: "RUNNING"},
 		{Name: "fresh"},
-	})
-	if !strings.Contains(line, "fresh") {
-		t.Fatalf("expected the stateless agent to still be listed, got:\n%q", line)
-	}
-	for _, unwanted := range []string{"idle", "run", "failed", "needs you"} {
-		if strings.Contains(line, "fresh "+unwanted) {
-			t.Fatalf("stateless agent must not be given state %q, got:\n%q", unwanted, line)
-		}
+	}))
+	if want := "1 chief ▶  2 fresh"; line != want {
+		t.Fatalf("stateless agent rendered with a lifecycle indicator: got %q, want %q", line, want)
 	}
 }
 

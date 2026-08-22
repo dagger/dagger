@@ -85,7 +85,7 @@ func TestStatusLineRendersReorientedLayout(t *testing.T) {
 	tui.RenderOnce()
 	line := strings.TrimRight(strings.Join(tui.Frame(), "\n"), " ")
 
-	left := "1 agent idle ▏░░░░░░░░░ 1.3%/1.1M (auto)"
+	left := "1 agent ○ ▏░░░░░░░░░ 1.3%/1.1M (auto)"
 	if !strings.HasPrefix(line, left) {
 		t.Fatalf("expected roster and context at the left, got:\n%q", line)
 	}
@@ -111,7 +111,7 @@ func TestStatusLineRendersRosterWithoutModel(t *testing.T) {
 	tui.AddChild(sl)
 	tui.RenderOnce()
 	line := strings.Join(tui.Frame(), "\n")
-	if !strings.Contains(line, "1 agent running") {
+	if !strings.Contains(line, "1 agent ▶") {
 		t.Fatalf("expected roster before model selection, got %q", line)
 	}
 }

@@ -54,7 +54,7 @@ type StatusLineLive struct {
 // and context usage on the left, with token usage, cost, subscription and the
 // active model grouped on the right:
 //
-//	1 agent running  ███░░ 34.1%/200k (auto)    ↑6.3k ↓30k R3.8M W144k $3.609 (sub) claude-opus-4-6
+//	1 agent ▶  ███░░ 34.1%/200k (auto)    ↑6.3k ↓30k R3.8M W144k $3.609 (sub) claude-opus-4-6
 type StatusLine struct {
 	tuist.Compo
 

@@ -29,9 +29,9 @@ type AgentRosterEntry struct {
 }
 
 // AgentRoster renders a compact list of the session's live agents — a bold
-// jump number, display name and textual state each, on one line:
+// jump number, display name and lifecycle symbol each, on one line:
 //
-//	1 agent running  2 scout idle  3 docs running  4 tests needs you
+//	1 agent ▶  2 scout ○  3 docs ▶  4 tests needs you
 //
 // The roster is embedded at the left of the prompt's status line. It is always
 // visible once an agent has been published: besides being a switcher, it is the
@@ -143,23 +143,24 @@ func (r *AgentRoster) Line(width int) string {
 	return line
 }
 
-// agentStateDisplay maps a lifecycle state to its short label and color. Only
-// WAITING_INPUT and FAILED are attention-grabbing; everything else stays quiet
-// so the roster does not compete with the trace for attention.
+// agentStateDisplay maps a lifecycle state to its compact symbol and color.
+// WAITING_INPUT keeps its attention label; only it and FAILED are
+// attention-grabbing. Everything else stays quiet so the roster does not
+// compete with the trace for attention.
 func agentStateDisplay(state string) (label string, color termenv.Color) {
 	switch state {
 	case "WAITING_INPUT":
 		return "needs you", termenv.ANSIYellow
 	case "FAILED":
-		return "failed", termenv.ANSIRed
+		return IconFailure, termenv.ANSIRed
 	case "RUNNING":
-		return "running", termenv.ANSIGreen
+		return CaretRightFilled, termenv.ANSIGreen
 	case "PAUSED":
-		return "paused", termenv.ANSIBrightBlack
+		return IconPause, termenv.ANSIBrightBlack
 	case "STOPPED":
-		return "stopped", termenv.ANSIBrightBlack
+		return IconStop, termenv.ANSIBrightBlack
 	case "IDLE":
-		return "idle", termenv.ANSIBrightBlack
+		return DotEmpty, termenv.ANSIBrightBlack
 	default:
 		// No state record seen yet: the agent is published but its runtime
 		// has not reported in. Render it as present-but-unknown rather than
