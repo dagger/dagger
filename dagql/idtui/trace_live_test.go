@@ -19,12 +19,8 @@ import (
 // hack/designs/resume-from-trace.md §12's two Cloud-side assumptions stop
 // being assumptions:
 //
-//   - that attribute-only, empty-bodied log records survive the round trip —
-//     agent state, snapshot digests and call payloads are ALL that shape, so a
-//     dropped record is a lost fact and a failed restore;
-//   - that span attributes come back byte-identical — a re-encoded
-//     `dagger.io/dag.call` that differs in any way breaks the digest that
-//     names it, and with it every handle the restore rebuilds.
+//   - that raw byte-bodied call payload records survive the round trip;
+//   - that attribute-only agent state and snapshot records survive too.
 //
 // Neither is checkable against the fake server in trace_fetch_test.go, which
 // answers a different question (does the client speak the protocol). This one
@@ -57,8 +53,9 @@ type recordShapes struct {
 	logRecords int
 	noBody     int // Body absent entirely — the shape that used to panic
 	emptyBody  int // Body present, empty string — what the engine emits
+	bytesBody  int // raw protobuf call payloads
 	textBody   int // Body with text — ordinary log output
-	attrOnly   int // no body text, but attributes: the resume channel
+	attrOnly   int // no body text, but attributes: agent resume facts
 }
 
 func (s *recordShapes) ImportSpans(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) error {
@@ -79,12 +76,14 @@ func (s *recordShapes) ImportLogs(ctx context.Context, req *collogspb.ExportLogs
 				switch {
 				case body == nil:
 					s.noBody++
+				case len(body.GetBytesValue()) > 0:
+					s.bytesBody++
 				case body.GetStringValue() == "":
 					s.emptyBody++
 				default:
 					s.textBody++
 				}
-				if body.GetStringValue() == "" && len(record.GetAttributes()) > 0 {
+				if body != nil && len(body.GetBytesValue()) == 0 && body.GetStringValue() == "" && len(record.GetAttributes()) > 0 {
 					s.attrOnly++
 				}
 			}
@@ -122,29 +121,26 @@ func TestLiveCloudFetchRoundTrip(t *testing.T) {
 
 	require.NoError(t, client.FetchTrace(ctx, traceID, sink))
 
-	t.Logf("spans=%d logRecords=%d (noBody=%d emptyBody=%d textBody=%d attrOnly=%d) callPayloads=%d",
-		sink.spans, sink.logRecords, sink.noBody, sink.emptyBody, sink.textBody,
-		sink.attrOnly, len(db.CallPayloads))
+	t.Logf("spans=%d logRecords=%d (noBody=%d emptyBody=%d bytesBody=%d textBody=%d attrOnly=%d) calls=%d",
+		sink.spans, sink.logRecords, sink.noBody, sink.emptyBody, sink.bytesBody, sink.textBody,
+		sink.attrOnly, len(db.Calls))
 	t.Log(client.StatsSummary())
 
 	require.NotZero(t, sink.spans, "the trace stream returned no spans")
 
-	// §12, assumption ONE. Call payloads ride attribute-only records over the
-	// log channel, and they are the same shape agent state and snapshot
-	// digests use — so a non-empty CallPayloads map is the round trip
-	// surviving, measured through the consumer that depends on it.
-	require.NotZero(t, sink.attrOnly,
-		"no attribute-only log record came back; the resume channel does not survive the round trip")
-	require.NotEmpty(t, db.CallPayloads,
-		"no call payloads reached the DB; §5.2's span-free ID rebuild has nothing to work from")
+	// Call payloads ride raw byte bodies on their dedicated log scope. Count
+	// both the wire shape and the decoded calls to prove the Cloud round trip
+	// preserved the consumer channel.
+	require.NotZero(t, sink.bytesBody,
+		"no byte-bodied log record came back; call payloads did not survive the round trip")
+	require.NotEmpty(t, db.Calls,
+		"no call payloads reached the DB; span-free ID rebuild has nothing to work from")
 }
 
-// TestLiveCloudPreservesCallAttributes is §12's second assumption, measured
-// where it bites: a call payload names itself by digest, so if Cloud returned
-// a re-encoded `dagger.io/dag.call` the rebuilt ID would digest to something
-// else and every handle the restore rebuilds would be wrong. Rebuilding and
-// re-digesting is a byte-identity check with the failure mode spelled out.
-func TestLiveCloudPreservesCallAttributes(t *testing.T) {
+// TestLiveCloudPreservesCallPayloads verifies the second assumption where it
+// bites: every decoded payload must rebuild to the address computed from its
+// raw body.
+func TestLiveCloudPreservesCallPayloads(t *testing.T) {
 	traceID := liveCloudTraceID(t)
 	ctx := t.Context()
 
@@ -165,7 +161,7 @@ func TestLiveCloudPreservesCallAttributes(t *testing.T) {
 
 	var checked, mismatched int
 	var firstUnrebuildable error
-	for digest := range db.CallPayloads {
+	for digest := range db.Calls {
 		id, err := db.CallIDForDigest(digest)
 		if err != nil {
 			// A chain whose ancestor frames did not reach this client is a
@@ -188,7 +184,7 @@ func TestLiveCloudPreservesCallAttributes(t *testing.T) {
 		}
 	}
 
-	t.Logf("call payloads: %d total, %d rebuilt, %d mismatched", len(db.CallPayloads), checked, mismatched)
+	t.Logf("calls: %d total, %d rebuilt, %d mismatched", len(db.Calls), checked, mismatched)
 	if firstUnrebuildable != nil {
 		t.Logf("first payload that did not rebuild: %v", firstUnrebuildable)
 	}

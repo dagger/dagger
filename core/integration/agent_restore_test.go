@@ -34,7 +34,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/go-sse/sse"
@@ -379,16 +378,9 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 
 // TestRestoreFromTraceRefusesAnUnrestorableAgent is the other half of §5.3.3,
 // on real telemetry: an anchor whose conversation never reached the restoring
-// client must fail loudly rather than produce a handle that looks fine.
-//
-// The gap has to be manufactured, and the only honest way to do it turned out
-// to be blunt: withholding the call-payload LOG records is not enough, because
-// a frame that got a span of its own carries its payload on the span
-// (core/telemetry.go stamps dagger.io/dag.call), and in a session this small
-// every frame of the chain gets one. The log channel is the fallback for the
-// frames that structurally never get a span — so a capture that keeps its
-// spans keeps its payloads. Stripping BOTH is what an incomplete trace
-// actually looks like to a client, and it is what §9's first row describes.
+// client must fail loudly rather than produce a handle that looks fine. The
+// gap is manufactured by withholding the reserved call-payload log records
+// while preserving spans and every other log record.
 func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -417,11 +409,11 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	traces, logs := sink.capture()
 
 	// Serve the spans and the agent's own state/anchor records, but no call
-	// payloads on either channel: the anchor still names a conversation, and
-	// nothing can rebuild it.
+	// payload records: the anchor still names a conversation, and nothing can
+	// rebuild it.
 	client := serveCapture(t, &fakeCloudTrace{
 		traceID: traceID,
-		traces:  withoutSpanCallPayloads(traces),
+		traces:  traces,
 		logs:    withoutCallPayloadRecords(logs),
 	})
 	db := restoringDB(t)
@@ -435,27 +427,6 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	require.ErrorContains(t, err, "never reached this client")
 }
 
-// withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every
-// span in a capture.
-func withoutSpanCallPayloads(reqs []*coltracepb.ExportTraceServiceRequest) []*coltracepb.ExportTraceServiceRequest {
-	stripped := make([]*coltracepb.ExportTraceServiceRequest, 0, len(reqs))
-	for _, req := range reqs {
-		clone, ok := proto.Clone(req).(*coltracepb.ExportTraceServiceRequest)
-		if !ok {
-			continue
-		}
-		for _, resource := range clone.GetResourceSpans() {
-			for _, scope := range resource.GetScopeSpans() {
-				for _, span := range scope.GetSpans() {
-					span.Attributes = withoutAttrs(span.GetAttributes(), telemetry.DagCallAttr)
-				}
-			}
-		}
-		stripped = append(stripped, clone)
-	}
-	return stripped
-}
-
 // withoutCallPayloadRecords drops the call-payload records from a capture,
 // leaving every other record intact.
 func withoutCallPayloadRecords(reqs []*collogspb.ExportLogsServiceRequest) []*collogspb.ExportLogsServiceRequest {
@@ -467,6 +438,10 @@ func withoutCallPayloadRecords(reqs []*collogspb.ExportLogsServiceRequest) []*co
 		}
 		for _, resource := range clone.GetResourceLogs() {
 			for _, scope := range resource.GetScopeLogs() {
+				if scope.GetScope().GetName() == telemetryattrs.CallPayloadInstrumentationScope {
+					scope.LogRecords = nil
+					continue
+				}
 				kept := scope.GetLogRecords()[:0]
 				for _, record := range scope.GetLogRecords() {
 					if !hasAttr(record.GetAttributes(), telemetryattrs.DagCallPayloadAttr) {

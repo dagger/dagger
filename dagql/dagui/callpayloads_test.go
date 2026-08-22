@@ -2,16 +2,21 @@ package dagui
 
 import (
 	"context"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -26,44 +31,68 @@ import (
 // client, and the chain is unrebuildable forever.
 func callPayloadTestChain() (root *callpbv1.Call, unspanned []*callpbv1.Call) {
 	dir := &callpbv1.Call{
-		Digest: "xxh3:dir",
-		Field:  "directory",
-		Type:   &callpbv1.Type{NamedType: "Directory"},
+		Field: "directory",
+		Type:  &callpbv1.Type{NamedType: "Directory"},
 		Args: []*callpbv1.Argument{{
 			Name:  "path",
 			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/skills"}},
 		}},
 	}
+	setCallDigest(dir)
 	withSkills := &callpbv1.Call{
-		Digest: "xxh3:withSkills",
-		Field:  "withSkills",
-		Type:   &callpbv1.Type{NamedType: "LLM"},
+		Field: "withSkills",
+		Type:  &callpbv1.Type{NamedType: "LLM"},
 		Args: []*callpbv1.Argument{{
 			Name:  "directory",
 			Value: &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: dir.Digest}},
 		}},
 	}
+	setCallDigest(withSkills)
 	agent := &callpbv1.Call{
-		Digest:         "xxh3:agent",
 		Field:          "agent",
 		Type:           &callpbv1.Type{NamedType: "Agent"},
 		ReceiverDigest: withSkills.Digest,
 	}
+	setCallDigest(agent)
 	return agent, []*callpbv1.Call{withSkills, dir}
+}
+
+func setCallDigest(callPB *callpbv1.Call) {
+	dgst, err := call.CanonicalDigest(callPB)
+	if err != nil {
+		panic(err)
+	}
+	callPB.Digest = dgst.String()
+}
+
+func rawCallPayload(t *testing.T, callPB *callpbv1.Call) []byte {
+	t.Helper()
+	payloadCall := proto.Clone(callPB).(*callpbv1.Call)
+	payloadCall.Digest = ""
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(payloadCall)
+	if err != nil {
+		t.Fatalf("encode %s: %v", callPB.Digest, err)
+	}
+	return payload
+}
+
+func setTestLogScope(record *sdklog.Record, name string) {
+	rf := reflect.ValueOf(record).Elem()
+	scope := rf.FieldByName("scope")
+	scope = reflect.NewAt(scope.Type(), unsafe.Pointer(scope.UnsafeAddr())).Elem()
+	scope.Set(reflect.ValueOf(&instrumentation.Scope{Name: name}))
 }
 
 // newTestCallPayloadRecord builds the record the engine emits for one frame of
 // a call's transitive closure.
-func newTestCallPayloadRecord(t *testing.T, span SpanID, call *callpbv1.Call) sdklog.Record {
+func newTestCallPayloadRecord(t *testing.T, span SpanID, callPB *callpbv1.Call) sdklog.Record {
 	t.Helper()
-	payload, err := call.Encode()
-	if err != nil {
-		t.Fatalf("encode %s: %v", call.Digest, err)
-	}
-	return newTestLogRecord(trace.TraceID{1}, span.SpanID, "",
-		otellog.String(telemetryattrs.DagCallPayloadDigestAttr, call.Digest),
-		otellog.String(telemetryattrs.DagCallPayloadAttr, payload),
+	record := newTestLogRecord(trace.TraceID{1}, span.SpanID, "",
+		otellog.Bool(telemetryattrs.DagCallPayloadAttr, true),
 	)
+	record.SetBody(otellog.BytesValue(rawCallPayload(t, callPB)))
+	setTestLogScope(&record, telemetryattrs.CallPayloadInstrumentationScope)
+	return record
 }
 
 func exportCallPayloads(t *testing.T, db *DB, span SpanID, calls ...*callpbv1.Call) {
@@ -77,8 +106,134 @@ func exportCallPayloads(t *testing.T, db *DB, span SpanID, calls ...*callpbv1.Ca
 	}
 }
 
-// A payload that arrives ONLY over the log channel must resolve exactly like
-// one that rode a span attribute: DB.Call is the single lookup both feed.
+func TestCallPayloadRecordReservationAndValidation(t *testing.T) {
+	_, frames := callPayloadTestChain()
+	callPB := frames[1]
+	payload := rawCallPayload(t, callPB)
+
+	newRecord := func(scope string, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+		record := newTestLogRecord(trace.TraceID{1}, trace.SpanID{1}, "", attrs...)
+		record.SetBody(body)
+		setTestLogScope(&record, scope)
+		return record
+	}
+	for _, test := range []struct {
+		name     string
+		record   sdklog.Record
+		reserved bool
+		valid    bool
+	}{
+		{
+			name: "valid marker scope and bytes body",
+			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload),
+				otellog.Bool(telemetryattrs.DagCallPayloadAttr, true)),
+			reserved: true,
+			valid:    true,
+		},
+		{
+			name:     "scope reserves absent marker",
+			record:   newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload)),
+			reserved: true,
+		},
+		{
+			name: "false marker reserves",
+			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload),
+				otellog.Bool(telemetryattrs.DagCallPayloadAttr, false)),
+			reserved: true,
+		},
+		{
+			name: "wrong marker kind reserves",
+			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload),
+				otellog.String(telemetryattrs.DagCallPayloadAttr, "true")),
+			reserved: true,
+		},
+		{
+			name: "marker reserves wrong scope",
+			record: newRecord("wrong.scope", otellog.BytesValue(payload),
+				otellog.Bool(telemetryattrs.DagCallPayloadAttr, true)),
+			reserved: true,
+		},
+		{
+			name: "marker reserves wrong body kind",
+			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.StringValue(string(payload)),
+				otellog.Bool(telemetryattrs.DagCallPayloadAttr, true)),
+			reserved: true,
+		},
+		{
+			name:     "unmarked unrelated record",
+			record:   newRecord("wrong.scope", otellog.BytesValue(payload)),
+			reserved: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := NewDB()
+			if got := db.ingestCallPayload(test.record); got != test.reserved {
+				t.Fatalf("reserved = %v, want %v", got, test.reserved)
+			}
+			got := db.Calls[callPB.Digest]
+			if test.valid && got == nil {
+				t.Fatal("valid payload was not decoded")
+			}
+			if !test.valid && len(db.Calls) != 0 {
+				t.Fatalf("invalid payload was accepted: %+v", db.Calls)
+			}
+		})
+	}
+}
+
+func TestCallPayloadDecodeIntegrity(t *testing.T) {
+	_, frames := callPayloadTestChain()
+	original := frames[1]
+
+	t.Run("embedded digest rejected", func(t *testing.T) {
+		payload, err := proto.Marshal(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record := newTestCallPayloadRecord(t, spanID(1), original)
+		record.SetBody(otellog.BytesValue(payload))
+		db := NewDB()
+		if !db.ingestCallPayload(record) {
+			t.Fatal("reserved record was not consumed")
+		}
+		if len(db.Calls) != 0 {
+			t.Fatal("payload with embedded self-digest was accepted")
+		}
+	})
+
+	t.Run("tamper changes address", func(t *testing.T) {
+		tampered := proto.Clone(original).(*callpbv1.Call)
+		tampered.Digest = ""
+		tampered.Args[0].Value = &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/tampered"}}
+		setCallDigest(tampered)
+		db := NewDB()
+		exportCallPayloads(t, db, spanID(1), original, tampered)
+		if original.Digest == tampered.Digest {
+			t.Fatalf("tamper retained address %s", original.Digest)
+		}
+		if db.Calls[original.Digest] == nil || db.Calls[tampered.Digest] == nil {
+			t.Fatalf("computed addresses missing: %+v", db.Calls)
+		}
+	})
+
+	t.Run("unknown fields discarded", func(t *testing.T) {
+		payload := rawCallPayload(t, original)
+		payload = protowire.AppendTag(payload, 1000, protowire.BytesType)
+		payload = protowire.AppendBytes(payload, []byte("discard me"))
+		record := newTestCallPayloadRecord(t, spanID(1), original)
+		record.SetBody(otellog.BytesValue(payload))
+		db := NewDB()
+		db.ingestCallPayload(record)
+		decoded := db.Calls[original.Digest]
+		if decoded == nil {
+			t.Fatal("payload with unknown field was not accepted")
+		}
+		if unknown := decoded.ProtoReflect().GetUnknown(); len(unknown) != 0 {
+			t.Fatalf("unknown fields retained: %x", unknown)
+		}
+	})
+}
+
 func TestIngestCallPayloadResolvesCallWithNoSpan(t *testing.T) {
 	db := NewDB()
 	_, unspanned := callPayloadTestChain()
@@ -110,27 +265,39 @@ func TestLateExactCallPayloadInvalidatesProvisionalSpanCaches(t *testing.T) {
 		Type:           &callpbv1.Type{NamedType: "Container"},
 		ReceiverDigest: "xxh3:provisional-container",
 	}
-	provisionalPayload, err := provisional.Encode()
-	if err != nil {
-		t.Fatal(err)
+	setCallDigest(provisional)
+	db.Calls[provisional.Digest] = provisional
+	exact := &callpbv1.Call{
+		Field:          "withExec",
+		Type:           &callpbv1.Type{NamedType: "Container"},
+		ReceiverDigest: "xxh3:exact-container",
+		Args: []*callpbv1.Argument{{
+			Name: "args",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{
+				Values: []*callpbv1.Literal{
+					{Value: &callpbv1.Literal_String_{String_: "sh"}},
+					{Value: &callpbv1.Literal_String_{String_: "-c"}},
+					{Value: &callpbv1.Literal_String_{String_: "echo exact"}},
+				},
+			}}},
+		}},
 	}
-	const exactDigest = "xxh3:exact-withExec"
+	setCallDigest(exact)
 	db.ImportSnapshots([]SpanSnapshot{
 		{
-			ID:          spanID(1),
-			Name:        "Container.withExec",
-			StartTime:   time.Unix(1, 0),
-			EndTime:     time.Unix(2, 0),
-			CallDigest:  provisional.Digest,
-			CallPayload: provisionalPayload,
-			Output:      exactDigest,
+			ID:         spanID(1),
+			Name:       "Container.withExec",
+			StartTime:  time.Unix(1, 0),
+			EndTime:    time.Unix(2, 0),
+			CallDigest: provisional.Digest,
+			Output:     exact.Digest,
 		},
 		{
 			ID:         spanID(2),
 			Name:       "Container.withExec",
 			StartTime:  time.Unix(3, 0),
 			EndTime:    time.Unix(4, 0),
-			CallDigest: exactDigest,
+			CallDigest: exact.Digest,
 		},
 	})
 
@@ -149,25 +316,9 @@ func TestLateExactCallPayloadInvalidatesProvisionalSpanCaches(t *testing.T) {
 		t.Fatalf("provisional call unexpectedly contained the exact command: %s", line)
 	}
 
-	exact := &callpbv1.Call{
-		Digest:         exactDigest,
-		Field:          "withExec",
-		Type:           &callpbv1.Type{NamedType: "Container"},
-		ReceiverDigest: "xxh3:exact-container",
-		Args: []*callpbv1.Argument{{
-			Name: "args",
-			Value: &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{
-				Values: []*callpbv1.Literal{
-					{Value: &callpbv1.Literal_String_{String_: "sh"}},
-					{Value: &callpbv1.Literal_String_{String_: "-c"}},
-					{Value: &callpbv1.Literal_String_{String_: "echo exact"}},
-				},
-			}}},
-		}},
-	}
 	exportCallPayloads(t, db, spanID(2), exact)
 
-	if got := span.Call(); got == nil || got.Digest != exactDigest {
+	if got := span.Call(); got == nil || got.Digest != exact.Digest {
 		t.Fatalf("late exact payload did not replace provisional call cache: %+v", got)
 	}
 	if line := renderCallLine(span.Call()); !strings.Contains(line, "echo exact") {
@@ -200,6 +351,29 @@ func TestIngestCallPayloadIsNotLogText(t *testing.T) {
 	}
 	if got := len(db.PrimaryLogs); got != 0 {
 		t.Errorf("payload record was buffered as a primary log: %d", got)
+	}
+}
+
+func TestCallPayloadRecordsDoNotDisturbLogOrdering(t *testing.T) {
+	db := NewDB()
+	span := spanID(1)
+	db.PrimarySpan = span
+	_, frames := callPayloadTestChain()
+	before := newTestLogRecord(trace.TraceID{1}, span.SpanID, "before")
+	payload := newTestCallPayloadRecord(t, span, frames[1])
+	malformed := newTestCallPayloadRecord(t, span, frames[1])
+	malformed.SetBody(otellog.StringValue("not protobuf bytes"))
+	after := newTestLogRecord(trace.TraceID{1}, span.SpanID, "after")
+
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{before, payload, malformed, after}); err != nil {
+		t.Fatal(err)
+	}
+	logs := db.PrimaryLogs[span]
+	if len(logs) != 2 {
+		t.Fatalf("ordinary logs = %d, want 2", len(logs))
+	}
+	if logs[0].Body().AsString() != "before" || logs[1].Body().AsString() != "after" {
+		t.Fatalf("ordinary log order changed: %q, %q", logs[0].Body().AsString(), logs[1].Body().AsString())
 	}
 }
 
@@ -238,9 +412,6 @@ func TestCallIDRebuildsFromLogOnlyRootAndClosure(t *testing.T) {
 			if span == nil {
 				t.Fatal("span not ingested")
 			}
-			if span.CallPayload != "" {
-				t.Fatal("fixture span unexpectedly carried a call payload")
-			}
 			id, err := span.CallID()
 			if err != nil {
 				t.Fatalf("chain not rebuildable: %v", err)
@@ -255,33 +426,6 @@ func TestCallIDRebuildsFromLogOnlyRootAndClosure(t *testing.T) {
 				t.Errorf("rebuilt ID lost the ID-literal argument's frame: %s", display)
 			}
 		})
-	}
-}
-
-func TestLegacySpanCarriedCallPayloadStillIngests(t *testing.T) {
-	_, unspanned := callPayloadTestChain()
-	legacyCall := unspanned[1]
-	payload, err := legacyCall.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	db := NewDB()
-	db.ImportSnapshots([]SpanSnapshot{{
-		ID:          spanID(1),
-		Name:        "Query.directory",
-		CallDigest:  legacyCall.Digest,
-		CallPayload: payload,
-	}})
-	if got := db.Call(legacyCall.Digest); got == nil || got.GetField() != legacyCall.GetField() {
-		t.Fatalf("legacy span payload was not ingested: %+v", got)
-	}
-	id, err := db.Spans.Map[spanID(1)].CallID()
-	if err != nil {
-		t.Fatalf("legacy span payload did not rebuild: %v", err)
-	}
-	if id.Digest().String() != legacyCall.Digest {
-		t.Fatalf("rebuilt digest = %s, want %s", id.Digest(), legacyCall.Digest)
 	}
 }
 
@@ -431,7 +575,7 @@ func TestCallIDForDigestReportsAMissingPayload(t *testing.T) {
 
 	if _, err := db.CallIDForDigest(root.Digest); err == nil {
 		t.Fatal("expected the unspanned receiver to be reported as missing")
-	} else if !strings.Contains(err.Error(), "xxh3:withSkills") {
+	} else if !strings.Contains(err.Error(), unspanned[0].Digest) {
 		t.Fatalf("gap report does not name the missing frame: %v", err)
 	}
 
@@ -448,22 +592,18 @@ func TestCallIDForDigestReportsAMissingPayload(t *testing.T) {
 // Without this, the test above could pass for reasons unrelated to the payloads
 // it exports.
 func TestCallIDWithoutLogPayloadsStillReportsTheGap(t *testing.T) {
-	root, _ := callPayloadTestChain()
-	rootPayload, err := root.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
+	root, unspanned := callPayloadTestChain()
 	db := NewDB()
+	db.Calls[root.Digest] = root
 	db.ImportSnapshots([]SpanSnapshot{{
-		ID:          spanID(1),
-		Name:        "LLM.agent",
-		CallDigest:  root.Digest,
-		CallPayload: rootPayload,
+		ID:         spanID(1),
+		Name:       "LLM.agent",
+		CallDigest: root.Digest,
 	}})
 
 	if _, err := db.Spans.Map[spanID(1)].CallID(); err == nil {
 		t.Fatal("expected the unspanned receiver to be reported as missing")
-	} else if !strings.Contains(err.Error(), "xxh3:withSkills") {
+	} else if !strings.Contains(err.Error(), unspanned[0].Digest) {
 		t.Fatalf("gap report does not name the missing frame: %v", err)
 	}
 }

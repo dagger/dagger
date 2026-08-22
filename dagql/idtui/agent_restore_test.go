@@ -16,6 +16,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // The seam `dagger agent --trace` reads the restore plan through
@@ -34,12 +35,18 @@ import (
 // rebuild on absent ARGUMENT frames — a snapshot chain has almost none).
 func cannedSnapshotChain() (root *callpbv1.Call, frames []*callpbv1.Call) {
 	llm := &callpbv1.Call{
-		Digest: "xxh3:llm",
-		Field:  "llm",
-		Type:   &callpbv1.Type{NamedType: "LLM"},
+		Field: "llm",
+		Type:  &callpbv1.Type{NamedType: "LLM"},
 	}
+	setDigest := func(frame *callpbv1.Call) {
+		dgst, err := call.CanonicalDigest(frame)
+		if err != nil {
+			panic(err)
+		}
+		frame.Digest = dgst.String()
+	}
+	setDigest(llm)
 	withPrompt := &callpbv1.Call{
-		Digest:         cannedAnchorDigest,
 		Field:          "withPrompt",
 		Type:           &callpbv1.Type{NamedType: "LLM"},
 		ReceiverDigest: llm.Digest,
@@ -48,24 +55,25 @@ func cannedSnapshotChain() (root *callpbv1.Call, frames []*callpbv1.Call) {
 			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: cannedAnchorPrompt}},
 		}},
 	}
+	setDigest(withPrompt)
 	return withPrompt, []*callpbv1.Call{withPrompt, llm}
 }
 
 const (
-	// cannedAnchorDigest is the imported chief's resume anchor: the digest
-	// its dagger.io/agent.snapshot.digest record names, and the key its call
-	// payload arrives under.
-	cannedAnchorDigest = "xxh3:snapshot"
 	cannedAnchorPrompt = "find the leak"
 	// cannedMissingDigest names a conversation whose payload never reached
 	// this client — §9's first row, and the one §5.3.3 fails a restore on.
 	cannedMissingDigest = "xxh3:neverpublished"
 )
 
+var cannedAnchorDigest = func() string {
+	root, _ := cannedSnapshotChain()
+	return root.Digest
+}()
+
 // cannedRestoreLogs is the rest of the capture's log channel: the resume
-// anchor each agent published, and the call payloads that make the chief's
-// anchor rebuildable. Both are attribute-only records, like every fact resume
-// rides on.
+// anchor each agent published, and the raw call payloads that make the chief's
+// anchor rebuildable.
 func cannedRestoreLogs(traceID byte, withWorker bool) *collogspb.ExportLogsServiceRequest {
 	record := func(span byte, attrs ...*commonpb.KeyValue) *logspb.LogRecord {
 		return &logspb.LogRecord{
@@ -89,20 +97,32 @@ func cannedRestoreLogs(traceID byte, withWorker bool) *collogspb.ExportLogsServi
 	}
 
 	_, frames := cannedSnapshotChain()
+	payloadRecords := make([]*logspb.LogRecord, 0, len(frames))
 	for _, frame := range frames {
-		payload, err := frame.Encode()
+		payloadCall := proto.Clone(frame).(*callpbv1.Call)
+		payloadCall.Digest = ""
+		payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(payloadCall)
 		if err != nil {
 			panic(err)
 		}
-		records = append(records, record(foreignTurnSpanID,
-			cannedStringAttr(telemetryattrs.DagCallPayloadDigestAttr, frame.Digest),
-			cannedStringAttr(telemetryattrs.DagCallPayloadAttr, payload),
-		))
+		payloadRecords = append(payloadRecords, &logspb.LogRecord{
+			TimeUnixNano: uint64(time.Unix(foreignTurnEnd, 0).UnixNano()),
+			TraceId:      cannedTraceID(traceID),
+			SpanId:       cannedSpanID(foreignTurnSpanID),
+			Body:         &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: payload}},
+			Attributes:   []*commonpb.KeyValue{cannedBoolAttr(telemetryattrs.DagCallPayloadAttr, true)},
+		})
 	}
 
 	return &collogspb.ExportLogsServiceRequest{
 		ResourceLogs: []*logspb.ResourceLogs{{
-			ScopeLogs: []*logspb.ScopeLogs{{LogRecords: records}},
+			ScopeLogs: []*logspb.ScopeLogs{
+				{LogRecords: records},
+				{
+					Scope:      &commonpb.InstrumentationScope{Name: telemetryattrs.CallPayloadInstrumentationScope},
+					LogRecords: payloadRecords,
+				},
+			},
 		}},
 	}
 }

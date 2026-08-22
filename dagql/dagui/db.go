@@ -21,7 +21,6 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -142,8 +141,7 @@ type DB struct {
 
 	Resources map[attribute.Distinct]*resource.Resource
 
-	CallPayloads map[string]string
-	Calls        map[string]*callpbv1.Call
+	Calls map[string]*callpbv1.Call
 
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
@@ -243,8 +241,7 @@ func NewDB() *DB {
 		Spans:     NewSpanSet(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
-		CallPayloads: make(map[string]string),
-		Calls:        make(map[string]*callpbv1.Call),
+		Calls: make(map[string]*callpbv1.Call),
 
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
@@ -945,10 +942,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.Intervals[span.CallDigest][span.StartTime] = span
 	}
 
-	if span.CallDigest != "" && span.CallPayload != "" {
-		db.addCallPayload(span.CallDigest, span.CallPayload)
-	}
-
 	if !span.ParentID.IsValid() && span.Received {
 		// keep track of the trace's root span
 		if db.RootSpan == nil {
@@ -1220,35 +1213,20 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 //
 // The walk needs that memory because CreatorSpans is keyed on a span's OUTPUT
 // digest while it answers with the span's CALL digest, and the two are
-// routinely the same value — a span that is its own creator. As long as a
-// payload is present the payload branch returns first and the question never
+// routinely the same value — a span that is its own creator. As long as an
+// exact call is present that branch returns first and the question never
 // arises; when one is MISSING, which is exactly the case a resume has to
 // report (design §9's first row: "call <digest> never reached this client"),
 // the walk recurred on the digest it started from and blew the stack instead.
 // Found by the end-to-end restore test, feeding it a capture whose call
 // payloads were withheld.
 func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
-	// First, check if we already have the call cached
-	if cached, ok := db.Calls[dig]; ok {
-		return cached
+	// First, check if we have the exact call.
+	if decoded, ok := db.Calls[dig]; ok {
+		return decoded
 	}
 
-	// Next, try to decode from the call payload
-	if callPayload, ok := db.CallPayloads[dig]; ok {
-		var call callpbv1.Call
-		if err := call.Decode(callPayload); err != nil {
-			slog.Warn("failed to decode call", "err", err)
-			// Cache nil so we don't keep retrying and spamming warnings
-			// on every render cycle.
-			db.Calls[dig] = nil
-			return nil
-		}
-		// Cache the decoded call for future use
-		db.Calls[dig] = &call
-		return &call
-	}
-
-	// Finally, try to find the call through creator spans
+	// Otherwise, try to find the call through creator spans.
 	if creators, ok := db.CreatorSpans[dig]; ok {
 		if seen == nil {
 			seen = map[string]bool{}
