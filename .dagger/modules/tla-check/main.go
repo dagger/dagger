@@ -78,6 +78,12 @@ var expectedOutcome = map[string]string{
 	// dependency-derived requirement (cache_persistence_import.go:736-740).
 	// Both exist unchanged on upstream/main; see the config header.
 	"resources_restart": "RequiredExact",
+
+	// accepted finding: the harm of that drift. A session that never
+	// bound the handle is handed the re-imported non-leaf, because its
+	// drifted stored set {} passes the lookup filter. resources_restart
+	// tracks the accounting; this tracks the caller's outcome.
+	"resources_restart_gated": "ReturnedGated",
 }
 
 type TlaCheck struct {
