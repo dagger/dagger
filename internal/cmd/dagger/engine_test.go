@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -15,6 +16,22 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestArchiveOptInUsesLiveCommandTraceID(t *testing.T) {
+	traceID := trace.TraceID{1, 2, 3, 4}
+	spanID := trace.SpanID{5}
+	ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID, SpanID: spanID,
+	}))
+
+	params, err := withArchiveTraceID(ctx, client.Params{ArchiveTelemetry: true})
+	require.NoError(t, err)
+	require.Equal(t, traceID.String(), params.ArchiveTraceID)
+
+	unchanged, err := withArchiveTraceID(context.Background(), client.Params{})
+	require.NoError(t, err)
+	require.Empty(t, unchanged.ArchiveTraceID)
+}
 
 type countingLogExporter struct {
 	exports atomic.Int64

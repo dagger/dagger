@@ -159,13 +159,14 @@ tombstone that was never re-hydrated projects IDLE-from-absence with the
 *seed* as its snapshot — async-agents item 12's "silently returns nothing
 new". Re-hydration fixes that case as a side effect.
 
-**(b) Restore is all-or-nothing, and eager.** The chief's recorded chain binds
-its workers by ID (`withTools(object: staff!withWorker(name, …llm!agent(id:…)))`
-— the pure form recommendation §3.2 landed, `modules/staff/main.dang:102`).
-If a worker is not re-hydrated *before* the chief's first tool dispatch, the
-dispatch resolves the handle against an empty registry and — today — `Send`'s
-`GetOrCreate` mints an amnesiac twin from the seed (async-agents §10.2, item
-13). §5.3 orders it; §4.2 makes the ordering violation loud.
+**(b) Restore is eager and best-effort.** The chief's recorded chain binds its
+workers by ID (`withTools(object: staff!withWorker(name, …llm!agent(id:…)))` —
+the pure form recommendation §3.2 landed, `modules/staff/main.dang:102`).
+Attempt every runtime before attaching any conversation, so no restored chief
+can dispatch while restore work is still pending. An agent that cannot be
+rebuilt or rehydrated is skipped with a visible notice; unrelated conversations
+remain usable. A later send to the missing runtime fails loudly rather than
+minting an amnesiac twin (§4.2), localizing the damage to the unavailable worker.
 
 **(c) Focus the agent with no agent above it.** A worker's loop span is
 started under its chief's tool-call span, so nesting is readable from the DB:
@@ -504,25 +505,23 @@ between a loud failure and a wrong handle).
 
 ### 5.3 Executing the plan
 
-Order and atomicity are load-bearing (recommendation §6.2's seed race):
+Order is load-bearing even though restoration is best-effort:
 
 1. Fetch the trace, under a span so the wait is visible, before the
    interactive loop starts — the same place `LoadSession` runs today
    (`internal/cmd/dagger/functions.go:1118-1127`).
-2. Re-hydrate **every** entry, before anything can dispatch a tool or bind an
-   LLM.
-3. Any entry whose snapshot ID does not rebuild — `CallIDForDigest` reports
-   the referring frame (`dagql/dagui/extract.go`) — **fails the command**,
-   naming the agent and the frame. It does not degrade to a partial restore:
-   a missing worker is exactly the hole a later tool dispatch falls into, and
-   with §4.2 that dispatch is an error rather than an amnesiac twin, but the
-   error would arrive minutes later with none of this context. `--partial`
-   opts into best-effort.
-4. Then attach: `LLMSession.Attach(instanceID, name, encodedAgentID)`
-   (`internal/cmd/dagger/llm.go:235`) already adopts an agent the session did
-   not spawn, rooted on its snapshot — which is exactly a restored agent. The
-   encoded handle is the ID `rehydrate` returned.
-5. `SetTarget` the focused agent (§3.1c). No Replay (§5.1.4).
+2. Attempt to rebuild every entry's snapshot ID before creating a runtime.
+   Missing frames or refused entries are skipped with a notice; fail only if
+   none can be rebuilt.
+3. Rehydrate every remaining entry, parents first, before attaching any.
+   Individual failures are skipped. A child whose parent failed becomes a
+   top-level lineage, and later calls to missing runtimes fail loudly (§4.2).
+4. Then attach every successfully rehydrated conversation, again skipping
+   individual failures and failing only if none attach. The encoded handle is
+   the ID `rehydrate` returned.
+5. `SetTarget` to the requested or most recently active attached top-level
+   agent (§3.1c). If the requested agent was skipped, report it and fall back.
+   No Replay (§5.1.4).
 
 Restored agents are marked **owned**: the session that resumed them is their
 only driver, so `.clear` stopping them is right. (Contrast with roster
@@ -944,10 +943,10 @@ differs where it does.
   refusals §3.1 and §4.4 require (a `STOPPED` record with no reason, an agent
   with no snapshot digest) are reported ON the entry rather than by failing the
   whole projection, because the projection is the only place that knows *which*
-  agent is unrestorable and why. The caller fails the command on the first one
-  (§5.3.3), and `--partial` skips exactly those entries — which a plan that
-  refused wholesale could not express. A refused entry still carries every fact
-  that did resolve, so the failure can name the agent, its ID and its anchor.
+  agent is unrestorable and why. Best-effort execution skips those entries and
+  surfaces a notice — which a plan that refused wholesale could not express. A
+  refused entry still carries every fact that did resolve, so the notice can name
+  the agent, its ID and its anchor.
 - **Unknown state tokens are refused too.** A trace from a newer engine that
   publishes a state this client does not know is not guessed at, for the same
   reason the other two refusals exist: every reading is a guess, and the wrong
@@ -1274,24 +1273,23 @@ differs where it does.
   span's START when it never ended, because an imported trace's unfinished
   spans are all sealed to one shared bound (§5.1.2) and ends alone would tie
   every agent of a crashed session together.
-- **Execution is three phases, not one loop, and the split is load-bearing.**
-  Every anchor is rebuilt BEFORE anything is re-hydrated, so a refusal leaves
-  the engine untouched — §3.1b's "all-or-nothing" is otherwise only true of the
-  command's exit code, not of the session it leaves behind. Then every entry is
-  re-hydrated, then every one is attached. The fail-first run against the naive
-  interleaved shape failed four ways: the call order, both refusals creating
-  entries before failing, and the "nothing restorable" guard missing entirely
-  (it panicked).
+- **Execution is phased, not interleaved, and the split is load-bearing.** Every
+  anchor is attempted before any runtime is created; every rehydrate attempt
+  completes before the first attach. Refused entries produce notices and are
+  skipped, while independent agents remain usable. Restore still fails when
+  nothing can be rebuilt or attached, avoiding an empty session that looks like
+  success.
 - **The restore verb is spelled `node(id:) { ... on LLM { … } }`**, not §3.2's
   `loadLLMFromID`. Same call — that is what the generated clients' `Ref` builds
   — and it is the form `core/integration`'s `rehydrateAgent` already used, so
   the CLI and the tests exercise one string.
-- **`--partial` skips exactly the refused entries, and still fails when that
-  leaves nothing.** A best-effort restore that restores nothing is an empty
-  session that looks like it worked, which is the outcome §12 rules out.
-- **Focus by `--agent` resolves instance IDs before names, and refuses an
-  ambiguous name.** A name is a display label two agents may legitimately share
-  (async-agents §8 spent the spawn pivot establishing that); an ID never is.
+- **Best-effort is the default and still fails when nothing attaches.** A restore
+  that recovers nothing is an empty session that looks like success, which is the
+  outcome §12 rules out.
+- **Focus by `--agent` resolves instance IDs before names.** If the requested
+  instance is unavailable or a name is ambiguous, the CLI reports that and falls
+  back to automatic focus among attached top-level conversations rather than
+  aborting after successful restore mutations.
 - **Restored conversations are owned** (`AttachRestored`, a second entry point
   onto the same `attach`), because the session that published them is gone and
   nothing else can drive them. They also inherit the composed agent group as

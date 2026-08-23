@@ -338,7 +338,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if !llm.Pristine() {
 					return fmt.Errorf("the interactive session has already started agent work; start a new session with dagger agent -r")
 				}
-				return restoreFromTrace(ctx, h, traceRestore{traceID: traceID})
+				return restoreFromTrace(ctx, h, traceRestore{traceID: traceID, source: h.restoreSource})
 			},
 		},
 	}

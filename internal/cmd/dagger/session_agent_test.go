@@ -204,6 +204,29 @@ func sessionTitleBoolAttr(span sdktrace.ReadOnlySpan, key attribute.Key) bool {
 	return false
 }
 
+func TestGeneratedTitleUpdatesActiveArchive(t *testing.T) {
+	session := &LLMSession{plumbingCtx: context.Background()}
+	session.titleGenerator = func(context.Context, *sessionAgent, string) (string, error) {
+		return "Investigate archive resume", nil
+	}
+	handler := &shellCallHandler{
+		generateSessionTitle: true,
+		initialPrompt:        "investigate resume",
+	}
+	var gotTitle string
+	handler.archiveMetadata = func(ctx context.Context, title string) error {
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok, "detached metadata updates must be bounded")
+		require.LessOrEqual(t, time.Until(deadline), 5*time.Second)
+		gotTitle = title
+		return nil
+	}
+	handler.configureSessionTitle(session)
+	require.NotNil(t, session.onTitle)
+	session.onTitle(session.newAgent("agent"))
+	require.Equal(t, "Investigate archive resume", gotTitle)
+}
+
 func TestSessionTitleGenerationTelemetryIsContained(t *testing.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))

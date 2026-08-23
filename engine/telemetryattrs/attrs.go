@@ -17,6 +17,13 @@ const (
 
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
+	// AgentResumeSourceTraceIDAttr and AgentResumeArchiveSourceAttr identify the
+	// retained session continued by a live "resume agents" bridge span. The
+	// source is the archive implementation that supplied it ("engine" or
+	// "cloud"). (string)
+	AgentResumeSourceTraceIDAttr = "dagger.io/agent.resume.source_trace_id"
+	AgentResumeArchiveSourceAttr = "dagger.io/agent.resume.archive_source"
+
 	// LogRoleAttr describes a semantic role for an OTLP log record whose body
 	// carries data rather than ordinary log output. LogRoleSpanName means the
 	// body is the latest display name for the span the record is attributed to;
@@ -305,6 +312,11 @@ const (
 	// map[string]any attribute decode bit-exact, like the decimal-string wait
 	// timings above.
 	WcprofExecArgvAttr = "wcprof.exec.argv"
+
+	// LinkPurposeContinuation marks lineage between a new live trace and the
+	// source identity spans it resumes. Unlike an empty-purpose or cause link,
+	// consumers must not use it to reparent spans or propagate status.
+	LinkPurposeContinuation = "continuation"
 
 	// LinkPurposeWait is a new value for telemetry.LinkPurposeAttr
 	// ("dagger.io/link.purpose"), alongside the existing "cause"/"error_origin"

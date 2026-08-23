@@ -2,7 +2,7 @@
 
 *Builds on [Resume from trace](./resume-from-trace.md).*
 
-Status: implementation in progress.
+Status: implemented.
 
 ## Summary
 
@@ -49,39 +49,45 @@ The engine-side persistence substrate and the CLI hard cut-over are implemented:
 - Graceful agent teardown captures each entry's pre-teardown state, stops the
   runtimes, then publishes one authoritative final checkpoint per registry
   entry. Each final record carries the expected final sequence.
-- Core and schema expose transactional batch rehydration. The operation resolves
-  every snapshot and handle first, validates the complete set, stages runtime
-  construction and durable tombstone leases off-registry, and publishes all
-  entries under one registry lock. A validation, acquisition or commit race
-  releases staged leases and leaves no partial runtime roster.
+- Core and schema keep rehydration on the public single-agent verb. Each restore
+  validates its state, stages the runtime and durable tombstone lease off-registry,
+  and publishes only that entry; a validation, acquisition or publication race
+  releases the candidate lease without affecting other agents.
 - `engine/clientdb` has durable checkpoints, fixed high-water range reads and
   trace-scoped agent-identity, ancestor and call-payload indexes. Reopening a
   store rebuilds those indexes.
 - The archive manager persists versioned atomic manifests and checksummed
   bootstrap sidecars, records fixed cuts, marks interrupted archives on startup,
   enforces TTL/quota retention with reader leases and keeps retained client
-  stores out of ephemeral GC. The engine exposes main-client-only archive list,
+  stores out of ephemeral GC. Finalization verifies every checkpoint sequence,
+  one authoritative final record per agent, parentage and the exact recursive
+  snapshot payload closure. The engine exposes main-client-only archive list,
   metadata, bootstrap and finite signal endpoints.
 - `dagger agent` now uses optional-value `-r/--resume`; `--trace`, `--partial`,
   local `llm_id` save files, autosave/replay hooks and saved-session loading have
   been removed. Startup and pristine `.resume` share the trace restore path.
 
-The remaining work is end-to-end archive consumption. The archive finalizer and
-server are being reconciled with the landed clientdb primitives, including strict
-verification of the authoritative final checkpoint sequence and recursive final
-snapshot payload closures. The client must then list/select archives, resolve
-engine-first with Cloud fallback only on a clean miss, import and acknowledge the
-bootstrap before batch rehydration, assimilate the three bounded remainder
-streams in the background, and emit the continuation link. Cloud still uses the
-existing whole-trace adapter until its bootstrap endpoint exists. Crash-durable
-per-turn checkpoints remain a follow-up.
+End-to-end archive consumption is implemented. The CLI lists and selects closed
+engine archives, resolves explicit traces engine-first with Cloud fallback only
+on a typed clean miss, strictly imports and acknowledges the verified bootstrap,
+then restores agents independently before attaching and focusing the successful
+conversations. Individual anchor, runtime or attachment failures surface as
+notices and do not block unrelated conversations. The three fixed-cut remainder
+signals assimilate independently in the background with acknowledged cursors,
+retries, permanent abandonment and one persistent warning. Resume emits the
+continuation bridge, agent commands opt into retention with their canonical trace
+ID, and generated titles update active manifests.
+Cloud uses the existing strict whole-trace adapter until it provides the same
+bootstrap protocol. Crash-durable per-turn checkpoints remain the durability
+follow-up described below; v1 guarantees graceful-close persistence.
 
 ## Goals
 
 1. Make agent resume a property of engine telemetry rather than client-local
    recipe files.
-2. Restore every agent's identity, committed conversation and lifecycle state
-   before accepting a message.
+2. Restore each recoverable agent's identity, committed conversation and
+   lifecycle state before accepting a message; surface and skip individual
+   failures.
 3. For engine archives, make the prompt available without waiting for
    historical tool spans, logs or metrics.
 4. Assimilate the source engine telemetry into the current TUI without changing
@@ -162,8 +168,9 @@ the meantime.
 
 `--trace` and `--partial` are removed. `--trace-timeout` becomes
 `--resume-timeout`; it and `--agent` apply after either direct or picker
-selection. Bootstrap remains strict. A best-effort per-agent mode can be added
-later if strict restore proves too limiting.
+selection. Bootstrap transport and integrity validation remain strict, while
+agent restoration is best-effort by default and fails only when no conversation
+can be attached.
 
 Any resume form skips destination workspace module loading and starts from the
 same fresh, unbound LLM base that `--trace` uses today. The restored recipes
@@ -571,20 +578,21 @@ the restore plan.
 Execution retains the current ordering:
 
 1. Project every agent from the imported bootstrap.
-2. Rebuild every snapshot ID from the call-payload closure.
-3. Fail before mutation if any entry or payload is invalid.
-4. Rehydrate every agent runtime.
-5. Attach every restored conversation.
-6. Focus the selected or most recently active top-level agent.
-7. Expose the interactive prompt.
+2. Attempt to rebuild every snapshot ID from the call-payload closure.
+3. Record a notice and skip entries whose anchors are invalid or missing.
+4. Rehydrate each remaining runtime, parents first, before attaching any.
+5. Attach each successful runtime, skipping individual attachment failures.
+6. Focus the selected or most recently active attached top-level agent.
+7. Expose the interactive prompt; fail only when no conversation attached.
 
-Bootstrap is strict. A transport error, missing anchor, missing call frame,
-reasonless stop or invalid state fails the command. Rehydration is one
-transactional batch engine operation: validate every instance and recipe, acquire
-and construct every entry off-registry, then publish the complete set under one
-registry lock. A staging failure releases all acquired resources; no runtime is
-visible until the whole batch can commit. Attach and focus remain client-side
-phases after the batch succeeds.
+Bootstrap transport and integrity validation are strict: a truncated stream,
+invalid cut or malformed protocol fails before restoration. Roster restoration is
+best-effort. Each `Agent.rehydrate` validates and acquires its own runtime before
+publication, so one failed entry leaves no half-created runtime of its own and
+does not block unrelated agents. Children retain parent checkpoint lineage only
+when that parent restored successfully; otherwise they become valid top-level
+lineages. Attach and focus remain client-side phases after all rehydration
+attempts finish.
 
 ### Background assimilation
 
@@ -665,25 +673,28 @@ the new trace.
 1. **Resume-critical records and indexes (implemented)** — the lossless
    checkpoint producer, final roster and sequence barrier, agent-identity and
    call-payload indexes, and trace-scoped latest/ancestor/range reads are landed.
-2. **Archive lifecycle (implemented; final verification in progress)** — agent
-   opt-in, archive config, manifest index, durable `DB.Checkpoint`, bootstrap
-   sidecar, archive-aware GC and listing are landed. Final checkpoint/recursive
-   payload verification is being completed against the landed store APIs.
-3. **Finite streams (implemented server-side)** — trace-addressed archive streams
-   are bounded by manifest cursors, advance scan cursors across exclusions and
-   emit terminal frames; the strict client consumer remains.
-4. **Bootstrap protocol (in progress)** — transactional batch rehydration and the
-   engine bootstrap endpoint are implemented; fixed-cut client import,
-   acknowledgment, verified projection, attach and focus remain.
-5. **Background assimilation (pending)** — stream excluded remainders
-   independently with cursors, retries and nonfatal TUI failure reporting.
-6. **CLI cut-over (in progress)** — trace IDs now use `--resume`/`.resume` and the
-   old trace/local save paths are deleted; the engine picker and
-   engine-first/Cloud-second source resolution remain.
-7. **Trace link (pending)** — emit the custom-purpose continuation bridge span.
-8. **Cloud parity (in progress)** — the existing whole-trace Cloud importer is
-   the temporary adapter; it still needs to implement the common archive source
-   interface until Cloud provides a bootstrap endpoint.
+2. **Archive lifecycle (implemented)** — agent opt-in, archive config, atomic
+   manifests, durable `DB.Checkpoint`, strict final-checkpoint and recursive
+   payload verification, bootstrap sidecars, archive-aware GC and listing are
+   landed.
+3. **Finite streams (implemented)** — trace-addressed archive streams are bounded
+   by manifest cursors, advance scan cursors across exclusions, emit strict
+   terminal frames and are consumed with acknowledged cursors.
+4. **Bootstrap protocol (implemented)** — the client validates the fixed cut,
+   imports each batch through the serialized frontend queue, waits for the event
+   loop, then batch-rehydrates, attaches and focuses.
+5. **Background assimilation (implemented)** — excluded remainders stream
+   independently with cursor retries, fixed-cut sealing and nonfatal persistent
+   failure reporting.
+6. **CLI cut-over (implemented)** — trace IDs use `--resume`/`.resume`, the old
+   trace/local save paths are deleted, and picker plus engine-first/Cloud-second
+   source resolution are wired.
+7. **Trace link (implemented)** — resume emits the custom-purpose continuation
+   bridge span without changing tree or status propagation.
+8. **Cloud adapter (implemented)** — Cloud currently satisfies the source
+   interface through a strict whole-trace startup. A native Cloud bootstrap
+   endpoint can adopt the engine's two-phase protocol without changing restore
+   execution.
 9. **Durability follow-up (pending)** — add coalesced verified turn/step
    checkpoints if graceful-close persistence proves insufficient.
 
@@ -705,8 +716,9 @@ the new trace.
   continue and one persistent warning appears.
 - Verify source and live trace IDs remain distinct, the continuation link is
   present, and imported telemetry is not re-exported to Cloud.
-- Verify all anchors are resolved before the first rehydration and every agent is
-  rehydrated before the first attach or message.
+- Verify every anchor is attempted before the first rehydration, every runtime
+  attempt completes before the first attach, and one failed agent does not block
+  the others.
 - Verify graceful close spills and syncs the store before the manifest becomes
   closed; a failed checkpoint produces an incomplete, unselectable archive.
 - Exercise TTL expiry, quota eviction, reader leases, newest-oversize behavior

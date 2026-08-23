@@ -563,6 +563,10 @@ func TestRestorePlanFoldsARelaunchedLoop(t *testing.T) {
 	if entry.Error != "" {
 		t.Errorf("the failure the retry recovered from must not ride the restored entry: %q", entry.Error)
 	}
+	if entry.SourceContext.SpanID != spanID(sourceRetryLoopID) {
+		t.Errorf("source identity = %v, want newest loop %v",
+			entry.SourceContext.SpanID, spanID(sourceRetryLoopID))
+	}
 }
 
 // TestRestorePlanCarriesTheLoopError covers the other half of FAILED: the
@@ -712,6 +716,16 @@ func TestRestorePlanReportsTheEnclosingAgent(t *testing.T) {
 	}
 	if worker.ParentAgentID != "agent-chief" {
 		t.Errorf("worker's enclosing agent = %q, want agent-chief", worker.ParentAgentID)
+	}
+	if chief.SourceContext.TraceID.TraceID != (trace.TraceID{sourceTrace}) ||
+		chief.SourceContext.SpanID != spanID(sourceLoopID) {
+		t.Errorf("chief source context = %+v, want source identity %v/%v",
+			chief.SourceContext, trace.TraceID{sourceTrace}, spanID(sourceLoopID))
+	}
+	if worker.SourceContext.TraceID.TraceID != (trace.TraceID{sourceTrace}) ||
+		worker.SourceContext.SpanID != spanID(sourceWorkerLoopID) {
+		t.Errorf("worker source context = %+v, want newest source identity %v/%v",
+			worker.SourceContext, trace.TraceID{sourceTrace}, spanID(sourceWorkerLoopID))
 	}
 }
 

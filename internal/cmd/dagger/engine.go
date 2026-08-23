@@ -22,6 +22,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -142,6 +143,7 @@ func withEngine(
 		cleanup.Add("close dagger session", sess.Close)
 
 		Frontend.SetClient(sess.Dagger())
+		ctx = withTraceRestoreSource(ctx, newEngineTraceRestoreSource(sess.ArchiveClient()))
 
 		return cleanup.Run, fn(ctx, sess)
 	})
@@ -183,6 +185,12 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 	params.EngineMetrics = telemetry.MetricExporters
 
+	archiveParams, archiveErr := withArchiveTraceID(ctx, params)
+	if archiveErr != nil {
+		return params, archiveErr
+	}
+	params = archiveParams
+
 	params.WithTerminal = withTerminal
 
 	params.Interactive = interactive
@@ -198,6 +206,18 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 	params.CloudAuth = ca
 
+	return params, nil
+}
+
+func withArchiveTraceID(ctx context.Context, params client.Params) (client.Params, error) {
+	if !params.ArchiveTelemetry {
+		return params, nil
+	}
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		return params, fmt.Errorf("archive telemetry requires a live command trace")
+	}
+	params.ArchiveTraceID = traceID.String()
 	return params, nil
 }
 

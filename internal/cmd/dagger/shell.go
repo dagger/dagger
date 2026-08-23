@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
@@ -51,6 +52,7 @@ var shellCmd = &cobra.Command{
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := newShellCallHandler(dag, Frontend)
+			handler.restoreSource = newEngineTraceRestoreSource(engineClient.ArchiveClient())
 
 			err := handler.RunAll(ctx, args)
 
@@ -197,6 +199,13 @@ type shellCallHandler struct {
 	// not serialized: two focused-in-turn conversations can step at once.
 	initialPrompt string
 	promptL       sync.Mutex
+
+	// restoreSource is the connected engine archive source shared by startup
+	// resume and pristine .resume.
+	restoreSource traceRestoreSource
+
+	// archiveMetadata publishes generated titles to the active archive best-effort.
+	archiveMetadata func(context.Context, string) error
 
 	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
 	// mode and function-returned LLMs retain their command span names.
@@ -912,12 +921,29 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	h.llmModel = s.Target().model
 	// Keep title generation as an independent post-turn callback. It is set only
 	// for dagger agent, never for generic function-returned LLMs.
-	if h.generateSessionTitle {
-		s.onTitle = func(a *sessionAgent) {
-			s.ensureTitle(a, h.sessionInitialPrompt())
+	h.configureSessionTitle(s)
+	return h.llmSession, h.llmErr
+}
+
+func (h *shellCallHandler) configureSessionTitle(s *LLMSession) {
+	if !h.generateSessionTitle {
+		return
+	}
+	s.onTitle = func(a *sessionAgent) {
+		title := s.ensureTitle(a, h.sessionInitialPrompt())
+		if title == "" || h.archiveMetadata == nil {
+			return
+		}
+		ctx := s.plumbingCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		metadataCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := h.archiveMetadata(metadataCtx, title); err != nil {
+			slog.Debug("failed to update agent archive title", "error", err)
 		}
 	}
-	return h.llmSession, h.llmErr
 }
 
 func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {

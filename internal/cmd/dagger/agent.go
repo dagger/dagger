@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -70,6 +71,10 @@ Examples:
 		return withEngine(
 			cmd.Context(),
 			client.Params{
+				// Agent prompt sessions retain their engine telemetry for resume.
+				// finalizeEngineParams supplies the canonical live command trace ID
+				// after frontend telemetry initialization.
+				ArchiveTelemetry: !agentListMode,
 				// A restored trace carries its own workspace and composition.
 				// Loading destination modules would make a cold resume depend on
 				// the checkout it happens to be launched from.
@@ -97,8 +102,14 @@ Examples:
 				if err != nil {
 					return err
 				}
+				archiveClient := engineClient.ArchiveClient()
+				liveTraceID := engineClient.ArchiveTraceID
 				opts := interactivePromptModeOpts{
 					generateSessionTitle: true,
+					restoreSource:        newEngineTraceRestoreSource(archiveClient),
+					archiveMetadata: func(updateCtx context.Context, title string) error {
+						return archiveClient.UpdateMetadata(updateCtx, liveTraceID, archive.MetadataUpdate{Title: title})
+					},
 				}
 				if resume {
 					opts.restore = &traceRestore{
@@ -142,7 +153,7 @@ func init() {
 	// value remains positional and is rejected as an agent composition.
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentResumePicker)
 	agentCmd.Flags().DurationVar(&agentResumeTimeout, "resume-timeout", 0,
-		"Resume from data received so far if a trace stream is idle for this duration")
+		"Maximum idle interval without bytes before a resume stream fails (background history retries nonfatally)")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"Focus this restored agent (instance ID or name) instead of the top-level one")
 	agentCmd.Flags().StringArrayVar(&agentCheckpointInclude, "checkpoint-include", nil,

@@ -204,6 +204,12 @@ type AgentRestore struct {
 	// fact focus selection is made of (§3.1c).
 	ParentAgentID string
 
+	// SourceContext is the newest source identity span for this agent. A
+	// resuming client links the top-level contexts from its live bridge span to
+	// preserve cross-trace continuation lineage without changing either trace's
+	// tree.
+	SourceContext SpanContext
+
 	// LastActivity is when this agent was last seen doing anything: the
 	// newest end time across its loop spans, or their newest start when one
 	// never ended. It exists for the other half of §3.1c's focus rule —
@@ -314,6 +320,9 @@ func (node *AgentNode) restoreEntry() AgentRestore {
 		SnapshotDigest: node.SnapshotDigest,
 		ParentAgentID:  node.parentAgentID(),
 		LastActivity:   node.lastActivity(),
+	}
+	if span := node.Span(); span != nil {
+		entry.SourceContext = SpanContext{TraceID: span.TraceID, SpanID: span.ID}
 	}
 	state, err := node.restoreState()
 	if err != nil {

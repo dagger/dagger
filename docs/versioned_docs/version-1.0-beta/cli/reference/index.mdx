@@ -138,7 +138,7 @@ dagger agent [options] [name...]
       --checkpoint-max-untracked-total-bytes int   Maximum aggregate untracked checkpoint bytes (default 64 MiB)
   -l, --list                                       List available agents
   -r, --resume trace[=picker]                      Resume agents from a retained trace (engine archive picker if no trace ID is given)
-      --resume-timeout duration                    Resume from data received so far if a trace stream is idle for this duration
+      --resume-timeout duration                    Maximum idle interval without bytes before a resume stream fails (background history retries nonfatally)
 ```
 
 ### Options inherited from parent commands
