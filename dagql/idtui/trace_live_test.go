@@ -124,18 +124,18 @@ func TestLiveCloudFetchRoundTrip(t *testing.T) {
 
 	t.Logf("spans=%d logRecords=%d (noBody=%d emptyBody=%d textBody=%d attrOnly=%d) callPayloads=%d",
 		sink.spans, sink.logRecords, sink.noBody, sink.emptyBody, sink.textBody,
-		sink.attrOnly, len(db.CallPayloads))
+		sink.attrOnly, len(db.Calls))
 	t.Log(client.StatsSummary())
 
 	require.NotZero(t, sink.spans, "the trace stream returned no spans")
 
-	// §12, assumption ONE. Call payloads ride attribute-only records over the
-	// log channel, and they are the same shape agent state and snapshot
-	// digests use — so a non-empty CallPayloads map is the round trip
+	// §12, assumption ONE. Call payloads ride content-typed byte-bodied
+	// records over the log channel; attribute-only records still carry agent
+	// state and snapshot digests. A non-empty Calls map is the round trip
 	// surviving, measured through the consumer that depends on it.
 	require.NotZero(t, sink.attrOnly,
 		"no attribute-only log record came back; the resume channel does not survive the round trip")
-	require.NotEmpty(t, db.CallPayloads,
+	require.NotEmpty(t, db.Calls,
 		"no call payloads reached the DB; §5.2's span-free ID rebuild has nothing to work from")
 }
 
@@ -165,7 +165,7 @@ func TestLiveCloudPreservesCallAttributes(t *testing.T) {
 
 	var checked, mismatched int
 	var firstUnrebuildable error
-	for digest := range db.CallPayloads {
+	for digest := range db.Calls {
 		id, err := db.CallIDForDigest(digest)
 		if err != nil {
 			// A chain whose ancestor frames did not reach this client is a
@@ -188,7 +188,7 @@ func TestLiveCloudPreservesCallAttributes(t *testing.T) {
 		}
 	}
 
-	t.Logf("call payloads: %d total, %d rebuilt, %d mismatched", len(db.CallPayloads), checked, mismatched)
+	t.Logf("call payloads: %d total, %d rebuilt, %d mismatched", len(db.Calls), checked, mismatched)
 	if firstUnrebuildable != nil {
 		t.Logf("first payload that did not rebuild: %v", firstUnrebuildable)
 	}
