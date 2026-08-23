@@ -453,21 +453,28 @@ func (node *AgentNode) lastActivity() time.Time {
 // agent in (see AgentNode.PreTeardownState).
 func (db *DB) ingestAgentState(record sdklog.Record) bool {
 	var state, waitingOn, stopReason string
-	var sawState bool
+	var reserved, validState bool
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		switch kv.Key {
 		case telemetryattrs.AgentStateAttr:
-			state = kv.Value.AsString()
-			sawState = true
+			reserved = true
+			state, validState = LogValueString(kv.Value)
 		case telemetryattrs.AgentWaitingOnAttr:
-			waitingOn = kv.Value.AsString()
+			if value, ok := LogValueString(kv.Value); ok {
+				waitingOn = value
+			}
 		case telemetryattrs.AgentStopReasonAttr:
-			stopReason = kv.Value.AsString()
+			if value, ok := LogValueString(kv.Value); ok {
+				stopReason = value
+			}
 		}
 		return true
 	})
-	if !sawState {
+	if !reserved {
 		return false
+	}
+	if !validState {
+		return true
 	}
 
 	spanID := SpanID{SpanID: record.SpanID()}
@@ -498,16 +505,19 @@ func (db *DB) ingestAgentState(record sdklog.Record) bool {
 // and most commits do not move it. Latest record wins — this is the tip.
 func (db *DB) ingestAgentSnapshot(record sdklog.Record) bool {
 	var digest string
-	var sawDigest bool
+	var reserved, validDigest bool
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		if kv.Key == telemetryattrs.AgentSnapshotDigestAttr {
-			digest = kv.Value.AsString()
-			sawDigest = true
+			reserved = true
+			digest, validDigest = LogValueString(kv.Value)
 		}
 		return true
 	})
-	if !sawDigest {
+	if !reserved {
 		return false
+	}
+	if !validDigest {
+		return true
 	}
 
 	spanID := SpanID{SpanID: record.SpanID()}
