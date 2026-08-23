@@ -25,6 +25,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // setupCmd is the idempotent "ensure environment works" doctor verb.
@@ -441,7 +442,11 @@ To get started:
 // recommendations either way.
 func setupStepMigrate(ctx context.Context, dag *dagger.Client, ui *setupUI) (applied bool, moduleOnly bool, configs []string, rerr error) {
 	messageCtx := ctx
-	ctx, span := Tracer().Start(ctx, "Workspace migration", telemetry.Reveal(), telemetry.Encapsulate())
+	spanOpts := []trace.SpanStartOption{telemetry.Reveal()}
+	if ui != nil {
+		spanOpts = append(spanOpts, telemetry.Encapsulate())
+	}
+	ctx, span := Tracer().Start(ctx, "Workspace migration", spanOpts...)
 	ui.setMigration(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 	defer telemetry.EndWithCause(span, &rerr)
 
