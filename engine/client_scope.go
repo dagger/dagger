@@ -261,6 +261,13 @@ func (transport *NestedClientTransport) Closed() bool {
 
 type clientScopeContextKey struct{}
 
+// contextWithClientScope installs execution authority without changing the
+// context's effective client metadata. The metadata may deliberately route
+// host/resource access to a different client, such as a Workspace owner.
+func contextWithClientScope(ctx context.Context, scope ClientScope) context.Context {
+	return context.WithValue(ctx, clientScopeContextKey{}, scope)
+}
+
 // ContextWithClientScope installs the immutable scope and its metadata
 // snapshot. Existing metadata values are replaced by the sealed snapshot.
 func ContextWithClientScope(ctx context.Context, scope ClientScope) (context.Context, error) {
@@ -268,7 +275,7 @@ func ContextWithClientScope(ctx context.Context, scope ClientScope) (context.Con
 	if err != nil {
 		return nil, err
 	}
-	ctx = context.WithValue(ctx, clientScopeContextKey{}, scope)
+	ctx = contextWithClientScope(ctx, scope)
 	return ContextWithClientMetadata(ctx, metadata), nil
 }
 
@@ -278,8 +285,10 @@ func ClientScopeFromContext(ctx context.Context) (ClientScope, bool) {
 }
 
 // DetachClientScope explicitly clones lifecycle ownership before removing the
-// caller's cancellation. Contexts without a scope are supported for standalone
-// DagQL/core use and return no lease; engine request contexts always carry one.
+// caller's cancellation. It replaces only execution authority, preserving the
+// effective client metadata used for host/resource routing. Contexts without a
+// scope are supported for standalone DagQL/core use and return no lease; engine
+// request contexts always carry one.
 func DetachClientScope(ctx context.Context, kind ClientLeaseKind, ownerID string) (context.Context, *ClientLifecycleLease, error) {
 	scope, ok := ClientScopeFromContext(ctx)
 	if !ok {
@@ -289,10 +298,6 @@ func DetachClientScope(ctx context.Context, kind ClientLeaseKind, ownerID string
 	if err != nil {
 		return nil, nil, err
 	}
-	detached, err := ContextWithClientScope(context.WithoutCancel(ctx), cloned)
-	if err != nil {
-		cloned.Lease().Release()
-		return nil, nil, err
-	}
+	detached := contextWithClientScope(context.WithoutCancel(ctx), cloned)
 	return detached, cloned.Lease(), nil
 }

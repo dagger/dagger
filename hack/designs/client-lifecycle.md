@@ -269,7 +269,9 @@ defer release()
 longer the lifecycle primitive for executable work. Agent and service registries
 store the acquired scope and release it from their actual terminal transition.
 DagQL shared-work coordination acquires one lease for the shared callback, not
-one per waiter.
+one per waiter. Detaching replaces only the held execution scope; it preserves
+the context's effective client metadata because host/resource routing may have
+been rebound independently, for example to a Workspace owner.
 
 Nested client creation is strict capability delegation. The engine-owned proxy
 must register its transport with the creating `ClientScope`, atomically cloning a

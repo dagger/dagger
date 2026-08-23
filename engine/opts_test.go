@@ -75,6 +75,60 @@ func TestClientScopeIsImmutableCloneableAndRaceSafe(t *testing.T) {
 	require.ErrorContains(t, err, "not held")
 }
 
+func TestDetachClientScopePreservesEffectiveMetadata(t *testing.T) {
+	t.Parallel()
+
+	var backgroundReleased atomic.Bool
+	rootLease := NewClientLifecycleLease(
+		ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind ClientLeaseKind, ownerID string) (*ClientLifecycleLease, error) {
+			return NewClientLifecycleLease(
+				kind,
+				ownerID,
+				func() { backgroundReleased.Store(true) },
+				nil,
+			), nil
+		},
+	)
+	t.Cleanup(rootLease.Release)
+
+	scope, err := NewClientScope(&ClientMetadata{
+		SessionID: "session",
+		ClientID:  "execution-client",
+	}, rootLease)
+	require.NoError(t, err)
+	ctx, err := ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+
+	// Workspace host access executes under the caller's scope but routes through
+	// the Workspace owner's metadata. Detaching that work must preserve both.
+	routingMetadata := &ClientMetadata{
+		SessionID: "session",
+		ClientID:  "workspace-owner",
+	}
+	ctx = ContextWithClientMetadata(ctx, routingMetadata)
+	detached, backgroundLease, err := DetachClientScope(ctx, ClientLeaseSharedWork, "call")
+	require.NoError(t, err)
+	require.NotNil(t, backgroundLease)
+	t.Cleanup(backgroundLease.Release)
+
+	detachedScope, ok := ClientScopeFromContext(detached)
+	require.True(t, ok)
+	require.Equal(t, "execution-client", detachedScope.ClientID())
+	require.Equal(t, ClientLeaseSharedWork, detachedScope.Lease().Kind())
+	require.Equal(t, "call", detachedScope.Lease().OwnerID())
+
+	detachedMetadata, err := ClientMetadataFromContext(detached)
+	require.NoError(t, err)
+	require.Equal(t, routingMetadata, detachedMetadata)
+	require.Equal(t, "workspace-owner", detachedMetadata.ClientID)
+
+	backgroundLease.Release()
+	require.True(t, backgroundReleased.Load())
+}
+
 func TestClientMetadataAppendToHTTPHeadersNormalizesLegacyWorkspaceModuleLoading(t *testing.T) {
 	t.Parallel()
 
