@@ -1209,8 +1209,13 @@ func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includ
 
 	fmt.Fprintln(w)
 
+	var lastBody string
 	for _, l := range logs {
-		data := l.Body().AsString()
+		data, ok := dagui.LogBodyString(l)
+		if !ok {
+			continue
+		}
+		lastBody = data
 		switch primaryLogStream(l) {
 		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
@@ -1225,10 +1230,7 @@ func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includ
 		}
 	}
 
-	trailingLn := false
-	if len(logs) > 0 {
-		trailingLn = strings.HasSuffix(logs[len(logs)-1].Body().AsString(), "\n")
-	}
+	trailingLn := strings.HasSuffix(lastBody, "\n")
 	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
 		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
 		// encourage module authors to add one of their own
@@ -1243,7 +1245,9 @@ func primaryLogStream(l sdklog.Record) int {
 	var stream int
 	l.WalkAttributes(func(attr log.KeyValue) bool {
 		if attr.Key == telemetry.StdioStreamAttr {
-			stream = int(attr.Value.AsInt64())
+			if value, ok := dagui.LogValueInt64(attr.Value); ok {
+				stream = int(value)
+			}
 			return false
 		}
 		return true

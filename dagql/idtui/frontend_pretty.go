@@ -2631,7 +2631,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			logSpanIDs[spanID] = struct{}{}
 			fe.updateSpanTreesForLogs(spanID)
 		}
-		fe.db.LogExporter().Export(context.Background(), logsCopy)
+		logsCopy = fe.db.IngestLogs(logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
@@ -8311,7 +8311,11 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	for _, log := range renderableLogRecords(logs) {
+	for _, log := range logs {
+		body, isText := dagui.LogBodyString(log)
+		if !isText {
+			continue
+		}
 		// Check for Markdown content type
 		contentType := ""
 		eof := false
@@ -8320,13 +8324,13 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		for attr := range log.WalkAttributes {
 			switch attr.Key {
 			case telemetry.ContentTypeAttr:
-				contentType = attr.Value.AsString()
+				contentType, _ = dagui.LogValueString(attr.Value)
 			case telemetry.StdioEOFAttr:
-				eof = attr.Value.AsBool()
+				eof, _ = dagui.LogValueBool(attr.Value)
 			case telemetry.LogsGlobalAttr:
-				global = attr.Value.AsBool()
+				global, _ = dagui.LogValueBool(attr.Value)
 			case telemetry.LogsVerboseAttr:
-				verbose = attr.Value.AsBool()
+				verbose, _ = dagui.LogValueBool(attr.Value)
 			}
 		}
 
@@ -8354,7 +8358,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 				context = spanID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
-			fmt.Fprint(pw, log.Body().AsString())
+			fmt.Fprint(pw, body)
 		}
 
 		vterm := l.spanLogs(spanID)
@@ -8365,11 +8369,11 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 		switch contentType {
 		case "text/markdown":
-			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
+			_, _ = vterm.WriteMarkdown([]byte(body))
 		case "text/x-diff":
-			_, _ = vterm.WriteDiff([]byte(log.Body().AsString()))
+			_, _ = vterm.WriteDiff([]byte(body))
 		default:
-			_, _ = fmt.Fprint(vterm, log.Body().AsString())
+			_, _ = fmt.Fprint(vterm, body)
 		}
 	}
 	return nil
