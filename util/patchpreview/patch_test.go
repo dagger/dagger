@@ -144,6 +144,27 @@ func TestSummarizeChangesBoth(t *testing.T) {
 	}, "\n"), got)
 }
 
+func TestSummarizeChangesUsesActualDiffstatWidth(t *testing.T) {
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	SummarizeChanges(out, nil, []Commit{
+		{
+			SHA:     "abcdef1234567",
+			Message: "commit subject",
+			Entries: []Entry{
+				{Path: "commit-file-name.go", Kind: KindModified, Added: 46},
+				{Path: "another-file-name.go", Kind: KindModified, Added: 1, Removed: 2},
+			},
+		},
+	}, 26) // The narrowest Changes bubble has 26 columns for content.
+
+	require.Equal(t, strings.Join([]string{
+		"abcdef1 commit subject",
+		"another-file-name.go +1 -2",
+		"commit-file-name.go  +46",
+	}, "\n"), buf.String())
+}
+
 func TestSummarizeChangesElidesOldCommits(t *testing.T) {
 	var commits []Commit
 	for i := range maxCommits + 3 {
