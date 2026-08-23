@@ -1,0 +1,19 @@
+"""
+Run agent conversations through the official Codex CLI.
+
+Set OPENAI_API_KEY in the environment used to launch Dagger. The key is
+mounted into the harness as a secret and is not persisted in checkpoints.
+"""
+type Codex {
+  """Use the official Codex CLI as the conversation harness."""
+  agent(base: LLM!): LLM! @agent {
+    base.withHarness(
+      harness: container
+        .from("node:22-bookworm-slim")
+        .withExec(["npm", "install", "--global", "@openai/codex@latest"])
+        .withSecretVariable("OPENAI_API_KEY", secret(uri: "env://OPENAI_API_KEY"))
+        .withWorkdir("/workspace"),
+      kind: LLMHarnessKind.CODEX,
+    )
+  }
+}

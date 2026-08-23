@@ -1,0 +1,7 @@
+{
+  "name": "claude",
+  "engineVersion": "v1.0.0-0",
+  "sdk": {
+    "source": "dang"
+  }
+}
