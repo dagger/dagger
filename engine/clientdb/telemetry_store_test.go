@@ -2,6 +2,8 @@ package clientdb
 
 import (
 	"database/sql"
+	"errors"
+	"sync/atomic"
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
@@ -9,7 +11,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -323,6 +330,183 @@ func TestSelectLogsForSpans(t *testing.T) {
 	page, err = store.SelectLogsForSpans(t.Context(), setOf("a", "b"), 2)
 	require.NoError(t, err)
 	require.Equal(t, []int64{2, 3, 5}, logIDs(page))
+}
+
+func TestStoreCheckpointAndBoundedRanges(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	_, err = store.AppendSpans([]Span{{TraceID: "trace", SpanID: "one"}, {TraceID: "trace", SpanID: "two"}})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]Log{{Body: []byte("one")}, {Body: []byte("two")}})
+	require.NoError(t, err)
+	_, err = store.AppendMetrics([]Metric{{Data: []byte("one")}, {Data: []byte("two")}})
+	require.NoError(t, err)
+
+	var syncs atomic.Int32
+	store.spans.spill.testSyncHook = func() error { syncs.Add(1); return nil }
+	store.logs.spill.testSyncHook = func() error { syncs.Add(1); return nil }
+	store.metrics.spill.testSyncHook = func() error { syncs.Add(1); return nil }
+
+	highWater, err := store.Checkpoint(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, HighWater{Spans: 2, Logs: 2, Metrics: 2}, highWater)
+	require.Equal(t, int32(3), syncs.Load())
+	require.Empty(t, store.spans.tail)
+	require.Empty(t, store.logs.tail)
+	require.Empty(t, store.metrics.tail)
+	require.Equal(t, highWater.Spans, store.spans.spill.committedLastID)
+	require.Equal(t, highWater.Logs, store.logs.spill.committedLastID)
+	require.Equal(t, highWater.Metrics, store.metrics.spill.committedLastID)
+
+	_, err = store.AppendSpans([]Span{{TraceID: "trace", SpanID: "after"}})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]Log{{Body: []byte("after")}})
+	require.NoError(t, err)
+	_, err = store.AppendMetrics([]Metric{{Data: []byte("after")}})
+	require.NoError(t, err)
+	require.Equal(t, HighWater{Spans: 3, Logs: 3, Metrics: 3}, store.HighWater())
+
+	spans, err := store.SelectSpansRange(t.Context(), SelectSpansRangeParams{
+		AfterID:   0,
+		ThroughID: highWater.Spans,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 2}, spanRowIDs(spans))
+	logs, err := store.SelectLogsRange(t.Context(), SelectLogsRangeParams{
+		AfterID:   1,
+		ThroughID: highWater.Logs,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{2}, logIDs(logs))
+	metrics, err := store.SelectMetricsRange(t.Context(), SelectMetricsRangeParams{
+		AfterID:   2,
+		ThroughID: highWater.Metrics,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Empty(t, metrics)
+}
+
+func TestStoreCheckpointPropagatesSyncFailure(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	_, err = store.AppendLogs([]Log{{Body: []byte("must be durable")}})
+	require.NoError(t, err)
+	injected := errors.New("injected sync failure")
+	store.logs.spill.testSyncHook = func() error { return injected }
+
+	highWater, err := store.Checkpoint(t.Context())
+	require.Equal(t, HighWater{Logs: 1}, highWater)
+	require.ErrorIs(t, err, injected)
+	require.ErrorContains(t, err, "checkpoint logs")
+}
+
+func TestArchiveIndexesAreTraceScopedAndRecover(t *testing.T) {
+	root := t.TempDir()
+	store, err := openStore(t.Context(), root, "client", telemetryTailBudget)
+	require.NoError(t, err)
+
+	agentAttrs := testAgentIdentityAttrs(t, "agent")
+	_, err = store.AppendSpans([]Span{
+		{TraceID: "trace-a", SpanID: "root-a"},
+		{TraceID: "trace-a", SpanID: "shared", ParentSpanID: validString("root-a"), Attributes: agentAttrs},
+		{TraceID: "trace-b", SpanID: "root-b"},
+		{TraceID: "trace-b", SpanID: "shared", ParentSpanID: validString("root-b"), Attributes: agentAttrs},
+		{TraceID: "trace-a", SpanID: "shared", ParentSpanID: validString("root-a"), Attributes: []byte("latest-a")},
+	})
+	require.NoError(t, err)
+
+	payloadA, digest := testCallPayloadLog(t, "trace-a", "shared", "resume")
+	payloadB, digestB := testCallPayloadLog(t, "trace-b", "shared", "resume")
+	require.Equal(t, digest, digestB)
+	_, err = store.AppendLogs([]Log{
+		{TraceID: validString("trace-a"), SpanID: validString("shared"), Body: []byte("a")},
+		{TraceID: validString("trace-b"), SpanID: validString("shared"), Body: []byte("b")},
+		payloadA,
+		payloadB,
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.closeStreams())
+
+	store, err = openStore(t.Context(), root, "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	require.Equal(t, []string{"shared"}, store.AgentIdentitySpanIDs("trace-a"))
+	require.Equal(t, []string{"shared"}, store.AgentIdentitySpanIDs("trace-b"))
+	require.Empty(t, store.AgentIdentitySpanIDs("trace-c"))
+	require.ElementsMatch(t, []string{"root-a", "shared"}, keysOf(store.AncestorClosureForTrace("trace-a", setOf("shared"))))
+	require.ElementsMatch(t, []string{"root-b", "shared"}, keysOf(store.AncestorClosureForTrace("trace-b", setOf("shared"))))
+
+	spans, err := store.SelectSpansLatestForTrace(t.Context(), "trace-a", setOf("shared"))
+	require.NoError(t, err)
+	require.Equal(t, []int64{5}, spanRowIDs(spans))
+	logs, err := store.SelectLogsForTraceSpans(t.Context(), "trace-a", setOf("shared"), 0)
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 3}, logIDs(logs))
+	logs, err = store.SelectLogsForTraceSpans(t.Context(), "trace-b", setOf("shared"), 0)
+	require.NoError(t, err)
+	require.Equal(t, []int64{2, 4}, logIDs(logs))
+
+	payload, err := store.SelectCallPayload(t.Context(), "trace-a", digest)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), payload.ID)
+	payload, err = store.SelectCallPayload(t.Context(), "trace-b", digest)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), payload.ID)
+	_, err = store.SelectCallPayload(t.Context(), "trace-c", digest)
+	require.ErrorIs(t, err, sql.ErrNoRows)
+}
+
+func testAgentIdentityAttrs(t *testing.T, agentID string) []byte {
+	t.Helper()
+	attrs, err := MarshalProtoJSONs([]*otlpcommonv1.KeyValue{
+		{
+			Key: telemetryattrs.AgentAttr,
+			Value: &otlpcommonv1.AnyValue{
+				Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true},
+			},
+		},
+		{
+			Key: telemetryattrs.AgentIDAttr,
+			Value: &otlpcommonv1.AnyValue{
+				Value: &otlpcommonv1.AnyValue_StringValue{StringValue: agentID},
+			},
+		},
+	})
+	require.NoError(t, err)
+	return attrs
+}
+
+func testCallPayloadLog(t *testing.T, traceID, spanID, field string) (Log, string) {
+	t.Helper()
+	callPB := &callpbv1.Call{Field: field}
+	dgst, err := call.CanonicalDigest(callPB)
+	require.NoError(t, err)
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(callPB)
+	require.NoError(t, err)
+	body, err := proto.Marshal(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: payload}})
+	require.NoError(t, err)
+	attrs, err := MarshalProtoJSONs([]*otlpcommonv1.KeyValue{{
+		Key:   telemetryattrs.DagCallPayloadAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}},
+	}})
+	require.NoError(t, err)
+	scope, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: telemetryattrs.CallPayloadInstrumentationScope})
+	require.NoError(t, err)
+	return Log{
+		TraceID:              validString(traceID),
+		SpanID:               validString(spanID),
+		Body:                 body,
+		Attributes:           attrs,
+		InstrumentationScope: scope,
+	}, dgst.String()
 }
 
 func setOf(ids ...string) map[string]struct{} {

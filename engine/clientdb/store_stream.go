@@ -49,10 +49,12 @@ type logStream[Row any] struct {
 	cond       *sync.Cond
 	capWaiters int
 
-	spillReq chan struct{}
-	closeReq chan chan error
-	closed   bool
-	fatalErr error
+	spillReq      chan struct{}
+	checkpointReq chan chan error
+	closeReq      chan chan error
+	lifecycleMu   sync.Mutex
+	closed        bool
+	fatalErr      error
 }
 
 func openLogStream[Row any](
@@ -78,15 +80,16 @@ func openLogStream[Row any](
 		hardCap = budget * telemetryTailHardCapMultiplier
 	}
 	stream := &logStream[Row]{
-		codec:    codec,
-		nextID:   spill.lastID + 1,
-		tailBase: spill.lastID + 1,
-		budget:   budget,
-		hardCap:  hardCap,
-		spill:    spill,
-		onAppend: onAppend,
-		spillReq: make(chan struct{}, 1),
-		closeReq: make(chan chan error),
+		codec:         codec,
+		nextID:        spill.lastID + 1,
+		tailBase:      spill.lastID + 1,
+		budget:        budget,
+		hardCap:       hardCap,
+		spill:         spill,
+		onAppend:      onAppend,
+		spillReq:      make(chan struct{}, 1),
+		checkpointReq: make(chan chan error),
+		closeReq:      make(chan chan error),
 	}
 	stream.cond = sync.NewCond(&stream.mu)
 	go stream.runSpiller()
@@ -236,6 +239,24 @@ func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row,
 	return s.spill.readSince(ctx, id, limit)
 }
 
+func (s *logStream[Row]) Range(ctx context.Context, afterID, throughID int64, limit int) ([]Row, error) {
+	if throughID <= afterID || limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.Since(ctx, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	end := len(rows)
+	for i, row := range rows {
+		if s.codec.getID(row) > throughID {
+			end = i
+			break
+		}
+	}
+	return rows[:end], nil
+}
+
 func (s *logStream[Row]) readID(ctx context.Context, id int64) (Row, bool, error) {
 	var zero Row
 	if id <= 0 {
@@ -280,6 +301,19 @@ func (s *logStream[Row]) runSpiller() {
 					break
 				}
 			}
+		case response := <-s.checkpointReq:
+			var err error
+			for {
+				spilled, spillErr := s.spillOnce(true)
+				err = errors.Join(err, spillErr)
+				if spillErr != nil || !spilled {
+					break
+				}
+			}
+			if err == nil {
+				err = s.spill.sync()
+			}
+			response <- err
 		case response := <-s.closeReq:
 			var err error
 			for {
@@ -359,7 +393,35 @@ func (s *logStream[Row]) setFatal(err error) {
 	s.mu.Unlock()
 }
 
+func (s *logStream[Row]) checkpoint(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+
+	s.mu.Lock()
+	err := s.stateErrLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	response := make(chan error, 1)
+	select {
+	case s.checkpointReq <- response:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	select {
+	case err := <-response:
+		return err
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 func (s *logStream[Row]) close() error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
