@@ -13,6 +13,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLLMHarnessCheckpointCursorValidation(t *testing.T) {
+	messages := harnessPrompt("one")
+	historyDigest, err := llmHarnessHistoryDigest(messages)
+	require.NoError(t, err)
+	checkpoint := &LLMHarnessCheckpoint{
+		Kind:          LLMHarnessCodex,
+		MessageCount:  len(messages),
+		HistoryDigest: historyDigest,
+	}
+	assert.True(t, checkpoint.validFor(messages, LLMHarnessCodex))
+	assert.False(t, checkpoint.validFor(messages, LLMHarnessClaude))
+	assert.True(t, checkpoint.validFor(append(messages, harnessPrompt("suffix")...), LLMHarnessCodex))
+
+	changed := cloneLLMMessages(messages)
+	changed[0].Content[0].Text = "changed"
+	assert.False(t, checkpoint.validFor(changed, LLMHarnessCodex))
+
+	checkpoint.MessageCount = len(messages) + 1
+	assert.False(t, checkpoint.validFor(messages, LLMHarnessCodex))
+	assert.False(t, (*LLMHarnessCheckpoint)(nil).validFor(messages, LLMHarnessCodex))
+}
+
 func TestLLMHarnessCodexCorrelationFIFO(t *testing.T) {
 	ledger, err := NewLLMHarnessCorrelationLedger(LLMHarnessCodex, nil)
 	require.NoError(t, err)

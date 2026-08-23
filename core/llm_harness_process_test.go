@@ -49,7 +49,13 @@ func TestLLMHarnessCommand(t *testing.T) {
 		})
 	}
 
-	_, err := llmHarnessCommand(LLMHarnessKind("OTHER"))
+	resumed, err := llmHarnessCommand(LLMHarnessClaude, "session-1")
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--resume", "session-1",
+	}, resumed)
+
+	_, err = llmHarnessCommand(LLMHarnessKind("OTHER"))
 	require.EqualError(t, err, `unsupported LLM harness kind "OTHER"`)
 }
 

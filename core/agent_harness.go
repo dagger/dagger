@@ -2,13 +2,10 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -235,7 +232,15 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		unregister()
 		return nil, nil, fmt.Errorf("resolve harness workspace: %w", err)
 	}
-	process, err := startLLMHarnessProcess(ctx, llm.harness, llm.harnessKind, workspace, execToken)
+	checkpoint := llm.harnessCheckpoint.clone()
+	if !checkpoint.validFor(llm.Messages, llm.harnessKind) {
+		checkpoint = nil
+	}
+	var nativeSession string
+	if llm.harnessKind == LLMHarnessClaude && checkpoint != nil && checkpoint.Protocol == claudeHarnessProtocol {
+		nativeSession = checkpoint.NativeSession
+	}
+	process, err := startLLMHarnessProcess(ctx, llm.harness, llm.harnessKind, workspace, execToken, nativeSession)
 	if err != nil {
 		unregister()
 		return nil, nil, err
@@ -259,7 +264,7 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 	}
 	start := LLMHarnessStart{
 		History:    cloneLLMMessages(llm.Messages),
-		Checkpoint: llm.harnessCheckpoint.clone(),
+		Checkpoint: checkpoint,
 		Model:      llm.model,
 		MaxTokens:  maxTokens,
 		// The execution listener publishes its selected port through this env.
@@ -339,7 +344,7 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 		}
 	}
 	checkpointed := materialized.Self().Clone()
-	historyJSON, err := json.Marshal(checkpointed.Messages)
+	historyDigest, err := llmHarnessHistoryDigest(checkpointed.Messages)
 	if err != nil {
 		return "", err
 	}
@@ -347,7 +352,7 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 		Harness:       checkpointed.harness,
 		Kind:          checkpointed.harnessKind,
 		MessageCount:  len(checkpointed.Messages),
-		HistoryDigest: digest.FromBytes(historyJSON),
+		HistoryDigest: historyDigest,
 		NativeSession: commit.NativeState.NativeSession,
 		Protocol:      commit.NativeState.Protocol,
 		Correlations:  append([]LLMHarnessMessageCorrelation(nil), commit.Correlations...),

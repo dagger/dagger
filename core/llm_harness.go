@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/opencontainers/go-digest"
 )
 
 // LLMHarnessAdapter is the common control protocol implemented by a live CLI
@@ -55,6 +57,22 @@ type LLMHarnessSession struct {
 type LLMHarnessNativeState struct {
 	NativeSession string
 	Protocol      string
+}
+
+func llmHarnessHistoryDigest(messages []*LLMMessage) (digest.Digest, error) {
+	encoded, err := json.Marshal(messages)
+	if err != nil {
+		return "", fmt.Errorf("marshal LLM harness history: %w", err)
+	}
+	return digest.FromBytes(encoded), nil
+}
+
+func (checkpoint *LLMHarnessCheckpoint) validFor(messages []*LLMMessage, kind LLMHarnessKind) bool {
+	if checkpoint == nil || checkpoint.Kind != kind || checkpoint.MessageCount < 0 || checkpoint.MessageCount > len(messages) {
+		return false
+	}
+	historyDigest, err := llmHarnessHistoryDigest(messages[:checkpoint.MessageCount])
+	return err == nil && historyDigest == checkpoint.HistoryDigest
 }
 
 // LLMHarnessTurnState is a native turn's typed lifecycle state.

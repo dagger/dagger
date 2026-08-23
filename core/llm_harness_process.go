@@ -42,24 +42,24 @@ type LLMHarnessProcess struct {
 
 // llmHarnessCommand returns the persistent stdio command for a vendor. Neither
 // command is a one-shot prompt invocation.
-func llmHarnessCommand(kind LLMHarnessKind) ([]string, error) {
+func llmHarnessCommand(kind LLMHarnessKind, nativeSession ...string) ([]string, error) {
+	var sessionID string
+	if len(nativeSession) > 0 {
+		sessionID = nativeSession[0]
+	}
 	switch kind {
 	case LLMHarnessCodex:
-		return []string{"codex", "app-server"}, nil
+		spec := CodexLLMHarnessCommand()
+		return append([]string{spec.Path}, spec.Args...), nil
 	case LLMHarnessClaude:
-		return []string{
-			"claude",
-			"-p",
-			"--input-format", "stream-json",
-			"--output-format", "stream-json",
-			"--verbose",
-		}, nil
+		spec := ClaudeLLMHarnessCommand(sessionID)
+		return append([]string{spec.Path}, spec.Args...), nil
 	default:
 		return nil, fmt.Errorf("unsupported LLM harness kind %q", kind)
 	}
 }
 
-func validateLLMHarnessProcessConfig(harness dagql.ObjectResult[*Container], kind LLMHarnessKind, workspace dagql.ObjectResult[*Directory]) (string, []string, error) {
+func validateLLMHarnessProcessConfig(harness dagql.ObjectResult[*Container], kind LLMHarnessKind, workspace dagql.ObjectResult[*Directory], nativeSession ...string) (string, []string, error) {
 	if harness.Self() == nil {
 		return "", nil, fmt.Errorf("harness container is required")
 	}
@@ -70,7 +70,7 @@ func validateLLMHarnessProcessConfig(harness dagql.ObjectResult[*Container], kin
 	if workspace.Self() == nil {
 		return "", nil, fmt.Errorf("LLM workspace directory is required")
 	}
-	command, err := llmHarnessCommand(kind)
+	command, err := llmHarnessCommand(kind, nativeSession...)
 	if err != nil {
 		return "", nil, err
 	}
@@ -86,8 +86,9 @@ func startLLMHarnessProcess(
 	kind LLMHarnessKind,
 	workspace dagql.ObjectResult[*Directory],
 	execHTTPHandlerToken string,
+	nativeSession string,
 ) (_ *LLMHarnessProcess, rerr error) {
-	workdir, command, err := validateLLMHarnessProcessConfig(harness, kind, workspace)
+	workdir, command, err := validateLLMHarnessProcessConfig(harness, kind, workspace, nativeSession)
 	if err != nil {
 		return nil, err
 	}
