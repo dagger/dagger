@@ -107,7 +107,7 @@ type Editor {
 			Text: "done",
 		}}))
 	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-	transcript, err := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
+	transcript, err := ws.Agents().Compose(dagger.AgentGroupComposeOpts{Base: base}).
 		WithPrompt("track it").
 		Loop().
 		Transcript(ctx)
@@ -317,8 +317,8 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
 // convention: a tool that returns an LLM replaces the conversation, and the loop
 // resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
-// adoptLLM). The tool's LLM! argument is auto-injected with the conversation up
-// to and including its own call, so `install`/`reload`-style self-extension is a
+// adoptLLM). MCP passes the current conversation directly to the tool's hidden
+// LLM! argument, including the tool call itself, so `install`/`reload`-style
 // plain transform.
 func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)

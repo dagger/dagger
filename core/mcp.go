@@ -99,9 +99,8 @@ type MCP struct {
 	skillDirs []dagql.ObjectResult[*Directory]
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
-	// step() sets it before CallBatch; MCP.Call threads it into tool dispatch
-	// (LLMToContext) so a tool's `LLM!` argument auto-fills with it. Transient:
-	// cleared by Clone, never persisted.
+	// The object-tool adapter passes it explicitly to hidden LLM arguments.
+	// Transient: cleared by Clone, never persisted.
 	selfLLM dagql.ObjectResult[*LLM]
 	// continuation is an LLM returned by a tool during this step (see
 	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
@@ -169,8 +168,8 @@ func (m *MCP) Clone() *MCP {
 }
 
 // SetSelfLLM records the conversation dispatching this step's tool calls, so
-// MCP.Call can hand it to a tool that declares an `LLM!` argument. Called by
-// step() on its transient MCP clone, immediately before CallBatch.
+// the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
+// by step() on its transient MCP clone, immediately before CallBatch.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -508,9 +507,9 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 }
 
 // adoptLLM makes a tool-returned LLM the conversation the agent loop resumes
-// from — the continuation ring of the state-return convention. The tool is
-// handed the current conversation through an auto-injected `LLM!` argument
-// (see loadLLMArg), transforms it, and returns the result; step() then appends
+// from — the continuation ring of the state-return convention. The object-tool
+// adapter passes the current conversation directly to the tool's hidden `LLM!`
+// argument; the tool transforms it and returns the result. step() then appends
 // this turn's tool results to the RETURNED LLM instead of the one that made the
 // call, so the swap takes effect mid-turn without restarting the session.
 //
@@ -544,8 +543,8 @@ func (m *MCP) adoptLLM(ctx context.Context, next dagql.ObjectResult[*LLM]) (stri
 	if next.Self() == nil {
 		return "", fmt.Errorf("cannot continue from a null LLM")
 	}
-	current, ok := LLMFromContext(ctx)
-	if !ok {
+	current := m.currentLLM()
+	if current.Self() == nil {
 		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
 	}
 
@@ -1060,13 +1059,6 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
 		// Workspace-typed args resolve against it, not the ambient workspace.
 		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
-	}
-	if self := m.currentLLM(); self.Self() != nil {
-		// Bind the conversation making this call so the tool's LLM-typed args
-		// auto-fill with it — the continuation hook (see adoptLLM). Note this
-		// must happen here rather than on the loop's ctx: a tool call runs under
-		// its display span's context, captured while the response streamed.
-		toolCtx = LLMToContext(toolCtx, self)
 	}
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
