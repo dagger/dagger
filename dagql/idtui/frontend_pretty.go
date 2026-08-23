@@ -908,6 +908,20 @@ func (fe *frontendPretty) dispatch(fn func()) {
 	}
 }
 
+// WaitForEventLoop enqueues a marker after previously dispatched exporter
+// work. Observing the marker is therefore an acknowledgment that the pretty
+// frontend has applied every preceding import batch to its DB.
+func (fe *frontendPretty) WaitForEventLoop(ctx context.Context) error {
+	done := make(chan struct{})
+	fe.dispatch(func() { close(done) })
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
 		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)

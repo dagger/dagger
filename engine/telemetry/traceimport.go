@@ -2,7 +2,9 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -64,6 +66,14 @@ import (
 // protojson into these three request types and feeds them here, and slice 4's
 // tests feed a canned capture instead. Nothing below knows which.
 
+// TraceImportBarrier acknowledges asynchronous frontend exporter work.
+type TraceImportBarrier interface {
+	// WaitForEventLoop returns after every frontend event enqueued before it has
+	// been applied. Import acknowledgments use this rather than exporter return
+	// values, because pretty frontend exporters enqueue their work.
+	WaitForEventLoop(context.Context) error
+}
+
 // TraceImportSinks are the exporters an imported trace lands in — the live
 // frontend's own (Frontend.SpanExporter, LogExporter, MetricExporter), which
 // is the whole point: one DB, both sessions. A nil sink drops its stream.
@@ -71,6 +81,7 @@ type TraceImportSinks struct {
 	Spans   sdktrace.SpanExporter
 	Logs    sdklog.Exporter
 	Metrics sdkmetric.Exporter
+	Barrier TraceImportBarrier
 }
 
 // TraceImporter folds a foreign trace into a live client's sinks, applying
@@ -82,7 +93,11 @@ type TraceImportSinks struct {
 type TraceImporter struct {
 	sinks TraceImportSinks
 
-	mu sync.Mutex
+	// queueMu serializes calls into the frontend exporters. In particular, it
+	// prevents separate span/log/metric transports from racing asynchronous
+	// frontend enqueue operations into an order different from import order.
+	queueMu sync.Mutex
+	mu      sync.Mutex
 	// unfinished holds every span seen with no end time, keyed by span ID, so
 	// a later update that DOES end it drops it back out. It is what Seal
 	// works from.
@@ -116,6 +131,12 @@ func NewTraceImporter(sinks TraceImportSinks) *TraceImporter {
 // ImportSpans folds one OTLP span export request of the foreign trace in,
 // stamping its roots passthrough and noting which of its spans never ended.
 func (imp *TraceImporter) ImportSpans(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) error {
+	imp.queueMu.Lock()
+	defer imp.queueMu.Unlock()
+	return imp.importSpans(ctx, req)
+}
+
+func (imp *TraceImporter) importSpans(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) error {
 	if imp.sinks.Spans == nil || req == nil {
 		return nil
 	}
@@ -172,6 +193,12 @@ func (imp *TraceImporter) noteLocked(resource *tracepb.ResourceSpans, scope *tra
 
 // ImportLogs folds one OTLP log export request of the foreign trace in.
 func (imp *TraceImporter) ImportLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
+	imp.queueMu.Lock()
+	defer imp.queueMu.Unlock()
+	return imp.importLogs(ctx, req)
+}
+
+func (imp *TraceImporter) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
 	if imp.sinks.Logs == nil || req == nil {
 		return nil
 	}
@@ -194,6 +221,12 @@ func (imp *TraceImporter) ImportLogs(ctx context.Context, req *collogspb.ExportL
 // Imported metrics COUNT (§12): cost and token totals accumulate across a
 // resume rather than restarting at zero.
 func (imp *TraceImporter) ImportMetrics(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
+	imp.queueMu.Lock()
+	defer imp.queueMu.Unlock()
+	return imp.importMetrics(ctx, req)
+}
+
+func (imp *TraceImporter) importMetrics(ctx context.Context, req *colmetricspb.ExportMetricsServiceRequest) error {
 	if imp.sinks.Metrics == nil || req == nil {
 		return nil
 	}
@@ -217,20 +250,41 @@ func (imp *TraceImporter) ImportMetrics(ctx context.Context, req *colmetricspb.E
 //
 // Idempotent: a second call has nothing left to seal.
 func (imp *TraceImporter) Seal(ctx context.Context) error {
-	if imp.sinks.Spans == nil {
-		return nil
-	}
+	imp.queueMu.Lock()
+	defer imp.queueMu.Unlock()
 
 	imp.mu.Lock()
 	sealAt := imp.rootEnd
 	if sealAt == 0 {
 		sealAt = imp.newest
 	}
+	imp.mu.Unlock()
+	return imp.sealAt(ctx, sealAt)
+}
+
+// SealAt seals unfinished imported spans at an explicit source cut. Archive
+// imports use the manifest's immutable seal timestamp rather than deriving a
+// bound from whichever records a partial transfer happened to deliver.
+func (imp *TraceImporter) SealAt(ctx context.Context, at time.Time) error {
+	if at.IsZero() {
+		return errors.New("trace import seal time is zero")
+	}
+	imp.queueMu.Lock()
+	defer imp.queueMu.Unlock()
+	return imp.sealAt(ctx, uint64(at.UnixNano())) //nolint:gosec
+}
+
+func (imp *TraceImporter) sealAt(ctx context.Context, sealAt uint64) error {
+	if imp.sinks.Spans == nil {
+		return nil
+	}
+
+	imp.mu.Lock()
 	order, unfinished := imp.order, imp.unfinished
-	imp.order, imp.unfinished = nil, map[string]*unfinishedSpan{}
 	imp.mu.Unlock()
 
 	if sealAt == 0 || len(unfinished) == 0 {
+		imp.clearUnfinished()
 		return nil
 	}
 
@@ -280,9 +334,20 @@ func (imp *TraceImporter) Seal(ctx context.Context) error {
 		scope.Spans = append(scope.Spans, sealed)
 	}
 	if len(groups) == 0 {
+		imp.clearUnfinished()
 		return nil
 	}
-	return imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups))
+	if err := imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups)); err != nil {
+		return err
+	}
+	imp.clearUnfinished()
+	return nil
+}
+
+func (imp *TraceImporter) clearUnfinished() {
+	imp.mu.Lock()
+	imp.order, imp.unfinished = nil, map[string]*unfinishedSpan{}
+	imp.mu.Unlock()
 }
 
 // pbSpanRunning reports whether a span was still running when the capture was

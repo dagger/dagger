@@ -156,6 +156,18 @@ type ViewHandle interface {
 	Update(func())
 }
 
+// EventLoopBarrier is the optional frontend acknowledgment seam used by
+// archive imports. It returns only after every event dispatched before the
+// barrier has been applied to the frontend's state.
+type EventLoopBarrier interface {
+	WaitForEventLoop(context.Context) error
+}
+
+// The pretty frontend owns the event loop and can provide archive import
+// acknowledgments. Streaming frontends apply exports synchronously and do not
+// need this optional interface.
+var _ EventLoopBarrier = (*frontendPretty)(nil)
+
 // TraceFrontend is the optional interface 'dagger trace' drives for
 // incremental loading and report zooming: snapshot import, lazy span/log
 // providers, surfaced-failure prefetch, and name-based zoom targets. Only the
