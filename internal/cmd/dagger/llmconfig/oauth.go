@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,6 +45,57 @@ const oauthHTTPTimeout = 10 * time.Second
 
 var oauthHTTPClient = &http.Client{Timeout: oauthHTTPTimeout}
 
+// oauthTokenError is the safe, structured form of an OAuth token endpoint
+// failure. Token endpoint bodies are untrusted and can contain credentials, so
+// errors retain only a recognized OAuth error code and the HTTP status.
+type oauthTokenError struct {
+	status int
+	code   string
+}
+
+func (e *oauthTokenError) Error() string {
+	if e.code != "" {
+		return fmt.Sprintf("OAuth error %s (HTTP %d)", e.code, e.status)
+	}
+	return fmt.Sprintf("OAuth token endpoint returned HTTP %d", e.status)
+}
+
+// recognizedOAuthErrorCode returns code only for the error identifiers defined
+// by RFC 6749. Never putting arbitrary response text in an error keeps token
+// endpoint failures from leaking credentials into logs or the TUI.
+func recognizedOAuthErrorCode(code string) string {
+	switch code {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope":
+		return code
+	default:
+		return ""
+	}
+}
+
+// ErrOAuthReauthenticationRequired marks refresh failures that cannot succeed
+// again until the user replaces the OAuth grant.
+var ErrOAuthReauthenticationRequired = errors.New("OAuth reauthentication required")
+
+// errNoRefreshToken is terminal until the provider is authorized again.
+var errNoRefreshToken = errors.New("no OAuth refresh token available")
+
+// isTerminalOAuthTokenError reports low-level failures for which retrying the
+// same refresh credential cannot succeed. Transient HTTP and network failures
+// must remain retryable.
+func isTerminalOAuthTokenError(err error) bool {
+	if errors.Is(err, errNoRefreshToken) {
+		return true
+	}
+	var tokenErr *oauthTokenError
+	return errors.As(err, &tokenErr) && tokenErr.code == "invalid_grant"
+}
+
+// IsTerminalOAuthRefreshError reports a refresh failure that requires the user
+// to authenticate again instead of retrying the same credential.
+func IsTerminalOAuthRefreshError(err error) bool {
+	return errors.Is(err, ErrOAuthReauthenticationRequired)
+}
+
 // postOAuthToken posts body to an OAuth token endpoint and decodes the JSON
 // response into out. what names the operation in error messages, e.g. "token
 // refresh". The request is bound to ctx and to oauthHTTPTimeout, whichever
@@ -65,8 +117,16 @@ func postOAuthToken(ctx context.Context, url, what, contentType string, body io.
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s failed (HTTP %d): %s", what, resp.StatusCode, string(respBody))
+		var payload struct {
+			Error string `json:"error"`
+		}
+		// The body is used only to classify a standard OAuth error. Do not
+		// propagate it (or error_description): providers may echo credentials.
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload)
+		return fmt.Errorf("%s failed: %w", what, &oauthTokenError{
+			status: resp.StatusCode,
+			code:   recognizedOAuthErrorCode(payload.Error),
+		})
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
@@ -147,7 +207,7 @@ func ExchangeOAuthCode(ctx context.Context, authCode, verifier string) (*Provide
 // RefreshOAuthToken refreshes an expired OAuth token.
 func RefreshOAuthToken(ctx context.Context, provider *Provider) (*Provider, error) {
 	if provider.RefreshToken == "" {
-		return nil, fmt.Errorf("no refresh token available")
+		return nil, errNoRefreshToken
 	}
 
 	body, err := json.Marshal(map[string]string{

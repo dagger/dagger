@@ -87,7 +87,7 @@ func ExchangeOpenAIOAuthCode(ctx context.Context, code, verifier string) (*Provi
 // RefreshOpenAIOAuthToken refreshes an expired OpenAI OAuth token.
 func RefreshOpenAIOAuthToken(ctx context.Context, provider *Provider) (*Provider, error) {
 	if provider.RefreshToken == "" {
-		return nil, fmt.Errorf("no refresh token available")
+		return nil, errNoRefreshToken
 	}
 
 	body := url.Values{
