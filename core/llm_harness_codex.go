@@ -14,7 +14,10 @@ const codexHarnessProtocol = "codex-app-server-v2"
 
 var (
 	ErrLLMHarnessProtocolFailure = errors.New("LLM harness protocol failure")
-	ErrCodexTurnMismatch         = errors.New("Codex active turn does not match expected turn")
+	// ErrCodexTurnMismatch remains vendor-specific for callers which want to
+	// diagnose Codex, while wrapping the common retry classification consumed by
+	// the harness runtime.
+	ErrCodexTurnMismatch = fmt.Errorf("Codex active turn does not match expected turn: %w", ErrLLMHarnessExpectedTurn)
 )
 
 // LLMHarnessCommandSpec describes the process a container runner must launch.

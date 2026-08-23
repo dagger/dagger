@@ -167,6 +167,10 @@ var (
 	ErrLLMHarnessDuplicateCorrelation = errors.New("duplicate LLM harness message correlation")
 	ErrLLMHarnessCorrelationConflict  = errors.New("conflicting LLM harness message correlation")
 	ErrLLMHarnessUnknownCorrelation   = errors.New("unknown LLM harness message correlation")
+	// ErrLLMHarnessExpectedTurn classifies a steer rejected because the
+	// observed native turn ended before acceptance. The dispatcher retries the
+	// same canonical FIFO head as a new turn.
+	ErrLLMHarnessExpectedTurn = errors.New("LLM harness expected turn mismatch")
 )
 
 // LLMHarnessCorrelationError identifies the correlation record which failed.

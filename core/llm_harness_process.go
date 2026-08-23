@@ -85,6 +85,7 @@ func startLLMHarnessProcess(
 	harness dagql.ObjectResult[*Container],
 	kind LLMHarnessKind,
 	workspace dagql.ObjectResult[*Directory],
+	execHTTPHandlerToken string,
 ) (_ *LLMHarnessProcess, rerr error) {
 	workdir, command, err := validateLLMHarnessProcessConfig(harness, kind, workspace)
 	if err != nil {
@@ -120,6 +121,7 @@ func startLLMHarnessProcess(
 	if err != nil {
 		return nil, fmt.Errorf("create harness service: %w", err)
 	}
+	svc.ExecHTTPHandlerToken = execHTTPHandlerToken
 	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, err

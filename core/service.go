@@ -58,8 +58,11 @@ type Service struct {
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
-	ModuleContext                 dagql.ObjectResult[*Module]
-	ExecMeta                      *executor.Meta
+	// ExecHTTPHandlerToken is a runtime-only capability layered onto the
+	// container-derived execution metadata when the service starts.
+	ExecHTTPHandlerToken string `json:"-"`
+	ModuleContext        dagql.ObjectResult[*Module]
+	ExecMeta             *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
@@ -593,6 +596,7 @@ func (svc *Service) startContainer(
 		cloned := *execMD
 		execMD = &cloned
 	}
+	execMD.ExecHTTPHandlerToken = svc.ExecHTTPHandlerToken
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {

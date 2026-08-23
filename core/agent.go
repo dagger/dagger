@@ -237,6 +237,9 @@ type agentMessageRecord struct {
 	// consumed marks the record as drained into the current in-flight
 	// turn: recorded in the history, reply pending.
 	consumed bool
+	// harnessSubmitted marks a record handed to the hot harness dispatcher. It
+	// remains in the Agent mailbox until native lifecycle proves consumption.
+	harnessSubmitted bool
 	// resolved marks reply/err as final. Set under the entry mutex just
 	// before done is closed; awaiters that observed the close read them
 	// freely.
@@ -613,6 +616,8 @@ type AgentRuntime struct {
 	last          dagql.ObjectResult[*LLM]     // last committed conversation (initially the seed)
 	cancel        context.CancelCauseFunc      // kills the loop context (set on start)
 	stepCancel    context.CancelCauseFunc      // cancels the in-flight step's context (set while stepping)
+	harness       *LLMHarnessRuntime           // one hot adapter while a harness-backed loop is live
+	harnessActive int                          // submitted records awaiting terminal resolution
 	scopeLease    *engine.ClientLifecycleLease // live agent or durable tombstone scope
 
 	// Mailbox, guarded by mu. mailbox is the FIFO of pending (not yet
@@ -1318,6 +1323,11 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		span.End()
 	}()
 
+	if last := rt.last.Self(); last != nil && last.harness.Self() != nil {
+		loopErr = rt.runHarness(ctx)
+		return
+	}
+
 	for {
 		// Run the turn: drain queued mail into the conversation, then step
 		// while anything is pending, draining again at every step boundary
@@ -1504,19 +1514,42 @@ func (rt *AgentRuntime) Interrupt() error {
 	rt.transitionLocked(func() {
 		rt.paused = true
 		rt.interruptSeq++
-		for _, msgID := range rt.mailbox {
-			rec := rt.messages[msgID]
-			rt.resolveLocked(rec, "", rt.interruptedMessageError())
+		if rt.harness != nil {
+			kept := rt.mailbox[:0]
+			for _, msgID := range rt.mailbox {
+				rec := rt.messages[msgID]
+				if rec != nil && rec.harnessSubmitted {
+					kept = append(kept, msgID)
+					continue
+				}
+				rt.resolveLocked(rec, "", rt.interruptedMessageError())
+			}
+			rt.mailbox = kept
+		} else {
+			for _, msgID := range rt.mailbox {
+				rec := rt.messages[msgID]
+				rt.resolveLocked(rec, "", rt.interruptedMessageError())
+			}
+			rt.mailbox = nil
 		}
-		rt.mailbox = nil
 	})
 	// Read the step cancel AFTER committing paused and discarding the queue,
 	// under the same lock hold: once paused is set the loop starts no new step,
 	// so this either targets the one step in flight or is nil (nothing to
 	// preempt).
 	stepCancel := rt.stepCancel
+	harness := rt.harness
+	harnessCtx := rt.spanCtx
 	rt.mu.Unlock()
 
+	if harness != nil {
+		if harnessCtx == nil {
+			harnessCtx = context.Background()
+		}
+		if err := harness.Interrupt(context.WithoutCancel(harnessCtx)); err != nil {
+			return err
+		}
+	}
 	if stepCancel != nil {
 		stepCancel(errAgentInterrupted)
 	}
@@ -1614,6 +1647,9 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM]) error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if rt.harness != nil {
+		return fmt.Errorf("agent %q has a live harness session; stop it before reseeding", rt.name)
+	}
 	switch rt.stateLocked() {
 	case AgentStateStopped:
 		return fmt.Errorf("agent %q is stopped; a released runtime's conversation cannot be replaced", rt.name)
