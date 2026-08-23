@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -125,6 +126,11 @@ type shellCallHandler struct {
 
 	// debug mode toggle
 	debug bool
+
+	// debugServer is the hidden, hotkey-controlled local pprof server.
+	debugServer     *http.Server
+	debugServerStop func() bool
+	debugServerL    sync.Mutex
 
 	// mu is used to synchronize access between the global handler and interpreter runs
 	mu sync.RWMutex
@@ -958,6 +964,14 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 				h.llmSession.ShowContextViz()
 			}
 		}
+	case key.MatchString(debugServerHotkey):
+		if h.llmSession != nil {
+			// Run async, like ctrl+t: binding and shutting down the HTTP server
+			// must not block the input goroutine.
+			return func() {
+				h.toggleDebugServer(ctx)
+			}
+		}
 	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
 			// Run async: ToggleAutocompact refreshes the status line, which
@@ -992,6 +1006,61 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 		}
 	}
 	return nil
+}
+
+// Ctrl+Alt+P is intentionally absent from KeyBindings: it is an obscure debug
+// chord, representable both as the legacy Meta-prefixed control byte and by the
+// enhanced keyboard protocol understood by the current input stack.
+const debugServerHotkey = "ctrl+alt+p"
+
+func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
+	h.debugServerL.Lock()
+	defer h.debugServerL.Unlock()
+
+	if h.debugServer != nil {
+		if h.debugServerStop != nil {
+			h.debugServerStop()
+			h.debugServerStop = nil
+		}
+		if err := h.debugServer.Close(); err != nil {
+			slog.Debug("failed to stop debug server", "error", err)
+		}
+		h.debugServer = nil
+		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
+		return
+	}
+
+	srv, lis, err := startDebugServer("127.0.0.1:0")
+	if err != nil {
+		slog.Error("failed to start debug server", "error", err)
+		h.frontend.SetSidebarContent(idtui.SidebarSection{
+			Title:   "Debug",
+			Content: "ERROR: " + err.Error(),
+		})
+		return
+	}
+	h.debugServer = srv
+	h.frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "Debug",
+		Content: fmt.Sprintf("http://%s/debug/pprof/", lis.Addr()),
+	})
+
+	// Register cancellation without parking a goroutine for the server's whole
+	// lifetime. Manual disable removes the callback before another toggle can
+	// register one, so repeated enable/disable cycles do not accumulate waiters.
+	h.debugServerStop = context.AfterFunc(ctx, func() {
+		h.debugServerL.Lock()
+		defer h.debugServerL.Unlock()
+		if h.debugServer != srv {
+			return
+		}
+		h.debugServerStop = nil
+		if err := srv.Close(); err != nil {
+			slog.Debug("failed to stop debug server", "error", err)
+		}
+		h.debugServer = nil
+		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
+	})
 }
 
 func noop() {}
