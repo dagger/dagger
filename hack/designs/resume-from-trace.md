@@ -1,5 +1,9 @@
 # Resume from trace
 
+> Follow-up: [Engine-persisted agent resume](./engine-persisted-agent-resume.md)
+> replaces this document's `--trace`/local-save split with one engine-backed
+> `--resume` path. This document remains the as-built history of Cloud restore.
+
 `dagger agent --trace <TRACE_ID>` — restore everything a past session did,
 from the trace it published: its agents, their conversations, and the whole
 TUI view of the run, into the session in front of you.
