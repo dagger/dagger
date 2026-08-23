@@ -47,6 +47,7 @@ func TestSetupViewRendersConciseCompletedStates(t *testing.T) {
 		loginState:       setupLoginComplete,
 		loginMessage:     "Already logged in.",
 		migrationMessage: "Nothing to migrate.",
+		migrationFinal:   emptyWorkspaceSetupHint,
 	}
 	tui := tuist.New(tuist.NewHeadlessTerminal(100, 20))
 	tui.AddChild(view)
@@ -62,6 +63,19 @@ func TestSetupViewRendersConciseCompletedStates(t *testing.T) {
 	}
 	if strings.Contains(rendered, "Workspace migration") || strings.Contains(rendered, "No workspace loaded") {
 		t.Fatalf("setup view retained verbose migration detail:\n%s", rendered)
+	}
+
+	view.SetFinal(true)
+	rendered = ansi.Strip(strings.Join(tui.RenderLines(), "\n"))
+	for _, want := range []string{
+		"nothing to migrate",
+		"dagger install <module>",
+		"dagger sdk search",
+		"dagger module init <sdk> <name>",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("final setup view missing %q:\n%s", want, rendered)
+		}
 	}
 }
 

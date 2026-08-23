@@ -123,6 +123,10 @@ func (ui *setupUI) setMigrationMessage(message string) {
 	ui.update(func(view *setupView) { view.migrationMessage = message })
 }
 
+func (ui *setupUI) setMigrationFinalMessage(message string) {
+	ui.update(func(view *setupView) { view.migrationFinal = message })
+}
+
 func (ui *setupUI) setRecommend(id dagui.SpanID) {
 	ui.update(func(view *setupView) { view.recommendID = id })
 }
@@ -170,6 +174,7 @@ type setupView struct {
 	workspace        *idtui.SpanListView
 	recommend        *idtui.SpanListView
 	migrationMessage string
+	migrationFinal   string
 	recommendMessage string
 }
 
@@ -295,11 +300,15 @@ func (view *setupView) renderFinal(ctx tuist.Context) {
 	case setupLoginFailed:
 		ctx.Line("Cloud account: " + view.loginMessage)
 	}
-	if view.migrationMessage != "" {
+	migrationMessage := view.migrationMessage
+	if view.migrationFinal != "" {
+		migrationMessage = view.migrationFinal
+	}
+	if migrationMessage != "" {
 		ctx.Line("")
 	}
-	if view.migrationMessage != "" {
-		lines(ctx, view.migrationMessage)
+	if migrationMessage != "" {
+		lines(ctx, migrationMessage)
 	}
 	if len(view.installed) > 0 {
 		ctx.Line("")

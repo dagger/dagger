@@ -486,6 +486,7 @@ func setupStepMigrate(ctx context.Context, dag *dagger.Client, ui *setupUI) (app
 			if !silent {
 				if ui != nil {
 					ui.setMigrationMessage("Nothing to migrate.")
+					ui.setMigrationFinalMessage(emptyWorkspaceSetupHint)
 				} else {
 					setupHumanMessage(nil, messageCtx, "workspace not loaded", emptyWorkspaceSetupHint)
 				}
