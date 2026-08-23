@@ -36,7 +36,7 @@ type AgentRosterEntry struct {
 // The roster is embedded at the left of the prompt's status line. It is always
 // visible once an agent has been published: besides being a switcher, it is the
 // prompt's state indicator.
-// Focus moves only by a keypress (alt+1…9 or alt+l from the prompt; 1…9, `
+// Focus moves only by a keypress (ctrl+1…9 or alt+l from the prompt; 1…9, `
 // or [/] in nav mode), never by an event: an agent that needs the user
 // advertises attention on its entry and waits. Nothing here may steal focus.
 type AgentRoster struct {
@@ -102,7 +102,7 @@ func (r *AgentRoster) Line(width int) string {
 	for i, entry := range entries {
 		label, color := agentStateDisplay(entry.State)
 
-		// Jump numbers only where a jump key exists (alt+1…9 from the
+		// Jump numbers only where a jump key exists (ctrl+1…9 from the
 		// prompt, 1…9 in nav mode); beyond that the entry is still listed,
 		// just not directly addressable by key -- [/] still walks onto it.
 		var number string

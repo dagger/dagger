@@ -366,9 +366,15 @@ func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	require.True(t, entries[0].Focused, "the session's own agent starts focused")
 	require.False(t, entries[1].Focused)
 
+	help := navKeyHelp(fe.keys(NewOutput(io.Discard)))
+	require.Contains(t, help, "ctrl+1…9 focus agent")
+	require.NotContains(t, help, "alt+1…9 focus agent")
+	require.False(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}),
+		"the old Alt+digit binding must remain unclaimed")
+
 	// Half a sentence to the chief, then jump to the scout.
 	fe.textInput.SetValue("half a thought")
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	require.Eventually(t, func() bool {
 		focused := handler.focusedAgents()
 		return len(focused) == 1 && focused[0] == "agent-scout"
@@ -390,7 +396,7 @@ func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	fe.tui.Step()
 	require.Equal(t, "half a thought", fe.textInput.Value())
 
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	require.Eventually(t, func() bool {
 		return len(handler.focusedAgents()) == 3
 	}, 5*time.Second, 10*time.Millisecond)
@@ -409,7 +415,7 @@ func TestUnaddressableAgentIsReadOnly(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, db, handler)
 
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	require.Empty(t, handler.focusedAgents(),
 		"focus must not move to an agent with no handle")
 	require.Error(t, fe.promptErr)
@@ -457,7 +463,7 @@ func TestFocusRetriesAfterPayloadArrives(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, db, handler)
 
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	require.Empty(t, handler.focusedAgents())
 	require.Error(t, fe.promptErr)
 	require.True(t, fe.agentRosterEntries()[1].ReadOnly)
@@ -465,7 +471,7 @@ func TestFocusRetriesAfterPayloadArrives(t *testing.T) {
 	// The missing payload lands late; the next explicit focus retries the
 	// rebuild instead of refusing off the cached mark.
 	db.Calls["sha256:scout"] = scoutCall
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	awaitFocus(t, handler, "agent-scout")
 	fe.tui.Step()
 	require.NoError(t, fe.promptErr, "a successful focus clears the stale error")
@@ -530,8 +536,8 @@ func TestRosterStaysVisibleInNavMode(t *testing.T) {
 }
 
 // TestNavDigitFocusesAndReturnsToPrompt covers the binding that always
-// arrives: alt+<digit> is contested all the way up the stack (editors,
-// browsers, terminal emulators), so nav mode offers the same jump on the bare
+// arrives: modified digits need an enhanced keyboard protocol or
+// terminal-specific encoding, so nav mode offers the same jump on the bare
 // digit. Focusing is a prelude to typing at the agent, so it hands the prompt
 // back -- which is also what makes the per-agent draft worth keeping.
 func TestNavDigitFocusesAndReturnsToPrompt(t *testing.T) {
@@ -662,7 +668,7 @@ func TestNavCycleWithNobodyToCycleTo(t *testing.T) {
 	delete(db.Calls, "sha256:scout")
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, db, handler)
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	require.Error(t, fe.promptErr, "naming a read-only entry reports why")
 
 	fe.setPromptError(nil)
@@ -734,7 +740,7 @@ func TestNavRosterKeysAreAdvertised(t *testing.T) {
 	readOnly := rosterDB(t)
 	delete(readOnly.Calls, "sha256:scout")
 	ro := focusTestFrontend(t, readOnly, &focusShellHandler{target: "agent-chief"})
-	require.True(t, pressEditlineKey(t, ro, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, ro, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	ro.enterNavMode()
 	help = navKeyHelp(ro.keys(out))
 	require.Contains(t, help, "1…9 focus agent")
