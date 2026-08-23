@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -72,9 +73,61 @@ var shellCmd = &cobra.Command{
 	},
 }
 
+// shellEnvironment keeps the runner's initial process environment while letting
+// asynchronous agent saves refresh $agent without running the interpreter.
+type shellEnvironment struct {
+	base expand.Environ
+
+	mu            sync.RWMutex
+	agent         expand.Variable
+	agentAssigned bool
+}
+
+func newShellEnvironment() *shellEnvironment {
+	return &shellEnvironment{base: expand.ListEnviron(os.Environ()...)}
+}
+
+func (e *shellEnvironment) Get(name string) expand.Variable {
+	if name != agentVar {
+		return e.base.Get(name)
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.agentAssigned {
+		return e.agent
+	}
+	return e.base.Get(name)
+}
+
+func (e *shellEnvironment) Each(yield func(string, expand.Variable) bool) {
+	e.mu.RLock()
+	agent, assigned := e.agent, e.agentAssigned
+	e.mu.RUnlock()
+
+	keepGoing := true
+	e.base.Each(func(name string, value expand.Variable) bool {
+		if assigned && name == agentVar {
+			return true
+		}
+		keepGoing = yield(name, value)
+		return keepGoing
+	})
+	if keepGoing && assigned {
+		yield(agentVar, agent)
+	}
+}
+
+func (e *shellEnvironment) setAgent(value string) {
+	e.mu.Lock()
+	e.agent = expand.Variable{Set: true, Kind: expand.String, Str: value}
+	e.agentAssigned = true
+	e.mu.Unlock()
+}
+
 type shellCallHandler struct {
-	dag    *dagger.Client
-	runner *interp.Runner
+	dag      *dagger.Client
+	runner   *interp.Runner
+	shellEnv *shellEnvironment
 
 	// don't detect + load a module, just stick to dagger core
 	noModule bool
@@ -455,8 +508,10 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 }
 
 func (h *shellCallHandler) Initialize(ctx context.Context) error {
+	h.shellEnv = newShellEnvironment()
 	r, err := interp.New(
 		interp.Params("-e", "-u", "-o", "pipefail"),
+		interp.Env(h.shellEnv),
 		interp.CallHandler(h.Call),
 		interp.ExecHandlers(h.Exec),
 
