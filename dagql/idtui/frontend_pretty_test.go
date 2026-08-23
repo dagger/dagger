@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -25,6 +26,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
@@ -184,6 +186,106 @@ func TestTerminalTitleFollowsPrimaryZoomAndLiveName(t *testing.T) {
 
 func TestSanitizeTerminalTitle(t *testing.T) {
 	require.Equal(t, "safename", sanitizeTerminalTitle("safe\x1b]2;injected\x07\nname"))
+}
+
+func renderDump(t *testing.T, id *call.ID, dump Dump) string {
+	t.Helper()
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	require.NoError(t, dump.DumpID(out, id))
+	return buf.String()
+}
+
+func dumpTestType(name string) *ast.Type {
+	return &ast.Type{NamedType: name, NonNull: true}
+}
+
+func callRenderingTestID() *call.ID {
+	objectID := call.New().
+		Append(dumpTestType("Container"), "container").
+		Append(
+			dumpTestType("Container"),
+			"withLabel",
+			call.WithArgs(call.NewArgument("name", call.NewLiteralString("value"), false)),
+		)
+	return call.New().Append(
+		dumpTestType("Result"),
+		"use",
+		call.WithArgs(
+			call.NewArgument("object", call.NewLiteralID(objectID), false),
+			call.NewArgument("keep", call.NewLiteralString("value"), false),
+			call.NewArgument("omit", call.NewLiteralNull(), false),
+			call.NewArgument("options", call.NewLiteralObject(
+				call.NewArgument("nested", call.NewLiteralString("value"), false),
+				call.NewArgument("absent", call.NewLiteralNull(), false),
+			), false),
+		),
+	)
+}
+
+func TestDumpUsesRawRecipeRendering(t *testing.T) {
+	require.Equal(t, strings.Join([]string{
+		"use(",
+		"┆ ┆ object: Container.withLabel(name: \"value\"): Container!",
+		"┆ ┆ keep: \"value\"",
+		"┆ ┆ omit: null",
+		"┆ ┆ options: {nested: \"value\", absent: null}",
+		"┆ ): Result!",
+		"",
+	}, "\n"), renderDump(t, callRenderingTestID(), Dump{}))
+}
+
+func renderLiveCallRows(t *testing.T, width int) string {
+	t.Helper()
+	id := callRenderingTestID()
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+
+	db := dagui.NewDB()
+	for digest, frame := range dag.GetRecipe().GetCallsByDigest() {
+		db.Calls[digest] = frame
+	}
+	rootID := prettyTestSpanID(1)
+	callID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "root",
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+		},
+		{
+			ID: callID, TraceID: prettyTestTraceID(), ParentID: rootID,
+			Name: "use", CallDigest: id.Call().GetDigest(),
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(width, 30)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true}
+	fe.recalculateViewLocked()
+	return ansi.Strip(strings.Join(fe.tui.Frame(), "\n"))
+}
+
+func TestLiveTUISimplifiesCallRows(t *testing.T) {
+	t.Run("compact when call fits", func(t *testing.T) {
+		got := renderLiveCallRows(t, 200)
+		require.Contains(t, got, "use(object: Container.withLabel(name: \"value\"): Container!, keep: \"value\", options: {nested: \"value\"}): Result!")
+		require.NotContains(t, got, "omit:")
+		require.NotContains(t, got, "absent:")
+		require.NotContains(t, got, "null")
+	})
+
+	t.Run("wrapped call keeps tree indentation", func(t *testing.T) {
+		got := renderLiveCallRows(t, 60)
+		require.Contains(t, got, VertDash3+" object: Container.withLabel(name: \"value\")")
+		require.NotContains(t, got, "omit:")
+		require.NotContains(t, got, "absent:")
+		require.NotContains(t, got, "null")
+	})
 }
 
 func TestRenderDigestedLiteralIsOpaque(t *testing.T) {

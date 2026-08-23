@@ -13,6 +13,7 @@ import (
 	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dustin/go-humanize"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
@@ -411,6 +412,10 @@ type renderer struct {
 	maxLiteralLen int
 	rendering     map[string]bool
 	final         bool
+	omitNulls     bool
+	compactIDs    bool
+	maxWidth      int
+	widthOffset   int
 
 	// indentFunc, when set, may override fancyIndent. Returns true if it
 	// handled the indent, false to fall through to the default parent-chain
@@ -430,6 +435,14 @@ func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final b
 		newline:       "\n",
 		final:         final,
 	}
+}
+
+// enableCallSimplification configures the compact TUI call presentation. Tree
+// indentation remains independent so wrapped arguments keep their row guides.
+func (r *renderer) enableCallSimplification(maxWidth int) {
+	r.omitNulls = true
+	r.compactIDs = true
+	r.maxWidth = maxWidth
 }
 
 const (
@@ -513,6 +526,50 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 	}
 }
 
+func isNullLiteral(lit *callpbv1.Literal) bool {
+	if lit == nil {
+		return false
+	}
+	_, ok := lit.GetValue().(*callpbv1.Literal_Null)
+	return ok
+}
+
+func (r *renderer) visibleArgs(args []*callpbv1.Argument, elide map[string]struct{}) []*callpbv1.Argument {
+	visible := make([]*callpbv1.Argument, 0, len(args))
+	for _, arg := range args {
+		if _, elided := elide[arg.GetName()]; elided {
+			continue
+		}
+		if r.omitNulls && isNullLiteral(arg.GetValue()) {
+			continue
+		}
+		visible = append(visible, arg)
+	}
+	return visible
+}
+
+func (r *renderer) compactRenderedLen(
+	span *dagui.Span,
+	call *callpbv1.Call,
+	prefix string,
+	chained bool,
+	depth int,
+	internal bool,
+	row *dagui.TraceRow,
+	abridged bool,
+) int {
+	var buf strings.Builder
+	probe := newRenderer(r.db, -1, r.FrontendOpts, r.final)
+	probe.omitNulls = r.omitNulls
+	probe.compactIDs = r.compactIDs
+	probe.newline = r.newline
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	if err := probe.renderCall(out, span, call, prefix, chained, depth, internal, row, abridged); err != nil {
+		return r.maxWidth + 1
+	}
+	return ansi.StringWidth(buf.String())
+}
+
 func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
@@ -573,33 +630,35 @@ func (r *renderer) renderCall( //nolint: gocyclo
 		fmt.Fprint(out, out.String(call.Field).Bold())
 	}
 
-	if len(call.Args) > len(elideArgs) {
+	visibleArgs := r.visibleArgs(call.Args, elideArgs)
+	hasArgs := len(visibleArgs) > 0
+	if hasArgs {
 		if specialTitle {
 			fmt.Fprint(out, " ")
 		}
 		fmt.Fprint(out, out.String("("))
 		var needIndent bool
-		for _, arg := range call.Args {
-			if _, elided := elideArgs[arg.Name]; elided {
-				continue
-			}
-			if arg.GetValue().GetCallDigest() != "" {
-				needIndent = true
-				break
-			}
-			if r.maxLiteralLen > 0 && r.renderedLen(arg.GetValue()) > r.maxLiteralLen {
-				needIndent = true
-				break
+		if r.compactIDs {
+			needIndent = r.maxWidth > 0 && r.widthOffset+r.compactRenderedLen(
+				span, call, prefix, chained, depth, internal, row, abridged,
+			) > r.maxWidth
+		} else {
+			for _, arg := range visibleArgs {
+				if arg.GetValue().GetCallDigest() != "" {
+					needIndent = true
+					break
+				}
+				if r.maxLiteralLen > 0 && r.renderedLen(arg.GetValue()) > r.maxLiteralLen {
+					needIndent = true
+					break
+				}
 			}
 		}
 		if needIndent {
 			fmt.Fprint(out, r.newline)
 			depth++
 			depth++
-			for _, arg := range call.Args {
-				if _, elided := elideArgs[arg.Name]; elided {
-					continue
-				}
+			for _, arg := range visibleArgs {
 				fmt.Fprint(out, prefix)
 				indentLevel := depth
 				if row != nil {
@@ -626,7 +685,13 @@ func (r *renderer) renderCall( //nolint: gocyclo
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged); err != nil {
+					widthOffset := r.widthOffset
+					if r.compactIDs {
+						r.widthOffset = ansi.StringWidth(prefix) + indentLevel*2 + ansi.StringWidth(arg.GetName()) + 2
+					}
+					err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged)
+					r.widthOffset = widthOffset
+					if err != nil {
 						return err
 					}
 				} else {
@@ -650,16 +715,24 @@ func (r *renderer) renderCall( //nolint: gocyclo
 			depth-- //nolint:ineffassign
 		} else {
 			printed := 0
-			for _, arg := range call.Args {
-				if _, elided := elideArgs[arg.Name]; elided {
-					continue
-				}
+			for _, arg := range visibleArgs {
 				if printed > 0 {
 					fmt.Fprint(out, out.String(", "))
 				}
 				printed++
 				fmt.Fprintf(out, out.String("%s: ").Foreground(kwColor).String(), arg.GetName())
-				r.renderLiteral(out, arg.GetValue())
+				if argDig := arg.GetValue().GetCallDigest(); r.compactIDs && argDig != "" {
+					argCall := r.db.Simplify(r.db.MustCall(argDig), false)
+					maxWidth := r.maxWidth
+					r.maxWidth = 0
+					err := r.renderCall(out, nil, argCall, prefix, false, depth, internal, row, abridged)
+					r.maxWidth = maxWidth
+					if err != nil {
+						return err
+					}
+				} else {
+					r.renderLiteral(out, arg.GetValue())
+				}
 			}
 		}
 		fmt.Fprint(out, out.String(")"))
@@ -779,10 +852,15 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 		fmt.Fprint(out, out.String("]"))
 	case *callpbv1.Literal_Object:
 		fmt.Fprint(out, out.String("{"))
-		for i, item := range val.Object.GetValues() {
-			if i > 0 {
+		printed := 0
+		for _, item := range val.Object.GetValues() {
+			if r.omitNulls && isNullLiteral(item.GetValue()) {
+				continue
+			}
+			if printed > 0 {
 				fmt.Fprint(out, out.String(", "))
 			}
+			printed++
 			fmt.Fprintf(out, out.String("%s: ").String(), item.GetName())
 			r.renderLiteral(out, item.GetValue())
 		}
