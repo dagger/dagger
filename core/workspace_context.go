@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -139,16 +138,16 @@ func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.Input
 	return val, true
 }
 
-// workspaceClientContext switches ctx to the Workspace's owning client so that
-// client-scoped resolvers — CurrentServedDeps, EnsureWorkspaceModules — resolve
-// against the workspace's own served modules rather than whichever client is
-// currently executing. Synthetic/value workspaces have no owning client, so ctx
-// is returned unchanged and resolution falls back to the current client.
+// workspaceHostRoutingContext stamps the Workspace owner's immutable metadata
+// onto ctx for record and host-routing operations. It deliberately does not
+// replace the held ClientScope: metadata is not runtime execution authority, so
+// schema/module operations continue to execute under the caller's leased scope.
+// Synthetic/value workspaces have no owning client and leave ctx unchanged.
 //
 // This mirrors core/schema's withWorkspaceClientContext, reimplemented here so
 // the LLM's schema derivation ([WorkspaceServedSchema]) needs no core→schema
 // import.
-func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context, error) {
+func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
 		return ctx, nil
 	}
@@ -190,7 +189,7 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 // callers that resolve those root fields directly (e.g. the LLM's inspect tool
 // enumerating module entrypoints) resolve them against the same workspace.
 func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
-	wsCtx, err := workspaceClientContext(ctx, ws.Self())
+	wsCtx, err := workspaceHostRoutingContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
 	}
