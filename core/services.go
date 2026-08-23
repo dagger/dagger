@@ -1129,7 +1129,8 @@ func (ss *Services) handleExit(running *RunningService, waitErr error) {
 	// Record the tombstone even for a replaced entry: the service ran in the
 	// session either way, and its logs remain worth finding.
 	sessionID := running.Key.SessionID
-	tombstones := append(ss.exited[sessionID], exited)
+	tombstones := ss.exited[sessionID]
+	tombstones = append(tombstones, exited)
 	if len(tombstones) > MaxExitedServicesPerSession {
 		tombstones = tombstones[len(tombstones)-MaxExitedServicesPerSession:]
 	}
