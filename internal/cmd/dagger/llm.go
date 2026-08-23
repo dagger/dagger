@@ -26,6 +26,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+const agentVar = "agent"
+
 type interpreterMode int
 
 const (
@@ -664,6 +666,7 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existin
 	if err != nil {
 		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
 	}
+	a.session.shell.assignAgent(llmID)
 
 	// Workspace IDs are engine-local handles, so persist the baseline through a
 	// minimal portable LLM recipe that binds it. Best-effort for attached or
