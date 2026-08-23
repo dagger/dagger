@@ -257,6 +257,26 @@ func TestCommandViewOwnsLiveAndFinalRendering(t *testing.T) {
 	}
 }
 
+func TestCommandViewInitializesPerRenderState(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	term := tuist.NewHeadlessTerminal(73, 19)
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), term)
+	fe.reportOnly = true
+	view := &commandViewFixture{label: "setup"}
+	fe.SetView(func(ViewContext) CommandView { return view })
+
+	claimed := prettyTestSpanID(1)
+	fe.claims.claimErrorID(claimed)
+	_ = fe.tui.Frame()
+
+	if fe.claims.hasError(claimed) {
+		t.Fatal("command view retained claims from a previous render")
+	}
+	if got, want := fe.window, (windowSize{Width: 73, Height: 19}); got != want {
+		t.Fatalf("command view window = %+v, want %+v", got, want)
+	}
+}
+
 func TestSpanListSelectsCommandOwnedRoots(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()

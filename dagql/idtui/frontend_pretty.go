@@ -2447,11 +2447,21 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
 		return
 	}
+	fe.claims = newRenderClaims()
+	if !fe.finalRender {
+		// Update window dimensions before choosing the screen body. Command-owned
+		// views embed the same trace renderers, which depend on this state for
+		// wrapping, log sizing, and resize handling.
+		fe.setWindowSizeLocked(windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()})
+	} else if fe.contentWidth <= 0 {
+		// Final render without a live TUI (report mode). Set to 0
+		// so the renderer doesn't truncate (maxLiteralLen = 0).
+		fe.contentWidth = 0
+	}
 	if fe.commandView != nil {
 		fe.RenderChild(ctx, fe.commandView)
 		return
 	}
-	fe.claims = newRenderClaims()
 
 	// Coalesce deferred view updates. Multiple ExportSpans batches may
 	// have set viewDirty since the last frame — recalculate once now.
@@ -2464,15 +2474,6 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// midterm's incremental search (only re-scans changed rows).
 	if fe.searchQuery != "" {
 		fe.refreshSearchMatches()
-	}
-
-	if !fe.finalRender {
-		// Update window dimensions from tuist.
-		fe.setWindowSizeLocked(windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()})
-	} else if fe.contentWidth <= 0 {
-		// Final render without a live TUI (report mode). Set to 0
-		// so the renderer doesn't truncate (maxLiteralLen = 0).
-		fe.contentWidth = 0
 	}
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
