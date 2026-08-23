@@ -564,6 +564,9 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		maxLiteralWidth = ctx.Width / 2
 	}
 	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.finalRender)
+	if !s.finalRender {
+		r.enableCallSimplification(ctx.Width)
+	}
 	visualFocused := s.focused && !s.finalRender
 
 	s.selfLineCount = 0
@@ -2989,6 +2992,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	}
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
+	if !fe.finalRender {
+		r.enableCallSimplification(ctx.Width)
+	}
 
 	if fe.finalRender {
 		fe.renderFinalReport(ctx, r)
