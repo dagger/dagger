@@ -94,6 +94,18 @@ func withEngine(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
+) error {
+	return withEngineAfterClose(ctx, params, fn, nil)
+}
+
+// withEngineAfterClose is withEngine with an optional callback that runs only
+// after both the command and the engine session close successfully. It is used
+// for exit output that is truthful only once session finalization has finished.
+func withEngineAfterClose(
+	ctx context.Context,
+	params client.Params,
+	fn runClientCallback,
+	afterClose func(*client.Client),
 ) (rerr error) {
 	if err := applyWorkspaceClientParams(&params); err != nil {
 		return err
@@ -140,13 +152,29 @@ func withEngine(
 		if err != nil {
 			return cleanup.Run, err
 		}
-		cleanup.Add("close dagger session", sess.Close)
+		cleanup.Add("close dagger session", func() error {
+			return closeEngineSession(ctx, rerr, sess.Close, func() {
+				if afterClose != nil {
+					afterClose(sess)
+				}
+			})
+		})
 
 		Frontend.SetClient(sess.Dagger())
 		ctx = withTraceRestoreSource(ctx, newEngineTraceRestoreSource(sess.ArchiveClient()))
 
 		return cleanup.Run, fn(ctx, sess)
 	})
+}
+
+func closeEngineSession(ctx context.Context, runErr error, close func() error, afterClose func()) error {
+	if err := close(); err != nil {
+		return err
+	}
+	if runErr == nil && ctx.Err() == nil && afterClose != nil {
+		afterClose()
+	}
+	return nil
 }
 
 // finalizeEngineParams fills in the run-scoped client params that depend on the

@@ -1058,6 +1058,62 @@ func rerunReportDB(t *testing.T) *dagui.DB {
 	return db
 }
 
+func TestSuggestedCommandRendering(t *testing.T) {
+	const command = "dagger agent -r=0123456789abcdef0123456789abcdef"
+
+	t.Run("human", func(t *testing.T) {
+		fe := NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+		fe.SetSuggestedCommand("RESUME SESSION", command)
+
+		var buf strings.Builder
+		fe.renderSuggestedCommand(&buf)
+		require.Equal(t, "\nRESUME SESSION\n  "+command+"\n", buf.String())
+	})
+
+	t.Run("agent style", func(t *testing.T) {
+		fe := NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+		fe.FrontendOpts.AgentStyle = true
+		fe.SetSuggestedCommand("RESUME SESSION", command)
+
+		var buf strings.Builder
+		fe.renderSuggestedCommand(&buf)
+		require.Equal(t, "\n== RESUME SESSION ==\n"+command+"\n", buf.String())
+	})
+
+	t.Run("suppressed", func(t *testing.T) {
+		fe := NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+
+		var buf strings.Builder
+		fe.renderSuggestedCommand(&buf)
+		require.Empty(t, buf.String(), "missing suggestion")
+
+		fe.SetSuggestedCommand("RESUME SESSION", command)
+		fe.Silent = true
+		fe.renderSuggestedCommand(&buf)
+		require.Empty(t, buf.String(), "silent frontend")
+	})
+}
+
+func TestSuggestedCommandFollowsFinalMessages(t *testing.T) {
+	const command = "dagger agent -r=0123456789abcdef0123456789abcdef"
+
+	var output bytes.Buffer
+	fe := NewASCIIReporterWithDB(&output, dagui.NewDB())
+	fe.Debug = true
+	fe.FrontendOpts.AgentStyle = true
+	fe.msgPreFinalRender.WriteString("Full trace at https://example.test/trace")
+	fe.SetSuggestedCommand("RESUME SESSION", command)
+	require.NoError(t, fe.FinalRender(&output))
+
+	rendered := output.String()
+	require.Contains(t, rendered, "Full trace at https://example.test/trace")
+	require.Less(t,
+		strings.Index(rendered, "Full trace at https://example.test/trace"),
+		strings.Index(rendered, "== RESUME SESSION =="),
+	)
+	require.True(t, strings.HasSuffix(rendered, "\n== RESUME SESSION ==\n"+command+"\n"), rendered)
+}
+
 func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	fe := NewWithDB(io.Discard, rerunReportDB(t))

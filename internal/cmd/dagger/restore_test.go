@@ -423,6 +423,34 @@ func TestTraceFetchErrorsRemainStrict(t *testing.T) {
 	})
 }
 
+type suggestedCommandRecorder struct {
+	title   string
+	command string
+}
+
+func (r *suggestedCommandRecorder) SetSuggestedCommand(title, command string) {
+	r.title = title
+	r.command = command
+}
+
+func TestAgentResumeHint(t *testing.T) {
+	const traceID = "0123456789abcdef0123456789abcdef"
+
+	recorder := new(suggestedCommandRecorder)
+	setAgentResumeHint(recorder, traceID)
+	require.Equal(t, agentResumeHintTitle, recorder.title)
+	require.Equal(t, "dagger agent -r="+traceID, recorder.command)
+
+	for _, invalid := range []string{"", "not-a-trace", "00000000000000000000000000000000", "0123456789ABCDEF0123456789ABCDEF"} {
+		recorder := new(suggestedCommandRecorder)
+		setAgentResumeHint(recorder, invalid)
+		require.Empty(t, recorder.command, invalid)
+	}
+
+	// Streaming frontends do not implement the optional suggestion seam.
+	require.NotPanics(t, func() { setAgentResumeHint(struct{}{}, traceID) })
+}
+
 func TestAgentResumeFlagValidation(t *testing.T) {
 	require.NoError(t, validateAgentResumeFlags(true, time.Second, true, true, nil))
 	require.NoError(t, validateAgentResumeFlags(false, 0, false, false, []string{"editor"}))

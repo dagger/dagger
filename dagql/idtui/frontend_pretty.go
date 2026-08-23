@@ -303,6 +303,11 @@ type frontendPretty struct {
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
 
+	// suggestedCommand is a copy-paste next step registered only after its
+	// prerequisite work succeeds. It renders after the TUI and final report so
+	// it remains the last, prominent thing visible on exit.
+	suggestedCommand *suggestedCommand
+
 	// Prompt forms are serialized through one active request and a FIFO. Each
 	// mounted form owns a scoped Tuist focus handle so teardown can restore the
 	// exact component that was focused before it was presented.
@@ -1188,6 +1193,23 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 			}
 		}
 		fe.Update()
+	})
+}
+
+type suggestedCommand struct {
+	title   string
+	command string
+}
+
+// SetSuggestedCommand registers a copy-paste command to print after the final
+// report. Commands call this only once the operation that makes the suggestion
+// truthful has completed successfully.
+func (fe *frontendPretty) SetSuggestedCommand(title, command string) {
+	if title == "" || command == "" {
+		return
+	}
+	fe.dispatch(func() {
+		fe.suggestedCommand = &suggestedCommand{title: title, command: command}
 	})
 }
 
@@ -2467,6 +2489,16 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		return ExitError{OriginalCode: exitCode, Original: fe.err}
 	}
 
+	// Register before msgPreFinalRender's defer below: deferred calls run in
+	// reverse order, so Cloud/telemetry notices print first and this remains the
+	// final block. Only enable it after the ordinary final render succeeds.
+	renderSuggestion := false
+	defer func() {
+		if renderSuggestion {
+			fe.renderSuggestedCommand(w)
+		}
+	}()
+
 	fe.setupFinalRenderLocked()
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
@@ -2484,7 +2516,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 					telemetryErr = *p
 				}
 				handleTelemetryErrorOutput(w, out, telemetryErr)
-				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
+				fmt.Fprintln(fe.writer, fe.msgPreFinalRender.String())
 			}()
 		}
 	}
@@ -2537,7 +2569,26 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			return replayPrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
 		}
 	}
-	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
+	if err := renderPrimaryOutputFor(w, fe.db, fe.primarySpan()); err != nil {
+		return err
+	}
+	renderSuggestion = true
+	return nil
+}
+
+// renderSuggestedCommand uses the same section helper as `dagger trace`'s
+// copy-paste suggestions. It is intentionally last in FinalRender so the hint
+// survives the TUI teardown and remains visible at the prompt.
+func (fe *frontendPretty) renderSuggestedCommand(w io.Writer) {
+	if fe.Silent || fe.suggestedCommand == nil {
+		return
+	}
+	out := NewOutput(w, termenv.WithProfile(fe.profile))
+	lines := reportSectionLines(out, fe.agentStyle(), fe.suggestedCommand.title, []string{fe.suggestedCommand.command})
+	fmt.Fprintln(w)
+	for _, line := range lines {
+		fmt.Fprintln(w, line)
+	}
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {

@@ -1133,8 +1133,9 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 		return err
 	}
 
-	// Restore through the same trace path used by pristine .resume. Every
-	// runtime must exist before any restored conversation is attached.
+	// Restore through the same trace path used by pristine .resume. Best-effort
+	// rehydration attempts every runtime before attaching the successful
+	// conversations.
 	if opts.restore != nil {
 		if opts.restore.source == nil {
 			opts.restore.source = opts.restoreSource

@@ -168,6 +168,14 @@ type EventLoopBarrier interface {
 // need this optional interface.
 var _ EventLoopBarrier = (*frontendPretty)(nil)
 
+// SuggestedCommandFrontend is the optional seam for commands that can offer a
+// copy-paste next step after a successful run. The pretty frontend renders it
+// with the same titled-section presentation used by `dagger trace` suggestions;
+// streaming frontends deliberately do not implement it.
+type SuggestedCommandFrontend interface {
+	SetSuggestedCommand(title, command string)
+}
+
 // TraceFrontend is the optional interface 'dagger trace' drives for
 // incremental loading and report zooming: snapshot import, lazy span/log
 // providers, surfaced-failure prefetch, and name-based zoom targets. Only the

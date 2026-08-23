@@ -12,9 +12,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var agentListMode bool
@@ -68,7 +70,7 @@ Examples:
 		); err != nil {
 			return err
 		}
-		return withEngine(
+		return withEngineAfterClose(
 			cmd.Context(),
 			client.Params{
 				// Agent prompt sessions retain their engine telemetry for resume.
@@ -120,8 +122,25 @@ Examples:
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, opts)
 			},
+			func(engineClient *client.Client) {
+				setAgentResumeHint(Frontend, engineClient.ArchiveTraceID)
+			},
 		)
 	},
+}
+
+const agentResumeHintTitle = "RESUME SESSION"
+
+func setAgentResumeHint(frontend any, traceID string) {
+	parsed, err := trace.TraceIDFromHex(traceID)
+	if err != nil || !parsed.IsValid() || parsed.String() != traceID {
+		return
+	}
+	suggester, ok := frontend.(idtui.SuggestedCommandFrontend)
+	if !ok {
+		return
+	}
+	suggester.SetSuggestedCommand(agentResumeHintTitle, "dagger agent -r="+traceID)
 }
 
 // agentResumeFlag is the optional value of -r/--resume: a trace ID, or the
