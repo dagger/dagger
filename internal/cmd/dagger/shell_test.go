@@ -65,6 +65,22 @@ func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
 	require.Equal(t, moduleURLDefault, handler.moduleURL)
 }
 
+func TestAssignAgentUsesPortableID(t *testing.T) {
+	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
+	handler.state = NewStateStore(nil)
+
+	portableID := dagger.ID("portable-agent-id")
+	handler.assignAgent(portableID)
+
+	agentToken := handler.shellEnv.Get(agentVar).String()
+	agentState, err := handler.state.Load(GetStateKey(agentToken))
+	require.NoError(t, err)
+	require.Len(t, agentState.Calls, 1)
+	require.Equal(t, "node", agentState.Calls[0].Name)
+	require.Equal(t, "LLM", agentState.Calls[0].ReturnObject)
+	require.Equal(t, string(portableID), agentState.Calls[0].Arguments["id"])
+}
+
 func TestAgentDebugServerHotkey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -204,7 +220,9 @@ func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx
 		WithSystemPrompt("keep the original agent composition").
 		WithTools(baseline)
 
-	session := &LLMSession{dag: dag, plumbingCtx: ctx}
+	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
+	handler.state = NewStateStore(nil)
+	session := &LLMSession{dag: dag, shell: handler, plumbingCtx: ctx}
 	agent := session.newAgent("baseline-test")
 	session.agents = []*sessionAgent{agent}
 	session.target = agent
@@ -246,6 +264,16 @@ func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx
 	var metadata sessionMetadata
 	require.NoError(t, json.Unmarshal(data, &metadata))
 	require.NotEmpty(t, metadata.WorkspaceBaselineID)
+
+	// The same portable conversation recipe is exposed to shell mode as an LLM
+	// object, so switching out of the prompt can continue from the saved agent.
+	agentToken := handler.shellEnv.Get(agentVar).String()
+	agentState, err := handler.state.Load(GetStateKey(agentToken))
+	require.NoError(t, err)
+	require.Len(t, agentState.Calls, 1)
+	require.Equal(t, "node", agentState.Calls[0].Name)
+	require.Equal(t, "LLM", agentState.Calls[0].ReturnObject)
+	require.Equal(t, metadata.LLMID, agentState.Calls[0].Arguments["id"])
 
 	dag2, err := dagger.Connect(ctx, dagger.WithWorkdir(workdir))
 	require.NoError(t, err)
