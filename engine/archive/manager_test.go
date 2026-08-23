@@ -186,6 +186,63 @@ func TestManagerQuotaLeaseAndExpiry(t *testing.T) {
 	}
 }
 
+func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	removeReady := false
+	removeAttempts := 0
+	manager, err := NewManager(Config{
+		Root: root, TTL: time.Hour, Now: func() time.Time { return now },
+		RemoveStore: func(string) (bool, error) {
+			removeAttempts++
+			return removeReady, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := manager.Register(testTraceA, "client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.BeginFinalizing(testTraceA, manifest.Generation); err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.Finalize(testTraceA, manifest.Generation, FinalizeInput{
+		SealAt: now, BootstrapBytes: testBootstrap(t, manifest, HighWater{}, now, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(2 * time.Hour)
+	if _, err := manager.GC(); err != nil {
+		t.Fatal(err)
+	}
+	if removeAttempts != 1 {
+		t.Fatalf("remove attempts = %d, want 1", removeAttempts)
+	}
+	if _, err := os.Stat(filepath.Join(root, testTraceA+".json")); err != nil {
+		t.Fatalf("pending manifest removed before store: %v", err)
+	}
+	if _, err := manager.Acquire(testTraceA); err == nil {
+		t.Fatal("pending archive remained acquirable")
+	}
+
+	removeReady = true
+	if _, err := manager.GC(); err != nil {
+		t.Fatal(err)
+	}
+	if removeAttempts != 2 {
+		t.Fatalf("remove attempts = %d, want 2", removeAttempts)
+	}
+	for _, name := range []string{testTraceA + ".json", testTraceA + ".bootstrap"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s remains after retry: %v", name, err)
+		}
+	}
+}
+
 func testBootstrap(t *testing.T, manifest Manifest, cut HighWater, sealAt time.Time, records int64) []byte {
 	t.Helper()
 	var signals []BootstrapSignal

@@ -388,6 +388,13 @@ func (l *spanLookup) latestRowIDs(ids map[string]struct{}) []int64 {
 	return rowIDs
 }
 
+func (l *spanLookup) hasSpanForTrace(traceID, spanID string) bool {
+	l.mu.RLock()
+	_, found := l.archiveLastRow[spanLookupKey{traceID: traceID, spanID: spanID}]
+	l.mu.RUnlock()
+	return found
+}
+
 func (l *spanLookup) hasSpan(spanID string) bool {
 	l.mu.RLock()
 	_, found := l.lastRow[spanID]
@@ -760,6 +767,71 @@ func (s *DB) Checkpoint(ctx context.Context) (HighWater, error) {
 	return highWater, result
 }
 
+// SizeBytes returns the physical size of the three telemetry streams. Archive
+// finalization calls this after Checkpoint, when every row in its fixed cut has
+// been flushed to these files.
+func (s *DB) SizeBytes() (int64, error) {
+	streams := []struct {
+		name string
+		stat func() (os.FileInfo, error)
+	}{
+		{name: "spans", stat: s.spans.spill.file.Stat},
+		{name: "logs", stat: s.logs.spill.file.Stat},
+		{name: "metrics", stat: s.metrics.spill.file.Stat},
+	}
+	var size int64
+	for _, stream := range streams {
+		info, err := stream.stat()
+		if err != nil {
+			return 0, fmt.Errorf("stat %s telemetry stream: %w", stream.name, err)
+		}
+		size += info.Size()
+	}
+	return size, nil
+}
+
+// ValidateTraceCut verifies the trace-addressed signals in a fixed stream cut.
+// Metrics have no per-row trace identity; their request trace is validated at
+// ingestion by the session exporter.
+func (s *DB) ValidateTraceCut(ctx context.Context, traceID string, cut HighWater) error {
+	const batchSize = int64(1024)
+	for cursor := int64(0); cursor < cut.Spans; {
+		rows, err := s.SelectSpansRange(ctx, SelectSpansRangeParams{
+			AfterID: cursor, ThroughID: cut.Spans, Limit: batchSize,
+		})
+		if err != nil {
+			return fmt.Errorf("read spans: %w", err)
+		}
+		if len(rows) == 0 {
+			return fmt.Errorf("span stream ended at %d before high-water %d", cursor, cut.Spans)
+		}
+		for _, row := range rows {
+			cursor = row.ID
+			if row.TraceID != traceID {
+				return fmt.Errorf("span row %d has trace %q, want %q", row.ID, row.TraceID, traceID)
+			}
+		}
+	}
+	for cursor := int64(0); cursor < cut.Logs; {
+		rows, err := s.SelectLogsRange(ctx, SelectLogsRangeParams{
+			AfterID: cursor, ThroughID: cut.Logs, Limit: batchSize,
+		})
+		if err != nil {
+			return fmt.Errorf("read logs: %w", err)
+		}
+		if len(rows) == 0 {
+			return fmt.Errorf("log stream ended at %d before high-water %d", cursor, cut.Logs)
+		}
+		for _, row := range rows {
+			cursor = row.ID
+			if !row.TraceID.Valid || row.TraceID.String != traceID {
+				return fmt.Errorf("log row %d has trace %q (valid %t), want %q", row.ID, row.TraceID.String, row.TraceID.Valid, traceID)
+			}
+		}
+	}
+	return nil
+}
+
 func (s *DB) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
 	return s.spans.Since(ctx, arg.ID, storeLimit(arg.Limit))
 }
@@ -825,6 +897,13 @@ func (s *DB) SpanLogScope(spanID string) map[string]struct{} {
 // (e.g. "did this tool call produce any child telemetry worth rendering?").
 func (s *DB) HasDescendants(spanID string) bool {
 	return s.lookup.hasDescendants(spanID)
+}
+
+// HasSpanForTrace reports whether the store has seen any snapshot of spanID in
+// traceID. Archive callers use the composite identity so a span ID collision in
+// another trace cannot hide a missing archive parent.
+func (s *DB) HasSpanForTrace(traceID, spanID string) bool {
+	return s.lookup.hasSpanForTrace(traceID, spanID)
 }
 
 // HasSpan reports whether the store has seen any snapshot of spanID.

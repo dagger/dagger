@@ -182,6 +182,51 @@ type storeGCGroup struct {
 	names    []string
 }
 
+// Remove closes an unreferenced store and deletes all of its stream files.
+// It returns false while a handle is active so archive eviction can defer
+// deleting the manifest and sidecar until its reader lease is released.
+func (r *DBs) Remove(clientID string) (bool, error) {
+	r.perStoreLock.Lock(clientID)
+	defer r.perStoreLock.Unlock(clientID)
+
+	r.mu.Lock()
+	store := r.open[clientID]
+	if store != nil && store.refCount > 0 {
+		r.mu.Unlock()
+		return false, nil
+	}
+	if store != nil {
+		if idle := r.idleByID[clientID]; idle != nil {
+			r.idle.Remove(idle)
+			delete(r.idleByID, clientID)
+		}
+		delete(r.open, clientID)
+		if err := store.closeStreams(); err != nil {
+			r.mu.Unlock()
+			return false, fmt.Errorf("close telemetry store %s: %w", clientID, err)
+		}
+	}
+	r.mu.Unlock()
+
+	entries, err := os.ReadDir(r.Root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("readdir %s: %w", r.Root, err)
+	}
+	for _, entry := range entries {
+		entryClientID, recognized := storeFileClientID(entry.Name())
+		if !recognized || entryClientID != clientID {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(r.Root, entry.Name())); err != nil {
+			return false, fmt.Errorf("remove telemetry store file %s: %w", entry.Name(), err)
+		}
+	}
+	return true, nil
+}
+
 // GC removes complete client stores whose newest stream (or transitional
 // SQLite sidecar) is older than CollectGarbageAfter. Grouping files by client
 // keeps a recently active stream from being separated from an older sibling.

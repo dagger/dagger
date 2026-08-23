@@ -407,6 +407,29 @@ func TestStoreCheckpointPropagatesSyncFailure(t *testing.T) {
 	require.ErrorContains(t, err, "checkpoint logs")
 }
 
+func TestStoreValidateTraceCutAndSize(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	_, err = store.AppendSpans([]Span{{TraceID: "trace", SpanID: "span"}})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]Log{{TraceID: validString("trace"), SpanID: validString("span")}})
+	require.NoError(t, err)
+	cut, err := store.Checkpoint(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, store.ValidateTraceCut(t.Context(), "trace", cut))
+	size, err := store.SizeBytes()
+	require.NoError(t, err)
+	require.Positive(t, size)
+
+	_, err = store.AppendLogs([]Log{{TraceID: validString("other"), SpanID: validString("span")}})
+	require.NoError(t, err)
+	require.NoError(t, store.ValidateTraceCut(t.Context(), "trace", cut), "rows after the fixed cut must not affect validation")
+	err = store.ValidateTraceCut(t.Context(), "trace", store.HighWater())
+	require.ErrorContains(t, err, `has trace "other"`)
+}
+
 func TestArchiveIndexesAreTraceScopedAndRecover(t *testing.T) {
 	root := t.TempDir()
 	store, err := openStore(t.Context(), root, "client", telemetryTailBudget)

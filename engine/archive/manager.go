@@ -104,6 +104,7 @@ type entry struct {
 	manifest Manifest
 	leases   int
 	deleting bool
+	removing bool
 }
 
 type Manager struct {
@@ -115,6 +116,7 @@ type Manager struct {
 
 	mu      sync.RWMutex
 	entries map[string]*entry
+	pending map[string]*entry
 	evicted map[string]struct{}
 	corrupt map[string]error
 }
@@ -143,7 +145,7 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{
 		root: cfg.Root, ttl: cfg.TTL, quota: cfg.QuotaBytes, now: cfg.Now,
-		removeStore: cfg.RemoveStore, entries: map[string]*entry{}, evicted: map[string]struct{}{}, corrupt: map[string]error{},
+		removeStore: cfg.RemoveStore, entries: map[string]*entry{}, pending: map[string]*entry{}, evicted: map[string]struct{}{}, corrupt: map[string]error{},
 	}
 	if err := m.load(); err != nil {
 		return nil, err
@@ -243,6 +245,9 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	defer m.mu.Unlock()
 	if _, exists := m.entries[traceID]; exists {
 		return Manifest{}, fmt.Errorf("archive trace %s already registered", traceID)
+	}
+	if _, deleting := m.pending[traceID]; deleting {
+		return Manifest{}, fmt.Errorf("archive trace %s is pending deletion", traceID)
 	}
 	if err := m.corrupt[traceID]; err != nil {
 		return Manifest{}, &Failure{Kind: FailureCorrupt, Err: err}
@@ -432,7 +437,10 @@ func (m *Manager) Acquire(traceID string) (*Lease, error) {
 func (m *Manager) release(ent *entry) {
 	m.mu.Lock()
 	ent.leases--
-	deleting := ent.deleting && ent.leases == 0
+	deleting := ent.deleting && ent.leases == 0 && !ent.removing
+	if deleting {
+		ent.removing = true
+	}
 	m.mu.Unlock()
 	if deleting {
 		_ = m.deleteEntry(ent)
@@ -497,11 +505,17 @@ func (m *Manager) KeepSet() map[string]bool {
 	return keep
 }
 
+func (m *Manager) markDeletingLocked(ent *entry) {
+	ent.deleting = true
+	delete(m.entries, ent.manifest.TraceID)
+	m.pending[ent.manifest.TraceID] = ent
+	m.evicted[ent.manifest.TraceID] = struct{}{}
+}
+
 func (m *Manager) GC() (overage int64, err error) {
 	now := m.now()
 	m.mu.Lock()
 	closed := make([]*entry, 0, len(m.entries))
-	var victims []*entry
 	for _, ent := range m.entries {
 		switch ent.manifest.State {
 		case StateClosed:
@@ -510,10 +524,7 @@ func (m *Manager) GC() (overage int64, err error) {
 			}
 		case StateInterrupted, StateIncomplete:
 			if !ent.deleting && !ent.manifest.ExpiresAt.After(now) {
-				ent.deleting = true
-				delete(m.entries, ent.manifest.TraceID)
-				m.evicted[ent.manifest.TraceID] = struct{}{}
-				victims = append(victims, ent)
+				m.markDeletingLocked(ent)
 			}
 		}
 	}
@@ -525,10 +536,7 @@ func (m *Manager) GC() (overage int64, err error) {
 	var newest *entry
 	for _, ent := range closed {
 		if !ent.manifest.ExpiresAt.After(now) {
-			ent.deleting = true
-			delete(m.entries, ent.manifest.TraceID)
-			m.evicted[ent.manifest.TraceID] = struct{}{}
-			victims = append(victims, ent)
+			m.markDeletingLocked(ent)
 			continue
 		}
 		newest = ent
@@ -540,17 +548,15 @@ func (m *Manager) GC() (overage int64, err error) {
 		if retained <= m.quota || ent.deleting || ent == newest {
 			continue
 		}
-		ent.deleting = true
-		delete(m.entries, ent.manifest.TraceID)
-		m.evicted[ent.manifest.TraceID] = struct{}{}
+		m.markDeletingLocked(ent)
 		retained -= ent.manifest.SizeBytes
-		victims = append(victims, ent)
 	}
 	if retained > m.quota {
 		overage = retained - m.quota
 	}
-	for _, ent := range victims {
-		if ent.leases == 0 {
+	for _, ent := range m.pending {
+		if ent.leases == 0 && !ent.removing {
+			ent.removing = true
 			ready = append(ready, ent)
 		}
 	}
@@ -561,7 +567,16 @@ func (m *Manager) GC() (overage int64, err error) {
 	return overage, err
 }
 
-func (m *Manager) deleteEntry(ent *entry) error {
+func (m *Manager) deleteEntry(ent *entry) (rerr error) {
+	complete := false
+	defer func() {
+		m.mu.Lock()
+		ent.removing = false
+		if complete {
+			delete(m.pending, ent.manifest.TraceID)
+		}
+		m.mu.Unlock()
+	}()
 	if m.removeStore != nil {
 		removed, err := m.removeStore(ent.manifest.MainClientID)
 		if err != nil {
@@ -578,6 +593,7 @@ func (m *Manager) deleteEntry(ent *entry) error {
 		}
 	}
 	result = errors.Join(result, removeAndSync(filepath.Join(m.root, ent.manifest.TraceID+".json")))
+	complete = result == nil
 	return result
 }
 

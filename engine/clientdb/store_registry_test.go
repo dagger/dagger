@@ -271,6 +271,25 @@ func TestStoreRegistryGC(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStoreRegistryRemoveWaitsForReferences(t *testing.T) {
+	root := t.TempDir()
+	registry := NewDBs(root)
+	store, err := registry.Open(t.Context(), "archive")
+	require.NoError(t, err)
+	requireStoreFilesExist(t, root, "archive")
+
+	removed, err := registry.Remove("archive")
+	require.NoError(t, err)
+	require.False(t, removed)
+	requireStoreFilesExist(t, root, "archive")
+
+	require.NoError(t, store.Close())
+	removed, err = registry.Remove("archive")
+	require.NoError(t, err)
+	require.True(t, removed)
+	requireStoreFilesMissing(t, root, "archive")
+}
+
 func streamClosed[Row any](stream *logStream[Row]) bool {
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
