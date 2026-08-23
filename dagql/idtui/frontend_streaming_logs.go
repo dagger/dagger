@@ -34,7 +34,10 @@ type streamingLogExporter struct {
 func renderableLogRecords(records []sdklog.Record) []sdklog.Record {
 	var filtered []sdklog.Record
 	for i, record := range records {
-		if record.Body().Kind() != log.KindString || dagui.IsCallPayloadRecord(record) || dagui.IsSpanNameRecord(record) {
+		if record.Body().Kind() != log.KindString ||
+			dagui.IsCallPayloadRecord(record) ||
+			dagui.IsSpanNameRecord(record) ||
+			dagui.IsAgentCheckpointRecord(record) {
 			if filtered == nil {
 				filtered = make([]sdklog.Record, 0, len(records)-1)
 				filtered = append(filtered, records[:i]...)
