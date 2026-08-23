@@ -26,43 +26,11 @@ type streamingLogExporter struct {
 	testLogs    map[dagui.SpanID]*Vterm
 }
 
-// renderableLogRecords returns the subset of records that may render as log
-// text: only string-bodied records outside the reserved call-payload channel.
-// The DB consumes payload records during ingestion, but frontends still hold
-// the original exporter batch and must not render it — and no non-string body
-// (bytes, structured values, unset) is ever log text, whatever produced it.
-func renderableLogRecords(records []sdklog.Record) []sdklog.Record {
-	var filtered []sdklog.Record
-	for i, record := range records {
-		if record.Body().Kind() != log.KindString ||
-			dagui.IsCallPayloadRecord(record) ||
-			dagui.IsSpanNameRecord(record) ||
-			dagui.IsAgentCheckpointRecord(record) {
-			if filtered == nil {
-				filtered = make([]sdklog.Record, 0, len(records)-1)
-				filtered = append(filtered, records[:i]...)
-			}
-			continue
-		}
-		if filtered != nil {
-			filtered = append(filtered, record)
-		}
-	}
-	if filtered == nil {
-		return records
-	}
-	return filtered
-}
-
-// Export processes log records: exports to the DB, groups by span, and either
-// flushes immediately (if the span exists) or buffers for later.
-// The caller must hold the mutex.
+// Export processes log records: ingests them in the DB, groups renderable text
+// by span, and either flushes immediately (if the span exists) or buffers for
+// later. The caller must hold the mutex.
 func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
-	if err := s.db.LogExporter().Export(ctx, records); err != nil {
-		return err
-	}
-
-	records = renderableLogRecords(records)
+	records = s.db.IngestLogs(records)
 	if len(records) == 0 {
 		return nil
 	}
@@ -129,9 +97,9 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 		// Check if this log is marked as verbose
 		isVerbose := false
 		record.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
-				isVerbose = true
-				return false // stop walking
+			if kv.Key == telemetry.LogsVerboseAttr {
+				isVerbose, _ = dagui.LogValueBool(kv.Value)
+				return !isVerbose
 			}
 			return true // continue walking
 		})
@@ -141,8 +109,8 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 			continue
 		}
 
-		body := record.Body().AsString()
-		if body == "" {
+		body, ok := dagui.LogBodyString(record)
+		if !ok || body == "" {
 			continue
 		}
 
