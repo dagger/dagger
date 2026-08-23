@@ -263,8 +263,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
 	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
 	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
-
 	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
+
+	// Client telemetry and resumable agent archives outlive disposable worker
+	// cache state. In particular, an unclean DAGQL persistence reset removes the
+	// entire worker tree below; keeping these stores beside it would erase every
+	// retained agent session on the next engine boot.
+	srv.clientDBDir = filepath.Join(srv.rootDir, "clientdbs")
+	if err := srv.migrateLegacyClientDBDir(); err != nil {
+		return nil, fmt.Errorf("migrate client telemetry storage: %w", err)
+	}
 
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
@@ -284,7 +292,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// set up client DBs, and the telemetry pub/sub which writes to it
 	//
 
-	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
 	srv.archives, err = archive.NewManager(archive.Config{
 		Root:        filepath.Join(srv.clientDBDir, "archives"),
@@ -676,6 +683,71 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 	srv.workerGCPolicies = nil
 	srv.workerDefaultGCPolicy = nil
 	return err
+}
+
+func (srv *Server) migrateLegacyClientDBDir() error {
+	legacy := filepath.Join(srv.workerRootDir, "clientdbs")
+	legacyInfo, err := os.Lstat(legacy)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat legacy directory: %w", err)
+	}
+	if !legacyInfo.IsDir() {
+		return fmt.Errorf("legacy path %s is not a directory", legacy)
+	}
+
+	destInfo, err := os.Lstat(srv.clientDBDir)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.Rename(legacy, srv.clientDBDir); err != nil {
+			return fmt.Errorf("move %s to %s: %w", legacy, srv.clientDBDir, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat destination directory: %w", err)
+	}
+	if !destInfo.IsDir() {
+		return fmt.Errorf("destination path %s is not a directory", srv.clientDBDir)
+	}
+	return mergeDirectoriesNoReplace(legacy, srv.clientDBDir)
+}
+
+// mergeDirectoriesNoReplace completes an interrupted migration, or combines a
+// legacy telemetry directory with the new persistent one. It never overwrites a
+// destination entry: a conflicting file stops engine startup with both copies
+// intact rather than choosing one and risking archive loss.
+func mergeDirectoriesNoReplace(source, dest string) error {
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", source, err)
+	}
+	for _, entry := range entries {
+		sourcePath := filepath.Join(source, entry.Name())
+		destPath := filepath.Join(dest, entry.Name())
+		destInfo, err := os.Lstat(destPath)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Rename(sourcePath, destPath); err != nil {
+				return fmt.Errorf("move %s to %s: %w", sourcePath, destPath, err)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", destPath, err)
+		}
+		if entry.IsDir() && destInfo.IsDir() {
+			if err := mergeDirectoriesNoReplace(sourcePath, destPath); err != nil {
+				return err
+			}
+			continue
+		}
+		return fmt.Errorf("refusing to overwrite existing telemetry path %s with %s", destPath, sourcePath)
+	}
+	if err := os.Remove(source); err != nil {
+		return fmt.Errorf("remove migrated directory %s: %w", source, err)
+	}
+	return nil
 }
 
 func (srv *Server) removeLocalCacheStateOnDisk() error {
