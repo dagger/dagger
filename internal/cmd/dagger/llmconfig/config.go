@@ -392,7 +392,11 @@ func refreshProviderToken(ctx context.Context, name string, provider Provider) (
 		refreshed, err = RefreshOAuthToken(ctx, &provider)
 	}
 	if err != nil {
-		return provider, false, fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+		refreshErr := fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+		if isTerminalOAuthTokenError(err) {
+			return provider, false, fmt.Errorf("%w: %w; run 'dagger llm setup' to reauthenticate", ErrOAuthReauthenticationRequired, refreshErr)
+		}
+		return provider, false, refreshErr
 	}
 	return *refreshed, true, nil
 }
