@@ -20,10 +20,8 @@ type MessageNode struct {
 // the live session's, rooted at db.RootSpan, and an imported one hanging off a
 // second parentless span — and the restored conversation has to surface
 // whichever root it hangs off. Resolving nil to db.RootSpan filed every
-// imported message as contained and dropped it, which is also how this
-// disagreed with HasConversationForSpan(nil): that one has always meant the
-// whole DB (see underSurfaceRoot). Scoped surfacing passes an explicit root
-// and is untouched, keeping the fixture containment it exists for.
+// imported message as contained and dropped it. Scoped surfacing passes an
+// explicit root and is untouched, keeping the fixture containment it exists for.
 func (db *DB) SurfacedConversation() []*MessageNode {
 	return db.SurfacedConversationForSpan(nil)
 }
@@ -92,12 +90,16 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 		var parentID SpanID
 		mayRollUp := spanMayRollUp(span, root, func(parent *Span) {
 			if parent == root {
+				// Root is the frame and isn't part of the surfaced tree.
 				return
 			}
 			if !parentID.IsValid() && parent.LLMRole != "" {
 				parentID = parent.ID
 			}
 			if (parent.Boundary || parent.Encapsulate) && parent.LLMRole != "" {
+				// Tool-call messages own their nested conversation. Retain the child
+				// anchored beneath that message; if the owner itself cannot roll up,
+				// the missing-parent pass below prevents the child from escaping.
 				anchoredToMessageBoundary = true
 			}
 		})
@@ -138,13 +140,60 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 	return roots
 }
 
-// HasConversation reports whether the surfaced conversation is non-empty.
+// SurfacedConversationForAgent returns ONE agent's conversation: the messages
+// beneath each of the loop spans the engine published for it, merged in
+// start-time order.
+//
+// Scoping by AGENT rather than by span is what makes it whole. A resume after
+// a failure relaunches the loop under a fresh span
+// (hack/designs/async-agents.md §9), which is why AgentNode keys on the
+// spawn-minted instance ID and keeps a list; a caller that scoped to
+// AgentNode.Span() alone would silently drop everything said before the last
+// relaunch.
+//
+// Nil, or an agent with no loop spans, means no conversation -- not the whole
+// trace. The distinction matters: callers use the empty result to decide the
+// scope is not worth applying, and collapsing it to the whole trace here would
+// take that choice away from them.
+//
+// Cached per DB mutation and per agent, in a memo slot of its own. It
+// deliberately does NOT share the whole-trace slot: that one is single-entry
+// and keyed by root, so the roster's per-agent view and the report's
+// zoom-scoped view would evict each other on every render.
+func (db *DB) SurfacedConversationForAgent(node *AgentNode) []*MessageNode {
+	if node == nil || len(node.Spans) == 0 {
+		return nil
+	}
+	if db.agentConversationInit && db.agentConversationAt == db.mutations && db.agentConversationID == node.ID {
+		return db.agentConversation
+	}
+	var roots []*MessageNode
+	for _, span := range node.Spans {
+		// buildSurfacedConversation directly, not SurfacedConversationForSpan:
+		// the latter would write each loop span through the shared single-slot
+		// memo, leaving it holding whichever span happened to be last.
+		roots = append(roots, db.buildSurfacedConversation(span)...)
+	}
+	sort.SliceStable(roots, func(i, j int) bool {
+		return roots[i].Span.Before(roots[j].Span)
+	})
+	db.agentConversation = roots
+	db.agentConversationAt = db.mutations
+	db.agentConversationID = node.ID
+	db.agentConversationInit = true
+	return db.agentConversation
+}
+
+// HasConversation reports whether the all-traces surfaced conversation is
+// non-empty, so the live view can promote it to the top level (mirrors
+// HasChecks).
 func (db *DB) HasConversation() bool {
 	return db.HasConversationForSpan(nil)
 }
 
 // HasConversationForSpan reports whether the root-relative surfaced
-// conversation is non-empty, including message-boundary anchoring.
+// conversation is non-empty, including message-boundary anchoring. A nil root
+// keeps SurfacedConversation's intentional all-traces behavior.
 func (db *DB) HasConversationForSpan(root *Span) bool {
 	return len(db.SurfacedConversationForSpan(root)) > 0
 }
