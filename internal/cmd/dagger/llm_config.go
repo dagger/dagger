@@ -127,6 +127,10 @@ func exportOAuthEnv(ctx context.Context, provider string) error {
 	return nil
 }
 
+// backgroundOAuthRefresh is replaceable so the refresher's scheduling and
+// terminal-error behavior can be tested without a provider endpoint.
+var backgroundOAuthRefresh = exportOAuthEnv
+
 // Timings for the background refresher. Vars, not consts, so tests can shrink
 // them — the same reason llmconfig's endpoint URLs are vars.
 var (
@@ -170,11 +174,24 @@ func startOAuthTokenRefresher(ctx context.Context) func() {
 				return
 			case <-time.After(nextOAuthRefreshDelay(providers)):
 			}
+			remaining := providers[:0]
 			for _, provider := range providers {
-				if err := exportOAuthEnv(ctx, provider); err != nil && ctx.Err() == nil {
+				err := backgroundOAuthRefresh(ctx, provider)
+				if err != nil && ctx.Err() == nil {
 					slog.WarnContext(ctx, "failed to refresh LLM OAuth token",
 						"provider", provider, "error", err)
+					if llmconfig.IsTerminalOAuthRefreshError(err) {
+						// invalid_grant and a missing refresh token cannot recover on
+						// the next 30-second tick. Warn once and leave on-demand
+						// refreshes to surface the reauthentication requirement.
+						continue
+					}
 				}
+				remaining = append(remaining, provider)
+			}
+			providers = remaining
+			if len(providers) == 0 {
+				return
 			}
 		}
 	}()

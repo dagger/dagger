@@ -1,9 +1,12 @@
 package daggercmd
 
 import (
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -354,6 +357,85 @@ func TestStartOAuthTokenRefresher(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "second-token" {
 		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q after stop, want the refresher to have stopped at %q", got, "second-token")
+	}
+}
+
+func TestOAuthTokenRefresherErrorScheduling(t *testing.T) {
+	tempDir := t.TempDir()
+	origConfigRoot, origConfigFile := llmconfig.ConfigRoot, llmconfig.ConfigFile
+	t.Cleanup(func() {
+		llmconfig.ConfigRoot, llmconfig.ConfigFile = origConfigRoot, origConfigFile
+	})
+	llmconfig.ConfigRoot = filepath.Join(tempDir, "dagger")
+	llmconfig.ConfigFile = filepath.Join(llmconfig.ConfigRoot, llmconfig.ConfigFileName)
+
+	cfg := &llmconfig.Config{
+		LLM: llmconfig.LLMConfig{
+			DefaultProvider: "anthropic",
+			Providers: map[string]llmconfig.Provider{
+				"anthropic": {
+					AuthType:       "oauth",
+					AuthToken:      "stale-token",
+					RefreshToken:   "invalid-refresh-token",
+					TokenExpiresAt: time.Now().Add(-time.Hour).UnixMilli(),
+					Enabled:        true,
+				},
+			},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	origRefresh := backgroundOAuthRefresh
+	origInterval, origMin := oauthRefreshUnknownInterval, oauthRefreshMinDelay
+	t.Cleanup(func() {
+		backgroundOAuthRefresh = origRefresh
+		oauthRefreshUnknownInterval, oauthRefreshMinDelay = origInterval, origMin
+	})
+	oauthRefreshUnknownInterval = time.Millisecond
+	oauthRefreshMinDelay = time.Millisecond
+
+	var calls atomic.Int32
+	backgroundOAuthRefresh = func(context.Context, string) error {
+		calls.Add(1)
+		return llmconfig.ErrOAuthReauthenticationRequired
+	}
+
+	stop := startOAuthTokenRefresher(t.Context())
+	t.Cleanup(stop)
+	deadline := time.Now().Add(10 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("background refresh calls = %d, want 1", got)
+	}
+
+	// An overdue token normally re-arms at oauthRefreshMinDelay. A terminal
+	// failure must retire it from the background scheduler instead.
+	time.Sleep(20 * time.Millisecond)
+	if got := calls.Load(); got != 1 {
+		t.Errorf("background refresh calls after terminal error = %d, want 1", got)
+	}
+	stop()
+
+	// A transient failure stays scheduled and is attempted again on the next
+	// minimum-delay tick.
+	calls.Store(0)
+	backgroundOAuthRefresh = func(context.Context, string) error {
+		calls.Add(1)
+		return errors.New("temporary refresh failure")
+	}
+	stopTransient := startOAuthTokenRefresher(t.Context())
+	t.Cleanup(stopTransient)
+	deadline = time.Now().Add(10 * time.Second)
+	for calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	stopTransient()
+	if got := calls.Load(); got < 2 {
+		t.Errorf("background transient refresh calls = %d, want at least 2", got)
 	}
 }
 
