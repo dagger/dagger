@@ -17,10 +17,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -532,26 +531,19 @@ func callPayloadIndexEntry(row Log) indexedCallPayload {
 	if !row.TraceID.Valid || row.TraceID.String == "" || row.ID <= 0 {
 		return indexedCallPayload{}
 	}
-	var scope otlpcommonv1.InstrumentationScope
-	if err := protojson.Unmarshal(row.InstrumentationScope, &scope); err != nil ||
-		scope.Name != telemetryattrs.CallPayloadInstrumentationScope {
-		return indexedCallPayload{}
-	}
 	var attrs []*otlpcommonv1.KeyValue
 	if err := UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
 		return indexedCallPayload{}
 	}
-	markerPresent := false
-	markerValid := true
+	claimed := false
 	for _, attr := range attrs {
-		if attr.GetKey() != telemetryattrs.DagCallPayloadAttr {
+		if attr.GetKey() != telemetry.ContentTypeAttr {
 			continue
 		}
-		markerPresent = true
-		value, ok := attr.GetValue().GetValue().(*otlpcommonv1.AnyValue_BoolValue)
-		markerValid = markerValid && ok && value.BoolValue
+		claimed = attr.GetValue().GetStringValue() == telemetryattrs.CallPayloadContentType
+		break
 	}
-	if !markerPresent || !markerValid {
+	if !claimed {
 		return indexedCallPayload{}
 	}
 	var body otlpcommonv1.AnyValue
@@ -562,14 +554,14 @@ func callPayloadIndexEntry(row Log) indexedCallPayload {
 	if !ok {
 		return indexedCallPayload{}
 	}
-	_, dgst, err := call.DecodeCallPayload(payload.BytesValue)
-	if err != nil {
+	decoded := new(callpbv1.Call)
+	if err := proto.Unmarshal(payload.BytesValue, decoded); err != nil || decoded.GetDigest() == "" {
 		return indexedCallPayload{}
 	}
 	return indexedCallPayload{
 		key: callPayloadLookupKey{
 			traceID: row.TraceID.String,
-			digest:  dgst.String(),
+			digest:  decoded.GetDigest(),
 		},
 		rowID: row.ID,
 		ok:    true,

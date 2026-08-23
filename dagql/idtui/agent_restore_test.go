@@ -10,6 +10,8 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -90,14 +92,15 @@ func cannedRestoreLogs(traceID byte, withWorker bool) *collogspb.ExportLogsServi
 
 	_, frames := cannedSnapshotChain()
 	for _, frame := range frames {
-		payload, err := frame.Encode()
+		payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(frame)
 		if err != nil {
 			panic(err)
 		}
-		records = append(records, record(foreignTurnSpanID,
-			cannedStringAttr(telemetryattrs.DagCallPayloadDigestAttr, frame.Digest),
-			cannedStringAttr(telemetryattrs.DagCallPayloadAttr, payload),
-		))
+		rec := record(foreignTurnSpanID,
+			cannedStringAttr(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		)
+		rec.Body = &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: payload}}
+		records = append(records, rec)
 	}
 
 	return &collogspb.ExportLogsServiceRequest{

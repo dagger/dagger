@@ -7,15 +7,14 @@ import (
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -510,26 +509,22 @@ func testAgentIdentityAttrs(t *testing.T, agentID string) []byte {
 func testCallPayloadLog(t *testing.T, traceID, spanID, field string) (Log, string) {
 	t.Helper()
 	callPB := &callpbv1.Call{Field: field}
-	dgst, err := call.CanonicalDigest(callPB)
-	require.NoError(t, err)
+	callPB.Digest = digest.FromString(callPB.String()).String()
 	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(callPB)
 	require.NoError(t, err)
 	body, err := proto.Marshal(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: payload}})
 	require.NoError(t, err)
 	attrs, err := MarshalProtoJSONs([]*otlpcommonv1.KeyValue{{
-		Key:   telemetryattrs.DagCallPayloadAttr,
-		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}},
+		Key:   telemetry.ContentTypeAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: telemetryattrs.CallPayloadContentType}},
 	}})
 	require.NoError(t, err)
-	scope, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: telemetryattrs.CallPayloadInstrumentationScope})
-	require.NoError(t, err)
 	return Log{
-		TraceID:              validString(traceID),
-		SpanID:               validString(spanID),
-		Body:                 body,
-		Attributes:           attrs,
-		InstrumentationScope: scope,
-	}, dgst.String()
+		TraceID:    validString(traceID),
+		SpanID:     validString(spanID),
+		Body:       body,
+		Attributes: attrs,
+	}, callPB.Digest
 }
 
 func setOf(ids ...string) map[string]struct{} {

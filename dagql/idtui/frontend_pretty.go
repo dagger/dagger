@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	lipglossv1 "github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
@@ -1485,10 +1486,52 @@ func (fe *frontendPretty) activateNextPromptForm() {
 	}
 }
 
+func formCompletionError(form *huh.Form) error {
+	if form.State == huh.StateAborted {
+		return errors.Join(ErrInterrupted, huh.ErrUserAborted)
+	}
+	return nil
+}
+
+func frontendFormKeyMap() *huh.KeyMap {
+	keymap := huh.NewDefaultKeyMap()
+	keymap.MultiSelect.Toggle.SetHelp("space", "toggle")
+	return keymap
+}
+
+func frontendFormTheme() *huh.Theme {
+	theme := huh.ThemeBase16()
+	theme.Focused.Base = theme.Focused.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Focused.SelectSelector = theme.Focused.SelectSelector.SetString("▶ ")
+	theme.Focused.MultiSelectSelector = theme.Focused.MultiSelectSelector.SetString("▶ ")
+	// ThemeBase16 copies its focused selectors into the blurred field styles,
+	// which leaves a stale caret behind after focus moves to another field.
+	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.SetString("  ")
+	theme.Blurred.MultiSelectSelector = theme.Blurred.MultiSelectSelector.SetString("  ")
+	// Give both choices the same strong treatment. ExplicitConfirm supplies the
+	// structural focus marker, so color and background carry no meaning here.
+	button := theme.Focused.FocusedButton.
+		UnsetBackground().
+		Foreground(lipglossv1.Color("8")).
+		Padding(0).
+		MarginRight(0).
+		Bold(false).
+		Faint(false)
+	theme.Focused.FocusedButton = button.Bold(true)
+	theme.Focused.BlurredButton = button
+	theme.Blurred.FocusedButton = button
+	theme.Blurred.BlurredButton = button
+	return theme
+}
+
 func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	req.model.SubmitCmd = tea.Quit
 	req.model.CancelCmd = tea.Quit
-	model := req.model.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	model := req.model.
+		WithTheme(frontendFormTheme()).
+		WithKeyMap(frontendFormKeyMap()).
+		WithShowHelp(false)
 	// Cap the form at half the screen so a tall field (e.g. the .resume session
 	// picker's long Select) stays scrollable instead of dominating the terminal.
 	// A form that already fits keeps its natural height: forcing the cap would
@@ -1537,11 +1580,17 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 	fe.syncHardwareCursor()
 
 	req := active.request
-	fe.finishPromptFormRequest(req, nil)
+	fe.finishPromptFormRequest(req, formCompletionError(active.model))
 	if invokeResult && req.result != nil {
 		// Teardown happens before callbacks so chained forms cannot orphan the
 		// wrapper that just quit.
 		req.result(active.model)
+	}
+	if active.model.State == huh.StateAborted {
+		// A form owns input focus, so Ctrl+C reaches Huh instead of the
+		// frontend's navigation handler. Preserve the frontend-wide interrupt
+		// contract rather than treating the form's default value as a choice.
+		fe.quitAction(ErrInterrupted)
 	}
 	fe.activateNextPromptForm()
 	if fe.keymapBar != nil {

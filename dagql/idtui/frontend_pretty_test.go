@@ -74,8 +74,11 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 	untypedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNTYPED-BYTES")))
 	spanName := frontendTestLogRecord(spanID, otellog.StringValue("updated span name"),
 		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	checkpoint := frontendTestLogRecord(spanID, otellog.BytesValue([]byte(`{"version":1,"sequence":1}`)),
+		otellog.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		otellog.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1))
 	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
-	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, spanName, after}
+	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, spanName, checkpoint, after}
 }
 
 func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
