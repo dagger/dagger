@@ -157,6 +157,46 @@ func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, 
 	return decoded.GetDigest(), true, nil
 }
 
+func classifyAgentCheckpointRecord(rec sdklog.Record) (sequence string, checkpoint bool, err error) {
+	reservedByScope := rec.InstrumentationScope().Name == telemetryattrs.AgentCheckpointInstrumentationScope
+	markerPresent := false
+	markerValid := true
+	contract := ""
+	rec.WalkAttributes(func(attr log.KeyValue) bool {
+		switch attr.Key {
+		case telemetryattrs.AgentCheckpointAttr:
+			markerPresent = true
+			markerValid = markerValid && attr.Value.Kind() == log.KindBool && attr.Value.AsBool()
+		case telemetryattrs.AgentCheckpointContractAttr:
+			if attr.Value.Kind() == log.KindString {
+				contract = attr.Value.AsString()
+			}
+		case telemetryattrs.AgentCheckpointSequenceAttr:
+			if attr.Value.Kind() == log.KindString {
+				sequence = attr.Value.AsString()
+			}
+		}
+		return true
+	})
+
+	if !markerPresent && !reservedByScope {
+		return "", false, nil
+	}
+	if !reservedByScope || !markerPresent || !markerValid {
+		return "", true, fmt.Errorf("invalid checkpoint scope or marker")
+	}
+	if contract != telemetryattrs.AgentCheckpointContractV1 {
+		return "", true, fmt.Errorf("unsupported checkpoint contract %q", contract)
+	}
+	if rec.Body().Kind() != log.KindBytes || len(rec.Body().AsBytes()) == 0 {
+		return "", true, fmt.Errorf("checkpoint body must be non-empty bytes")
+	}
+	if parsed, parseErr := strconv.ParseUint(sequence, 10, 64); parseErr != nil || parsed == 0 {
+		return "", true, fmt.Errorf("invalid checkpoint sequence %q", sequence)
+	}
+	return sequence, true, nil
+}
+
 type sessionSpanExporter struct {
 	sess *daggerSession
 	ps   *PubSub
@@ -205,6 +245,11 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
+		sequence, checkpoint, err := classifyAgentCheckpointRecord(rec)
+		if err != nil {
+			slog.Warn("dropping malformed agent checkpoint record", "err", err)
+			continue
+		}
 
 		origin := logOriginClientID(rec)
 		if origin == "" {
@@ -216,6 +261,9 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		}
 		if payload {
 			route = exp.sess.callPayloadMissingTargets(digest, route, true)
+		}
+		if checkpoint {
+			route = exp.sess.agentCheckpointMissingTargets(sequence, route)
 		}
 		if len(route) == 0 {
 			continue

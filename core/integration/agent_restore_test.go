@@ -181,7 +181,7 @@ func restoreAgent(ctx context.Context, t *testctx.T, c *dagger.Client, db *dagui
 	snapshotID, err := callID.Encode()
 	require.NoError(t, err)
 
-	h, err := rehydrateAgent(ctx, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error)
+	h, err := rehydrateAgentWithParent(ctx, c, snapshotID, entry.ID, entry.Name, entry.ParentAgentID, entry.State, entry.Error)
 	require.NoError(t, err, "re-hydrating agent %q", entry.Name)
 	return h
 }
@@ -299,6 +299,24 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// dismissal apart from the stop session teardown performs, and without it
 	// the whole session would restore as tombstones or none of it would.
 	require.Equal(t, "STOPPED", tests.mustVerb(ctx, t, "stop"))
+
+	// Stop is synchronous for runtime state, but presentation logs still travel
+	// through the ordinary bounded OTel processor. Wait for the sink to ingest the
+	// terminal state before freezing the capture; the new lossless checkpoint lane
+	// can otherwise reach the sink first without making the presentation lane a
+	// synchronous API.
+	require.Eventually(t, func() bool {
+		stopped := false
+		sink.read(func(db *dagui.DB) {
+			for _, agent := range db.Agents() {
+				if agent.Name == "tests" && agent.State == "STOPPED" {
+					stopped = true
+					break
+				}
+			}
+		})
+		return stopped
+	}, 60*time.Second, 100*time.Millisecond)
 
 	// The source session's trace, as its own client saw it.
 	rostered := sink.awaitAgents(t, 3)

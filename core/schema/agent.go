@@ -23,7 +23,8 @@ func (s agentSchema) Install(srv *dagql.Server) {
 	// gates their generated ID/load fields.
 	srv.InstallObject(dagql.NewClass[*core.Agent](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.AgentMessage](srv).View(AfterVersion("v1.0.0-0")))
-
+	core.AgentStates.Install(srv, AfterVersion("v1.0.0-0"))
+	core.AgentMessageDeliveries.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.Fields[*core.Agent]{
 		dagql.Func("name", s.name).
 			Doc(`Display label and identity discriminator — not a session-wide address.`),
@@ -132,6 +133,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				`The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.`,
 				`Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.`).
 			Args(
+				dagql.Arg("parentAgentID").Doc(`The restored parent agent instance identity, if that parent was also restored. Leave empty when the parent is absent so this agent becomes a valid top-level lineage.`),
 				dagql.Arg("state").Doc(`The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.`,
 					`RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.`),
 				dagql.Arg("error").Doc(`The loop error to restore, for state FAILED. Refused with any other state.`),
@@ -150,9 +152,6 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				`Idempotent: cancel and re-await freely; concurrent waiters share the result.`,
 				`Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.`),
 	}.Install(srv)
-
-	core.AgentStates.Install(srv, AfterVersion("v1.0.0-0"))
-	core.AgentMessageDeliveries.Install(srv, AfterVersion("v1.0.0-0"))
 }
 
 func (s agentSchema) name(ctx context.Context, agent *core.Agent, _ struct{}) (string, error) {
@@ -436,14 +435,15 @@ func (s agentSchema) reseed(ctx context.Context, parent dagql.ObjectResult[*core
 // client re-hydrates the handle from it and addresses the entry it just
 // created — which is exactly what a restoring client then attaches to.
 func (s agentSchema) rehydrate(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
-	State core.AgentState `default:"IDLE"`
-	Error string          `default:""`
+	ParentAgentID string          `name:"parentAgentID" default:""`
+	State         core.AgentState `default:"IDLE"`
+	Error         string          `default:""`
 }) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
 		return res, err
 	}
-	if _, err := agents.Rehydrate(ctx, parent, args.State, args.Error); err != nil {
+	if _, err := agents.Rehydrate(ctx, parent, args.State, args.Error, args.ParentAgentID); err != nil {
 		return res, err
 	}
 	return agentSelfID(ctx, parent)

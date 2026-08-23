@@ -146,6 +146,11 @@ type daggerSession struct {
 	callPayloadMu      sync.Mutex
 	callPayloadTargets map[string]map[string]struct{}
 
+	// agentCheckpointTargets gives the lossless and ordinary processors the
+	// same per-target claim point, so their copies persist each sequence once.
+	agentCheckpointMu      sync.Mutex
+	agentCheckpointTargets map[string]map[string]struct{}
+
 	services         *core.Services
 	agents           *core.AgentRuntimes
 	execHTTPHandlers *execHTTPHandlerRegistry
@@ -691,6 +696,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 		// logs and its later payload copies are dropped by per-target claims.
 		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
 		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
+		sdklog.WithProcessor(enginetel.NewAgentCheckpointBatchProcessor(logExporter)),
 		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logExporter)),
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
@@ -707,7 +713,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 		LoggerProviders:          1,
 		MeterProviders:           1,
 		ConfiguredSpanProcessors: 4,
-		ConfiguredLogProcessors:  3,
+		ConfiguredLogProcessors:  4,
 		ConfiguredMetricReaders:  1,
 		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
@@ -3250,6 +3256,35 @@ func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []st
 			}
 			seen = map[string]struct{}{}
 			sess.callPayloadTargets[digest] = seen
+		}
+		for _, target := range missing {
+			seen[target] = struct{}{}
+		}
+	}
+	return missing
+}
+
+func (sess *daggerSession) agentCheckpointMissingTargets(sequence string, targets []string) []string {
+	if sequence == "" || len(targets) == 0 {
+		return nil
+	}
+	sess.agentCheckpointMu.Lock()
+	defer sess.agentCheckpointMu.Unlock()
+
+	seen := sess.agentCheckpointTargets[sequence]
+	missing := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if _, ok := seen[target]; !ok {
+			missing = append(missing, target)
+		}
+	}
+	if len(missing) > 0 {
+		if seen == nil {
+			if sess.agentCheckpointTargets == nil {
+				sess.agentCheckpointTargets = map[string]map[string]struct{}{}
+			}
+			seen = map[string]struct{}{}
+			sess.agentCheckpointTargets[sequence] = seen
 		}
 		for _, target := range missing {
 			seen[target] = struct{}{}

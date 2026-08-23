@@ -126,6 +126,20 @@ const (
 // carry it under the ordinary core instrumentation scope.
 const CallPayloadContentType = "application/vnd.dagger.call+proto"
 
+// Resume-critical agent checkpoints over OTel logs.
+//
+// These records are distinct from bounded agent presentation telemetry. Their
+// byte body is the versioned JSON checkpoint, while the attributes provide a
+// small stable envelope for lossless routing and sequence indexing.
+const (
+	AgentCheckpointInstrumentationScope = "dagger.io/agent.checkpoint"
+	AgentCheckpointAttr                 = "dagger.io/agent.checkpoint"
+	AgentCheckpointContractAttr         = "dagger.io/agent.checkpoint.contract"
+	AgentCheckpointSequenceAttr         = "dagger.io/agent.checkpoint.sequence"
+	AgentCheckpointFinalAttr            = "dagger.io/agent.checkpoint.final"
+	AgentCheckpointContractV1           = "1"
+)
+
 // Agent directory (dagger.io/agent.*).
 //
 // Async agents (hack/designs/async-agents.md) are long-lived, addressable

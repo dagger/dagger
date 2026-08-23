@@ -479,12 +479,31 @@ func (db *DB) ingestSpanName(record sdklog.Record) bool {
 	return true
 }
 
+func IsAgentCheckpointRecord(record sdklog.Record) bool {
+	if record.InstrumentationScope().Name == telemetryattrs.AgentCheckpointInstrumentationScope {
+		return true
+	}
+	checkpoint := false
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetryattrs.AgentCheckpointAttr {
+			checkpoint = true
+			return false
+		}
+		return true
+	})
+	return checkpoint
+}
+
 type DBLogExporter struct {
 	*DB
 }
 
 func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
+		if IsAgentCheckpointRecord(log) {
+			// resume control data, consumed by archive bootstrap rather than UI
+			continue
+		}
 		if db.ingestSpanName(log) {
 			// live span metadata, not log text
 			continue

@@ -353,20 +353,25 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 // returns a handle on the restored instance. Error-returning, because half
 // the point of rehydrate is which calls it refuses.
 func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, instanceID, name, state, errText string) (*agentHandle, error) {
+	return rehydrateAgentWithParent(ctx, c, llmID, instanceID, name, "", state, errText)
+}
+
+func rehydrateAgentWithParent(ctx context.Context, c *dagger.Client, llmID, instanceID, name, parentAgentID, state, errText string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
-			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
+			Query: `query($llm: ID!, $id: String!, $name: String!, $parentAgentID: String!, $state: AgentState!, $error: String!) {
 				node(id: $llm) { ... on LLM {
-					agent(id: $id, name: $name) { rehydrate(state: $state, error: $error) }
+					agent(id: $id, name: $name) { rehydrate(parentAgentID: $parentAgentID, state: $state, error: $error) }
 				} }
 			}`,
 			Variables: map[string]any{
-				"llm":   llmID,
-				"id":    instanceID,
-				"name":  name,
-				"state": state,
-				"error": errText,
+				"llm":           llmID,
+				"id":            instanceID,
+				"name":          name,
+				"parentAgentID": parentAgentID,
+				"state":         state,
+				"error":         errText,
 			},
 		},
 		&dagger.Response{Data: &res},

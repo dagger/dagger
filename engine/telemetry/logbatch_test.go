@@ -264,6 +264,34 @@ func TestCallPayloadBatchProcessorFastPathRecordShape(t *testing.T) {
 	}
 }
 
+func TestAgentCheckpointBatchProcessorFastPath(t *testing.T) {
+	t.Parallel()
+
+	exp := &countingLogExporter{}
+	proc := NewAgentCheckpointBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	logger := provider.Logger(telemetryattrs.AgentCheckpointInstrumentationScope)
+
+	var valid logapi.Record
+	valid.SetBody(logapi.BytesValue([]byte(`{"version":1,"sequence":1}`)))
+	valid.AddAttributes(
+		logapi.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		logapi.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1),
+	)
+	logger.Emit(t.Context(), valid)
+
+	var malformed logapi.Record
+	malformed.SetBody(logapi.BytesValue([]byte(`{"version":1,"sequence":2}`)))
+	malformed.AddAttributes(logapi.Bool(telemetryattrs.AgentCheckpointAttr, true))
+	logger.Emit(t.Context(), malformed)
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, proc.ForceFlush(ctx))
+	require.Equal(t, 1, exp.count(), "only the versioned checkpoint envelope belongs on the lossless lane")
+	require.NoError(t, proc.Shutdown(ctx))
+}
+
 func TestCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	t.Parallel()
 

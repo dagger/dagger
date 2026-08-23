@@ -177,6 +177,13 @@ type Agent implements Node {
   """
   rehydrate(
     """
+    The restored parent agent instance identity, if that parent was also restored.
+    Leave empty when the parent is absent so this agent becomes a valid top-level
+    lineage.
+    """
+    parentAgentID: String = ""
+
+    """
     The lifecycle state to restore into, as facts on the entry: PAUSED parks it,
     FAILED holds an error a resume retries past, STOPPED is a sealed tombstone
     whose snapshot stays readable, IDLE is ready to be prompted.

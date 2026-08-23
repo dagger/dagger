@@ -1239,7 +1239,7 @@ func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T)
 			LoggerProviders:          1,
 			MeterProviders:           1,
 			ConfiguredSpanProcessors: 4,
-			ConfiguredLogProcessors:  3,
+			ConfiguredLogProcessors:  4,
 			ConfiguredMetricReaders:  1,
 			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
@@ -3051,6 +3051,43 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClassifyAgentCheckpointRecord(t *testing.T) {
+	valid := scopedLogRecord(t,
+		telemetryattrs.AgentCheckpointInstrumentationScope,
+		otellog.BytesValue([]byte(`{"version":1,"sequence":7}`)),
+		otellog.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		otellog.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1),
+		otellog.String(telemetryattrs.AgentCheckpointSequenceAttr, "7"),
+	)
+	sequence, checkpoint, err := classifyAgentCheckpointRecord(valid)
+	require.NoError(t, err)
+	require.True(t, checkpoint)
+	require.Equal(t, "7", sequence)
+
+	malformed := scopedLogRecord(t,
+		telemetryattrs.AgentCheckpointInstrumentationScope,
+		otellog.BytesValue([]byte(`{"version":1}`)),
+		otellog.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		otellog.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1),
+	)
+	_, checkpoint, err = classifyAgentCheckpointRecord(malformed)
+	require.True(t, checkpoint, "reserved records must never fall through as ordinary logs")
+	require.ErrorContains(t, err, "invalid checkpoint sequence")
+
+	ordinary := scopedLogRecord(t, "test.log", otellog.StringValue("hello"))
+	_, checkpoint, err = classifyAgentCheckpointRecord(ordinary)
+	require.NoError(t, err)
+	require.False(t, checkpoint)
+}
+
+func TestAgentCheckpointTargetsClaimEachSequenceOnce(t *testing.T) {
+	sess := &daggerSession{}
+	route := []string{"parent", "child"}
+	require.Equal(t, route, sess.agentCheckpointMissingTargets("7", route))
+	require.Empty(t, sess.agentCheckpointMissingTargets("7", route))
+	require.Equal(t, route, sess.agentCheckpointMissingTargets("8", route))
 }
 
 func TestClassifyCallPayloadRecordReadsEmbeddedAddress(t *testing.T) {

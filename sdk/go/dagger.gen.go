@@ -573,6 +573,8 @@ func (r *Agent) Pause(ctx context.Context) (*Agent, error) {
 
 // AgentRehydrateOpts contains options for Agent.Rehydrate
 type AgentRehydrateOpts struct {
+	// The restored parent agent instance identity, if that parent was also restored. Leave empty when the parent is absent so this agent becomes a valid top-level lineage.
+	ParentAgentID string
 	// The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
 	//
 	// RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
@@ -593,6 +595,10 @@ type AgentRehydrateOpts struct {
 func (r *Agent) Rehydrate(ctx context.Context, opts ...AgentRehydrateOpts) (*Agent, error) {
 	q := r.query.Select("rehydrate")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `parentAgentID` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ParentAgentID) {
+			q = q.Arg("parentAgentID", opts[i].ParentAgentID)
+		}
 		// `state` optional argument
 		if !querybuilder.IsZeroValue(opts[i].State) {
 			q = q.Arg("state", opts[i].State)

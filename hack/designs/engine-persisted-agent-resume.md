@@ -2,7 +2,7 @@
 
 *Builds on [Resume from trace](./resume-from-trace.md).*
 
-Status: proposal.
+Status: implementation in progress.
 
 ## Summary
 
@@ -31,6 +31,38 @@ a bootstrap endpoint and may retain today's whole-trace startup until then:
 
 The resumed command gets a new trace ID. Imported telemetry keeps its source
 trace ID, and a span link records that the new trace continues the old one.
+
+## Implementation status
+
+The resume-critical runtime substrate is implemented:
+
+- Agent runtimes publish a version-1 checkpoint containing a session-wide
+  sequence, identity/name/call digest/parent, latest committed portable snapshot
+  digest, projected state, stop reason and error. Publication occurs at identity
+  creation and on committed snapshot or projected-state changes.
+- Checkpoints enter a lock-free runtime queue, so JSON encoding and OTel
+  publication do not run under the agent mutex. A dedicated unbounded session
+  log processor drains them through the existing origin/ancestor routing into
+  `engine/clientdb`; per-target sequence claims deduplicate the dedicated and
+  ordinary log paths. DagUI recognizes the records as control data and does not
+  render their JSON bodies as output.
+- Graceful agent teardown captures each entry's pre-teardown state, stops the
+  runtimes, then publishes one authoritative final checkpoint per registry
+  entry. Each final record carries the expected final sequence, providing the
+  completeness boundary that archive finalization will verify.
+- Core and schema expose transactional batch rehydration. The operation resolves
+  every snapshot and handle first, validates the complete set, stages runtime
+  construction and durable tombstone leases off-registry, and publishes all
+  entries under one registry lock. A validation, acquisition or commit race
+  releases staged leases and leaves no partial runtime roster.
+
+The checkpoint consumer and archive lifecycle remain to be implemented. In
+particular, no archive manifest, checkpoint/call-payload index, durable
+`DB.Checkpoint`, bootstrap sidecar or archive HTTP API exists yet. Finalization
+must still validate the expected checkpoint sequence and recursive snapshot
+payload closures, and bootstrap must project the verified records into the
+batch API. Crash durability, background assimilation, CLI cut-over and Cloud
+parity are also pending.
 
 ## Goals
 
@@ -618,26 +650,29 @@ the new trace.
 
 ## Implementation plan
 
-1. **Resume-critical records and indexes** — add the lossless final checkpoint
-   lane, agent-identity and call-payload indexes, and trace-scoped
-   latest/ancestor/range reads.
-2. **Archive lifecycle** — add the agent opt-in, archive config, manifest index,
-   graceful `DB.Checkpoint`, bootstrap sidecar, archive-aware GC and listing.
-3. **Finite streams** — factor the live telemetry framing into strict static,
-   trace-addressed archive streams bounded by manifest cursors.
-4. **Bootstrap protocol** — import the fixed-cut resume closure, batch-rehydrate
-   every agent, then attach and focus.
-5. **Background assimilation** — stream excluded remainders independently with
-   cursors, retries and nonfatal TUI failure reporting.
-6. **CLI cut-over** — move trace IDs to `--resume`/`.resume`, add the engine
-   picker and engine-first/Cloud-second resolution, and delete `--trace` plus all
-   local save/load code.
-7. **Trace link** — emit the custom-purpose continuation bridge span.
-8. **Cloud parity** — implement the archive source interface for indefinite
-   traces; until Cloud has a bootstrap endpoint, its adapter may pay the current
-   whole-trace startup cost.
-9. **Durability follow-up** — add coalesced verified turn/step checkpoints if
-   graceful-close persistence proves insufficient.
+1. **Resume-critical records and indexes (in progress)** — the lossless
+   checkpoint producer, final roster and sequence barrier are implemented;
+   agent-identity/call-payload indexes and trace-scoped latest/ancestor/range
+   reads remain.
+2. **Archive lifecycle (pending)** — add the agent opt-in, archive config,
+   manifest index, graceful `DB.Checkpoint`, bootstrap sidecar, archive-aware GC
+   and listing.
+3. **Finite streams (pending)** — factor the live telemetry framing into strict
+   static, trace-addressed archive streams bounded by manifest cursors.
+4. **Bootstrap protocol (in progress)** — the transactional batch-rehydrate
+   engine operation is implemented; fixed-cut bootstrap import, verified
+   checkpoint projection, attach and focus remain.
+5. **Background assimilation (pending)** — stream excluded remainders
+   independently with cursors, retries and nonfatal TUI failure reporting.
+6. **CLI cut-over (pending)** — move trace IDs to `--resume`/`.resume`, add the
+   engine picker and engine-first/Cloud-second resolution, and delete `--trace`
+   plus all local save/load code.
+7. **Trace link (pending)** — emit the custom-purpose continuation bridge span.
+8. **Cloud parity (pending)** — implement the archive source interface for
+   indefinite traces; until Cloud has a bootstrap endpoint, its adapter may pay
+   the current whole-trace startup cost.
+9. **Durability follow-up (pending)** — add coalesced verified turn/step
+   checkpoints if graceful-close persistence proves insufficient.
 
 ## Validation
 

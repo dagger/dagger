@@ -52,6 +52,21 @@ func newTestAgentSnapshotRecord(span SpanID, digest string) sdklog.Record {
 	)
 }
 
+func TestAgentCheckpointRecordsDoNotRenderAsLogs(t *testing.T) {
+	db := NewDB()
+	record := newTestLogRecord(trace.TraceID{1}, trace.SpanID{1}, "",
+		otellog.Bool(telemetryattrs.AgentCheckpointAttr, true))
+	if !IsAgentCheckpointRecord(record) {
+		t.Fatal("checkpoint marker was not recognized")
+	}
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatal(err)
+	}
+	if len(db.PrimaryLogs) != 0 {
+		t.Fatalf("checkpoint control data leaked into rendered logs: %v", db.PrimaryLogs)
+	}
+}
+
 // TestAgentsRosterIsFlatAndUncontained is the property that separates the
 // agent roster from the surfaced-services tree it is modelled on: a worker
 // agent spawned inside a chief's tool call sits under a Boundary span, and

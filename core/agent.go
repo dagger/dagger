@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
@@ -253,6 +255,102 @@ type agentMessageRecord struct {
 	done chan struct{}
 }
 
+type queuedAgentCheckpoint struct {
+	ctx        context.Context
+	checkpoint AgentCheckpoint
+	next       *queuedAgentCheckpoint
+}
+
+type agentCheckpointFlush struct {
+	stop bool
+	done chan struct{}
+}
+
+// agentCheckpointPublisher is an unbounded, lock-free ingress in front of the
+// OTel logger. Runtime transitions only push immutable records and poke wake;
+// JSON encoding and logger processors therefore never run under AgentRuntime.mu.
+type agentCheckpointPublisher struct {
+	head atomic.Pointer[queuedAgentCheckpoint]
+	wake chan struct{}
+	ctl  chan agentCheckpointFlush
+	done chan struct{}
+}
+
+func newAgentCheckpointPublisher() *agentCheckpointPublisher {
+	publisher := &agentCheckpointPublisher{
+		wake: make(chan struct{}, 1),
+		ctl:  make(chan agentCheckpointFlush),
+		done: make(chan struct{}),
+	}
+	go publisher.run()
+	return publisher
+}
+
+func (publisher *agentCheckpointPublisher) enqueue(ctx context.Context, checkpoint AgentCheckpoint) {
+	node := &queuedAgentCheckpoint{ctx: ctx, checkpoint: checkpoint}
+	for {
+		head := publisher.head.Load()
+		node.next = head
+		if publisher.head.CompareAndSwap(head, node) {
+			break
+		}
+	}
+	select {
+	case publisher.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (publisher *agentCheckpointPublisher) drain() {
+	head := publisher.head.Swap(nil)
+	if head == nil {
+		return
+	}
+	queued := make([]*queuedAgentCheckpoint, 0)
+	for node := head; node != nil; node = node.next {
+		queued = append(queued, node)
+	}
+	sort.Slice(queued, func(i, j int) bool {
+		return queued[i].checkpoint.Sequence < queued[j].checkpoint.Sequence
+	})
+	for _, node := range queued {
+		EmitAgentCheckpoint(node.ctx, node.checkpoint)
+	}
+}
+
+func (publisher *agentCheckpointPublisher) run() {
+	defer close(publisher.done)
+	for {
+		select {
+		case <-publisher.wake:
+			publisher.drain()
+		case request := <-publisher.ctl:
+			publisher.drain()
+			close(request.done)
+			if request.stop {
+				return
+			}
+		}
+	}
+}
+
+func (publisher *agentCheckpointPublisher) flush(ctx context.Context, stop bool) error {
+	request := agentCheckpointFlush{stop: stop, done: make(chan struct{})}
+	select {
+	case publisher.ctl <- request:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-publisher.done:
+		return nil
+	}
+	select {
+	case <-request.done:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 // AgentRuntimes manages the lifecycle of agent runtime entries for a single
 // session: one entry per spawned agent instance, keyed by the spawn-minted
 // InstanceID, which is unique by construction so keys never collide across
@@ -277,6 +375,9 @@ type agentMessageRecord struct {
 type AgentRuntimes struct {
 	entries map[string]*AgentRuntime
 	mu      sync.Mutex
+
+	checkpointSequence  atomic.Uint64
+	checkpointPublisher *agentCheckpointPublisher
 }
 
 // NewAgentRuntimes returns a new, empty AgentRuntimes registry.
@@ -297,6 +398,64 @@ func agentKey(agent dagql.ObjectResult[*Agent]) (string, error) {
 		return "", fmt.Errorf("agent has no instance ID: only an agent minted by spawn can be addressed")
 	}
 	return self.InstanceID, nil
+}
+
+func agentParentID(ctx context.Context) string {
+	parent, ok := AgentFromContext(ctx)
+	if !ok || parent.Self() == nil {
+		return ""
+	}
+	return parent.Self().InstanceID
+}
+
+func agentSnapshotDigest(ctx context.Context, snapshot dagql.ObjectResult[*LLM]) string {
+	if snapshot.Self() == nil {
+		return ""
+	}
+	portable, err := snapshot.Self().PortableRecipe(ctx)
+	if err != nil {
+		return ""
+	}
+	digest, err := portable.RecipeDigest(ctx)
+	if err != nil {
+		return ""
+	}
+	return digest.String()
+}
+
+func (ars *AgentRuntimes) publisher() *agentCheckpointPublisher {
+	ars.mu.Lock()
+	defer ars.mu.Unlock()
+	if ars.checkpointPublisher == nil {
+		ars.checkpointPublisher = newAgentCheckpointPublisher()
+	}
+	return ars.checkpointPublisher
+}
+
+func (ars *AgentRuntimes) newRuntime(ctx context.Context, key string, agent dagql.ObjectResult[*Agent], parentID string) *AgentRuntime {
+	callDigest := ""
+	if digest, err := agent.RecipeDigest(ctx); err == nil {
+		callDigest = digest.String()
+	}
+	if parentID == "" {
+		parentID = agentParentID(ctx)
+	}
+	return &AgentRuntime{
+		key:                      key,
+		name:                     agent.Self().Name,
+		self:                     agent,
+		last:                     agent.Self().Seed,
+		messages:                 map[string]*agentMessageRecord{},
+		wake:                     make(chan struct{}, 1),
+		stateChanged:             make(chan struct{}),
+		checkpointCtx:            agentTombstoneTelemetryContext(ctx),
+		checkpointPublisher:      ars.publisher(),
+		checkpointSequence:       &ars.checkpointSequence,
+		checkpointCallDigest:     callDigest,
+		checkpointParentAgentID:  parentID,
+		checkpointSnapshotDigest: agentSnapshotDigest(ctx, agent.Self().Seed),
+		checkpointState:          AgentStateIdle,
+	}
 }
 
 // Get returns the runtime entry for the given agent value, if one exists.
@@ -328,64 +487,79 @@ func (ars *AgentRuntimes) GetOrCreate(ctx context.Context, agent dagql.ObjectRes
 		return nil, err
 	}
 	ars.mu.Lock()
-	defer ars.mu.Unlock()
 	if rt, found := ars.entries[key]; found {
+		ars.mu.Unlock()
 		return rt, nil
 	}
-	rt := newAgentRuntime(key, agent)
-	ars.entries[key] = rt
-	return rt, nil
+	ars.mu.Unlock()
+
+	candidate := ars.newRuntime(ctx, key, agent, "")
+	ars.mu.Lock()
+	if rt, found := ars.entries[key]; found {
+		ars.mu.Unlock()
+		return rt, nil
+	}
+	ars.entries[key] = candidate
+	ars.mu.Unlock()
+	candidate.enqueueCheckpoint()
+	return candidate, nil
+}
+
+func validateAgentRehydrate(agent dagql.ObjectResult[*Agent], state AgentState, loopErr string) (string, error) {
+	key, err := agentKey(agent)
+	if err != nil {
+		return "", err
+	}
+	name := agent.Self().Name
+	switch state {
+	case AgentStateIdle, AgentStatePaused, AgentStateFailed, AgentStateStopped:
+	default:
+		return "", fmt.Errorf("agent %q cannot be re-hydrated as %s: a restored agent holds a conversation, not a running loop — restore it as IDLE", name, state)
+	}
+	if loopErr != "" && state != AgentStateFailed {
+		return "", fmt.Errorf("agent %q: an error can only be restored with state FAILED, not %s", name, state)
+	}
+	return key, nil
 }
 
 // Rehydrate creates the runtime entry for an instance from a conversation it
-// did not seed, without starting its loop: the receiver's snapshot becomes the
+// did not seed, without starting its loop. The receiver's snapshot becomes the
 // entry's committed history, so prompting it continues where the previous
-// session left off (hack/designs/resume-from-trace.md §4.1).
+// session left off.
 //
-// It works for the same reason GetOrCreate is safe to call with a rebuilt
-// handle: the seed is read only when the entry is created. spawn is
-// mint-create-pin; this is adopt-create-pin, and the whole difference is which
-// conversation the entry begins life holding.
-//
-// state sets FACTS, never a stored state — the projection stays a projection
-// (async-agents §3.4) — and only the states a conversation can actually be
-// restored into are accepted: nothing restores as RUNNING, because the loop
-// died with the session that published it, and a roster redisplaying it as
-// running would be lying. An instance that already has an entry is refused
-// rather than re-seeded: by then it may have stepped, and a late restore that
-// silently discarded that would be worse than a loud one.
-func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string) (*AgentRuntime, error) {
-	key, err := agentKey(agent)
+// Validation and lease acquisition happen before publication. A failure or a
+// concurrent publication releases the candidate's lease and leaves no partial
+// runtime from this restore.
+func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr, parentAgentID string) (*AgentRuntime, error) {
+	key, err := validateAgentRehydrate(agent, state, loopErr)
 	if err != nil {
 		return nil, err
 	}
 	name := agent.Self().Name
-
-	switch state {
-	case AgentStateIdle, AgentStatePaused, AgentStateFailed, AgentStateStopped:
-	default:
-		return nil, fmt.Errorf("agent %q cannot be re-hydrated as %s: a restored agent holds a conversation, not a running loop — restore it as IDLE, and its still-pending input re-steps when it is next prompted", name, state)
-	}
-	if loopErr != "" && state != AgentStateFailed {
-		return nil, fmt.Errorf("agent %q: an error can only be restored with state FAILED, not %s", name, state)
-	}
 
 	ars.mu.Lock()
 	if _, found := ars.entries[key]; found {
 		ars.mu.Unlock()
 		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance", name)
 	}
-	rt := newAgentRuntime(key, agent)
-	ars.entries[key] = rt
 	ars.mu.Unlock()
 
-	if err := rt.rehydrate(ctx, state, loopErr); err != nil {
-		ars.mu.Lock()
-		delete(ars.entries, key)
-		ars.mu.Unlock()
+	candidate := ars.newRuntime(ctx, key, agent, parentAgentID)
+	if err := candidate.prepareRehydrate(ctx, state, loopErr); err != nil {
 		return nil, err
 	}
-	return rt, nil
+
+	ars.mu.Lock()
+	if _, found := ars.entries[key]; found {
+		ars.mu.Unlock()
+		candidate.releaseClientScope()
+		return nil, fmt.Errorf("agent %q acquired a runtime entry while re-hydration was staging", name)
+	}
+	ars.entries[key] = candidate
+	ars.mu.Unlock()
+
+	candidate.activateRehydrate(ctx)
+	return candidate, nil
 }
 
 // Reseed replaces an existing entry's committed conversation with the given
@@ -413,23 +587,6 @@ func (ars *AgentRuntimes) Reseed(ctx context.Context, agent dagql.ObjectResult[*
 		return fmt.Errorf("agent %q has no runtime in this session: only a spawned or re-hydrated instance holds a conversation to replace", agent.Self().Name)
 	}
 	return rt.Reseed(ctx, conversation)
-}
-
-// newAgentRuntime builds an inert entry for an agent value: loop not started,
-// snapshot == the value's conversation.
-func newAgentRuntime(key string, agent dagql.ObjectResult[*Agent]) *AgentRuntime {
-	return &AgentRuntime{
-		key:      key,
-		name:     agent.Self().Name,
-		self:     agent,
-		last:     agent.Self().Seed,
-		messages: map[string]*agentMessageRecord{},
-		// wake has a single slot: it only needs to record "something changed,
-		// re-check" (a stop request or a mailbox enqueue), not carry
-		// payloads — the loop re-reads the facts after every wake.
-		wake:         make(chan struct{}, 1),
-		stateChanged: make(chan struct{}),
-	}
 }
 
 // Start returns the running (or tombstoned) runtime entry for the given
@@ -567,7 +724,16 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 	for _, rt := range ars.entries {
 		entries = append(entries, rt)
 	}
+	publisher := ars.checkpointPublisher
 	ars.mu.Unlock()
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+
+	preTeardown := make([]AgentState, len(entries))
+	for i, rt := range entries {
+		rt.mu.Lock()
+		preTeardown[i] = rt.stateLocked()
+		rt.mu.Unlock()
+	}
 
 	var errs error
 	for _, rt := range entries {
@@ -576,6 +742,21 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 			continue
 		}
 		rt.releaseClientScope()
+	}
+
+	if publisher != nil && len(entries) > 0 {
+		expected := ars.checkpointSequence.Add(uint64(len(entries)))
+		sequence := expected - uint64(len(entries)) + 1
+		for i, rt := range entries {
+			rt.mu.Lock()
+			checkpoint := rt.checkpointLocked(sequence+uint64(i), preTeardown[i], true, expected)
+			checkpointCtx := rt.checkpointCtx
+			rt.mu.Unlock()
+			publisher.enqueue(checkpointCtx, checkpoint)
+		}
+	}
+	if publisher != nil {
+		errs = errors.Join(errs, publisher.flush(ctx, true))
 	}
 	return errs
 }
@@ -666,6 +847,17 @@ type AgentRuntime struct {
 	spanCtx         context.Context
 	emittedState    AgentState
 	emittedSnapshot string
+
+	// Resume-control publication is separate from bounded presentation logs.
+	// enqueueCheckpointLocked only pushes to a lock-free queue; serialization
+	// and OTel emission happen on the registry publisher goroutine.
+	checkpointCtx            context.Context
+	checkpointPublisher      *agentCheckpointPublisher
+	checkpointSequence       *atomic.Uint64
+	checkpointCallDigest     string
+	checkpointParentAgentID  string
+	checkpointSnapshotDigest string
+	checkpointState          AgentState
 }
 
 // agentTombstoneTelemetryContext keeps only the values needed to attribute
@@ -694,6 +886,41 @@ func (rt *AgentRuntime) Name() string {
 	return rt.name
 }
 
+func (rt *AgentRuntime) checkpointLocked(sequence uint64, preTeardown AgentState, final bool, expected uint64) AgentCheckpoint {
+	loopErr := ""
+	if rt.loopErr != nil {
+		loopErr = rt.loopErr.Error()
+	}
+	return AgentCheckpoint{
+		Sequence:              sequence,
+		AgentID:               rt.key,
+		Name:                  rt.name,
+		CallDigest:            rt.checkpointCallDigest,
+		ParentAgentID:         rt.checkpointParentAgentID,
+		SnapshotDigest:        rt.checkpointSnapshotDigest,
+		State:                 rt.stateLocked(),
+		PreTeardownState:      preTeardown,
+		StopReason:            rt.stopReason,
+		Error:                 loopErr,
+		Final:                 final,
+		ExpectedFinalSequence: expected,
+	}
+}
+
+func (rt *AgentRuntime) enqueueCheckpointLocked() {
+	if rt.checkpointPublisher == nil || rt.checkpointSequence == nil || rt.checkpointCtx == nil {
+		return
+	}
+	sequence := rt.checkpointSequence.Add(1)
+	rt.checkpointPublisher.enqueue(rt.checkpointCtx, rt.checkpointLocked(sequence, "", false, 0))
+}
+
+func (rt *AgentRuntime) enqueueCheckpoint() {
+	rt.mu.Lock()
+	rt.enqueueCheckpointLocked()
+	rt.mu.Unlock()
+}
+
 // transitionLocked applies a fact mutation and broadcasts it to any WaitFor
 // blocked on stateChanged. Must be called with rt.mu held.
 //
@@ -705,6 +932,11 @@ func (rt *AgentRuntime) transitionLocked(mut func()) {
 	close(rt.stateChanged)
 	rt.stateChanged = make(chan struct{})
 	rt.publishStateLocked()
+	state := rt.stateLocked()
+	if state != rt.checkpointState {
+		rt.checkpointState = state
+		rt.enqueueCheckpointLocked()
+	}
 }
 
 // publishStateLocked emits a state record when the PROJECTED state has
@@ -771,27 +1003,22 @@ func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[
 // observable and addressable, it just cannot be resumed from, which is exactly
 // how agentSpanAttrs treats the same failure.
 func (rt *AgentRuntime) publishSnapshotLocked(ctx context.Context) {
-	if rt.spanCtx == nil {
-		// No span to attribute the record to yet. The loop publishes the
-		// seed's digest as soon as it has one, so nothing is lost.
-		return
-	}
 	if rt.last.Self() == nil {
 		return
 	}
-	recipe, err := rt.last.Self().PortableRecipe(ctx)
-	if err != nil {
+	digest := agentSnapshotDigest(ctx, rt.last)
+	if digest == "" {
 		return
 	}
-	dig, err := recipe.RecipeDigest(ctx)
-	if err != nil {
+	if digest != rt.checkpointSnapshotDigest {
+		rt.checkpointSnapshotDigest = digest
+		rt.enqueueCheckpointLocked()
+	}
+	if rt.spanCtx == nil || digest == rt.emittedSnapshot {
 		return
 	}
-	if dig.String() == rt.emittedSnapshot {
-		return
-	}
-	rt.emittedSnapshot = dig.String()
-	EmitAgentSnapshot(rt.spanCtx, dig.String())
+	rt.emittedSnapshot = digest
+	EmitAgentSnapshot(rt.spanCtx, digest)
 }
 
 // State projects the entry's lifecycle state from its facts.
@@ -1123,52 +1350,47 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 // and every later transition — reach a roster. A later start opens the real
 // loop span; both carry the same dagger.io/agent.id, and a client unions
 // them into one entry by construction.
-func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr string) error {
+func (rt *AgentRuntime) prepareRehydrate(ctx context.Context, state AgentState, loopErr string) error {
 	// A restored snapshot is not yet demonstrably independent of its DagQL
 	// runtime, so retain a visible durable tombstone lease even without a loop.
-	scopeCtx, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgentTombstone, rt.key)
+	_, scopeLease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgentTombstone, rt.key)
 	if err != nil {
 		return fmt.Errorf("retain rehydrated agent scope: %w", err)
 	}
-	// Detached from the request: the context is retained past this call, and
-	// records emitted on a canceled one would be publishing into a corpse.
-	spanCtx, span := Tracer(scopeCtx).Start(scopeCtx,
-		fmt.Sprintf("agent: %s", rt.name),
-		agentSpanAttrs(ctx, rt.name, rt.self)...)
-	span.End()
-	spanCtx = agentTombstoneTelemetryContext(spanCtx)
-
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	rt.scopeLease = scopeLease
-	rt.spanCtx = spanCtx
 	switch state {
 	case AgentStatePaused:
 		rt.paused = true
 	case AgentStateFailed:
-		// FAILED projects from done + an error, so the error is a fact, not
-		// a label: a resume retries from the snapshot, and mail queued
-		// meanwhile projects this error rather than blocking. A restore with
-		// no error text still has to hold one, or the projection would read
-		// STOPPED and foreclose the retry.
 		if loopErr == "" {
 			loopErr = "failed in a previous session"
 		}
 		rt.done = true
 		rt.loopErr = errors.New(loopErr)
 	case AgentStateStopped:
-		// A dormant tombstone. Only an EXPLICIT stop restores this way — a
-		// session-teardown stop says nothing about what the user wanted, so a
-		// client restores the state held before it (§3.1) and never asks for
-		// STOPPED here. A later send or resume relaunches from rt.last.
 		rt.done = true
 		rt.sealed = true
 		rt.stopRequested = true
 		rt.stopReason = AgentStopExplicit
 	}
-	rt.publishStateLocked()
-	rt.publishSnapshotLocked(scopeCtx)
+	rt.checkpointState = rt.stateLocked()
 	return nil
+}
+
+func (rt *AgentRuntime) activateRehydrate(ctx context.Context) {
+	spanCtx, span := Tracer(ctx).Start(ctx,
+		fmt.Sprintf("agent: %s", rt.name),
+		agentSpanAttrs(ctx, rt.name, rt.self)...)
+	span.End()
+	spanCtx = agentTombstoneTelemetryContext(spanCtx)
+
+	rt.mu.Lock()
+	rt.spanCtx = spanCtx
+	rt.checkpointCtx = agentTombstoneTelemetryContext(ctx)
+	rt.publishStateLocked()
+	rt.publishSnapshotLocked(ctx)
+	rt.enqueueCheckpointLocked()
+	rt.mu.Unlock()
 }
 
 // start launches an evaluation loop for a live entry, once. Subsequent calls

@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,7 @@ type recordedState struct {
 	digest      string
 	body        string
 	contentType string
+	checkpoint  *AgentCheckpoint
 }
 
 // stateRecorder captures agent state records emitted through a context.
@@ -46,7 +48,16 @@ type stateRecorder struct {
 }
 
 func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	got := recordedState{body: rec.Body().AsString()}
+	got := recordedState{}
+	switch rec.Body().Kind() {
+	case otellog.KindString:
+		got.body = rec.Body().AsString()
+	case otellog.KindBytes:
+		var checkpoint AgentCheckpoint
+		if err := json.Unmarshal(rec.Body().AsBytes(), &checkpoint); err == nil {
+			got.checkpoint = &checkpoint
+		}
+	}
 	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
 		switch kv.Key {
 		case telemetryattrs.AgentStateAttr:
@@ -359,6 +370,107 @@ func TestEmitAgentSnapshotRecordShape(t *testing.T) {
 	require.Empty(t, rec.records[0].body, "snapshot records must not carry log text")
 }
 
+func TestEmitAgentCheckpointRecordShape(t *testing.T) {
+	rec, ctx := stateRecorderCtx(t)
+	checkpoint := AgentCheckpoint{
+		Sequence:              42,
+		AgentID:               "agent-1",
+		Name:                  "reviewer",
+		CallDigest:            "xxh3:agent",
+		ParentAgentID:         "chief-1",
+		SnapshotDigest:        "xxh3:snapshot",
+		State:                 AgentStateStopped,
+		PreTeardownState:      AgentStatePaused,
+		StopReason:            AgentStopSession,
+		Error:                 "prior failure",
+		Final:                 true,
+		ExpectedFinalSequence: 42,
+	}
+
+	EmitAgentCheckpoint(ctx, checkpoint)
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	require.Len(t, rec.records, 1)
+	require.NotNil(t, rec.records[0].checkpoint)
+	got := *rec.records[0].checkpoint
+	require.Equal(t, AgentCheckpointVersion, got.Version)
+	require.Equal(t, checkpoint.Sequence, got.Sequence)
+	require.Equal(t, checkpoint.AgentID, got.AgentID)
+	require.Equal(t, checkpoint.Name, got.Name)
+	require.Equal(t, checkpoint.CallDigest, got.CallDigest)
+	require.Equal(t, checkpoint.ParentAgentID, got.ParentAgentID)
+	require.Equal(t, checkpoint.SnapshotDigest, got.SnapshotDigest)
+	require.Equal(t, checkpoint.State, got.State)
+	require.Equal(t, checkpoint.PreTeardownState, got.PreTeardownState)
+	require.Equal(t, checkpoint.StopReason, got.StopReason)
+	require.Equal(t, checkpoint.Error, got.Error)
+	require.True(t, got.Final)
+	require.Equal(t, checkpoint.ExpectedFinalSequence, got.ExpectedFinalSequence)
+}
+
+func TestKillAllPublishesAuthoritativeFinalRoster(t *testing.T) {
+	recorder, ctx := stateRecorderCtx(t)
+	runtimes := NewAgentRuntimes()
+	publisher := runtimes.publisher()
+
+	entries := []*AgentRuntime{
+		{
+			key:                      "agent-a",
+			name:                     "chief",
+			paused:                   true,
+			stateChanged:             make(chan struct{}),
+			spanCtx:                  ctx,
+			checkpointCtx:            ctx,
+			checkpointPublisher:      publisher,
+			checkpointSequence:       &runtimes.checkpointSequence,
+			checkpointCallDigest:     "xxh3:agent-a",
+			checkpointSnapshotDigest: "xxh3:snapshot-a",
+			checkpointState:          AgentStatePaused,
+		},
+		{
+			key:                      "agent-b",
+			name:                     "worker",
+			stateChanged:             make(chan struct{}),
+			spanCtx:                  ctx,
+			checkpointCtx:            ctx,
+			checkpointPublisher:      publisher,
+			checkpointSequence:       &runtimes.checkpointSequence,
+			checkpointCallDigest:     "xxh3:agent-b",
+			checkpointParentAgentID:  "agent-a",
+			checkpointSnapshotDigest: "xxh3:snapshot-b",
+			checkpointState:          AgentStateIdle,
+		},
+	}
+	for _, rt := range entries {
+		runtimes.entries[rt.key] = rt
+	}
+
+	require.NoError(t, runtimes.KillAll(ctx, errors.New("session closed")))
+
+	var finals []AgentCheckpoint
+	recorder.mu.Lock()
+	for _, record := range recorder.records {
+		if record.checkpoint != nil && record.checkpoint.Final {
+			finals = append(finals, *record.checkpoint)
+		}
+	}
+	recorder.mu.Unlock()
+	require.Len(t, finals, 2)
+	require.Equal(t, uint64(4), finals[0].ExpectedFinalSequence)
+	require.Equal(t, finals[0].ExpectedFinalSequence, finals[1].ExpectedFinalSequence)
+	require.Equal(t, []uint64{3, 4}, []uint64{finals[0].Sequence, finals[1].Sequence})
+	require.Equal(t, AgentStatePaused, finals[0].PreTeardownState)
+	require.Equal(t, AgentStateIdle, finals[1].PreTeardownState)
+	for _, checkpoint := range finals {
+		require.Equal(t, AgentStateStopped, checkpoint.State)
+		require.Equal(t, AgentStopSession, checkpoint.StopReason)
+		require.NotEmpty(t, checkpoint.CallDigest)
+		require.NotEmpty(t, checkpoint.SnapshotDigest)
+	}
+	require.Equal(t, "agent-a", finals[1].ParentAgentID)
+}
+
 // TestEmitAgentFailureMessage locks the durable failure surface: the loop's
 // actual error becomes a failed assistant message beneath the loop, with the
 // same text on stdio for the focused conversation to retain in scrollback.
@@ -429,6 +541,99 @@ func TestStopReasonRidesTerminalRecord(t *testing.T) {
 	require.Empty(t, rec.records[0].stopReason)
 	require.Equal(t, "STOPPED", rec.records[1].state)
 	require.Equal(t, string(AgentStopExplicit), rec.records[1].stopReason)
+}
+
+func TestRehydrateDoesNotPublishWhenLeaseAcquisitionFails(t *testing.T) {
+	base := context.Background()
+	agentCtx := testAgentContext(t, base, "agent-a", "chief")
+	agent, ok := AgentFromContext(agentCtx)
+	require.True(t, ok)
+
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(engine.ClientLeaseKind, string) (*engine.ClientLifecycleLease, error) {
+			return nil, errors.New("lease acquisition failed")
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(base, scope)
+	require.NoError(t, err)
+
+	runtimes := NewAgentRuntimes()
+	_, err = runtimes.Rehydrate(ctx, agent, AgentStateIdle, "", "")
+	require.ErrorContains(t, err, "lease acquisition failed")
+	_, found, err := runtimes.Get(ctx, agent)
+	require.NoError(t, err)
+	require.False(t, found, "a failed single-agent restore must publish no runtime")
+	require.NoError(t, runtimes.KillAll(ctx, errors.New("test complete")))
+}
+
+func TestRehydratePublishesStateAndParent(t *testing.T) {
+	base := context.Background()
+	agentCtx := testAgentContext(t, base, "agent-a", "worker")
+	agent, ok := AgentFromContext(agentCtx)
+	require.True(t, ok)
+
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(base, scope)
+	require.NoError(t, err)
+
+	runtimes := NewAgentRuntimes()
+	runtime, err := runtimes.Rehydrate(ctx, agent, AgentStatePaused, "", "agent-parent")
+	require.NoError(t, err)
+	require.Equal(t, AgentStatePaused, runtime.State())
+	require.Equal(t, "agent-parent", runtime.checkpointParentAgentID)
+	require.Len(t, runtimes.entries, 1)
+
+	require.NoError(t, runtimes.KillAll(ctx, errors.New("test complete")))
+	require.Equal(t, int32(1), released.Load())
+}
+
+func TestRehydrateReleasesLeaseWhenPublicationRaceLoses(t *testing.T) {
+	base := context.Background()
+	agentCtx := testAgentContext(t, base, "agent-a", "chief")
+	agent, ok := AgentFromContext(agentCtx)
+	require.True(t, ok)
+
+	runtimes := NewAgentRuntimes()
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			runtimes.mu.Lock()
+			runtimes.entries[ownerID] = &AgentRuntime{key: ownerID}
+			runtimes.mu.Unlock()
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(base, scope)
+	require.NoError(t, err)
+
+	_, err = runtimes.Rehydrate(ctx, agent, AgentStateIdle, "", "")
+	require.ErrorContains(t, err, "acquired a runtime entry while re-hydration was staging")
+	require.Equal(t, int32(1), released.Load(), "the prepared candidate lease must be rolled back")
+
+	runtimes.mu.Lock()
+	delete(runtimes.entries, "agent-a")
+	runtimes.mu.Unlock()
+	require.NoError(t, runtimes.KillAll(ctx, errors.New("test complete")))
 }
 
 // TestKillAllStopsWithSessionReason is the other half: session teardown stops
