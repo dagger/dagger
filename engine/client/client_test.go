@@ -283,6 +283,48 @@ func TestOTLPConsumerDoesNotReconnectStreamErrors(t *testing.T) {
 	require.Equal(t, 1, requests)
 }
 
+func TestClientMetadataIncludesArchiveOptIn(t *testing.T) {
+	t.Parallel()
+
+	traceID := "11111111111111111111111111111111"
+	client := &Client{Params: Params{
+		ID: "client", SessionID: "session", SecretToken: "secret",
+		ArchiveTelemetry: true, ArchiveTraceID: traceID,
+	}}
+
+	md := client.clientMetadata()
+	require.True(t, md.ArchiveTelemetry)
+	require.Equal(t, traceID, md.ArchiveTraceID)
+}
+
+func TestValidateArchiveParams(t *testing.T) {
+	t.Parallel()
+
+	validTraceID := "11111111111111111111111111111111"
+	tests := []struct {
+		name    string
+		params  Params
+		wantErr string
+	}{
+		{name: "disabled"},
+		{name: "enabled", params: Params{ArchiveTelemetry: true, ArchiveTraceID: validTraceID}},
+		{name: "trace without opt in", params: Params{ArchiveTraceID: validTraceID}, wantErr: "requires archive telemetry opt-in"},
+		{name: "missing trace", params: Params{ArchiveTelemetry: true}, wantErr: "requires a canonical command trace ID"},
+		{name: "invalid trace", params: Params{ArchiveTelemetry: true, ArchiveTraceID: "not-a-trace"}, wantErr: "not a canonical command trace ID"},
+		{name: "noncanonical trace", params: Params{ArchiveTelemetry: true, ArchiveTraceID: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}, wantErr: "not a canonical command trace ID"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateArchiveParams(test.params)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestClientMetadataUsesExplicitModuleInsteadOfWorkspaceModules(t *testing.T) {
 	t.Parallel()
 

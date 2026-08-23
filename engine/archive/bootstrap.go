@@ -15,6 +15,10 @@ const maxBootstrapFrame = 64 << 20
 
 var bootstrapMagic = [4]byte{'D', 'A', 'B', 1}
 
+// ErrBootstrapIncomplete identifies a finite bootstrap response that ended
+// before its terminal frame.
+var ErrBootstrapIncomplete = errors.New("bootstrap stream ended before terminal frame")
+
 type BootstrapFrameKind byte
 
 const (
@@ -140,10 +144,11 @@ func ReadBootstrapFrame(r io.Reader) (BootstrapFrameKind, []byte, error) {
 	return kind, payload, nil
 }
 
-// VerifyBootstrap requires a header first and a terminal last, rejects trailing
-// bytes, and verifies the terminal checksum. EOF before the terminal is an
-// interruption, never a successful finite response.
-func VerifyBootstrap(r io.Reader) (BootstrapHeader, BootstrapTerminal, error) {
+// DecodeBootstrap requires a header first and a terminal last, rejects trailing
+// bytes, verifies the terminal checksum, calls onHeader before reading any
+// signal frame, and calls consume for each signal frame. EOF before the terminal
+// is an interruption, never a successful finite response.
+func DecodeBootstrap(r io.Reader, onHeader func(BootstrapHeader) error, consume func(BootstrapFrameKind, []byte) error) (BootstrapHeader, BootstrapTerminal, error) {
 	var header BootstrapHeader
 	var terminal BootstrapTerminal
 	hash := sha256.New()
@@ -152,7 +157,7 @@ func VerifyBootstrap(r io.Reader) (BootstrapHeader, BootstrapTerminal, error) {
 		kind, payload, err := ReadBootstrapFrame(r)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return header, terminal, errors.New("bootstrap stream ended before terminal frame")
+				return header, terminal, ErrBootstrapIncomplete
 			}
 			return header, terminal, err
 		}
@@ -186,8 +191,26 @@ func VerifyBootstrap(r io.Reader) (BootstrapHeader, BootstrapTerminal, error) {
 				return header, terminal, fmt.Errorf("unsupported bootstrap version %d", header.Version)
 			}
 			seenHeader = true
-		} else if kind == BootstrapFrameHeader {
+			if onHeader != nil {
+				if err := onHeader(header); err != nil {
+					return header, terminal, err
+				}
+			}
+			continue
+		}
+		if kind == BootstrapFrameHeader {
 			return header, terminal, errors.New("duplicate bootstrap header")
 		}
+		if consume != nil {
+			if err := consume(kind, payload); err != nil {
+				return header, terminal, err
+			}
+		}
 	}
+}
+
+// VerifyBootstrap validates a bootstrap stream without consuming its signal
+// payloads.
+func VerifyBootstrap(r io.Reader) (BootstrapHeader, BootstrapTerminal, error) {
+	return DecodeBootstrap(r, nil, nil)
 }

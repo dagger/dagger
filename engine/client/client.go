@@ -52,6 +52,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -106,6 +107,12 @@ type Params struct {
 	EngineTrace   sdktrace.SpanExporter
 	EngineLogs    sdklog.Exporter
 	EngineMetrics []sdkmetric.Exporter
+
+	// ArchiveTelemetry opts the main session into bounded engine-side telemetry
+	// retention. ArchiveTraceID must be the canonical command trace ID supplied
+	// by the caller; the client does not derive it.
+	ArchiveTelemetry bool
+	ArchiveTraceID   string
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
@@ -200,6 +207,9 @@ type Client struct {
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
+	if err := validateArchiveParams(params); err != nil {
+		return nil, err
+	}
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,
 		params.SkipWorkspaceModules,
@@ -337,6 +347,23 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	return c, nil
 }
 
+func validateArchiveParams(params Params) error {
+	if !params.ArchiveTelemetry {
+		if params.ArchiveTraceID != "" {
+			return errors.New("archive trace ID requires archive telemetry opt-in")
+		}
+		return nil
+	}
+	if params.ArchiveTraceID == "" {
+		return errors.New("archive telemetry requires a canonical command trace ID")
+	}
+	traceID, err := trace.TraceIDFromHex(params.ArchiveTraceID)
+	if err != nil || !traceID.IsValid() || traceID.String() != params.ArchiveTraceID {
+		return fmt.Errorf("archive trace ID %q is not a canonical command trace ID", params.ArchiveTraceID)
+	}
+	return nil
+}
+
 func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
 	if loadWorkspaceModules && skipWorkspaceModules {
 		return false, fmt.Errorf("load workspace modules and skip workspace modules are mutually exclusive")
@@ -363,6 +390,9 @@ type EngineToEngineParams struct {
 // ConnectEngineToEngine connects a Dagger client to another Dagger engine using an existing session connection.
 // Session attachables are proxied back to the original client.
 func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
+	if err := validateArchiveParams(params.Params); err != nil {
+		return nil, err
+	}
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,
 		params.SkipWorkspaceModules,
@@ -1611,6 +1641,8 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudAuth:                      c.CloudAuth,
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
+		ArchiveTelemetry:               c.ArchiveTelemetry,
+		ArchiveTraceID:                 c.ArchiveTraceID,
 		Profile:                        c.Profile,
 	}
 
@@ -1703,6 +1735,12 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 func (c *httpClient) Close() error {
 	c.inner.CloseIdleConnections()
 	return nil
+}
+
+// ArchiveClient returns a telemetry archive client bound to this connected
+// engine's direct authenticated HTTP transport.
+func (c *Client) ArchiveClient() *archive.Client {
+	return archive.NewClient(EngineConn(c))
 }
 
 func EngineConn(engineClient *Client) DirectConn {
