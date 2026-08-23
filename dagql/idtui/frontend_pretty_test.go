@@ -71,18 +71,50 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	// A bytes body with no content type: not a call payload at all, but still
 	// binary data that must never render as log text.
-	untypedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNTYPED-BYTES")))
 	spanName := frontendTestLogRecord(spanID, otellog.StringValue("updated span name"),
 		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
-	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
-	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, spanName, after}
+	unreservedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("not text")))
+	malformedRole := frontendTestLogRecord(spanID, otellog.StringValue("malformed role\n"),
+		otellog.Bool(telemetryattrs.LogRoleAttr, true))
+	malformedProgress := frontendTestLogRecord(spanID, otellog.StringValue("malformed progress\n"),
+		otellog.Bool(telemetryattrs.ProgressItemAttr, true))
+	malformedAgentState := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent state\n"),
+		otellog.Int64(telemetryattrs.AgentStateAttr, 1))
+	malformedAgentSnapshot := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent snapshot\n"),
+		otellog.Bool(telemetryattrs.AgentSnapshotDigestAttr, true))
+	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"),
+		otellog.Bool(telemetry.ContentTypeAttr, true),
+		otellog.String(telemetry.LogsVerboseAttr, "not bool"),
+		otellog.String(telemetry.StdioEOFAttr, "not bool"),
+		otellog.String(telemetry.LogsGlobalAttr, "not bool"),
+		otellog.String(telemetry.StdioStreamAttr, "not int"),
+		otellog.Bool(telemetry.DagDigestAttr, true))
+	eof := frontendTestLogRecord(spanID, otellog.StringValue(""),
+		otellog.Bool(telemetry.StdioEOFAttr, true))
+	return []sdklog.Record{
+		before,
+		payloadBytes,
+		typedText,
+		spanName,
+		unreservedBytes,
+		malformedRole,
+		malformedProgress,
+		malformedAgentState,
+		malformedAgentSnapshot,
+		after,
+		eof,
+	}
 }
 
-func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
+func requireRenderableFrontendLogs(t *testing.T, records []sdklog.Record) {
 	t.Helper()
-	require.Len(t, records, 2)
+	require.Len(t, records, 3)
+	for _, record := range records {
+		require.Equal(t, otellog.KindString, record.Body().Kind())
+	}
 	require.Equal(t, "before\n", records[0].Body().AsString())
 	require.Equal(t, "after\n", records[1].Body().AsString())
+	require.Empty(t, records[2].Body().AsString(), "stdio EOF must remain available to frontends")
 }
 
 func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
@@ -91,8 +123,8 @@ func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 	knownRecords := frontendMixedLogRecords(t, knownSpanID)
 	unknownRecords := frontendMixedLogRecords(t, unknownSpanID)
 
-	t.Run("filter preserves ordinary order", func(t *testing.T) {
-		requireOnlyOrdinaryFrontendLogs(t, renderableLogRecords(knownRecords))
+	t.Run("ingestion preserves renderable order", func(t *testing.T) {
+		requireRenderableFrontendLogs(t, dagui.NewDB().IngestLogs(knownRecords))
 	})
 
 	t.Run("streaming", func(t *testing.T) {
@@ -106,7 +138,7 @@ func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 		knownLogs := fe.logs.testLogs[dagui.SpanID{SpanID: knownSpanID}]
 		require.NotNil(t, knownLogs)
 		require.Equal(t, "before\nafter\n", knownLogs.rawBuf.String())
-		requireOnlyOrdinaryFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
+		requireRenderableFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
 		require.Len(t, fe.logs.pendingLogs, 1, "reserved records remained buffered for missing spans")
 	})
 
