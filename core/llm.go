@@ -1929,10 +1929,9 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 
 	// Materialize the assistant response BEFORE dispatching the tool calls, so
-	// a continuation tool can be handed the conversation up to and including
-	// its own call (MCP.SetSelfLLM -> LLMToContext -> loadLLMArg). This is the
-	// same chain a single multi-selector Select would build; only the timing
-	// differs.
+	// the object-tool adapter can pass the conversation up to and including its
+	// own call directly to hidden LLM arguments. This is the same chain a
+	// single multi-selector Select would build; only the timing differs.
 	var responded dagql.ObjectResult[*LLM]
 	if err := srv.Select(ctx, inst, &responded, responseSel); err != nil {
 		for _, s := range res.DisplaySpans {

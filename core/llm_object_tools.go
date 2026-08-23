@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -31,18 +32,15 @@ const llmToolLogsMaxLines = 8
 // from the generated tool schema.
 const workspaceTypeName = "Workspace"
 
-// llmTypeName is the object type the engine auto-injects into a module
-// function's arguments from the conversation making the call (see
-// core/llm_context.go). Like Workspace, such arguments are hidden from the
-// generated tool schema. A method returning it is a continuation: the loop
-// resumes from the returned conversation (MCP.adoptLLM).
+// llmTypeName identifies an object-tool argument that MCP fills directly from
+// the conversation making the call. It is hidden only from the generated tool
+// schema; the module's GraphQL schema remains unchanged. A method returning LLM
+// is a continuation: the loop resumes from the returned conversation.
 const llmTypeName = "LLM"
 
-// agentTypeName is the object type the engine auto-injects into a module
-// function's arguments from the calling agent, when the tool call is
-// dispatched from a running agent loop (see core/agent_context.go). Like
-// Workspace and LLM, such arguments are hidden from the generated tool
-// schema — the model never sees or supplies them.
+// agentTypeName identifies an object-tool argument that MCP fills directly from
+// the calling agent when dispatch runs inside an agent loop. It is hidden only
+// from the generated tool schema; the module's GraphQL schema remains unchanged.
 const agentTypeName = "Agent"
 
 // boundTool is one object bound into the LLM's toolset via withTools. It carries
@@ -492,9 +490,8 @@ func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 		return false
 	}
 	for _, arg := range field.Arguments {
-		if isAutoInjectedArg(arg) {
-			// Auto-injected from the bound Workspace / current conversation;
-			// treated as optional.
+		if isImplicitToolArg(arg) {
+			// MCP supplies this argument; the model does not need an object handle.
 			continue
 		}
 		required := arg.Type.NonNull && arg.DefaultValue == nil
@@ -571,13 +568,12 @@ func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
 	return name.Value.Raw, true
 }
 
-// isAutoInjectedArg reports whether an argument is filled in by the engine
-// rather than by the model: the bound Workspace (@expectedType(name:
-// "Workspace")), the conversation making the call (an `LLM!` arg — see
-// core/llm_context.go), or the calling agent (an `Agent!` arg — see
-// core/agent_context.go). All are hidden from the generated tool schema and
-// never disqualify a method from being a tool.
-func isAutoInjectedArg(arg *ast.ArgumentDefinition) bool {
+// isImplicitToolArg reports whether MCP supplies an object-tool argument rather
+// than asking the model for it. Workspace retains its existing contextual
+// behavior; LLM and Agent are passed directly by the object-tool adapter. This
+// classification affects only the generated MCP tool and never rewrites the
+// module's GraphQL schema.
+func isImplicitToolArg(arg *ast.ArgumentDefinition) bool {
 	return isExpectedTypeArg(arg, workspaceTypeName) ||
 		isExpectedTypeArg(arg, llmTypeName) ||
 		isExpectedTypeArg(arg, agentTypeName)
@@ -593,15 +589,16 @@ func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
 }
 
 // objectMethodSchema builds a tool's JSON-schema parameters from a field's
-// visible arguments — its scalars, enums, lists, and input objects — omitting the
-// auto-injected Workspace and LLM arguments. Object args render as ID strings
-// annotated with their expected type; liftable object args (required or
-// optional) render as address strings instead, with the type's syntax hint.
+// visible arguments — its scalars, enums, lists, and input objects — omitting
+// the Workspace, LLM, and Agent arguments supplied by MCP. Object arguments
+// render as ID strings annotated with their expected type; liftable object
+// arguments (required or optional) render as address strings instead, with
+// the type's syntax hint.
 func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
 	properties := map[string]any{}
 	var required []string
 	for _, arg := range field.Arguments {
-		if isAutoInjectedArg(arg) {
+		if isImplicitToolArg(arg) {
 			continue
 		}
 		argSchema, err := argTypeToJSONSchema(schema, arg.Type)
@@ -735,7 +732,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if !ok {
 			return nil, fmt.Errorf("no object of type %q is bound", typeName)
 		}
-		sel, err := buildObjectMethodSelector(ctx, srv, recv.ObjectType(), field, args)
+		sel, err := m.buildObjectMethodSelector(ctx, srv, recv.ObjectType(), field, args)
 		if err != nil {
 			return nil, err
 		}
@@ -750,9 +747,10 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 	}
 }
 
-// buildObjectMethodSelector converts the model's tool arguments into a selector
-// for the method. It decodes each provided argument through the field's input
-// spec; the Workspace argument is omitted here and auto-injected downstream.
+// buildObjectMethodSelector converts the model's tool arguments into a complete
+// selector for the module method. Workspace retains its contextual handling;
+// MCP directly adds the current LLM and calling Agent for hidden arguments.
+// These are explicit selector arguments, not GraphQL defaults or dynamic inputs.
 // An object-typed argument of a liftable type (see liftableTypes) additionally
 // accepts an address string: when the value fails to decode as an ID, it is
 // lifted into the object via the core Address API
@@ -761,7 +759,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 // (internal/cmd/dagger/flags.go). ctx and srv are the session's, so addresses
 // resolve against the workspace client schema with all installed modules
 // visible.
-func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, astField *ast.FieldDefinition, args map[string]any) (dagql.Selector, error) {
+func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, astField *ast.FieldDefinition, args map[string]any) (dagql.Selector, error) {
 	fieldName := astField.Name
 	sel := dagql.Selector{View: srv.View, Field: fieldName}
 	field, ok := recvType.FieldSpec(fieldName, srv.View)
@@ -775,7 +773,13 @@ func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType 
 		}
 		val, ok := args[arg.Name]
 		if !ok {
-			if wsInput, ok := boundWorkspaceInput(ctx, srv, arg); ok {
+			implicit, found, err := m.implicitToolInput(ctx, astField, arg)
+			if err != nil {
+				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
+			}
+			if found {
+				sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: implicit})
+			} else if wsInput, ok := boundWorkspaceInput(ctx, srv, arg); ok {
 				sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: wsInput})
 			}
 			continue
@@ -805,6 +809,52 @@ func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType 
 		return sel, fmt.Errorf("unknown arguments: %s", strings.Join(unknown, ", "))
 	}
 	return sel, nil
+}
+
+// implicitToolInput fills the two runtime-local arguments supported by the MCP
+// object-tool adapter. These values are ordinary explicit selector arguments:
+// module function schemas and general DAGQL input resolution know nothing about
+// this convention.
+func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
+	astArg := astField.Arguments.ForName(spec.Name)
+	if astArg == nil {
+		return nil, false, nil
+	}
+
+	var obj dagql.IDable
+	switch {
+	case isExpectedTypeArg(astArg, llmTypeName):
+		if m == nil {
+			return nil, true, errors.New("no MCP context for current conversation")
+		}
+		llm := m.currentLLM()
+		if llm.Self() == nil {
+			return nil, true, errors.New("function requires the current conversation; invoke it as an LLM tool")
+		}
+		obj = llm
+	case isExpectedTypeArg(astArg, agentTypeName):
+		agent, ok := AgentFromContext(ctx)
+		if !ok {
+			return nil, true, errors.New("function requires the calling agent; invoke it from an agent loop (LLM.spawn) — synchronous loop support is planned")
+		}
+		obj = agent
+	default:
+		return nil, false, nil
+	}
+
+	id, err := obj.ID()
+	if err != nil {
+		return nil, true, fmt.Errorf("get %s ID: %w", astArg.Directives.ForName("expectedType").Arguments.ForName("name").Value.Raw, err)
+	}
+	encoded, err := id.Encode()
+	if err != nil {
+		return nil, true, fmt.Errorf("encode ID: %w", err)
+	}
+	input, err := spec.Type.Decoder().DecodeInput(encoded)
+	if err != nil {
+		return nil, true, fmt.Errorf("decode ID: %w", err)
+	}
+	return input, true, nil
 }
 
 // liftObjectArg resolves an address string supplied for a liftable

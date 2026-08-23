@@ -1444,10 +1444,9 @@ var errAgentInterrupted = errors.New("agent interrupted")
 // resume, which wakes the loop to continue exactly where it left off.
 func (rt *AgentRuntime) loop(ctx context.Context) {
 	// Bind the agent's own handle into the loop context: every Step below —
-	// and thus every tool dispatched within one — descends from it, so a
-	// module tool declaring an `Agent!` argument is auto-injected with THIS
-	// agent (AgentToContext -> ModuleFunction.loadAgentArg), the
-	// child->parent channel of design §3.1. Covers the Resume-retry
+	// and thus every tool dispatched within one — descends from it, so MCP can
+	// pass THIS agent explicitly to a hidden `Agent!` object-tool argument. This
+	// is the child->parent channel of design §3.1. Covers the Resume-retry
 	// relaunch too, which re-enters here on a fresh detached context.
 	ctx = AgentToContext(ctx, rt.self)
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("agent: %s", rt.name),

@@ -690,31 +690,6 @@ func (arg *FunctionArg) IsWorkspace() bool {
 	return arg.isCoreObjectType("Workspace")
 }
 
-// IsLLM returns true if the argument is of type LLM. On a non-@agent function,
-// such an argument is optional and auto-injected with the conversation that
-// dispatched the call (see [LLMToContext]), making the function a continuation:
-// it can transform the conversation it was handed and return the result.
-//
-// @agent middlewares are excluded by their callers (see Function.FieldSpec and
-// ModuleFunction.setCallInputs): their `base: LLM!` is the composition
-// entrypoint, always passed explicitly, and must stay required.
-func (arg *FunctionArg) IsLLM() bool {
-	return arg.isCoreObjectType("LLM")
-}
-
-// IsAgentHandle returns true if the argument is of the core Agent type. Such
-// an argument is auto-injected with the CALLING agent when the function is
-// dispatched as a tool from a running agent loop (see [AgentToContext]): the
-// child->parent channel of hack/designs/async-agents.md §3.1, letting a
-// spawned worker's tool message the agent that called it.
-//
-// Named IsAgentHandle rather than IsAgent to avoid confusion with
-// Function.IsAgent, which marks an @agent middleware *function* — an
-// unrelated concept.
-func (arg *FunctionArg) IsAgentHandle() bool {
-	return arg.isCoreObjectType("Agent")
-}
-
 func (arg *FunctionArg) isCoreObjectType(name string) bool {
 	typeDef := arg.TypeDef.Self()
 	if typeDef == nil || typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid {
