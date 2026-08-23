@@ -240,6 +240,9 @@ type agentMessageRecord struct {
 	// harnessSubmitted marks a record handed to the hot harness dispatcher. It
 	// remains in the Agent mailbox until native lifecycle proves consumption.
 	harnessSubmitted bool
+	// harnessMaterialized marks synchronous LLM.step input which is already on
+	// the immutable receiver and must not be appended a second time at commit.
+	harnessMaterialized bool
 	// resolved marks reply/err as final. Set under the entry mutex just
 	// before done is closed; awaiters that observed the close read them
 	// freely.

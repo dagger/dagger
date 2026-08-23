@@ -15,6 +15,56 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
+// stepHarness runs synchronous LLM.step through the same persistent adapter
+// machinery as Agent. The temporary runtime lives for one native turn; its
+// pending user suffix is already materialized on inst, so checkpoint commit
+// appends only native output and state.
+func (llm *LLM) stepHarness(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
+	if !llm.HasPending() {
+		return inst, nil
+	}
+
+	rt := &AgentRuntime{
+		last:         inst,
+		messages:     map[string]*agentMessageRecord{},
+		stateChanged: make(chan struct{}),
+	}
+	messageID := identity.NewID()
+	rt.messages[messageID] = &agentMessageRecord{
+		harnessMaterialized: true,
+	}
+
+	runtime, unregister, err := rt.startHarness(ctx, inst, maxTokens)
+	if err != nil {
+		return inst, err
+	}
+	defer unregister()
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), TerminateGracePeriod)
+		defer cancel()
+		_ = runtime.Close(cleanupCtx)
+	}()
+
+	pending := pendingHarnessMessages(llm.Messages)
+	if err := runtime.Enqueue(ctx, messageID, pending); err != nil {
+		return inst, err
+	}
+	_, awaitErr := runtime.Await(ctx, messageID)
+	result := rt.Snapshot()
+	if awaitErr != nil {
+		return result, awaitErr
+	}
+	return result, nil
+}
+
+func pendingHarnessMessages(messages []*LLMMessage) []*LLMMessage {
+	start := len(messages) - 1
+	for start > 0 && messages[start-1].Role == LLMMessageRoleUser {
+		start--
+	}
+	return cloneLLMMessages(messages[start:])
+}
+
 // runHarness replaces provider Step for a harness-backed Agent loop. One
 // process, adapter, correlation ledger, and dispatcher remain hot until the
 // Agent loop exits.
@@ -240,7 +290,9 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 			rt.mu.Unlock()
 			return "", fmt.Errorf("commit harness turn: unknown Agent message %q", id)
 		}
-		texts = append(texts, rec.text)
+		if !rec.harnessMaterialized {
+			texts = append(texts, rec.text)
+		}
 	}
 	rt.mu.Unlock()
 
@@ -261,7 +313,19 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 			}
 			selectors = append(selectors, selector)
 		case LLMMessageRoleUser:
-			selectors = append(selectors, toolResultSelectors(base.Self(), []*LLMMessage{message}, nil)...)
+			for _, block := range message.Content {
+				if block.Kind != LLMContentToolResult {
+					continue
+				}
+				selectors = append(selectors, dagql.Selector{
+					Field: "withToolResult",
+					Args: []dagql.NamedInput{
+						{Name: "callId", Value: dagql.NewString(block.CallID)},
+						{Name: "content", Value: dagql.NewString(block.Text)},
+						{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
+					},
+				})
+			}
 		}
 	}
 	srv, err := CurrentDagqlServer(ctx)

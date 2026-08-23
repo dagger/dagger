@@ -229,6 +229,24 @@ func TestLLMHarnessRuntimeInterruptCancelsUnconsumedSteer(t *testing.T) {
 	adapter.mu.Unlock()
 }
 
+func TestPendingHarnessMessages(t *testing.T) {
+	messages := []*LLMMessage{
+		{Role: LLMMessageRoleSystem, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "system"}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "old prompt"}}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "old reply"}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, Text: "tool result"}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "follow-up"}}},
+	}
+
+	pending := pendingHarnessMessages(messages)
+	require.Len(t, pending, 2)
+	assert.Equal(t, "tool result", pending[0].Content[0].Text)
+	assert.Equal(t, "follow-up", pending[1].TextContent())
+
+	pending[1].Content[0].Text = "changed"
+	assert.Equal(t, "follow-up", messages[4].TextContent(), "pending suffix must be detached")
+}
+
 func TestLLMHarnessRuntimeCheckpointMaterialization(t *testing.T) {
 	adapter := newFakeLLMHarnessAdapter()
 	var checkpoint LLMHarnessCommit

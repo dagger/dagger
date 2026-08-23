@@ -1846,6 +1846,9 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
+	if llm.harness.Self() != nil {
+		return llm.stepHarness(ctx, inst, maxTokens)
+	}
 	return llm.step(ctx, inst, maxTokens)
 }
 
