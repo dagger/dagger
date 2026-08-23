@@ -625,7 +625,7 @@ func (s *workspaceSchema) checkpoint(
 	case *core.WorkspaceSourceClientLocal:
 		return s.checkpointClientLocal(ctx, srv, parent, args)
 	case *core.WorkspaceSourceRootlessLocal:
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a rootless local workspace")
+		return s.checkpointRootless(ctx, srv, parent)
 	case *core.WorkspaceSourceDirectory:
 		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
@@ -637,6 +637,14 @@ func (s *workspaceSchema) checkpoint(
 		}
 		return s.checkpointGitRef(ctx, srv, parent, src, nil)
 	case *core.WorkspaceSourceOverlay:
+		// Rootless workspaces deliberately ignore their host path and accumulate
+		// edits against an in-engine empty tree. Normalize that effective tree
+		// before checking replayability: the live rootless workspace recipe is
+		// client-bound by definition, while the normalized composition below is
+		// the portable value checkpoint is meant to return.
+		if _, ok := src.Base.(*core.WorkspaceSourceRootlessLocal); ok {
+			return s.checkpointRootless(ctx, srv, parent)
+		}
 		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
@@ -648,7 +656,7 @@ func (s *workspaceSchema) checkpoint(
 		case *core.WorkspaceSourceClientLocal:
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace after workspace edits; checkpoint it before applying overlays")
 		case *core.WorkspaceSourceRootlessLocal:
-			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a rootless local workspace overlay")
+			return s.checkpointRootless(ctx, srv, parent)
 		default:
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot normalize overlay base %T", src.Base)
 		}
@@ -677,6 +685,50 @@ func checkpointRecipeReplayable(
 		)
 	}
 	return nil
+}
+
+// checkpointRootless freezes the effective source tree of a context-only local
+// workspace. Rootless workspaces intentionally never read HostPath: their
+// pristine tree is empty, and functional edits accumulate as a full in-engine
+// overlay. Rebuilding that tree through Directory.asWorkspace drops the client
+// route and host path from the value while retaining portable workspace
+// metadata.
+func (s *workspaceSchema) checkpointRootless(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws := parent.Self()
+	if len(ws.PendingCommits()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a rootless workspace with pending commits")
+	}
+	if len(ws.MountPoints()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a rootless workspace with mounts")
+	}
+
+	root, err := s.workspaceOverlayRootfs(ctx, ws)
+	if err != nil {
+		return inst, fmt.Errorf("resolve rootless workspace checkpoint tree: %w", err)
+	}
+	if err := srv.Select(ctx, root, &inst, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(ws.Cwd)}},
+	}); err != nil {
+		return inst, fmt.Errorf("construct rootless workspace checkpoint: %w", err)
+	}
+
+	workspaceEnv, _ := selectedWorkspaceEnvFor(ctx, ws)
+	inst, err = checkpointWorkspaceMetadataComposition(ctx, srv, inst, ws, workspaceEnv)
+	if err != nil {
+		return inst, fmt.Errorf("compose rootless workspace checkpoint metadata: %w", err)
+	}
+	// The live rootless receiver is necessarily client-bound. Classify the
+	// reconstructed value instead, so support for rootless workspaces never
+	// becomes a replayability bypass.
+	if err := checkpointRecipeReplayable(ctx, srv, inst); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return inst, nil
 }
 
 func (s *workspaceSchema) checkpointClientLocal(

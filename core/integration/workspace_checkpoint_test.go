@@ -6,6 +6,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -61,6 +63,92 @@ func (WorkspaceSuite) TestWorkspaceCheckpointReplayableValuePassesThrough(ctx co
 	original := got.Directory.AsWorkspace.WithNewFile.Original
 	require.NotEmpty(t, original)
 	require.Equal(t, original, got.Directory.AsWorkspace.WithNewFile.Frozen.ID)
+}
+
+// A rootless local workspace is context-only: even though it carries the
+// caller's host path for identity, reads resolve against an empty in-engine
+// tree. Checkpointing must preserve that boundary, retain functional edits made
+// to the in-engine tree, and return a recipe that a second checkpoint accepts
+// as replayable.
+func (WorkspaceSuite) TestWorkspaceCheckpointFreezesRootlessEffectiveTree(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "host-only.txt"), []byte("must not be captured"), 0o644))
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	type frozen struct {
+		ID         string `json:"id"`
+		Cwd        string `json:"cwd"`
+		ConfigFile string `json:"configFile"`
+		Directory  struct {
+			Entries []string `json:"entries"`
+		} `json:"directory"`
+		File struct {
+			Contents string `json:"contents"`
+		} `json:"file"`
+		Replay struct {
+			ID        string `json:"id"`
+			Directory struct {
+				Entries []string `json:"entries"`
+			} `json:"directory"`
+			File struct {
+				Contents string `json:"contents"`
+			} `json:"file"`
+		} `json:"replay"`
+	}
+	var got struct {
+		CurrentWorkspace struct {
+			Pristine frozen `json:"pristine"`
+			Edited   struct {
+				Checkpoint frozen `json:"checkpoint"`
+			} `json:"edited"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `{
+  currentWorkspace {
+    pristine: checkpoint {
+      id
+      cwd
+      configFile
+      directory(path: "/") { entries }
+      replay: checkpoint {
+        id
+        directory(path: "/") { entries }
+      }
+    }
+    edited: withNewFile(path: "overlay.txt", contents: "in engine") {
+      checkpoint {
+        id
+        cwd
+        configFile
+        directory(path: "/") { entries }
+        file(path: "overlay.txt") { contents }
+        replay: checkpoint {
+          id
+          directory(path: "/") { entries }
+          file(path: "overlay.txt") { contents }
+        }
+      }
+    }
+  }
+}`}, &dagger.Response{Data: &got}))
+
+	pristine := got.CurrentWorkspace.Pristine
+	require.NotEmpty(t, pristine.ID)
+	require.Equal(t, "/", pristine.Cwd)
+	require.Empty(t, pristine.ConfigFile)
+	require.Empty(t, pristine.Directory.Entries, "a rootless checkpoint must not capture its host path")
+	require.Equal(t, pristine.ID, pristine.Replay.ID, "the normalized checkpoint recipe must be replayable")
+	require.Empty(t, pristine.Replay.Directory.Entries)
+
+	edited := got.CurrentWorkspace.Edited.Checkpoint
+	require.NotEmpty(t, edited.ID)
+	require.Equal(t, "/", edited.Cwd)
+	require.Empty(t, edited.ConfigFile)
+	require.Equal(t, []string{"overlay.txt"}, edited.Directory.Entries)
+	require.Equal(t, "in engine", edited.File.Contents)
+	require.Equal(t, edited.ID, edited.Replay.ID, "the normalized overlay recipe must be replayable")
+	require.Equal(t, []string{"overlay.txt"}, edited.Replay.Directory.Entries)
+	require.Equal(t, "in engine", edited.Replay.File.Contents)
 }
 
 func (WorkspaceSuite) TestWorkspaceCheckpointRejectsNonReplayableLeaf(ctx context.Context, t *testctx.T) {
