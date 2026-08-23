@@ -81,29 +81,12 @@ func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
 			continue
 		}
 
-		contained := false
 		var parentID SpanID
-		reachedRoot := span == root
-		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			atRoot := p == root
-			if !atRoot && (p.Boundary || p.Encapsulate) {
-				contained = true
-				break
+		if !spanMayRollUp(span, root, func(parent *Span) {
+			if !parentID.IsValid() && parent.Service {
+				parentID = parent.ID
 			}
-			if !parentID.IsValid() && p.Service {
-				parentID = p.ID
-			}
-			if atRoot {
-				// Stop at root: its own flags are outside the question, but it
-				// still nests (see SurfacedChecksForSpan).
-				reachedRoot = true
-				break
-			}
-		}
-		if !contained && root != nil && !reachedRoot {
-			contained = true
-		}
-		if contained {
+		}) {
 			continue
 		}
 		byID[span.ID] = &info{span: span, parentID: parentID}

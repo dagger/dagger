@@ -73,41 +73,20 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 			continue
 		}
 
-		contained := false
-		anchoredToMessage := false
+		anchoredToMessageBoundary := false
 		var parentID SpanID
-		reachedRoot := false
-		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			atRoot := p == root
-			if !atRoot && (p.Boundary || p.Encapsulate) {
-				// Tool-call messages are boundaries so nested work remains anchored
-				// beneath the call, but the call itself remains in the conversation.
-				if p.LLMRole != "" {
-					parentID = p.ID
-					anchoredToMessage = true
-					break
-				}
-				contained = true
-				break
+		mayRollUp := spanMayRollUp(span, root, func(parent *Span) {
+			if parent == root {
+				return
 			}
-			if !atRoot && !parentID.IsValid() && p.LLMRole != "" {
-				// Anchor only to messages strictly BELOW root: root itself is
-				// the frame and isn't part of the surfaced tree, so a message
-				// anchored to it would have no node to nest under.
-				parentID = p.ID
+			if !parentID.IsValid() && parent.LLMRole != "" {
+				parentID = parent.ID
 			}
-			if atRoot {
-				// Stop at root: its own flags are outside the question, but it
-				// still anchors the messages beneath it (see
-				// SurfacedChecksForSpan).
-				reachedRoot = true
-				break
+			if (parent.Boundary || parent.Encapsulate) && parent.LLMRole != "" {
+				anchoredToMessageBoundary = true
 			}
-		}
-		if !contained && !anchoredToMessage && root != nil && !reachedRoot {
-			contained = true
-		}
-		if contained {
+		})
+		if !mayRollUp && !anchoredToMessageBoundary {
 			continue
 		}
 		byID[span.ID] = &info{span: span, parentID: parentID}
@@ -144,22 +123,15 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 	return roots
 }
 
-// HasConversation reports whether the trace contains any LLM message spans, so
-// the live view can promote the conversation to the top level (mirrors
-// HasChecks).
+// HasConversation reports whether the surfaced conversation is non-empty.
 func (db *DB) HasConversation() bool {
 	return db.HasConversationForSpan(nil)
 }
 
-// HasConversationForSpan is HasConversation restricted to root's subtree; a nil
-// root means the whole trace.
+// HasConversationForSpan reports whether the root-relative surfaced
+// conversation is non-empty, including message-boundary anchoring.
 func (db *DB) HasConversationForSpan(root *Span) bool {
-	for _, span := range db.Spans.Order {
-		if span.LLMRole != "" && underSurfaceRoot(span, root) {
-			return true
-		}
-	}
-	return false
+	return len(db.SurfacedConversationForSpan(root)) > 0
 }
 
 // PromoteConversationTo wires the surfaced conversation into host.RevealedSpans

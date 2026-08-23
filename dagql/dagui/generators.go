@@ -59,35 +59,14 @@ func (db *DB) buildSurfacedGenerators(root *Span) []*GeneratorNode {
 		if span.GeneratorName == "" {
 			continue
 		}
-		// Walk ancestors toward root: a Boundary/Encapsulate between this
-		// generator and root contains it (hide it); otherwise remember the
-		// nearest ancestor generator to nest under, and note whether we reach
-		// root at all.
-		contained := false
+		// Remember the nearest ancestor generator while the shared walk decides
+		// whether Boundary/Encapsulate contains this span relative to root.
 		parentName := ""
-		reachedRoot := span == root
-		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			atRoot := p == root
-			if !atRoot && (p.Boundary || p.Encapsulate) {
-				contained = true
-				break
+		if !spanMayRollUp(span, root, func(parent *Span) {
+			if parentName == "" && parent.GeneratorName != "" && parent.GeneratorName != span.GeneratorName {
+				parentName = parent.GeneratorName
 			}
-			if parentName == "" && p.GeneratorName != "" && p.GeneratorName != span.GeneratorName {
-				parentName = p.GeneratorName
-			}
-			if atRoot {
-				// Stop at root: its own flags are outside the question, but its
-				// name still nests (see SurfacedChecksForSpan).
-				reachedRoot = true
-				break
-			}
-		}
-		// A chain severed before root can't be proven boundary-free; treat it
-		// as contained, exactly as SurfacedChecksForSpan does.
-		if !contained && root != nil && !reachedRoot {
-			contained = true
-		}
-		if contained {
+		}) {
 			continue
 		}
 		failed := span.IsFailedOrCausedFailure()
@@ -148,21 +127,17 @@ func (n *GeneratorNode) HasFailedChild() bool {
 	return false
 }
 
-// HasGenerators reports whether the trace contains any generator spans, so the
-// live view can promote them to the top level (mirrors HasChecks).
+// HasGenerators reports whether the trace's surfaced generator view is
+// non-empty, so the live view can promote it to the top level (mirrors
+// HasChecks).
 func (db *DB) HasGenerators() bool {
 	return db.HasGeneratorsForSpan(nil)
 }
 
-// HasGeneratorsForSpan is HasGenerators restricted to root's subtree; a nil
-// root means the whole trace.
+// HasGeneratorsForSpan reports whether the root-relative surfaced generator
+// view is non-empty. A nil root means the live trace root.
 func (db *DB) HasGeneratorsForSpan(root *Span) bool {
-	for _, span := range db.Spans.Order {
-		if span.GeneratorName != "" && underSurfaceRoot(span, root) {
-			return true
-		}
-	}
-	return false
+	return len(db.SurfacedGeneratorsForSpan(root)) > 0
 }
 
 // PromoteGeneratorsTo wires the surfaced generators into host.RevealedSpans

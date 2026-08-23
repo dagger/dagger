@@ -76,42 +76,14 @@ func (db *DB) buildSurfacedChecks(root *Span) []*CheckNode {
 		if span.CheckName == "" {
 			continue
 		}
-		// Walk ancestors toward root: a Boundary/Encapsulate between this check
-		// and root contains it (hide it); otherwise remember the nearest
-		// ancestor check to nest under, and note whether we reach root at all.
-		contained := false
+		// Remember the nearest ancestor check while the shared walk decides
+		// whether Boundary/Encapsulate contains this span relative to root.
 		parentName := ""
-		reachedRoot := span == root
-		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			atRoot := p == root
-			if !atRoot && (p.Boundary || p.Encapsulate) {
-				contained = true
-				break
+		if !spanMayRollUp(span, root, func(parent *Span) {
+			if parentName == "" && parent.CheckName != "" && parent.CheckName != span.CheckName {
+				parentName = parent.CheckName
 			}
-			if parentName == "" && p.CheckName != "" && p.CheckName != span.CheckName {
-				parentName = p.CheckName
-			}
-			if atRoot {
-				// Stop at root: it's the frame of reference, so its own flags --
-				// and anything above it -- say nothing about whether this check
-				// is contained *within* it. Its CheckName still nests, so a
-				// zoom to a parent check keeps its sub-checks beneath it.
-				reachedRoot = true
-				break
-			}
-		}
-		// A check whose ancestor chain is severed before it reaches root can't
-		// be proven boundary-free: a check a test runs as a fixture reaches the
-		// outer trace through a nested `dagger check` invocation (a reparenting
-		// seam at the spawning withExec), so its chain dead-ends at that seam --
-		// or at an unreceived placeholder -- below the test's Boundary span,
-		// which the incremental fetch never loaded. Treat that severance as
-		// containment, so fixtures stay hidden just like checks with a loaded
-		// Boundary ancestor -- and so do checks that ran outside root entirely.
-		if !contained && root != nil && !reachedRoot {
-			contained = true
-		}
-		if contained {
+		}) {
 			continue
 		}
 		failed := span.IsFailedOrCausedFailure()

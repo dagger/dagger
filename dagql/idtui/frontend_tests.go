@@ -1519,8 +1519,12 @@ func (fe *frontendPretty) toggleTestsMode() {
 }
 
 func (fe *frontendPretty) fullscreenTestViewForFocus() *TestView {
-	if span := fe.focusedCheckWithTests(); span != nil {
-		return fe.newFullscreenTestView(span.ID, span.CheckName)
+	if span := fe.focusedTestScope(); span != nil {
+		scopeName := span.CheckName
+		if scopeName == "" {
+			scopeName = span.LLMTool
+		}
+		return fe.newFullscreenTestView(span.ID, scopeName)
 	}
 	if fe.db == nil || !fe.db.HasTests() {
 		return nil
@@ -1528,12 +1532,23 @@ func (fe *frontendPretty) fullscreenTestViewForFocus() *TestView {
 	return fe.newFullscreenTestView(dagui.SpanID{}, "")
 }
 
-func (fe *frontendPretty) focusedCheckWithTests() *dagui.Span {
+func (fe *frontendPretty) hasTestsForFocus() bool {
+	if fe.focusedTestScope() != nil {
+		return true
+	}
+	return fe.db != nil && fe.db.HasTests()
+}
+
+// focusedTestScope finds the nearest visible owner whose root-relative test
+// view is non-empty. Checks and LLM tool calls use the same Boundary ownership
+// rule, so the T affordance must consult the scoped view before falling back to
+// the (possibly empty) global TestView.
+func (fe *frontendPretty) focusedTestScope() *dagui.Span {
 	if fe.db == nil || !fe.FocusedSpan.IsValid() {
 		return nil
 	}
 	for span := fe.db.Spans.Map[fe.FocusedSpan]; span != nil; span = span.ParentSpan {
-		if span.CheckName != "" && fe.db.TestViewForSpan(span).HasTests() {
+		if (span.CheckName != "" || span.LLMTool != "") && fe.db.TestViewForSpan(span).HasTests() {
 			return span
 		}
 	}
@@ -1605,7 +1620,7 @@ func (fe *frontendPretty) updateTestViews() {
 	}
 	for id, st := range fe.spanTrees {
 		span := fe.db.Spans.Map[id]
-		if span != nil && span.CheckName != "" {
+		if span != nil && (span.CheckName != "" || span.LLMTool != "") {
 			st.Update()
 		}
 	}

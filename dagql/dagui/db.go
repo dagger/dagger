@@ -560,19 +560,36 @@ func surfaceRootID(root *Span) SpanID {
 	return root.ID
 }
 
-// underSurfaceRoot reports whether span is root or one of its descendants. A
-// nil root means the whole trace, so everything qualifies -- which is what
-// keeps the no-arg HasX predicates exactly as cheap and as broad as they were.
-func underSurfaceRoot(span, root *Span) bool {
-	if root == nil {
+// spanMayRollUp walks span's real parent chain and reports whether span may
+// roll up to root. Boundary and Encapsulate are unilateral containment flags:
+// either one on an ancestor strictly below root stops the roll-up, while flags
+// on root itself are outside the question. An explicit root must be reached;
+// nil asks about all traces and accepts parentless or severed chains as long as
+// no loaded ancestor contains them.
+//
+// visit is called for each ancestor encountered, including a containing
+// boundary and root itself. Surfaced views use it to retain their nearest
+// semantic parent without reimplementing containment. The starting span is not
+// visited: a span's flags contain its descendants, not the span itself.
+func spanMayRollUp(span, root *Span, visit func(*Span)) bool {
+	if span == nil {
+		return false
+	}
+	if span == root {
 		return true
 	}
-	for p := span; p != nil; p = p.ParentSpan {
-		if p == root {
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		if visit != nil {
+			visit(parent)
+		}
+		if parent == root {
 			return true
 		}
+		if parent.Boundary || parent.Encapsulate {
+			return false
+		}
 	}
-	return false
+	return root == nil
 }
 
 func (db *DB) initSpan(spanID SpanID) *Span {

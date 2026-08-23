@@ -92,9 +92,52 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		}
 	}
 
+	if testLines := fe.renderMessageTests(ctx, node.Span, len(indent)); len(testLines) > 0 {
+		fmt.Fprintln(out)
+		for _, line := range testLines {
+			fmt.Fprintln(out, indent+line)
+		}
+	}
+
 	for _, child := range node.Children {
 		fe.renderMessageNode(ctx, out, r, child, depth+1)
 	}
+}
+
+// renderMessageTests renders the tests owned directly by an LLM tool boundary.
+// The root-relative view includes tests beneath this tool but stops at nested
+// tool boundaries, so nested worker tools render and claim their own tests when
+// their message node is visited.
+func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span, outerIndent int) []string {
+	if span == nil || span.LLMTool == "" {
+		return nil
+	}
+	view := fe.db.TestViewForSpan(span)
+	if !view.HasTests() {
+		return nil
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		AgentStyle:      fe.agentStyle(),
+		Logs:            fe.logs.Logs,
+		SummaryIndent:   2,
+		SummaryLogLines: -1,
+		TraceID:         fe.traceID,
+	}
+	width := ctx.Width - outerIndent
+	if width <= 0 {
+		width = finalRenderTestsWidth
+	}
+	lines := tv.renderTestSummaryLines(
+		NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile)),
+		view,
+		max(width, finalRenderTestsWidth),
+		finalTestViewHeight(tv),
+	)
+	if len(lines) > 0 {
+		fe.claims.claimTestReport(span, view)
+	}
+	return lines
 }
 
 // indentMessageNodeLogs shrinks the width used to wrap a surfaced message's logs

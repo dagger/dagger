@@ -113,6 +113,24 @@ func boundarySnapshot(id, parent byte) SpanSnapshot {
 	return snap
 }
 
+func TestContainedOnlyHasPredicatesMatchSurfacedViews(t *testing.T) {
+	db := NewDB()
+	root := checkSnapshot(1, "root", SpanID{}, "")
+	boundary := boundarySnapshot(2, 1)
+	contained := checkSnapshot(3, "contained work", boundary.ID, "contained check")
+	contained.GeneratorName = "contained generator"
+	contained.LLMRole = "user"
+	db.ImportSnapshots([]SpanSnapshot{root, boundary, contained})
+
+	if db.HasChecks() || db.HasGenerators() || db.HasConversation() {
+		t.Fatal("a contained-only trace must not advertise empty surfaced views")
+	}
+	boundarySpan := db.Spans.Map[boundary.ID]
+	if !db.HasChecksForSpan(boundarySpan) || !db.HasGeneratorsForSpan(boundarySpan) || !db.HasConversationForSpan(boundarySpan) {
+		t.Fatal("the owning boundary's scoped Has predicates must see direct work")
+	}
+}
+
 func TestSurfacedChecksMemoizedPerFrame(t *testing.T) {
 	db := NewDB()
 	db.ImportSnapshots([]SpanSnapshot{

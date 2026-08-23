@@ -66,15 +66,10 @@ func (db *DB) HasChecks() bool {
 	return db.HasChecksForSpan(nil)
 }
 
-// HasChecksForSpan is HasChecks restricted to root's subtree; a nil root means
-// the whole trace.
+// HasChecksForSpan reports whether the root-relative surfaced check view is
+// non-empty. A nil root means the live trace root, matching SurfacedChecks.
 func (db *DB) HasChecksForSpan(root *Span) bool {
-	for _, span := range db.Spans.Order {
-		if span.CheckName != "" && underSurfaceRoot(span, root) {
-			return true
-		}
-	}
-	return false
+	return len(db.SurfacedChecksForSpan(root)) > 0
 }
 
 func (db *DB) HasGenerateReport() bool {

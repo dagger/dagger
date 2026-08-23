@@ -15,6 +15,89 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
+func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	const (
+		rootByte byte = iota + 1
+		chiefPromptByte
+		spawnByte
+		spawnTestByte
+		workerPromptByte
+		workerToolByte
+		workerTestByte
+	)
+	id := func(n byte) dagui.SpanID { return prettyTestSpanID(n) }
+	start := time.Unix(100, 0)
+	tool := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent,
+			Name: name, LLMRole: "assistant", LLMTool: name, Boundary: true,
+			StartTime: start.Add(time.Duration(n) * time.Second),
+			EndTime:   start.Add(time.Duration(n+1) * time.Second), Final: true,
+		}
+	}
+	testCase := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent,
+			Name: name, TestCaseName: name, TestStatus: dagui.TestStatusFailure,
+			StartTime: start.Add(time.Duration(n) * time.Second),
+			EndTime:   start.Add(time.Duration(n+1) * time.Second), Final: true,
+		}
+	}
+
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "agent session", StartTime: start, EndTime: start.Add(20 * time.Second), Final: true},
+		{ID: id(chiefPromptByte), TraceID: prettyTestTraceID(), ParentID: id(rootByte), Name: "chief prompt", LLMRole: "user", StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true},
+		tool(spawnByte, id(rootByte), "spawn-worker"),
+		testCase(spawnTestByte, id(spawnByte), "spawn ownership test"),
+		{ID: id(workerPromptByte), TraceID: prettyTestTraceID(), ParentID: id(spawnByte), Name: "worker prompt", LLMRole: "user", StartTime: start.Add(5 * time.Second), EndTime: start.Add(6 * time.Second), Final: true},
+		tool(workerToolByte, id(spawnByte), "worker-check"),
+		testCase(workerTestByte, id(workerToolByte), "nested worker test"),
+	})
+	db.SetPrimarySpan(id(rootByte))
+
+	if db.HasTests() {
+		t.Fatal("boundary-owned agent tests escaped into the global test view")
+	}
+	spawnView := db.TestViewForSpan(db.Spans.Map[id(spawnByte)])
+	if spawnView.FindCaseByName("spawn ownership test") == nil || spawnView.FindCaseByName("nested worker test") != nil {
+		t.Fatalf("spawn boundary did not keep only its direct test: %+v", spawnView.Counts)
+	}
+	workerView := db.TestViewForSpan(db.Spans.Map[id(workerToolByte)])
+	if workerView.FindCaseByName("nested worker test") == nil {
+		t.Fatal("nested worker boundary lost its own test")
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	fe.FocusedSpan = id(workerToolByte)
+	if !fe.hasTestsForFocus() {
+		t.Fatal("T key predicate ignored focused tool tests when global HasTests is false")
+	}
+	fullscreen := fe.fullscreenTestViewForFocus()
+	if fullscreen == nil || fullscreen.currentView().FindCaseByName("nested worker test") == nil {
+		t.Fatal("T inspect did not open the focused worker tool's scoped view")
+	}
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	joined := strings.Join(fe.conversationReport(tuist.Context{Width: 120}, r, false), "\n")
+	if strings.Count(joined, "TESTS") != 2 {
+		t.Fatalf("expected one inline TESTS report per owning tool boundary:\n%s", joined)
+	}
+	for _, name := range []string{"spawn ownership test", "nested worker test"} {
+		if !strings.Contains(joined, name) {
+			t.Fatalf("final conversation report hid %q:\n%s", name, joined)
+		}
+	}
+	if !fe.claims.hasTestCase(id(spawnTestByte)) || !fe.claims.hasTestCase(id(workerTestByte)) {
+		t.Fatal("inline conversation test reports did not claim their cases")
+	}
+	if global := fe.renderGlobalTests(tuist.Context{Width: 120}, true); len(global) != 0 {
+		t.Fatalf("boundary-owned tests repeated in global TESTS section:\n%s", strings.Join(global, "\n"))
+	}
+}
+
 // TestConversationReportFlagsToolResultTokens verifies a tool call that fed a
 // large result back into context is flagged inline with an estimated token
 // count, so an outsized, context-bloating result is easy to spot in the report.
