@@ -47,8 +47,11 @@ type Doug {
   "Update the TODO list."
   todoWrite(pending: [String!]! = []): Doug!
 
-  "Build an agent — requires an object arg, so ineligible."
+  "Build an agent — its LLM! arg is auto-injected, so it IS eligible."
   agent(base: ID! @expectedType(name: "LLM")): LLM!
+
+  "Apply a changeset — requires a non-injected object arg, so ineligible."
+  apply(changes: ID! @expectedType(name: "Changeset")): Doug!
 
   old: String! @deprecated(reason: "gone")
 }
@@ -77,9 +80,13 @@ func TestObjectToolEligible(t *testing.T) {
 	require.True(t, objectToolEligible(fieldByName(doug, "write"), nil))
 	require.True(t, objectToolEligible(fieldByName(doug, "todoWrite"), nil))
 
-	// A required object-typed argument (LLM, not the auto-injected Workspace)
-	// disqualifies the method — the model has no handle to pass.
-	require.False(t, objectToolEligible(fieldByName(doug, "agent"), nil))
+	// A required object-typed argument disqualifies the method — the model has no
+	// handle to pass.
+	require.False(t, objectToolEligible(fieldByName(doug, "apply"), nil))
+
+	// ...except when the engine fills it in: an `LLM!` arg is auto-injected with
+	// the conversation making the call, so it does not disqualify.
+	require.True(t, objectToolEligible(fieldByName(doug, "agent"), nil))
 
 	// except drops a method by name.
 	require.False(t, objectToolEligible(fieldByName(doug, "read"), []string{"read"}))
