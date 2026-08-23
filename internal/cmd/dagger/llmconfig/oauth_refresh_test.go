@@ -25,6 +25,8 @@ type fakeOAuthServer struct {
 	mu sync.Mutex
 	// refreshToken is the only refresh token the endpoint accepts.
 	refreshToken string
+	// requests counts all refresh requests, including rejected grants.
+	requests int
 	// grants counts successful refresh grants.
 	grants int
 	// expiresIn is the expires_in returned with each grant; negative omits the
@@ -68,6 +70,12 @@ func (s *fakeOAuthServer) state() (grants int, refreshToken string) {
 	return s.grants, s.refreshToken
 }
 
+func (s *fakeOAuthServer) requestCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.requests
+}
+
 func (s *fakeOAuthServer) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/profile":
@@ -108,8 +116,9 @@ func (s *fakeOAuthServer) serve(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.requests++
 	if s.fail || refreshToken != s.refreshToken {
-		http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
+		http.Error(w, `{"error":"invalid_grant","error_description":"credential-leak-marker"}`, http.StatusBadRequest)
 		return
 	}
 	s.grants++
@@ -192,6 +201,117 @@ func TestRefreshKeepsRefreshTokenWhenOmitted(t *testing.T) {
 				t.Errorf("persisted RefreshToken = %q, want the stored %q kept", got, "rt-keep")
 			}
 		})
+	}
+}
+
+func TestTerminalRefreshErrorRequiresReauthentication(t *testing.T) {
+	for _, providerName := range []string{"anthropic", "openai-codex"} {
+		t.Run(providerName, func(t *testing.T) {
+			srv := newFakeOAuthServer(t, "rt-reauthorized")
+			srv.install(t)
+
+			useTempConfig(t, &Config{
+				LLM: LLMConfig{
+					DefaultProvider: providerName,
+					Providers: map[string]Provider{
+						providerName: expiredOAuthProvider("rt-permanently-invalid"),
+					},
+				},
+			})
+
+			_, err := RefreshOAuthProviderIfNeeded(t.Context(), providerName)
+			if err == nil {
+				t.Fatal("first refresh succeeded with an invalid refresh token")
+			}
+			if !IsTerminalOAuthRefreshError(err) {
+				t.Errorf("first refresh error %q is not marked terminal", err)
+			}
+			if !strings.Contains(err.Error(), "invalid_grant") {
+				t.Errorf("first refresh error %q does not identify invalid_grant", err)
+			}
+			if !strings.Contains(err.Error(), "dagger llm setup") {
+				t.Errorf("first refresh error %q has no reauthentication hint", err)
+			}
+			for _, secret := range []string{"rt-permanently-invalid", "credential-leak-marker"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Errorf("first refresh error exposed token endpoint content %q: %v", secret, err)
+				}
+			}
+
+			// Move beyond the ordinary rate limit and verify an on-demand call
+			// still surfaces the failure. Only the background scheduler should
+			// retire terminal credentials; an explicit credential resolution must
+			// not silently return the stale token.
+			refreshKey := ConfigFile + "\x00" + providerName
+			lastOAuthRefresh[refreshKey] = time.Now().Add(-2 * oauthRefreshFloor)
+			_, err = RefreshOAuthProviderIfNeeded(t.Context(), providerName)
+			if err == nil || !IsTerminalOAuthRefreshError(err) {
+				t.Fatalf("second on-demand refresh error = %v, want terminal failure", err)
+			}
+			if got := srv.requestCount(); got != 2 {
+				t.Errorf("token endpoint received %d on-demand requests, want 2", got)
+			}
+
+			// Reauthorization replaces the failed credential and permits refresh.
+			cfg, loadErr := Load()
+			if loadErr != nil {
+				t.Fatalf("Load() failed: %v", loadErr)
+			}
+			provider := cfg.LLM.Providers[providerName]
+			provider.RefreshToken = "rt-reauthorized"
+			cfg.LLM.Providers[providerName] = provider
+			if saveErr := cfg.Save(); saveErr != nil {
+				t.Fatalf("Save() failed: %v", saveErr)
+			}
+			lastOAuthRefresh[refreshKey] = time.Now().Add(-2 * oauthRefreshFloor)
+			current, err := RefreshOAuthProviderIfNeeded(t.Context(), providerName)
+			if err != nil {
+				t.Fatalf("refresh after reauthorization failed: %v", err)
+			}
+			if current == nil || current.AuthToken != "access-1" {
+				t.Errorf("refresh after reauthorization returned %+v, want access-1", current)
+			}
+			if got := srv.requestCount(); got != 3 {
+				t.Errorf("token endpoint received %d total requests, want two invalid then reauthorized", got)
+			}
+		})
+	}
+}
+
+func TestTransientRefreshErrorIsRetried(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "credential-leak-marker", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	origToken, origProfile := oauthTokenURL, oauthProfileURL
+	t.Cleanup(func() { oauthTokenURL, oauthProfileURL = origToken, origProfile })
+	oauthTokenURL = srv.URL
+	oauthProfileURL = srv.URL
+
+	useTempConfig(t, &Config{
+		LLM: LLMConfig{
+			DefaultProvider: "anthropic",
+			Providers: map[string]Provider{
+				"anthropic": expiredOAuthProvider("rt-secret"),
+			},
+		},
+	})
+
+	for i := range 2 {
+		_, err := RefreshOAuthProviderIfNeeded(t.Context(), "anthropic")
+		if err == nil {
+			t.Fatalf("refresh %d succeeded against a failing endpoint", i)
+		}
+		if strings.Contains(err.Error(), "credential-leak-marker") || strings.Contains(err.Error(), "rt-secret") {
+			t.Errorf("refresh %d error exposed endpoint or credential content: %v", i, err)
+		}
+		lastOAuthRefresh[ConfigFile+"\x00anthropic"] = time.Now().Add(-2 * oauthRefreshFloor)
+	}
+	if requests != 2 {
+		t.Errorf("transient endpoint received %d requests, want 2", requests)
 	}
 }
 
