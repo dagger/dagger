@@ -2,9 +2,9 @@
 
 ## Status
 
-Implementation in progress. The correctness foundations through separate client
-record/runtime storage are complete; cold-capability decoupling and reclamation
-are still deliberately disabled.
+Implementation in progress. The correctness foundations through cold-capability
+decoupling are complete; session-owned metrics and runtime reclamation are still
+deliberately disabled.
 
 ### Implementation progress
 
@@ -51,35 +51,39 @@ Completed, in dependency order:
    executable lookups are purpose-specific; executable runtime access requires
    a held `ClientScope`. Both maps remain session-long, and zero leases never
    trigger reclamation.
+8. Workspace host access uses a session-owned engine gateway plus immutable
+   owner metadata from the record graph, so it no longer rediscovers an owner
+   runtime. Every detached DagQL cache initializer now retains one explicit
+   shared-work scope and drops its detached context when the callback finishes.
+   Module/schema memoization is scoped to its owning query capability instead
+   of a process-global cache. Agent tombstones compact their telemetry context
+   but retain their durable lease because their DagQL snapshots are not yet
+   self-contained.
 
 Intentional interim retention remains visible: child quiescence is not yet
 implemented, so each parent's `child` lease is retained after transport close and
 released safely during authoritative session teardown. Records and execution
-runtimes are now separate, but both remain session-long while cold capabilities
-and per-runtime metrics still depend on retained execution state. No quiescence
-inference or reclamation is enabled yet.
+runtimes remain session-long, metrics remain per runtime, and agent tombstones
+keep their durable leases. No quiescence inference or reclamation is enabled yet.
 
 ### Next implementation seam
 
-Decouple cold capabilities from retained execution runtimes without enabling
-reclamation yet:
+Move metrics to session ownership without enabling reclamation yet:
 
-1. Make workspace host access session-owned and capture only immutable owner
-   metadata plus the minimal host gateway capability instead of rediscovering a
-   retained runtime by client ID.
-2. Audit cached lazy/shared callbacks and require each path either to retain a
-   documented durable scope lease or to capture a self-contained capability
-   that no longer points back to runtime query/schema/engine state.
-3. Audit module/schema objects and agent tombstones for retained runtime
-   pointers. Preserve every current typed lease until the corresponding cold
-   value is demonstrably self-contained.
-4. Keep records and runtimes session-long, metrics per runtime, and child leases
-   retained until teardown throughout this seam.
+1. Replace per-runtime meter providers and periodic readers with one
+   session-owned metric pipeline while preserving each measurement's immutable
+   origin client ID through aggregation.
+2. Route metric exports to the origin record and its validated ancestor IDs
+   without creating one reader or retained runtime edge per destination.
+3. Keep metric collection and teardown behind the same producer-stop and final
+   session telemetry barrier, and update lifecycle diagnostics and focused
+   routing/provider-count tests.
+4. Keep records and runtimes session-long and retain every child and durable
+   lease throughout this seam.
 
-Stop after that seam. Do not infer child quiescence, migrate metrics, or reclaim
-runtimes yet. Once cold capabilities no longer depend accidentally on runtime
-identity, continue with session-owned metrics and finally quiescent runtime
-reclamation.
+Stop after that seam. Do not infer child quiescence or reclaim runtimes yet.
+Once metrics no longer depend on retained execution state, continue with
+quiescent runtime reclamation.
 
 ## Problem
 
@@ -408,10 +412,14 @@ reclamation.
    `clientRuntime` maps now back metadata, telemetry-route, attachable, and
    executable-scope lookups. Record-only paths do not require a runtime, while
    executable lookup requires both a retained runtime and a held scope.
-8. [ ] **Decouple cold capabilities.** Make workspace host access session-owned;
-   verify cached lazy callbacks either acquire a durable scope lease or capture a
-   self-contained capability. Audit module/schema objects and agent tombstones for
-   pointers back to the client runtime.
+8. [x] **Decouple cold capabilities.** Workspace host access uses immutable
+   owner metadata and a session-owned gateway rather than owner runtime lookup;
+   detached lazy, shared-call, and arbitrary-cache callbacks hold one explicit
+   shared-work lease and release their contexts at terminal transitions.
+   Module/schema memoization is capability-owned instead of process-global, and
+   agent tombstones replace detached resolver contexts with compact telemetry
+   contexts while visibly retaining a durable lease for non-self-contained
+   DagQL snapshots.
 9. [ ] **Move metrics to session ownership.** Preserve origin attribution through
    aggregation and routing so per-runtime meter providers and periodic readers no
    longer block runtime reclamation.
@@ -424,10 +432,10 @@ reclamation.
     memory leak and must not be coupled to runtime reclamation.
 
 The order matters. The completed telemetry and lease seams bound known retention
-and make ownership visible without guessing. Metadata must be sealed before a
-record/runtime split can safely make identity snapshots authoritative; cold
-capabilities and metrics must then be independent before zero leases can become a
-valid reclamation proof.
+and make ownership visible without guessing. Metadata sealing made identity
+snapshots authoritative, and cold capabilities no longer depend accidentally on
+runtime lookup. Metrics must now become session-owned before zero leases can
+become a valid reclamation proof.
 
 ## Verification
 
