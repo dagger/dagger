@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/spf13/cobra"
@@ -115,6 +116,19 @@ func TestSetupViewHidesKeymapDuringAuthentication(t *testing.T) {
 	if view.HideKeymap() {
 		t.Fatal("ordinary setup progress hid keymap")
 	}
+}
+
+func TestSetupUIRecordsOnlyCompletedInstalls(t *testing.T) {
+	view := &setupView{}
+	ui := &setupUI{view: view, handle: immediateViewHandle{}}
+	id := dagui.SpanID{}
+
+	ui.addInstall(id)
+	require.Equal(t, []dagui.SpanID{id}, view.installIDs)
+	require.Empty(t, view.installed)
+
+	ui.addInstalled("eslint")
+	require.Equal(t, []string{"eslint"}, view.installed)
 }
 
 type immediateViewHandle struct{}

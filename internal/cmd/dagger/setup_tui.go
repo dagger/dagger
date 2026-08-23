@@ -131,9 +131,14 @@ func (ui *setupUI) setRecommendMessage(message string) {
 	ui.update(func(view *setupView) { view.recommendMessage = message })
 }
 
-func (ui *setupUI) addInstall(id dagui.SpanID, name string) {
+func (ui *setupUI) addInstall(id dagui.SpanID) {
 	ui.update(func(view *setupView) {
 		view.installIDs = append(view.installIDs, id)
+	})
+}
+
+func (ui *setupUI) addInstalled(name string) {
+	ui.update(func(view *setupView) {
 		view.installed = append(view.installed, name)
 	})
 }

@@ -698,7 +698,7 @@ func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommen
 		err := func() (rerr error) {
 			installCtx, span := Tracer().Start(ctx, "dagger install "+r.Module.Repo,
 				telemetry.Reveal(), telemetry.Encapsulate())
-			ui.addInstall(dagui.SpanID{SpanID: span.SpanContext().SpanID()}, r.Module.Name)
+			ui.addInstall(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 			defer telemetry.EndWithCause(span, &rerr)
 
 			stdio := telemetry.SpanStdio(installCtx, InstrumentationLibrary)
@@ -708,6 +708,7 @@ func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommen
 		if err != nil {
 			return fmt.Errorf("install %s: %w", r.Module.Repo, err)
 		}
+		ui.addInstalled(r.Module.Name)
 	}
 	return nil
 }
