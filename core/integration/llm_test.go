@@ -335,6 +335,12 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 	// Mirrors GoProgrammer.drive's conversation (the first user message must
 	// match its withPrompt byte for byte): write main.go, then build it. Tool
 	// results are placeholders — the real tools run during replay.
+	// Give the workspace a fresh digest so the nested execs actually run. If
+	// they hit the shared cache, there is no live stdout for captureLogs to
+	// surface and the build result correctly collapses to "(done)".
+	source := fmt.Sprintf("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n\n// cache-buster: %s\n", identity.NewID())
+	writeArgs, err := json.Marshal(map[string]string{"content": source})
+	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
 			"Use the read, write, build tools to complete the following assignment.\n"+
@@ -345,7 +351,7 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Writing main.go."},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
-				Arguments: dagger.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
+				Arguments: dagger.JSON(writeArgs)},
 		}).
 		WithToolResult("call_1", "", false).
 		WithResponse([]dagger.LLMContentBlockInput{
