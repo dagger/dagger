@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,6 +53,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/archive"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -65,6 +67,11 @@ import (
 type daggerSession struct {
 	sessionID          string
 	mainClientCallerID string
+
+	archiveManifest   *archive.Manifest
+	archiveIncomplete atomic.Bool
+	archiveErrMu      sync.Mutex
+	archiveErr        error
 
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested
@@ -558,6 +565,34 @@ func (record *clientRecord) TelemetryDB(ctx context.Context) (*clientdb.DB, erro
 	return record.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, record.clientID)
 }
 
+func (sess *daggerSession) markArchiveIncomplete(err error) {
+	if sess.archiveManifest == nil || err == nil {
+		return
+	}
+	sess.archiveIncomplete.Store(true)
+	sess.archiveErrMu.Lock()
+	sess.archiveErr = errors.Join(sess.archiveErr, err)
+	sess.archiveErrMu.Unlock()
+}
+
+func (sess *daggerSession) archiveFailure() error {
+	sess.archiveErrMu.Lock()
+	defer sess.archiveErrMu.Unlock()
+	return sess.archiveErr
+}
+
+func (sess *daggerSession) validateArchiveTrace(traceID trace.TraceID, what string) error {
+	if sess.archiveManifest == nil || !traceID.IsValid() {
+		return nil
+	}
+	if traceID.String() == sess.archiveManifest.TraceID {
+		return nil
+	}
+	err := fmt.Errorf("%s has trace %s, want canonical archive trace %s", what, traceID, sess.archiveManifest.TraceID)
+	sess.markArchiveIncomplete(err)
+	return err
+}
+
 // slowDrainOp flags a shutdown-drain operation that ate a meaningful chunk of
 // the drain budget: the CLI allows 10s for the whole shutdown.
 const slowDrainOp = 2 * time.Second
@@ -733,6 +768,18 @@ func (srv *Server) initializeDaggerSession(
 	// construction (before the session is published) and are immutable /
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
+	if clientMetadata.ArchiveTelemetry {
+		manifest, err := srv.archives.Register(clientMetadata.ArchiveTraceID, clientMetadata.ClientID)
+		if err != nil {
+			return fmt.Errorf("register telemetry archive: %w", err)
+		}
+		sess.archiveManifest = &manifest
+		failureCleanups.Add("discard telemetry archive", func() error {
+			return srv.archives.Discard(manifest.TraceID, manifest.Generation)
+		})
+	} else if clientMetadata.ArchiveTraceID != "" {
+		return errors.New("archive trace ID requires archive telemetry opt-in")
+	}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -934,7 +981,16 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// delivery barrier for the session-owned providers.
 	srv.stampSessionComplete(ctx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
-	errs = errors.Join(errs, sess.shutdownTelemetry(ctx))
+	telemetryErr := sess.shutdownTelemetry(ctx)
+	errs = errors.Join(errs, telemetryErr)
+	if sess.archiveManifest != nil {
+		if telemetryErr != nil {
+			sess.markArchiveIncomplete(telemetryErr)
+		}
+		if err := srv.finalizeSessionArchive(ctx, sess); err != nil {
+			errs = errors.Join(errs, fmt.Errorf("finalize telemetry archive: %w", err))
+		}
+	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -1900,6 +1956,8 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		userConfigPath = md.UserConfigPath
 	}
 
+	clientMetadata.ArchiveTelemetry = false
+	clientMetadata.ArchiveTraceID = ""
 	clientMetadata.ExtraModules = extraModules
 	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
 	clientMetadata.SingleQuery = singleQuery
@@ -1968,8 +2026,16 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}).Debug("handling http request")
 
 	mux := http.NewServeMux()
-	switch r.URL.Path {
-	case "/v1/traces", "/v1/logs", "/v1/metrics":
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives"):
+		record, err := srv.archiveRequestRecord(clientMetadata.ClientID, clientMetadata.SessionID, clientMetadata.ClientSecretToken)
+		if err != nil {
+			return httpErr(err, http.StatusUnauthorized)
+		}
+		_ = record.daggerSession.validateArchiveTrace(trace.SpanContextFromContext(ctx).TraceID(), "archive API request")
+		r = r.WithContext(ctx)
+		return srv.serveArchiveHTTP(w, r, record)
+	case r.URL.Path == "/v1/traces" || r.URL.Path == "/v1/logs" || r.URL.Path == "/v1/metrics":
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
@@ -2027,6 +2093,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		}()
 
 		sess := client.daggerSession
+		_ = sess.validateArchiveTrace(trace.SpanContextFromContext(ctx).TraceID(), "telemetry-bearing request")
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 

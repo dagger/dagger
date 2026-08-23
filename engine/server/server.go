@@ -56,6 +56,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -165,6 +166,7 @@ type Server struct {
 	releasedSessionIDs map[string]struct{}
 	daggerSessionsMu   sync.RWMutex
 	clientDBs          *clientdb.DBs
+	archives           *archive.Manager
 
 	locker *locker.Locker
 
@@ -284,6 +286,15 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
+	srv.archives, err = archive.NewManager(archive.Config{
+		Root:        filepath.Join(srv.clientDBDir, "archives"),
+		TTL:         cfg.TelemetryArchives.TTL.Duration,
+		QuotaBytes:  cfg.TelemetryArchives.QuotaBytes,
+		RemoveStore: srv.clientDBs.Remove,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize telemetry archives: %w", err)
+	}
 	srv.telemetryPubSub = NewPubSub(srv)
 	srv.wcprofSpanCount = newWcprofSpanCounter()
 
@@ -1023,6 +1034,15 @@ func (srv *Server) Locker() *locker.Locker {
 
 func (srv *Server) gcClientDBs() {
 	for range time.NewTicker(time.Minute).C {
+		if srv.archives != nil {
+			overage, err := srv.archives.GC()
+			if err != nil {
+				slog.Error("failed to GC telemetry archives", "error", err)
+			}
+			if overage > 0 {
+				slog.Warn("telemetry archive quota exceeded by newest archive", "overageBytes", overage)
+			}
+		}
 		if err := srv.clientDBs.GC(srv.activeClientIDs()); err != nil {
 			slog.Error("failed to GC client DBs", "error", err)
 		}
@@ -1031,6 +1051,11 @@ func (srv *Server) gcClientDBs() {
 
 func (srv *Server) activeClientIDs() map[string]bool {
 	keep := map[string]bool{}
+	if srv.archives != nil {
+		for id := range srv.archives.KeepSet() {
+			keep[id] = true
+		}
+	}
 
 	// Snapshot session pointers under daggerSessionsMu, then per session read
 	// state atomically (lock-free) and the clients map under clientMu. No

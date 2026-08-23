@@ -173,6 +173,12 @@ type ClientMetadata struct {
 	// nested-client state and must not be forwarded through client headers.
 	UseRecipeIDsByDefault bool `json:"-"`
 
+	// ArchiveTelemetry opts the main client's session into bounded engine-side
+	// telemetry retention for agent resume. ArchiveTraceID is the immutable,
+	// canonical command trace identity for the single-trace archive.
+	ArchiveTelemetry bool   `json:"archive_telemetry,omitempty"`
+	ArchiveTraceID   string `json:"archive_trace_id,omitempty"`
+
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
