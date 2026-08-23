@@ -151,36 +151,51 @@ func TestExplicitChoiceHasOneTextualSelection(t *testing.T) {
 }
 
 func TestFormFieldsFlowWithVerticalKeys(t *testing.T) {
-	var selected []string
-	multi := NewFlowMultiSelect(
-		huh.NewMultiSelect[string]().
-			Options(
-				huh.NewOption("one", "one"),
-				huh.NewOption("two", "two"),
-			).
-			Value(&selected),
-		"two",
-	)
-	multi.WithKeyMap(huh.NewDefaultKeyMap())
-	multi.Focus()
-	if hovered, ok := multi.Hovered(); !ok || hovered != "one" {
-		t.Fatalf("unexpected initial option: %q, %v", hovered, ok)
+	downKeys := map[string]tea.KeyMsg{
+		"down":   {Type: tea.KeyDown},
+		"j":      {Type: tea.KeyRunes, Runes: []rune{'j'}},
+		"ctrl+n": {Type: tea.KeyCtrlN},
 	}
-	if _, cmd := multi.Update(tea.KeyMsg{Type: tea.KeyDown}); cmd != nil {
-		t.Fatal("down before the final option advanced to the next field")
-	}
-	if hovered, ok := multi.Hovered(); !ok || hovered != "two" {
-		t.Fatalf("down did not reach final option: %q, %v", hovered, ok)
-	}
-	if _, cmd := multi.Update(tea.KeyMsg{Type: tea.KeyDown}); cmd == nil {
-		t.Fatal("down on the final option did not advance to the next field")
+	for name, keyMsg := range downKeys {
+		t.Run(name, func(t *testing.T) {
+			var selected []string
+			multi := NewFlowMultiSelect(
+				huh.NewMultiSelect[string]().
+					Options(
+						huh.NewOption("one", "one"),
+						huh.NewOption("two", "two"),
+					).
+					Value(&selected),
+				"two",
+			)
+			multi.WithKeyMap(huh.NewDefaultKeyMap())
+			multi.Focus()
+			if _, cmd := multi.Update(keyMsg); cmd != nil {
+				t.Fatalf("%s before the final option advanced to the next field", name)
+			}
+			if hovered, ok := multi.Hovered(); !ok || hovered != "two" {
+				t.Fatalf("%s did not reach final option: %q, %v", name, hovered, ok)
+			}
+			if _, cmd := multi.Update(keyMsg); cmd == nil {
+				t.Fatalf("%s on the final option did not advance to the next field", name)
+			}
+		})
 	}
 
-	install := true
-	confirm := NewExplicitConfirm("Install selected", "Skip", &install)
-	confirm.Focus()
-	if _, cmd := confirm.Update(tea.KeyMsg{Type: tea.KeyUp}); cmd == nil {
-		t.Fatal("up from the confirmation did not return to the previous field")
+	upKeys := map[string]tea.KeyMsg{
+		"up":     {Type: tea.KeyUp},
+		"k":      {Type: tea.KeyRunes, Runes: []rune{'k'}},
+		"ctrl+p": {Type: tea.KeyCtrlP},
+	}
+	for name, keyMsg := range upKeys {
+		t.Run(name, func(t *testing.T) {
+			install := true
+			confirm := NewExplicitConfirm("Install selected", "Skip", &install)
+			confirm.Focus()
+			if _, cmd := confirm.Update(keyMsg); cmd == nil {
+				t.Fatalf("%s from the confirmation did not return to the previous field", name)
+			}
+		})
 	}
 }
 

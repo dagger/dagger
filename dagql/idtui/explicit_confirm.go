@@ -28,6 +28,7 @@ type ExplicitConfirm struct {
 	description string
 	theme       *huh.Theme
 	keymap      huh.ConfirmKeyMap
+	previous    key.Binding
 }
 
 var _ huh.Field = (*ExplicitConfirm)(nil)
@@ -39,6 +40,9 @@ func NewExplicitConfirm(affirmative, negative string, value *bool) *ExplicitConf
 		affirmative: affirmative,
 		negative:    negative,
 		keymap:      huh.NewDefaultKeyMap().Confirm,
+		previous: key.NewBinding(
+			key.WithKeys("up", "k", "ctrl+p"),
+		),
 	}
 	field.confirm.Affirmative(affirmative).Negative(negative)
 	return field
@@ -70,7 +74,7 @@ func (field *ExplicitConfirm) Inline(inline bool) *ExplicitConfirm {
 func (field *ExplicitConfirm) Init() tea.Cmd { return field.confirm.Init() }
 
 func (field *ExplicitConfirm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "up" {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && key.Matches(keyMsg, field.previous) {
 		return field, huh.PrevField
 	}
 	model, cmd := field.confirm.Update(msg)
