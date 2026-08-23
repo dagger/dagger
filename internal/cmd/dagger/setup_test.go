@@ -44,6 +44,16 @@ func TestSetupStepLogin(t *testing.T) {
 	}
 }
 
+func TestConfirmSetupLoginSkipsNonInteractiveAutoApply(t *testing.T) {
+	previousAutoApply := autoApply
+	autoApply = true
+	t.Cleanup(func() { autoApply = previousAutoApply })
+
+	choice, err := confirmSetupLoginInteractive(t.Context(), &cobra.Command{}, nil, false)
+	require.NoError(t, err)
+	require.Equal(t, setupLoginNotNow, choice)
+}
+
 func TestDisableSetupCloudLoginPrompt(t *testing.T) {
 	configFile := llmconfig.ConfigFile
 	llmconfig.ConfigFile = filepath.Join(t.TempDir(), "config.toml")

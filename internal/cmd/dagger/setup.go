@@ -55,9 +55,9 @@ repository root — never a nested one. A subdirectory config with a
 blueprint is left as legacy with a warning.
 
 Idempotent: safe to run anytime. No-ops what's already in good shape.
-Each step can be skipped at the prompt. With --auto-apply, all steps
-are applied without prompting. In non-interactive mode (no TTY) the
-default is to skip steps that would mutate state.`,
+Each step can be skipped at the prompt. With --auto-apply, workspace
+changes and module recommendations are applied without prompting. Cloud
+login is skipped in non-interactive mode; run dagger login separately.`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		showFinalProgressKey: "true",
@@ -313,6 +313,16 @@ const (
 )
 
 func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (setupLoginChoice, error) {
+	return confirmSetupLoginInteractive(ctx, cmd, ui, isatty.IsTerminal(os.Stdin.Fd()))
+}
+
+func confirmSetupLoginInteractive(ctx context.Context, cmd *cobra.Command, ui *setupUI, interactive bool) (setupLoginChoice, error) {
+	if !interactive {
+		if ui != nil {
+			ui.setLoginSkipped("Skipped in non-interactive mode; run `dagger login` to log in.")
+		}
+		return setupLoginNotNow, nil
+	}
 	if ui == nil || !ui.live {
 		if confirm(cmd, "  Log in to Dagger Cloud?") {
 			return setupLogin, nil
@@ -321,10 +331,6 @@ func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (se
 	}
 	if autoApply {
 		return setupLogin, nil
-	}
-	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		ui.setLoginSkipped("Skipped in non-interactive mode; use --auto-apply to accept.")
-		return setupLoginNotNow, nil
 	}
 	choice := setupLogin
 	form := huh.NewForm(huh.NewGroup(
