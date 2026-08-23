@@ -12,12 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The CLI half of `dagger agent --trace`
-// (hack/designs/resume-from-trace.md §5.3, §5.4). What is asserted here is
-// POLICY, against a fake target and a fake plan source, in the style of
-// session_agent_test.go: which flag combinations mean nothing, what order the
-// plan is executed in, which agent the prompt ends up pointed at, and what
-// happens to an entry the trace does not carry enough to restore.
+// The CLI policy for trace-backed `dagger agent --resume`: flag validation,
+// strict restore ordering, and focus selection against fake source/target seams.
 //
 // The engine round trips (rehydrate, attach) and the fetch have their own
 // coverage; none of them is reachable — or interesting — without an engine.
@@ -229,7 +225,6 @@ func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
 		src.plan[1].Err = errors.New(`agent "scout" (agent-scout) published a STOPPED record with no reason`)
 		err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
 		require.ErrorContains(t, err, "agent-scout")
-		require.ErrorContains(t, err, "--partial")
 		require.Empty(t, dst.calls, "a refused restore must not create anything")
 	})
 
@@ -241,35 +236,6 @@ func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
 		require.ErrorContains(t, err, "never reached this client")
 		require.Empty(t, dst.calls, "a refused restore must not create anything")
 	})
-}
-
-// TestRestorePartialSkipsExactlyTheUnrestorableOnes: --partial is the opt-in
-// to best-effort, and it skips precisely the entries that were refused —
-// which is what a plan that refused wholesale could not express.
-func TestRestorePartialSkipsExactlyTheUnrestorableOnes(t *testing.T) {
-	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-	delete(src.anchors, "xxh3:scout")
-	src.plan[2].Err = errors.New("published no snapshot digest")
-
-	req := restoreRequest()
-	req.partial = true
-	require.NoError(t, executeRestorePlan(context.Background(), src, dst, req))
-
-	require.Equal(t, []string{"rehydrate:agent-chief", "adopt:agent-chief", "focus:agent-chief"},
-		dst.calls, "--partial must skip the refused entries and restore the rest")
-}
-
-// TestRestoreFailsWhenNothingCanBeRestored: --partial degrades a restore, it
-// does not turn one into an empty session that looks like it worked.
-func TestRestoreFailsWhenNothingCanBeRestored(t *testing.T) {
-	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-	src.anchors = nil
-
-	req := restoreRequest()
-	req.partial = true
-	err := executeRestorePlan(context.Background(), src, dst, req)
-	require.ErrorContains(t, err, "no agent in trace")
-	require.Empty(t, dst.calls)
 }
 
 // TestRestoreFailsOnAnEmptyPlan: a trace with no agents in it — a CI run, a
@@ -332,23 +298,50 @@ func TestTraceFetchErrorsRemainStrict(t *testing.T) {
 	})
 }
 
-// TestAgentTraceFlagConflicts is §5.4's surface. Both refusals are about two
-// things claiming to say what the session is: a saved session and a trace are
-// two stores for one conversation, and a restored session's composition comes
-// from the trace rather than from the workspace.
-func TestAgentTraceFlagConflicts(t *testing.T) {
-	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
+func TestAgentResumeFlagValidation(t *testing.T) {
+	require.NoError(t, validateAgentResumeFlags(true, time.Second, true, true, nil))
+	require.NoError(t, validateAgentResumeFlags(false, 0, false, false, []string{"editor"}))
+	require.ErrorContains(t, validateAgentResumeFlags(false, 0, true, false, nil), "--resume-timeout")
+	require.ErrorContains(t, validateAgentResumeFlags(false, 0, false, true, nil), "--agent requires")
+	require.ErrorContains(t, validateAgentResumeFlags(true, -time.Second, true, false, nil), "cannot be negative")
 
-	require.NoError(t, validateAgentTraceFlags(traceID, time.Second, false, nil))
-	require.NoError(t, validateAgentTraceFlags("", 0, true, []string{"editor"}),
-		"the flags only conflict WITH --trace")
-	require.ErrorContains(t, validateAgentTraceFlags("", time.Second, false, nil), "requires --trace")
-	require.ErrorContains(t, validateAgentTraceFlags(traceID, -time.Second, false, nil), "cannot be negative")
-
-	err := validateAgentTraceFlags(traceID, 0, true, nil)
-	require.ErrorContains(t, err, "-r/--resume")
-
-	err = validateAgentTraceFlags(traceID, 0, false, []string{"editor", "dagger-go"})
+	err := validateAgentResumeFlags(true, 0, false, false, []string{"editor", "dagger-go"})
 	require.ErrorContains(t, err, "editor, dagger-go")
 	require.ErrorContains(t, err, "come from the trace")
+}
+
+func TestEngineArchivePickerUnavailableUntilClientIsWired(t *testing.T) {
+	_, err := (cloudTraceRestoreSource{}).Select(t.Context())
+	require.ErrorContains(t, err, "engine archive picker unavailable")
+	require.ErrorContains(t, err, "-r=<trace-id>")
+}
+
+func TestLLMSessionPristineGate(t *testing.T) {
+	session := new(LLMSession)
+	require.True(t, session.Pristine())
+	require.True(t, session.BeginRestore())
+	require.False(t, session.Pristine())
+	require.False(t, session.BeginRestore())
+
+	prompted := new(LLMSession)
+	prompted.beginPrompt()
+	require.False(t, prompted.Pristine())
+}
+
+func TestAgentResumeFlagSurface(t *testing.T) {
+	require.Nil(t, agentCmd.Flags().Lookup("trace"))
+	require.Nil(t, agentCmd.Flags().Lookup("partial"))
+	require.Nil(t, agentCmd.Flags().Lookup("trace-timeout"))
+	require.NotNil(t, agentCmd.Flags().Lookup("resume-timeout"))
+	resume := agentCmd.Flags().Lookup("resume")
+	require.NotNil(t, resume)
+	require.Equal(t, string(agentResumePicker), resume.NoOptDefVal)
+}
+
+func TestAgentResumeFlagOptionalValue(t *testing.T) {
+	var flag agentResumeFlag
+	require.NoError(t, flag.Set(string(agentResumePicker)))
+	require.Empty(t, flag.TraceID())
+	require.NoError(t, flag.Set("2f123ba77bf7bd2d4db2f70ed20613e8"))
+	require.Equal(t, "2f123ba77bf7bd2d4db2f70ed20613e8", flag.TraceID())
 }

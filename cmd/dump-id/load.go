@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,20 +11,9 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
-// sessionMeta mirrors the subset of internal/cmd/dagger.sessionMetadata that
-// matters here: the saved conversation's recipe-form LLM ID plus provenance.
-type sessionMeta struct {
-	Name      string `json:"name"`
-	Model     string `json:"model"`
-	CreatedAt string `json:"created_at"`
-	LLMID     string `json:"llm_id"`
-	Branch    string `json:"branch,omitempty"`
-}
-
 // source is a decoded recipe plus where it came from.
 type source struct {
 	label string
-	meta  *sessionMeta
 
 	encoded  string // base64 as stored
 	rawBytes int    // decoded protobuf byte count
@@ -35,9 +23,7 @@ type source struct {
 	graph *graph
 }
 
-// load reads a base64 ID from path (stdin if empty or "-"). If the content
-// looks like JSON it is treated as a saved session file and the llm_id field
-// is used.
+// load reads a base64 ID from path (stdin if empty or "-").
 func load(path string) (*source, error) {
 	var data []byte
 	var err error
@@ -55,17 +41,6 @@ func load(path string) (*source, error) {
 	src := &source{label: label}
 
 	str := strings.TrimSpace(string(data))
-	if strings.HasPrefix(str, "{") {
-		var meta sessionMeta
-		if err := json.Unmarshal([]byte(str), &meta); err != nil {
-			return nil, fmt.Errorf("%s: parse session JSON: %w", label, err)
-		}
-		if meta.LLMID == "" {
-			return nil, fmt.Errorf("%s: session JSON has no llm_id", label)
-		}
-		src.meta = &meta
-		str = strings.TrimSpace(meta.LLMID)
-	}
 	src.encoded = str
 
 	if raw, err := base64.StdEncoding.DecodeString(str); err == nil {

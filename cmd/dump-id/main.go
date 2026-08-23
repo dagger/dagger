@@ -9,8 +9,7 @@
 //	-find    every call whose (qualified) name matches a regexp
 //	-diff    structural diff against another recipe
 //
-// Input is a base64 ID on stdin, a file containing one, or a saved session
-// JSON file (the `llm_id` field is extracted automatically).
+// Input is a base64 ID on stdin or a file containing one.
 package main
 
 import (
@@ -26,17 +25,17 @@ import (
 
 func main() {
 	var (
-		sessionFlag string
-		jsonOut     bool
-		statsOut    bool
-		treeOut     bool
-		findPat     string
-		diffWith    string
-		maxLit      int
-		spineDepth  int
-		treeDepth   int
+		fileFlag   string
+		jsonOut    bool
+		statsOut   bool
+		treeOut    bool
+		findPat    string
+		diffWith   string
+		maxLit     int
+		spineDepth int
+		treeDepth  int
 	)
-	flag.StringVar(&sessionFlag, "session", "", "read the ID from this file; a saved-session JSON file's llm_id is extracted automatically ('-' = stdin)")
+	flag.StringVar(&fileFlag, "file", "", "read the ID from this file ('-' = stdin)")
 	flag.BoolVar(&jsonOut, "json", false, "emit the decoded callpbv1.DAG as structured JSON")
 	flag.BoolVar(&statsOut, "stats", false, "emit per-field counts, chain depth and expansion counts")
 	flag.BoolVar(&treeOut, "tree", false, "emit the receiver spine with ID-valued arguments expanded inline")
@@ -47,7 +46,7 @@ func main() {
 	flag.IntVar(&treeDepth, "depth", 0, "in -tree, only recurse this many levels into ID arguments (0 = unlimited)")
 	flag.Parse()
 
-	input := sessionFlag
+	input := fileFlag
 	if input == "" && flag.NArg() > 0 {
 		input = flag.Arg(0)
 	}

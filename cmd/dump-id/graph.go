@@ -333,11 +333,6 @@ func (g *graph) fieldStats() []fieldStat {
 
 func (g *graph) printStats(w io.Writer, src *source, o formatOpts) {
 	fmt.Fprintf(w, "== %s ==\n", src.label)
-	if src.meta != nil {
-		fmt.Fprintf(w, "session name:  %s\n", o.clip(src.meta.Name))
-		fmt.Fprintf(w, "session model: %s\n", src.meta.Model)
-		fmt.Fprintf(w, "session saved: %s\n", src.meta.CreatedAt)
-	}
 	fmt.Fprintf(w, "encoded:       %d base64 chars, %d protobuf bytes\n", len(src.encoded), src.rawBytes)
 	fmt.Fprintf(w, "root:          %s %s\n", g.qualName(g.root), g.typeOf(g.root))
 	fmt.Fprintf(w, "root digest:   %s\n", g.root)

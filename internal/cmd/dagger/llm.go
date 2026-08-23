@@ -3,17 +3,12 @@ package daggercmd
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
@@ -80,29 +75,26 @@ type LLMSession struct {
 	target *sessionAgent
 	mu     sync.Mutex
 
-	// onStep, if set, is invoked after every prompt turn (including an
-	// interrupted one). It is used to auto-save the session so it is
-	// preserved across interruptions.
-	onStep func(*sessionAgent)
-	// onStepL serializes onStep runs: stepped fires them on background
-	// goroutines (a save serializes the whole conversation, which for a long
-	// session takes far too long to spend inside the turn), and two saves
-	// interleaving on one file would corrupt it.
-	onStepL sync.Mutex
+	// agentWorkStarted is set before a prompt or restore can create a runtime.
+	// It gates .resume, which is valid only for a pristine interactive session.
+	agentWorkStarted bool
+
+	// onTitle is an independent, best-effort callback after a prompt turn. It
+	// is deliberately separate from persistence; title generation remains useful
+	// for the live TUI and retained archive after local autosave is removed.
+	onTitle func(*sessionAgent)
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
 
 	// primaryCtx carries the interactive command's root span. The generated
 	// title is emitted and applied there, while the model call that derives it
-	// stays beneath plumbingCtx. Title generation is attempted once per save
-	// identity; resetTitle starts a fresh identity after branch/resume.
-	primaryCtx      context.Context
-	title           string
-	titleAttempted  bool
-	titleGeneration uint64
-	titleL          sync.Mutex
-	titleGenerator  func(context.Context, *sessionAgent, string) (string, error)
+	// stays beneath plumbingCtx. Title generation is attempted once.
+	primaryCtx     context.Context
+	title          string
+	titleAttempted bool
+	titleL         sync.Mutex
+	titleGenerator func(context.Context, *sessionAgent, string) (string, error)
 
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
@@ -191,6 +183,31 @@ func (s *LLMSession) Target() *sessionAgent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.target
+}
+
+// Pristine reports whether the session has never prompted, spawned, or
+// restored an agent.
+func (s *LLMSession) Pristine() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.agentWorkStarted
+}
+
+// BeginRestore atomically reserves a pristine session for restore.
+func (s *LLMSession) BeginRestore() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.agentWorkStarted {
+		return false
+	}
+	s.agentWorkStarted = true
+	return true
+}
+
+func (s *LLMSession) beginPrompt() {
+	s.mu.Lock()
+	s.agentWorkStarted = true
+	s.mu.Unlock()
 }
 
 // SetTarget points the prompt at a conversation the session already holds.
@@ -340,29 +357,17 @@ func (s *LLMSession) InterruptTarget() bool {
 	return target.Interrupt()
 }
 
-// stepped notifies the session that a conversation reached a step boundary, so
-// it can auto-save. The save runs in the background: serializing a long
-// conversation's portable ID is the most expensive call in the client, and a
-// turn that paid for it synchronously kept the "working" indicator lit long
-// after the reply had landed. Saves serialize behind onStepL so concurrent
-// steps cannot interleave writes to the session file.
-func (s *LLMSession) stepped(a *sessionAgent) {
-	if s.onStep == nil {
+// generateTitle invokes the independent title callback after a prompt turn.
+// It runs in the background so the lightweight title model call never delays
+// returning control to the prompt.
+func (s *LLMSession) generateTitle(a *sessionAgent) {
+	if s.onTitle == nil {
 		return
 	}
-	a.stepWG.Add(1)
-	go func() {
-		defer a.stepWG.Done()
-		s.onStepL.Lock()
-		defer s.onStepL.Unlock()
-		s.onStep(a)
-	}()
+	go s.onTitle(a)
 }
 
-// ensureTitle derives and publishes the title for the current save identity.
-// It is called at the first completed turn, before that turn is auto-saved,
-// rather than from AutoSaveSession itself so later saves do not spend another
-// model call or emit duplicate title records.
+// ensureTitle derives and publishes the title for this interactive session.
 func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
 	if strings.TrimSpace(initialPrompt) == "" {
 		return ""
@@ -375,7 +380,6 @@ func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
 		return title
 	}
 	s.titleAttempted = true
-	generation := s.titleGeneration
 	s.titleL.Unlock()
 
 	ctx := s.plumbingCtx
@@ -405,29 +409,12 @@ func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
 		title = "Dagger agent session"
 	}
 
-	// A branch or resume may have reset the identity while the lightweight
-	// request was in flight. Do not let the old request rename the new session.
 	s.titleL.Lock()
-	if generation != s.titleGeneration {
-		title = s.title
-		s.titleL.Unlock()
-		return title
-	}
 	s.title = title
 	s.titleL.Unlock()
 
 	emitSessionTitle(s.primaryCtx, title)
 	return title
-}
-
-// resetTitle makes the next completed turn title a newly branched or resumed
-// save identity. An in-flight request from the old identity is discarded.
-func (s *LLMSession) resetTitle() {
-	s.titleL.Lock()
-	s.title = ""
-	s.titleAttempted = false
-	s.titleGeneration++
-	s.titleL.Unlock()
 }
 
 const maxSessionTitleRunes = 60
@@ -598,302 +585,4 @@ func trimConversationForSummary(text string, contextWindow int) string {
 	}
 	slices.Reverse(kept)
 	return notice + "\n\n" + strings.Join(kept, "\n\n")
-}
-
-// sessionMetadata stores metadata about a saved LLM session.
-type sessionMetadata struct {
-	Name      string `json:"name"`
-	Model     string `json:"model"`
-	CreatedAt string `json:"created_at"`
-	LLMID     string `json:"llm_id"`
-	Branch    string `json:"branch,omitempty"`
-
-	// WorkspaceBaselineID is the portable ID of an otherwise-empty LLM bound
-	// to the conversation's last-synced workspace. Workspace.id itself is an
-	// engine-local handle and Workspace has no portableID field, so the small
-	// LLM wrapper carries the workspace recipe across engine sessions.
-	WorkspaceBaselineID string `json:"workspace_baseline_id,omitempty"`
-}
-
-// getSessionDir returns the directory where LLM sessions are stored, creating
-// it if necessary.
-func getSessionDir() (string, error) {
-	stateHome := os.Getenv("XDG_STATE_HOME")
-	if stateHome == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		stateHome = filepath.Join(homeDir, ".local", "state")
-	}
-
-	sessionDir := filepath.Join(stateHome, "dagger", "llm-sessions")
-	if err := os.MkdirAll(sessionDir, 0700); err != nil {
-		return "", fmt.Errorf("failed to create session directory: %w", err)
-	}
-	// Sessions contain prompts and history-bearing LLM IDs; keep the
-	// directory private even if an older version created it more openly.
-	if err := os.Chmod(sessionDir, 0700); err != nil {
-		return "", fmt.Errorf("failed to restrict session directory permissions: %w", err)
-	}
-
-	return sessionDir, nil
-}
-
-// AutoSaveSession saves the conversation automatically under name, stored on
-// disk under a UUIDv7 filename for anonymity and time-sorted ordering. If
-// existingUUID is non-empty the same file is updated in-place; otherwise a new
-// UUIDv7 is generated. Returns the UUID used.
-//
-// NOTE: the save identity (name/sessionUUID) is still session-wide while this
-// saves ONE conversation, so with several conversations in a session the last
-// to step wins the file. Per-conversation save identity is the follow-up
-// (hack/designs/async-agents.md §5.1).
-func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existingUUID string) (string, error) {
-	if a.llm == nil {
-		return existingUUID, nil // nothing to save
-	}
-
-	sessionDir, err := getSessionDir()
-	if err != nil {
-		return existingUUID, err
-	}
-
-	// Persist the portable, self-contained (recipe-form) ID rather than the
-	// default runtime handle, which is an engine-local reference that cannot be
-	// resolved once this session's engine is gone.
-	llmID, err := a.llm.PortableID(ctx)
-	if err != nil {
-		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
-	}
-	a.session.shell.assignAgent(llmID)
-
-	// Workspace IDs are engine-local handles, so persist the baseline through a
-	// minimal portable LLM recipe that binds it. Best-effort for attached or
-	// trace-restored conversations whose snapshot may be unbound: the
-	// conversation remains saveable, and LoadSession safely falls back to its
-	// restored workspace when this field is absent.
-	var workspaceBaselineID string
-	if baseline := a.lastSynced(nil); baseline != nil {
-		portable, err := a.session.dag.LLM().WithWorkspace(baseline).PortableID(ctx)
-		if err != nil {
-			slog.Debug("could not persist workspace synchronization baseline", "error", err)
-		} else {
-			workspaceBaselineID = string(portable)
-		}
-	}
-
-	sessionID := existingUUID
-	if sessionID == "" {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return "", fmt.Errorf("failed to generate session UUID: %w", err)
-		}
-		sessionID = id.String()
-	}
-
-	metadata := sessionMetadata{
-		Name:                name,
-		Model:               a.model,
-		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
-		LLMID:               string(llmID),
-		WorkspaceBaselineID: workspaceBaselineID,
-	}
-
-	jsonData, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return sessionID, fmt.Errorf("failed to marshal session data: %w", err)
-	}
-
-	sessionFile := filepath.Join(sessionDir, sessionID+".json")
-	if err := os.WriteFile(sessionFile, jsonData, 0600); err != nil {
-		return sessionID, fmt.Errorf("failed to write session file: %w", err)
-	}
-	// WriteFile only applies the mode on creation; fix up files written more
-	// openly by an older version.
-	if err := os.Chmod(sessionFile, 0600); err != nil {
-		return sessionID, fmt.Errorf("failed to restrict session file permissions: %w", err)
-	}
-
-	slog.Debug("auto-saved LLM session", "id", sessionID, "name", name, "file", sessionFile)
-	return sessionID, nil
-}
-
-// LoadSession loads an LLM session from disk by UUID, replacing this
-// conversation. The message history is replayed for telemetry against
-// replayCtx (not ctx), so callers can surface the replayed conversation at the
-// conversation's top level rather than nested under the command span that
-// triggered the load. Pass ctx for replayCtx to replay in place.
-func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
-	sessionDir, err := getSessionDir()
-	if err != nil {
-		return err
-	}
-
-	sessionFile := filepath.Join(sessionDir, sessionID+".json")
-	data, err := os.ReadFile(sessionFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("session %q not found", sessionID)
-		}
-		return fmt.Errorf("failed to read session file: %w", err)
-	}
-
-	var metadata sessionMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return fmt.Errorf("failed to unmarshal session data: %w", err)
-	}
-
-	if metadata.LLMID == "" {
-		return fmt.Errorf("invalid session data: missing LLM ID")
-	}
-
-	loadedLLM := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.LLMID))
-	var baseline *dagger.Workspace
-	fallback := loadedLLM.Workspace()
-	if _, err := fallback.ID(ctx); err != nil {
-		slog.Debug("restored conversation has no workspace synchronization baseline", "error", err)
-	} else {
-		baseline = fallback
-	}
-	if metadata.WorkspaceBaselineID != "" {
-		// Workspace.id is not portable, so the metadata ID addresses the minimal
-		// LLM wrapper written by AutoSaveSession. Resolve its bound workspace now;
-		// if an old/corrupt save cannot rebuild it, retain the safe same-workspace
-		// fallback instead of failing resume or comparing unrelated host roots.
-		portable := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.WorkspaceBaselineID))
-		candidate := portable.Workspace()
-		if _, err := candidate.ID(ctx); err != nil {
-			slog.Debug("could not restore workspace synchronization baseline", "error", err)
-		} else {
-			baseline = candidate
-		}
-	}
-
-	// Replay the message history to emit telemetry spans so the TUI shows the
-	// conversation in its scrollback. Replay against replayCtx so the spans nest
-	// where the caller wants the conversation to appear (e.g. the top level for
-	// .resume) rather than under the triggering command span.
-	if _, err := loadedLLM.Replay(replayCtx); err != nil {
-		slog.Warn("failed to replay session history", "error", err)
-	}
-
-	// Restoring a session replays any un-flushed workspace edits as recorded
-	// patches; hunks that no longer fit the live files degrade to conflict
-	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
-	// describes a workspace that is now partially fiction, so tell it what
-	// needs resolving rather than letting it stumble over the markers.
-	if cue := conflictMarkerCue(ctx, loadedLLM, baseline); cue != "" {
-		loadedLLM = loadedLLM.WithSystemPrompt(cue)
-	}
-
-	// Restore the baseline together with the conversation so any asynchronous
-	// status refresh sees a consistent pair.
-	return a.updateSyncedLLM(loadedLLM, baseline)
-}
-
-// conflictMarkerCue reports whether restoring the session left conflict
-// markers in the workspace overlay, returning a system-prompt cue listing the
-// affected files, or "" when restoration was clean.
-//
-// Only files touched by the overlay can carry restore-time markers (they are
-// produced by replaying the recorded patches), so the search is scoped to the
-// overlay changeset's added and modified paths — which also makes this free
-// for sessions that flushed their changes before saving: the changeset is
-// empty and nothing is searched. Best-effort throughout; a failed check must
-// not block loading the session.
-func conflictMarkerCue(ctx context.Context, llm *dagger.LLM, before *dagger.Workspace) string {
-	if llm == nil || before == nil {
-		return ""
-	}
-	changes := llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: before})
-	added, err := changes.AddedPaths(ctx)
-	if err != nil {
-		slog.Debug("skipping conflict-marker check", "error", err)
-		return ""
-	}
-	modified, err := changes.ModifiedPaths(ctx)
-	if err != nil {
-		slog.Debug("skipping conflict-marker check", "error", err)
-		return ""
-	}
-	paths := slices.Concat(added, modified)
-	if len(paths) == 0 {
-		return ""
-	}
-	results, err := changes.After().Search(ctx, "<<<<<<< workspace", dagger.DirectorySearchOpts{
-		Literal:   true,
-		FilesOnly: true,
-		Paths:     paths,
-	})
-	if err != nil {
-		slog.Debug("skipping conflict-marker check", "error", err)
-		return ""
-	}
-	files := make([]string, 0, len(results))
-	seen := map[string]bool{}
-	for _, res := range results {
-		fp, err := res.FilePath(ctx)
-		if err != nil || seen[fp] {
-			continue
-		}
-		seen[fp] = true
-		files = append(files, fp)
-	}
-	if len(files) == 0 {
-		return ""
-	}
-	sort.Strings(files)
-	return fmt.Sprintf(
-		"While restoring this session, some of your earlier edits no longer applied cleanly to the "+
-			"workspace and were left as conflict markers (\"<<<<<<< workspace\" ... \">>>>>>> patch\") in: %s. "+
-			"The workspace content may differ from what the conversation above describes. "+
-			"Review these files and resolve the markers before continuing.",
-		strings.Join(files, ", "))
-}
-
-// ListSessions returns saved sessions sorted by creation time (newest first,
-// via UUIDv7 ordering). The returned metadata's LLMID field carries the file
-// UUID (for loading), not the full LLM ID.
-func ListSessions() ([]sessionMetadata, error) {
-	sessionDir, err := getSessionDir()
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read session directory: %w", err)
-	}
-
-	var sessions []sessionMetadata
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(sessionDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		var meta sessionMetadata
-		if err := json.Unmarshal(data, &meta); err != nil {
-			continue
-		}
-		sessionID := strings.TrimSuffix(entry.Name(), ".json")
-		sessions = append(sessions, sessionMetadata{
-			Name:      meta.Name,
-			Model:     meta.Model,
-			CreatedAt: meta.CreatedAt,
-			LLMID:     sessionID, // repurpose LLMID to carry the file UUID for listing
-			Branch:    meta.Branch,
-		})
-	}
-
-	// Reverse so newest (highest UUIDv7) is first.
-	slices.Reverse(sessions)
-
-	return sessions, nil
 }

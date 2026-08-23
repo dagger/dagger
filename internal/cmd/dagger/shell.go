@@ -192,13 +192,10 @@ type shellCallHandler struct {
 	mode      interpreterMode
 	savedMode interpreterMode // for coming back from history
 
-	// initialPrompt is the first prompt of the current session, used to name
-	// the auto-saved session file. sessionUUID is the file UUID being updated
-	// in-place; empty until the first save (or reset on branch/resume).
-	// promptL guards them (and llmModel) because prompt turns are no longer
-	// serialized: two focused-in-turn conversations can be stepping at once.
+	// initialPrompt is the first prompt of the interactive session and feeds
+	// title generation. promptL also guards llmModel because prompt turns are
+	// not serialized: two focused-in-turn conversations can step at once.
 	initialPrompt string
-	sessionUUID   string
 	promptL       sync.Mutex
 
 	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
@@ -215,14 +212,6 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
-
-	// cmdParentCtx is the context active just above the per-command span
-	// created in Handle. Builtins whose telemetry should surface as siblings of
-	// the command itself -- rather than nested under the command's own span --
-	// replay against this instead of the command ctx (e.g. .resume, whose
-	// replayed conversation belongs at the top level, not buried under the
-	// ".resume" span).
-	cmdParentCtx context.Context
 }
 
 // SubmitToTarget hands a submitted message to the FOCUSED conversation's
@@ -309,8 +298,7 @@ func (h *shellCallHandler) AgentStepped(instanceID string) {
 	s.AgentStepped(instanceID)
 }
 
-// notePrompt records the session's first prompt, which names the auto-saved
-// session file.
+// notePrompt records the session's first prompt for title generation.
 func (h *shellCallHandler) notePrompt(line string) {
 	h.promptL.Lock()
 	defer h.promptL.Unlock()
@@ -327,23 +315,10 @@ func (h *shellCallHandler) noteModel(model string) {
 	h.llmModel = model
 }
 
-// saveIdentity returns the current auto-save name and file UUID.
-func (h *shellCallHandler) saveIdentity() (initialPrompt, sessionUUID string) {
+func (h *shellCallHandler) sessionInitialPrompt() string {
 	h.promptL.Lock()
 	defer h.promptL.Unlock()
-	return h.initialPrompt, h.sessionUUID
-}
-
-// resetSaveIdentity forgets the current save file, so the next prompt starts a
-// fresh one (used after branching or resuming).
-func (h *shellCallHandler) resetSaveIdentity() {
-	h.promptL.Lock()
-	h.initialPrompt = ""
-	h.sessionUUID = ""
-	h.promptL.Unlock()
-	if h.generateSessionTitle && h.llmSession != nil {
-		h.llmSession.resetTitle()
-	}
+	return h.initialPrompt
 }
 
 // QueueMessage stores a message submitted while a non-prompt turn was running,
@@ -402,10 +377,7 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
 		}
-		// Branching creates a new session; clear the save identity so the next
-		// prompt generates a fresh save file rather than overwriting the
-		// original, and switch to prompt mode for a new prompt.
-		h.resetSaveIdentity()
+		// Continue the selected branch in prompt mode.
 		h.mode = modePrompt
 	}
 }
@@ -723,11 +695,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
 
-	// Remember the context above the per-command span so builtins that replay
-	// conversation telemetry (.resume) can surface it at this level rather than
-	// nested under their own command span.
-	h.cmdParentCtx = ctx
-
 	// Create a new span for this command
 	var span trace.Span
 	ctx, span = Tracer().Start(ctx, line,
@@ -943,26 +910,12 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 	h.llmSession = s
 	h.llmModel = s.Target().model
-	// Auto-save the session after each step (and after ctrl+s exports/resets the
-	// workspace), updating the same file in-place so a conversation maps to a
-	// single session file. Set here at init so it is available even before the
-	// first prompt (e.g. ctrl+s on a freshly loaded session).
-	s.onStep = func(a *sessionAgent) {
-		initialPrompt, sessionUUID := h.saveIdentity()
-		sessionName := initialPrompt
-		if h.generateSessionTitle {
-			if title := s.ensureTitle(a, initialPrompt); title != "" {
-				sessionName = title
-			}
+	// Keep title generation as an independent post-turn callback. It is set only
+	// for dagger agent, never for generic function-returned LLMs.
+	if h.generateSessionTitle {
+		s.onTitle = func(a *sessionAgent) {
+			s.ensureTitle(a, h.sessionInitialPrompt())
 		}
-		savedUUID, err := a.AutoSaveSession(ctx, sessionName, sessionUUID)
-		if err != nil {
-			slog.Warn("failed to auto-save session", "error", err)
-			return
-		}
-		h.promptL.Lock()
-		h.sessionUUID = savedUUID
-		h.promptL.Unlock()
 	}
 	return h.llmSession, h.llmErr
 }

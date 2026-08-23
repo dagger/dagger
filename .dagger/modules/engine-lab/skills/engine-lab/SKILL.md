@@ -33,9 +33,7 @@ Workflow:
   `start` needed), e.g. pkg "./core/integration" with run "TestSuite/TestSub".
 - `dumpId(file, ...)` builds and runs the repo's own `cmd/dump-id` against a
   file in your workspace — no engine session needed. `file` is a
-  workspace-relative path to a base64 call ID or a saved-session JSON file
-  (the `llm_id` field is extracted for you), so a `~/.config/dagger` save
-  copied into the tree can be inspected directly. Modes mirror the command's
+  workspace-relative path to a base64 call ID. Modes mirror the command's
   flags: `stats` (per-field counts, chain depth, expansion/re-execution
   counts — the mode for "why did this recipe run that call N times?"), `tree`,
   `json`, `find` (regexp over Type.field names), `diff` (structural diff

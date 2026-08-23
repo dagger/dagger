@@ -1082,23 +1082,12 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 // requests. Keeping title generation explicit prevents generic LLM-returning
 // functions from silently renaming their primary command span.
 type interactivePromptModeOpts struct {
-	sessionID            string
-	resume               bool
-	restore              traceRestore
+	restore              *traceRestore
 	generateSessionTitle bool
 }
 
 // startInteractivePromptModeWithResume is like startInteractivePromptMode but
-// optionally resumes a previously saved session before entering the interactive
-// loop. When resume is true and sessionID is empty, an interactive picker is
-// shown; when sessionID is non-empty, that session is resumed directly. The
-// resumed conversation replaces the composed LLM as the starting point.
-//
-// restore.traceID instead resumes from a published TRACE
-// (hack/designs/resume-from-trace.md): the whole trace is fetched into this
-// frontend's DB and every agent it published is re-hydrated, attached and
-// focused before the loop starts. The two are mutually exclusive
-// (validateAgentTraceFlags).
+// may restore every agent from a retained trace before entering the loop.
 func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Client, response any, opts interactivePromptModeOpts) error {
 	// Extract the LLM ID from the response
 	var llmID string
@@ -1138,25 +1127,10 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 		return err
 	}
 
-	// Optionally resume a previously saved session, replacing the composed LLM
-	// as the starting point. With no session id, present the interactive picker.
-	if opts.resume {
-		if opts.sessionID != "" {
-			if err := target.LoadSession(ctx, ctx, opts.sessionID); err != nil {
-				return err
-			}
-			handler.resetSaveIdentity()
-		} else if err := handler.resumeSessionInteractive(ctx); err != nil {
-			return err
-		}
-	}
-
-	// Or restore a whole past session from its published trace: its agents,
-	// their conversations and its scrollback, all before the loop starts —
-	// nothing may address a restored instance before every one of them
-	// exists (hack/designs/resume-from-trace.md §5.3).
-	if opts.restore.traceID != "" {
-		if err := restoreFromTrace(ctx, handler, opts.restore); err != nil {
+	// Restore through the same trace path used by pristine .resume. Every
+	// runtime must exist before any restored conversation is attached.
+	if opts.restore != nil {
+		if err := restoreFromTrace(ctx, handler, *opts.restore); err != nil {
 			return err
 		}
 	}

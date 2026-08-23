@@ -2,7 +2,6 @@ package daggercmd
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -185,9 +184,8 @@ func TestAgentDebugServerContextCancellation(t *testing.T) {
 }
 
 // TestAgentWorkspaceBaseline exercises a checkpoint-backed conversation end to
-// end: its Git state can be previewed, its portable synchronization checkpoint
-// survives save/restore, and explicit synchronization advances that checkpoint.
-// It also locks in compatibility with metadata written before the baseline field.
+// end: its Git state can be previewed and explicit synchronization advances
+// the checkpoint used by reset and clear.
 func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx.T) {
 	workdir := filepath.Join(t.TempDir(), "work")
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1",
@@ -310,63 +308,6 @@ func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx
 		require.Equal(t, "artifact.previewignored", changes.Uncommitted[0].Path)
 	})
 	session.frontend = nil
-
-	// Auto-save persists a second portable recipe for the baseline. Reload it
-	// through a different client to prove it is not an engine-local Workspace ID.
-	stateHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
-	sessionID, err := agent.AutoSaveSession(ctx, "baseline persistence", "")
-	require.NoError(t, err)
-	sessionDir, err := getSessionDir()
-	require.NoError(t, err)
-	sessionFile := filepath.Join(sessionDir, sessionID+".json")
-	data, err := os.ReadFile(sessionFile)
-	require.NoError(t, err)
-	var metadata sessionMetadata
-	require.NoError(t, json.Unmarshal(data, &metadata))
-	require.NotEmpty(t, metadata.WorkspaceBaselineID)
-
-	// The same portable conversation recipe is exposed to shell mode as an LLM
-	// object, so switching out of the prompt can continue from the saved agent.
-	agentToken := handler.shellEnv.Get(agentVar).String()
-	agentState, err := handler.state.Load(GetStateKey(agentToken))
-	require.NoError(t, err)
-	require.Len(t, agentState.Calls, 1)
-	require.Equal(t, "node", agentState.Calls[0].Name)
-	require.Equal(t, "LLM", agentState.Calls[0].ReturnObject)
-	require.Equal(t, metadata.LLMID, agentState.Calls[0].Arguments["id"])
-
-	dag2, err := dagger.Connect(ctx, dagger.WithWorkdir(workdir))
-	require.NoError(t, err)
-	t.Cleanup(func() { dag2.Close() })
-	session2 := &LLMSession{dag: dag2, plumbingCtx: ctx}
-	restored := session2.newAgent("restored")
-	session2.agents = []*sessionAgent{restored}
-	session2.target = restored
-	require.NoError(t, restored.LoadSession(ctx, ctx, sessionID))
-	added, err := restored.llm.Workspace().Changes(dagger.WorkspaceChangesOpts{
-		From: restored.lastSynced(nil),
-	}).AddedPaths(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"agent.txt"}, added,
-		"restored pending changes must still be measured from the saved checkpoint")
-
-	// Old metadata has no baseline. Resume conservatively compares the restored
-	// workspace with itself rather than guessing currentWorkspace and risking an
-	// unlike-host-root failure.
-	metadata.WorkspaceBaselineID = ""
-	data, err = json.MarshalIndent(metadata, "", "  ")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(sessionFile, data, 0o600))
-	legacy := session2.newAgent("legacy")
-	session2.agents = append(session2.agents, legacy)
-	session2.target = legacy
-	require.NoError(t, legacy.LoadSession(ctx, ctx, sessionID))
-	empty, err := legacy.llm.Workspace().Changes(dagger.WorkspaceChangesOpts{
-		From: legacy.lastSynced(nil),
-	}).IsEmpty(ctx)
-	require.NoError(t, err)
-	require.True(t, empty)
 
 	// Export and reset each install their fresh checkpoint as the new baseline.
 	// .clear reuses that latest checkpoint while retaining the starting toolset.

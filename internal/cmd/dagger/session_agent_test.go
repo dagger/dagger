@@ -268,7 +268,7 @@ func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
 	agent := session.newAgent("agent")
 
 	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "please fix the cache tests"))
-	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later autosave"))
+	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later turn"))
 	require.Equal(t, 1, calls)
 
 	primary.End()
@@ -290,7 +290,7 @@ func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
 	require.Equal(t, telemetryattrs.LogRoleSpanName, role)
 }
 
-func TestSessionTitleFallsBackAndResetsWithSaveIdentity(t *testing.T) {
+func TestSessionTitleFallsBackOnce(t *testing.T) {
 	calls := 0
 	session := &LLMSession{
 		primaryCtx: context.Background(),
@@ -306,10 +306,6 @@ func TestSessionTitleFallsBackAndResetsWithSaveIdentity(t *testing.T) {
 	require.Equal(t, "Investigate why the telemetry exporter sometimes deadlocks…", first)
 	require.Equal(t, first, session.ensureTitle(agent, "ignored"))
 	require.Equal(t, 1, calls)
-
-	session.resetTitle()
-	require.Equal(t, "Name the resumed session", session.ensureTitle(agent, "Name the resumed session"))
-	require.Equal(t, 2, calls)
 }
 
 func TestNormalizeSessionTitle(t *testing.T) {
@@ -320,7 +316,7 @@ func TestNormalizeSessionTitle(t *testing.T) {
 	}{
 		"empty":      {" \n ", ""},
 		"label":      {" TITLE: Add OTLP title emission. ", "Add OTLP title emission"},
-		"quotes":     {"`Repair agent autosaves`", "Repair agent autosaves"},
+		"quotes":     {"`Name agent sessions`", "Name agent sessions"},
 		"first line": {"Debug session restore\nThis is an explanation", "Debug session restore"},
 		"unicode":    {"Improve 🗡️ agent naming", "Improve 🗡️ agent naming"},
 	} {
@@ -490,19 +486,8 @@ func TestRewindWaitsForTheCanceledTurnAndPreservesFocus(t *testing.T) {
 	chief, scout := agents[0], agents[1]
 	chiefRT, scoutRT := runtimeOf(t, chief), runtimeOf(t, scout)
 
-	// Model WithPrompt's ordering: its save is scheduled before endTurn. Hold
-	// that save open so the test proves rewind drains it as well as the turn.
-	saveStarted := make(chan struct{})
-	saveRelease := make(chan struct{})
-	s.onStep = func(*sessionAgent) {
-		close(saveStarted)
-		<-saveRelease
-	}
-
 	var canceled error
 	chief.beginTurn(func(cause error) { canceled = cause })
-	s.stepped(chief)
-	<-saveStarted
 	done := make(chan error, 1)
 	go func() {
 		done <- chief.rewindRuntime(context.Background(), nil)
@@ -514,12 +499,6 @@ func TestRewindWaitsForTheCanceledTurnAndPreservesFocus(t *testing.T) {
 	require.Zero(t, chiefRT.reseedCount(), "reseed must wait for old turn cleanup")
 
 	chief.endTurn()
-	select {
-	case err := <-done:
-		t.Fatalf("rewind completed before the abandoned save drained: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	close(saveRelease)
 	require.NoError(t, <-done)
 	require.Equal(t, 1, chiefRT.reseedCount())
 	require.Same(t, chiefRT, chief.runtime(), "rewind preserves instance identity")

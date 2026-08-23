@@ -180,11 +180,6 @@ type sessionAgent struct {
 	refreshQueued   bool
 	refreshL        sync.Mutex
 
-	// stepWG tracks this conversation's asynchronous auto-saves. Rewind waits
-	// for the canceled turn's save before exposing the edit, otherwise that older
-	// save can finish after the reworded turn and overwrite its truncated history.
-	stepWG sync.WaitGroup
-
 	autoCompact  bool
 	autoCompactL sync.Mutex
 
@@ -197,9 +192,8 @@ type sessionAgent struct {
 
 	// lastSyncedWorkspace is the immutable workspace checkpoint this
 	// conversation last explicitly synchronized with the host. Explicit
-	// export/reset advances it, and reset/clear/session persistence reuse it.
-	// UI refreshes run asynchronously, so every access is guarded by
-	// lastSyncedWorkspaceL.
+	// export/reset advances it, and reset/clear reuse it. UI refreshes run
+	// asynchronously, so every access is guarded by lastSyncedWorkspaceL.
 	lastSyncedWorkspace  *dagger.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
 
@@ -671,11 +665,6 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) erro
 		}
 	}
 
-	// WithPrompt schedules its auto-save before endTurn closes done. Waiting
-	// here therefore drains every save from the abandoned branch before the
-	// replacement prompt is exposed and can produce a newer save.
-	a.stepWG.Wait()
-
 	if rt != nil {
 		if !owned {
 			// Rewind creates a local branch from an attached agent; replacing the
@@ -747,9 +736,9 @@ func (a *sessionAgent) syncFromAgent(rt agentRuntime) error {
 // Ctrl-C parked it), then await the message's reply. Mid-turn submissions
 // (Submit) and interrupts (Interrupt) act on that same runtime; when the turn
 // ends the conversation's LLM is re-rooted on the agent's committed snapshot
-// so history, /commands, and session saving keep operating on the honest
-// chain.
+// so history and /commands keep operating on the honest chain.
 func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
+	a.session.beginPrompt()
 	// The turn's context is this conversation's own, so an interrupt aimed at
 	// this agent stops this turn and no other. It is published before any of
 	// the work below: from here on the conversation is busy, so a message
@@ -843,8 +832,8 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	// In --debug, surface how much this turn grew the context.
 	a.reportContextUsage(ctx, a.llm)
 
-	// Auto-save so the session is preserved even across interrupted turns.
-	a.session.stepped(a)
+	// Generate the live/archive title independently of local persistence.
+	a.session.generateTitle(a)
 
 	return awaitErr
 }
@@ -1172,13 +1161,9 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 	// The exported edits now live on disk, so rebind a workspace freshly frozen
 	// from it: the overlay the agent accumulated is now redundant with the files
 	// themselves, and carrying it forward would re-diff already-saved content
-	// as pending changes. Rebinding also drops it from the next save —
-	// portableID emits only the current binding. The rebinding is another
-	// checkpoint rather than the live checkout so the conversation stays
-	// portable across the save: the agent keeps working against a frozen tree,
-	// and a restored trace does not reach for whatever is on the destination's
-	// disk. Sync eagerly so a failure surfaces here rather than corrupting
-	// later saves.
+	// as pending changes. The agent stays bound to a frozen tree so a restored
+	// trace does not reach for whatever is on the destination's disk. Sync
+	// eagerly so a failure surfaces here rather than in a later turn.
 	frozen, err := checkpointWorkspace(ctx, a.session.dag)
 	if err != nil {
 		return fmt.Errorf("freeze workspace after export: %w", err)
@@ -1190,7 +1175,6 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 	if err := a.updateSyncedLLM(rebound, frozen); err != nil {
 		return err
 	}
-	a.session.stepped(a)
 	return a.updateChangesPreview(a.llm)
 }
 
@@ -1221,7 +1205,6 @@ func (a *sessionAgent) ResetWorkspace(ctx context.Context) error {
 	if err := a.updateSyncedLLM(reset, frozen); err != nil {
 		return err
 	}
-	a.session.stepped(a)
 	return a.updateChangesPreview(a.llm)
 }
 

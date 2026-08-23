@@ -108,22 +108,19 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
+Resuming restores every agent from a retained trace under the same identity,
+with its committed conversation and lifecycle state. A bare -r opens the
+connected engine's archive picker; an attached trace ID selects one directly.
+Restoring a trace whose agents are still running forks them: the restored
+instances are new runtimes in this session, not a hand-off of the live ones.
+Messages that were enqueued but never consumed are not restored.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=&lt;session&gt;       # Resume a specific saved session
-  dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
+  dagger agent -r                 # Pick a retained agent trace to resume
+  dagger agent -r=&lt;trace-id&gt;      # Resume a specific trace
 
 
 ```
@@ -133,11 +130,15 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-      --agent string              With --trace, focus this restored agent (instance ID or name) instead of the top-level one
-  -l, --list                      List available agents
-      --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
-  -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
-      --trace string              Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
+      --agent string                               Focus this restored agent (instance ID or name) instead of the top-level one
+      --checkpoint-exclude stringArray             Exclude a workspace path pattern from the portable checkpoint (repeatable)
+      --checkpoint-include stringArray             Approve a workspace path pattern for the portable checkpoint (repeatable)
+      --checkpoint-max-untracked-file-bytes int    Maximum bytes for one untracked checkpoint file (default 16 MiB)
+      --checkpoint-max-untracked-files int         Maximum untracked checkpoint files (default 4096)
+      --checkpoint-max-untracked-total-bytes int   Maximum aggregate untracked checkpoint bytes (default 64 MiB)
+  -l, --list                                       List available agents
+  -r, --resume trace[=picker]                      Resume agents from a retained trace (engine archive picker if no trace ID is given)
+      --resume-timeout duration                    Resume from data received so far if a trace stream is idle for this duration
 ```
 
 ### Options inherited from parent commands

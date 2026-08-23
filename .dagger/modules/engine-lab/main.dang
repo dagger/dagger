@@ -23,8 +23,8 @@
 #   - `engineTest`: run engine tests via the engine-dev toolchain (spins its
 #     own ephemeral engine; independent of `start`).
 #   - `dumpId`: build and run the repo's own `cmd/dump-id` against a file in
-#     the workspace — recipe forensics on a saved session's `llm_id`, with no
-#     engine needed.
+#     the workspace — recipe forensics on a base64 call ID, with no engine
+#     needed.
 #
 # Engine log access deliberately has no tool here: the engine service's spans
 # are discoverable via ListServices, and ReadLogs(span: ..., grep: ...) reads
@@ -366,10 +366,9 @@ type EngineLab {
   Compile and run `./cmd/dump-id` from the workspace source: decode a dagql
   call ID (a "recipe") and report on it.
 
-  `file` is a workspace-relative path to a file holding a base64 call ID, or a
-  saved-session JSON file — the `llm_id` field is extracted automatically, so
-  a session save file can be passed straight in. Modes match the command's own
-  flags; with none, the human-readable idtui dump is printed.
+  `file` is a workspace-relative path to a file holding a base64 call ID. Modes
+  match the command's own flags; with none, the human-readable idtui dump is
+  printed.
 
   The binary is compiled from the CURRENT workspace on every call, so edits to
   cmd/dump-id take effect immediately. No engine session is needed.
@@ -377,8 +376,7 @@ type EngineLab {
   dumpId(
     source: Workspace!,
     """
-    Workspace-relative path to the input: a file containing a base64 call ID,
-    or a saved-session JSON file, e.g. "testdata/after.json".
+    Workspace-relative path to a file containing a base64 call ID.
     """
     file: String!,
     """
@@ -399,8 +397,7 @@ type EngineLab {
     """
     find: String! = "",
     """
-    Structurally diff the input recipe against the recipe in this file (also
-    workspace-relative, also session-JSON-aware).
+    Structurally diff the input recipe against the recipe in this file.
     """
     diff: String! = "",
     """

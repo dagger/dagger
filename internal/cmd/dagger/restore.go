@@ -19,9 +19,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// `dagger agent --trace <TRACE_ID>` — restoring a past session's agents, their
-// conversations and its whole TUI into the session in front of you
-// (hack/designs/resume-from-trace.md §5.3, §5.4).
+// Trace-backed agent resume restores a past session's agents, conversations,
+// lifecycle state, and TUI history into the new interactive session.
 //
 // Everything below the CLI is already built: internal/cloud fetches the trace,
 // engine/telemetry imports it into the live frontend's own exporters,
@@ -43,19 +42,32 @@ import (
 //  5. Then focus (§3.1c). No Replay: the imported spans ARE the scrollback
 //     (§5.1.4).
 
-// traceRestore is what `--trace` asks for.
+// traceRestore describes one resume request. An empty traceID asks the source
+// to select from its retained traces.
 type traceRestore struct {
-	// traceID is the Cloud trace to restore from.
 	traceID string
-	// timeout is the maximum interval a Cloud stream may deliver no bytes.
-	// When it elapses, restore proceeds best-effort from data already received.
 	timeout time.Duration
-	// agent names the conversation to focus, by instance ID or display name,
-	// overriding §3.1c's automatic choice.
-	agent string
-	// partial opts into a best-effort restore: entries the trace does not
-	// carry enough to restore are skipped instead of failing the command.
-	partial bool
+	agent   string
+	source  traceRestoreSource
+}
+
+// traceRestoreSource is the transport boundary for trace selection and import.
+// The engine archive client can implement this without coupling restore plan
+// execution to its wire protocol. Until that client is wired, explicit IDs use
+// the existing Cloud importer and picker selection fails clearly.
+type traceRestoreSource interface {
+	Select(context.Context) (string, error)
+	Import(context.Context, string, time.Duration) (bool, error)
+}
+
+type cloudTraceRestoreSource struct{}
+
+func (cloudTraceRestoreSource) Select(context.Context) (string, error) {
+	return "", errors.New("engine archive picker unavailable; resume an explicit trace with dagger agent -r=<trace-id>")
+}
+
+func (cloudTraceRestoreSource) Import(ctx context.Context, traceID string, timeout time.Duration) (bool, error) {
+	return fetchTraceForRestore(ctx, traceRestore{traceID: traceID, timeout: timeout}, fetchTraceIntoFrontend)
 }
 
 // agentRestoreSource is the frontend seam the plan is read through
@@ -82,26 +94,63 @@ type restoreTarget interface {
 
 // restoreFromTrace runs the whole of §5.3 against the live session.
 func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceRestore) (rerr error) {
-	// The plan and the anchor rebuilds are reads of the frontend's DB, which
-	// the frontend owns single-threaded (§5.1, "Reading the DB back"). A
-	// frontend with no span DB cannot restore at all, and says so rather than
-	// restoring nothing.
+	// Both startup resume and .resume enter here. The interactive command may
+	// resume only before any agent has been prompted, spawned, or restored.
+	if !handler.llmSession.Pristine() {
+		return errors.New("the interactive session has already started agent work; start a new session with dagger agent -r")
+	}
+
+	source := req.source
+	if source == nil {
+		source = cloudTraceRestoreSource{}
+	}
+	if req.traceID == "" {
+		traceID, err := source.Select(ctx)
+		if err != nil {
+			return err
+		}
+		if traceID == "" {
+			return nil // picker aborted
+		}
+		req.traceID = traceID
+	}
+
+	// The plan and anchor rebuilds are reads of the frontend's DB, which the
+	// frontend owns single-threaded. A frontend with no span DB cannot restore.
 	restorer, ok := Frontend.(idtui.AgentRestorer)
 	if !ok {
-		return fmt.Errorf("--trace needs a frontend that keeps the trace: %T cannot restore from one", Frontend)
+		return fmt.Errorf("--resume needs a frontend that keeps the trace: %T cannot restore from one", Frontend)
 	}
 
-	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
+	ctx, span := Tracer().Start(ctx, "resuming trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	if timedOut, err := fetchTraceForRestore(ctx, req, fetchTraceIntoFrontend); err != nil {
+	timedOut, err := source.Import(ctx, req.traceID, req.timeout)
+	if err != nil {
 		return err
-	} else if timedOut {
-		req.partial = true
+	}
+	if timedOut {
 		restoreNotice(ctx, fmt.Sprintf(
-			"trace streams were idle for %s; restoring from data received so far", req.timeout))
+			"trace streams were idle for %s; restoring strictly from data received so far", req.timeout))
 	}
 
+	// Every resume starts from a fresh unbound LLM. Restored snapshot recipes
+	// carry their original workspace and composition; the destination checkout
+	// must not become their reset base.
+	baseID, err := freshAgentBase(ctx, handler.dag)
+	if err != nil {
+		return err
+	}
+	base := dagger.Ref[*dagger.LLM](handler.dag, dagger.ID(baseID))
+	if err := handler.llmSession.Target().setInitialLLM(base); err != nil {
+		return err
+	}
+
+	// Import failures leave the session pristine. Once plan execution begins it
+	// may create runtimes, so reserve the session against another .resume first.
+	if !handler.llmSession.BeginRestore() {
+		return errors.New("the interactive session has already started agent work; start a new session with dagger agent -r")
+	}
 	target := &sessionRestore{
 		dag:     handler.dag,
 		session: handler.llmSession,
@@ -114,9 +163,9 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 // frontend or credentials.
 type traceFetcher func(context.Context, string, time.Duration) error
 
-// fetchTraceForRestore applies the opt-in best-effort policy. The configured
-// timeout is idle time, not total transfer time: a large trace may stream for
-// arbitrarily long as long as bytes keep arriving.
+// fetchTraceForRestore classifies an opted-in idle timeout separately from
+// transport failures. Plan execution remains strict over the records imported
+// before the stall. Idle time is not total transfer time.
 func fetchTraceForRestore(ctx context.Context, req traceRestore, fetch traceFetcher) (bool, error) {
 	err := fetch(ctx, req.traceID, req.timeout)
 	if err == nil {
@@ -180,34 +229,13 @@ func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restore
 	}
 
 	// Phase 1: resolve every anchor, refusing before anything is created.
-	//
-	// Both refusals are the same kind and are reported the same way: the
-	// projection's (a stop with no reason, no anchor at all — §5.2) and the
-	// rebuild's (a frame whose payload never reached this client — §9's first
-	// row). Neither degrades to a partial restore unless asked, because a
-	// missing worker is exactly the hole a later tool dispatch falls into,
-	// and that error would arrive minutes later with none of this context.
-	var (
-		restoring []restoredAgent
-		skipped   []string
-	)
+	restoring := make([]restoredAgent, 0, len(plan))
 	for _, entry := range plan {
 		snapshotID, err := resolveAnchor(src, entry)
 		if err != nil {
-			if !req.partial {
-				return fmt.Errorf("%w\n\npass --partial to restore the rest of the trace without it", err)
-			}
-			skipped = append(skipped, fmt.Sprintf("%s (%s): %v", entry.Name, entry.ID, err))
-			continue
+			return err
 		}
 		restoring = append(restoring, restoredAgent{entry: entry, snapshotID: snapshotID})
-	}
-	if len(restoring) == 0 {
-		return fmt.Errorf("no agent in trace %s could be restored:\n  %s",
-			req.traceID, strings.Join(skipped, "\n  "))
-	}
-	for _, skip := range skipped {
-		restoreNotice(ctx, "skipped unrestorable agent "+skip)
 	}
 
 	// Phase 2: re-hydrate everything, before anything can address any of it.
@@ -265,16 +293,11 @@ func selectFocus(restored []restoredAgent, want string) (restoredAgent, string, 
 	toplevel := slices.DeleteFunc(slices.Clone(restored), func(r restoredAgent) bool {
 		return r.entry.ParentAgentID != ""
 	})
-	notice := ""
 	if len(toplevel) == 0 {
-		// Only reachable under --partial, where the chief an entry names as
-		// its parent may be one of the skipped ones. Focus among what there
-		// is rather than refusing to focus at all.
-		toplevel = restored
-		notice = "no top-level agent was restored; focusing "
+		return restoredAgent{}, "", errors.New("restored trace has no top-level agent")
 	}
 	if len(toplevel) == 1 {
-		return toplevel[0], notice + focusLabel(toplevel[0]), nil
+		return toplevel[0], focusLabel(toplevel[0]), nil
 	}
 
 	// Most recently active, which is NOT the plan's order: the plan is
@@ -403,31 +426,29 @@ func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, ag
 	return r.session.Focus(ctx, entry.ID, entry.Name, agentID)
 }
 
-// validateAgentTraceFlags rejects the combinations §5.4 rules out, before any
-// engine work happens.
-func validateAgentTraceFlags(traceID string, timeout time.Duration, resume bool, args []string) error {
+// validateAgentResumeFlags rejects resume combinations that have no meaning
+// before any engine work begins.
+func validateAgentResumeFlags(
+	resume bool,
+	timeout time.Duration,
+	timeoutSet bool,
+	agentSet bool,
+	args []string,
+) error {
 	if timeout < 0 {
-		return errors.New("--trace-timeout cannot be negative")
+		return errors.New("--resume-timeout cannot be negative")
 	}
-	if traceID == "" {
-		if timeout > 0 {
-			return errors.New("--trace-timeout requires --trace")
+	if !resume {
+		if timeoutSet {
+			return errors.New("--resume-timeout requires -r/--resume")
+		}
+		if agentSet {
+			return errors.New("--agent requires -r/--resume")
 		}
 		return nil
 	}
-	if resume {
-		// Two stores, one conversation: a saved session and a trace both
-		// claim to say what the conversation is, and nothing decides between
-		// them. (The direction §5.4 sketches — the save file as a pointer AT
-		// a trace — makes this one flag later, not two.)
-		return errors.New("--trace cannot be combined with -r/--resume: " +
-			"a saved session and a trace are two stores for one conversation")
-	}
 	if len(args) > 0 {
-		// Composition comes from the trace: the restored agents are the ones
-		// the source session actually had, not the ones currentWorkspace
-		// offers today.
-		return fmt.Errorf("--trace cannot be combined with agent names (%s): "+
+		return fmt.Errorf("-r/--resume cannot be combined with agent names (%s): "+
 			"a restored session's agents come from the trace, not from the workspace",
 			strings.Join(args, ", "))
 	}
