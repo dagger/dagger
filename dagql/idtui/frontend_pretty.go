@@ -2797,7 +2797,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		// switch between. A single-agent roster remains a state display.
 		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
 			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("alt+1"), key.WithHelp("alt+1…9", "focus agent")),
+				key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
 				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
 					KeyEnabled(fe.lastFocusedAgent != "")),
 			)
@@ -4055,7 +4055,7 @@ func (fe *frontendPretty) focusedAgentID() string {
 }
 
 // focusAgentIndex moves focus to the nth roster entry (0-based), the
-// tmux-style numbered jump behind prompt mode's alt+<digit>. Reports whether
+// tmux-style numbered jump behind prompt mode's ctrl+<digit>. Reports whether
 // the key was handled.
 func (fe *frontendPretty) focusAgentIndex(n int) bool {
 	entries := fe.agentRosterEntries()
@@ -4106,7 +4106,7 @@ func (fe *frontendPretty) addressableAgentCount() int {
 	return n
 }
 
-// navFocusAgent is nav mode's numbered jump: prompt mode's alt+<digit> on the
+// navFocusAgent is nav mode's numbered jump: prompt mode's ctrl+<digit> on the
 // bare digit (0-based here). Reports whether the digit named a roster entry
 // at all -- a digit past the end of the strip names nothing, and nav mode
 // leaves it unclaimed rather than swallowing it.
@@ -5398,12 +5398,13 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		// boundary it bubbles the key to PromptFrame for history navigation.
 		return false
 	default:
-		// Roster focus: tmux's numbered jump targets and last-window toggle,
-		// aliased onto alt+ so the digits themselves keep typing. tab is
-		// unavailable (input-mode binding, and the completion menu eats it).
-		// alt+<digit> is widely stolen upstream, which is why nav mode binds
-		// the bare digits (and a [/] cycle) to the same jumps -- see
-		// handleNavKeyUV; these bindings stay for everyone they do reach.
+		// Roster focus: tmux's numbered jump targets, with Ctrl so the digits
+		// themselves keep typing, plus its last-window toggle. Tuist requests
+		// Kitty keyboard disambiguation, so capable terminals encode modified
+		// digits distinctly. Nav mode's bare digits remain the fallback for
+		// legacy terminals and terminal shortcuts that consume Ctrl+digits.
+		// Tab is unavailable (input-mode binding, and the completion menu eats
+		// it).
 		if n, ok := agentJumpKey(keyStr); ok {
 			if fe.focusAgentIndex(n) {
 				return true
@@ -5443,10 +5444,10 @@ func (fe *frontendPretty) handlePromptFrameKey(_ tuist.Context, ev uv.KeyPressEv
 // bare digits and [/] (see handleNavKeyUV).
 const agentLastKey = "alt+l"
 
-// agentJumpKey maps prompt mode's alt+1..alt+9 to a 0-based roster index.
+// agentJumpKey maps prompt mode's ctrl+1..ctrl+9 to a 0-based roster index.
 // Nav mode reaches the same jumps without the modifier.
 func agentJumpKey(keyStr string) (int, bool) {
-	rest, ok := strings.CutPrefix(keyStr, "alt+")
+	rest, ok := strings.CutPrefix(keyStr, "ctrl+")
 	if !ok || len(rest) != 1 || rest[0] < '1' || rest[0] > '9' {
 		return 0, false
 	}
@@ -5639,14 +5640,15 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		fe.enterInsertMode()
 		return
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		// Roster focus on bare digits. Prompt mode has to hide the same jump
-		// behind alt+ so the digits keep typing, and alt+<digit> is the most
-		// contested chord there is -- editors, browsers and terminal
-		// emulators all bind it to tab switching -- so for plenty of users
-		// the keypress never reaches us at all. Nav mode is a modal context
-		// where unmodified keys are the vocabulary, so it can offer the jump
-		// on a key nothing upstream can intercept (§5.1). The alt+ bindings
-		// stay: this adds a path that always works, it does not replace one.
+		// Roster focus on bare digits. Prompt mode hides the same jump behind
+		// Ctrl so the digits keep typing. Tuist requests the Kitty keyboard
+		// protocol's disambiguate mode, under which Ctrl+digits arrive as
+		// distinct CSI u sequences, but legacy terminals cannot represent every
+		// chord and terminal shortcuts can still consume them before they reach
+		// us. Nav mode is a modal context where unmodified keys are the
+		// vocabulary, so it can offer the jump on a key that always arrives
+		// (§5.1). The Ctrl bindings stay: this adds a universal fallback rather
+		// than replacing the prompt shortcut.
 		//
 		// Accepted cost: nav mode is otherwise vim-flavoured (hjkl, gg, G,
 		// /, n/N), and spending the digits here forecloses ever adding vim's
