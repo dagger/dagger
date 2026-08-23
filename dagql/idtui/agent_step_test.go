@@ -142,7 +142,7 @@ func TestInterjectHintClearsOnFocusSwitch(t *testing.T) {
 	fe.handleInputComplete()
 	require.Equal(t, "one more thing", fe.queuedMsgLabel.Message())
 
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}))
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
 	require.Empty(t, fe.queuedMsgLabel.Message())
 }
 

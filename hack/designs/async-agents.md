@@ -531,16 +531,17 @@ input-mode binding (frontend_pretty.go:2421,:4552) and the completion menu
 consumes it.
 
 All three keys are bound in **both input modes**. At the prompt they can only
-be modified ones — the digits themselves have to keep typing — and
-`alt+<digit>` is the most contested chord there is: editors, browsers and
-terminal emulators all spend it on tab switching, so for many users the
-keypress never arrives at all. Nav mode is a modal context where unmodified
-keys are the vocabulary, so it carries the same jumps on bare `1`…`9` and the
-last-focused toggle on `` ` `` (tmux's `l` is nav mode's expand); the `alt+`
-bindings stay for everyone they do reach, since this adds a path that always
-works rather than replacing one. It also settles a live false affordance: the
-strip already printed `1:chief* 2:scout` in nav mode, where those numbers did
-nothing at all.
+be modified ones — the digits themselves have to keep typing. Numbered jumps
+use `ctrl+1`…`ctrl+9`; tuist enables the Kitty keyboard protocol's
+disambiguate mode, under which supporting terminals send these as distinct
+`CSI u` sequences. Legacy terminal input cannot represent every Ctrl+digit,
+and terminal shortcuts may still consume them before they reach the TUI. Nav
+mode is a modal context where unmodified keys are the vocabulary, so it
+carries the same jumps on bare `1`…`9` and the last-focused toggle on `` ` ``
+(tmux's `l` is nav mode's expand). The prompt bindings stay for everyone they
+do reach, since this adds a path that always works rather than replacing one.
+It also settles a live false affordance: the strip already printed
+`1:chief* 2:scout` in nav mode, where those numbers did nothing at all.
 
 Nav mode additionally binds the `[`/`]` cycle the paragraph above renounced.
 That renunciation stands as far as it went — the toggle, not the cycle,
@@ -1101,12 +1102,13 @@ What is BUILT (see also §8 for ratified semantics):
   `Target()`. Ownership is one flag, read where a handle leaves a
   conversation, so `dropAgent` stops only what the session spawned and
   clearing an attached conversation can never kill somebody else's worker.
-  Frontend half in `dagql/idtui/frontend_pretty.go`: `alt+1…9` jump to a
+  Frontend half in `dagql/idtui/frontend_pretty.go`: `ctrl+1…9` jump to a
   roster entry and `alt+l` toggles back to the last (tmux's idioms), with
   nav mode carrying both on unmodified keys — `1`…`9` and `` ` `` — plus a
-  `[`/`]` cycle, since `alt+<digit>` is routinely eaten upstream. The keys
-  split by verb: naming an agent returns to the prompt, the cycle stays in
-  nav mode so it can be tapped. Focus is believed on the keypress and
+  `[`/`]` cycle, since modified digits require an enhanced keyboard protocol
+  or terminal-specific encoding. The keys split by verb: naming an agent
+  returns to the prompt, the cycle stays in nav mode so it can be tapped.
+  Focus is believed on the keypress and
   confirmed after (`pendingFocusAgent`), which is what the strip's `*`
   marker and the cycle's next step both read — the handler's target is only
   re-pointed on the shell goroutine, so counting from it would step from
