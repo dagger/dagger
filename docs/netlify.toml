@@ -366,11 +366,6 @@
   status = 301
 
 [[redirects]]
-  from = "/install"
-  to = "/getting-started/installation"
-  status = 301
-
-[[redirects]]
   from = "/quickstart"
   to = "/getting-started/quickstarts/basics"
   status = 301
@@ -1333,6 +1328,12 @@
 [[redirects]]
   from = "/reference/container-runtimes/openshift"
   to = "/reference/deployment/openshift"
+  status = 301
+
+# The installation page moved to /install.
+[[redirects]]
+  from = "/getting-started/installation"
+  to = "/install"
   status = 301
 
 ## start: disabled 1.0 redirects ##
