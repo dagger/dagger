@@ -73,5 +73,3 @@ dagger workspace config -g modules.aws.settings.profile alice-dev
 ```
 
 `--global` chooses where a write is stored; reads always show the effective merged view. Only module settings can be stored user-level (`modules.<name>.settings.*`, optionally under `env.<name>.*`), and a user-level entry for a module that doesn't exist in some checkout is simply ignored there — the same key spans every branch and clone of the repository.
-
-See [Workspace configuration](../reference/configuration/workspace.mdx#user-level-configuration) for the full schema and key-normalization rules.

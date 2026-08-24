@@ -203,31 +203,5 @@ module.exports = {
         "api/reference/all",
       ],
     },
-
-    // ========================================
-    // REFERENCE
-    // ========================================
-    {
-      type: "category",
-      label: "Reference",
-      link: {
-        type: "doc",
-        id: "reference/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "reference/configuration/workspace",
-        "reference/configuration/modules",
-        "reference/configuration/engine",
-        "reference/configuration/cloud",
-        "reference/configuration/cache",
-        "reference/configuration/llm",
-        "reference/configuration/custom-runner",
-        "reference/configuration/custom-ca",
-        "reference/configuration/proxy",
-        "reference/upgrade-to-workspaces",
-      ],
-    },
   ],
 };
