@@ -20,7 +20,7 @@ function typeSlug(name: string): string {
 }
 
 function apiTypeSidebarItem(name: string) {
-  const id = `extending/types/${typeSlug(name)}`;
+  const id = `api/reference/${typeSlug(name)}`;
   const label = promotedApiTypeLabels[name];
   return label ? { type: "doc", id, label } : id;
 }
@@ -188,24 +188,31 @@ module.exports = {
             "extending/sdks/python",
           ],
         },
+      ],
+    },
+
+    // ========================================
+    // API
+    // ========================================
+    {
+      type: "category",
+      label: "API",
+      link: {
+        type: "doc",
+        id: "api/reference/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        ...promotedApiTypeItems,
         {
           type: "category",
-          label: "Types Reference",
+          label: "Other types",
           collapsible: true,
           collapsed: true,
-          items: [
-            "extending/types/index",
-            ...promotedApiTypeItems,
-            {
-              type: "category",
-              label: "Other types",
-              collapsible: true,
-              collapsed: true,
-              items: otherApiTypeItems,
-            },
-            "extending/types/all",
-          ],
+          items: otherApiTypeItems,
         },
+        "api/reference/all",
       ],
     },
 

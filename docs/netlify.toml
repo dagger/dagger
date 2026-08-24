@@ -1922,6 +1922,17 @@
 #   to = "/cli/:splat"
 #   status = 301
 #
+# TODO: /extending/types moved to /api/reference.
+# [[redirects]]
+#   from = "/extending/types/*"
+#   to = "/api/reference/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/types"
+#   to = "/api/reference"
+#   status = 301
+#
 # TODO: /reference/cli moved to /cli/reference.
 # [[redirects]]
 #   from = "/reference/cli/*"
