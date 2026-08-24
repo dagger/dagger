@@ -132,11 +132,11 @@ module.exports = {
     },
 
     // ========================================
-    // SETUP GUIDES
+    // MODULES
     // ========================================
     {
       type: "category",
-      label: "Setup Guides",
+      label: "Modules",
       link: {
         type: "doc",
         id: "modules/index",
