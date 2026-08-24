@@ -75,7 +75,7 @@ dagger call playwright --app=docusaurus:serve test
 dagger settings playwright app docusaurus:serve
 ```
 
-(The string form is why `dagger settings` can now express these references at all; the earlier table form could not be set from the command line.) See [Running Services](../../using-dagger/services.mdx) for a worked example.
+(The string form is why `dagger settings` can now express these references at all; the earlier table form could not be set from the command line.) See [Running Services](../../cli/services.mdx) for a worked example.
 
 ### Skipping functions for a verb
 
@@ -90,7 +90,7 @@ The same applies to `[modules.<name>.generate]` and `[modules.<name>.up]`.
 
 ## Environments
 
-An [environment](../../using-dagger/environments.mdx) is a named overlay applied with the global `--env` flag. Overrides are stored under `[env.<name>...]` and layered on top of the base configuration:
+An [environment](../../cli/environments.mdx) is a named overlay applied with the global `--env` flag. Overrides are stored under `[env.<name>...]` and layered on top of the base configuration:
 
 ```toml
 [env.staging.modules.eslint.settings]

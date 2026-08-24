@@ -100,21 +100,21 @@ module.exports = {
     },
 
     // ========================================
-    // USING DAGGER
+    // CLI
     // ========================================
     {
       type: "category",
-      label: "Using Dagger",
+      label: "CLI",
       collapsible: true,
       collapsed: false,
       items: [
-        "using-dagger/checking",
-        "using-dagger/generating",
-        "using-dagger/changesets",
-        "using-dagger/services",
-        "using-dagger/module-wiring",
-        "using-dagger/calling-functions",
-        "using-dagger/environments",
+        "cli/checking",
+        "cli/generating",
+        "cli/changesets",
+        "cli/services",
+        "cli/module-wiring",
+        "cli/calling-functions",
+        "cli/environments",
       ],
     },
 

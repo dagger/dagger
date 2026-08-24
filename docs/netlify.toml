@@ -1916,6 +1916,12 @@
 #   to = "/extending/how-dagger-works/functions"
 #   status = 301
 #
+# TODO: /using-dagger was renamed to /cli.
+# [[redirects]]
+#   from = "/using-dagger/*"
+#   to = "/cli/:splat"
+#   status = 301
+#
 # [[redirects]]
 #   from = "/adopting/ci-integration"
 #   to = "/adopting/triggers"

@@ -129,7 +129,7 @@ format(source: Directory) -> string   # writes formatted files to disk, returns 
 format(source: Directory) -> Changeset
 ```
 
-**What improved.** The change becomes a reviewable, composable value. The caller can inspect the diff, apply it, open a pull request, or hand it to another function — the module proposes the edit instead of performing it. The effect is explicit in the signature: a function that returns a `Changeset` clearly edits source, while one that returns a `File` clearly produces an artifact. See [Changesets](../../using-dagger/changesets.mdx).
+**What improved.** The change becomes a reviewable, composable value. The caller can inspect the diff, apply it, open a pull request, or hand it to another function — the module proposes the edit instead of performing it. The effect is explicit in the signature: a function that returns a `Changeset` clearly edits source, while one that returns a `File` clearly produces an artifact. See [Changesets](../../cli/changesets.mdx).
 
 ## Maintainer review checklist
 
