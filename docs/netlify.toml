@@ -1325,6 +1325,25 @@
   to = "/reference/deployment/openshift"
   status = 301
 
+# The landing page moved into the Getting Started section. Not forced: while the
+# 1.0 beta snapshot still serves a page at /, the file shadows this rule; it
+# starts applying once the default version has no page there.
+[[redirects]]
+  from = "/"
+  to = "/getting-started/introduction"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started"
+  to = "/getting-started/introduction"
+  status = 301
+
+# The unreleased docs at /next have no page at their root either.
+[[redirects]]
+  from = "/next"
+  to = "/next/getting-started/introduction"
+  status = 301
+
 # The quickstart and workspace setup pages moved under /getting-started.
 [[redirects]]
   from = "/quickstart"

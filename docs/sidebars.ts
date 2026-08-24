@@ -39,11 +39,6 @@ const otherApiTypeItems = allApiTypes
 module.exports = {
   current: [
     // ========================================
-    // OVERVIEW
-    // ========================================
-    "index",
-
-    // ========================================
     // GETTING STARTED
     // ========================================
     {
@@ -52,6 +47,7 @@ module.exports = {
       collapsible: true,
       collapsed: false,
       items: [
+        "getting-started/introduction",
         "getting-started/quickstart",
         "getting-started/workspace-setup",
       ],
