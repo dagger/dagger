@@ -1,3 +1,28 @@
+## HOW THIS FILE IS ORGANISED
+##
+## Redirects are global: the file has no notion of docs versions, and Netlify
+## applies the FIRST matching rule, so order is the only thing that governs
+## behaviour. Two invariants:
+##
+##   1. Specific rules before wildcards; the /* fallback stays last.
+##   2. Unforced rules are shadowed by real files. A rule for a path the site
+##      still serves is inert until that path stops existing -- which is what
+##      lets a restructure be written before it ships.
+##
+## New rules go in an append-only "migration" block named for the namespace
+## upgrade that caused them (see "migration 0.21 -> 1.0" below). Each block is
+## written once and never edited afterwards: when a later restructure moves a
+## target again, add a new block and let the browser chain the hops, rather
+## than rewriting history. Watch for two things when appending -- a rename that
+## reverts an earlier one creates a redirect loop, and a wildcard inside a
+## migration block will swallow paths later blocks want.
+##
+## The pre-1.0 sections below are still flattened, each rule pointing straight at
+## what was then the current layout (some targets are now stale as a result).
+## Reorganising them into migration blocks is a follow-up: group by the release
+## whose namespace changed, keep each group internally ordered as it is today,
+## and move every wildcard out to the wildcard section at the end.
+
 [build]
   command = "yarn run docusaurus build"
 
@@ -1325,6 +1350,22 @@
   to = "/reference/deployment/openshift"
   status = 301
 
+## start: migration 0.21 -> 1.0 ##
+##
+## Rules for the 1.0 docs restructure. Written once, in the terms of the change
+## they describe -- do NOT rewrite them when a later restructure moves the
+## target again; append a new migration block instead and let the hops chain.
+##
+## Most rules here are dormant: their source path is still served by the 1.0
+## beta snapshot at /, and an unforced rule is shadowed by a real file. They
+## start applying on their own once the default version stops serving that path.
+## That is why none of them are forced -- force = true would hijack a live page.
+##
+## The commented-out rules at the end are parked: their targets need validating
+## against the 1.0 build first (same reason as the disabled block below). They
+## can be uncommented as-is; shadowing keeps them inert until they are needed.
+##
+
 # The landing page moved into the Getting Started section. Not forced: while the
 # 1.0 beta snapshot still serves a page at /, the file shadows this rule; it
 # starts applying once the default version has no page there.
@@ -1365,6 +1406,50 @@
   from = "/install"
   to = "/cli/install"
   status = 301
+
+# TODO: /using-dagger was renamed to /cli.
+# [[redirects]]
+#   from = "/using-dagger/*"
+#   to = "/cli/:splat"
+#   status = 301
+#
+# TODO: the /reference section was removed; see docs/TODO.md for where its
+# pages should land. The disabled rules below still point at /reference/*.
+#
+# TODO: /extending/sdks moved to /sdks; the rest of /extending was cut.
+# [[redirects]]
+#   from = "/extending/sdks/*"
+#   to = "/sdks/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending"
+#   to = "/sdks"
+#   status = 301
+#
+# TODO: /extending/types moved to /api/reference.
+# [[redirects]]
+#   from = "/extending/types/*"
+#   to = "/api/reference/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/types"
+#   to = "/api/reference"
+#   status = 301
+#
+# TODO: /reference/cli moved to /cli/reference.
+# [[redirects]]
+#   from = "/reference/cli/*"
+#   to = "/cli/reference/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/cli"
+#   to = "/cli/reference"
+#   status = 301
+#
+## end: migration 0.21 -> 1.0 ##
 
 ## start: disabled 1.0 redirects ##
 ##
@@ -1945,48 +2030,6 @@
 # [[redirects]]
 #   from = "/using-dagger/shipping"
 #   to = "/extending/how-dagger-works/functions"
-#   status = 301
-#
-# TODO: /using-dagger was renamed to /cli.
-# [[redirects]]
-#   from = "/using-dagger/*"
-#   to = "/cli/:splat"
-#   status = 301
-#
-# TODO: the /reference section was removed; see docs/TODO.md for where its
-# pages should land. The disabled rules below still point at /reference/*.
-#
-# TODO: /extending/sdks moved to /sdks; the rest of /extending was cut.
-# [[redirects]]
-#   from = "/extending/sdks/*"
-#   to = "/sdks/:splat"
-#   status = 301
-#
-# [[redirects]]
-#   from = "/extending"
-#   to = "/sdks"
-#   status = 301
-#
-# TODO: /extending/types moved to /api/reference.
-# [[redirects]]
-#   from = "/extending/types/*"
-#   to = "/api/reference/:splat"
-#   status = 301
-#
-# [[redirects]]
-#   from = "/extending/types"
-#   to = "/api/reference"
-#   status = 301
-#
-# TODO: /reference/cli moved to /cli/reference.
-# [[redirects]]
-#   from = "/reference/cli/*"
-#   to = "/cli/reference/:splat"
-#   status = 301
-#
-# [[redirects]]
-#   from = "/reference/cli"
-#   to = "/cli/reference"
 #   status = 301
 #
 # [[redirects]]
