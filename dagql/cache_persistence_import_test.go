@@ -14,6 +14,7 @@ import (
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
@@ -643,4 +644,429 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	assert.Assert(t, !resB.HitCache())
 	assert.Equal(t, 51, cacheTestUnwrapInt(t, resB))
 	cacheTestReleaseSession(t, cB, ctx)
+}
+
+// persistRetryDecodeObj is a persistable object whose decode and owner-lease
+// links are test-controlled: persistRetryDecodeHooks may block or fail a
+// specific result's decode, and persistRetryDecodeSnapshotID names the
+// snapshot ref the object reports, so flipping it between persist and reload
+// forces the decode-time lease sync to do real remove/attach work.
+type persistRetryDecodeObj struct {
+	Name string
+}
+
+type persistedPersistRetryDecodeObj struct {
+	Name string `json:"name"`
+}
+
+// map[uint64]func(context.Context) error, keyed by result ID; a non-nil
+// error fails the decode.
+var persistRetryDecodeHooks sync.Map
+
+var persistRetryDecodeSnapshotID atomic.Value // string; "" means no link
+
+func (*persistRetryDecodeObj) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "PersistRetryDecodeObj",
+		NonNull:   true,
+	}
+}
+
+func (obj *persistRetryDecodeObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	payload, err := json.Marshal(persistedPersistRetryDecodeObj{Name: obj.Name})
+	if err != nil {
+		return PersistedObjectEncoding{}, err
+	}
+	return PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: obj.PersistedSnapshotRefLinks(),
+	}, nil
+}
+
+func (*persistRetryDecodeObj) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
+	snapshotID, _ := persistRetryDecodeSnapshotID.Load().(string)
+	if snapshotID == "" {
+		return nil
+	}
+	return []PersistedSnapshotRefLink{{
+		RefKey: snapshotID,
+		Role:   "snapshot",
+	}}
+}
+
+func (*persistRetryDecodeObj) DecodePersistedObject(ctx context.Context, dag *Server, resultID uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
+	_ = dag
+	var persisted persistedPersistRetryDecodeObj
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, err
+	}
+	if hookAny, ok := persistRetryDecodeHooks.Load(resultID); ok {
+		if err := hookAny.(func(context.Context) error)(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return &persistRetryDecodeObj{Name: persisted.Name}, nil
+}
+
+func newPersistRetryDecodeTestServer() *Server {
+	srv, err := NewServer(context.Background(), &persistCodecRoot{})
+	if err != nil {
+		panic(err)
+	}
+	srv.InstallObject(NewClass(srv, ClassOpts[*persistRetryDecodeObj]{}))
+	Fields[*persistCodecRoot]{
+		NodeFunc("objRetryDecode", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistRetryDecodeObj], error) {
+			obj, err := NewObjectResultForCurrentCall(ctx, srv, &persistRetryDecodeObj{Name: "x"})
+			if err != nil {
+				return ObjectResult[*persistRetryDecodeObj]{}, err
+			}
+			return obj, nil
+		}).IsPersistable(),
+	}.Install(srv)
+	return srv
+}
+
+// persistRetryDecodeSeed publishes one persistRetryDecodeObj result on a
+// fresh cache at dbPath, persists it, closes the cache, and returns the
+// result ID for a reload on a second cache.
+func persistRetryDecodeSeed(t *testing.T, ctx context.Context, dbPath string, snapshotManager bkcache.SnapshotManager) uint64 {
+	t.Helper()
+	cacheA, err := NewCache(ctx, dbPath, snapshotManager, nil)
+	assert.NilError(t, err)
+	srvA := newPersistRetryDecodeTestServer()
+
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-import-retry-decode-root",
+	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
+	rootCtxA = srvToContext(rootCtxA, srvA)
+
+	var seed ObjectResult[*persistRetryDecodeObj]
+	err = srvA.Select(rootCtxA, srvA.root, &seed, Selector{Field: "objRetryDecode"})
+	assert.NilError(t, err)
+	assert.Assert(t, seed.cacheSharedResult() != nil)
+	resultID := uint64(seed.cacheSharedResult().id)
+	assert.Assert(t, resultID != 0)
+
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
+	assert.NilError(t, cacheA.persistCurrentState(ctx))
+	assert.NilError(t, cacheA.Close(context.Background()))
+	return resultID
+}
+
+// A decode leader whose own context is canceled mid-decode must not fail a
+// parked joiner: the joiner classifies the latched error as the departed
+// leader's own cancellation and retries, leading a fresh decode.
+func TestCachePersistenceImportedDecodeLeaderCancelRetriesJoiner(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+
+	cB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+	srvB := newPersistRetryDecodeTestServer()
+
+	var decodeEntries atomic.Int32
+	firstEntered := make(chan struct{})
+	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
+		if decodeEntries.Add(1) == 1 {
+			close(firstEntered)
+			select {
+			case <-hookCtx.Done():
+				return hookCtx.Err()
+			case <-time.After(10 * time.Second):
+				return fmt.Errorf("first decode was never canceled for result %d", resultID)
+			}
+		}
+		return nil
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+
+	loadCtx := func(sessionID string) context.Context {
+		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  sessionID + "-client",
+			SessionID: sessionID,
+		})
+		loadCtx = ContextWithCache(loadCtx, cB)
+		return srvToContext(loadCtx, srvB)
+	}
+
+	const leaderSessionID = "persist-decode-cancel-session-a"
+	const joinerSessionID = "persist-decode-cancel-session-b"
+
+	leaderCtx, cancelLeader := context.WithCancel(loadCtx(leaderSessionID))
+	defer cancelLeader()
+	leaderCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(leaderCtx, leaderSessionID, srvB, resultID)
+		leaderCh <- err
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the leader to enter the persisted decode")
+	}
+
+	joinerCtx := loadCtx(joinerSessionID)
+	joinerCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
+		joinerCh <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // let the joiner park on the decode channel
+	cancelLeader()
+
+	leaderErr := <-leaderCh
+	joinerErr := <-joinerCh
+	assert.ErrorContains(t, leaderErr, "context canceled")
+	assert.NilError(t, joinerErr)
+	assert.Equal(t, decodeEntries.Load(), int32(2))
+
+	assert.NilError(t, cB.ReleaseSession(joinerCtx, joinerSessionID))
+	assert.NilError(t, cB.ReleaseSession(loadCtx(leaderSessionID), leaderSessionID))
+}
+
+// A leader canceled inside the post-install owner-lease sync must not leave
+// the lease set silently unsynchronized: the next demand retries just the
+// sync (the payload is decoded exactly once) and the desired lease is
+// attached, instead of serving the value on the fast path.
+func TestCachePersistenceImportedDecodeLeaseSyncCancelRetriesSync(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("persist-decode-sync-snap-old")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, &fakeSnapshotManager{})
+	// The reloaded object reports a different snapshot ref than the stored
+	// link rows, so the decode-time sync must remove the old lease and
+	// attach the new one.
+	persistRetryDecodeSnapshotID.Store("persist-decode-sync-snap-new")
+
+	managerB := &fakeSnapshotManager{}
+	cB, err := NewCache(ctx, dbPath, managerB, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+	srvB := newPersistRetryDecodeTestServer()
+	// Arm the attach block only after NewCache: the import itself attaches
+	// the stored snap-old owner lease, and that call must not park.
+	managerB.attachStarted = make(chan struct{})
+	managerB.allowAttach = make(chan struct{})
+
+	var decodeEntries atomic.Int32
+	persistRetryDecodeHooks.Store(resultID, func(context.Context) error {
+		decodeEntries.Add(1)
+		return nil
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+
+	loadCtx := func(sessionID string) context.Context {
+		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  sessionID + "-client",
+			SessionID: sessionID,
+		})
+		loadCtx = ContextWithCache(loadCtx, cB)
+		return srvToContext(loadCtx, srvB)
+	}
+
+	const leaderSessionID = "persist-decode-sync-session-a"
+	const readerSessionID = "persist-decode-sync-session-b"
+
+	leaderCtx, cancelLeader := context.WithCancel(loadCtx(leaderSessionID))
+	defer cancelLeader()
+	leaderCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(leaderCtx, leaderSessionID, srvB, resultID)
+		leaderCh <- err
+	}()
+	select {
+	case <-managerB.attachStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the leader to block in AttachLease")
+	}
+	cancelLeader()
+
+	// The leader failed inside the sync after installing the payload, so
+	// the pending-sync flag is latched by the time its error returns.
+	leaderErr := <-leaderCh
+	assert.ErrorContains(t, leaderErr, "sync persisted hit owner leases")
+	assert.ErrorContains(t, leaderErr, "context canceled")
+
+	// A later demand must not serve the value on the fast path with the
+	// lease set unsynchronized: it leads a sync-only attempt first.
+	readerCtx := loadCtx(readerSessionID)
+	_, readerErr := cB.LoadResultByResultID(readerCtx, readerSessionID, srvB, resultID)
+	assert.NilError(t, readerErr)
+	// The payload was decoded once; the retry ran only the lease sync.
+	assert.Equal(t, decodeEntries.Load(), int32(1))
+	// Attaches: the import attached the stored snap-old lease; the leader's
+	// canceled attach recorded nothing; the retry attached snap-new. Removes:
+	// the failed attempt and the retry each removed the stale snap-old lease
+	// (the reconciled link set is stored only on full success).
+	assert.Equal(t, len(managerB.attachCalls), 2)
+	assert.Equal(t, managerB.attachCalls[0].SnapshotID, "persist-decode-sync-snap-old")
+	assert.Equal(t, managerB.attachCalls[1].SnapshotID, "persist-decode-sync-snap-new")
+	assert.Equal(t, len(managerB.removeCalls), 2)
+
+	assert.NilError(t, cB.ReleaseSession(readerCtx, readerSessionID))
+	assert.NilError(t, cB.ReleaseSession(loadCtx(leaderSessionID), leaderSessionID))
+}
+
+// A joiner's own cancellation returns its own cause, never the attempt's
+// outcome, and leaves the running attempt untouched.
+func TestCachePersistenceImportedDecodeJoinerOwnCancelReturnsOwnCause(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+
+	cB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+	srvB := newPersistRetryDecodeTestServer()
+
+	var decodeEntries atomic.Int32
+	firstEntered := make(chan struct{})
+	allowFirst := make(chan struct{})
+	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
+		if decodeEntries.Add(1) == 1 {
+			close(firstEntered)
+			select {
+			case <-allowFirst:
+				return nil
+			case <-hookCtx.Done():
+				return hookCtx.Err()
+			case <-time.After(10 * time.Second):
+				return fmt.Errorf("first decode was never released for result %d", resultID)
+			}
+		}
+		return nil
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+
+	loadCtx := func(sessionID string) context.Context {
+		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  sessionID + "-client",
+			SessionID: sessionID,
+		})
+		loadCtx = ContextWithCache(loadCtx, cB)
+		return srvToContext(loadCtx, srvB)
+	}
+
+	const leaderSessionID = "persist-decode-joiner-cancel-session-a"
+	const joinerSessionID = "persist-decode-joiner-cancel-session-b"
+
+	leaderCtx := loadCtx(leaderSessionID)
+	leaderCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(leaderCtx, leaderSessionID, srvB, resultID)
+		leaderCh <- err
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the leader to enter the persisted decode")
+	}
+
+	joinerCtx, cancelJoiner := context.WithCancel(loadCtx(joinerSessionID))
+	defer cancelJoiner()
+	joinerCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
+		joinerCh <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // let the joiner park on the decode channel
+	cancelJoiner()
+
+	joinerErr := <-joinerCh
+	assert.Assert(t, errors.Is(joinerErr, context.Canceled), "joiner error: %v", joinerErr)
+
+	close(allowFirst)
+	leaderErr := <-leaderCh
+	assert.NilError(t, leaderErr)
+	assert.Equal(t, decodeEntries.Load(), int32(1))
+
+	assert.NilError(t, cB.ReleaseSession(leaderCtx, leaderSessionID))
+	assert.NilError(t, cB.ReleaseSession(loadCtx(joinerSessionID), joinerSessionID))
+}
+
+// A genuine decode failure still propagates to every caller: no one
+// classifies it as retryable and no one loops.
+func TestCachePersistenceImportedDecodeFailurePropagatesToJoiners(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+
+	cB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+	srvB := newPersistRetryDecodeTestServer()
+
+	var decodeEntries atomic.Int32
+	firstEntered := make(chan struct{})
+	allowFirst := make(chan struct{})
+	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
+		if decodeEntries.Add(1) == 1 {
+			close(firstEntered)
+			select {
+			case <-allowFirst:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return fmt.Errorf("persist decode genuine failure for result %d", resultID)
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+
+	loadCtx := func(sessionID string) context.Context {
+		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  sessionID + "-client",
+			SessionID: sessionID,
+		})
+		loadCtx = ContextWithCache(loadCtx, cB)
+		return srvToContext(loadCtx, srvB)
+	}
+
+	const leaderSessionID = "persist-decode-fail-session-a"
+	const joinerSessionID = "persist-decode-fail-session-b"
+
+	leaderCtx := loadCtx(leaderSessionID)
+	leaderCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(leaderCtx, leaderSessionID, srvB, resultID)
+		leaderCh <- err
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the leader to enter the persisted decode")
+	}
+
+	joinerCtx := loadCtx(joinerSessionID)
+	joinerCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
+		joinerCh <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // let the joiner park on the decode channel
+	close(allowFirst)
+
+	leaderErr := <-leaderCh
+	joinerErr := <-joinerCh
+	assert.ErrorContains(t, leaderErr, "persist decode genuine failure")
+	assert.ErrorContains(t, joinerErr, "persist decode genuine failure")
+
+	assert.NilError(t, cB.ReleaseSession(leaderCtx, leaderSessionID))
+	assert.NilError(t, cB.ReleaseSession(joinerCtx, joinerSessionID))
 }
