@@ -544,6 +544,25 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a directory merged into the given path, without mutating the source.
+
+  Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+  """
+  @spec with_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
+  def with_directory(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a generated API client initialized.
 
   The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
@@ -662,7 +681,9 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with a directory added, without mutating the source.
+  Return this workspace with the given path replaced by a directory, without mutating the source.
+
+  The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
   """
   @spec with_new_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
   def with_new_directory(%__MODULE__{} = workspace, path, source) do

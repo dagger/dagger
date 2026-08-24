@@ -15969,6 +15969,29 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with a directory merged into the given path, without mutating the source.
+    /// Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to merge into. Relative paths resolve from the workspace cwd.
+    /// * `source` - Directory to merge there.
+    pub fn with_directory(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a generated API client initialized.
     /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
     ///
@@ -16180,12 +16203,13 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a directory added, without mutating the source.
+    /// Return this workspace with the given path replaced by a directory, without mutating the source.
+    /// The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
     ///
     /// # Arguments
     ///
-    /// * `path` - Path of the added directory. Relative paths resolve from the workspace cwd.
-    /// * `source` - Directory to add.
+    /// * `path` - Path to replace. Relative paths resolve from the workspace cwd.
+    /// * `source` - Directory to write there.
     pub fn with_new_directory(
         &self,
         path: impl Into<String>,

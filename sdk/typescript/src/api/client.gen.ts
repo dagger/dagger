@@ -15453,6 +15453,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a directory merged into the given path, without mutating the source.
+   *
+   * Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+   * @param path Path to merge into. Relative paths resolve from the workspace cwd.
+   * @param source Directory to merge there.
+   */
+  withDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a generated API client initialized.
    *
    * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
@@ -15538,9 +15550,11 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with a directory added, without mutating the source.
-   * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
-   * @param source Directory to add.
+   * Return this workspace with the given path replaced by a directory, without mutating the source.
+   *
+   * The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
+   * @param path Path to replace. Relative paths resolve from the workspace cwd.
+   * @param source Directory to write there.
    */
   withNewDirectory = (path: string, source: Directory): Workspace => {
     const ctx = this._ctx.select("withNewDirectory", { path, source })
