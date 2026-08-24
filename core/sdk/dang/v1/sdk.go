@@ -54,7 +54,7 @@ func (Impl) ModuleTypes(
 		runner = runDangDirForModuleTypes
 	}
 
-	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, nil, scopedMod, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
+	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true /* inert attachables */, nil, scopedMod, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		inst, err = initDangModule(ctx, dag, env)
 		if err != nil {
 			return nil, err
@@ -114,7 +114,7 @@ func (r *runtime) Call(
 	if err != nil {
 		return fmt.Errorf("get schema introspection: %w", err)
 	}
-	outputBytes, err := r.eval(ctx, query, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, fnCall, moduleContext)
+	outputBytes, err := r.eval(ctx, query, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true /* inert attachables */, fnCall, moduleContext)
 	if err != nil {
 		return err
 	}
