@@ -87,6 +87,121 @@ func TestLLMHarnessCommandSpecs(t *testing.T) {
 	assert.Equal(t, []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--resume", "session-1"}, ClaudeLLMHarnessCommand("session-1").Args)
 }
 
+func TestCodexHarnessExternalAuthAndRefresh(t *testing.T) {
+	transport, fixture := newHarnessFixture(t)
+	adapter := NewCodexLLMHarnessAdapter(transport)
+	var forces []bool
+	auth := &LLMHarnessAuth{Kind: LLMHarnessAuthOAuth, Resolve: func(_ context.Context, force bool) (LLMHarnessAuthState, error) {
+		forces = append(forces, force)
+		if force {
+			return LLMHarnessAuthState{Token: "token-v2", AccountID: "account-v2", PlanType: "business"}, nil
+		}
+		return LLMHarnessAuthState{Token: "token-v1", AccountID: "account-v1", PlanType: "pro"}, nil
+	}}
+	fixtureDone := runFixture(t, func() error {
+		initialize, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		capabilities := initialize["params"].(map[string]any)["capabilities"].(map[string]any)
+		if capabilities["experimentalApi"] != true {
+			return fmt.Errorf("experimental API capability not enabled: %#v", capabilities)
+		}
+		if err := fixture.write(map[string]any{"method": "initialize", "id": frameID(initialize), "response": map[string]any{}}); err != nil {
+			return err
+		}
+
+		login, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if login["method"] != "account/login/start" {
+			return fmt.Errorf("got auth method %v", login["method"])
+		}
+		params := login["params"].(map[string]any)
+		if params["type"] != "chatgptAuthTokens" || params["accessToken"] != "token-v1" || params["chatgptAccountId"] != "account-v1" || params["chatgptPlanType"] != "pro" {
+			return fmt.Errorf("unexpected login params %#v", params)
+		}
+		if err := fixture.write(map[string]any{"method": "account/login/start", "id": frameID(login), "response": map[string]any{}}); err != nil {
+			return err
+		}
+
+		thread, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "thread/start", "id": frameID(thread), "response": map[string]any{"thread": map[string]any{"id": "thread-auth"}}}); err != nil {
+			return err
+		}
+
+		if err := fixture.write(map[string]any{
+			"method": "account/chatgptAuthTokens/refresh",
+			"id":     99,
+			"params": map[string]any{"reason": "unauthorized", "previousAccountId": "account-v1"},
+		}); err != nil {
+			return err
+		}
+		refresh, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		result := refresh["result"].(map[string]any)
+		if refresh["id"] != float64(99) || result["accessToken"] != "token-v2" || result["chatgptAccountId"] != "account-v2" || result["chatgptPlanType"] != "business" {
+			return fmt.Errorf("unexpected refresh response %#v", refresh)
+		}
+		return nil
+	})
+
+	session, err := adapter.Start(context.Background(), LLMHarnessStart{Auth: auth})
+	require.NoError(t, err)
+	assert.Equal(t, "thread-auth", session.NativeSession)
+	awaitFixture(t, fixtureDone)
+	assert.Equal(t, []bool{false, true}, forces)
+	closeHarnessAdapter(t, adapter)
+}
+
+func TestCodexHarnessAPIKeyLogin(t *testing.T) {
+	transport, fixture := newHarnessFixture(t)
+	adapter := NewCodexLLMHarnessAdapter(transport)
+	auth := &LLMHarnessAuth{Kind: LLMHarnessAuthAPIKey, Resolve: func(_ context.Context, force bool) (LLMHarnessAuthState, error) {
+		if force {
+			return LLMHarnessAuthState{}, fmt.Errorf("API key must not be refreshed")
+		}
+		return LLMHarnessAuthState{Token: "openai-api-key"}, nil
+	}}
+	fixtureDone := runFixture(t, func() error {
+		initialize, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "initialize", "id": frameID(initialize), "response": map[string]any{}}); err != nil {
+			return err
+		}
+		login, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		params := login["params"].(map[string]any)
+		if login["method"] != "account/login/start" || params["type"] != "apiKey" || params["apiKey"] != "openai-api-key" {
+			return fmt.Errorf("unexpected API-key login %#v", login)
+		}
+		if err := fixture.write(map[string]any{"method": "account/login/start", "id": frameID(login), "response": map[string]any{}}); err != nil {
+			return err
+		}
+		thread, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		return fixture.write(map[string]any{"method": "thread/start", "id": frameID(thread), "response": map[string]any{"thread": map[string]any{"id": "thread-api-key"}}})
+	})
+
+	session, err := adapter.Start(context.Background(), LLMHarnessStart{Auth: auth})
+	require.NoError(t, err)
+	assert.Equal(t, "thread-api-key", session.NativeSession)
+	awaitFixture(t, fixtureDone)
+	closeHarnessAdapter(t, adapter)
+}
+
 func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 	transport, fixture := newHarnessFixture(t)
 	adapter := NewCodexLLMHarnessAdapter(transport)

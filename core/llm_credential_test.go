@@ -374,6 +374,29 @@ func TestCredentialReloaderReadsTokenBeforeExpiry(t *testing.T) {
 	require.Equal(t, time.Date(2026, 1, 2, 16, 4, 5, 0, time.UTC), cred.ExpiresAt)
 }
 
+func TestForcedCredentialReloaderRequestsRefresh(t *testing.T) {
+	var order []string
+	getenv := func(_ context.Context, key string) (string, error) {
+		order = append(order, key)
+		switch key {
+		case "OPENAI_CODEX_AUTH_TOKEN?forceRefresh=true":
+			return "rotated-token", nil
+		case "OPENAI_CODEX_AUTH_TOKEN_EXPIRES_AT":
+			return "2026-01-02T16:04:05Z", nil
+		default:
+			return "", nil
+		}
+	}
+
+	cred, err := forcedCredentialReloader(getenv, "OPENAI_CODEX_AUTH_TOKEN")(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "rotated-token", cred.Token)
+	require.Equal(t, []string{
+		"OPENAI_CODEX_AUTH_TOKEN?forceRefresh=true",
+		"OPENAI_CODEX_AUTH_TOKEN_EXPIRES_AT",
+	}, order)
+}
+
 func TestCredentialReloaderTolerance(t *testing.T) {
 	t.Run("no token means no credential and no expiry lookup", func(t *testing.T) {
 		var lookups []string

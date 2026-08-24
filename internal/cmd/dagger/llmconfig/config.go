@@ -364,21 +364,24 @@ func Remove() error {
 	return nil
 }
 
-// refreshProviderToken refreshes an expired OAuth provider in place, dispatching
-// to the provider-specific refresh flow. It returns the (possibly updated)
-// provider and whether it changed.
-func refreshProviderToken(ctx context.Context, name string, provider Provider) (Provider, bool, error) {
+// refreshProviderToken refreshes a due OAuth provider (or forces it after
+// definitive credential rejection), dispatching to the provider-specific flow.
+// It returns the possibly updated provider and whether it changed.
+func refreshProviderToken(ctx context.Context, name string, provider Provider, force bool) (Provider, bool, error) {
 	// A disabled provider's credentials are never exported (applyLLMConfigEnv
 	// skips it), so refreshing it would spend its single-use grant for nothing
 	// — and rotate a refresh token the user still expects to work when they
 	// re-enable the provider.
-	if !provider.Enabled || !provider.IsOAuth() || !IsTokenExpired(&provider) {
+	if !provider.Enabled || !provider.IsOAuth() || (!force && !IsTokenExpired(&provider)) {
 		return provider, false, nil
 	}
-	// Rate-limit per provider, so a pathologically short-lived token can't turn
-	// every resolution into another rotation. The caller holds oauthRefreshMu.
+	// Rate-limit ordinary expiry-driven refreshes per provider, so a
+	// pathologically short-lived token can't turn every resolution into another
+	// rotation. A forced refresh means the provider rejected the current token;
+	// it must bypass this floor even when the preceding resolution was recent.
+	// The caller holds oauthRefreshMu.
 	floorKey := ConfigFile + "\x00" + name
-	if time.Since(lastOAuthRefresh[floorKey]) < oauthRefreshFloor {
+	if !force && time.Since(lastOAuthRefresh[floorKey]) < oauthRefreshFloor {
 		return provider, false, nil
 	}
 	lastOAuthRefresh[floorKey] = time.Now()
@@ -419,7 +422,7 @@ func RefreshOAuthTokensIfNeeded(ctx context.Context) error {
 		var changed bool
 		var errs []error
 		for name, provider := range cfg.LLM.Providers {
-			refreshed, didChange, err := refreshProviderToken(ctx, name, provider)
+			refreshed, didChange, err := refreshProviderToken(ctx, name, provider, false)
 			if err != nil {
 				// Keep going: a refresh grant is single-use, so a provider
 				// that already spent its own must not lose the result because
@@ -443,6 +446,19 @@ func RefreshOAuthTokensIfNeeded(ctx context.Context) error {
 // provider. Used to keep a long-running session's bearer token fresh: the
 // client re-resolves the token on demand rather than only at startup.
 func RefreshOAuthProviderIfNeeded(ctx context.Context, name string) (*Provider, error) {
+	return refreshOAuthProvider(ctx, name, false)
+}
+
+// ForceRefreshOAuthProvider refreshes a single OAuth provider even when its
+// recorded expiry is still in the future. It is reserved for a consumer that
+// received definitive rejection evidence (such as Codex app-server's
+// account/chatgptAuthTokens/refresh request); ordinary callers should use the
+// expiry-aware path above to avoid rotating single-use refresh tokens early.
+func ForceRefreshOAuthProvider(ctx context.Context, name string) (*Provider, error) {
+	return refreshOAuthProvider(ctx, name, true)
+}
+
+func refreshOAuthProvider(ctx context.Context, name string, force bool) (*Provider, error) {
 	oauthRefreshMu.Lock()
 	defer oauthRefreshMu.Unlock()
 
@@ -456,7 +472,7 @@ func RefreshOAuthProviderIfNeeded(ctx context.Context, name string) (*Provider, 
 		if !ok || !provider.IsOAuth() || !provider.Enabled {
 			return false, nil
 		}
-		refreshed, changed, err := refreshProviderToken(ctx, name, provider)
+		refreshed, changed, err := refreshProviderToken(ctx, name, provider, force)
 		if err != nil {
 			return false, err
 		}

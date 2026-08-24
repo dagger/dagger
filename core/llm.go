@@ -703,9 +703,12 @@ type LLMRouter struct {
 	// supplied it. They are what makes a token a live credential rather than
 	// a snapshot: the client's secret provider re-reads (and, for the CLI,
 	// refreshes) the token on every resolution, so asking again at request
-	// time yields the current one. Nil when no token was configured.
-	reloadAnthropicAuthToken credentialResolver
-	reloadCodexAuthToken     credentialResolver
+	// time yields the current one. forceReloadCodexAuthToken bypasses the
+	// expiry check after Codex reports that the current token was rejected.
+	// Nil when no token was configured.
+	reloadAnthropicAuthToken  credentialResolver
+	reloadCodexAuthToken      credentialResolver
+	forceReloadCodexAuthToken credentialResolver
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -1078,6 +1081,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		if v != "" {
 			r.OpenAICodexAuthToken = v
 			r.reloadCodexAuthToken = credentialReloader(getenv, "OPENAI_CODEX_AUTH_TOKEN")
+			r.forceReloadCodexAuthToken = forcedCredentialReloader(getenv, "OPENAI_CODEX_AUTH_TOKEN")
 		}
 		return nil
 	})
@@ -1329,6 +1333,7 @@ func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error)
 	}
 	router.reloadAnthropicAuthToken = router.reloadAnthropicAuthToken.detach(sessionCtx)
 	router.reloadCodexAuthToken = router.reloadCodexAuthToken.detach(sessionCtx)
+	router.forceReloadCodexAuthToken = router.forceReloadCodexAuthToken.detach(sessionCtx)
 
 	return router, nil
 }
@@ -1605,8 +1610,11 @@ func (llm *LLM) WithModel(model, provider string) *LLM {
 }
 
 // WithHarness configures future evaluation through an official CLI in the
-// supplied cold container. Selecting a new seed starts a new harness lineage,
-// so any checkpoint and its history cursor are deliberately discarded.
+// supplied cold container. The explicit kind selection is the auth trust
+// boundary: Core may provide only that official protocol's matching session
+// credential directly to its runtime adapter, never to the container recipe or
+// module SDK. Selecting a new seed starts a new harness lineage, so any
+// checkpoint and its history cursor are deliberately discarded.
 func (llm *LLM) WithHarness(harness dagql.ObjectResult[*Container], kind LLMHarnessKind) (*LLM, error) {
 	if harness.Self() == nil {
 		return nil, fmt.Errorf("harness container is required")

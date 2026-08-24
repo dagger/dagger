@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -33,6 +34,63 @@ func TestLLMHarnessCheckpointCursorValidation(t *testing.T) {
 	checkpoint.MessageCount = len(messages) + 1
 	assert.False(t, checkpoint.validFor(messages, LLMHarnessCodex))
 	assert.False(t, (*LLMHarnessCheckpoint)(nil).validFor(messages, LLMHarnessCodex))
+}
+
+func TestCodexHarnessAuthOfferPrefersOAuth(t *testing.T) {
+	initial := codexTestToken(t, "account-initial")
+	current := codexTestToken(t, "account-current")
+	rotated := codexTestToken(t, "account-rotated")
+	var forces []bool
+	router := &LLMRouter{
+		OpenAIAPIKey:         "fallback-api-key",
+		OpenAICodexAuthToken: initial,
+		reloadCodexAuthToken: func(context.Context) (Credential, error) {
+			forces = append(forces, false)
+			return Credential{Token: current}, nil
+		},
+		forceReloadCodexAuthToken: func(context.Context) (Credential, error) {
+			forces = append(forces, true)
+			return Credential{Token: rotated}, nil
+		},
+	}
+
+	offer := codexHarnessAuthOffer(router)
+	require.NotNil(t, offer)
+	assert.Equal(t, LLMHarnessAuthOAuth, offer.Kind)
+	state, err := offer.Resolve(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, current, state.Token)
+	assert.Equal(t, "account-current", state.AccountID)
+	state, err = offer.Resolve(t.Context(), true)
+	require.NoError(t, err)
+	assert.Equal(t, rotated, state.Token)
+	assert.Equal(t, "account-rotated", state.AccountID)
+	assert.Equal(t, []bool{false, true}, forces)
+}
+
+func TestCodexHarnessAuthOfferAPIKeyFallback(t *testing.T) {
+	// The offer is selected entirely from Core's router and the explicit CODEX
+	// harness kind. There is deliberately no container or marker input to
+	// inspect, and the credential never enters the module graph.
+	offer := codexHarnessAuthOffer(&LLMRouter{
+		OpenAIAPIKey:         "openai-api-key",
+		OpenAICodexAuthToken: "not-a-chatgpt-jwt",
+	})
+	require.NotNil(t, offer)
+	assert.Equal(t, LLMHarnessAuthAPIKey, offer.Kind)
+	state, err := offer.Resolve(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, LLMHarnessAuthState{Token: "openai-api-key"}, state)
+}
+
+func TestCodexHarnessAuthOfferNoCredential(t *testing.T) {
+	assert.Nil(t, codexHarnessAuthOffer(nil))
+	assert.Nil(t, codexHarnessAuthOffer(&LLMRouter{AnthropicAPIKey: "unrelated"}))
+
+	// Non-Codex kinds do not load a router or consult the harness container.
+	offer, err := llmHarnessAuthOffer(t.Context(), nil, LLMHarnessClaude)
+	require.NoError(t, err)
+	assert.Nil(t, offer)
 }
 
 func TestLLMHarnessCodexCorrelationFIFO(t *testing.T) {

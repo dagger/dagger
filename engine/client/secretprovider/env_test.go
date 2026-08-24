@@ -14,7 +14,7 @@ func TestEnvProviderRefresherError(t *testing.T) {
 	t.Setenv("DAGGER_TEST_SECRET_ENV", "stale-but-usable")
 
 	var called int
-	RegisterEnvRefresher(func(context.Context, string) error {
+	RegisterEnvRefresher(func(context.Context, string, bool) error {
 		called++
 		return errors.New("token endpoint unreachable")
 	})
@@ -29,6 +29,43 @@ func TestEnvProviderRefresherError(t *testing.T) {
 	}
 	if called != 1 {
 		t.Errorf("refresher called %d times, want 1", called)
+	}
+}
+
+func TestEnvProviderForcedRefreshErrorIsFatal(t *testing.T) {
+	t.Setenv("DAGGER_TEST_SECRET_ENV", "known-stale")
+	refreshErr := errors.New("rotation failed")
+	RegisterEnvRefresher(func(context.Context, string, bool) error {
+		return refreshErr
+	})
+	t.Cleanup(func() { RegisterEnvRefresher(nil) })
+
+	_, err := envProvider(t.Context(), "DAGGER_TEST_SECRET_ENV?forceRefresh=true")
+	if !errors.Is(err, refreshErr) {
+		t.Fatalf("forced envProvider error = %v, want refresh failure", err)
+	}
+}
+
+func TestEnvProviderForceRefreshOption(t *testing.T) {
+	t.Setenv("DAGGER_TEST_SECRET_ENV", "refreshed")
+
+	var gotName string
+	var gotForce bool
+	RegisterEnvRefresher(func(_ context.Context, name string, force bool) error {
+		gotName, gotForce = name, force
+		return nil
+	})
+	t.Cleanup(func() { RegisterEnvRefresher(nil) })
+
+	got, err := envProvider(t.Context(), "DAGGER_TEST_SECRET_ENV?forceRefresh=true")
+	if err != nil {
+		t.Fatalf("envProvider() failed: %v", err)
+	}
+	if string(got) != "refreshed" {
+		t.Errorf("envProvider() = %q, want refreshed value", got)
+	}
+	if gotName != "DAGGER_TEST_SECRET_ENV" || !gotForce {
+		t.Errorf("refresher got name=%q force=%v", gotName, gotForce)
 	}
 }
 

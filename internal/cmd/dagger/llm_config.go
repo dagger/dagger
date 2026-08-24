@@ -110,17 +110,28 @@ func exportOAuthCredential(provider string, p *llmconfig.Provider) {
 	}
 }
 
-// exportOAuthEnv refreshes provider's token if it is due and exports the
-// result.
-func exportOAuthEnv(ctx context.Context, provider string) error {
+// exportOAuthEnv refreshes provider's token if it is due (or unconditionally
+// when force is set after provider rejection) and exports the result.
+func exportOAuthEnv(ctx context.Context, provider string, force bool) error {
 	if _, ok := oauthEnvVars[provider]; !ok {
 		return nil
 	}
-	p, err := llmconfig.RefreshOAuthProviderIfNeeded(ctx, provider)
+	var (
+		p   *llmconfig.Provider
+		err error
+	)
+	if force {
+		p, err = llmconfig.ForceRefreshOAuthProvider(ctx, provider)
+	} else {
+		p, err = llmconfig.RefreshOAuthProviderIfNeeded(ctx, provider)
+	}
 	if err != nil {
 		return err
 	}
 	if p == nil {
+		if force {
+			return fmt.Errorf("no managed OAuth credential configured for %s", provider)
+		}
 		return nil
 	}
 	exportOAuthCredential(provider, p)
@@ -129,7 +140,9 @@ func exportOAuthEnv(ctx context.Context, provider string) error {
 
 // backgroundOAuthRefresh is replaceable so the refresher's scheduling and
 // terminal-error behavior can be tested without a provider endpoint.
-var backgroundOAuthRefresh = exportOAuthEnv
+var backgroundOAuthRefresh = func(ctx context.Context, provider string) error {
+	return exportOAuthEnv(ctx, provider, false)
+}
 
 // Timings for the background refresher. Vars, not consts, so tests can shrink
 // them — the same reason llmconfig's endpoint URLs are vars.
@@ -280,12 +293,12 @@ func init() {
 	// env://<KEY> against the client on each LLM router config load, so hook
 	// that resolution: when the engine asks for an OAuth auth-token var, refresh
 	// it if expired and update the process env before it's read.
-	secretprovider.RegisterEnvRefresher(func(ctx context.Context, name string) error {
+	secretprovider.RegisterEnvRefresher(func(ctx context.Context, name string, force bool) error {
 		provider, ok := oauthEnvProviders[name]
 		if !ok {
 			return nil
 		}
-		return exportOAuthEnv(ctx, provider)
+		return exportOAuthEnv(ctx, provider, force)
 	})
 }
 

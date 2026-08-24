@@ -240,6 +240,11 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 	if llm.harnessKind == LLMHarnessClaude && checkpoint != nil && checkpoint.Protocol == claudeHarnessProtocol {
 		nativeSession = checkpoint.NativeSession
 	}
+	auth, err := llmHarnessAuthOffer(ctx, query, llm.harnessKind)
+	if err != nil {
+		unregister()
+		return nil, nil, fmt.Errorf("resolve %s harness auth: %w", llm.harnessKind, err)
+	}
 	process, err := startLLMHarnessProcess(ctx, llm.harness, llm.harnessKind, workspace, execToken, nativeSession)
 	if err != nil {
 		unregister()
@@ -273,6 +278,7 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		MCPURL:     "http://127.0.0.1:${" + engineutil.DaggerSessionPortEnv + "}" + engineutil.DaggerExecHTTPPath,
 		MCPToken:   bearer,
 		CallDigest: callDigest,
+		Auth:       auth,
 	}
 	runtime, err := NewLLMHarnessRuntime(ctx, llm.harnessKind, adapter, start, func(commitCtx context.Context, commit LLMHarnessCommit) (string, error) {
 		return rt.commitHarnessTurn(commitCtx, commit)
@@ -283,6 +289,68 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		return nil, nil, err
 	}
 	return runtime, unregister, nil
+}
+
+// llmHarnessAuthOffer treats the public harness kind as the explicit trust
+// boundary: selecting an official CLI protocol authorizes Core to obtain only
+// that harness's matching session credential. The credential is passed directly
+// to the adapter at runtime and never becomes an SDK-visible Secret or part of
+// the caller-supplied container.
+func llmHarnessAuthOffer(ctx context.Context, query *Query, kind LLMHarnessKind) (*LLMHarnessAuth, error) {
+	if kind != LLMHarnessCodex {
+		// Claude Code accepts API keys and CLAUDE_CODE_OAUTH_TOKEN before its
+		// stream protocol starts, but has no equivalent refresh callback. Its
+		// runtime-only process injection belongs here once that adapter supports
+		// it; keep the normalized auth contract vendor-neutral in the meantime.
+		return nil, nil
+	}
+	router, err := loadLLMRouter(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return codexHarnessAuthOffer(router), nil
+}
+
+func codexHarnessAuthOffer(router *LLMRouter) *LLMHarnessAuth {
+	if router == nil {
+		return nil
+	}
+	// Prefer the subscription credential. Codex app-server's external-auth
+	// protocol keeps refresh ownership with Dagger and never writes a refresh
+	// token into the harness filesystem.
+	if router.reloadCodexAuthToken != nil && router.forceReloadCodexAuthToken != nil && extractChatGPTAccountID(router.OpenAICodexAuthToken) != "" {
+		normal := router.reloadCodexAuthToken
+		forced := router.forceReloadCodexAuthToken
+		return &LLMHarnessAuth{Kind: LLMHarnessAuthOAuth, Resolve: func(resolveCtx context.Context, force bool) (LLMHarnessAuthState, error) {
+			resolve := normal
+			if force {
+				resolve = forced
+			}
+			credential, err := resolve(resolveCtx)
+			if err != nil {
+				return LLMHarnessAuthState{}, err
+			}
+			accountID, planType := extractChatGPTAuthClaims(credential.Token)
+			if credential.Token == "" || accountID == "" {
+				return LLMHarnessAuthState{}, fmt.Errorf("openai-codex OAuth credential omitted access token or account ID")
+			}
+			return LLMHarnessAuthState{
+				Token:     credential.Token,
+				AccountID: accountID,
+				PlanType:  planType,
+			}, nil
+		}}
+	}
+	// API-key users use app-server's official login RPC too. This preserves the
+	// installable module's fallback without resolving a Secret in module code or
+	// adding the key to the cold container recipe.
+	if router.OpenAIAPIKey != "" {
+		key := router.OpenAIAPIKey
+		return &LLMHarnessAuth{Kind: LLMHarnessAuthAPIKey, Resolve: func(context.Context, bool) (LLMHarnessAuthState, error) {
+			return LLMHarnessAuthState{Token: key}, nil
+		}}
+	}
+	return nil
 }
 
 func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarnessCommit) (string, error) {

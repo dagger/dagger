@@ -34,6 +34,36 @@ type LLMHarnessStart struct {
 	MCPURL     string
 	MCPToken   string
 	CallDigest string
+
+	// Auth is a runtime-only credential offer derived from the session and the
+	// explicitly selected harness kind. It is never stored in the LLM, container
+	// recipe, or checkpoint. The resolver returns to the originating client so
+	// OAuth rotation remains client-owned.
+	Auth *LLMHarnessAuth
+}
+
+// LLMHarnessAuthKind is the normalized credential class offered to a harness
+// adapter. Adapters own the vendor-specific ingress (for example, Codex
+// app-server RPCs); module code never receives the credential.
+type LLMHarnessAuthKind string
+
+const (
+	LLMHarnessAuthAPIKey LLMHarnessAuthKind = "api-key"
+	LLMHarnessAuthOAuth  LLMHarnessAuthKind = "oauth"
+)
+
+// LLMHarnessAuth resolves the matching session credential. force is true only
+// when a refresh-capable vendor protocol definitively rejects an OAuth access
+// token.
+type LLMHarnessAuth struct {
+	Kind    LLMHarnessAuthKind
+	Resolve func(ctx context.Context, force bool) (LLMHarnessAuthState, error)
+}
+
+type LLMHarnessAuthState struct {
+	Token     string
+	AccountID string
+	PlanType  string
 }
 
 // LLMHarnessInput is one canonical Dagger mailbox record translated for a

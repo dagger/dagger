@@ -72,6 +72,7 @@ type CodexLLMHarnessAdapter struct {
 	ledger    *LLMHarnessCorrelationLedger
 	blocks    map[string]int64
 	nextBlock int64
+	auth      *LLMHarnessAuth
 
 	events    chan LLMHarnessEvent
 	stop      chan struct{}
@@ -110,6 +111,7 @@ func (a *CodexLLMHarnessAdapter) Start(ctx context.Context, start LLMHarnessStar
 		return LLMHarnessSession{}, err
 	}
 	a.ledger = ledger
+	a.auth = start.Auth
 	a.mu.Unlock()
 
 	go a.readLoop()
@@ -123,9 +125,16 @@ func (a *CodexLLMHarnessAdapter) Start(ctx context.Context, start LLMHarnessStar
 			"title":   "Dagger LLM harness",
 			"version": "1",
 		},
-		"capabilities": map[string]any{},
+		"capabilities": map[string]any{
+			"experimentalApi": true,
+		},
 	}, &initialized); err != nil {
 		return LLMHarnessSession{}, fmt.Errorf("initialize Codex app-server: %w", err)
+	}
+	if start.Auth != nil {
+		if err := a.loginAuth(ctx); err != nil {
+			return LLMHarnessSession{}, fmt.Errorf("authenticate Codex app-server: %w", err)
+		}
 	}
 
 	checkpointThread := ""
@@ -163,6 +172,56 @@ func (a *CodexLLMHarnessAdapter) Start(ctx context.Context, start LLMHarnessStar
 		NativeSession: threadResult.Thread.ID,
 		Protocol:      codexHarnessProtocol,
 	}, nil
+}
+
+func (a *CodexLLMHarnessAdapter) loginAuth(ctx context.Context) error {
+	auth, state, err := a.resolveAuth(ctx, false)
+	if err != nil {
+		return err
+	}
+	switch auth.Kind {
+	case LLMHarnessAuthOAuth:
+		var planType any
+		if state.PlanType != "" {
+			planType = state.PlanType
+		}
+		return a.call(ctx, "account/login/start", map[string]any{
+			"type":             "chatgptAuthTokens",
+			"accessToken":      state.Token,
+			"chatgptAccountId": state.AccountID,
+			"chatgptPlanType":  planType,
+		}, nil)
+	case LLMHarnessAuthAPIKey:
+		return a.call(ctx, "account/login/start", map[string]any{
+			"type":   "apiKey",
+			"apiKey": state.Token,
+		}, nil)
+	default:
+		return fmt.Errorf("%w: unsupported Codex auth kind %q", ErrLLMHarnessProtocolFailure, auth.Kind)
+	}
+}
+
+func (a *CodexLLMHarnessAdapter) resolveAuth(ctx context.Context, force bool) (*LLMHarnessAuth, LLMHarnessAuthState, error) {
+	a.mu.Lock()
+	auth := a.auth
+	a.mu.Unlock()
+	if auth == nil || auth.Resolve == nil {
+		return nil, LLMHarnessAuthState{}, fmt.Errorf("%w: Codex auth is unavailable", ErrLLMHarnessProtocolFailure)
+	}
+	if force && auth.Kind != LLMHarnessAuthOAuth {
+		return nil, LLMHarnessAuthState{}, fmt.Errorf("%w: Codex auth kind %q cannot refresh", ErrLLMHarnessProtocolFailure, auth.Kind)
+	}
+	state, err := auth.Resolve(ctx, force)
+	if err != nil {
+		return nil, LLMHarnessAuthState{}, err
+	}
+	if state.Token == "" {
+		return nil, LLMHarnessAuthState{}, fmt.Errorf("%w: Codex auth omitted credential", ErrLLMHarnessProtocolFailure)
+	}
+	if auth.Kind == LLMHarnessAuthOAuth && state.AccountID == "" {
+		return nil, LLMHarnessAuthState{}, fmt.Errorf("%w: Codex external auth omitted account ID", ErrLLMHarnessProtocolFailure)
+	}
+	return auth, state, nil
 }
 
 func (a *CodexLLMHarnessAdapter) StartTurn(ctx context.Context, input LLMHarnessInput) error {
@@ -336,6 +395,13 @@ func (a *CodexLLMHarnessAdapter) readLoop() {
 			return
 		}
 		if envelope.ID != nil {
+			if envelope.Method == "account/chatgptAuthTokens/refresh" && len(envelope.Response) == 0 && len(envelope.Result) == 0 && len(envelope.Error) == 0 {
+				if err := a.handleExternalAuthRefresh(*envelope.ID, envelope.Params); err != nil {
+					a.failProtocol(err)
+					return
+				}
+				continue
+			}
 			response := envelope.Response
 			if len(response) == 0 {
 				response = envelope.Result
@@ -363,6 +429,48 @@ func (a *CodexLLMHarnessAdapter) readLoop() {
 			}
 		}
 	}
+}
+
+func (a *CodexLLMHarnessAdapter) handleExternalAuthRefresh(id int64, params json.RawMessage) error {
+	var request struct {
+		Reason            string  `json:"reason"`
+		PreviousAccountID *string `json:"previousAccountId"`
+	}
+	if err := decodeHarnessParams("account/chatgptAuthTokens/refresh", params, &request); err != nil {
+		return err
+	}
+	_, auth, err := a.resolveAuth(context.Background(), true)
+	if err != nil {
+		writeErr := a.writeServerResponse(map[string]any{
+			"id": id,
+			"error": map[string]any{
+				"code":    -32001,
+				"message": "Dagger could not refresh the Codex OAuth credential",
+			},
+		})
+		return errors.Join(fmt.Errorf("refresh Codex external auth: %w", err), writeErr)
+	}
+	var planType any
+	if auth.PlanType != "" {
+		planType = auth.PlanType
+	}
+	return a.writeServerResponse(map[string]any{
+		"id": id,
+		"result": map[string]any{
+			"accessToken":      auth.Token,
+			"chatgptAccountId": auth.AccountID,
+			"chatgptPlanType":  planType,
+		},
+	})
+}
+
+func (a *CodexLLMHarnessAdapter) writeServerResponse(response map[string]any) error {
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+	if err := a.writer.Encode(response); err != nil {
+		return fmt.Errorf("write Codex server response: %w", err)
+	}
+	return nil
 }
 
 func (a *CodexLLMHarnessAdapter) deliverResponse(id int64, method string, response, rawError json.RawMessage) error {

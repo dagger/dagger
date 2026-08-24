@@ -193,8 +193,24 @@ func credentialHorizon(now time.Time, cred Credential) time.Time {
 // reload resolves against that same client. That is what lets a nested `dagger
 // agent` use the session's LLM auth without ever holding credentials itself.
 func credentialReloader(getenv func(context.Context, string) (string, error), tokenKey string) credentialResolver {
+	return credentialReloaderWithForce(getenv, tokenKey, false)
+}
+
+// forcedCredentialReloader asks the env secret provider to refresh even when
+// the token's recorded expiry has not arrived. Codex app-server uses this only
+// after its backend rejects the current external-auth token and sends an
+// account/chatgptAuthTokens/refresh request.
+func forcedCredentialReloader(getenv func(context.Context, string) (string, error), tokenKey string) credentialResolver {
+	return credentialReloaderWithForce(getenv, tokenKey, true)
+}
+
+func credentialReloaderWithForce(getenv func(context.Context, string) (string, error), tokenKey string, force bool) credentialResolver {
 	return func(ctx context.Context) (Credential, error) {
-		token, err := getenv(ctx, tokenKey)
+		lookupKey := tokenKey
+		if force {
+			lookupKey += "?forceRefresh=true"
+		}
+		token, err := getenv(ctx, lookupKey)
 		if err != nil {
 			return Credential{}, fmt.Errorf("get %q: %w", tokenKey, err)
 		}

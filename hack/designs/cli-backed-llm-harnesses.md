@@ -1,14 +1,15 @@
 # CLI-backed LLM harnesses
 
-Design proposal for running the official Codex and Claude Code CLIs as the
-execution harness behind `LLM` and `Agent`, while preserving Dagger's workspace,
-message, lifecycle, and telemetry model.
+Design and implementation plan for running the official Codex and Claude Code
+CLIs as the execution harness behind `LLM` and `Agent`, while preserving Dagger's
+workspace, message, lifecycle, and telemetry model.
 
 ## Table of contents
 
 - [Problem and constraints](#problem-and-constraints)
 - [Solution](#solution)
 - [Core API](#core-api)
+- [Authentication and consent](#authentication-and-consent)
 - [Agent integration and control plane](#agent-integration-and-control-plane)
 - [State model](#state-model)
 - [Turn lifecycle](#turn-lifecycle)
@@ -85,6 +86,13 @@ constraints:
 9. **Existing `LLM` behavior remains useful.** `LLM.withHarness` configures cold
    execution and immutable snapshots remain valid for branching, provider
    switching, trace restore, and use without a live `Agent`.
+10. **Session credentials are authority, not ordinary configuration.** The session
+    may already hold an Anthropic API key, Claude Code subscription token, OpenAI
+    API key, or Codex subscription token for provider-backed `LLM` calls. Passing
+    that credential into a caller-supplied executable container gives the entire
+    harness process the ability to use or exfiltrate it. Automatic forwarding must
+    therefore be narrow, explicit, auditable, bound to the evaluated harness
+    identity, and fail closed when consent cannot be obtained.
 
 Trying to disable every built-in native tool is unnecessary and, for Codex, not
 a stable supported configuration. The container sandbox, MCP capability set,
@@ -158,9 +166,11 @@ type LLM {
 ```
 
 There is no public `LLMHarness` object or vendor session-file path. The caller
-constructs the container and therefore controls the CLI version, credentials,
-configuration, and installed programs. Dagger controls invocation and protocol
-handling.
+constructs the container and therefore controls the CLI version, configuration,
+and any credentials explicitly mounted on it. Dagger controls invocation and
+protocol handling. The next authentication phase may offer credentials already
+held by the session, but only through the consented broker below; `withHarness`
+itself never silently injects them.
 
 The existing Agent API is the live interface; no second lifecycle API is added:
 
@@ -219,6 +229,147 @@ The harness container must have a non-empty working directory other than `/`.
 That directory becomes the workspace mount point. Rejecting `/` prevents the
 mount from hiding the CLI, its configuration, or system files. New public types
 and fields are gated with `AfterVersion("v1.0.0-0")`, including the enum.
+
+## Authentication and consent
+
+### Current behavior
+
+`LLM.withHarness(harness:, kind:)` is the explicit trust boundary. The caller's
+selection of `CODEX` or `CLAUDE` asserts that the supplied container implements
+that official CLI protocol and authorizes Core to obtain only the matching
+session credential for that protocol. Core never distinguishes an installable
+module with a container environment marker: such a marker is forgeable, becomes
+part of the portable recipe, and does not establish executable identity.
+
+For Codex, the process starts without credentials and Core authenticates it over
+app-server after initialization. ChatGPT subscription OAuth is delivered with
+`account/login/start`'s `chatgptAuthTokens` form; an OpenAI API key fallback uses
+the same method's `apiKey` form. Neither credential becomes a GraphQL `Secret`,
+a module argument, a container environment variable, or part of the cold
+harness seed. If Codex reports that an OAuth access token was rejected, its
+`account/chatgptAuthTokens/refresh` request is forwarded to the CLI-side OAuth
+refresher, which rotates and persists both tokens in the client's existing LLM
+configuration before returning the new access token to app-server. Future
+`dagger agent` invocations therefore pick up the rotated credential.
+
+`codex login --with-access-token` is not an equivalent ingress. Upstream
+classifies `at-*` values as personal access tokens and other JWTs as Agent
+Identity credentials; neither is ChatGPT subscription OAuth. The command reads
+a one-shot value from stdin and establishes Codex-owned auth state, with no
+callback through which Dagger can refresh and persist its managed OAuth grant.
+`chatgptAuthTokens` is the published app-server host-owned external-auth
+contract and is the only refresh-capable ChatGPT ingress. It is currently
+capability-gated and marked experimental/internal by Codex, so the adapter
+negotiates that capability and keeps the dependency isolated behind its
+versioned protocol implementation.
+
+Claude Code has the analogous official `CLAUDE_CODE_OAUTH_TOKEN` environment
+ingress, but its stream-JSON protocol has no host refresh request. Today the
+installable Claude module therefore retains its explicit `ANTHROPIC_API_KEY`
+secret. A future Claude OAuth path can use the same normalized Core auth offer,
+but must inject only into the runtime process clone before launch and define how
+client-side rotation is re-resolved; copying a refresh token or native auth file
+into the harness is not acceptable.
+
+A caller that supplies its own container and selects `CODEX` receives the same
+Core-side protocol handling as the installable module; the kind selection, not
+module identity, is the authorization declaration. Content-bound interactive
+consent can strengthen that declaration as described below, but a magic module
+marker is not an interim security boundary.
+
+### Credential selection
+
+At harness startup Dagger derives at most one credential offer from the session
+configuration and explicit harness kind:
+
+| Harness | Session credential class | Native delivery |
+| --- | --- | --- |
+| `CLAUDE` | Anthropic API key | Explicit module secret today |
+| `CLAUDE` | Claude Code subscription OAuth | Future runtime-only `CLAUDE_CODE_OAUTH_TOKEN` injection |
+| `CODEX` | OpenAI API key | app-server `account/login/start` with `apiKey` |
+| `CODEX` | Codex/ChatGPT subscription OAuth | app-server `account/login/start` with `chatgptAuthTokens` |
+
+OAuth is preferred over the API-key fallback when both valid Codex credentials
+are configured. The adapter owns the exact environment variable, temporary
+config, or protocol shape because those are versioned vendor behavior. Core
+passes a normalized, runtime-only credential class rather than teaching `LLM`
+or module SDKs about native auth files. A kind/provider mismatch never offers
+an unrelated credential: Dagger does not offer Anthropic credentials to Codex,
+OpenAI credentials to Claude, or arbitrary secrets from the session.
+
+### Harness identity and consent
+
+A future content-bound consent layer can strengthen the explicit `withHarness`
+trust declaration. Before injecting a session credential, that broker would
+evaluate the cold seed and compute its content-preferred container digest.
+Consent would be bound to that evaluated digest, the harness kind, the
+credential source/account identity (never its plaintext), and the adapter
+protocol major version. A recipe digest alone is insufficient: a call such as
+`npm install @anthropic-ai/claude-code@latest` can resolve to different bytes
+without changing its call shape.
+
+The prompt shows both identities:
+
+```text
+Allow this CLI harness to receive your Claude Code subscription credential?
+
+Harness kind: CLAUDE
+Container content: sha256:…
+Credential: Claude Code subscription (value hidden)
+
+Container recipe:
+  Query.container
+    .from(address: "node:22-bookworm-slim")
+    .withExec(args: ["npm", "install", "--global",
+                     "@anthropic-ai/claude-code@latest"])
+    .withWorkdir(path: "/workspace")
+
+[once] [remember this exact harness] [deny]
+```
+
+The full ID call chain is available from the same recipe data used by the ID
+TUI; the confirmation UI may initially show a compact receiver spine with an
+expand action. It must not evaluate or print secret values while rendering the
+prompt.
+
+`once` records a runtime grant for the current process. `remember` stores a
+client-local approval for the exact tuple above. Approval state is not part of
+the `LLM`, harness container, portable recipe, trace, or checkpoint and is never
+shared merely because another client can reproduce the same LLM ID. Rebuilding
+or changing the container, switching harness kind, changing account/source, or
+crossing an adapter protocol major version requires new consent. Credential
+rotation within the same approved account/source does not.
+
+Headless execution fails closed when no remembered grant exists. A future
+non-interactive policy may pre-approve explicit content digests, but a generic
+`--yes`, module annotation, or `withHarness` argument must not authorize an
+unknown executable to receive session credentials. The error includes the
+harness digest and a command or UI route for reviewing it.
+
+### Injection lifecycle
+
+After approval, the future broker would:
+
+1. resolve the matching session credential without exposing it through GraphQL;
+2. clone the evaluated cold seed into runtime-only container state;
+3. inject the credential as a Dagger secret environment variable, secret mount,
+   or temporary native auth file selected by the adapter;
+4. start the harness and keep the grant scoped to that process tree; and
+5. remove the runtime auth material during stop or session teardown.
+
+The broker leaves the caller-supplied cold seed unchanged; broker-provided auth
+exists only on its runtime clone. Credential mounts generated by the broker,
+temporary auth files, environment values, approval records, and any stable hash
+of the secret are excluded from rootfs snapshots, workspace snapshots, messages,
+protocol logs, telemetry, and call IDs. Explicit credentials already present on
+the supplied seed keep their existing Dagger secret-mount semantics, but their
+plaintext is likewise never checkpointed.
+
+Once injected, the credential is available to the harness process and its
+children; no container sandbox can prevent an already-authorized executable
+from sending it over its permitted network. The consent UI must state that fact.
+Where vendors eventually provide scoped or short-lived token exchange, the
+broker should prefer it over forwarding the session's reusable bearer token.
 
 ## Agent integration and control plane
 
@@ -1060,8 +1211,13 @@ error.
   uses a random runtime-scoped bearer token.
 - Generated MCP configuration exposes only the Dagger server. Strict MCP config
   is enabled when supported by the vendor CLI.
+- Session LLM credentials are never forwarded implicitly. The credential broker
+  requires an exact evaluated harness-content grant and offers only the
+  credential class matching the harness kind and resolved provider.
+- Remembered grants are client-local capability policy, not portable LLM state;
+  an unrecognized harness in headless execution fails closed.
 - Credentials are Dagger secrets and are never copied into opaque container
-  snapshots, protocol logs, or message-correlation telemetry.
+  snapshots, protocol logs, message-correlation telemetry, or call IDs.
 - The mutable workspace mount contains only the bound workspace directory, not
   the engine filesystem or caller host checkout.
 - Host writes still require explicit `Workspace.export`; bridge capture advances
@@ -1071,24 +1227,63 @@ error.
 
 ## Delivery
 
-1. Add the gated `LLMHarnessKind` enum, `LLM.withHarness`, and immutable
-   checkpoint/cursor representation.
-2. Change Agent message delivery records so vendor evidence, not enqueue-time
+Legend: `[x]` implemented, `[-]` implemented in part, `[ ]` not started.
+
+### Phase 1: live CLI harnesses
+
+1. [x] Add the gated `LLMHarnessKind` enum, `LLM.withHarness`, immutable
+   checkpoint/cursor representation, and cursor validation.
+2. [x] Change Agent message delivery records so vendor evidence, not enqueue-time
    prediction, finalizes `STARTED`/`STEERED`/`QUEUED`.
-3. Refactor MCP serving into transport-neutral dispatch and add Streamable HTTP.
-4. Add the runtime-scoped exec HTTP registry and serialized workspace bridge.
-5. Add persistent container execution, process-tree control, quiescent
-   rootfs/workspace snapshotting, and streaming protocol pipes.
-6. Implement the common lifecycle/correlation accumulator and atomic LLM
-   materialization.
-7. Implement Codex app-server thread/turn JSON-RPC, expected-turn steering,
-   interruption, typed notifications, fork/resume, and queue reconciliation.
-8. Implement persistent Claude stream-JSON user/control input, UUID lifecycle,
-   interruption receipts, queued cancellation, and partial-message handling.
-9. Route harness-backed `Agent` and temporary synchronous `LLM.step`/`loop`
+3. [x] Refactor MCP serving into transport-neutral dispatch and add stateful
+   Streamable HTTP.
+4. [-] Add the runtime-scoped exec HTTP registry and serialized workspace bridge.
+   The authenticated registry and container-local forwarding path exist; full
+   pull-before-call/push-after-call workspace bridging remains.
+5. [-] Add persistent container execution, process-tree control, quiescent
+   rootfs/workspace snapshotting, and streaming protocol pipes. Persistent
+   interactive services, separate protocol/stderr pipes, signaling, and bounded
+   close exist; consistent rootfs/workspace freeze and capture remain.
+6. [-] Implement the common lifecycle/correlation accumulator and atomic LLM
+   materialization. Messages, correlations, native session metadata, and cursor
+   advance together; native rootfs and bridged workspace state are not yet part
+   of the same transaction.
+7. [-] Implement Codex app-server thread/turn JSON-RPC, expected-turn steering,
+   interruption, typed notifications, fork/resume, and queue reconciliation. The
+   persistent RPC, lifecycle, resume, steering, retry, and interruption paths
+   exist; fork and optional native queue reconciliation remain.
+8. [-] Implement persistent Claude stream-JSON user/control input, UUID lifecycle,
+   interruption receipts, queued cancellation, and partial-message handling. The
+   persistent protocol, UUID ledger, control operations, receipts, and streaming
+   content exist; broader version fixtures and abort projection remain.
+9. [x] Route harness-backed `Agent` and temporary synchronous `LLM.step`/`loop`
    through the live driver.
-10. Add cold rehydrate/reseed, failure recovery, telemetry, and security
-    coverage.
+10. [-] Add cold rehydrate/reseed, failure recovery, telemetry, and security
+    coverage. Cursor validation, Claude process resume, Codex thread resume,
+    fail-closed protocol handling, and reseed guards exist; opaque container
+    capture, full portable history import, live display telemetry, and end-to-end
+    recovery coverage remain.
+11. [x] Add installable `modules/claude` and `modules/codex` `@agent` middlewares
+    using explicitly mounted API-key secrets.
+
+### Phase 2: session authentication broker
+
+1. [-] Normalize API-key and subscription credentials from the resolved session
+   LLM route into an internal harness-auth offer. The official Codex module now
+   receives a runtime-only `openai-codex` OAuth offer; the general offer model
+   and Claude remain.
+2. [ ] Compute the evaluated harness content identity and render its recipe call
+   chain in an interactive consent prompt.
+3. [ ] Add once-only and client-local remembered grants keyed by harness content,
+   kind, credential source/account, and adapter protocol major version.
+4. [-] Add adapter-owned runtime injection for Claude Code and Codex API-key and
+   subscription auth, excluding all auth material from cold state and telemetry.
+   Codex subscription auth now uses app-server external auth without persisting
+   tokens in the harness; the remaining credential classes are not brokered.
+5. [-] Add fail-closed headless behavior, explicit digest pre-approval, grant
+   listing/revocation, and credential-rotation handling. Codex app-server refresh
+   requests now rotate and persist the client-side OAuth grant; consent policy
+   and grant management remain.
 
 ### Delivery tests
 
@@ -1150,13 +1345,39 @@ Focused unit, fixture, and integration coverage must prove:
 - switching from a harness to a provider retains portable message/workspace/tool
   state;
 - malformed protocol, process crash, and sync failure never advance only one of
-  messages, workspace, native state, and cursor; and
-- secrets do not appear in persisted containers, messages, or telemetry.
+  messages, workspace, native state, and cursor;
+- secrets do not appear in persisted containers, messages, or telemetry;
+- API-key harness modules continue to work without session credential forwarding;
+- no session credential reaches a harness before an affirmative grant;
+- the consent prompt shows harness kind, evaluated content digest, credential
+  class, and expandable ID call chain without showing secret-derived data;
+- a remembered grant works only for its exact harness identity and is invalidated
+  by a container, kind, account/source, or protocol-major change;
+- Claude Code and Codex subscription credentials use their official adapter-owned
+  auth ingress and survive credential rotation without entering checkpoints;
+- an unknown harness in headless mode fails with an actionable digest instead of
+  prompting, hanging, or forwarding credentials; and
+- approval records cannot be recovered from an LLM ID, trace, checkpoint, or
+  another client's session.
 
 ## Status
 
-Proposed. The session-scoped Agent runtime, mailbox, lifecycle verbs, immutable
-snapshots, rehydrate, and reseed already exist. `LLM.withHarness`, persistent
-CLI control-plane integration, HTTP MCP workspace bridging, and harness
-checkpointing are not implemented. This revision supersedes the original
-one-shot harness framing.
+In progress. The public harness API, deferred Agent delivery evidence,
+correlation/framing core, persistent service pipes, Codex and Claude adapters,
+stateful HTTP MCP transport and exec registry, harness-backed Agent runtime,
+synchronous `step`/`loop` path, checkpoint cursor validation, and installable
+API-key modules are implemented.
+
+The first implementation deliberately stops short of claiming the full atomic
+cold-state model above. Serialized bidirectional workspace bridging, quiescent
+workspace/rootfs capture, portable native-container checkpoints, complete
+history import/fork recovery, and live display telemetry remain Phase 1 work.
+
+Authentication remains explicit for arbitrary harness containers.
+`modules/claude` mounts `env://ANTHROPIC_API_KEY`; `modules/codex` retains an
+explicit API-key fallback and now forwards the session's selected Codex
+subscription OAuth token through app-server external auth. Codex-initiated
+refreshes run through the CLI refresher and persist rotated credentials for
+future invocations. The general consented, harness-content-bound broker —
+including Claude OAuth and arbitrary harness approval — remains the next Phase 2
+venture. This revision supersedes the original one-shot harness framing.

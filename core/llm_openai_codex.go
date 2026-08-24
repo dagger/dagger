@@ -485,9 +485,18 @@ func (e *codexError) Unwrap() error { return e.err }
 
 // extractChatGPTAccountID extracts the chatgpt_account_id from a JWT token.
 func extractChatGPTAccountID(token string) string {
+	accountID, _ := extractChatGPTAuthClaims(token)
+	return accountID
+}
+
+// extractChatGPTAuthClaims returns the external-auth metadata Codex app-server
+// requires alongside an access token. Both values live in OpenAI's namespaced
+// auth claim; plan type is optional, while an empty account ID makes the token
+// unusable for external auth.
+func extractChatGPTAuthClaims(token string) (accountID, planType string) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return ""
+		return "", ""
 	}
 
 	// JWT payloads use base64url encoding (may need padding)
@@ -501,19 +510,20 @@ func extractChatGPTAccountID(token string) string {
 
 	decoded, err := base64.URLEncoding.DecodeString(payload)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 
 	var claims map[string]any
 	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
+		return "", ""
 	}
 
 	auth, ok := claims["https://api.openai.com/auth"].(map[string]any)
 	if !ok {
-		return ""
+		return "", ""
 	}
 
-	accountID, _ := auth["chatgpt_account_id"].(string)
-	return accountID
+	accountID, _ = auth["chatgpt_account_id"].(string)
+	planType, _ = auth["chatgpt_plan_type"].(string)
+	return accountID, planType
 }

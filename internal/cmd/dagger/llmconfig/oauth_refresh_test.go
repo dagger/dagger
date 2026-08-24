@@ -204,6 +204,48 @@ func TestRefreshKeepsRefreshTokenWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestForceRefreshOAuthProviderPersistsRotation(t *testing.T) {
+	srv := newFakeOAuthServer(t, "rt-0")
+	srv.install(t)
+
+	useTempConfig(t, &Config{
+		LLM: LLMConfig{
+			DefaultProvider: "openai-codex",
+			Providers: map[string]Provider{
+				"openai-codex": {
+					AuthType:       "oauth",
+					AuthToken:      "rejected-access",
+					RefreshToken:   "rt-0",
+					TokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
+					Enabled:        true,
+				},
+			},
+		},
+	})
+
+	// The token is not due by expiry. Only definitive rejection evidence from
+	// Codex should take this path and rotate it immediately.
+	current, err := ForceRefreshOAuthProvider(t.Context(), "openai-codex")
+	if err != nil {
+		t.Fatalf("ForceRefreshOAuthProvider() failed: %v", err)
+	}
+	if current == nil || current.AuthToken != "access-1" || current.RefreshToken != "rt-1" {
+		t.Fatalf("forced refresh returned %+v", current)
+	}
+
+	persisted, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	provider := persisted.LLM.Providers["openai-codex"]
+	if provider.AuthToken != "access-1" || provider.RefreshToken != "rt-1" {
+		t.Errorf("persisted provider = %+v, want rotated access and refresh tokens", provider)
+	}
+	if grants, refreshToken := srv.state(); grants != 1 || refreshToken != "rt-1" {
+		t.Errorf("OAuth server grants=%d refreshToken=%q", grants, refreshToken)
+	}
+}
+
 func TestTerminalRefreshErrorRequiresReauthentication(t *testing.T) {
 	for _, providerName := range []string{"anthropic", "openai-codex"} {
 		t.Run(providerName, func(t *testing.T) {
