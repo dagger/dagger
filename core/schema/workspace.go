@@ -142,10 +142,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a directory added, without mutating the source.").
+			Doc("Return this workspace with the given path replaced by a directory, without mutating the source.",
+				"The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.").
 			Args(
-				dagql.Arg("path").Doc("Path of the added directory. Relative paths resolve from the workspace cwd."),
-				dagql.Arg("source").Doc("Directory to add."),
+				dagql.Arg("path").Doc("Path to replace. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("Directory to write there."),
 			),
 		dagql.NodeFunc("withDirectory", s.withDirectory).
 			View(AfterVersion("v1.0.0-0")).
@@ -1536,8 +1537,15 @@ func (s *workspaceSchema) withNewDirectory(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		// Clearing first is what lets both overlay branches share this edit:
+		// an edit that ignores whatever the base holds at the path reads the
+		// same on a full read root as on a host overlay's delta root.
+		cleared, err := clearedForWrite(ctx, srv, base, resolvedPath)
+		if err != nil {
+			return cleared, err
+		}
 		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, base, &updated, dagql.Selector{
+		err = srv.Select(ctx, cleared, &updated, dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(resolvedPath)},
@@ -1581,6 +1589,28 @@ func (s *workspaceSchema) withDirectory(
 		})
 		return updated, err
 	}, nil)
+}
+
+// clearedForWrite returns base holding nothing at path, ready for a write that
+// replaces what was there. Clearing the workspace root starts from an empty
+// directory instead: Directory.withoutDirectory removes the path itself, which
+// at the root is the tree rather than its contents.
+func clearedForWrite(
+	ctx context.Context,
+	srv *dagql.Server,
+	base dagql.ObjectResult[*core.Directory],
+	resolvedPath string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var cleared dagql.ObjectResult[*core.Directory]
+	if resolvedPath == "." {
+		err := srv.Select(ctx, srv.Root(), &cleared, dagql.Selector{Field: "directory"})
+		return cleared, err
+	}
+	err := srv.Select(ctx, base, &cleared, dagql.Selector{
+		Field: "withoutDirectory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+	})
+	return cleared, err
 }
 
 type workspaceWithoutFileArgs struct {

@@ -16913,7 +16913,9 @@ func (r *Workspace) WithMountedFile(path string, source *File) *Workspace {
 	}
 }
 
-// Return this workspace with a directory added, without mutating the source.
+// Return this workspace with the given path replaced by a directory, without mutating the source.
+//
+// The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
 func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
 	assertNotNil("source", source)
 	q := r.query.Select("withNewDirectory")

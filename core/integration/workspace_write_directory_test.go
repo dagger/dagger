@@ -224,6 +224,106 @@ func (WorkspaceSuite) TestModuleInitScaffoldsOverExistingContent(ctx context.Con
 	require.NoError(t, err)
 }
 
+// The comparison dagger/dagger#13955 was reported with: one call, one source,
+// one path, put to a host-backed workspace and to the synthetic workspace made
+// out of that same workspace's own content. They answered differently about
+// what they had removed.
+func (WorkspaceSuite) TestWorkspaceWithNewDirectoryAgreesWithSyntheticCopy(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "target"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, "target", "keep.txt"), []byte("do not delete me\n"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	source := c.Directory().WithNewFile("new.txt", "written by withNewDirectory")
+
+	hostBacked := c.CurrentWorkspace()
+	synthetic := hostBacked.Directory("/").AsWorkspace()
+
+	hostRemoved, err := hostBacked.WithNewDirectory("/target", source).
+		Changes(dagger.WorkspaceChangesOpts{From: hostBacked}).RemovedPaths(ctx)
+	require.NoError(t, err)
+	syntheticRemoved, err := synthetic.WithNewDirectory("/target", source).
+		Changes(dagger.WorkspaceChangesOpts{From: synthetic}).RemovedPaths(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"target/keep.txt"}, hostRemoved)
+	require.Equal(t, hostRemoved, syntheticRemoved)
+}
+
+// TestWorkspaceWithNewDirectoryReplaces pins withNewDirectory to replacement on
+// every workspace kind. dagger/dagger#13955: it replaced on a host-backed
+// workspace and merged on a value or git one, so the same call meant two
+// different things depending only on where the workspace came from.
+func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context, t *testctx.T) {
+	for _, kind := range workspaceWriteKinds() {
+		t.Run(kind.name, func(ctx context.Context, t *testctx.T) {
+			c, ws := kind.setup(ctx, t)
+			source := c.Directory().WithNewFile("new.txt", "new")
+
+			t.Run("replaces what the path already holds", func(ctx context.Context, t *testctx.T) {
+				written := ws.WithNewDirectory("target", source)
+
+				entries, err := written.Directory("target").Entries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"new.txt"}, entries)
+
+				changes := written.Changes(dagger.WorkspaceChangesOpts{From: ws})
+				removed, err := changes.RemovedPaths(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"target/keep.txt"}, removed)
+
+				added, err := changes.AddedPaths(ctx)
+				require.NoError(t, err)
+				require.Contains(t, added, "target/new.txt")
+			})
+
+			t.Run("replaces the workspace root", func(ctx context.Context, t *testctx.T) {
+				written := ws.WithNewDirectory("/", source)
+
+				entries, err := written.Directory("/").Entries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"new.txt"}, entries)
+
+				// The whole directory goes, so it is reported as the directory
+				// rather than file by file.
+				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				require.NoError(t, err)
+				require.Contains(t, removed, "target/")
+			})
+
+			t.Run("creates a path the workspace does not have", func(ctx context.Context, t *testctx.T) {
+				written := ws.WithNewDirectory("fresh/nested", source)
+
+				contents, err := written.File("fresh/nested/new.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "new", contents)
+
+				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				require.NoError(t, err)
+				require.Empty(t, removed)
+			})
+
+			// Replacement covers the overlay's own earlier writes at the path,
+			// not just the workspace's base content: on a host-backed workspace
+			// those live in the delta root the edit is applied to.
+			t.Run("drops earlier edits under the path", func(ctx context.Context, t *testctx.T) {
+				written := ws.WithNewFile("target/staged.txt", "staged").
+					WithNewDirectory("target", source)
+
+				entries, err := written.Directory("target").Entries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"new.txt"}, entries)
+
+				removed, err := written.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"target/keep.txt"}, removed)
+			})
+		})
+	}
+}
+
 // A host-backed overlay's changeset is diffed against a host base re-read at
 // diff time, while its other side accumulates across edits. Nothing the caller
 // never wrote may end up pinned on that accumulating side, or a file the user
