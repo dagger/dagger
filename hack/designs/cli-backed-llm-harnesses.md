@@ -11,6 +11,7 @@ workspace, message, lifecycle, and telemetry model.
 - [Core API](#core-api)
 - [Authentication and consent](#authentication-and-consent)
 - [Agent integration and control plane](#agent-integration-and-control-plane)
+- [Native child agents](#native-child-agents)
 - [State model](#state-model)
 - [Turn lifecycle](#turn-lifecycle)
 - [Message compatibility](#message-compatibility)
@@ -92,6 +93,12 @@ constraints:
     harness process the ability to use or exfiltrate it. Automatic forwarding must
     therefore be narrow, explicit, auditable, bound to the evaluated harness
     identity, and fail closed when consent cannot be obtained.
+11. **Native child agents are observable before they are addressable.** Codex
+    multiplexes parent and child threads over one app-server connection and
+    streams each child's turns, text, tools, usage, and state. A child may still
+    be controlled exclusively by its parent and reject direct user input.
+    Dagger must preserve that capability boundary instead of advertising every
+    observed native thread as an ordinary sendable Agent.
 
 Trying to disable every built-in native tool is unnecessary and, for Codex, not
 a stable supported configuration. The container sandbox, MCP capability set,
@@ -186,11 +193,30 @@ type LLM {
   spawn(name: String): ID! @expectedType(name: "Agent")
 }
 
+"""How input may be delivered to an Agent."""
+enum AgentInputMode {
+  """Ordinary Agent.send is supported."""
+  DIRECT
+
+  """Another Agent owns input; direct input requires an explicit override."""
+  CONTROLLED
+
+  """The Agent can be observed but the native protocol exposes no input path."""
+  OBSERVE_ONLY
+}
+
 type Agent {
+  """The Agent which owns this Agent's input and lifecycle, if any."""
+  controlledBy: Agent
+
+  """The currently negotiated direct-input capability."""
+  inputMode: AgentInputMode!
+
   state: AgentState!
   snapshot: LLM!
   start: ID! @expectedType(name: "Agent")
-  send(message: String!): ID! @expectedType(name: "AgentMessage")
+  send(message: String!, force: Boolean = false): ID!
+    @expectedType(name: "AgentMessage")
   interrupt: ID! @expectedType(name: "Agent")
   pause: ID! @expectedType(name: "Agent")
   resume: ID! @expectedType(name: "Agent")
@@ -561,6 +587,56 @@ starts from the replacement conversation's checkpoint or imports its messages.
 Native session state from the old conversation is never silently paired with the
 new history.
 
+## Native child agents
+
+Codex app-server multiplexes spawned subagents as ordinary child threads. Their
+notifications use the same `turn/started`, item lifecycle, text/reasoning delta,
+tool, usage, status, and `turn/completed` shapes as the primary thread, keyed by
+`threadId`. Dagger therefore has enough information to stream each child as its
+own conversation and project a live lifecycle state. Child notifications never
+enter the parent's canonical turn accumulator: a child completion must not
+complete the parent's `AgentMessage` or advance its checkpoint.
+
+Native children are represented by proxy Agent entries owned by the parent
+harness runtime, not by independent `AgentRuntime` loops or harness processes.
+The proxy identity is stable within the harness lineage and incorporates the
+vendor thread ID. Its conversation spans sit beneath the parent Agent loop and
+carry a correlation back to the primary-thread spawn item. The proxy ends when
+the native thread closes or its owning harness is released. Until the complete
+native thread tree participates in the atomic checkpoint, a proxy publishes no
+restorable Agent checkpoint or snapshot digest.
+
+Lineage and control are separate facts. `ParentAgentID` continues to describe
+the roster hierarchy: an ordinary Dagger worker may have a parent while still
+accepting direct input. A separate `controlledBy` identity says that another
+Agent owns this Agent's input and lifecycle. Telemetry carries both that
+identity and `inputMode`, allowing the TUI to show an owned/read-only marker,
+focus the child for observation, and disable its prompt without requiring a
+reconstructable send handle.
+
+Codex's `Thread.canAcceptDirectInput` is the primary capability signal:
+
+- `true` maps to `DIRECT`; the proxy supports the same `send`, delivery,
+  streaming response, interrupt, and await behavior as the primary Agent;
+- `false` with a controlling parent maps to `CONTROLLED`; `send` refuses by
+  default with an error identifying the controller; and
+- absence of any usable native input operation maps to `OBSERVE_ONLY`.
+
+`send(force: true)` is the explicit break-glass path for a `CONTROLLED` Agent.
+It submits directly to the child through the native turn control plane rather
+than asking the parent model to relay the message. The harness dispatcher
+serializes it with parent-driven collaboration and preserves the ordinary
+correlation/delivery contract. If app-server enforces the direct-input
+restriction, Dagger returns that refusal; it never reports the message as
+queued or consumed. `force` cannot override `OBSERVE_ONLY`, bypass the outer
+container boundary, or detach the child from its owner.
+
+For Codex versions where controlled child input has not been proven safe, the
+adapter reports `OBSERVE_ONLY` even when a lower-level request appears
+available. Compatibility fixtures must verify direct start, active-turn steer,
+interrupt, parent `sendInput`, parent close, and their races before enabling
+`CONTROLLED` break-glass input for that version.
+
 ## State model
 
 The design separates **hot runtime** from **immutable checkpoint**.
@@ -906,22 +982,13 @@ exit while only an internal container clone existed in the trace. Incremental
 projection of every parsed native event into the richer LLM display remains in
 progress.
 
-At the current milestone, service telemetry is the only completed layer. The
-adapters decode prompt lifecycle, text/thinking deltas, native tool calls,
-results, and usage into typed events, but `LLMHarnessRuntime` only accumulates
-them for the terminal checkpoint; it does not yet create the live message spans
-used by `displayPhases`. The resulting TUI defects are concrete:
-
-1. the user's submitted prompt never appears as an `LLM prompt` row;
-2. the model response appears only after terminal commit instead of streaming;
-3. native and MCP tool calls and their results are not surfaced as tool-call
-   spans; and
-4. usage and turn/message correlation are not attached to the live conversation.
-
-Fixing this requires emitting the same `LLMRole`, `LLMTool`, message, call
-digest, and agent identity attributes as provider-backed evaluation. Those spans
-then participate in the existing reveal-independent conversation report and
-live conversation promotion; no harness-specific TUI section is needed.
+The runtime now projects submitted prompts, streamed text and thinking, native
+and MCP tool calls, and tool results through the existing `displayPhases`
+implementation. It emits the same `LLMRole`, `LLMTool`, message, call-digest,
+and Agent identity attributes as provider-backed evaluation, so those spans
+participate in the existing reveal-independent conversation report and live
+conversation promotion; no harness-specific TUI section is needed. Remaining
+telemetry work is tracked exhaustively in the status checklist below.
 
 ```go
 switch event := event.(type) {
@@ -951,6 +1018,13 @@ Dagger MCP execution is parented beneath its tool-call span and includes bridge
 pull, evaluation, and push. The existing per-exec OTLP setup remains active for
 native subprocess telemetry. Structured CLI protocol JSON is intercepted before
 ordinary stdio rendering so it is not dumped into user-facing output.
+
+An MCP tool result is a content envelope, not itself display text. The live
+tool-call span renders text blocks directly and uses bounded semantic summaries
+for image, audio, and resource blocks. `structuredContent`, `_meta`, and the raw
+vendor envelope remain available in the encapsulated app-server protocol logs,
+but are not serialized into the user-facing stdout log. Error payloads render
+only their message while retaining the tool span's error status.
 
 Agent state and snapshot telemetry retain current semantics. `RUNNING` reflects
 real native activity; `PAUSED` is emitted only after the process reaches the
@@ -1315,6 +1389,8 @@ completed foundation and remaining behavior.
 - [x] Route harness-backed `Agent` evaluation through the live runtime.
 - [x] Route synchronous `LLM.step` and `LLM.loop` through a temporary live
   harness runtime.
+- [ ] Add version-gated `Agent.inputMode`, `Agent.controlledBy`, and explicit
+  break-glass input to the public Agent API.
 - [ ] Import arbitrary portable `LLM.Messages`, including synthetic assistant
   and tool-result history, when no valid native checkpoint exists.
 - [ ] Send only the suffix after a valid cursor when native state resumes.
@@ -1384,10 +1460,24 @@ completed foundation and remaining behavior.
 - [x] Implement JSON-RPC request correlation independently of Agent message IDs.
 - [x] Implement app-server initialization and capability negotiation.
 - [x] Implement `thread/start` and valid-checkpoint `thread/resume`.
+- [x] Recover a missing Codex rollout by resuming from the exact portable-history
+  prefix represented by the checkpoint, preserving system prompts as developer
+  instructions and never duplicating an uncommitted suffix.
 - [x] Implement `turn/start`, expected-turn `turn/steer`, and
   `turn/interrupt`.
 - [x] Decode turn, user-message, text, thinking, native-command, MCP-call,
   result, usage, and terminal notifications into the common event vocabulary.
+- [x] Scope turn, item, delta, and usage notifications to the adapter's primary
+  thread so spawned Codex agents cannot replace or terminate Dagger's canonical
+  turn.
+- [x] Decode primary-thread `subAgentActivity` and `collabAgentToolCall` items as
+  native tool calls/results while leaving child-thread output owned by Codex.
+- [ ] Track Codex child threads as native Agent proxies and route their turn,
+  item, delta, tool, usage, and status notifications into per-child streams
+  without affecting the primary turn accumulator.
+- [ ] Negotiate `canAcceptDirectInput` for each child and compatibility-test
+  direct start, active-turn steer, interrupt, parent input, and close before
+  enabling controlled break-glass input.
 - [x] Normalize `openai-codex/<model>` to the unqualified app-server model name.
 - [x] Authenticate API keys through `account/login/start` without placing them
   in the harness recipe.
@@ -1426,19 +1516,29 @@ completed foundation and remaining behavior.
 - [x] Add a session-owned exec HTTP registry with opaque, unique handler tokens.
 - [x] Forward the registered handler through the harness exec's loopback
   listener.
-- [x] Require a random runtime bearer token before dispatching an MCP request.
+- [x] Start the loopback listener for an exec-HTTP-only service even when the
+  execution has no nested-client metadata.
+- [x] Inject the exec-HTTP capability into the live process as a runtime-only,
+  output-scrubbed secret environment variable which does not affect cache
+  identity.
+- [x] Require that runtime capability as the MCP bearer token before dispatching
+  a request.
 - [x] Construct a live MCP handler from the harness LLM's current MCP state.
-- [ ] Apply the same implicit workspace-module main-object binding used by
+- [x] Apply the same implicit workspace-module main-object binding used by
   `LLM.MCP` before constructing the harness tool server.
-- [ ] Configure Codex app-server to use the generated MCP URL and bearer token.
+- [x] Configure Codex app-server with one complete process-level Dagger MCP
+  table containing the generated URL, bearer-token environment variable,
+  required-server policy, and tool approval policy.
 - [ ] Configure Claude Code to use the generated MCP URL and bearer token.
 - [ ] Ignore unrelated user/project MCP configuration, using strict native MCP
   configuration where the vendor supports it.
 - [ ] Verify that bound object tools, workspace-module tools, skills, builtins,
   and external MCP proxies are all visible to the native model.
-- [ ] Correlate the vendor MCP item with the authoritative HTTP request by native
+- [x] Preserve the Dagger client/query context across Streamable HTTP tool calls
+  while retaining request cancellation and protocol values.
+- [x] Correlate the vendor MCP item with the authoritative HTTP request by native
   call ID without executing or materializing it twice.
-- [ ] Parent Dagger MCP evaluation beneath the corresponding live tool-call span.
+- [x] Parent Dagger MCP evaluation beneath the corresponding live tool-call span.
 - [ ] Pull native workspace changes into `MCP.workspace` immediately before
   every Dagger tool call.
 - [ ] Push Dagger workspace/tool changes into the mutable harness mount after
@@ -1456,30 +1556,53 @@ completed foundation and remaining behavior.
   tool-call, tool-result, usage, and terminal events.
 - [x] Keep structured protocol JSON inside the verbose harness service logs
   instead of rendering it as the user-facing conversation.
-- [ ] Emit the submitted user message immediately as an `LLM prompt` span with
+- [x] Emit the submitted user message immediately as an `LLM prompt` span with
   `LLMRole`, message, call-digest, and Agent identity attributes.
-- [ ] Feed every text delta into a live `displayPhases.StartText` span so the
+- [x] Feed every text delta into a live `displayPhases.StartText` span so the
   model response streams instead of appearing only at terminal commit.
-- [ ] Feed observable reasoning deltas into live thinking spans and close or
-  abort them at the correct lifecycle boundary.
-- [ ] Emit each native tool call as a live tool-call span with its name,
+- [x] Feed observable reasoning deltas into live thinking spans.
+- [ ] Distinguish completed from aborted thinking spans at every terminal
+  lifecycle boundary.
+- [x] Emit each native tool call as a live tool-call span with its name,
   arguments, call ID, and native source.
-- [ ] Emit each Dagger MCP tool call as the same live tool-call shape and nest
+- [x] Render Codex sub-agent creation and collaboration controls as native tool
+  spans without promoting the child agent's private response as the parent's
+  model response.
+- [x] Emit each Dagger MCP tool call as the same live tool-call shape and nest
   its actual execution span beneath it.
-- [ ] Attach native and MCP tool results, error status, output, and result-token
+- [x] Attach native and MCP tool results, error status, output, and result-token
   metadata to their corresponding tool-call spans.
+- [x] Render MCP tool-result `content` blocks in user-facing logs instead of the
+  raw `{content, structuredContent, _meta}` response envelope, using bounded
+  semantic summaries for binary and resource content while retaining the full
+  envelope in encapsulated app-server protocol logs.
+- [ ] Emit a child Agent identity, controlling-Agent identity, input mode, and
+  live state while streaming each Codex child conversation beneath its own
+  roster entry.
+- [ ] Let the TUI focus an observe-only or controlled Agent for inspection
+  without requiring a sendable call digest, mark who controls it, and disable
+  or explicitly gate its prompt according to `inputMode`.
 - [ ] Update existing LLM token gauges from harness usage notifications before
   the turn completes.
-- [ ] Attach Dagger message ID, vendor message ID, native turn ID, delivery, and
-  terminal status as non-content correlation attributes.
-- [ ] Close all live display spans exactly once on completion, interruption,
-  protocol failure, process exit, and caller cancellation.
+- [x] Attach Dagger message ID, vendor message ID, native turn ID, tool-call ID,
+  and native source as non-content correlation attributes.
+- [ ] Attach final delivery classification and terminal status as non-content
+  correlation attributes.
+- [x] Close all live display spans exactly once on normal completion and runtime
+  close or failure.
+- [ ] Prove exact-once display closure across interruption, process exit, and
+  caller cancellation races.
 - [ ] Preserve the same surfaced-conversation tree in both the live promoted TUI
   and the reveal-independent final report.
+- [x] Unit-test prompt/text/tool/result log emission and exact Dagger MCP
+  parenting, including the race where HTTP arrives before app-server lifecycle.
 - [ ] Add TUI tests proving the prompt, streaming response, native tools, MCP
   tools, results, and errors appear before terminal checkpoint commit.
-- [ ] Add `tui-qa` coverage for a real Codex and Claude turn, including timing
-  assertions that distinguish streaming from a terminal-only redraw.
+- [x] Exercise a real Codex turn with `tui-qa`, capturing the submitted prompt,
+  response while `RUNNING`, live MCP tool call, successful result, and final
+  answer before checkpoint completion.
+- [ ] Add equivalent `tui-qa` coverage for Claude, including timing assertions
+  that distinguish streaming from a terminal-only redraw.
 
 ### Authentication, consent, and isolation
 
@@ -1511,6 +1634,8 @@ completed foundation and remaining behavior.
 
 - [x] Validate native checkpoint compatibility before attempting resume.
 - [x] Resume Codex threads and Claude sessions from compatible native IDs.
+- [x] Fall back from Codex's exact `no rollout found` error to a new native
+  thread reconstructed from the checkpointed portable Responses API history.
 - [x] Preserve the last committed snapshot when protocol framing, correlation,
   service startup, or process execution fails.
 - [x] Refuse reseed while the current Agent reports active execution.
@@ -1538,6 +1663,9 @@ completed foundation and remaining behavior.
 - [x] Verify a fresh `dagger-dev --env dev agent` Codex session authenticates,
   executes a native shell command under the external sandbox contract, and
   completes a turn.
+- [x] Verify a fresh `dagger-dev --env dev agent` Codex session discovers and
+  successfully calls the workspace's `review_status` tool through authenticated
+  Streamable HTTP MCP.
 - [ ] Add equivalent end-to-end Claude module coverage for the persistent
   stream-JSON path.
 
@@ -1561,8 +1689,23 @@ completed foundation and remaining behavior.
   materialization.
 - [x] Fixture-test Codex OAuth, refresh, API-key login, model selection, external
   sandbox policy, typed text/tool events, steering, interruption, and resume.
+- [x] Fixture-test interleaved parent/child Codex threads, collaboration tool
+  telemetry, and missing-rollout recovery from only the committed history
+  prefix.
 - [x] Manually verify with `tui-qa` that the Wolfi Codex module completes a real
   native shell tool call without bubblewrap or approval failure.
+- [x] Unit-test runtime-only exec-HTTP capability injection and output-secret
+  registration.
+- [x] Unit-test Streamable HTTP preservation of the MCP server's Dagger context.
+- [x] Unit-test live harness prompt/text/tool/result telemetry and exact native
+  call-ID span parenting across event/HTTP ordering races.
+- [x] Capture raw OTLP and `tui-qa` evidence for a real Codex workspace MCP call:
+  the prompt and token deltas stream as logs, `Review.status` is a direct child
+  of `review_status`, and the tool result completes successfully.
+- [x] Capture raw OTLP and `tui-qa` evidence for a real Codex delegation: child
+  lifecycle/output stays filtered, `subAgentActivity` and `wait` are sibling
+  native tool spans beneath the parent response, the parent completes, and a
+  follow-up prompt succeeds on the same hot runtime.
 - [ ] Integration-test concurrent `Agent.send` calls for unique IDs, exact FIFO
   native submission, correlated delivery, and await resolution.
 - [ ] Integration-test cancel-and-re-await plus concurrent awaiters.

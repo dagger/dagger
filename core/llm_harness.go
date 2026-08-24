@@ -34,6 +34,7 @@ type LLMHarnessStart struct {
 	MCPURL     string
 	MCPToken   string
 	CallDigest string
+	display    *llmHarnessDisplay
 
 	// Auth is a runtime-only credential offer derived from the session and the
 	// explicitly selected harness kind. It is never stored in the LLM, container

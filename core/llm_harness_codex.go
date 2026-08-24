@@ -2,12 +2,15 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
+
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 const codexHarnessProtocol = "codex-app-server-v2"
@@ -29,7 +32,12 @@ type LLMHarnessCommandSpec struct {
 
 // CodexLLMHarnessCommand returns the persistent Codex app-server invocation.
 func CodexLLMHarnessCommand() LLMHarnessCommandSpec {
-	return LLMHarnessCommandSpec{Path: "codex", Args: []string{"app-server"}}
+	// The exec-side HTTP listener selects an ephemeral loopback port and exports
+	// it only inside the container. The executor also injects the handler's
+	// runtime-only capability as a scrubbed secret env var. Configure the whole
+	// MCP server in one layer: Codex replaces (rather than deep-merges) a server
+	// table when thread-local config mentions it.
+	return LLMHarnessCommandSpec{Path: "sh", Args: []string{"-c", `exec codex app-server -c "mcp_servers.dagger.url=\"http://127.0.0.1:${DAGGER_SESSION_PORT}/_dagger/exec-http\"" -c 'mcp_servers.dagger.bearer_token_env_var="DAGGER_SESSION_HTTP_TOKEN"' -c 'mcp_servers.dagger.required=true' -c 'mcp_servers.dagger.default_tools_approval_mode="approve"'`}}
 }
 
 type codexRPCResponse struct {
@@ -152,6 +160,23 @@ func (a *CodexLLMHarnessAdapter) Start(ctx context.Context, start LLMHarnessStar
 			params["model"] = start.Model
 		}
 		err = a.call(ctx, "thread/resume", params, &threadResult)
+		if codexIsMissingRollout(err) {
+			if start.Checkpoint.MessageCount < 0 || start.Checkpoint.MessageCount > len(start.History) {
+				return LLMHarnessSession{}, fmt.Errorf("start Codex thread: %w", err)
+			}
+			instructions, history, historyErr := codexPortableHistory(start.History[:start.Checkpoint.MessageCount])
+			if historyErr != nil {
+				return LLMHarnessSession{}, errors.Join(
+					fmt.Errorf("start Codex thread: %w", err),
+					fmt.Errorf("recover Codex thread from portable history: %w", historyErr),
+				)
+			}
+			params["history"] = history
+			if instructions != "" {
+				params["developerInstructions"] = instructions
+			}
+			err = a.call(ctx, "thread/resume", params, &threadResult)
+		}
 	} else {
 		params := map[string]any{}
 		if start.Model != "" {
@@ -504,6 +529,17 @@ func (a *CodexLLMHarnessAdapter) deliverResponse(id int64, method string, respon
 }
 
 func (a *CodexLLMHarnessAdapter) codexEvents(method string, params json.RawMessage) ([]LLMHarnessEvent, error) {
+	primary, err := a.isPrimaryThreadNotification(params)
+	if err != nil {
+		return nil, err
+	}
+	if !primary {
+		// App-server multiplexes spawned sub-agents over the same connection.
+		// Their lifecycle is represented on the primary thread by collaboration
+		// items; forwarding their raw turn events would let a child turn replace
+		// the Dagger runtime's canonical active turn.
+		return nil, nil
+	}
 	switch method {
 	case "turn/started":
 		var p struct {
@@ -591,18 +627,27 @@ func (a *CodexLLMHarnessAdapter) codexItemEvent(method string, params json.RawMe
 		return nil, err
 	}
 	var item struct {
-		Type             string          `json:"type"`
-		ID               string          `json:"id"`
-		ClientID         string          `json:"clientId"`
-		Command          string          `json:"command"`
-		AggregatedOutput string          `json:"aggregatedOutput"`
-		ExitCode         *int            `json:"exitCode"`
-		Status           string          `json:"status"`
-		Server           string          `json:"server"`
-		Tool             string          `json:"tool"`
-		Arguments        json.RawMessage `json:"arguments"`
-		Result           json.RawMessage `json:"result"`
-		Error            json.RawMessage `json:"error"`
+		Type              string          `json:"type"`
+		ID                string          `json:"id"`
+		ClientID          string          `json:"clientId"`
+		Command           string          `json:"command"`
+		AggregatedOutput  string          `json:"aggregatedOutput"`
+		ExitCode          *int            `json:"exitCode"`
+		Status            string          `json:"status"`
+		Server            string          `json:"server"`
+		Tool              string          `json:"tool"`
+		Arguments         json.RawMessage `json:"arguments"`
+		Result            json.RawMessage `json:"result"`
+		Error             json.RawMessage `json:"error"`
+		Kind              string          `json:"kind"`
+		AgentThreadID     string          `json:"agentThreadId"`
+		AgentPath         string          `json:"agentPath"`
+		SenderThreadID    string          `json:"senderThreadId"`
+		ReceiverThreadIDs []string        `json:"receiverThreadIds"`
+		Prompt            *string         `json:"prompt"`
+		Model             *string         `json:"model"`
+		ReasoningEffort   json.RawMessage `json:"reasoningEffort"`
+		AgentsStates      json.RawMessage `json:"agentsStates"`
 	}
 	if err := json.Unmarshal(p.Item, &item); err != nil {
 		return nil, fmt.Errorf("%w: decode Codex %s item: %v", ErrLLMHarnessProtocolFailure, method, err)
@@ -633,15 +678,201 @@ func (a *CodexLLMHarnessAdapter) codexItemEvent(method string, params json.RawMe
 		if started {
 			return []LLMHarnessEvent{LLMHarnessToolCall{Block: a.block(item.ID), CallID: item.ID, Name: item.Tool, Arguments: JSON(item.Arguments), Source: LLMHarnessToolSourceMCP}}, nil
 		}
-		text := string(item.Result)
-		errored := len(item.Error) != 0 && string(item.Error) != "null"
+		errored := item.Status == "failed" || (len(item.Error) != 0 && string(item.Error) != "null")
+		var text string
+		var err error
 		if errored {
-			text = string(item.Error)
+			text, err = codexMCPToolErrorText(item.Error)
+			if err == nil && text == "" {
+				text = "MCP tool call failed"
+			}
+		} else {
+			text, err = codexMCPToolResultText(item.Result)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%w: decode Codex MCP tool %q result: %v", ErrLLMHarnessProtocolFailure, item.Tool, err)
 		}
 		return []LLMHarnessEvent{LLMHarnessToolResult{CallID: item.ID, Text: text, Error: errored}}, nil
+	case "subAgentActivity":
+		activity, err := json.Marshal(map[string]any{
+			"agentPath":     item.AgentPath,
+			"agentThreadId": item.AgentThreadID,
+			"kind":          item.Kind,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%w: encode Codex sub-agent activity: %v", ErrLLMHarnessProtocolFailure, err)
+		}
+		if started {
+			return []LLMHarnessEvent{LLMHarnessToolCall{Block: a.block(item.ID), CallID: item.ID, Name: "subAgentActivity", Arguments: JSON(activity), Source: LLMHarnessToolSourceNative}}, nil
+		}
+		return []LLMHarnessEvent{LLMHarnessToolResult{CallID: item.ID, Text: string(activity)}}, nil
+	case "collabAgentToolCall":
+		if started {
+			arguments := map[string]any{}
+			if item.SenderThreadID != "" {
+				arguments["senderThreadId"] = item.SenderThreadID
+			}
+			if len(item.ReceiverThreadIDs) > 0 {
+				arguments["receiverThreadIds"] = item.ReceiverThreadIDs
+			}
+			if item.Prompt != nil {
+				arguments["prompt"] = *item.Prompt
+			}
+			if item.Model != nil {
+				arguments["model"] = *item.Model
+			}
+			if len(item.ReasoningEffort) > 0 && string(item.ReasoningEffort) != "null" {
+				arguments["reasoningEffort"] = item.ReasoningEffort
+			}
+			encoded, err := json.Marshal(arguments)
+			if err != nil {
+				return nil, fmt.Errorf("%w: encode Codex collaboration call: %v", ErrLLMHarnessProtocolFailure, err)
+			}
+			return []LLMHarnessEvent{LLMHarnessToolCall{Block: a.block(item.ID), CallID: item.ID, Name: item.Tool, Arguments: JSON(encoded), Source: LLMHarnessToolSourceNative}}, nil
+		}
+		result := map[string]any{"status": item.Status}
+		if len(item.ReceiverThreadIDs) > 0 {
+			result["receiverThreadIds"] = item.ReceiverThreadIDs
+		}
+		if len(item.AgentsStates) > 0 && string(item.AgentsStates) != "null" {
+			result["agentsStates"] = item.AgentsStates
+		}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("%w: encode Codex collaboration result: %v", ErrLLMHarnessProtocolFailure, err)
+		}
+		return []LLMHarnessEvent{LLMHarnessToolResult{CallID: item.ID, Text: string(encoded), Error: item.Status == "failed"}}, nil
 	default:
 		return nil, nil
 	}
+}
+
+// codexMCPToolResultText projects the MCP content envelope into the portable
+// text carried by Dagger's LLMContentToolResult and its live tool-call log.
+// The untouched app-server item remains available in the harness service's
+// encapsulated verbose protocol logs; structuredContent and _meta are not
+// presentation text and therefore never leak into the conversation row.
+func codexMCPToolResultText(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	result, err := mcp.ParseCallToolResult(&raw)
+	if err != nil {
+		return "", err
+	}
+	parts := make([]string, 0, len(result.Content))
+	for _, content := range result.Content {
+		text, err := codexMCPContentText(content)
+		if err != nil {
+			return "", err
+		}
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func codexMCPContentText(content mcp.Content) (string, error) {
+	if text, ok := mcp.AsTextContent(content); ok {
+		return text.Text, nil
+	}
+	if image, ok := mcp.AsImageContent(content); ok {
+		return codexMCPBinaryContentText("image", image.MIMEType, image.Data)
+	}
+	if audio, ok := mcp.AsAudioContent(content); ok {
+		return codexMCPBinaryContentText("audio", audio.MIMEType, audio.Data)
+	}
+	if resource, ok := mcp.AsEmbeddedResource(content); ok {
+		switch value := resource.Resource.(type) {
+		case mcp.TextResourceContents:
+			return codexMCPResourceText(value.URI, value.MIMEType, value.Text), nil
+		case *mcp.TextResourceContents:
+			return codexMCPResourceText(value.URI, value.MIMEType, value.Text), nil
+		case mcp.BlobResourceContents:
+			text, err := codexMCPBinaryContentText("blob", value.MIMEType, value.Blob)
+			return codexMCPResourceText(value.URI, value.MIMEType, text), err
+		case *mcp.BlobResourceContents:
+			text, err := codexMCPBinaryContentText("blob", value.MIMEType, value.Blob)
+			return codexMCPResourceText(value.URI, value.MIMEType, text), err
+		default:
+			return "", fmt.Errorf("unsupported embedded MCP resource type %T", resource.Resource)
+		}
+	}
+	switch link := content.(type) {
+	case mcp.ResourceLink:
+		return codexMCPResourceLinkText(link), nil
+	case *mcp.ResourceLink:
+		return codexMCPResourceLinkText(*link), nil
+	default:
+		return "", fmt.Errorf("unsupported MCP content type %T", content)
+	}
+}
+
+func codexMCPBinaryContentText(kind, mimeType, data string) (string, error) {
+	decodedBytes, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding, strings.NewReader(data)))
+	if err != nil {
+		return "", fmt.Errorf("decode %s content: %w", kind, err)
+	}
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return fmt.Sprintf("[%s content: %s, %d bytes]", kind, mimeType, decodedBytes), nil
+}
+
+func codexMCPResourceText(uri, mimeType, text string) string {
+	header := "[resource: " + uri
+	if mimeType != "" {
+		header += ", " + mimeType
+	}
+	return header + "]\n" + text
+}
+
+func codexMCPResourceLinkText(link mcp.ResourceLink) string {
+	text := "[resource link: " + link.Name + " (" + link.URI + ")"
+	if link.MIMEType != "" {
+		text += ", " + link.MIMEType
+	}
+	text += "]"
+	if link.Description != "" {
+		text += "\n" + link.Description
+	}
+	return text
+}
+
+func codexMCPToolErrorText(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var itemError struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &itemError); err != nil {
+		return "", err
+	}
+	if itemError.Message == "" {
+		return "", errors.New("Codex MCP tool error omitted message")
+	}
+	return itemError.Message, nil
+}
+
+func (a *CodexLLMHarnessAdapter) isPrimaryThreadNotification(params json.RawMessage) (bool, error) {
+	if len(params) == 0 || string(params) == "null" {
+		return true, nil
+	}
+	var scope struct {
+		ThreadID string `json:"threadId"`
+	}
+	if err := json.Unmarshal(params, &scope); err != nil {
+		return false, fmt.Errorf("%w: decode Codex notification scope: %v", ErrLLMHarnessProtocolFailure, err)
+	}
+	if scope.ThreadID == "" {
+		return true, nil
+	}
+	a.mu.Lock()
+	threadID := a.threadID
+	a.mu.Unlock()
+	return threadID == "" || scope.ThreadID == threadID, nil
 }
 
 func (a *CodexLLMHarnessAdapter) failProtocol(cause error) {
@@ -743,6 +974,86 @@ func codexIsTurnMismatch(err error) bool {
 	}
 	message := strings.ToLower(rpcErr.Message + " " + string(rpcErr.Data))
 	return strings.Contains(message, "expectedturnid") || strings.Contains(message, "active turn") || strings.Contains(message, "turn mismatch")
+}
+
+func codexIsMissingRollout(err error) bool {
+	var rpcErr *codexRPCError
+	if !errors.As(err, &rpcErr) {
+		return false
+	}
+	message := strings.ToLower(rpcErr.Message + " " + string(rpcErr.Data))
+	return strings.Contains(message, "no rollout found") ||
+		(strings.Contains(message, "rollout") && strings.Contains(message, "not found"))
+}
+
+func codexPortableHistory(messages []*LLMMessage) (string, []map[string]any, error) {
+	var system []string
+	history := make([]map[string]any, 0)
+	for messageIndex, message := range messages {
+		switch message.Role {
+		case LLMMessageRoleSystem:
+			if text := message.TextContent(); strings.TrimSpace(text) != "" {
+				system = append(system, text)
+			}
+		case LLMMessageRoleUser, LLMMessageRoleAssistant:
+			for blockIndex, block := range message.Content {
+				switch block.Kind {
+				case LLMContentText:
+					if block.Text == "" {
+						continue
+					}
+					role := "user"
+					contentType := "input_text"
+					if message.Role == LLMMessageRoleAssistant {
+						role = "assistant"
+						contentType = "output_text"
+					}
+					history = append(history, map[string]any{
+						"type":    "message",
+						"role":    role,
+						"content": []map[string]any{{"type": contentType, "text": block.Text}},
+					})
+				case LLMContentThinking:
+					// Portable Dagger history does not guarantee that Signature is a
+					// Codex encrypted reasoning item. The visible response and tool
+					// sequence are sufficient context; never fabricate reasoning state.
+					continue
+				case LLMContentToolCall:
+					if message.Role != LLMMessageRoleAssistant || block.CallID == "" || block.ToolName == "" {
+						return "", nil, fmt.Errorf("message %d block %d is not a valid assistant tool call", messageIndex, blockIndex)
+					}
+					arguments := block.Arguments.String()
+					if arguments == "" {
+						arguments = "{}"
+					}
+					history = append(history, map[string]any{
+						"type":      "function_call",
+						"call_id":   block.CallID,
+						"name":      block.ToolName,
+						"arguments": arguments,
+					})
+				case LLMContentToolResult:
+					if message.Role != LLMMessageRoleUser || block.CallID == "" {
+						return "", nil, fmt.Errorf("message %d block %d is not a valid user tool result", messageIndex, blockIndex)
+					}
+					output := block.Text
+					if block.Errored {
+						output = "error: " + output
+					}
+					history = append(history, map[string]any{
+						"type":    "function_call_output",
+						"call_id": block.CallID,
+						"output":  output,
+					})
+				default:
+					return "", nil, fmt.Errorf("message %d block %d has unsupported kind %q", messageIndex, blockIndex, block.Kind)
+				}
+			}
+		default:
+			return "", nil, fmt.Errorf("message %d has unsupported role %q", messageIndex, message.Role)
+		}
+	}
+	return strings.Join(system, "\n\n"), history, nil
 }
 
 func decodeHarnessParams(method string, raw json.RawMessage, dst any) error {

@@ -34,6 +34,7 @@ type LLMHarnessRuntime struct {
 	adapter LLMHarnessAdapter
 	ledger  *LLMHarnessCorrelationLedger
 	commit  LLMHarnessCommitFunc
+	display *llmHarnessDisplay
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -114,6 +115,7 @@ func NewLLMHarnessRuntime(ctx context.Context, kind LLMHarnessKind, adapter LLMH
 		adapter: adapter,
 		ledger:  ledger,
 		commit:  commit,
+		display: start.display,
 		ctx:     runCtx,
 		cancel:  cancel,
 		done:    make(chan struct{}),
@@ -158,6 +160,9 @@ func (runtime *LLMHarnessRuntime) Enqueue(ctx context.Context, daggerMessageID s
 	runtime.records[daggerMessageID] = record
 	runtime.queue = append(runtime.queue, daggerMessageID)
 	runtime.mu.Unlock()
+	if runtime.display != nil {
+		runtime.display.prompt(record.input)
+	}
 	runtime.poke()
 	return nil
 }
@@ -316,6 +321,9 @@ func (runtime *LLMHarnessRuntime) run() {
 			case LLMHarnessTurn:
 				switch event.State {
 				case LLMHarnessTurnStarted:
+					if runtime.display != nil {
+						runtime.display.startTurn(event.NativeTurnID)
+					}
 					runtime.setActiveTurn(event.NativeTurnID)
 				case LLMHarnessTurnCompleted:
 					if err := runtime.finishTurn(event.NativeTurnID, false, consumedByTurn, accumulators, finishedTurns); err != nil {
@@ -342,12 +350,24 @@ func (runtime *LLMHarnessRuntime) run() {
 				}
 			case LLMHarnessTextDelta:
 				runtime.accumulator(accumulators).text(event)
+				if runtime.display != nil {
+					runtime.display.text(runtime.currentTurnID(), event)
+				}
 			case LLMHarnessThinkingDelta:
 				runtime.accumulator(accumulators).thinking(event)
+				if runtime.display != nil {
+					runtime.display.thinking(runtime.currentTurnID(), event)
+				}
 			case LLMHarnessToolCall:
 				runtime.accumulator(accumulators).toolCall(event)
+				if runtime.display != nil {
+					runtime.display.toolCall(runtime.currentTurnID(), event)
+				}
 			case LLMHarnessToolResult:
 				runtime.accumulator(accumulators).toolResult(event)
+				if runtime.display != nil {
+					runtime.display.toolResult(runtime.currentTurnID(), event)
+				}
 			case LLMHarnessUsage:
 				runtime.accumulator(accumulators).addUsage(event.Usage)
 			case LLMHarnessCompleted:
@@ -502,6 +522,9 @@ func (runtime *LLMHarnessRuntime) finishTurn(turnID string, interrupted bool, co
 			return fmt.Errorf("commit LLM harness turn %q: %w", turnID, err)
 		}
 	}
+	if runtime.display != nil {
+		runtime.display.finishTurn(turnID, nil)
+	}
 	runtime.mu.Lock()
 	for _, record := range records {
 		resolveHarnessRecord(record, reply, nil)
@@ -518,15 +541,19 @@ func (runtime *LLMHarnessRuntime) finishTurn(turnID string, interrupted bool, co
 }
 
 func (runtime *LLMHarnessRuntime) accumulator(accumulators map[string]*llmHarnessAccumulator) *llmHarnessAccumulator {
-	runtime.mu.Lock()
-	turnID := runtime.activeTurn
-	runtime.mu.Unlock()
+	turnID := runtime.currentTurnID()
 	accumulator := accumulators[turnID]
 	if accumulator == nil {
 		accumulator = &llmHarnessAccumulator{byIndex: map[int64]int{}}
 		accumulators[turnID] = accumulator
 	}
 	return accumulator
+}
+
+func (runtime *LLMHarnessRuntime) currentTurnID() string {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.activeTurn
 }
 
 func (runtime *LLMHarnessRuntime) setActiveTurn(turnID string) {
@@ -555,6 +582,9 @@ func (runtime *LLMHarnessRuntime) fail(err error) {
 		resolveHarnessRecord(record, "", err)
 	}
 	runtime.mu.Unlock()
+	if runtime.display != nil {
+		runtime.display.close(err)
+	}
 }
 
 func finalizeHarnessDelivery(record *llmHarnessRuntimeRecord, delivery AgentMessageDelivery, err error) {

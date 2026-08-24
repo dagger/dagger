@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -238,6 +239,43 @@ func (dp *displayPhases) CloseAll() {
 	for _, idx := range idxs {
 		dp.Close(idx)
 	}
+}
+
+// ToolCall returns the display context for a closed tool-call phase. The span
+// deliberately remains open until its authoritative execution result arrives.
+func (dp *displayPhases) ToolCall(callID string) (toolCallDisplay, bool) {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	tc, ok := dp.toolCalls[callID]
+	return tc, ok
+}
+
+// FinishToolCall attaches the model-visible result to a live tool-call span,
+// records its context cost and error state, and ends it exactly once.
+func (dp *displayPhases) FinishToolCall(callID, result string, errored bool) {
+	dp.mu.Lock()
+	tc, ok := dp.toolCalls[callID]
+	if ok {
+		delete(dp.toolCalls, callID)
+	}
+	dp.mu.Unlock()
+	if !ok {
+		return
+	}
+	if tokens := estimateTextTokens(len(result)); tokens > 0 {
+		tc.Span.SetAttributes(attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens))
+	}
+	if errored {
+		tc.Span.SetStatus(codes.Error, result)
+	}
+	attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+	if resultType := toolResultContentType(result); resultType != "" {
+		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, resultType))
+	}
+	resultStdio := telemetry.SpanStdio(tc.Ctx, InstrumentationLibrary, attrs...)
+	fmt.Fprintln(resultStdio.Stdout, result)
+	_ = resultStdio.Close()
+	tc.Span.End()
 }
 
 // Abort records an error on all display spans and ends them. Called when

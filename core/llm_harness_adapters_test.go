@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -82,7 +83,7 @@ func closeHarnessAdapter(t *testing.T, adapter LLMHarnessAdapter) {
 }
 
 func TestLLMHarnessCommandSpecs(t *testing.T) {
-	assert.Equal(t, LLMHarnessCommandSpec{Path: "codex", Args: []string{"app-server"}}, CodexLLMHarnessCommand())
+	assert.Equal(t, LLMHarnessCommandSpec{Path: "sh", Args: []string{"-c", `exec codex app-server -c "mcp_servers.dagger.url=\"http://127.0.0.1:${DAGGER_SESSION_PORT}/_dagger/exec-http\"" -c 'mcp_servers.dagger.bearer_token_env_var="DAGGER_SESSION_HTTP_TOKEN"' -c 'mcp_servers.dagger.required=true' -c 'mcp_servers.dagger.default_tools_approval_mode="approve"'`}}, CodexLLMHarnessCommand())
 	assert.Equal(t, LLMHarnessCommandSpec{Path: "claude", Args: []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"}}, ClaudeLLMHarnessCommand())
 	assert.Equal(t, []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--resume", "session-1"}, ClaudeLLMHarnessCommand("session-1").Args)
 }
@@ -229,6 +230,9 @@ func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 		if params["model"] != "gpt-fixture" {
 			return fmt.Errorf("got model %v", params["model"])
 		}
+		if _, ok := params["config"]; ok {
+			return fmt.Errorf("thread config must not replace process MCP config: %#v", params["config"])
+		}
 		if err := fixture.write(map[string]any{"method": "thread/start", "id": frameID(thread), "response": map[string]any{"thread": map[string]any{"id": "thread-1"}}}); err != nil {
 			return err
 		}
@@ -278,13 +282,25 @@ func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 		if err := fixture.write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "commandExecution", "id": "shell-1", "aggregatedOutput": "ok", "exitCode": 0}}}); err != nil {
 			return err
 		}
+		if err := fixture.write(map[string]any{"method": "item/started", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "mcpToolCall", "id": "mcp-1", "server": "dagger", "tool": "staff_collect", "status": "inProgress", "arguments": map[string]any{"name": "calculator"}}}}); err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "mcpToolCall", "id": "mcp-1", "server": "dagger", "tool": "staff_collect", "status": "completed", "arguments": map[string]any{"name": "calculator"}, "result": map[string]any{"content": []any{map[string]any{"type": "text", "text": "first"}, map[string]any{"type": "text", "text": "second"}}, "structuredContent": map[string]any{"answer": 4}, "_meta": map[string]any{"private": true}}}}}); err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "item/started", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "mcpToolCall", "id": "mcp-error", "server": "dagger", "tool": "staff_collect", "status": "inProgress", "arguments": map[string]any{"name": "missing"}}}}); err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "mcpToolCall", "id": "mcp-error", "server": "dagger", "tool": "staff_collect", "status": "failed", "arguments": map[string]any{"name": "missing"}, "result": nil, "error": map[string]any{"message": "worker not found"}}}}); err != nil {
+			return err
+		}
 		if err := fixture.write(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"}}}); err != nil {
 			return err
 		}
 		return nil
 	})
 
-	session, err := adapter.Start(context.Background(), LLMHarnessStart{Model: "gpt-fixture"})
+	session, err := adapter.Start(context.Background(), LLMHarnessStart{Model: "gpt-fixture", MCPURL: "http://container/mcp", MCPToken: "mcp-token"})
 	require.NoError(t, err)
 	assert.Equal(t, "thread-1", session.NativeSession)
 	require.NoError(t, adapter.StartTurn(context.Background(), textHarnessInput("opaque-message-1", "opaque-message-1", "hello")))
@@ -301,8 +317,144 @@ func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 	assert.Equal(t, LLMHarnessTextDelta{Block: 1, Delta: "partial"}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessToolCall{Block: 2, CallID: "shell-1", Name: "shell", Arguments: JSON(`{"command":"printf ok"}`), Source: LLMHarnessToolSourceNative}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessToolResult{CallID: "shell-1", Text: "ok"}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolCall{Block: 3, CallID: "mcp-1", Name: "staff_collect", Arguments: JSON(`{"name":"calculator"}`), Source: LLMHarnessToolSourceMCP}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolResult{CallID: "mcp-1", Text: "first\nsecond"}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolCall{Block: 4, CallID: "mcp-error", Name: "staff_collect", Arguments: JSON(`{"name":"missing"}`), Source: LLMHarnessToolSourceMCP}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolResult{CallID: "mcp-error", Text: "worker not found", Error: true}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessTurn{NativeTurnID: "turn-1", State: LLMHarnessTurnCompleted}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessCompleted{NativeTurnID: "turn-1"}, receiveHarnessEvent(t, adapter.Events()))
+	awaitFixture(t, fixtureDone)
+	closeHarnessAdapter(t, adapter)
+}
+
+func TestCodexMCPToolResultContentProjection(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "text",
+			raw:  `{"content":[{"type":"text","text":"hello"}]}`,
+			want: "hello",
+		},
+		{
+			name: "multiple text blocks",
+			raw:  `{"content":[{"type":"text","text":"first"},{"type":"text","text":"second"}]}`,
+			want: "first\nsecond",
+		},
+		{
+			name: "empty",
+			raw:  `{"content":[]}`,
+		},
+		{
+			name: "structured content uses text fallback",
+			raw:  `{"content":[{"type":"text","text":"answer: 4"}],"structuredContent":{"answer":4},"_meta":{"private":true}}`,
+			want: "answer: 4",
+		},
+		{
+			name: "structured only stays out of presentation",
+			raw:  `{"content":[],"structuredContent":{"answer":4}}`,
+		},
+		{
+			name: "binary content is summarized without base64",
+			raw:  `{"content":[{"type":"image","mimeType":"image/png","data":"aGk="},{"type":"audio","mimeType":"audio/wav","data":"YWJj"}]}`,
+			want: "[image content: image/png, 2 bytes]\n[audio content: audio/wav, 3 bytes]",
+		},
+		{
+			name: "resource link",
+			raw:  `{"content":[{"type":"resource_link","uri":"file:///report.txt","name":"report","description":"final report","mimeType":"text/plain"}]}`,
+			want: "[resource link: report (file:///report.txt), text/plain]\nfinal report",
+		},
+		{
+			name: "embedded text resource",
+			raw:  `{"content":[{"type":"resource","resource":{"uri":"file:///report.txt","mimeType":"text/plain","text":"the report"}}]}`,
+			want: "[resource: file:///report.txt, text/plain]\nthe report",
+		},
+		{
+			name: "embedded blob resource",
+			raw:  `{"content":[{"type":"resource","resource":{"uri":"file:///blob.bin","mimeType":"application/octet-stream","blob":"aGk="}}]}`,
+			want: "[resource: file:///blob.bin, application/octet-stream]\n[blob content: application/octet-stream, 2 bytes]",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := codexMCPToolResultText(json.RawMessage(test.raw))
+			require.NoError(t, err)
+			require.Equal(t, test.want, got)
+		})
+	}
+
+	_, err := codexMCPToolResultText(json.RawMessage(`{"content":[{"type":"future"}]}`))
+	require.Error(t, err)
+	_, err = codexMCPToolResultText(json.RawMessage(`{"content":[{"type":"image","mimeType":"image/png","data":"not base64"}]}`))
+	require.Error(t, err)
+	message, err := codexMCPToolErrorText(json.RawMessage(`{"message":"tool failed","details":{"private":true}}`))
+	require.NoError(t, err)
+	require.Equal(t, "tool failed", message)
+}
+
+func TestCodexHarnessScopesChildThreadsAndExposesCollaboration(t *testing.T) {
+	transport, fixture := newHarnessFixture(t)
+	adapter := NewCodexLLMHarnessAdapter(transport)
+	fixtureDone := runFixture(t, func() error {
+		initialize, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "initialize", "id": frameID(initialize), "response": map[string]any{}}); err != nil {
+			return err
+		}
+		thread, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "thread/start", "id": frameID(thread), "response": map[string]any{"thread": map[string]any{"id": "thread-parent"}}}); err != nil {
+			return err
+		}
+		turn, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "turn/start", "id": frameID(turn), "response": map[string]any{"turn": map[string]any{"id": "turn-parent"}}}); err != nil {
+			return err
+		}
+
+		frames := []map[string]any{
+			{"method": "turn/started", "params": map[string]any{"threadId": "thread-parent", "turn": map[string]any{"id": "turn-parent", "status": "inProgress"}}},
+			{"method": "item/started", "params": map[string]any{"threadId": "thread-parent", "turnId": "turn-parent", "item": map[string]any{"type": "userMessage", "id": "user-parent", "clientId": "message-parent"}}},
+			{"method": "item/started", "params": map[string]any{"threadId": "thread-parent", "turnId": "turn-parent", "item": map[string]any{"type": "subAgentActivity", "id": "spawn-1", "kind": "started", "agentThreadId": "thread-child", "agentPath": "/root/calculate_sum"}}},
+			{"method": "item/completed", "params": map[string]any{"threadId": "thread-parent", "turnId": "turn-parent", "item": map[string]any{"type": "subAgentActivity", "id": "spawn-1", "kind": "started", "agentThreadId": "thread-child", "agentPath": "/root/calculate_sum"}}},
+			{"method": "turn/started", "params": map[string]any{"threadId": "thread-child", "turn": map[string]any{"id": "turn-child", "status": "inProgress"}}},
+			{"method": "item/agentMessage/delta", "params": map[string]any{"threadId": "thread-child", "turnId": "turn-child", "itemId": "answer-child", "delta": "4. Confirmed."}},
+			{"method": "thread/tokenUsage/updated", "params": map[string]any{"threadId": "thread-child", "turnId": "turn-child", "tokenUsage": map[string]any{"last": map[string]any{"totalTokens": 4}}}},
+			{"method": "turn/completed", "params": map[string]any{"threadId": "thread-child", "turn": map[string]any{"id": "turn-child", "status": "completed"}}},
+			{"method": "item/started", "params": map[string]any{"threadId": "thread-parent", "turnId": "turn-parent", "item": map[string]any{"type": "collabAgentToolCall", "id": "wait-1", "tool": "wait", "status": "inProgress", "senderThreadId": "thread-parent", "receiverThreadIds": []string{"thread-child"}, "agentsStates": map[string]any{}}}},
+			{"method": "item/completed", "params": map[string]any{"threadId": "thread-parent", "turnId": "turn-parent", "item": map[string]any{"type": "collabAgentToolCall", "id": "wait-1", "tool": "wait", "status": "completed", "senderThreadId": "thread-parent", "receiverThreadIds": []string{"thread-child"}, "agentsStates": map[string]any{"thread-child": map[string]any{"status": "completed", "message": "4. Confirmed."}}}}},
+			{"method": "item/agentMessage/delta", "params": map[string]any{"threadId": "thread-parent", "turnId": "turn-parent", "itemId": "answer-parent", "delta": "The result is 4."}},
+			{"method": "turn/completed", "params": map[string]any{"threadId": "thread-parent", "turn": map[string]any{"id": "turn-parent", "status": "completed"}}},
+		}
+		for _, frame := range frames {
+			if err := fixture.write(frame); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	_, err := adapter.Start(context.Background(), LLMHarnessStart{})
+	require.NoError(t, err)
+	require.NoError(t, adapter.StartTurn(context.Background(), textHarnessInput("message-parent", "message-parent", "Hire a sub-agent")))
+
+	assert.Equal(t, LLMHarnessTurn{NativeTurnID: "turn-parent", State: LLMHarnessTurnStarted}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessMessageLifecycle{DaggerMessageID: "message-parent", VendorMessageID: "message-parent", NativeTurn: "turn-parent", State: LLMHarnessMessageStarted}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolCall{Block: 1, CallID: "spawn-1", Name: "subAgentActivity", Arguments: JSON(`{"agentPath":"/root/calculate_sum","agentThreadId":"thread-child","kind":"started"}`), Source: LLMHarnessToolSourceNative}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolResult{CallID: "spawn-1", Text: `{"agentPath":"/root/calculate_sum","agentThreadId":"thread-child","kind":"started"}`}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolCall{Block: 2, CallID: "wait-1", Name: "wait", Arguments: JSON(`{"receiverThreadIds":["thread-child"],"senderThreadId":"thread-parent"}`), Source: LLMHarnessToolSourceNative}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessToolResult{CallID: "wait-1", Text: `{"agentsStates":{"thread-child":{"message":"4. Confirmed.","status":"completed"}},"receiverThreadIds":["thread-child"],"status":"completed"}`}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessTextDelta{Block: 3, Delta: "The result is 4."}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessTurn{NativeTurnID: "turn-parent", State: LLMHarnessTurnCompleted}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessCompleted{NativeTurnID: "turn-parent"}, receiveHarnessEvent(t, adapter.Events()))
 	awaitFixture(t, fixtureDone)
 	closeHarnessAdapter(t, adapter)
 }
@@ -464,6 +616,62 @@ func TestCodexHarnessResumesCheckpointThread(t *testing.T) {
 	session, err := adapter.Start(context.Background(), LLMHarnessStart{Checkpoint: checkpoint})
 	require.NoError(t, err)
 	assert.Equal(t, "checkpoint-thread", session.NativeSession)
+	awaitFixture(t, fixtureDone)
+	closeHarnessAdapter(t, adapter)
+}
+
+func TestCodexHarnessRecoversMissingRolloutFromCheckpointHistory(t *testing.T) {
+	transport, fixture := newHarnessFixture(t)
+	adapter := NewCodexLLMHarnessAdapter(transport)
+	fixtureDone := runFixture(t, func() error {
+		initialize, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "initialize", "id": frameID(initialize), "response": map[string]any{}}); err != nil {
+			return err
+		}
+		resume, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "thread/resume", "id": frameID(resume), "error": map[string]any{"code": -32600, "message": "no rollout found for thread id checkpoint-thread"}}); err != nil {
+			return err
+		}
+		recover, err := fixture.read()
+		if err != nil {
+			return err
+		}
+		if recover["method"] != "thread/resume" {
+			return fmt.Errorf("got recovery method %v", recover["method"])
+		}
+		params := recover["params"].(map[string]any)
+		if params["threadId"] != "checkpoint-thread" || params["developerInstructions"] != "system instruction" {
+			return fmt.Errorf("got recovery params %#v", params)
+		}
+		history, ok := params["history"].([]any)
+		if !ok || len(history) != 5 {
+			return fmt.Errorf("got recovery history %#v", params["history"])
+		}
+		if history[0].(map[string]any)["role"] != "user" || history[1].(map[string]any)["role"] != "assistant" || history[2].(map[string]any)["type"] != "function_call" || history[3].(map[string]any)["type"] != "function_call_output" || history[4].(map[string]any)["role"] != "assistant" {
+			return fmt.Errorf("got recovery history %#v", history)
+		}
+		return fixture.write(map[string]any{"method": "thread/resume", "id": frameID(recover), "response": map[string]any{"thread": map[string]any{"id": "recovered-thread"}}})
+	})
+
+	history := []*LLMMessage{
+		{Role: LLMMessageRoleSystem, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "system instruction"}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "inspect"}}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "checking"}, {Kind: LLMContentThinking, Text: "private reasoning"}, {Kind: LLMContentToolCall, CallID: "call-1", ToolName: "shell", Arguments: JSON(`{"command":"pwd"}`)}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Text: "/workspace"}}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "done"}}},
+		// This suffix is not represented by the checkpoint and must not be imported.
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "pending"}}},
+	}
+	checkpoint := &LLMHarnessCheckpoint{NativeSession: "checkpoint-thread", Protocol: codexHarnessProtocol, MessageCount: len(history) - 1}
+	session, err := adapter.Start(context.Background(), LLMHarnessStart{Checkpoint: checkpoint, History: history})
+	require.NoError(t, err)
+	assert.Equal(t, "recovered-thread", session.NativeSession)
 	awaitFixture(t, fixtureDone)
 	closeHarnessAdapter(t, adapter)
 }

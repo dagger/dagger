@@ -19,7 +19,10 @@ type testLLMToolSource struct {
 	mu        sync.Mutex
 	toolLoads int
 	called    chan any
+	callCtx   chan context.Context
 }
+
+type testLLMToolContextKey struct{}
 
 func (s *testLLMToolSource) DefaultSystemPrompt(context.Context) (string, error) {
 	return "test instructions", nil
@@ -41,8 +44,9 @@ func (s *testLLMToolSource) Tools(context.Context) ([]LLMTool, error) {
 				},
 				"required": []string{"message"},
 			},
-			Call: func(_ context.Context, args any) (any, error) {
+			Call: func(ctx context.Context, args any) (any, error) {
 				s.called <- args
+				s.callCtx <- ctx
 				return map[string]any{"echo": args.(map[string]any)["message"]}, nil
 			},
 		},
@@ -63,8 +67,9 @@ func (s *testLLMToolSource) loadCount() int {
 
 func newTestLLMToolServer(t *testing.T) (*LLMToolServer, *testLLMToolSource) {
 	t.Helper()
-	source := &testLLMToolSource{called: make(chan any, 1)}
-	server, err := newLLMToolServer(t.Context(), source)
+	source := &testLLMToolSource{called: make(chan any, 1), callCtx: make(chan context.Context, 1)}
+	ctx := context.WithValue(t.Context(), testLLMToolContextKey{}, "server context")
+	server, err := newLLMToolServer(ctx, source)
 	require.NoError(t, err)
 	return server, source
 }
@@ -107,6 +112,7 @@ func TestLLMToolServerStreamableHTTP(t *testing.T) {
 	require.Truef(t, ok, "unexpected MCP content type %T", result.Content[0])
 	require.JSONEq(t, `{"echo":"hello"}`, text.Text)
 	require.Equal(t, map[string]any{"message": "hello"}, <-source.called)
+	require.Equal(t, "server context", (<-source.callCtx).Value(testLLMToolContextKey{}))
 	require.Equal(t, 2, source.loadCount(), "tools should refresh after a successful call")
 }
 

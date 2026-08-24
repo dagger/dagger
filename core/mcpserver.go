@@ -32,7 +32,25 @@ type llmToolSource interface {
 // LLMToolServer exposes an MCP tool set independently of its transport.
 type LLMToolServer struct {
 	*mcpserver.MCPServer
-	env llmToolSource
+	env         llmToolSource
+	baseCtx     context.Context
+	callContext func(context.Context, mcp.CallToolRequest) context.Context
+}
+
+// llmToolRequestContext takes cancellation and deadlines from the transport
+// request while falling back to the server's construction context for Dagger
+// session values. Streamable HTTP creates a fresh request context which does
+// not otherwise carry client metadata, CurrentQuery, or the active schema.
+type llmToolRequestContext struct {
+	context.Context
+	base context.Context
+}
+
+func (ctx llmToolRequestContext) Value(key any) any {
+	if value := ctx.Context.Value(key); value != nil {
+		return value
+	}
+	return ctx.base.Value(key)
 }
 
 // NewLLMToolServer initializes an MCP server from the tools in env.
@@ -49,7 +67,8 @@ func newLLMToolServer(ctx context.Context, env llmToolSource) (*LLMToolServer, e
 	s := &LLMToolServer{
 		MCPServer: mcpserver.NewMCPServer("Dagger", "0.0.1",
 			mcpserver.WithInstructions(instructions)),
-		env: env,
+		env:     env,
+		baseCtx: ctx,
 	}
 	if err := s.setTools(ctx); err != nil {
 		return nil, err
@@ -62,6 +81,10 @@ func (s *LLMToolServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFun
 		// should never happen
 		if request.Method != "tools/call" {
 			return nil, fmt.Errorf("[dagger] expected MCP request method \"tools/call\" but received %q", request.Method)
+		}
+		ctx = llmToolRequestContext{Context: ctx, base: s.baseCtx}
+		if s.callContext != nil {
+			ctx = s.callContext(ctx, request)
 		}
 
 		result, err := tool.Call(ctx, request.Params.Arguments)
@@ -86,6 +109,14 @@ func (s *LLMToolServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFun
 
 		return mcp.NewToolResultText(text), nil
 	}
+}
+
+// withCallContext lets a protocol bridge parent the authoritative Dagger tool
+// evaluation beneath a vendor's live tool-call display span. It must be set
+// before the server starts receiving requests.
+func (s *LLMToolServer) withCallContext(callContext func(context.Context, mcp.CallToolRequest) context.Context) *LLMToolServer {
+	s.callContext = callContext
+	return s
 }
 
 func (s *LLMToolServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool, error) {

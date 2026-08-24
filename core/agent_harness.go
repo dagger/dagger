@@ -198,6 +198,11 @@ func (rt *AgentRuntime) pokeWake() {
 
 func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (*LLMHarnessRuntime, func(), error) {
 	llm := inst.Self()
+	callDigest := ""
+	if dig, err := inst.RecipeDigest(ctx); err == nil {
+		callDigest = dig.String()
+	}
+	display := newLLMHarnessDisplay(ctx, callDigest)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -206,14 +211,22 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 	if err != nil {
 		return nil, nil, fmt.Errorf("get harness HTTP registry: %w", err)
 	}
-	toolServer, err := NewLLMToolServer(ctx, llm.mcp)
+	mcp := llm.mcp
+	if len(mcp.boundTools) == 0 {
+		mcp, err = mcp.bindWorkspaceModuleTools(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("bind harness workspace module tools: %w", err)
+		}
+	}
+	toolServer, err := NewLLMToolServer(ctx, mcp)
 	if err != nil {
 		return nil, nil, err
 	}
+	toolServer.withCallContext(display.mcpCallContext)
 	httpHandler := toolServer.StreamableHTTPHandler()
-	bearer := identity.NewID()
+	var execToken string
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer "+bearer {
+		if request.Header.Get("Authorization") != "Bearer "+execToken {
 			http.Error(response, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
@@ -229,7 +242,7 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		unregister()
 		return nil, nil, err
 	}
-	workspace, err := llm.mcp.workspaceDirectory(ctx, srv)
+	workspace, err := mcp.workspaceDirectory(ctx, srv)
 	if err != nil {
 		unregister()
 		return nil, nil, fmt.Errorf("resolve harness workspace: %w", err)
@@ -265,10 +278,6 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		unregister()
 		return nil, nil, fmt.Errorf("unsupported LLM harness kind %q", llm.harnessKind)
 	}
-	callDigest := ""
-	if dig, err := inst.RecipeDigest(ctx); err == nil {
-		callDigest = dig.String()
-	}
 	start := LLMHarnessStart{
 		History:    cloneLLMMessages(llm.Messages),
 		Checkpoint: checkpoint,
@@ -278,14 +287,16 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		// Vendor adapters which consume MCPURL may substitute it in their native
 		// configuration; the forwarding path itself is selected by execToken.
 		MCPURL:     "http://127.0.0.1:${" + engineutil.DaggerSessionPortEnv + "}" + engineutil.DaggerExecHTTPPath,
-		MCPToken:   bearer,
+		MCPToken:   execToken,
 		CallDigest: callDigest,
 		Auth:       auth,
+		display:    display,
 	}
 	runtime, err := NewLLMHarnessRuntime(ctx, llm.harnessKind, adapter, start, func(commitCtx context.Context, commit LLMHarnessCommit) (string, error) {
 		return rt.commitHarnessTurn(commitCtx, commit)
 	})
 	if err != nil {
+		display.close(err)
 		_ = process.Stop(context.WithoutCancel(ctx))
 		unregister()
 		return nil, nil, err

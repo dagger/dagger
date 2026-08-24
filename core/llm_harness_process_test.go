@@ -26,7 +26,7 @@ func TestLLMHarnessCommand(t *testing.T) {
 		{
 			name: "codex app server",
 			kind: LLMHarnessCodex,
-			want: []string{"codex", "app-server"},
+			want: []string{"sh", "-c", `exec codex app-server -c "mcp_servers.dagger.url=\"http://127.0.0.1:${DAGGER_SESSION_PORT}/_dagger/exec-http\"" -c 'mcp_servers.dagger.bearer_token_env_var="DAGGER_SESSION_HTTP_TOKEN"' -c 'mcp_servers.dagger.required=true' -c 'mcp_servers.dagger.default_tools_approval_mode="approve"'`},
 		},
 		{
 			name: "persistent claude stream json",

@@ -202,6 +202,7 @@ func (c *Client) Run(
 		namedSetupFunc{"injectInit", c.injectInit},
 		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
 		namedSetupFunc{"filterEnvs", c.filterEnvs},
+		namedSetupFunc{"setupExecHTTPAuth", c.setupExecHTTPAuth},
 		namedSetupFunc{"setupRootfs", c.setupRootfs},
 		namedSetupFunc{"setUserGroup", c.setUserGroup},
 		namedSetupFunc{"setExitCodePath", c.setExitCodePath},

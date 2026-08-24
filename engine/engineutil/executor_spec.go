@@ -68,7 +68,12 @@ const (
 
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
-	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
+	// DaggerExecHTTPTokenEnv carries the runtime-only capability which selects
+	// and authenticates the container-local exec HTTP handler. The value is
+	// injected after the execution cache key has been computed and scrubbed from
+	// process output like any other secret environment variable.
+	DaggerExecHTTPTokenEnv = "DAGGER_SESSION_HTTP_TOKEN"
+	DaggerEngineNumCPUEnv  = "DAGGER_ENGINE_NUM_CPU"
 
 	// DaggerExecHTTPPath is the container-local endpoint forwarded to the
 	// session-scoped handler selected by ExecutionMetadata.
@@ -439,6 +444,21 @@ func (c *Client) filterEnvs(_ context.Context, state *execState) error {
 	}
 	state.spec.Process.Env = filteredEnvs
 
+	return nil
+}
+
+func (c *Client) setupExecHTTPAuth(_ context.Context, state *execState) error {
+	if state.execMD == nil || state.execMD.ExecHTTPHandlerToken == "" {
+		return nil
+	}
+	state.spec.Process.Env = append(
+		state.spec.Process.Env,
+		DaggerExecHTTPTokenEnv+"="+state.execMD.ExecHTTPHandlerToken,
+	)
+	state.execMD.SecretEnvNames = append(
+		state.execMD.SecretEnvNames,
+		DaggerExecHTTPTokenEnv,
+	)
 	return nil
 }
 
@@ -1064,49 +1084,54 @@ func (c *Client) createCWD(_ context.Context, state *execState) error {
 }
 
 func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr error) {
-	if state.nestedClientMetadata == nil || state.nestedClientMetadata.ClientID == "" {
+	hasNestedClient := state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != ""
+	hasExecHTTPHandler := state.execMD != nil && state.execMD.ExecHTTPHandlerToken != ""
+	if !hasNestedClient && !hasExecHTTPHandler {
 		return nil
-	}
-
-	if state.nestedClientMetadata.ClientSecretToken == "" {
-		state.nestedClientMetadata.ClientSecretToken = randid.NewID()
-	}
-	if state.nestedClientMetadata.ClientHostname == "" {
-		state.nestedClientMetadata.ClientHostname = state.spec.Hostname
 	}
 
 	// propagate trace ctx to session attachables
 	ctx = trace.ContextWithSpanContext(ctx, state.causeCtx)
 
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
-
-	state.nestedClientMetadata.ClientStableID = randid.NewID()
-
-	// include SSH_AUTH_SOCK if it's set in the exec's env vars
-	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
-		if strings.HasPrefix(sockPath, "~") {
-			if homeDir, ok := state.origEnvMap["HOME"]; ok {
-				expandedPath, err := pathutil.ExpandHomeDir(homeDir, sockPath)
-				if err != nil {
-					return fmt.Errorf("failed to expand homedir: %w", err)
-				}
-				state.nestedClientMetadata.SSHAuthSocketPath = expandedPath
-			} else {
-				return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
-			}
-		} else {
-			state.nestedClientMetadata.SSHAuthSocketPath = sockPath
+	var transport *engine.NestedClientTransport
+	if hasNestedClient {
+		if state.nestedClientMetadata.ClientSecretToken == "" {
+			state.nestedClientMetadata.ClientSecretToken = randid.NewID()
 		}
-	}
+		if state.nestedClientMetadata.ClientHostname == "" {
+			state.nestedClientMetadata.ClientHostname = state.spec.Hostname
+		}
 
-	// include overridden client version if it's set in the exec's env vars
-	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
-		state.nestedClientMetadata.ClientVersion = version
-	}
+		state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
+		state.nestedClientMetadata.ClientStableID = randid.NewID()
 
-	transport, err := c.registerNestedClientTransport(ctx, state)
-	if err != nil {
-		return err
+		// include SSH_AUTH_SOCK if it's set in the exec's env vars
+		if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
+			if strings.HasPrefix(sockPath, "~") {
+				if homeDir, ok := state.origEnvMap["HOME"]; ok {
+					expandedPath, err := pathutil.ExpandHomeDir(homeDir, sockPath)
+					if err != nil {
+						return fmt.Errorf("failed to expand homedir: %w", err)
+					}
+					state.nestedClientMetadata.SSHAuthSocketPath = expandedPath
+				} else {
+					return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
+				}
+			} else {
+				state.nestedClientMetadata.SSHAuthSocketPath = sockPath
+			}
+		}
+
+		// include overridden client version if it's set in the exec's env vars
+		if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
+			state.nestedClientMetadata.ClientVersion = version
+		}
+
+		var err error
+		transport, err = c.registerNestedClientTransport(ctx, state)
+		if err != nil {
+			return err
+		}
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -1139,8 +1164,12 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			if req.URL.Path == DaggerExecHTTPPath && state.execMD.ExecHTTPHandlerToken != "" {
+			if req.URL.Path == DaggerExecHTTPPath && hasExecHTTPHandler {
 				c.SessionHandler.ServeExecHTTP(state.sessionID, state.execMD.ExecHTTPHandlerToken, resp, req)
+				return
+			}
+			if !hasNestedClient {
+				http.NotFound(resp, req)
 				return
 			}
 			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
