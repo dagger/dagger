@@ -581,16 +581,25 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
 		}
 		if state.hasValue || state.persistedEnvelope == nil {
-			if !state.isObject {
-				c.registerLazyEvaluation(res, hit)
-				return hit, nil
+			res.persistDecodeMu.Lock()
+			leaseSyncPending := res.persistLeaseSyncPending
+			res.persistDecodeMu.Unlock()
+			if !leaseSyncPending {
+				if !state.isObject {
+					c.registerLazyEvaluation(res, hit)
+					return hit, nil
+				}
+				objRes, err := wrapSharedResultWithResolver(ctx, res, hit.HitCache(), resolver)
+				if err != nil {
+					return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
+				}
+				c.registerLazyEvaluation(res, objRes)
+				return objRes, nil
 			}
-			objRes, err := wrapSharedResultWithResolver(ctx, res, hit.HitCache(), resolver)
-			if err != nil {
-				return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
-			}
-			c.registerLazyEvaluation(res, objRes)
-			return objRes, nil
+			// The payload is installed but its owner-lease sync has not
+			// succeeded yet (a previous leader failed or was canceled
+			// between the install and finishPersistDecode). Join or lead a
+			// sync-only attempt below before serving the value.
 		}
 
 		res.persistDecodeMu.Lock()
@@ -606,8 +615,19 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 
 			res.persistDecodeMu.Lock()
 			decodeErr := res.persistDecodeErr
+			decodeRetry := res.persistDecodeRetry
 			res.persistDecodeMu.Unlock()
 			if decodeErr != nil {
+				if decodeRetry {
+					// The attempt failed only because its leader's own
+					// context was canceled; the entry itself is healthy.
+					// Mirror waitForLazyEvaluation: a canceled joiner
+					// returns its own cause, a healthy one retries.
+					if ownCause := context.Cause(ctx); ownCause != nil {
+						return nil, ownCause
+					}
+					continue
+				}
 				return nil, decodeErr
 			}
 			continue
@@ -615,87 +635,108 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 
 		res.persistDecodeWaitCh = make(chan struct{})
 		res.persistDecodeErr = nil
+		res.persistDecodeRetry = false
 		res.persistDecodeMu.Unlock()
 
-		finishPersistDecode := func(err error) {
+		// finishPersistDecode latches the outcome, clears the channel, and
+		// closes it in one critical section. installed reports whether the
+		// decoded payload is in place: a failure after the install means
+		// only the lease sync is outstanding, and persistLeaseSyncPending
+		// makes the next demand retry just that instead of serving the
+		// value with the owner-lease set unsynchronized.
+		finishPersistDecode := func(err error, installed bool) {
 			res.persistDecodeMu.Lock()
 			res.persistDecodeErr = err
+			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err)
+			res.persistLeaseSyncPending = installed && err != nil
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeWaitCh = nil
 			res.persistDecodeMu.Unlock()
 			close(waitCh)
 		}
 
-		call := res.loadResultCall()
-		if call == nil {
-			err := fmt.Errorf("decode persisted hit payload: missing authoritative call for object result %d", res.id)
-			finishPersistDecode(err)
-			return nil, err
-		}
-		decodeResolver := resolver
-		seenTypeNames := map[string]struct{}{}
-		for _, typeName := range persistedEnvelopeObjectTypeNames(*state.persistedEnvelope, nil) {
-			if _, seen := seenTypeNames[typeName]; seen {
-				continue
-			}
-			seenTypeNames[typeName] = struct{}{}
-			var err error
-			decodeResolver, err = resolverForSharedResultObject(ctx, decodeResolver, res, typeName)
-			if err != nil {
-				err = fmt.Errorf("decode persisted hit payload: %w", err)
-				finishPersistDecode(err)
+		// Re-read the payload under leadership: between the loop-top read
+		// and publishing the channel another leader may have installed the
+		// payload and left only the lease sync pending. A sync-only attempt
+		// skips the decode below and just reconciles the leases.
+		state = res.loadPayloadState()
+		if !state.hasValue && state.persistedEnvelope != nil {
+			call := res.loadResultCall()
+			if call == nil {
+				err := fmt.Errorf("decode persisted hit payload: missing authoritative call for object result %d", res.id)
+				finishPersistDecode(err, false)
 				return nil, err
 			}
-		}
-		dag := resolverServer(decodeResolver)
-		if dag == nil {
-			err := fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", decodeResolver)
-			finishPersistDecode(err)
-			return nil, err
-		}
-		decodeCtx := ContextWithCall(ctx, call)
-		decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
-		if err != nil {
-			c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
-			err = fmt.Errorf("decode persisted hit payload: %w", err)
-			finishPersistDecode(err)
-			return nil, err
-		}
-		if decoded == nil || decoded.Unwrap() == nil {
-			err := fmt.Errorf("decode persisted hit payload: decoded nil payload for object result %d", res.id)
-			finishPersistDecode(err)
-			return nil, err
-		}
-
-		res.payloadMu.Lock()
-		if !res.hasValue && res.persistedEnvelope != nil {
-			res.self = decoded.Unwrap()
-			res.hasValue = true
-			if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-				res.objClass = objDecoded.ObjectType()
-			}
-			decodedShared := decoded.cacheSharedResult()
-			if decodedShared != nil {
-				res.sessionResourceHandle = decodedShared.sessionResourceHandle
-				if decodedShared.requiredSessionResources != nil {
-					res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
-				} else if decodedShared.sessionResourceHandle == "" {
-					res.requiredSessionResources = nil
+			decodeResolver := resolver
+			seenTypeNames := map[string]struct{}{}
+			for _, typeName := range persistedEnvelopeObjectTypeNames(*state.persistedEnvelope, nil) {
+				if _, seen := seenTypeNames[typeName]; seen {
+					continue
+				}
+				seenTypeNames[typeName] = struct{}{}
+				var err error
+				decodeResolver, err = resolverForSharedResultObject(ctx, decodeResolver, res, typeName)
+				if err != nil {
+					err = fmt.Errorf("decode persisted hit payload: %w", err)
+					finishPersistDecode(err, false)
+					return nil, err
 				}
 			}
-			res.persistedEnvelope = nil
-			c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
+			dag := resolverServer(decodeResolver)
+			if dag == nil {
+				err := fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", decodeResolver)
+				finishPersistDecode(err, false)
+				return nil, err
+			}
+			decodeCtx := ContextWithCall(ctx, call)
+			decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
+			if err != nil {
+				c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
+				err = fmt.Errorf("decode persisted hit payload: %w", err)
+				finishPersistDecode(err, false)
+				return nil, err
+			}
+			if decoded == nil || decoded.Unwrap() == nil {
+				err := fmt.Errorf("decode persisted hit payload: decoded nil payload for object result %d", res.id)
+				finishPersistDecode(err, false)
+				return nil, err
+			}
+
+			res.payloadMu.Lock()
+			if !res.hasValue && res.persistedEnvelope != nil {
+				res.self = decoded.Unwrap()
+				res.hasValue = true
+				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
+					res.objClass = objDecoded.ObjectType()
+				}
+				decodedShared := decoded.cacheSharedResult()
+				if decodedShared != nil {
+					res.sessionResourceHandle = decodedShared.sessionResourceHandle
+					if decodedShared.requiredSessionResources != nil {
+						res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
+					} else if decodedShared.sessionResourceHandle == "" {
+						res.requiredSessionResources = nil
+					}
+				}
+				res.persistedEnvelope = nil
+				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
+			}
+			res.payloadMu.Unlock()
+			if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
+				res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
+			}
+			resolver = decodeResolver
 		}
-		res.payloadMu.Unlock()
-		if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
-			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
-		}
-		resolver = decodeResolver
+		// The payload is installed. The sync must succeed before the value
+		// is served without the pending flag; on failure the flag makes the
+		// next demand retry just the sync (syncResultSnapshotLeases stores
+		// the reconciled link set only on full success, so a retry re-diffs
+		// from the previous stored state).
 		if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 			err = fmt.Errorf("sync persisted hit owner leases: %w", err)
-			finishPersistDecode(err)
+			finishPersistDecode(err, true)
 			return nil, err
 		}
-		finishPersistDecode(nil)
+		finishPersistDecode(nil, true)
 	}
 }

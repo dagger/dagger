@@ -2009,6 +2009,18 @@ type sharedResult struct {
 	persistDecodeMu     sync.Mutex
 	persistDecodeWaitCh chan struct{}
 	persistDecodeErr    error
+	// persistDecodeRetry records whether persistDecodeErr was caused by the
+	// decode leader's own context being canceled. A woken joiner with a
+	// healthy context retries such an attempt instead of returning the
+	// departed leader's error as its own.
+	persistDecodeRetry bool
+	// persistLeaseSyncPending records that the decoded payload was installed
+	// but syncResultSnapshotLeases has not yet succeeded. While set, readers
+	// must join or lead a sync-only decode attempt before the value is
+	// served, so a leader that failed or was canceled between the install
+	// and finishPersistDecode cannot leave the owner-lease set silently
+	// unsynchronized.
+	persistLeaseSyncPending bool
 
 	lazyMu           sync.Mutex
 	lazyEval         LazyEvalFunc
