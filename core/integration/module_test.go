@@ -8138,6 +8138,12 @@ func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...st
 	}
 }
 
+func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {
+	t.Helper()
+	return goGitBase(t, c).
+		With(withModuleFixture(t, c, ".", fixture))
+}
+
 func testDataPath(t testing.TB, elems ...string) string {
 	t.Helper()
 	pathElems := append([]string{"testdata"}, elems...)
