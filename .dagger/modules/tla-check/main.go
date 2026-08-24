@@ -64,17 +64,13 @@ var expectedOutcome = map[string]string{
 	// mutation: the last canceling waiter must release a completed fn's leases
 	"orphaned_lease": "SharedLeaseReleasedWhenRetired",
 
-	// green: reader cancellation inside the persisted-decode singleflight
-	"decode_cancel_gates":    "",
+	// green: reader cancellation inside the persisted-decode singleflight.
+	// A joiner that wakes on a departed leader's cancellation retries
+	// instead of failing (persistDecodeRetry), and a post-install failure
+	// leaves persistLeaseSyncPending set so the next demand retries the
+	// lease sync; see the config headers.
+	"decode_cancel":          "",
 	"decode_cancel_liveness": "",
-
-	// accepted finding: a persisted-decode leader canceled mid-decode
-	// latches its context error, and a parked joiner returns that error
-	// as its own failure (ensurePersistedHitValueLoaded runs the decode
-	// on the leader's request context; see the config header). Stays
-	// red until the decode singleflight retries foreign cancellation
-	// the way waitForLazyEvaluation does.
-	"decode_cancel": "NoSpuriousErrors",
 }
 
 var clientExpectedOutcome = map[string]string{
