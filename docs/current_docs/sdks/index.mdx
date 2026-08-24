@@ -43,13 +43,13 @@ Start from the call you want people to remember, then make it obvious.
 
 A module can expose plain functions that just return values — that's valid and composes fine. But a module earns its place by plugging into Dagger's workflows. There are three first-class function types, and a genuinely useful reusable module provides **at least one**:
 
-- **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as [Cloud Checks](../adopting/triggers/index.mdx).
+- **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as Cloud Checks.
 - **Generators** produce source changes as reviewable [changesets](../cli/changesets.mdx) — codegen, formatting, lockfile updates. They run with `dagger generate`.
 - **Services** expose a long-running service — a database, web server, or proxy — started with `dagger up`.
 
 You mark a function as one of these in your SDK (`@check`, `@generate`, `@up`, or the language's equivalent — see your [SDK guide](#choose-your-sdk)). A module that offers none of them is often better left as a plain function call than packaged as a module.
 
-Round these out with the rest of the platform: settings and environments for team and per-context defaults, explicit `Secret` inputs for credentials, and [Dagger Cloud](../adopting/observability.mdx) for traces and remote execution.
+Round these out with the rest of the platform: settings and environments for team and per-context defaults, explicit `Secret` inputs for credentials, and Dagger Cloud for traces and remote execution.
 
 ## Quality
 
