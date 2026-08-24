@@ -50,6 +50,8 @@ module.exports = {
         "getting-started/introduction",
         "getting-started/quickstart",
         "getting-started/workspace-setup",
+        "getting-started/pre-push",
+        "getting-started/post-push",
       ],
     },
 
