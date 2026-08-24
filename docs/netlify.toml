@@ -1413,8 +1413,9 @@
 #   to = "/cli/:splat"
 #   status = 301
 #
-# TODO: the /reference section was removed; see docs/TODO.md for where its
-# pages should land. The disabled rules below still point at /reference/*.
+# TODO: the /reference section was removed and its pages have no new home yet.
+# The disabled rules below still point at /reference/*; retarget them once the
+# pages land somewhere.
 #
 # TODO: /extending/sdks moved to /sdks; the rest of /extending was cut.
 # [[redirects]]
