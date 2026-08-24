@@ -44,11 +44,6 @@ module.exports = {
     "index",
 
     // ========================================
-    // INSTALLATION
-    // ========================================
-    "getting-started/installation",
-
-    // ========================================
     // ADOPTING DAGGER
     // ========================================
     {
@@ -108,6 +103,7 @@ module.exports = {
       collapsible: true,
       collapsed: false,
       items: [
+        "cli/install",
         "cli/checking",
         "cli/generating",
         "cli/changesets",

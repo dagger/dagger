@@ -1330,10 +1330,15 @@
   to = "/reference/deployment/openshift"
   status = 301
 
-# The installation page moved to /install.
+# The installation page moved under the CLI section.
 [[redirects]]
   from = "/getting-started/installation"
-  to = "/install"
+  to = "/cli/install"
+  status = 301
+
+[[redirects]]
+  from = "/install"
+  to = "/cli/install"
   status = 301
 
 ## start: disabled 1.0 redirects ##
