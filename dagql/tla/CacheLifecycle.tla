@@ -148,9 +148,9 @@ CONSTANTS
                         \* failure sites: DecodeResult itself (payload
                         \* stays encoded, retried on the next demand) and
                         \* the lease sync after the decoded value was
-                        \* installed (payload decoded, error latched, the
-                        \* lease set possibly left incompletely synced and
-                        \* not retried; see DecodeLeadFinish).
+                        \* installed (payload decoded, error latched,
+                        \* persistSyncPending set so the next demand
+                        \* retries just the sync; see DecodeLeadFinish).
 
 \* Config sanity check, evaluated once at startup: the ClassOf table must
 \* assign a class to every call and to nothing else.
@@ -328,7 +328,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
      own |-> ownVal, deps |-> depsSet,
      persisted |-> persistedFlag, barrier |-> "none",
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
-     decodeGen |-> 0,
+     decodeGen |-> 0, persistSyncPending |-> FALSE,
      laundered |-> launderedFlag,
      imported |-> TRUE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
@@ -344,7 +344,7 @@ DeadHusk ==
      released |-> TRUE, own |-> 0, deps |-> {},
      persisted |-> FALSE, barrier |-> "none",
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
-     decodeGen |-> 0,
+     decodeGen |-> 0, persistSyncPending |-> FALSE,
      laundered |-> FALSE,
      imported |-> TRUE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
@@ -800,7 +800,7 @@ PubIndexFresh(o) ==
                        \* only imported entries carry encoded envelopes
                        payload |-> "decoded",
                        decodePhase |-> "idle", decodeErr |-> "none",
-                       decodeGen |-> 0,
+                       decodeGen |-> 0, persistSyncPending |-> FALSE,
                        laundered |-> FALSE,
                        \* lazy-evaluation state, mirroring the lazyMu block
                        \* on sharedResult (cache.go:1584-1597):
@@ -1098,8 +1098,12 @@ ReadBarrierOk(i) ==
        IN /\ res[r].barrier \in {"none", "closedOk"}
           \* An encoded payload must be decoded before the result can be
           \* returned; the decode actions below handle that arm and loop
-          \* back here once the payload is in memory.
+          \* back here once the payload is in memory. An installed payload
+          \* whose owner-lease sync is still pending (persistSyncPending,
+          \* Go persistLeaseSyncPending) is not served either: the caller
+          \* joins or leads a sync-only attempt first.
           /\ res[r].payload = "decoded"
+          /\ ~res[r].persistSyncPending
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF invocations[i].path = "hit"
                                   /\ invocations[i].persistable
@@ -1197,9 +1201,10 @@ ReadBarrierCancelWait(i) ==
 (*   - the finish (:615-621) latches the error, CLEARS the channel, and    *)
 (*     closes it - so unlike the lazy singleflight there is no lingering   *)
 (*     published channel: after any finish, the next demand leads a        *)
-(*     fresh attempt. A failure is retryable only when it landed before    *)
-(*     the install; after it the payload is decoded, later readers         *)
-(*     return it on the fast path, and the lease sync is not retried.      *)
+(*     fresh attempt. A failure before the install leaves the payload      *)
+(*     encoded, so the next attempt decodes afresh; a failure after it     *)
+(*     leaves the payload decoded and sets persistSyncPending, so the      *)
+(*     next attempt retries only the lease sync (sync-only attempt).       *)
 (* Channels are modeled as generations: res.decodeGen counts finishes      *)
 (* and cancellations of attempts on the result, a joiner records the       *)
 (* generation it joined, and its channel is closed once decodeGen has      *)
@@ -1216,30 +1221,36 @@ ReadBarrierCancelWait(i) ==
 (*                                                                         *)
 (* The decode runs on the LEADER'S OWN request context: DecodeResult is    *)
 (* called on ContextWithCall(ctx, call) and syncResultSnapshotLeases on    *)
-(* ctx, both the leader's ctx with no WithoutCancel. (Contrast the lazy    *)
-(* attempt: evaluateOne runs the callback under context.WithoutCancel plus *)
-(* an attempt-scoped cancel, and waitForLazyEvaluation retries a healthy   *)
-(* waiter on the attempt's own cancellation.) A leader canceled mid-decode *)
-(* gets a context error back, and finishPersistDecode latches it like any  *)
-(* other decode error. A parked joiner wakes, reads it, and returns it as  *)
-(* its own failure; nothing lets it tell a departed leader from a broken   *)
-(* payload. Where the error landed decides the rest: inside DecodeResult   *)
-(* the payload stays encoded and the next demand leads afresh; inside the  *)
-(* lease sync, after the install, the payload is decoded and later readers *)
-(* return it without joining, while syncResultSnapshotLeases - which       *)
-(* removes and attaches leases one at a time and returns on the first      *)
-(* error - may have left the desired lease set incompletely synchronized   *)
-(* (earlier attaches and imported leases may already exist), and the       *)
-(* decode path does not retry it. DecodeLeadCancel, DecodeLeadFinish, and  *)
-(* DecodeWake model exactly that; the decode_cancel configuration records  *)
-(* the joiner failure as an accepted finding under NoSpuriousErrors.       *)
+(* ctx, both the leader's ctx with no WithoutCancel. A leader canceled     *)
+(* mid-decode gets a context error back and returns it as its own; the     *)
+(* finish latches the error together with a retry classification           *)
+(* (persistDecodeRetry, computed by lazyEvalErrorCausedByContext against   *)
+(* the leader's ctx). A woken joiner reads both: a genuine failure is      *)
+(* returned as the joiner's own error, while a departed leader's           *)
+(* cancellation sends a healthy joiner back around the loop to lead or     *)
+(* join afresh - the same shape waitForLazyEvaluation gives the lazy       *)
+(* singleflight. Where the cancellation landed decides the rest: inside    *)
+(* DecodeResult the payload stays encoded and the next attempt decodes     *)
+(* afresh; inside the lease sync, after the install, persistSyncPending    *)
+(* routes every later reader through a sync-only attempt, so the           *)
+(* lease set cannot be left incompletely synchronized behind a served      *)
+(* value (syncResultSnapshotLeases stores the reconciled link set only on  *)
+(* full success, so a retry re-diffs from the previous stored state).      *)
+(* DecodeLeadCancel, DecodeLeadFinish, and DecodeWake model exactly that;  *)
+(* the decode_cancel configuration holds NoSpuriousErrors green over it.   *)
 (***************************************************************************)
 
+\* DecodeLead: a reader finds no attempt published and leads one. Two
+\* shapes, decided by the payload: an encoded envelope needs the full
+\* decode (DecodeResult, install, lease sync), while an installed payload
+\* with persistSyncPending set needs only the lease sync - the leader
+\* skips the decode and reconciles the leases (sync-only attempt).
 DecodeLead(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ LET r == invocations[i].resId IN
        /\ res[r].barrier \in {"none", "closedOk"}
-       /\ res[r].payload = "envelope"
+       /\ \/ res[r].payload = "envelope"
+          \/ res[r].payload = "decoded" /\ res[r].persistSyncPending
        /\ res[r].decodePhase = "idle"
        /\ res' = [res EXCEPT ![r].decodePhase = "running",
                              ![r].decodeErr = "none"]
@@ -1251,10 +1262,12 @@ DecodeLead(i) ==
 \* under payloadMu (the block after DecodeResult in
 \* ensurePersistedHitValueLoaded): res.self is set, hasValue becomes true,
 \* the envelope is dropped. The attempt is still running - the channel is
-\* still published and the lease sync has not run - but from this instant
+\* still published and the lease sync has not run - and from this instant
 \* a reader reaching the top of the loop takes the fast path and returns
-\* the value without joining (ReadBarrierOk), whatever happens to the
-\* attempt afterwards.
+\* the value without joining (ReadBarrierOk): persistSyncPending is still
+\* FALSE while the attempt runs. Only a post-install FAILURE of this
+\* attempt sets the flag and routes later readers through a sync-only
+\* attempt.
 DecodeInstall(i) ==
     /\ invocations[i].phase = "decoding"
     /\ LET r == invocations[i].resId IN
@@ -1273,13 +1286,14 @@ DecodeInstall(i) ==
 \*     before it) failed. The payload stays encoded, and the next demand
 \*     leads a fresh attempt.
 \*   - "failDecoded": the value was installed and syncResultSnapshotLeases
-\*     then failed (AttachLease can fail). The payload is decoded, so later
-\*     readers take the fast path and never join; only the joiners already
-\*     parked read the latched error. The sync removes and attaches leases
-\*     one at a time and returns on the first error, so the desired lease
-\*     set may be left incompletely synchronized (earlier attaches and
-\*     imported leases may already exist), and the decode path does not
-\*     retry it.
+\*     then failed (AttachLease can fail). The payload stays decoded and
+\*     persistSyncPending is set, so later readers do not take the fast
+\*     path: the next demand leads a sync-only attempt that retries the
+\*     lease reconciliation. Joiners already parked read the latched
+\*     error and fail (a genuine failure is not classified retryable).
+\* The finish computes persistSyncPending exactly as the Go finish does:
+\* installed and failed. "ok" therefore also clears the flag after a
+\* successful sync-only attempt.
 DecodeLeadFinish(i) ==
     /\ invocations[i].phase = "decoding"
     /\ LET r == invocations[i].resId
@@ -1293,7 +1307,9 @@ DecodeLeadFinish(i) ==
           /\ res' = [res EXCEPT ![r].decodePhase = "idle",
                                 ![r].decodeErr = IF outcome = "ok"
                                                  THEN "none" ELSE "fail",
-                                ![r].decodeGen = @ + 1]
+                                ![r].decodeGen = @ + 1,
+                                ![r].persistSyncPending =
+                                     outcome # "ok" /\ installed]
           /\ invocations' = [invocations EXCEPT ![i].phase =
                IF outcome = "ok" THEN "readBarrier" ELSE "decodeErr"]
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
@@ -1301,12 +1317,16 @@ DecodeLeadFinish(i) ==
 
 \* DecodeJoin: a reader finds an attempt published and parks on its
 \* channel. joinedGen records which attempt; the channel closes when
-\* decodeGen moves past it.
+\* decodeGen moves past it. A reader only reaches the singleflight while
+\* the payload is encoded or its lease sync is pending; during a fresh
+\* attempt's post-install window (payload decoded, flag still FALSE) it
+\* takes the fast path instead and never joins.
 DecodeJoin(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ LET r == invocations[i].resId IN
        /\ res[r].barrier \in {"none", "closedOk"}
-       /\ res[r].payload = "envelope"
+       /\ \/ res[r].payload = "envelope"
+          \/ res[r].payload = "decoded" /\ res[r].persistSyncPending
        /\ res[r].decodePhase = "running"
        /\ invocations' = [invocations EXCEPT ![i].phase = "decodeJoined",
                                               ![i].joinedGen = res[r].decodeGen]
@@ -1315,24 +1335,26 @@ DecodeJoin(i) ==
 
 \* DecodeWake: the joiner's select took its closed channel - its attempt's
 \* finish or cancellation moved decodeGen past joinedGen - and it re-reads
-\* the CURRENT latched error: "fail" or "cancel" is returned as the
-\* joiner's own failure; "none" means the attempt succeeded or a newer
-\* leader reset the error, and the joiner loops to the top of the read
-\* barrier, where it returns an installed value (ReadBarrierOk), rejoins
-\* the running attempt (DecodeJoin), or leads (DecodeLead). Nothing here
-\* depends on decodePhase: a newer attempt may well be running. TODAY the
-\* code returns a latched error of either origin: a broken payload
-\* ("fail") or a leader that left on its own context ("cancel",
-\* DecodeLeadCancel). A fix shaped like waitForLazyEvaluation's retry
-\* would loop on "cancel" too. That is NOT modeled, because the code does
-\* not do it; modeling it here would turn decode_cancel green without a
-\* code change.
+\* the CURRENT latched error and its retry classification
+\* (persistDecodeErr and persistDecodeRetry): a genuine failure ("fail")
+\* is returned as the joiner's own failure; a departed leader's
+\* cancellation ("cancel", classified retryable by
+\* lazyEvalErrorCausedByContext against the leader's ctx) sends the
+\* joiner back to the top of the read barrier, exactly like "none" (the
+\* attempt succeeded or a newer leader reset the error). There it returns
+\* an installed value (ReadBarrierOk), rejoins the running attempt
+\* (DecodeJoin), or leads (DecodeLead). Nothing here depends on
+\* decodePhase: a newer attempt may well be running. Go's retrying joiner
+\* first checks its own context and returns its own cause if it is dead;
+\* that check folds into the cancel actions reachable from the phases the
+\* retry passes through (DecodeJoinCancel, DecodeLeadCancel), which stay
+\* enabled for it, so the outcome is the same.
 DecodeWake(i) ==
     /\ invocations[i].phase = "decodeJoined"
     /\ LET r == invocations[i].resId IN
        /\ res[r].decodeGen > invocations[i].joinedGen
        /\ invocations' = [invocations EXCEPT ![i].phase =
-            IF res[r].decodeErr \in {"fail", "cancel"}
+            IF res[r].decodeErr = "fail"
             THEN "decodeErr" ELSE "readBarrier"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -1353,21 +1375,21 @@ DecodeWake(i) ==
 (*     load (LoadResultByResultID), resultServerForCall. The payload stays *)
 (*     encoded and the next demand leads a fresh attempt.                  *)
 (*   - after install: syncResultSnapshotLeases, still on the leader's ctx, *)
-(*     returned the context error. The payload is decoded, so later        *)
-(*     readers take the fast path and never join; only the joiners already *)
-(*     parked read the latched error. The sync removes and attaches leases *)
-(*     one at a time and returns on the first error, so the desired lease  *)
-(*     set may be left incompletely synchronized (earlier attaches and     *)
-(*     imported leases may already exist), and the decode path does not    *)
-(*     retry it.                                                           *)
-(* The latch, clear, and close are one action. What each joiner then sees  *)
-(* is decided by the generation mechanism in DecodeWake, including the     *)
-(* case where a newer leader published a fresh channel, and possibly       *)
-(* installed the value, before this attempt's joiners woke. A canceled     *)
-(* leader whose decode has no ctx-aware step still succeeds, because       *)
-(* nothing re-checks ctx after the decode: DecodeInstall and               *)
-(* DecodeLeadFinish stay enabled for it. This is the leader's own          *)
-(* cancellation, so ownCancel is set.                                      *)
+(*     returned the context error. The payload stays decoded and           *)
+(*     persistSyncPending is set (the finish computes it as installed and  *)
+(*     failed), so later readers lead or join a sync-only attempt that     *)
+(*     retries the lease reconciliation instead of serving the value       *)
+(*     over an incompletely synchronized lease set. This also covers a     *)
+(*     canceled sync-only leader: the flag simply stays set.               *)
+(* The latch, retry classification, clear, and close are one action. What  *)
+(* each joiner then sees is decided by the generation mechanism in         *)
+(* DecodeWake, including the case where a newer leader published a fresh   *)
+(* channel, and possibly installed the value, before this attempt's        *)
+(* joiners woke; a joiner that reads this attempt's latched "cancel"       *)
+(* retries rather than failing. A canceled leader whose decode has no      *)
+(* ctx-aware step still succeeds, because nothing re-checks ctx after the  *)
+(* decode: DecodeInstall and DecodeLeadFinish stay enabled for it. This    *)
+(* is the leader's own cancellation, so ownCancel is set.                  *)
 (***************************************************************************)
 DecodeLeadCancel(i) ==
     /\ ReaderCanCancel
@@ -1375,7 +1397,9 @@ DecodeLeadCancel(i) ==
     /\ LET r == invocations[i].resId IN
        /\ res' = [res EXCEPT ![r].decodePhase = "idle",
                              ![r].decodeErr = "cancel",
-                             ![r].decodeGen = @ + 1]
+                             ![r].decodeGen = @ + 1,
+                             ![r].persistSyncPending =
+                                  res[r].payload = "decoded"]
        /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
                                               ![i].ownCancel = TRUE]
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
@@ -2218,6 +2242,10 @@ TypeOK ==
          \* every finish or cancellation is by a distinct leader, and an
          \* invocation leads at most once
          /\ res[r].decodeGen \in 0..MaxInvocations
+         /\ res[r].persistSyncPending \in BOOLEAN
+         \* the pending flag exists only for an installed payload: it is
+         \* set by a post-install finish and the install never reverts
+         /\ res[r].persistSyncPending => res[r].payload = "decoded"
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
@@ -2305,9 +2333,11 @@ NoSpuriousErrors ==
 \* the waiter's own. ownCancel is a property-only ghost set by exactly the
 \* actions that model an invocation's own ctx.Done arm: WaiterCancel,
 \* WaiterCancelLate, ReadBarrierCancelHit/Wait, DecodeLeadCancel,
-\* DecodeJoinCancel. The pre-exit phases are included so that a future
+\* DecodeJoinCancel. The pre-exit phases are included so that a
 \* DecodeWake that sent a joiner to "canceling" on a latched foreign
-\* "cancel" trips this at once rather than turning decode_cancel green.
+\* "cancel" trips this at once: the retry the code performs on a departed
+\* leader's cancellation must loop the joiner, never relabel the foreign
+\* cancellation as the joiner's own.
 CancelOnlyOwn ==
     \A i \in InvocationIds :
         invocations[i].phase \in {"cancelDropHold", "canceling", "canceled"}
