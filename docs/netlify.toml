@@ -517,7 +517,7 @@
 
 [[redirects]]
   from = "/reference/979596/cli"
-  to = "/reference/cli"
+  to = "/cli/reference"
   status = 301
 
 [[redirects]]
@@ -1320,7 +1320,7 @@
 
 [[redirects]]
   from = "/cli/*"
-  to = "/reference/cli"
+  to = "/cli/reference"
   status = 301
 
 ## end: wildcard redirects ##
@@ -1920,6 +1920,17 @@
 # [[redirects]]
 #   from = "/using-dagger/*"
 #   to = "/cli/:splat"
+#   status = 301
+#
+# TODO: /reference/cli moved to /cli/reference.
+# [[redirects]]
+#   from = "/reference/cli/*"
+#   to = "/cli/reference/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/cli"
+#   to = "/cli/reference"
 #   status = 301
 #
 # [[redirects]]

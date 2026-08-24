@@ -5,6 +5,6 @@ package clidocs
 
 // Mount the generated reference into this module's generate source so the
 // toolchain diffs the regenerated output against the committed file.
-//go:generate:include cli/**
+//go:generate:include reference/**
 
-//go:generate go -C ../../../ run ./internal/cmd/dagger/docsgen -out docs/current_docs/reference/cli/index.mdx -include-experimental
+//go:generate go -C ../../../ run ./internal/cmd/dagger/docsgen -out docs/current_docs/cli/reference/index.mdx -include-experimental

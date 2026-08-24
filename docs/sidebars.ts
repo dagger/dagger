@@ -115,6 +115,19 @@ module.exports = {
         "cli/module-wiring",
         "cli/calling-functions",
         "cli/environments",
+        {
+          type: "category",
+          label: "Reference",
+          link: {
+            type: "doc",
+            id: "cli/reference/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "cli/reference/lockfiles",
+          ],
+        },
       ],
     },
 
@@ -247,16 +260,6 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
-        {
-          type: "category",
-          label: "CLI",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "reference/cli/index",
-            "reference/cli/lockfiles",
-          ],
-        },
         "reference/configuration/workspace",
         "reference/configuration/modules",
         "reference/configuration/engine",
