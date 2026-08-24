@@ -272,6 +272,10 @@ type clientRecord struct {
 	// Host attachables and resources remain session-owned and keyed by clientID.
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
+
+	// SDK clients execute inside the engine and have no host-side attachables.
+	// Reject their attachable lookups instead of waiting or proxying to an ancestor.
+	inertAttachables bool
 }
 
 // clientRuntime is reclaimable executable state for a client record. A runtime
@@ -1119,6 +1123,10 @@ type ClientInitOpts struct {
 	requestOwner    string
 	requestLeaseOut **engine.ClientLifecycleLease
 
+	// InertAttachables marks an in-engine SDK client that must not access any
+	// caller-host session attachables.
+	InertAttachables bool
+
 	// If set, host-backed services for this client may proxy through this
 	// ancestor when this client has no session attachables of its own.
 	HostServiceProxyClientID string
@@ -1292,20 +1300,23 @@ func (sess *daggerSession) resolveClientAttachableCaller(
 	ifAvailable bool,
 	wait func(context.Context, string) (engineutil.SessionCaller, error),
 ) (engineutil.SessionCaller, bool, error) {
+	sess.scopeMu.Lock()
+	inertAttachables := record.inertAttachables
+	hostServiceProxyClientID := record.hostServiceProxyClientID
+	parentClientIDs := slices.Clone(record.parentClientIDs)
+	sess.scopeMu.Unlock()
+	if inertAttachables {
+		return nil, false, status.Error(codes.PermissionDenied, "SDK client access to host session attachables is denied")
+	}
 	if sess.attachables != nil {
 		if caller, ok := sess.attachables.Lookup(record.clientID); ok {
 			return caller, true, nil
 		}
 	}
 
-	// Synthetic nested clients (for example builtin Dang evaluation) do not
-	// establish their own session attachables. Follow only their explicit host-
-	// service proxy route; normal nested clients must keep waiting for their own
-	// exact attachable so an initialization race cannot accidentally use a parent.
-	sess.scopeMu.Lock()
-	hostServiceProxyClientID := record.hostServiceProxyClientID
-	parentClientIDs := slices.Clone(record.parentClientIDs)
-	sess.scopeMu.Unlock()
+	// Synthetic nested clients with an explicit host-service proxy may follow
+	// that route; normal nested clients must keep waiting for their own exact
+	// attachable so an initialization race cannot accidentally use a parent.
 	if hostServiceProxyClientID != "" {
 		if !slices.Contains(parentClientIDs, hostServiceProxyClientID) {
 			return nil, false, fmt.Errorf("host service proxy client %q not found for client %q", hostServiceProxyClientID, record.clientID)
@@ -1651,6 +1662,12 @@ func (srv *Server) getOrInitClient(
 	if client.clientMetadata.ClientSecretToken != token {
 		return nil, nil, fmt.Errorf("client %q registered with different secret token", clientID)
 	}
+	if opts.InertAttachables && opts.HostServiceProxyClientID != "" {
+		return nil, nil, fmt.Errorf("client %q cannot combine inert attachables with a host service proxy", clientID)
+	}
+	if opts.InertAttachables {
+		client.inertAttachables = true
+	}
 	if opts.HostServiceProxyClientID != "" && client.hostServiceProxyClientID != "" && client.hostServiceProxyClientID != opts.HostServiceProxyClientID {
 		unlockScope()
 		return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
@@ -1854,7 +1871,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 	transport *engine.NestedClientTransport,
 	nestedClientMetadata *engine.ClientMetadata,
 	callerClientID string,
-	hostServiceProxyToCaller bool,
+	inertAttachables bool,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
 ) {
@@ -1901,18 +1918,13 @@ func (srv *Server) ServeHTTPToNestedClient(
 		fnCall = typed
 	}
 
-	var hostServiceProxyClientID string
-	if hostServiceProxyToCaller {
-		hostServiceProxyClientID = callerClientID
-	}
-
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata:           clientMetadata,
-		NestedTransport:          transport,
-		ParentClientID:           callerClientID,
-		HostServiceProxyClientID: hostServiceProxyClientID,
-		ModuleContext:            moduleContext,
-		FunctionCall:             fnCall,
+		ClientMetadata:   clientMetadata,
+		NestedTransport:  transport,
+		ParentClientID:   callerClientID,
+		InertAttachables: inertAttachables,
+		ModuleContext:    moduleContext,
+		FunctionCall:     fnCall,
 	}).ServeHTTP(w, r)
 }
 
@@ -2310,7 +2322,10 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	r = r.WithContext(ctx)
 
-	if client.hostServiceProxyClientID == "" {
+	sess.scopeMu.Lock()
+	waitForAttachables := !client.inertAttachables && client.hostServiceProxyClientID == ""
+	sess.scopeMu.Unlock()
+	if waitForAttachables {
 		profWait := wcprof.BeginWaitIdent(ctx, "session:attachables", wcprof.WaitReasonIO)
 		_, err := sess.getClientCaller(ctx, client.clientID)
 		profWait.End()

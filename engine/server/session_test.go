@@ -45,6 +45,8 @@ import (
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -553,7 +555,6 @@ func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
 		}
 	}
 	registration := identity()
-	registration.LockMode = "live"
 	attachables := identity()
 	attachables.AllowedLLMModules = []string{"github.com/acme/mod"}
 	init := identity()
@@ -583,7 +584,6 @@ func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
 
 			sealed, err := sess.clientMetadataSnapshot(client.clientRecord)
 			require.NoError(t, err)
-			require.Equal(t, "live", sealed.LockMode)
 			require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
 			require.Equal(t, *init.Workspace, *sealed.Workspace)
 			require.Equal(t, query.ExtraModules, sealed.ExtraModules)
@@ -3964,13 +3964,9 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.Same(t, existing, child.workspace)
 }
 
-func TestSpecificClientAttachableConnFallsBackForSyntheticClient(t *testing.T) {
+func TestSpecificClientAttachableConnRejectsInertClient(t *testing.T) {
 	t.Parallel()
 
-	// Builtin Dang agent tools execute through a synthetic nested client with no
-	// attachable connection of its own. Secret and socket values bind that client
-	// as their source, so specific-client access must follow its explicit proxy
-	// instead of waiting forever for an attachable that will never be registered.
 	parentConn := &grpc.ClientConn{}
 	parentCaller := &sessionAttachableCaller{
 		ctx:       context.Background(),
@@ -3982,6 +3978,7 @@ func TestSpecificClientAttachableConnFallsBackForSyntheticClient(t *testing.T) {
 		clientID:                 "child",
 		hostServiceProxyClientID: parent.clientID,
 		parentClientIDs:          []string{parent.clientID},
+		inertAttachables:         true,
 	}
 	attachables := newSessionAttachableManager()
 	attachables.callers[parent.clientID] = parentCaller
@@ -3999,19 +3996,25 @@ func TestSpecificClientAttachableConnFallsBackForSyntheticClient(t *testing.T) {
 	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
 
 	for _, ifAvailable := range []bool{false, true} {
-		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-		ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
 			SessionID: sess.sessionID,
 			ClientID:  child.clientID,
 		})
 		conn, ok, err := srv.SpecificClientAttachableConn(ctx, child.clientID, core.SpecificClientAttachableConnOpts{
 			IfAvailable: ifAvailable,
 		})
-		cancel()
-		require.NoError(t, err)
-		require.True(t, ok)
-		require.Same(t, parentConn, conn)
+		require.Error(t, err)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+		require.ErrorContains(t, err, "SDK client access to host session attachables is denied")
+		require.False(t, ok)
+		require.Nil(t, conn)
+		require.NotSame(t, parentConn, conn)
 	}
+
+	caller, err := sess.resolveHostServiceCaller(t.Context(), child.clientID)
+	require.Error(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Nil(t, caller)
 }
 
 func TestResolveHostServiceCallerFallsBackToParentRecordWithoutRuntime(t *testing.T) {

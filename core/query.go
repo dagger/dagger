@@ -62,8 +62,10 @@ type Server interface {
 	// client scope before the proxy begins serving.
 	RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error)
 
-	// Handle an HTTP request from a registered nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	// Handle an HTTP request from a registered nested Dagger client. When
+	// inertAttachables is true, host session attachable access is denied rather
+	// than inherited from the parent or awaited on the synthetic client.
+	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
