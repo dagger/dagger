@@ -461,6 +461,29 @@ type ServiceIO struct {
 	Interactive bool
 }
 
+// serviceProcessStdin presents service stdin to os/exec as an *os.File*. When
+// an arbitrary reader is assigned directly to exec.Cmd.Stdin, os/exec starts a
+// copy goroutine and Cmd.Wait waits for that goroutine even after the process
+// has exited. Persistent protocol inputs intentionally remain open between
+// messages, so that behavior prevents runc from publishing natural process
+// exit. The OS pipe lets runc exit independently; service cleanup then closes
+// the source and unblocks this forwarding goroutine.
+func serviceProcessStdin(source io.ReadCloser) (_ *os.File, cleanup func(), _ error) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	go func() {
+		_, _ = io.Copy(writer, source)
+		_ = writer.Close()
+	}()
+	return reader, func() {
+		_ = source.Close()
+		_ = writer.Close()
+		_ = reader.Close()
+	}, nil
+}
+
 func (io *ServiceIO) Close() error {
 	if io == nil {
 		return nil
@@ -799,7 +822,12 @@ func (svc *Service) startContainer(
 
 	var stdinReader io.ReadCloser
 	if opts.IO != nil && opts.IO.Stdin != nil {
-		stdinReader = opts.IO.Stdin
+		var closeStdin func()
+		stdinReader, closeStdin, err = serviceProcessStdin(opts.IO.Stdin)
+		if err != nil {
+			return fmt.Errorf("prepare service stdin: %w", err)
+		}
+		cleanup.Add("close service stdin", cleanups.Infallible(closeStdin))
 	}
 	stdoutWriters := multiWriteCloser{outBufWC}
 	if opts.IO != nil && opts.IO.Stdout != nil {

@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 var ErrLLMHarnessProcessClosed = errors.New("LLM harness process is closed")
@@ -94,6 +95,17 @@ func startLLMHarnessProcess(
 		return nil, err
 	}
 
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Harness containers are cold seeds and may end in a lazy operation such as
+	// the CLI installation. cloneContainerForTerminal deliberately clears Lazy,
+	// so materialize the seed before cloning it for the live process.
+	if err := cache.Evaluate(ctx, harness); err != nil {
+		return nil, fmt.Errorf("evaluate harness container: %w", err)
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -115,22 +127,48 @@ func startLLMHarnessProcess(
 	if err != nil {
 		return nil, fmt.Errorf("create harness container result: %w", err)
 	}
-	dig, err := mounted.ContentPreferredDigest(ctx)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("harness container digest: %w", err)
+		return nil, fmt.Errorf("get client metadata: %w", err)
 	}
-	svc, err := ctr.AsService(ctx, mounted, ContainerAsServiceArgs{Args: command})
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("attach harness container: empty session ID")
+	}
+	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, mounted)
 	if err != nil {
+		return nil, fmt.Errorf("attach harness container: %w", err)
+	}
+	mounted, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return nil, fmt.Errorf("attach harness container: expected %T, got %T", mounted, attachedAny)
+	}
+	var svc dagql.ObjectResult[*Service]
+	// This is intentional user-facing work: expose the same asService install
+	// span an API-authored service would have so its logs and exit failure have a
+	// visible origin in the TUI.
+	if err := srv.Select(
+		dagql.WithNonInternalTelemetry(ctx),
+		mounted,
+		&svc,
+		dagql.Selector{
+			View:  srv.View,
+			Field: "asService",
+			Args: []dagql.NamedInput{{
+				Name:  "args",
+				Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(command...)),
+			}},
+		},
+	); err != nil {
 		return nil, fmt.Errorf("create harness service: %w", err)
 	}
-	svc.ExecHTTPHandlerToken = execHTTPHandlerToken
+	svc.Self().ExecHTTPHandlerToken = execHTTPHandlerToken
 	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return startLLMHarnessProcessService(workdir, command, func(sio *ServiceIO) (*RunningService, func(), error) {
-		return svcs.StartInteractive(ctx, dig, svc, sio)
+		return svcs.StartInteractiveResult(ctx, svc, sio)
 	})
 }
 

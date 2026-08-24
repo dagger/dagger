@@ -237,10 +237,18 @@ func (a *CodexLLMHarnessAdapter) StartTurn(ctx context.Context, input LLMHarness
 			ID string `json:"id"`
 		} `json:"turn"`
 	}
+	// The harness container is the security boundary, so Codex must not add a
+	// nested Linux sandbox or request approvals this headless adapter cannot
+	// service.
 	return a.call(ctx, "turn/start", map[string]any{
 		"threadId":            threadID,
 		"clientUserMessageId": input.VendorMessageID,
 		"input":               codexUserInput(input.Content),
+		"approvalPolicy":      "never",
+		"sandboxPolicy": map[string]any{
+			"type":          "externalSandbox",
+			"networkAccess": "enabled",
+		},
 	}, &result)
 }
 

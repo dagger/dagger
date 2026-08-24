@@ -244,6 +244,13 @@ func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 		if turnParams["clientUserMessageId"] != "opaque-message-1" {
 			return fmt.Errorf("got client id %v", turnParams["clientUserMessageId"])
 		}
+		if turnParams["approvalPolicy"] != "never" {
+			return fmt.Errorf("got approval policy %v", turnParams["approvalPolicy"])
+		}
+		sandboxPolicy, ok := turnParams["sandboxPolicy"].(map[string]any)
+		if !ok || sandboxPolicy["type"] != "externalSandbox" || sandboxPolicy["networkAccess"] != "enabled" {
+			return fmt.Errorf("got sandbox policy %#v", turnParams["sandboxPolicy"])
+		}
 		input := turnParams["input"].([]any)[0].(map[string]any)
 		if input["text"] != "hello" {
 			return fmt.Errorf("got text %v", input["text"])
@@ -257,6 +264,9 @@ func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 			return err
 		}
 		if err := fixture.write(map[string]any{"method": "item/started", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "userMessage", "id": "user-1", "clientId": "opaque-message-1"}}}); err != nil {
+			return err
+		}
+		if err := fixture.write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"type": "userMessage", "id": "user-1", "clientId": "opaque-message-1"}}}); err != nil {
 			return err
 		}
 		if err := fixture.write(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{"threadId": "thread-1", "turnId": "turn-1", "itemId": "assistant-1", "delta": "partial"}}); err != nil {
@@ -287,6 +297,7 @@ func TestCodexHarnessCommandsAndDefinitiveConsumption(t *testing.T) {
 	close(allowLifecycle)
 	assert.Equal(t, LLMHarnessTurn{NativeTurnID: "turn-1", State: LLMHarnessTurnStarted}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessMessageLifecycle{DaggerMessageID: "opaque-message-1", VendorMessageID: "opaque-message-1", NativeTurn: "turn-1", State: LLMHarnessMessageStarted}, receiveHarnessEvent(t, adapter.Events()))
+	assert.Equal(t, LLMHarnessMessageLifecycle{DaggerMessageID: "opaque-message-1", VendorMessageID: "opaque-message-1", NativeTurn: "turn-1", State: LLMHarnessMessageCompleted}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessTextDelta{Block: 1, Delta: "partial"}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessToolCall{Block: 2, CallID: "shell-1", Name: "shell", Arguments: JSON(`{"command":"printf ok"}`), Source: LLMHarnessToolSourceNative}, receiveHarnessEvent(t, adapter.Events()))
 	assert.Equal(t, LLMHarnessToolResult{CallID: "shell-1", Text: "ok"}, receiveHarnessEvent(t, adapter.Events()))

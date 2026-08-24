@@ -3,5 +3,11 @@
   "engineVersion": "v1.0.0-0",
   "sdk": {
     "source": "dang"
-  }
+  },
+  "dependencies": [
+    {
+      "name": "wolfi",
+      "source": "../wolfi"
+    }
+  ]
 }

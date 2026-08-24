@@ -410,6 +410,17 @@ func (runtime *LLMHarnessRuntime) consumeLifecycle(event LLMHarnessMessageLifecy
 		return record, false, nil // provisional acknowledgement
 	case LLMHarnessMessageStarted, LLMHarnessMessageCompleted:
 		if pending != record {
+			// Codex emits both item/started and item/completed for the same
+			// userMessage. The first event is definitive consumption; the
+			// completion is a duplicate lifecycle observation, not another FIFO
+			// dequeue. A completed event can only be ignored after this exact
+			// record was already correlated to this exact native turn.
+			runtime.mu.Lock()
+			alreadyConsumed := event.State == LLMHarnessMessageCompleted && record.turnID == event.NativeTurn && record.turnID != ""
+			runtime.mu.Unlock()
+			if alreadyConsumed {
+				return record, false, nil
+			}
 			return nil, false, fmt.Errorf("LLM harness consumed message %q out of FIFO order", daggerID)
 		}
 		if event.NativeTurn == "" {

@@ -133,6 +133,25 @@ func TestLLMHarnessRuntimeKeepsOneAdapterAcrossTurns(t *testing.T) {
 	assert.Equal(t, []string{"two"}, commits[1].DaggerMessageIDs)
 }
 
+func TestLLMHarnessRuntimeAcceptsCompletedLifecycleAfterStarted(t *testing.T) {
+	adapter := newFakeLLMHarnessAdapter()
+	runtime, err := NewLLMHarnessRuntime(t.Context(), LLMHarnessCodex, adapter, LLMHarnessStart{}, nil)
+	require.NoError(t, err)
+	defer runtime.Close(context.Background())
+
+	require.NoError(t, runtime.Enqueue(t.Context(), "one", harnessPrompt("first")))
+	waitForHarnessCalls(t, func() int { adapter.mu.Lock(); defer adapter.mu.Unlock(); return len(adapter.starts) }, 1)
+	adapter.events <- LLMHarnessTurn{NativeTurnID: "turn", State: LLMHarnessTurnStarted}
+	adapter.events <- harnessLifecycle("one", "turn", LLMHarnessMessageStarted)
+	adapter.events <- harnessLifecycle("one", "turn", LLMHarnessMessageCompleted)
+	adapter.events <- LLMHarnessTextDelta{Block: 0, Delta: "reply"}
+	adapter.events <- LLMHarnessCompleted{NativeTurnID: "turn"}
+
+	reply, err := runtime.Await(t.Context(), "one")
+	require.NoError(t, err)
+	assert.Equal(t, "reply", reply)
+}
+
 func TestLLMHarnessRuntimeSteerAckWaitsForConsumption(t *testing.T) {
 	adapter := newFakeLLMHarnessAdapter()
 	runtime, err := NewLLMHarnessRuntime(t.Context(), LLMHarnessCodex, adapter, LLMHarnessStart{}, nil)

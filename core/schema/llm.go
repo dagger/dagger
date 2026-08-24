@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/opencontainers/go-digest"
 )
 
 type llmSchema struct {
@@ -65,6 +66,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("harness").Doc("The container containing the official CLI and its configuration."),
 				dagql.Arg("kind").Doc("The official CLI to use."),
 			),
+		dagql.Func("__withHarnessCheckpoint", s.withHarnessCheckpoint).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Record an internal native harness checkpoint as an addressable LLM result."),
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
@@ -300,6 +304,22 @@ func (s *llmSchema) withHarness(ctx context.Context, llm *core.LLM, args struct 
 		return nil, err
 	}
 	return llm.WithHarness(harness, args.Kind)
+}
+
+func (s *llmSchema) withHarnessCheckpoint(ctx context.Context, llm *core.LLM, args struct {
+	MessageCount  int
+	HistoryDigest string
+	NativeSession string
+	Protocol      string
+	Correlations  dagql.DigestedSerializedString[[]core.LLMHarnessMessageCorrelation]
+}) (*core.LLM, error) {
+	return llm.WithHarnessCheckpoint(
+		args.MessageCount,
+		digest.Digest(args.HistoryDigest),
+		args.NativeSession,
+		args.Protocol,
+		args.Correlations.Self,
+	)
 }
 
 func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Workspace], _ error) {

@@ -3,15 +3,91 @@ package core
 import (
 	"context"
 	"errors"
+	"io"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 )
+
+type interactiveOriginStartable struct {
+	opts    chan ServiceStartOpts
+	stopped chan struct{}
+	once    sync.Once
+}
+
+func (s *interactiveOriginStartable) Start(_ context.Context, running *RunningService, _ digest.Digest, opts ServiceStartOpts) error {
+	s.opts <- opts
+	running.Stop = func(context.Context, bool) error {
+		s.once.Do(func() { close(s.stopped) })
+		return nil
+	}
+	running.Wait = func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-s.stopped:
+			return nil
+		}
+	}
+	return nil
+}
+
+func TestServiceProcessStdinDoesNotHoldProcessWaitOpen(t *testing.T) {
+	stdinR, stdinW := io.Pipe()
+	processStdin, cleanup, err := serviceProcessStdin(stdinR)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cleanup()
+		_ = stdinW.Close()
+	})
+
+	cmd := exec.Command("sh", "-c", "exit 42")
+	cmd.Stdin = processStdin
+	done := make(chan error, 1)
+	go func() { done <- cmd.Run() }()
+
+	select {
+	case err := <-done:
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		require.Equal(t, 42, exitErr.ExitCode())
+	case <-time.After(time.Second):
+		t.Fatal("process wait was held open by persistent service stdin")
+	}
+}
+
+func TestStartInteractivePreservesServiceOrigins(t *testing.T) {
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "client",
+	})
+	origin := testSpanContext("00000000000000000000000000000001", "0000000000000001")
+	startable := &interactiveOriginStartable{
+		opts:    make(chan ServiceStartOpts, 1),
+		stopped: make(chan struct{}),
+	}
+	services := NewServices()
+	running, release, err := services.startInteractive(
+		ctx,
+		digest.FromString("interactive"),
+		startable,
+		&ServiceIO{},
+		[]trace.SpanContext{origin},
+	)
+	require.NoError(t, err)
+	defer release()
+	require.Equal(t, ServiceRuntimeInteractive, running.Key.Kind)
+	require.NotEmpty(t, running.Key.InstanceID)
+	require.Equal(t, []trace.SpanContext{origin}, (<-startable.opts).OriginSpanContexts)
+	require.NoError(t, services.StopRunning(ctx, running, true))
+}
 
 type dependencyExitPropagationStartable struct {
 	depExited chan struct{}

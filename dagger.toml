@@ -16,6 +16,7 @@ legacy-default-path = true
 source = ".dagger/modules/dev"
 
 [modules.dev.settings]
+
 # Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
 # active Docker context points somewhere else.
 docker = "unix:///var/run/docker.sock"
@@ -51,6 +52,7 @@ source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
 legacy-default-path = true
 
 [modules.helm.settings]
+
 # The module installs the wolfi `helm` package as `helm~<version>`, and that
 # package moved to the 4.x line, so 3.x versions no longer resolve. Charts are
 # still packaged with helm 3 (see .dagger/modules/release/helm.go); revisit once
@@ -90,16 +92,9 @@ source = ".dagger/modules/security"
 legacy-default-path = true
 
 [modules.security.settings]
+
 # Paths to exclude from the source tree before scanning.
-ignore = [
-  "bin",
-  ".git",
-  "docs",
-  "sdk/rust/examples",
-  "sdk/rust/crates/dagger-sdk/examples",
-  "core/integration/testdata",
-  "dagql/idtui/viztest",
-]
+ignore = ["bin", ".git", "docs", "sdk/rust/examples", "sdk/rust/crates/dagger-sdk/examples", "core/integration/testdata", "dagql/idtui/viztest"]
 
 [modules.shellcheck]
 source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
@@ -128,6 +123,7 @@ source = ".dagger/modules/engine-lab"
 # run logged in as you. Resolved from the host on use; commands still work
 # (logged out) when the file isn't there.
 cloudCredentials = "file://~/.config/dagger/credentials.json"
+
 # LLM provider config for clients that connect to the nested dev engine.
 daggerConfig = "file://~/.config/dagger/config.toml"
 
@@ -139,6 +135,7 @@ source = ".dagger/modules/tui-qa"
 
 [env.dev.modules.tui-qa.settings]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
+
 # LLM provider config for clients that connect to the nested dev engine.
 daggerConfig = "file://~/.config/dagger/config.toml"
 
@@ -178,6 +175,12 @@ source = "modules/librarian"
 
 [modules.history]
 source = "modules/history"
+
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
+[modules.codex]
+source = "modules/codex"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
@@ -268,9 +271,6 @@ path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/rust-client-dev"
-
-[modules.tla-check]
-source = ".dagger/modules/tla-check"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/tla-check"

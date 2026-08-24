@@ -93,6 +93,12 @@ func TestCodexHarnessAuthOfferNoCredential(t *testing.T) {
 	assert.Nil(t, offer)
 }
 
+func TestLLMHarnessNativeModel(t *testing.T) {
+	assert.Equal(t, "gpt-5.5", llmHarnessNativeModel(LLMHarnessCodex, "openai-codex/gpt-5.5"))
+	assert.Equal(t, "gpt-5.5", llmHarnessNativeModel(LLMHarnessCodex, "gpt-5.5"))
+	assert.Equal(t, "anthropic/claude", llmHarnessNativeModel(LLMHarnessClaude, "anthropic/claude"))
+}
+
 func TestLLMHarnessCodexCorrelationFIFO(t *testing.T) {
 	ledger, err := NewLLMHarnessCorrelationLedger(LLMHarnessCodex, nil)
 	require.NoError(t, err)

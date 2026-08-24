@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/opencontainers/go-digest"
 )
 
 // stepHarness runs synchronous LLM.step through the same persistent adapter
@@ -270,7 +272,7 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 	start := LLMHarnessStart{
 		History:    cloneLLMMessages(llm.Messages),
 		Checkpoint: checkpoint,
-		Model:      llm.model,
+		Model:      llmHarnessNativeModel(llm.harnessKind, llm.model),
 		MaxTokens:  maxTokens,
 		// The execution listener publishes its selected port through this env.
 		// Vendor adapters which consume MCPURL may substitute it in their native
@@ -289,6 +291,13 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		return nil, nil, err
 	}
 	return runtime, unregister, nil
+}
+
+func llmHarnessNativeModel(kind LLMHarnessKind, model string) string {
+	if kind == LLMHarnessCodex {
+		return strings.TrimPrefix(model, codexModelPrefix)
+	}
+	return model
 }
 
 // llmHarnessAuthOffer treats the public harness kind as the explicit trust
@@ -411,27 +420,30 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 			return "", err
 		}
 	}
-	checkpointed := materialized.Self().Clone()
-	historyDigest, err := llmHarnessHistoryDigest(checkpointed.Messages)
+	historyDigest, err := llmHarnessHistoryDigest(materialized.Self().Messages)
 	if err != nil {
 		return "", err
 	}
-	checkpointed.harnessCheckpoint = &LLMHarnessCheckpoint{
-		Harness:       checkpointed.harness,
-		Kind:          checkpointed.harnessKind,
-		MessageCount:  len(checkpointed.Messages),
-		HistoryDigest: historyDigest,
-		NativeSession: commit.NativeState.NativeSession,
-		Protocol:      commit.NativeState.Protocol,
-		Correlations:  append([]LLMHarnessMessageCorrelation(nil), commit.Correlations...),
-	}
-	next, err := dagql.NewObjectResultForCurrentCall(ctx, srv, checkpointed)
+	correlationsJSON, err := json.Marshal(commit.Correlations)
 	if err != nil {
+		return "", fmt.Errorf("marshal LLM harness correlations: %w", err)
+	}
+	var next dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, materialized, &next, dagql.Selector{
+		Field: "__withHarnessCheckpoint",
+		Args: []dagql.NamedInput{
+			{Name: "messageCount", Value: dagql.NewInt(len(materialized.Self().Messages))},
+			{Name: "historyDigest", Value: dagql.NewString(historyDigest.String())},
+			{Name: "nativeSession", Value: dagql.NewString(commit.NativeState.NativeSession)},
+			{Name: "protocol", Value: dagql.NewString(commit.NativeState.Protocol)},
+			{Name: "correlations", Value: dagql.NewDigestedSerializedString(commit.Correlations, digest.FromBytes(correlationsJSON))},
+		},
+	}); err != nil {
 		return "", err
 	}
 	rt.mu.Lock()
 	rt.transitionLocked(func() { rt.commitLast(ctx, next) })
 	rt.mu.Unlock()
-	reply, _ := checkpointed.LastReply()
+	reply, _ := next.Self().LastReply()
 	return strings.TrimSpace(reply), nil
 }

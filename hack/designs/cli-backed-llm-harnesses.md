@@ -20,7 +20,6 @@ workspace, message, lifecycle, and telemetry model.
 - [Implementation](#implementation)
 - [Failure and cancellation](#failure-and-cancellation)
 - [Security and isolation](#security-and-isolation)
-- [Delivery](#delivery)
 - [Status](#status)
 
 ## Problem and constraints
@@ -171,6 +170,14 @@ and any credentials explicitly mounted on it. Dagger controls invocation and
 protocol handling. The next authentication phase may offer credentials already
 held by the session, but only through the consented broker below; `withHarness`
 itself never silently injects them.
+
+`withHarness` deliberately accepts a `Container`, not a `Service`. The container
+is the immutable cold seed which can be chained from prior Dagger state; Core
+materializes it, mounts the workspace, and derives an internal interactive
+service while retaining ownership of the exact command. The kind is also the
+executable contract: `CODEX` requires `codex` on `PATH`, while `CLAUDE` requires
+`claude`. The caller configures the image, installation, working directory, and
+ordinary container policy, but not the app-server command or protocol flags.
 
 The existing Agent API is the live interface; no second lifecycle API is added:
 
@@ -646,6 +653,16 @@ Dagger materializes all selectors into one successor `LLM` and only then swaps
 telemetry may show staged progress, but trace snapshot records continue to point
 at the last atomic commit.
 
+The current implementation records the cursor and native metadata through a
+cached internal `LLM.__withHarnessCheckpoint` selector. This is important even
+before opaque rootfs capture is complete: the selector makes the committed
+snapshot an attached DagQL result with an addressable ID, so `Agent.snapshot`,
+cache reload, and subsequent selector chaining all operate on the same immutable
+call chain. Correlations use a digested serialized argument to keep successive
+checkpoint IDs compact. The portable recipe still reconstructs from the harness
+seed and projected messages rather than persisting this transient session-native
+checkpoint.
+
 Before capturing native files, the runner must reach one of these conditions:
 
 - the native regular turn/command emitted a terminal lifecycle event and the
@@ -878,7 +895,33 @@ unmatched lifecycle event prevents checkpoint advancement.
 Harness output must render while the process and native turn are running. The
 runner exposes persistent bidirectional pipes; raw protocol records are verbose
 logs under an encapsulated `Codex app-server` or `Claude Code` span, while parsed
-events drive the existing `displayPhases` implementation.
+events must drive the existing `displayPhases` implementation.
+
+The harness seed is now materialized and converted through the ordinary
+`Container.asService` selector with user-facing telemetry. Interactive service
+startup preserves that selector's origin spans, so the TUI and trace show the
+actual `codex app-server` or Claude service, its stdout/stderr logs, lifetime,
+and exit status. This closes the earlier visibility gap where the process could
+exit while only an internal container clone existed in the trace. Incremental
+projection of every parsed native event into the richer LLM display remains in
+progress.
+
+At the current milestone, service telemetry is the only completed layer. The
+adapters decode prompt lifecycle, text/thinking deltas, native tool calls,
+results, and usage into typed events, but `LLMHarnessRuntime` only accumulates
+them for the terminal checkpoint; it does not yet create the live message spans
+used by `displayPhases`. The resulting TUI defects are concrete:
+
+1. the user's submitted prompt never appears as an `LLM prompt` row;
+2. the model response appears only after terminal commit instead of streaming;
+3. native and MCP tool calls and their results are not surfaced as tool-call
+   spans; and
+4. usage and turn/message correlation are not attached to the live conversation.
+
+Fixing this requires emitting the same `LLMRole`, `LLMTool`, message, call
+digest, and agent identity attributes as provider-backed evaluation. Those spans
+then participate in the existing reveal-independent conversation report and
+live conversation promotion; no harness-specific TUI section is needed.
 
 ```go
 switch event := event.(type) {
@@ -921,6 +964,15 @@ A hot harness receives one generated Streamable HTTP MCP endpoint containing all
 tools from the live `MCP.Tools` set: bound object tools, skills, builtins, and
 external MCP proxies.
 
+That sentence is the target contract, not current behavior. Core currently
+registers the authenticated Streamable HTTP handler and makes a container-local
+forwarding URL available in `LLMHarnessStart`, but neither adapter configures its
+native CLI to use that URL/token. The harness startup path also constructs the
+server directly from `llm.mcp` without applying the implicit workspace-module
+binding performed by `LLM.MCP`. Consequently, the native model currently sees
+none of the workspace's Dagger tools. Both tool resolution and vendor MCP
+configuration must be completed before the endpoint is usable.
+
 The existing `mark3labs/mcp-go` dependency provides the handler:
 
 ```go
@@ -947,7 +999,7 @@ type ExecHTTPHandlerRegistry interface {
 }
 ```
 
-The adapter writes the URL and random bearer token into temporary CLI
+The adapter will write the URL and random bearer token into temporary CLI
 configuration. User/project MCP configuration is ignored where a strict-config
 option exists, preventing accidental access to servers outside the Dagger tool
 environment. Native CLI tools are not disabled.
@@ -1130,6 +1182,21 @@ same-turn input. Mounted workspace writes stay outside the rootfs checkpoint;
 opaque CLI session files elsewhere become part of the returned harness
 container.
 
+The implemented runner materializes the cold seed, attaches the terminal clone
+to the session cache, selects `asService(args:)`, and starts a unique interactive
+service from that attached result. Persistent stdin is bridged through an OS
+pipe so process exit is observable even when the protocol input source remains
+open; service wait no longer hangs on `os/exec`'s stdin-copy goroutine. Rootfs
+and mounted-workspace capture at a verified quiescent boundary remain the next
+container-lifecycle step.
+
+For Codex, Dagger's harness container is the execution security boundary.
+`turn/start` selects app-server's `externalSandbox` policy with network access
+delegated to the container and disables interactive approvals. This avoids a
+second bubblewrap namespace, which the normal nested service environment cannot
+create, while preserving the container's filesystem, network, mount, and secret
+policy as the authority boundary.
+
 The runner separates protocol process stdout from subprocess/user stdout. It
 bounds JSON records, rejects malformed framing, and applies backpressure without
 blocking lifecycle/control messages behind verbose tool output.
@@ -1225,159 +1292,300 @@ error.
 - Protocol input is bounded and decoded as data. Vendor event fields never
   become DagQL selectors without validation.
 
-## Delivery
-
-Legend: `[x]` implemented, `[-]` implemented in part, `[ ]` not started.
-
-### Phase 1: live CLI harnesses
-
-1. [x] Add the gated `LLMHarnessKind` enum, `LLM.withHarness`, immutable
-   checkpoint/cursor representation, and cursor validation.
-2. [x] Change Agent message delivery records so vendor evidence, not enqueue-time
-   prediction, finalizes `STARTED`/`STEERED`/`QUEUED`.
-3. [x] Refactor MCP serving into transport-neutral dispatch and add stateful
-   Streamable HTTP.
-4. [-] Add the runtime-scoped exec HTTP registry and serialized workspace bridge.
-   The authenticated registry and container-local forwarding path exist; full
-   pull-before-call/push-after-call workspace bridging remains.
-5. [-] Add persistent container execution, process-tree control, quiescent
-   rootfs/workspace snapshotting, and streaming protocol pipes. Persistent
-   interactive services, separate protocol/stderr pipes, signaling, and bounded
-   close exist; consistent rootfs/workspace freeze and capture remain.
-6. [-] Implement the common lifecycle/correlation accumulator and atomic LLM
-   materialization. Messages, correlations, native session metadata, and cursor
-   advance together; native rootfs and bridged workspace state are not yet part
-   of the same transaction.
-7. [-] Implement Codex app-server thread/turn JSON-RPC, expected-turn steering,
-   interruption, typed notifications, fork/resume, and queue reconciliation. The
-   persistent RPC, lifecycle, resume, steering, retry, and interruption paths
-   exist; fork and optional native queue reconciliation remain.
-8. [-] Implement persistent Claude stream-JSON user/control input, UUID lifecycle,
-   interruption receipts, queued cancellation, and partial-message handling. The
-   persistent protocol, UUID ledger, control operations, receipts, and streaming
-   content exist; broader version fixtures and abort projection remain.
-9. [x] Route harness-backed `Agent` and temporary synchronous `LLM.step`/`loop`
-   through the live driver.
-10. [-] Add cold rehydrate/reseed, failure recovery, telemetry, and security
-    coverage. Cursor validation, Claude process resume, Codex thread resume,
-    fail-closed protocol handling, and reseed guards exist; opaque container
-    capture, full portable history import, live display telemetry, and end-to-end
-    recovery coverage remain.
-11. [x] Add installable `modules/claude` and `modules/codex` `@agent` middlewares
-    using explicitly mounted API-key secrets.
-
-### Phase 2: session authentication broker
-
-1. [-] Normalize API-key and subscription credentials from the resolved session
-   LLM route into an internal harness-auth offer. The official Codex module now
-   receives a runtime-only `openai-codex` OAuth offer; the general offer model
-   and Claude remain.
-2. [ ] Compute the evaluated harness content identity and render its recipe call
-   chain in an interactive consent prompt.
-3. [ ] Add once-only and client-local remembered grants keyed by harness content,
-   kind, credential source/account, and adapter protocol major version.
-4. [-] Add adapter-owned runtime injection for Claude Code and Codex API-key and
-   subscription auth, excluding all auth material from cold state and telemetry.
-   Codex subscription auth now uses app-server external auth without persisting
-   tokens in the harness; the remaining credential classes are not brokered.
-5. [-] Add fail-closed headless behavior, explicit digest pre-approval, grant
-   listing/revocation, and credential-rotation handling. Codex app-server refresh
-   requests now rotate and persist the client-side OAuth grant; consent policy
-   and grant management remain.
-
-### Delivery tests
-
-Focused unit, fixture, and integration coverage must prove:
-
-- Codex starts `app-server`, not `exec --json`, and one process serves several
-  turns;
-- Claude starts the persistent `-p` stream-JSON command, keeps stdin open, and
-  accepts user frames while running;
-- concurrent `Agent.send` calls receive unique IDs and reach native input in the
-  exact Dagger FIFO order;
-- Dagger message IDs are opaque 25-character base36 strings; Codex uses that
-  string as `clientUserMessageId`, while Claude receives a distinct valid UUID
-  which reverse-maps to the same record after reconnect and checkpoint restore;
-- a successful Codex `turn/steer` response leaves delivery pending and the
-  record at the mailbox head until correlated user-message/item lifecycle proves
-  consumption and finalizes `STEERED`;
-- a Codex expected-turn mismatch retries the same head record with `turn/start`,
-  which finalizes `STARTED` only after definitive consumption and without
-  reordering;
-- Claude lifecycle distinguishes a message folded at an agent/tool boundary
-  from one queued for a subsequent command;
-- no message changes an already-streaming model response or executing native
-  tool;
-- `AgentMessage.await` follows the consuming native turn under multiple senders,
-  same-turn steering, and queued follow-up work;
-- cancel-and-re-await and concurrent awaiters return one correlated result;
-- pause stops dispatch, remains `RUNNING` until native quiescence, queues later
-  messages, and resume drains them in order;
-- Codex interrupt records interrupted status and an aborted-turn marker while
-  preserving completed output and detected side effects;
-- an acknowledged Codex steer interrupted before correlated consumption stays
-  at the mailbox head until cancellation evidence, then reconciles as
-  unconsumed/cancelled without ever becoming `STEERED` or entering a cold cursor;
-- Claude interrupt receipts reverse-map every `still_queued` UUID, reject
-  unknown/duplicate UUIDs, and reconcile the resulting Dagger record set;
-  `cancel_queued` and `cancel_async_message` use the mapped UUID and produce
-  matching lifecycle states;
-- Claude partial assistant output is marked aborted and does not masquerade as a
-  successful complete reply;
-- stop is atomic under races with send and terminal native notifications;
-- snapshot never exposes staged output or workspace state ahead of its opaque
-  container/cursor;
-- rehydrate creates no process until start/send/resume, resumes a valid native
-  checkpoint, and imports portable history when invalid;
-- reseed is refused while native execution or queue reconciliation is in flight
-  and never reuses old native state with new history;
-- initial arbitrary `LLM.Messages`, including synthetic response/tool-result
-  content, imports into both harnesses;
-- only the suffix after a valid cursor is sent on native resume;
-- text, thinking, native tools, MCP tools, message lifecycle, and usage render
-  before turn completion;
-- native edits are visible to the next Dagger MCP call, Dagger workspace results
-  are visible to the next native tool, and final native edits are checkpointed
-  without a trailing MCP call;
-- background writers prevent checkpoint commit until frozen or terminated;
-- immutable forks use independent Codex threads/containers and cannot mutate
-  each other's native state;
-- switching from a harness to a provider retains portable message/workspace/tool
-  state;
-- malformed protocol, process crash, and sync failure never advance only one of
-  messages, workspace, native state, and cursor;
-- secrets do not appear in persisted containers, messages, or telemetry;
-- API-key harness modules continue to work without session credential forwarding;
-- no session credential reaches a harness before an affirmative grant;
-- the consent prompt shows harness kind, evaluated content digest, credential
-  class, and expandable ID call chain without showing secret-derived data;
-- a remembered grant works only for its exact harness identity and is invalidated
-  by a container, kind, account/source, or protocol-major change;
-- Claude Code and Codex subscription credentials use their official adapter-owned
-  auth ingress and survive credential rotation without entering checkpoints;
-- an unknown harness in headless mode fails with an actionable digest instead of
-  prompting, hanging, or forwarding credentials; and
-- approval records cannot be recovered from an LLM ID, trace, checkpoint, or
-  another client's session.
-
 ## Status
 
-In progress. The public harness API, deferred Agent delivery evidence,
-correlation/framing core, persistent service pipes, Codex and Claude adapters,
-stateful HTTP MCP transport and exec registry, harness-backed Agent runtime,
-synchronous `step`/`loop` path, checkpoint cursor validation, and installable
-API-key modules are implemented.
+This is the exhaustive implementation checklist for this design. Every item is
+atomic: `[x]` is implemented at the current milestone and `[ ]` remains. There
+are deliberately no partially checked items; incomplete work is split into its
+completed foundation and remaining behavior.
 
-The first implementation deliberately stops short of claiming the full atomic
-cold-state model above. Serialized bidirectional workspace bridging, quiescent
-workspace/rootfs capture, portable native-container checkpoints, complete
-history import/fork recovery, and live display telemetry remain Phase 1 work.
+### Public API and immutable state
 
-Authentication remains explicit for arbitrary harness containers.
-`modules/claude` mounts `env://ANTHROPIC_API_KEY`; `modules/codex` retains an
-explicit API-key fallback and now forwards the session's selected Codex
-subscription OAuth token through app-server external auth. Codex-initiated
-refreshes run through the CLI refresher and persist rotated credentials for
-future invocations. The general consented, harness-content-bound broker —
-including Claude OAuth and arbitrary harness approval — remains the next Phase 2
-venture. This revision supersedes the original one-shot harness framing.
+- [x] Add the version-gated `LLMHarnessKind` enum and
+  `LLM.withHarness(harness:, kind:)` API.
+- [x] Keep the public input as a cold `Container` seed while Core owns the exact
+  `codex app-server` or persistent Claude invocation.
+- [x] Validate the harness kind and require a non-root, non-empty working
+  directory for the workspace mount.
+- [x] Store harness kind, container, native session, protocol, history cursor,
+  digest, and message correlations in the immutable LLM checkpoint model.
+- [x] Validate checkpoint prefixes while allowing a Dagger-only message suffix.
+- [x] Materialize checkpoints through an attached, cache-addressable internal
+  selector so snapshots have IDs and remain chainable across turns.
+- [x] Route harness-backed `Agent` evaluation through the live runtime.
+- [x] Route synchronous `LLM.step` and `LLM.loop` through a temporary live
+  harness runtime.
+- [ ] Import arbitrary portable `LLM.Messages`, including synthetic assistant
+  and tool-result history, when no valid native checkpoint exists.
+- [ ] Send only the suffix after a valid cursor when native state resumes.
+- [ ] Fork native state before evaluating two immutable branches from one
+  checkpoint.
+- [ ] Include messages, workspace, rebound tools, native rootfs, cursor, and
+  correlations in one atomic checkpoint transaction.
+
+### Persistent process and service lifecycle
+
+- [x] Run one persistent `codex app-server` JSONL process per hot Codex runtime.
+- [x] Run one persistent Claude stream-JSON process with stdin kept open.
+- [x] Materialize the caller's container and derive the harness with the normal
+  internal `Container.asService` selector.
+- [x] Preserve the service selector's origin, command, stdout/stderr, lifetime,
+  exit status, and startup failure in the TUI and trace.
+- [x] Provide separate persistent protocol stdout and diagnostic stderr pipes.
+- [x] Apply bounded JSONL framing, malformed-record rejection, and output
+  backpressure.
+- [x] Signal, stop, wait for, and release the live service without blocking on
+  the persistent stdin-copy goroutine.
+- [x] Propagate natural process exit and its real error through the adapter
+  instead of reducing it to a generic EOF or hanging the turn.
+- [x] Run Codex with `approvalPolicy: never` and app-server
+  `externalSandbox`, delegating filesystem and network enforcement to the
+  Dagger harness container.
+- [ ] Track and quiesce the entire native process tree at checkpoint boundaries.
+- [ ] Freeze or terminate background writers before capturing workspace or
+  rootfs state.
+- [ ] Capture a mutually consistent writable rootfs and mounted-workspace
+  generation without including secret mounts.
+
+### Canonical mailbox, lifecycle, and commits
+
+- [x] Mint one opaque Dagger message ID and one stable vendor correlation ID per
+  permanent Agent message record.
+- [x] Use the Dagger ID directly for Codex `clientUserMessageId` and a distinct,
+  persisted UUID for Claude.
+- [x] Serialize all native submission through one FIFO dispatcher.
+- [x] Keep an accepted record at the mailbox head until correlated native
+  lifecycle proves consumption or cancellation.
+- [x] Make `AgentMessage.delivery` wait for definitive vendor evidence instead
+  of freezing an enqueue-time prediction.
+- [x] Ignore Codex's paired started/completed notification only after the same
+  message has already been correlated to the same native turn.
+- [x] Retry a stale Codex `turn/steer` through `turn/start` without changing the
+  FIFO head or preserving the stale `STEERED` classification.
+- [x] Accumulate typed text, thinking, tool-call, tool-result, usage, and terminal
+  events into ordinary LLM messages at turn completion.
+- [x] Commit message correlations, native metadata, history digest, and cursor
+  together in an attached checkpoint selector.
+- [x] Keep one adapter hot across consecutive turns and resolve every consumed
+  message against its terminal native turn.
+- [ ] Finish exact pause semantics: stop new dispatch immediately, remain
+  `RUNNING` until native quiescence, then publish `PAUSED`.
+- [ ] Finish graceful-stop and kill-stop reconciliation under races with send,
+  lifecycle notification, and process exit.
+- [ ] Reconcile every native queued input by correlation ID before resolving an
+  interrupt or abandoning a process.
+- [ ] Preserve interrupted/aborted partial assistant content without presenting
+  it as a successful reply.
+- [ ] Surface native terminal failure details, including the failed turn and
+  affected message IDs, through `AgentMessage.await` and Agent state.
+
+### Codex adapter
+
+- [x] Implement JSON-RPC request correlation independently of Agent message IDs.
+- [x] Implement app-server initialization and capability negotiation.
+- [x] Implement `thread/start` and valid-checkpoint `thread/resume`.
+- [x] Implement `turn/start`, expected-turn `turn/steer`, and
+  `turn/interrupt`.
+- [x] Decode turn, user-message, text, thinking, native-command, MCP-call,
+  result, usage, and terminal notifications into the common event vocabulary.
+- [x] Normalize `openai-codex/<model>` to the unqualified app-server model name.
+- [x] Authenticate API keys through `account/login/start` without placing them
+  in the harness recipe.
+- [x] Authenticate ChatGPT subscription OAuth through
+  `chatgptAuthTokens` external auth without persisting tokens in the harness.
+- [x] Handle app-server token refresh requests through the CLI-side refresher
+  and persist rotated client credentials.
+- [x] Disable Codex's nested bubblewrap sandbox through the app-server external
+  sandbox policy while retaining the outer Dagger container boundary.
+- [ ] Implement `thread/fork` before diverging from a shared native checkpoint.
+- [ ] Implement optional native queue inspection/cancellation with exact
+  two-way reconciliation against Dagger's mailbox.
+- [ ] Add compatibility fixtures for every supported app-server protocol
+  version and fail clearly when required lifecycle/auth features are absent.
+
+### Claude adapter
+
+- [x] Implement persistent bidirectional stream-JSON input and output.
+- [x] Persist and validate the Dagger-ID-to-UUID correlation ledger.
+- [x] Decode `command_lifecycle`, streaming content, usage, completion, and
+  interruption into the common event vocabulary.
+- [x] Implement interrupt control requests and negotiated interrupt receipts.
+- [x] Implement `cancel_queued` and per-message `cancel_async_message` requests.
+- [x] Reject unknown or duplicate UUIDs in queue receipts.
+- [x] Resume a supported native Claude session with its persisted session ID.
+- [ ] Project aborted partial assistant messages distinctly from complete
+  replies.
+- [ ] Define and implement the fallback when an older CLI lacks precise queue
+  lifecycle or cancellation capabilities.
+- [ ] Add compatibility fixtures for all supported Claude stream-JSON versions.
+
+### Dagger tools, MCP, and workspace synchronization
+
+- [x] Refactor `LLMToolServer` so the same tool set can be served over stdio or
+  stateful Streamable HTTP.
+- [x] Add a session-owned exec HTTP registry with opaque, unique handler tokens.
+- [x] Forward the registered handler through the harness exec's loopback
+  listener.
+- [x] Require a random runtime bearer token before dispatching an MCP request.
+- [x] Construct a live MCP handler from the harness LLM's current MCP state.
+- [ ] Apply the same implicit workspace-module main-object binding used by
+  `LLM.MCP` before constructing the harness tool server.
+- [ ] Configure Codex app-server to use the generated MCP URL and bearer token.
+- [ ] Configure Claude Code to use the generated MCP URL and bearer token.
+- [ ] Ignore unrelated user/project MCP configuration, using strict native MCP
+  configuration where the vendor supports it.
+- [ ] Verify that bound object tools, workspace-module tools, skills, builtins,
+  and external MCP proxies are all visible to the native model.
+- [ ] Correlate the vendor MCP item with the authoritative HTTP request by native
+  call ID without executing or materializing it twice.
+- [ ] Parent Dagger MCP evaluation beneath the corresponding live tool-call span.
+- [ ] Pull native workspace changes into `MCP.workspace` immediately before
+  every Dagger tool call.
+- [ ] Push Dagger workspace/tool changes into the mutable harness mount after
+  every tool call, including failures.
+- [ ] Perform a final serialized pull when a native turn ends without a trailing
+  Dagger MCP call.
+- [ ] Persist the final workspace and rebound object tools in the same atomic
+  commit as messages and native state.
+
+### Live telemetry and TUI
+
+- [x] Expose the derived harness service, raw protocol/stderr logs, lifetime, and
+  exit status through normal service telemetry.
+- [x] Decode vendor output into typed prompt lifecycle, text/thinking delta,
+  tool-call, tool-result, usage, and terminal events.
+- [x] Keep structured protocol JSON inside the verbose harness service logs
+  instead of rendering it as the user-facing conversation.
+- [ ] Emit the submitted user message immediately as an `LLM prompt` span with
+  `LLMRole`, message, call-digest, and Agent identity attributes.
+- [ ] Feed every text delta into a live `displayPhases.StartText` span so the
+  model response streams instead of appearing only at terminal commit.
+- [ ] Feed observable reasoning deltas into live thinking spans and close or
+  abort them at the correct lifecycle boundary.
+- [ ] Emit each native tool call as a live tool-call span with its name,
+  arguments, call ID, and native source.
+- [ ] Emit each Dagger MCP tool call as the same live tool-call shape and nest
+  its actual execution span beneath it.
+- [ ] Attach native and MCP tool results, error status, output, and result-token
+  metadata to their corresponding tool-call spans.
+- [ ] Update existing LLM token gauges from harness usage notifications before
+  the turn completes.
+- [ ] Attach Dagger message ID, vendor message ID, native turn ID, delivery, and
+  terminal status as non-content correlation attributes.
+- [ ] Close all live display spans exactly once on completion, interruption,
+  protocol failure, process exit, and caller cancellation.
+- [ ] Preserve the same surfaced-conversation tree in both the live promoted TUI
+  and the reveal-independent final report.
+- [ ] Add TUI tests proving the prompt, streaming response, native tools, MCP
+  tools, results, and errors appear before terminal checkpoint commit.
+- [ ] Add `tui-qa` coverage for a real Codex and Claude turn, including timing
+  assertions that distinguish streaming from a terminal-only redraw.
+
+### Authentication, consent, and isolation
+
+- [x] Treat explicit harness kind selection as the current protocol trust
+  declaration and never offer a credential from an unrelated provider.
+- [x] Normalize matching Codex OAuth and API-key credentials into a runtime-only
+  internal auth offer.
+- [x] Keep broker-provided Codex credentials out of GraphQL arguments, the cold
+  container recipe, checkpoint messages, and protocol logs.
+- [x] Keep the Claude module's current `ANTHROPIC_API_KEY` ingress explicit.
+- [x] Make the harness container, rather than Codex's nested sandbox, the
+  filesystem/network/secret authority boundary.
+- [ ] Compute a content-preferred digest for the evaluated cold harness seed.
+- [ ] Render the harness recipe, kind, credential class, and account/source in an
+  interactive consent prompt without resolving secret plaintext.
+- [ ] Add once-only and client-local remembered grants bound to harness content,
+  kind, credential source/account, and adapter protocol major version.
+- [ ] Add explicit digest pre-approval plus grant listing and revocation.
+- [ ] Fail closed with an actionable digest when headless execution has no
+  matching remembered grant.
+- [ ] Inject Claude Code subscription OAuth only into the runtime process clone
+  and define client-side rotation behavior.
+- [ ] Exclude all broker-created auth files, mounts, environment values, approval
+  records, and secret-derived hashes from rootfs capture and telemetry.
+- [ ] Prove that approval records cannot be recovered from an LLM ID, trace,
+  checkpoint, portable recipe, or another client's session.
+
+### Cold continuation, recovery, and branching
+
+- [x] Validate native checkpoint compatibility before attempting resume.
+- [x] Resume Codex threads and Claude sessions from compatible native IDs.
+- [x] Preserve the last committed snapshot when protocol framing, correlation,
+  service startup, or process execution fails.
+- [x] Refuse reseed while the current Agent reports active execution.
+- [ ] Snapshot and restore opaque CLI session files from the harness rootfs.
+- [ ] Recreate a stopped runtime from the full atomic container/workspace/tool
+  checkpoint rather than only native session metadata.
+- [ ] Make `rehydrate` lazy, start no process until start/send/resume, and import
+  portable history when opaque native state is unavailable or invalid.
+- [ ] Complete reseed guards for unacknowledged commands, unresolved native
+  queues, active background writers, and unquiesced workspace state.
+- [ ] Recover from a crash by replaying only mailbox records not proved consumed
+  by the last committed native prefix.
+- [ ] Fork independent Codex threads/containers for immutable LLM branches.
+- [ ] Clone or portably import Claude continuation state for immutable branches.
+- [ ] Preserve portable messages, workspace, and tools when switching from a
+  harness-backed LLM to a provider-backed LLM.
+
+### Installable modules
+
+- [x] Provide `modules/claude` and `modules/codex` `@agent` middlewares.
+- [x] Require `claude` or `codex` on `PATH` according to the selected harness
+  kind while Core owns all invocation flags.
+- [x] Build the Codex harness on Wolfi with Node/npm, `ripgrep`, and the system CA
+  bundle needed by its native TLS client.
+- [x] Verify a fresh `dagger-dev --env dev agent` Codex session authenticates,
+  executes a native shell command under the external sandbox contract, and
+  completes a turn.
+- [ ] Add equivalent end-to-end Claude module coverage for the persistent
+  stream-JSON path.
+
+### Required regression coverage
+
+- [x] Unit-test exact Codex and Claude persistent command specifications.
+- [x] Unit-test bounded JSONL framing, malformed records, and protocol EOF.
+- [x] Unit-test one adapter serving consecutive turns.
+- [x] Unit-test Codex command acknowledgement remaining pending until correlated
+  consumption.
+- [x] Unit-test expected-turn retry winning a lifecycle/response race.
+- [x] Unit-test interruption cancelling an accepted but unconsumed steer without
+  recording `STEERED`.
+- [x] Unit-test Codex's duplicate started/completed user-message lifecycle.
+- [x] Unit-test out-of-order JSON-RPC responses by request ID.
+- [x] Unit-test Claude UUID checkpoint restoration, control receipts, queued
+  cancellation, and unknown receipt rejection.
+- [x] Unit-test natural process exit, startup output, stderr visibility, and real
+  exit-error propagation with persistent stdin.
+- [x] Unit-test checkpoint cursor validation and attached checkpoint
+  materialization.
+- [x] Fixture-test Codex OAuth, refresh, API-key login, model selection, external
+  sandbox policy, typed text/tool events, steering, interruption, and resume.
+- [x] Manually verify with `tui-qa` that the Wolfi Codex module completes a real
+  native shell tool call without bubblewrap or approval failure.
+- [ ] Integration-test concurrent `Agent.send` calls for unique IDs, exact FIFO
+  native submission, correlated delivery, and await resolution.
+- [ ] Integration-test cancel-and-re-await plus concurrent awaiters.
+- [ ] Integration-test pause, cooperative quiescence, queued sends, and ordered
+  resume.
+- [ ] Integration-test Codex interrupted-turn markers, completed partial output,
+  queued steer reconciliation, and filesystem side effects.
+- [ ] Integration-test Claude folded-versus-queued lifecycle, interruption
+  receipts, cancellation, and aborted partial output.
+- [ ] Integration-test stop races with send, terminal notification, and process
+  exit.
+- [ ] Integration-test arbitrary history import, valid-cursor suffix import,
+  cold rehydrate, and reseed.
+- [ ] Integration-test atomic snapshots under workspace edits, tool mutations,
+  background writers, malformed protocol, process crash, and sync failure.
+- [ ] Integration-test independent immutable forks and switching back to a
+  provider-backed LLM.
+- [ ] Integration-test the complete workspace tool set through each native MCP
+  client and bidirectional workspace synchronization around every call.
+- [ ] Integration-test live and final conversation telemetry for prompts,
+  streamed text/thinking, native tools, MCP tools, tool results, usage, failure,
+  interruption, and replay.
+- [ ] Security-test credential non-disclosure in containers, messages,
+  telemetry, call IDs, and checkpoints.
+- [ ] Security-test content-bound interactive consent, remembered-grant
+  invalidation, headless refusal, rotation, and client-local approval isolation.

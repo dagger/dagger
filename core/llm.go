@@ -1636,6 +1636,42 @@ func (llm *LLM) WithHarness(harness dagql.ObjectResult[*Container], kind LLMHarn
 	return llm, nil
 }
 
+// WithHarnessCheckpoint records the vendor-native state corresponding to the
+// current portable message history. It is reached through an internal DAGQL
+// selector so the checkpointed LLM remains an attached, addressable cache
+// result even though the harness publishes it from outside a field resolver.
+func (llm *LLM) WithHarnessCheckpoint(
+	messageCount int,
+	historyDigest digest.Digest,
+	nativeSession string,
+	protocol string,
+	correlations []LLMHarnessMessageCorrelation,
+) (*LLM, error) {
+	if llm.harness.Self() == nil {
+		return nil, fmt.Errorf("cannot checkpoint LLM without a harness")
+	}
+	if err := historyDigest.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid LLM harness history digest: %w", err)
+	}
+	checkpoint := &LLMHarnessCheckpoint{
+		Harness:       llm.harness,
+		Kind:          llm.harnessKind,
+		MessageCount:  messageCount,
+		HistoryDigest: historyDigest,
+		NativeSession: nativeSession,
+		Protocol:      protocol,
+		Correlations:  slices.Clone(correlations),
+	}
+	if !checkpoint.validFor(llm.Messages, llm.harnessKind) {
+		return nil, fmt.Errorf("LLM harness checkpoint does not match message history")
+	}
+
+	llm = llm.Clone()
+	checkpoint.Harness = llm.harness
+	llm.harnessCheckpoint = checkpoint
+	return llm, nil
+}
+
 // WithReasoningEffort changes the reasoning effort for the rest of the
 // conversation, overriding any provider-configured default. "none" explicitly
 // disables reasoning.

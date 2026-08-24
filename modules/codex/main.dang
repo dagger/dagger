@@ -8,11 +8,13 @@ the module's container recipe, and refreshed OAuth tokens remain in Dagger's
 client-side LLM configuration.
 """
 type Codex {
-  """Use the official Codex CLI as the conversation harness."""
+  """
+  Use the official Codex CLI as the conversation harness.
+  """
   agent(base: LLM!): LLM! @agent {
     base.withHarness(
-      harness: container
-        .from("node:22-bookworm-slim")
+      harness: wolfi
+        .container(["ca-certificates", "npm-12", "nodejs-26", "ripgrep"])
         .withExec(["npm", "install", "--global", "@openai/codex@latest"])
         .withWorkdir("/workspace"),
       kind: LLMHarnessKind.CODEX,
