@@ -8,7 +8,7 @@ description: "Develop Dagger modules in Python: create, write objects and functi
 
 The Python SDK lets you write Dagger modules in Python. You declare objects with `@object_type` and expose functions with `@function`; the SDK turns your type hints into a Dagger API schema, and generates a typed client (`dagger.dag`) for calling the Dagger API and any module dependencies.
 
-This page is the standalone reference for developing modules with Python. For platform concepts that apply to every SDK, start with the [Module Developer Guide](../index.mdx), and see the [Types](../types/index.mdx), and [Checks](../how-dagger-works/checks.mdx).
+This page is the standalone reference for developing modules with Python. For platform concepts that apply to every SDK, start with the [Module Developer Guide](../index.mdx) and the [Types](../types/index.mdx) reference.
 
 ## The Python SDK is a module
 
@@ -752,11 +752,11 @@ class MyModule:
 
 `dagger up` starts every `@up` service and exposes its ports. (A plain `@function` returning `dagger.Service` can still be bound into other containers with `with_service_binding` — see [Services](#services) — but only `@up` functions are started by `dagger up`.)
 
-See [Checks](../how-dagger-works/checks.mdx) and [Changesets](../../cli/changesets.mdx).
+See [Changesets](../../cli/changesets.mdx).
 
 ### Directives
 
-The annotations used above — `Name`, `Deprecated`, `Doc` — are the Python expression of Dagger's [directives](../how-dagger-works/index.mdx) and are applied via `typing.Annotated` (except `Doc`, which can be a plain annotation). The `@check`, `@generate`, and `@up` decorators mark function behavior.
+The annotations used above — `Name`, `Deprecated`, `Doc` — are the Python expression of Dagger's directives and are applied via `typing.Annotated` (except `Doc`, which can be a plain annotation). The `@check`, `@generate`, and `@up` decorators mark function behavior.
 
 ### Ignoring inputs
 
@@ -974,5 +974,4 @@ dagger -m github.com/you/your-module@v0.1.0 api call <function> ...
 
 - [Module Developer Guide](../index.mdx)
 - [Types](../types/index.mdx)
-- [Checks](../how-dagger-works/checks.mdx)
 - [Changesets](../../cli/changesets.mdx)

@@ -18,7 +18,6 @@ where relevant:
 
 - [Module Developer Guide](../index.mdx) — what a module is and how it runs
 - [Types](../types/index.mdx) — how language types map to the Dagger API
-- [Checks](../how-dagger-works/checks.mdx) — how `dagger check` discovers and runs checks
 - [Changesets](../../cli/changesets.mdx) — how generated files are reviewed and applied
 
 :::important
@@ -672,7 +671,7 @@ with an additional decorator.
 
 A check is a function that validates something and passes or fails by exit code.
 Mark it with `@check()`. `dagger check` discovers and runs every check in the
-module. See [Checks](../how-dagger-works/checks.mdx).
+module.
 
 ```typescript
 import { dag, Directory, Workspace, object, func, check } from "@dagger.io/dagger"

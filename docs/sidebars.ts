@@ -174,24 +174,6 @@ module.exports = {
       items: [
         {
           type: "category",
-          label: "How Dagger Works",
-          link: {
-            type: "doc",
-            id: "extending/how-dagger-works/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/how-dagger-works/workspaces",
-            "extending/how-dagger-works/modules",
-            "extending/how-dagger-works/functions",
-            "extending/how-dagger-works/checks",
-            "extending/how-dagger-works/cache",
-            "extending/how-dagger-works/execution",
-          ],
-        },
-        {
-          type: "category",
           label: "SDKs",
           link: {
             type: "doc",

@@ -8,7 +8,7 @@ description: "When to build a Dagger module, how to develop one, and how to desi
 
 A module is a reusable, typed API for automation — functions, objects, checks, services, and generators that anyone can run from a workspace, in CI, in Cloud, or from an agent. This guide covers when to build a module, the development loop, and how to design one people will actually use.
 
-It's language-agnostic. For the underlying model, read [How Dagger Works](./how-dagger-works/index.mdx); for syntax, pick your [SDK](#choose-your-sdk).
+It's language-agnostic. For syntax, pick your [SDK](#choose-your-sdk).
 
 ## When to build a module
 
@@ -24,7 +24,7 @@ Dagger ships no language-specific module tooling in the CLI. Instead, **each SDK
 2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](./types/index.mdx).
 3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
 4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
-5. **Check and test** with the module's [checks](./how-dagger-works/checks.mdx) and your own tests.
+5. **Check and test** with the module's checks and your own tests.
 
 The verbs `dagger check` and `dagger generate` are the same across every SDK; the scaffold, regenerate, and dependency steps come from the SDK module.
 
@@ -43,7 +43,7 @@ Start from the call you want people to remember, then make it obvious.
 
 A module can expose plain functions that just return values — that's valid and composes fine. But a module earns its place by plugging into Dagger's workflows. There are three first-class function types, and a genuinely useful reusable module provides **at least one**:
 
-- **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as [Cloud Checks](../adopting/triggers/index.mdx). See [Checks](./how-dagger-works/checks.mdx).
+- **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as [Cloud Checks](../adopting/triggers/index.mdx).
 - **Generators** produce source changes as reviewable [changesets](../cli/changesets.mdx) — codegen, formatting, lockfile updates. They run with `dagger generate`.
 - **Services** expose a long-running service — a database, web server, or proxy — started with `dagger up`.
 

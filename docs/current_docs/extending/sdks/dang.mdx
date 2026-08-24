@@ -16,7 +16,6 @@ Before diving in, it helps to understand the platform concepts every SDK shares:
 
 - [Module Developer Guide](../index.mdx) — what a module is and how it fits into a workspace.
 - [Types](../types/index.mdx) — the types your functions accept and return.
-- [Checks](../how-dagger-works/checks.mdx) — how Dagger discovers and runs validation.
 - [Changesets](../../cli/changesets.mdx) — how Dagger represents file diffs (used by `init` and generators).
 
 ## A note on tooling: Dang is delivered as a Dagger module
@@ -169,7 +168,7 @@ container
   .withExec(["npm", "install"])
 ```
 
-Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](../how-dagger-works/checks.mdx) and the [type reference](../types/index.mdx) for the underlying model.
+Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See the [type reference](../types/index.mdx) for the underlying model.
 
 ## Define objects and functions
 
@@ -731,7 +730,7 @@ Dang has three first-class function types, each marked with a directive and run 
 
 ### Checks
 
-A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code. See [Checks](../how-dagger-works/checks.mdx).
+A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code.
 
 ```dang
 type MyCi {
@@ -885,5 +884,4 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 
 - [Module Developer Guide](../index.mdx)
 - [Types](../types/index.mdx)
-- [Checks](../how-dagger-works/checks.mdx)
 - [Changesets](../../cli/changesets.mdx)

@@ -11,7 +11,6 @@ The Go SDK lets you write Dagger modules in Go. You define plain Go structs and 
 This page is a standalone guide to the Go SDK. It assumes you already understand the platform concepts covered in the [Module Developer Guide](../index.mdx):
 
 - [Types](../types/index.mdx) — how SDK types map to the Dagger API
-- [Checks](../how-dagger-works/checks.mdx) — functions that validate your code
 - [Changesets](../../cli/changesets.mdx) — how generators and tooling return diffs for you to apply
 
 A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service**. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Go syntax.
@@ -811,7 +810,7 @@ func New(ws *dagger.Workspace) *MyModule {
 
 ### Checks {#checks}
 
-Mark a function with the `// +check` pragma to make it a **check** — a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it returns a non-nil `error`, or when it returns a `*dagger.Container` whose execution exits non-zero. The platform model is described in [Checks](../how-dagger-works/checks.mdx).
+Mark a function with the `// +check` pragma to make it a **check** — a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it returns a non-nil `error`, or when it returns a `*dagger.Container` whose execution exits non-zero.
 
 ```go
 // Lint the project.
@@ -1020,5 +1019,4 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`; the versio
 
 - [Module Developer Guide](../index.mdx) — platform concepts that apply to every SDK
 - [Types](../types/index.mdx)
-- [Checks](../how-dagger-works/checks.mdx)
 - [Generating Code](../../cli/generating.mdx) and [Changesets](../../cli/changesets.mdx)
