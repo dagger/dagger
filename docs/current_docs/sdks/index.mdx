@@ -1,10 +1,10 @@
 ---
-slug: /extending
-title: "Module Developer Guide"
+slug: /sdks
+title: "SDKs"
 description: "When to build a Dagger module, how to develop one, and how to design an API people can call."
 ---
 
-# Module Developer Guide
+# SDKs
 
 A module is a reusable, typed API for automation — functions, objects, checks, services, and generators that anyone can run from a workspace, in CI, in Cloud, or from an agent. This guide covers when to build a module, the development loop, and how to design one people will actually use.
 
@@ -59,7 +59,7 @@ A module is ready for other people when its public API is small and well-named, 
 
 Pick a language to build in. Each guide covers its syntax, project layout, development workflow, dependencies, and testing:
 
-- **[Dang](./sdks/dang.mdx)** — Dagger's native DSL. No codegen and no build step: what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
-- **[Go](./sdks/go.mdx)** — Build modules in Go with a generated, typed client.
-- **[TypeScript](./sdks/typescript.mdx)** — Build modules in TypeScript with decorators and a generated client (Bun, Deno, or Node).
-- **[Python](./sdks/python.mdx)** — Build modules in Python with type hints, decorators, and a generated client.
+- **[Dang](./dang.mdx)** — Dagger's native DSL. No codegen and no build step: what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
+- **[Go](./go.mdx)** — Build modules in Go with a generated, typed client.
+- **[TypeScript](./typescript.mdx)** — Build modules in TypeScript with decorators and a generated client (Bun, Deno, or Node).
+- **[Python](./python.mdx)** — Build modules in Python with type hints, decorators, and a generated client.

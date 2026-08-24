@@ -1922,6 +1922,17 @@
 #   to = "/cli/:splat"
 #   status = 301
 #
+# TODO: /extending/sdks moved to /sdks; the rest of /extending was cut.
+# [[redirects]]
+#   from = "/extending/sdks/*"
+#   to = "/sdks/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending"
+#   to = "/sdks"
+#   status = 301
+#
 # TODO: /extending/types moved to /api/reference.
 # [[redirects]]
 #   from = "/extending/types/*"

@@ -160,34 +160,22 @@ module.exports = {
     },
 
     // ========================================
-    // MODULE DEVELOPER GUIDE
+    // SDKS
     // ========================================
     {
       type: "category",
-      label: "Module Developer Guide",
+      label: "SDKs",
       link: {
         type: "doc",
-        id: "extending/index",
+        id: "sdks/index",
       },
       collapsible: true,
       collapsed: true,
       items: [
-        {
-          type: "category",
-          label: "SDKs",
-          link: {
-            type: "doc",
-            id: "extending/sdks/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/sdks/dang",
-            "extending/sdks/go",
-            "extending/sdks/typescript",
-            "extending/sdks/python",
-          ],
-        },
+        "sdks/dang",
+        "sdks/go",
+        "sdks/typescript",
+        "sdks/python",
       ],
     },
 
