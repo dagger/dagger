@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"golang.org/x/mod/semver"
 )
@@ -16,5 +18,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	os.Exit(0)
+	prerelease := strings.TrimPrefix(semver.Prerelease(os.Args[1]), "-")
+	if prerelease != "" {
+		fmt.Print(strings.SplitN(prerelease, ".", 2)[0])
+	}
 }

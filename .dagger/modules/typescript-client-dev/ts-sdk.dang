@@ -163,6 +163,11 @@ type TypescriptClientDev {
     } else {
       "prepatch"
     }
+    let prerelease = if (isSemver(version)) {
+      prereleaseFromVersion(version)
+    } else {
+      ""
+    }
     let build = nodejsDevContainer
       .withWorkdir(sourcePath)
       .withExec(["npm", "run", "build"])
@@ -170,6 +175,9 @@ type TypescriptClientDev {
     # Check that dist/ exists in the build
     build.directory("dist").entries
     let publishArgs = ["npm", "publish", "--access", "public"]
+    if (prerelease != "") {
+      publishArgs += ["--tag", prerelease]
+    }
     if (dryRun == true) {
       publishArgs += ["--dry-run"]
       # TODO(vito): in dang, if exprs have to have same return type on all
@@ -202,6 +210,18 @@ type TypescriptClientDev {
       .withExec(["is-semver", version], expect: ReturnType.ANY)
       .exitCode
     exitCode == 0
+  }
+
+  let prereleaseFromVersion(version: String!): String! {
+    let binary = go(
+      ws: self.ws,
+      source: currentModule.source.directory("is-semver"),
+    ).binary("is-semver")
+    container
+      .from("alpine")
+      .withFile("/bin/is-semver", binary)
+      .withExec(["/bin/is-semver", version])
+      .stdout
   }
 
   let versionFromTag(tag: String!): String! {
