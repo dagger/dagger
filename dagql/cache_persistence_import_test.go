@@ -802,6 +802,9 @@ func TestCachePersistenceImportedDecodeLeaderCancelRetriesJoiner(t *testing.T) {
 	const leaderSessionID = "persist-decode-cancel-session-a"
 	const joinerSessionID = "persist-decode-cancel-session-b"
 
+	joined := make(chan struct{}, 4)
+	cB.testPersistDecodeJoined = func(uint64) { joined <- struct{}{} }
+
 	leaderCtx, cancelLeader := context.WithCancel(loadCtx(leaderSessionID))
 	defer cancelLeader()
 	leaderCh := make(chan error, 1)
@@ -821,7 +824,11 @@ func TestCachePersistenceImportedDecodeLeaderCancelRetriesJoiner(t *testing.T) {
 		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
 		joinerCh <- err
 	}()
-	time.Sleep(100 * time.Millisecond) // let the joiner park on the decode channel
+	select {
+	case <-joined:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the joiner to park on the decode channel")
+	}
 	cancelLeader()
 
 	leaderErr := <-leaderCh
@@ -965,6 +972,9 @@ func TestCachePersistenceImportedDecodeJoinerOwnCancelReturnsOwnCause(t *testing
 	const leaderSessionID = "persist-decode-joiner-cancel-session-a"
 	const joinerSessionID = "persist-decode-joiner-cancel-session-b"
 
+	joined := make(chan struct{}, 4)
+	cB.testPersistDecodeJoined = func(uint64) { joined <- struct{}{} }
+
 	leaderCtx := loadCtx(leaderSessionID)
 	leaderCh := make(chan error, 1)
 	go func() {
@@ -984,7 +994,11 @@ func TestCachePersistenceImportedDecodeJoinerOwnCancelReturnsOwnCause(t *testing
 		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
 		joinerCh <- err
 	}()
-	time.Sleep(100 * time.Millisecond) // let the joiner park on the decode channel
+	select {
+	case <-joined:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the joiner to park on the decode channel")
+	}
 	cancelJoiner()
 
 	joinerErr := <-joinerCh
@@ -1041,6 +1055,9 @@ func TestCachePersistenceImportedDecodeFailurePropagatesToJoiners(t *testing.T) 
 	const leaderSessionID = "persist-decode-fail-session-a"
 	const joinerSessionID = "persist-decode-fail-session-b"
 
+	joined := make(chan struct{}, 4)
+	cB.testPersistDecodeJoined = func(uint64) { joined <- struct{}{} }
+
 	leaderCtx := loadCtx(leaderSessionID)
 	leaderCh := make(chan error, 1)
 	go func() {
@@ -1059,14 +1076,127 @@ func TestCachePersistenceImportedDecodeFailurePropagatesToJoiners(t *testing.T) 
 		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
 		joinerCh <- err
 	}()
-	time.Sleep(100 * time.Millisecond) // let the joiner park on the decode channel
+	select {
+	case <-joined:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the joiner to park on the decode channel")
+	}
 	close(allowFirst)
 
 	leaderErr := <-leaderCh
 	joinerErr := <-joinerCh
 	assert.ErrorContains(t, leaderErr, "persist decode genuine failure")
 	assert.ErrorContains(t, joinerErr, "persist decode genuine failure")
+	// The joiner read the latched error from the leader's attempt; a
+	// genuine failure is not retried, so the decoder ran exactly once.
+	assert.Equal(t, decodeEntries.Load(), int32(1))
 
 	assert.NilError(t, cB.ReleaseSession(leaderCtx, leaderSessionID))
 	assert.NilError(t, cB.ReleaseSession(joinerCtx, joinerSessionID))
+}
+
+// A reader that read the encoded payload, then lost the race with a leader
+// that decoded, installed, and finished its lease sync successfully, must
+// take the fast path instead of publishing a redundant sync-only attempt
+// (whose sync could fail or be canceled and re-latch an error).
+func TestCachePersistenceImportedDecodeStaleReaderDoesNotLeadAfterSuccess(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+
+	cB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+	srvB := newPersistRetryDecodeTestServer()
+
+	var decodeEntries atomic.Int32
+	firstEntered := make(chan struct{})
+	allowFirst := make(chan struct{})
+	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
+		if decodeEntries.Add(1) == 1 {
+			close(firstEntered)
+			select {
+			case <-allowFirst:
+				return nil
+			case <-time.After(10 * time.Second):
+				return fmt.Errorf("first decode was never released for result %d", resultID)
+			}
+		}
+		return nil
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+
+	// The leader is the first caller through the pre-lock hook; the stale
+	// reader is the second and parks there - after its loop-top read of
+	// the encoded payload, before it can acquire persistDecodeMu - until
+	// the leader has completely finished.
+	var preLockCalls atomic.Int32
+	var leadPublishes atomic.Int32
+	stalePaused := make(chan struct{})
+	releaseStale := make(chan struct{})
+	cB.testPersistDecodePreLock = func(uint64) {
+		if preLockCalls.Add(1) == 2 {
+			close(stalePaused)
+			select {
+			case <-releaseStale:
+			case <-time.After(10 * time.Second):
+			}
+		}
+	}
+	cB.testPersistDecodeLeadPublished = func(uint64) { leadPublishes.Add(1) }
+
+	loadCtx := func(sessionID string) context.Context {
+		loadCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  sessionID + "-client",
+			SessionID: sessionID,
+		})
+		loadCtx = ContextWithCache(loadCtx, cB)
+		return srvToContext(loadCtx, srvB)
+	}
+
+	const leaderSessionID = "persist-decode-stale-session-a"
+	const staleSessionID = "persist-decode-stale-session-b"
+
+	leaderCtx := loadCtx(leaderSessionID)
+	leaderCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(leaderCtx, leaderSessionID, srvB, resultID)
+		leaderCh <- err
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the leader to enter the persisted decode")
+	}
+
+	staleCtx := loadCtx(staleSessionID)
+	staleCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(staleCtx, staleSessionID, srvB, resultID)
+		staleCh <- err
+	}()
+	select {
+	case <-stalePaused:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the stale reader to pause before the decode mutex")
+	}
+
+	// Let the leader finish completely: decode, install, lease sync, and
+	// the finish that clears the channel with no error latched.
+	close(allowFirst)
+	assert.NilError(t, <-leaderCh)
+
+	close(releaseStale)
+	assert.NilError(t, <-staleCh)
+	// The stale reader found the payload installed and the sync done, so
+	// it served the value instead of leading: one decode, one published
+	// attempt in the whole test.
+	assert.Equal(t, decodeEntries.Load(), int32(1))
+	assert.Equal(t, leadPublishes.Load(), int32(1))
+
+	assert.NilError(t, cB.ReleaseSession(leaderCtx, leaderSessionID))
+	assert.NilError(t, cB.ReleaseSession(staleCtx, staleSessionID))
 }
