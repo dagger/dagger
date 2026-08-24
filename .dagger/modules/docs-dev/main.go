@@ -133,7 +133,7 @@ func (d DocsDev) References(
 	)
 	// 2. Generate the API reference stubs.
 	//
-	// The reference pages under docs/current_docs/reference/api are rendered
+	// The reference pages under docs/current_docs/api/reference are rendered
 	// from docs-graphql/schema.graphqls at site-build time by the
 	// dagger-api-reference Docusaurus plugin (see docs/plugins and
 	// docs/src/components/api). All this step regenerates is the thin per-type
@@ -147,8 +147,8 @@ func (d DocsDev) References(
 		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
 		Directory("/src").
 		WithoutDirectory("docs/node_modules")
-	// The CLI reference (docs/current_docs/reference/cli/index.mdx) is generated
-	// separately by the go toolchain (see docs/current_docs/reference/generate.go)
+	// The CLI reference (docs/current_docs/cli/reference/index.mdx) is generated
+	// separately by the go toolchain (see docs/current_docs/cli/generate.go)
 	// and committed, so it is already part of src here.
 
 	// 3. Generate config file schemas?
