@@ -875,7 +875,9 @@ func buildCaptureBundle(ctx context.Context, checkout, tmpDir, objectFormat, bas
 	if _, err := runHostGit(ctx, stagingRepo, "update-ref", captureHeadRef, head); err != nil {
 		return "", errors.New("advertise checkpoint head failed")
 	}
-	bundleArgs := []string{"bundle", "create", "--version=3", output, captureHeadRef}
+	// Sparse pack traversal may add objects outside the exact revision closure
+	// for copied trees, which the verification below intentionally rejects.
+	bundleArgs := []string{"-c", "pack.useSparse=false", "bundle", "create", "--version=3", output, captureHeadRef}
 	if worktreeSHA != "" {
 		if _, err := runHostGit(ctx, stagingRepo, "update-ref", captureWorktreeRef, worktreeSHA); err != nil {
 			return "", errors.New("advertise checkpoint worktree failed")
