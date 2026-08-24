@@ -44,16 +44,16 @@ module.exports = {
     "index",
 
     // ========================================
-    // ADOPTING DAGGER
+    // GETTING STARTED
     // ========================================
     {
       type: "category",
-      label: "Adopting Dagger",
+      label: "Getting Started",
       collapsible: true,
       collapsed: false,
       items: [
         "getting-started/quickstart",
-        "adopting/workspace-setup",
+        "getting-started/workspace-setup",
       ],
     },
 

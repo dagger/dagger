@@ -366,11 +366,6 @@
   status = 301
 
 [[redirects]]
-  from = "/quickstart"
-  to = "/getting-started/quickstarts/basics"
-  status = 301
-
-[[redirects]]
   from = "/quickstart/agent"
   to = "/getting-started/quickstarts/agent"
   status = 301
@@ -1328,6 +1323,17 @@
 [[redirects]]
   from = "/reference/container-runtimes/openshift"
   to = "/reference/deployment/openshift"
+  status = 301
+
+# The quickstart and workspace setup pages moved under /getting-started.
+[[redirects]]
+  from = "/quickstart"
+  to = "/getting-started/quickstart"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/workspace-setup"
+  to = "/getting-started/workspace-setup"
   status = 301
 
 # The installation page moved under the CLI section.
