@@ -59,9 +59,7 @@ func TestPushImageRetriesThrottledUpload(t *testing.T) {
 			img,
 			registryHost+"/dagger/test:latest",
 			PushOpts{
-				RegistryTransport: RegistryTransport{
-					Protocol: RegistryProtocolHTTP,
-				},
+				Insecure: true,
 			},
 		)
 	}()

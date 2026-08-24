@@ -262,7 +262,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
 	devEnginePlatform, err := devEngine.Platform(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", err
 	}
 
 	devBinary := dag.DaggerCli().Binary()
@@ -276,7 +276,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	testEngineUtils := dag.Directory().
 		WithFile("engine.tar", devEngine.AsTarball()).
 		WithFile("dagger", devBinary, dagger.DirectoryWithFileOpts{
-			Permissions: 0755,
+			Permissions: 0o755,
 		})
 
 	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
