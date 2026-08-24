@@ -602,10 +602,16 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			// sync-only attempt below before serving the value.
 		}
 
+		if c.testPersistDecodePreLock != nil {
+			c.testPersistDecodePreLock(uint64(res.id))
+		}
 		res.persistDecodeMu.Lock()
 		if res.persistDecodeWaitCh != nil {
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeMu.Unlock()
+			if c.testPersistDecodeJoined != nil {
+				c.testPersistDecodeJoined(uint64(res.id))
+			}
 
 			select {
 			case <-waitCh:
@@ -633,17 +639,35 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			continue
 		}
 
+		// Decide leadership on state read under the mutex: a caller that
+		// paused between the loop-top read and this lock acquisition may
+		// find another leader already installed the payload and finished
+		// its lease sync. There is nothing left to lead then; loop back to
+		// the fast path instead of publishing a redundant attempt whose
+		// sync could fail or be canceled and re-latch an error.
+		state = res.loadPayloadState()
+		needDecode := !state.hasValue && state.persistedEnvelope != nil
+		if !needDecode && !res.persistLeaseSyncPending {
+			res.persistDecodeMu.Unlock()
+			continue
+		}
+
 		res.persistDecodeWaitCh = make(chan struct{})
 		res.persistDecodeErr = nil
 		res.persistDecodeRetry = false
 		res.persistDecodeMu.Unlock()
+		if c.testPersistDecodeLeadPublished != nil {
+			c.testPersistDecodeLeadPublished(uint64(res.id))
+		}
 
-		// finishPersistDecode latches the outcome, clears the channel, and
-		// closes it in one critical section. installed reports whether the
-		// decoded payload is in place: a failure after the install means
-		// only the lease sync is outstanding, and persistLeaseSyncPending
-		// makes the next demand retry just that instead of serving the
-		// value with the owner-lease set unsynchronized.
+		// finishPersistDecode latches the outcome, the retry
+		// classification, and the pending-sync flag, and clears the
+		// channel, all under persistDecodeMu; the cleared channel is then
+		// closed after unlocking. installed reports whether the decoded
+		// payload is in place: a failure after the install means only the
+		// lease sync is outstanding, and persistLeaseSyncPending makes the
+		// next demand retry just that instead of serving the value with
+		// the owner-lease set unsynchronized.
 		finishPersistDecode := func(err error, installed bool) {
 			res.persistDecodeMu.Lock()
 			res.persistDecodeErr = err
@@ -655,12 +679,10 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			close(waitCh)
 		}
 
-		// Re-read the payload under leadership: between the loop-top read
-		// and publishing the channel another leader may have installed the
-		// payload and left only the lease sync pending. A sync-only attempt
-		// skips the decode below and just reconciles the leases.
-		state = res.loadPayloadState()
-		if !state.hasValue && state.persistedEnvelope != nil {
+		// A leader with an installed payload (persistLeaseSyncPending was
+		// set) runs a sync-only attempt: it skips the decode below and
+		// just reconciles the leases.
+		if needDecode {
 			call := res.loadResultCall()
 			if call == nil {
 				err := fmt.Errorf("decode persisted hit payload: missing authoritative call for object result %d", res.id)

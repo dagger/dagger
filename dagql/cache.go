@@ -1824,6 +1824,13 @@ type Cache struct {
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
+	// persisted-decode singleflight hooks (ensurePersistedHitValueLoaded):
+	// before acquiring persistDecodeMu in the join-or-lead region, after a
+	// joiner captured the published channel, and after a leader published
+	// a fresh channel.
+	testPersistDecodePreLock       func(uint64)
+	testPersistDecodeJoined        func(uint64)
+	testPersistDecodeLeadPublished func(uint64)
 
 	closeOnce sync.Once
 	closeErr  error
