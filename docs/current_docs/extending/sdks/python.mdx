@@ -8,7 +8,7 @@ description: "Develop Dagger modules in Python: create, write objects and functi
 
 The Python SDK lets you write Dagger modules in Python. You declare objects with `@object_type` and expose functions with `@function`; the SDK turns your type hints into a Dagger API schema, and generates a typed client (`dagger.dag`) for calling the Dagger API and any module dependencies.
 
-This page is the standalone reference for developing modules with Python. For platform concepts that apply to every SDK, start with the [Module Developer Guide](../index.mdx), and see the [Type System](../type-system/index.mdx), and [Checks](../how-dagger-works/checks.mdx).
+This page is the standalone reference for developing modules with Python. For platform concepts that apply to every SDK, start with the [Module Developer Guide](../index.mdx), and see the [Types](../types/index.mdx), and [Checks](../how-dagger-works/checks.mdx).
 
 ## The Python SDK is a module
 
@@ -250,7 +250,7 @@ class MyModule:
         )
 ```
 
-Custom type names are namespaced in the schema by the module's main object (e.g. `MyModuleAccount`) to avoid conflicts when multiple modules are loaded together. See [User-defined object types](../type-system/user-defined-object-types.mdx).
+Custom type names are namespaced in the schema by the module's main object (e.g. `MyModuleAccount`) to avoid conflicts when multiple modules are loaded together.
 
 ## Arguments and return values
 
@@ -271,8 +271,6 @@ Function parameters become typed arguments. Return type hints become the functio
 | your `@object_type` | object | custom type |
 | your `@enum_type` | enum | custom enum |
 | `None` / `-> None` | `Void` | |
-
-See [Arguments and return values](../type-system/arguments-and-return-values.mdx) and [Scalars, lists, nullability, defaults](../type-system/scalars-lists-nullability-defaults.mdx).
 
 ### Documentation
 
@@ -384,7 +382,7 @@ class MyModule:
         )
 ```
 
-Invalid values are rejected with an error listing the allowed choices. See [Enums and validation](../type-system/enums-and-validation.mdx).
+Invalid values are rejected with an error listing the allowed choices.
 
 ### Interfaces
 
@@ -416,11 +414,11 @@ class MyModule:
         return dag.mallard()
 ```
 
-The `typing.Protocol` base is what marks this as a Dagger interface rather than a plain Python protocol. Any object whose functions match the protocol — including objects returned by other modules — can be passed where the interface is expected. See [Designing for composability](../type-system/designing-for-composability.mdx).
+The `typing.Protocol` base is what marks this as a Dagger interface rather than a plain Python protocol. Any object whose functions match the protocol — including objects returned by other modules — can be passed where the interface is expected.
 
 ## Core Dagger types
 
-The generated client `dag` exposes the full Dagger API. The most common core types are `Container`, `Directory`, `File`, `Secret`, `Service`, and `CacheVolume`. They are immutable and lazy: each `with_*` method returns a new value, and nothing executes until you `await` a leaf operation. See [Core types](../type-system/core-types.mdx).
+The generated client `dag` exposes the full Dagger API. The most common core types are `Container`, `Directory`, `File`, `Secret`, `Service`, and `CacheVolume`. They are immutable and lazy: each `with_*` method returns a new value, and nothing executes until you `await` a leaf operation.
 
 ### Workspace inputs
 
@@ -594,8 +592,6 @@ class MyModule:
         # 'hello' dependency is available on dag after regeneration
         return await dag.hello().hello()
 ```
-
-See [Designing for composability](../type-system/designing-for-composability.mdx).
 
 ## Regenerate bindings
 
@@ -977,6 +973,6 @@ dagger -m github.com/you/your-module@v0.1.0 api call <function> ...
 ## Next steps
 
 - [Module Developer Guide](../index.mdx)
-- [Type System](../type-system/index.mdx)
+- [Types](../types/index.mdx)
 - [Checks](../how-dagger-works/checks.mdx)
 - [Changesets](../../cli/changesets.mdx)

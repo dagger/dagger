@@ -192,26 +192,6 @@ module.exports = {
         },
         {
           type: "category",
-          label: "Type System",
-          link: {
-            type: "doc",
-            id: "extending/type-system/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/type-system/core-types",
-            "extending/type-system/scalars-lists-nullability-defaults",
-            "extending/type-system/enums-and-validation",
-            "extending/type-system/arguments-and-return-values",
-            "extending/type-system/user-defined-object-types",
-            "extending/type-system/constructors-fields-methods",
-            "extending/type-system/designing-for-composability",
-            "extending/type-system/type-design-clinics",
-          ],
-        },
-        {
-          type: "category",
           label: "SDKs",
           link: {
             type: "doc",

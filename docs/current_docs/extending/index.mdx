@@ -21,7 +21,7 @@ Install a module into a workspace ([`dagger.toml`](../reference/configuration/wo
 Dagger ships no language-specific module tooling in the CLI. Instead, **each SDK is itself a Dagger module** — `github.com/dagger/go-sdk`, `dang-sdk`, and so on — whose functions you call to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
 
 1. **Scaffold** a new module — the SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../cli/changesets.mdx) you apply.
-2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](./type-system/index.mdx).
+2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](./types/index.mdx).
 3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
 4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
 5. **Check and test** with the module's [checks](./how-dagger-works/checks.mdx) and your own tests.

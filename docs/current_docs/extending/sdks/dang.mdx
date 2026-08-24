@@ -15,7 +15,7 @@ Use Dang when your module is primarily *orchestrating* the Dagger API — contai
 Before diving in, it helps to understand the platform concepts every SDK shares:
 
 - [Module Developer Guide](../index.mdx) — what a module is and how it fits into a workspace.
-- [Type System](../type-system/index.mdx) — the types your functions accept and return.
+- [Types](../types/index.mdx) — the types your functions accept and return.
 - [Checks](../how-dagger-works/checks.mdx) — how Dagger discovers and runs validation.
 - [Changesets](../../cli/changesets.mdx) — how Dagger represents file diffs (used by `init` and generators).
 
@@ -169,7 +169,7 @@ container
   .withExec(["npm", "install"])
 ```
 
-Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](../how-dagger-works/checks.mdx) and the [type system](../type-system/index.mdx) for the underlying model.
+Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](../how-dagger-works/checks.mdx) and the [type reference](../types/index.mdx) for the underlying model.
 
 ## Define objects and functions
 
@@ -884,6 +884,6 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 ## Next steps
 
 - [Module Developer Guide](../index.mdx)
-- [Type System](../type-system/index.mdx)
+- [Types](../types/index.mdx)
 - [Checks](../how-dagger-works/checks.mdx)
 - [Changesets](../../cli/changesets.mdx)
