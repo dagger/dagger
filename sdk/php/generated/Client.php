@@ -1023,6 +1023,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a Volume from its ID.
+     */
+    public function loadVolumeFromID(VolumeId $id): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadVolumeFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Workspace from its ID.
      */
     public function loadWorkspaceFromID(WorkspaceId $id): Workspace

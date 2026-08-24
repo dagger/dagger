@@ -59,6 +59,7 @@
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
+              <li><a href="#query-sshfsVolume">sshfsVolume</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -156,6 +157,7 @@
               <li><a href="#definition-Up">Up</a></li>
               <li><a href="#definition-UpGroup">UpGroup</a></li>
               <li><a href="#definition-Void">Void</a></li>
+              <li><a href="#definition-Volume">Volume</a></li>
               <li><a href="#definition-Workspace">Workspace</a></li>
             </ul>
           </div>
@@ -1827,6 +1829,88 @@
               </div>
             </div>
           </section>
+          <section id="query-sshfsVolume" class="operation operation-query" data-traverse-target="query-sshfsVolume">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>sshfsVolume</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Constructs an SSHFS volume.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Volume"><code>Volume!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>endpoint</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>privateKey</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span>
+                        </td>
+                        <td> Private key secret used to authenticate to the remote host. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>knownHosts</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span>
+                        </td>
+                        <td> known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>cacheKey</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>insecureSkipHostKeyCheck</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> Disable SSH host key verification. This is insecure and must be explicitly opted into. Default = <code>false</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>experimentalServiceHost</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span>
+                        </td>
+                        <td> Service to use as the SSHFS network endpoint while verifying the original host key. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-typeDef" class="operation operation-query" data-traverse-target="query-typeDef">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -1994,6 +2078,10 @@
                         <td data-property-name=""><a class="property-name" id="Address-value" href="#Address-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The address value </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-volume" href="#Address-volume"><code>volume</code></a> - <span class="property-type"><a href="#definition-Volume"><code>Volume!</code></a></span> </td>
+                        <td> Load a volume from the address. </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -2136,6 +2224,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asUpGroup" href="#Binding-asUpGroup"><code>asUpGroup</code></a> - <span class="property-type"><a href="#definition-UpGroup"><code>UpGroup!</code></a></span> </td>
                         <td> Retrieve the binding value, as type UpGroup </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asVolume" href="#Binding-asVolume"><code>asVolume</code></a> - <span class="property-type"><a href="#definition-Volume"><code>Volume!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Volume </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspace" href="#Binding-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
@@ -3895,6 +3987,35 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>size</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
                                 <p>Size of the temporary directory in bytes.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withMountedVolume" href="#Container-withMountedVolume"><code>withMountedVolume</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container plus a volume mounted at the given path. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the volume mount (e.g., &quot;/mnt/volume&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>volume</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>Identifier of the volume to mount.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>readOnly</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Mount the volume read-only.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -7276,6 +7397,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withUpOutput" href="#Env-withUpOutput"><code>withUpOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired Up output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withVolumeInput" href="#Env-withVolumeInput"><code>withVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Volume in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The Volume value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withVolumeOutput" href="#Env-withVolumeOutput"><code>withVolumeOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Volume output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11458,6 +11625,11 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><a href="#definition-Volume"><code>Volume</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><a href="#definition-Workspace"><code>Workspace</code></a></p>
                         </td>
                       </tr>
@@ -13040,6 +13212,37 @@
                   <h5>Description</h5>
                   <p>The absence of a value.</p>
                   <p>A Null Void is used as a placeholder for resolvers that do not return anything.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Volume" class="definition definition-object" data-traverse-target="definition-Volume">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Volume</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A filesystem volume that can be mounted into containers.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Volume-id" href="#Volume-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this Volume. </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

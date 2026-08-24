@@ -846,6 +846,18 @@ export type ContainerWithMountedTempOpts = {
   expand?: boolean
 }
 
+export type ContainerWithMountedVolumeOpts = {
+  /**
+   * Mount the volume read-only.
+   */
+  readOnly?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithNewFileOpts = {
   /**
    * Permissions of the new file. Example: 0600
@@ -2463,6 +2475,28 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
+export type ClientSshfsVolumeOpts = {
+  /**
+   * known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+   */
+  knownHosts?: Secret
+
+  /**
+   * Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+   */
+  cacheKey?: string
+
+  /**
+   * Disable SSH host key verification. This is insecure and must be explicitly opted into.
+   */
+  insecureSkipHostKeyCheck?: boolean
+
+  /**
+   * Service to use as the SSHFS network endpoint while verifying the original host key.
+   */
+  experimentalServiceHost?: Service
+}
+
 /**
  * A unique identifier for an object.
  */
@@ -2918,6 +2952,11 @@ export type UpID = string & { __UpID: never }
  */
 export type Void = string & { __Void: never }
 
+/**
+ * A unique identifier for an object.
+ */
+export type VolumeID = string & { __VolumeID: never }
+
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -3107,6 +3146,14 @@ export class Address extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Load a volume from the address.
+   */
+  volume = (): Volume => {
+    const ctx = this._ctx.select("volume")
+    return new Volume(ctx)
   }
 }
 
@@ -3400,6 +3447,14 @@ export class Binding extends BaseClient {
   asUpGroup = (): UpGroup => {
     const ctx = this._ctx.select("asUpGroup")
     return new UpGroup(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Volume
+   */
+  asVolume = (): Volume => {
+    const ctx = this._ctx.select("asVolume")
+    return new Volume(ctx)
   }
 
   /**
@@ -5074,6 +5129,22 @@ export class Container extends BaseClient {
     opts?: ContainerWithMountedTempOpts,
   ): Container => {
     const ctx = this._ctx.select("withMountedTemp", { path, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container plus a volume mounted at the given path.
+   * @param path Location of the volume mount (e.g., "/mnt/volume").
+   * @param volume Identifier of the volume to mount.
+   * @param opts.readOnly Mount the volume read-only.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  withMountedVolume = (
+    path: string,
+    volume: Volume,
+    opts?: ContainerWithMountedVolumeOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withMountedVolume", { path, volume, ...opts })
     return new Container(ctx)
   }
 
@@ -7864,6 +7935,31 @@ export class Env extends BaseClient {
    */
   withUpOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withUpOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Volume in the environment
+   * @param name The name of the binding
+   * @param value The Volume value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withVolumeInput = (name: string, value: Volume, description: string): Env => {
+    const ctx = this._ctx.select("withVolumeInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Volume output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withVolumeOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withVolumeOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -13295,6 +13391,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Volume from its ID.
+   */
+  loadVolumeFromID = (id: VolumeID): Volume => {
+    const ctx = this._ctx.select("loadVolumeFromID", { id })
+    return new Volume(ctx)
+  }
+
+  /**
    * Load a Workspace from its ID.
    */
   loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
@@ -13380,6 +13484,28 @@ export class Client extends BaseClient {
   sourceMap = (filename: string, line: number, column: number): SourceMap => {
     const ctx = this._ctx.select("sourceMap", { filename, line, column })
     return new SourceMap(ctx)
+  }
+
+  /**
+   * Constructs an SSHFS volume.
+   * @param endpoint SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path.
+   * @param privateKey Private key secret used to authenticate to the remote host.
+   * @param opts.knownHosts known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+   * @param opts.cacheKey Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+   * @param opts.insecureSkipHostKeyCheck Disable SSH host key verification. This is insecure and must be explicitly opted into.
+   * @param opts.experimentalServiceHost Service to use as the SSHFS network endpoint while verifying the original host key.
+   */
+  sshfsVolume = (
+    endpoint: string,
+    privateKey: Secret,
+    opts?: ClientSshfsVolumeOpts,
+  ): Volume => {
+    const ctx = this._ctx.select("sshfsVolume", {
+      endpoint,
+      privateKey,
+      ...opts,
+    })
+    return new Volume(ctx)
   }
 
   /**
@@ -14840,6 +14966,37 @@ export class UpGroup extends BaseClient {
    */
   with = (arg: (param: UpGroup) => UpGroup) => {
     return arg(this)
+  }
+}
+
+/**
+ * A filesystem volume that can be mounted into containers.
+ */
+export class Volume extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Volume.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
   }
 }
 

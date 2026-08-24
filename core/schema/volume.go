@@ -16,7 +16,7 @@ var _ SchemaResolvers = &volumeSchema{}
 func (s *volumeSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("sshfsVolume", s.sshfsVolume).
-			View(AfterVersion("v1.0.0-0")).
+			View(AfterVersion("v0.21.9-0")).
 			WithInput(dagql.PerSessionInput).
 			Doc("Constructs an SSHFS volume.").
 			Args(
@@ -29,7 +29,7 @@ func (s *volumeSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	srv.InstallObject(dagql.NewClass[*core.Volume](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.Volume](srv).View(AfterVersion("v0.21.9-0")))
 	dagql.Fields[*core.Volume]{}.Install(srv)
 }
 

@@ -52,7 +52,7 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerCallInput).
 			Doc(`Load a local socket from the address.`),
 		dagql.NodeFunc("volume", s.volume).
-			View(AfterVersion("v1.0.0-0")).
+			View(AfterVersion("v0.21.9-0")).
 			WithInput(dagql.PerCallInput).
 			Doc(`Load a volume from the address.`),
 	}.Install(srv)

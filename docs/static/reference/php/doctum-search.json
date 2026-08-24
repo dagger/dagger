@@ -1648,6 +1648,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\VolumeId",
+			"p": "Dagger/VolumeId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Workspace",
 			"p": "Dagger/Workspace.html",
 			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
@@ -2799,6 +2809,12 @@
 			"n": "Dagger\\Client::loadUpGroupFromID",
 			"p": "Dagger/Client.html#method_loadUpGroupFromID",
 			"d": "<p>Load a UpGroup from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadVolumeFromID",
+			"p": "Dagger/Client.html#method_loadVolumeFromID",
+			"d": "<p>Load a Volume from its ID.</p>"
 		},
 		{
 			"t": "M",

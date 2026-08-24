@@ -150,6 +150,7 @@ impl Void {
         format!("\"{}\"", self.0.clone())
     }
 }
+pub type VolumeId = Id;
 pub type WorkspaceId = Id;
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
@@ -14633,6 +14634,22 @@ impl Query {
             }),
         );
         UpGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Volume from its ID.
+    pub fn load_volume_from_id(&self, id: impl IntoID<VolumeId>) -> Volume {
+        let mut query = self.selection.select("loadVolumeFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Volume {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

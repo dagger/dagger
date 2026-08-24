@@ -1416,6 +1416,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Volume from its ID.
+  """
+  @spec load_volume_from_id(t(), Dagger.VolumeID.t()) :: Dagger.Volume.t()
+  def load_volume_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadVolumeFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Volume{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Workspace from its ID.
   """
   @spec load_workspace_from_id(t(), Dagger.WorkspaceID.t()) :: Dagger.Workspace.t()

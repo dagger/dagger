@@ -425,7 +425,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withMountedVolume", s.withMountedVolume).
-			View(AfterVersion("v1.0.0-0")).
+			View(AfterVersion("v0.21.9-0")).
 			Doc(`Retrieves this container plus a volume mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the volume mount (e.g., "/mnt/volume").`),

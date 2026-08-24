@@ -14,7 +14,7 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-func TestVolumeSchemaGateIsClosedBeforeRelease(t *testing.T) {
+func TestVolumeSchemaGate(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
@@ -43,6 +43,12 @@ func TestVolumeSchemaGateIsClosedBeforeRelease(t *testing.T) {
 		}
 	}
 	require.Empty(t, refs)
+
+	releaseSchema := base.base.SchemaForView("v0.21.9-0")
+	require.NotNil(t, releaseSchema.Types["Volume"])
+	require.NotNil(t, releaseSchema.Query.Fields.ForName("sshfsVolume"))
+	require.NotNil(t, releaseSchema.Types["Address"].Fields.ForName("volume"))
+	require.NotNil(t, releaseSchema.Types["Container"].Fields.ForName("withMountedVolume"))
 }
 
 func namedSchemaType(typ *ast.Type) string {

@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -106,7 +107,7 @@ func (VolumeSuite) TestModuleAcceptsAndMountsVolume(ctx context.Context, t *test
 	require.NoError(t, err)
 
 	modDir := t.TempDir()
-	copyTestdataFixture(ctx, t, modDir, "modules", "go", "call-volume")
+	require.NoError(t, fscopy.Copy(ctx, testDataPath(t, "modules", "go", "call-volume"), "/", modDir, "/"))
 	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
@@ -126,7 +127,8 @@ func (VolumeSuite) TestModuleAcceptsAndMountsVolume(ctx context.Context, t *test
 func (VolumeSuite) TestModuleCannotConstructSSHFSVolume(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := moduleFixture(t, c, "go/sshfs-volume-constructor-denied").
+	_, err := goGitBase(t, c).
+		With(withModuleFixture(t, c, ".", "go/sshfs-volume-constructor-denied")).
 		With(daggerCallAt(".", "fn")).
 		Sync(ctx)
 	requireErrOut(t, err, "SshfsVolume")

@@ -1064,7 +1064,11 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 			return nil, gqlErrs(rerr)
 		}
 
-		//nolint:staticcheck // annoying, but we can't easily switch to this without inconsistencies
+		// nolintlint is included because staticcheck's verdict on this line
+		// differs between environments (stale/partial staticcheck results make
+		// nolintlint report the directive as unused in CI while local runs
+		// need it), so the bare directive flaps.
+		//nolint:staticcheck,nolintlint // annoying, but we can't easily switch to this without inconsistencies
 		listErr := validator.Validate(s.Schema(), gqlOp.Doc)
 		if len(listErr) != 0 {
 			for _, e := range listErr {

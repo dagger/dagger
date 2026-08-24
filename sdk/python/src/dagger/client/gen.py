@@ -287,6 +287,10 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class VolumeID(Scalar):
+    """A unique identifier for an object."""
+
+
 class WorkspaceID(Scalar):
     """A unique identifier for an object."""
 
@@ -13820,6 +13824,14 @@ class Query(Root):
         _ctx = self._select("loadUpGroupFromID", _args)
         return UpGroup(_ctx)
 
+    def load_volume_from_id(self, id: VolumeID) -> "Volume":
+        """Load a Volume from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadVolumeFromID", _args)
+        return Volume(_ctx)
+
     def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
         """Load a Workspace from its ID."""
         _args = [
@@ -16184,6 +16196,7 @@ __all__ = [
     "UpID",
     "Void",
     "Volume",
+    "VolumeID",
     "Workspace",
     "WorkspaceID",
     "dag",
