@@ -932,6 +932,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def
@@ -974,6 +977,22 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	})
 
 	return s.schemas[view]
+}
+
+type viewFilteredType interface {
+	ViewFilter() ViewFilter
+}
+
+func viewFilterForType(t Type) ViewFilter {
+	if viewFiltered, ok := t.(viewFilteredType); ok {
+		return viewFiltered.ViewFilter()
+	}
+	return nil
+}
+
+func typeVisibleInView(t Type, view call.View) bool {
+	viewFilter := viewFilterForType(t)
+	return viewFilter == nil || viewFilter.Contains(view)
 }
 
 // SchemaDigest returns the digest of the current schema.
@@ -1045,7 +1064,11 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 			return nil, gqlErrs(rerr)
 		}
 
-		//nolint:staticcheck // annoying, but we can't easily switch to this without inconsistencies
+		// nolintlint is included because staticcheck's verdict on this line
+		// differs between environments (stale/partial staticcheck results make
+		// nolintlint report the directive as unused in CI while local runs
+		// need it), so the bare directive flaps.
+		//nolint:staticcheck,nolintlint // annoying, but we can't easily switch to this without inconsistencies
 		listErr := validator.Validate(s.Schema(), gqlOp.Doc)
 		if len(listErr) != 0 {
 			for _, e := range listErr {

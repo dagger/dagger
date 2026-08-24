@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"strings"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
@@ -37,6 +38,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
+				dagql.Arg("hiddenFields").Doc("Fields to hide from the schema JSON file, formatted as Type.field."),
 			),
 		dagql.NodeFunc("_remoteGitMirror", s.remoteGitMirror).
 			IsPersistable().
@@ -141,7 +143,7 @@ func (s *querySchema) clientFilesyncMirror(ctx context.Context, parent dagql.Obj
 	return dagql.NewResultForCurrentCall(ctx, mirror)
 }
 
-func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]byte, error) {
+func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagql.Server) ([]byte, error) {
 	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
@@ -174,6 +176,13 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 		introspectionResponse.Schema.ScrubType(rawType)
 		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameForRawType(rawType))
 	}
+	for _, rawField := range hiddenFields {
+		rawType, fieldName, ok := strings.Cut(rawField, ".")
+		if !ok || rawType == "" || fieldName == "" || strings.Contains(fieldName, ".") {
+			return nil, fmt.Errorf("invalid hidden field %q: expected Type.field", rawField)
+		}
+		introspectionResponse.Schema.ScrubField(rawType, fieldName)
+	}
 
 	moduleSchemaJSON, err := json.Marshal(introspectionResponse)
 	if err != nil {
@@ -183,7 +192,8 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 }
 
 type schemaJSONArgs struct {
-	HiddenTypes []string `default:"[]"`
+	HiddenTypes  []string `default:"[]"`
+	HiddenFields []string `default:"[]"`
 }
 
 func (s *querySchema) schemaJSONFile(
@@ -199,7 +209,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, dag.View, dag)
+	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, args.HiddenFields, dag.View, dag)
 	if err != nil {
 		return inst, err
 	}

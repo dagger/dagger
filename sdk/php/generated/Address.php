@@ -134,4 +134,13 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
         return (string)$this->queryLeaf($leafQueryBuilder, 'value');
     }
+
+    /**
+     * Load a volume from the address.
+     */
+    public function volume(): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('volume');
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

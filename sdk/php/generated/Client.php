@@ -1023,6 +1023,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a Volume from its ID.
+     */
+    public function loadVolumeFromID(VolumeId $id): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadVolumeFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Workspace from its ID.
      */
     public function loadWorkspaceFromID(WorkspaceId $id): Workspace
@@ -1128,6 +1138,35 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Constructs an SSHFS volume.
+     */
+    public function sshfsVolume(
+        string $endpoint,
+        Secret $privateKey,
+        ?Secret $knownHosts = null,
+        ?string $cacheKey = null,
+        ?bool $insecureSkipHostKeyCheck = false,
+        ?Service $experimentalServiceHost = null,
+    ): Volume {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
+        $innerQueryBuilder->setArgument('endpoint', $endpoint);
+        $innerQueryBuilder->setArgument('privateKey', $privateKey);
+        if (null !== $knownHosts) {
+        $innerQueryBuilder->setArgument('knownHosts', $knownHosts);
+        }
+        if (null !== $cacheKey) {
+        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
+        }
+        if (null !== $insecureSkipHostKeyCheck) {
+        $innerQueryBuilder->setArgument('insecureSkipHostKeyCheck', $insecureSkipHostKeyCheck);
+        }
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
+        }
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

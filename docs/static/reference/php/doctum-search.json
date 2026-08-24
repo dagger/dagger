@@ -1638,6 +1638,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Volume",
+			"p": "Dagger/Volume.html",
+			"d": "<p>A filesystem volume that can be mounted into containers.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\VolumeId",
+			"p": "Dagger/VolumeId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Workspace",
 			"p": "Dagger/Workspace.html",
 			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
@@ -1751,6 +1771,12 @@
 			"n": "Dagger\\Address::value",
 			"p": "Dagger/Address.html#method_value",
 			"d": "<p>The address value</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::volume",
+			"p": "Dagger/Address.html#method_volume",
+			"d": "<p>Load a volume from the address.</p>"
 		},
 		{
 			"t": "M",
@@ -1967,6 +1993,12 @@
 			"n": "Dagger\\Binding::asUpGroup",
 			"p": "Dagger/Binding.html#method_asUpGroup",
 			"d": "<p>Retrieve the binding value, as type UpGroup</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asVolume",
+			"p": "Dagger/Binding.html#method_asVolume",
+			"d": "<p>Retrieve the binding value, as type Volume</p>"
 		},
 		{
 			"t": "M",
@@ -2780,6 +2812,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadVolumeFromID",
+			"p": "Dagger/Client.html#method_loadVolumeFromID",
+			"d": "<p>Load a Volume from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
@@ -2831,6 +2869,12 @@
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::sshfsVolume",
+			"p": "Dagger/Client.html#method_sshfsVolume",
+			"d": "<p>Constructs an SSHFS volume.</p>"
 		},
 		{
 			"t": "M",
@@ -3299,6 +3343,12 @@
 			"n": "Dagger\\Container::withMountedTemp",
 			"p": "Dagger/Container.html#method_withMountedTemp",
 			"d": "<p>Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::withMountedVolume",
+			"p": "Dagger/Container.html#method_withMountedVolume",
+			"d": "<p>Retrieves this container plus a volume mounted at the given path.</p>"
 		},
 		{
 			"t": "M",
@@ -4439,6 +4489,18 @@
 			"n": "Dagger\\Env::withUpOutput",
 			"p": "Dagger/Env.html#method_withUpOutput",
 			"d": "<p>Declare a desired Up output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withVolumeInput",
+			"p": "Dagger/Env.html#method_withVolumeInput",
+			"d": "<p>Create or update a binding of type Volume in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withVolumeOutput",
+			"p": "Dagger/Env.html#method_withVolumeOutput",
+			"d": "<p>Declare a desired Volume output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6707,6 +6769,12 @@
 			"n": "Dagger\\UpGroup::run",
 			"p": "Dagger/UpGroup.html#method_run",
 			"d": "<p>Execute all selected service functions</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Volume::id",
+			"p": "Dagger/Volume.html#method_id",
+			"d": "<p>A unique identifier for this Volume.</p>"
 		},
 		{
 			"t": "M",

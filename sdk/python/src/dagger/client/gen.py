@@ -287,6 +287,10 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class VolumeID(Scalar):
+    """A unique identifier for an object."""
+
+
 class WorkspaceID(Scalar):
     """A unique identifier for an object."""
 
@@ -881,6 +885,12 @@ class Address(Type):
         _ctx = self._select("value", _args)
         return await _ctx.execute(str)
 
+    def volume(self) -> "Volume":
+        """Load a volume from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("volume", _args)
+        return Volume(_ctx)
+
 
 @typecheck
 class Binding(Type):
@@ -1078,6 +1088,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asUpGroup", _args)
         return UpGroup(_ctx)
+
+    def as_volume(self) -> "Volume":
+        """Retrieve the binding value, as type Volume"""
+        _args: list[Arg] = []
+        _ctx = self._select("asVolume", _args)
+        return Volume(_ctx)
 
     def as_workspace(self) -> "Workspace":
         """Retrieve the binding value, as type Workspace"""
@@ -3451,6 +3467,38 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedTemp", _args)
+        return Container(_ctx)
+
+    def with_mounted_volume(
+        self,
+        path: str,
+        volume: "Volume",
+        *,
+        read_only: bool | None = False,
+        expand: bool | None = False,
+    ) -> Self:
+        """Retrieves this container plus a volume mounted at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the volume mount (e.g., "/mnt/volume").
+        volume:
+            Identifier of the volume to mount.
+        read_only:
+            Mount the volume read-only.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
+        """
+        _args = [
+            Arg("path", path),
+            Arg("volume", volume),
+            Arg("readOnly", read_only, False),
+            Arg("expand", expand, False),
+        ]
+        _ctx = self._select("withMountedVolume", _args)
         return Container(_ctx)
 
     def with_new_file(
@@ -7432,6 +7480,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withUpOutput", _args)
+        return Env(_ctx)
+
+    def with_volume_input(
+        self,
+        name: str,
+        value: "Volume",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Volume in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Volume value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withVolumeInput", _args)
+        return Env(_ctx)
+
+    def with_volume_output(self, name: str, description: str) -> Self:
+        """Declare a desired Volume output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withVolumeOutput", _args)
         return Env(_ctx)
 
     def with_workspace(self, workspace: Directory) -> Self:
@@ -13734,6 +13824,14 @@ class Query(Root):
         _ctx = self._select("loadUpGroupFromID", _args)
         return UpGroup(_ctx)
 
+    def load_volume_from_id(self, id: VolumeID) -> "Volume":
+        """Load a Volume from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadVolumeFromID", _args)
+        return Volume(_ctx)
+
     def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
         """Load a Workspace from its ID."""
         _args = [
@@ -13868,6 +13966,50 @@ class Query(Root):
         ]
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    def sshfs_volume(
+        self,
+        endpoint: str,
+        private_key: "Secret",
+        *,
+        known_hosts: "Secret | None" = None,
+        cache_key: str | None = None,
+        insecure_skip_host_key_check: bool | None = False,
+        experimental_service_host: "Service | None" = None,
+    ) -> "Volume":
+        """Constructs an SSHFS volume.
+
+        Parameters
+        ----------
+        endpoint:
+            SSHFS endpoint URL in the form
+            sshfs://user@host[:port]/absolute/path.
+        private_key:
+            Private key secret used to authenticate to the remote host.
+        known_hosts:
+            known_hosts material used to verify the remote host key. Required
+            unless insecureSkipHostKeyCheck is true.
+        cache_key:
+            Optional cache equivalence key. If set, volumes with the same
+            cacheKey may be considered equivalent for cache lookups, still
+            subject to their resource dependencies.
+        insecure_skip_host_key_check:
+            Disable SSH host key verification. This is insecure and must be
+            explicitly opted into.
+        experimental_service_host:
+            Service to use as the SSHFS network endpoint while verifying the
+            original host key.
+        """
+        _args = [
+            Arg("endpoint", endpoint),
+            Arg("privateKey", private_key),
+            Arg("knownHosts", known_hosts, None),
+            Arg("cacheKey", cache_key, None),
+            Arg("insecureSkipHostKeyCheck", insecure_skip_host_key_check, False),
+            Arg("experimentalServiceHost", experimental_service_host, None),
+        ]
+        _ctx = self._select("sshfsVolume", _args)
+        return Volume(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -15522,6 +15664,39 @@ class UpGroup(Type):
 
 
 @typecheck
+class Volume(Type):
+    """A filesystem volume that can be mounted into containers."""
+
+    async def id(self) -> str:
+        """A unique identifier for this Volume.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
@@ -16020,6 +16195,8 @@ __all__ = [
     "UpGroupID",
     "UpID",
     "Void",
+    "Volume",
+    "VolumeID",
     "Workspace",
     "WorkspaceID",
     "dag",
