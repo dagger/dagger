@@ -114,10 +114,10 @@ const config: Config = {
             ...Object.fromEntries(
               versions.slice(1).map((v) => [v, { noIndex: true }]),
             ),
-            // Keep the old-version banner suppressed; path/label are derived
-            // (non-default versions are served at /<version>/).
+            // Path/label are derived (non-default versions are served at
+            // /<version>/); the default "unmaintained" banner points readers
+            // at the 1.0 docs.
             "0.21.4": {
-              banner: "none",
               badge: false,
               noIndex: true,
             },
