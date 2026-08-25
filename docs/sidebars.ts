@@ -67,7 +67,6 @@ module.exports = {
         "cli/install",
         "cli/checking",
         "cli/generating",
-        "cli/changesets",
         "cli/services",
         "cli/module-wiring",
         "cli/calling-functions",

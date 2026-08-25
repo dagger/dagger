@@ -20,7 +20,7 @@ Install a module into a workspace (`dagger.toml`) to make it part of a project's
 
 Dagger ships no language-specific module tooling in the CLI. Instead, **each SDK is itself a Dagger module** — `github.com/dagger/go-sdk`, `dang-sdk`, and so on — whose functions you call to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
 
-1. **Scaffold** a new module — the SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../cli/changesets.mdx) you apply.
+1. **Scaffold** a new module — the SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../cli/generating.mdx) you apply.
 2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](../api/reference/index.mdx).
 3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
 4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
@@ -44,7 +44,7 @@ Start from the call you want people to remember, then make it obvious.
 A module can expose plain functions that just return values — that's valid and composes fine. But a module earns its place by plugging into Dagger's workflows. There are three first-class function types, and a genuinely useful reusable module provides **at least one**:
 
 - **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as Cloud Checks.
-- **Generators** produce source changes as reviewable [changesets](../cli/changesets.mdx) — codegen, formatting, lockfile updates. They run with `dagger generate`.
+- **Generators** produce source changes as reviewable [changesets](../cli/generating.mdx) — codegen, formatting, lockfile updates. They run with `dagger generate`.
 - **Services** expose a long-running service — a database, web server, or proxy — started with `dagger up`.
 
 You mark a function as one of these in your SDK (`@check`, `@generate`, `@up`, or the language's equivalent — see your [SDK guide](#choose-your-sdk)). A module that offers none of them is often better left as a plain function call than packaged as a module.

@@ -18,7 +18,7 @@ where relevant:
 
 - [SDKs overview](./index.mdx) — what a module is and how it runs
 - [Types](../api/reference/index.mdx) — how language types map to the Dagger API
-- [Changesets](../cli/changesets.mdx) — how generated files are reviewed and applied
+- [Generating code](../cli/generating.mdx) — how generated files are reviewed and applied
 
 :::important
 Module development tooling lives in the SDK module, not the `dagger` CLI:
@@ -41,7 +41,7 @@ dagger install github.com/dagger/typescript-sdk
 dagger api call typescript-sdk init --name=my-module
 ```
 
-`init` returns a [changeset](../cli/changesets.mdx) describing the files to
+`init` returns a [changeset](../cli/generating.mdx) describing the files to
 create — which Dagger shows you to review before anything is written to disk.
 
 `init` arguments (from `dagger api call typescript-sdk init --help`):
@@ -727,7 +727,7 @@ returns a non-zero exit code (which surfaces as a thrown error when you `sync`).
 
 ### Generators
 
-A generator produces a [changeset](../cli/changesets.mdx) — a diff between the
+A generator produces a [changeset](../cli/generating.mdx) — a diff between the
 current source and generated output. Mark it with `@generate()` and return a
 `Changeset`. `dagger generate` runs every generator and presents the combined
 changeset for review.
