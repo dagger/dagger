@@ -141,6 +141,13 @@ CONSTANTS
                         \* cache after the handler drain has completed. New
                         \* operations are refused after the cache tombstone;
                         \* operations admitted earlier keep release deferred.
+    ModelLateDeps,      \* explicit dependency edges added to results that
+                        \* are already published (Cache.AddExplicitDependency;
+                        \* the one caller today attaches generated module
+                        \* types to a published module container,
+                        \* core/sdk/module_typedefs.go). Off in
+                        \* configurations that ask no late-dependency
+                        \* question.
     \* --- failure and cancellation injection --------------------------------
     \* Each enables one nondeterministic event the environment can inject.
     \* Configurations keep injections off unless their question needs them,
@@ -1061,6 +1068,32 @@ DepReachable(rf, start, target) ==
                     ELSE Reach(next, seen \cup next)
     IN Reach({start}, {start})
 
+\* p together with every registered result that transitively depends on it.
+AncestorClosure(rf, p) ==
+    LET RECURSIVE up(_)
+        up(S) ==
+            LET next == S \cup {q \in DOMAIN rf :
+                                  rf[q].registered /\ rf[q].deps \cap S # {}}
+            IN IF next = S THEN S ELSE up(next)
+    IN up({p})
+
+\* The stored required sets after addExplicitDependencyLocked adds the
+\* edge making p's deps newDepsOfP: the parent is recomputed and the
+\* change cascades upward through depParents until the sets stop changing
+\* (the worklist in addExplicitDependencyLocked). At the fixpoint every
+\* result in p's ancestor closure reads its deps' final stored sets, and
+\* everything outside the closure keeps its stored set - which is why a
+\* drifted set elsewhere would NOT be repaired by the cascade. The
+\* recursion is well-founded because dependency edges are acyclic.
+CascadeRequired(rf, p, newDepsOfP) ==
+    LET A == AncestorClosure(rf, p)
+        depsOf(x) == IF x = p THEN newDepsOfP ELSE rf[x].deps
+        RECURSIVE reqOf(_)
+        reqOf(x) == IF x \notin A THEN rf[x].required
+                    ELSE OwnHandleReq(rf[x].handle)
+                           \cup UNION {reqOf(dd) : dd \in depsOf(x)}
+    IN [x \in DOMAIN rf |-> reqOf(x)]
+
 PubAttachAddDep(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ \E d \in ResultIds :
@@ -1075,16 +1108,18 @@ PubAttachAddDep(o) ==
         /\ res[d].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
         /\ LET p == ongoingCalls[o].resId
                newDeps == res[p].deps \cup {d}
-           IN res' = [res EXCEPT
-                ![p].deps = newDeps,
-                ![d].own = @ + 1,
-                \* addExplicitDependencyLocked recomputes the PARENT one level
-                \* deep after adding the edge (cache.go:2687), reading each
-                \* dep's stored required set. Ancestors of p are not revisited;
-                \* that stale-ancestor gap is effort 4's (AddExplicitDependency
-                \* on an already-published result), out of scope here.
-                ![p].required = OwnHandleReq(res[p].handle)
-                                  \cup UNION {res[dd].required : dd \in newDeps}]
+               \* addExplicitDependencyLocked recomputes the parent after
+               \* adding the edge and cascades the change upward through
+               \* depParents (the worklist in cache.go), so an ancestor that
+               \* already depends on p learns about requirements the new
+               \* dep introduces.
+               newReq == CascadeRequired(res, p, newDeps)
+           IN res' = [x \in DOMAIN res |->
+                IF x = p THEN [res[x] EXCEPT !.deps = newDeps,
+                                             !.required = newReq[x]]
+                ELSE IF x = d THEN [res[x] EXCEPT !.own = @ + 1,
+                                                  !.required = newReq[x]]
+                ELSE [res[x] EXCEPT !.required = newReq[x]]]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1725,6 +1760,37 @@ BindResource ==
                    sessionEdges, countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
+(* AddDepLate: an explicit dependency edge is added to a result that was   *)
+(* already published. Go: Cache.AddExplicitDependency ->                   *)
+(* addExplicitDependencyLocked, one egraphMu critical section; the one     *)
+(* caller today attaches generated module types to a published module      *)
+(* container (core/sdk/module_typedefs.go). The caller holds both          *)
+(* results, so both barriers are settled. The edge must not form a cycle   *)
+(* (the stated no-cycle assumption), and the stored required sets cascade  *)
+(* upward exactly as in PubAttachAddDep.                                   *)
+(***************************************************************************)
+AddDepLate ==
+    /\ ModelLateDeps
+    /\ \E p \in ResultIds, d \in ResultIds :
+        /\ p # d
+        /\ res[p].registered
+        /\ res[d].registered
+        /\ res[p].barrier \in {"none", "closedOk"}
+        /\ res[d].barrier \in {"none", "closedOk"}
+        /\ d \notin res[p].deps
+        /\ ~DepReachable(res, d, p)
+        /\ LET newDeps == res[p].deps \cup {d}
+               newReq  == CascadeRequired(res, p, newDeps)
+           IN res' = [x \in DOMAIN res |->
+                IF x = p THEN [res[x] EXCEPT !.deps = newDeps,
+                                             !.required = newReq[x]]
+                ELSE IF x = d THEN [res[x] EXCEPT !.own = @ + 1,
+                                                  !.required = newReq[x]]
+                ELSE [res[x] EXCEPT !.required = newReq[x]]]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
 (* collect whatever that leaves unowned. Fireable at any time.             *)
 (*                                                                         *)
@@ -2280,6 +2346,7 @@ Next ==
            \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
     \/ \E r \in 1..Len(res) : PruneCut(r)
     \/ BindResource
+    \/ AddDepLate
     \/ EvalSpawn
     \/ \E e \in EvalIds :
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)

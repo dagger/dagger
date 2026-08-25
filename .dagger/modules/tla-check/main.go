@@ -71,6 +71,20 @@ var expectedOutcome = map[string]string{
 	// installs leaving the stored set alone; see the config headers.
 	"resources":         "",
 	"resources_restart": "",
+	// green: the upward cascade of stored required sets when an explicit
+	// dependency is added to an already-published result
+	// (addExplicitDependencyLocked's worklist over depParents).
+	"resources_latedep": "",
+
+	// accepted finding: a late explicit dependency can extend a result's
+	// transitive requirement while another session's invocation already
+	// holds it. Nothing synchronizes AddExplicitDependency with in-flight
+	// readers of the parent or its ancestors, and nothing re-validates at
+	// the return boundary, so that invocation exits holding a result that
+	// now depends on a handle leaf its session never bound. The stored
+	// accounting itself stays exact (resources_latedep gates the
+	// cascade); see the config headers.
+	"resources_latedep_gated": "ReturnedGated",
 }
 
 type TlaCheck struct {
