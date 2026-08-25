@@ -98,12 +98,14 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
-  Returns details for the latest semver tag.
+  Return the latest stable release tag, falling back to HEAD when no release exists.
+
+  Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
   """
-  @spec latest_version(t()) :: Dagger.GitRef.t()
-  def latest_version(%__MODULE__{} = git_repository) do
+  @spec latest(t()) :: Dagger.GitRef.t()
+  def latest(%__MODULE__{} = git_repository) do
     query_builder =
-      git_repository.query_builder |> QB.select("latestVersion")
+      git_repository.query_builder |> QB.select("latest")
 
     %Dagger.GitRef{
       query_builder: query_builder,

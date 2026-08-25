@@ -25,7 +25,7 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Check the docs website build
-func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:140:1)
+func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:156:1)
 	if r.check != nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../..
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:214:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:230:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -140,13 +140,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:247:2)
+	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:263:2)
 
-	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:249:2)
+	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:265:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:243:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:259:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -172,17 +172,17 @@ type DocsDevReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:162:2)
+	Version string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:178:2)
 	//
 	// Workspace forwarded to engine-dev for VCS stamping (References is the
 	// only docs-dev method that builds). Auto-injected on a direct call;
 	// dependencies don't inherit it.
 	//
-	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:168:2)
+	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:184:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:159:1)
+func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:175:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -201,7 +201,7 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 }
 
 // Build the docs server
-func (r *DocsDev) Server() *Container { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:146:1)
+func (r *DocsDev) Server() *Container { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:162:1)
 	q := r.query.Select("server")
 
 	return &Container{
