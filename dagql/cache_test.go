@@ -7071,7 +7071,7 @@ func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
 	assert.Equal(t, candidates[2].Value, "alpha")
 }
 
-func TestCacheAddExplicitDependencyRecomputesAncestors(t *testing.T) {
+func TestCacheAddExplicitDependencyRefusesSessionResourceDeps(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := cacheTestContext(t.Context())
@@ -7128,25 +7128,41 @@ func TestCacheAddExplicitDependencyRecomputesAncestors(t *testing.T) {
 
 	gated := sel("gatedLeafParent", "")
 	middle := sel("plain", "a")
+	plainDep := sel("plain", "b")
 	top := sel("wrap", "a")
 	topShared := top.cacheSharedResult()
 	assert.Assert(t, topShared != nil && topShared.id != 0)
+	middleShared := middle.cacheSharedResult()
+	assert.Assert(t, middleShared != nil && middleShared.id != 0)
 	assertCacheRequiredSessionResourcesExact(t, c)
 
-	c.egraphMu.RLock()
-	topRequiresBefore := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
-	c.egraphMu.RUnlock()
-	assert.Assert(t, !topRequiresBefore)
+	// A retention edge lands after the parent settled, where requirement
+	// growth would be invisible to sessions already holding the parent or
+	// its ancestors (top holds middle here), so a dep carrying a
+	// session-resource requirement must be refused and nothing may change.
+	err = c.AddExplicitDependency(ctx, middle, gated, "test_late_dep")
+	assert.ErrorContains(t, err, "explicit dependency edges must be session-resource-free")
 
-	// The late dep on the already-published middle result must cascade to
-	// its ancestor: top depends on middle, middle now depends on the gated
-	// parent, so both stored sets must grow to {handle}.
-	assert.NilError(t, c.AddExplicitDependency(ctx, middle, gated, "test_late_dep"))
-
+	gatedShared := gated.cacheSharedResult()
+	assert.Assert(t, gatedShared != nil && gatedShared.id != 0)
 	c.egraphMu.RLock()
-	topRequiresAfter := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	_, edgeAdded := middleShared.deps[gatedShared.id]
+	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
+	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
 	c.egraphMu.RUnlock()
-	assert.Assert(t, topRequiresAfter, "ancestor stored set went stale after a late explicit dependency")
+	assert.Assert(t, !edgeAdded, "refused dep must not leave an edge behind")
+	assert.Assert(t, !middleRequired)
+	assert.Assert(t, !topRequired)
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// A requirement-free dep is the supported retention case and must land.
+	assert.NilError(t, c.AddExplicitDependency(ctx, middle, plainDep, "test_retention_dep"))
+	plainDepShared := plainDep.cacheSharedResult()
+	assert.Assert(t, plainDepShared != nil && plainDepShared.id != 0)
+	c.egraphMu.RLock()
+	_, retained := middleShared.deps[plainDepShared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, retained, "requirement-free retention edge must be recorded")
 	assertCacheRequiredSessionResourcesExact(t, c)
 	cacheTestReleaseSession(t, c, ctx)
 }

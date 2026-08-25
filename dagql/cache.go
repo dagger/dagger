@@ -2631,7 +2631,17 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	return attached, nil
 }
 
+// AddExplicitDependency records a retention edge from parent to dep after
+// parent has already been published, so dep stays alive as long as parent's
+// cache entry does. It refuses deps that carry session-resource requirements:
+// a requirement added after the parent settled would be invisible to sessions
+// already holding the parent. The publication attach path uses the internal
+// variant, which is the one window where requirement-carrying deps may land.
 func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	return c.addExplicitDependency(ctx, parent, dep, reason, false)
+}
+
+func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string, allowSessionResources bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -2657,6 +2667,19 @@ func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 	}
 	if _, found := c.resultsByID[depShared.id]; !found {
 		return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
+	}
+	// A live result's stored requiredSessionResources may only grow while its
+	// own attachment is in flight; serve paths re-check the lookup filter
+	// after crossing an open attach barrier and rely on the set being frozen
+	// once attachment settles. The publication attach path is that window and
+	// may add requirement-carrying deps (allowSessionResources). The public
+	// retention edge lands after the parent settled, where growth would be
+	// invisible to sessions already holding the parent or its ancestors, so
+	// it refuses deps that carry session-resource requirements. Its one
+	// caller retains an SDK-generated typedefs module, whose dependency
+	// closure is pure type metadata and can never reach a secret or socket.
+	if !allowSessionResources && depShared.requiredSessionResources != nil && !depShared.requiredSessionResources.Empty() {
+		return fmt.Errorf("add explicit dependency: dep result %d requires session resources; explicit dependency edges must be session-resource-free", depShared.id)
 	}
 	return c.addExplicitDependencyLocked(ctx, parentShared, depShared, reason)
 }
@@ -2685,45 +2708,11 @@ func (c *Cache) addExplicitDependencyLocked(
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
 
-	// The new dep can extend the parent's stored required set, and every
-	// result already depending on the parent derives its own stored set
-	// from it, so a change must cascade upward through depParents until
-	// the sets stop changing. At publication time the parent is fresh and
-	// has no depParents; the cascade matters for a dep added to an
-	// already-published result.
-	queue := []*sharedResult{parentRes}
-	for len(queue) > 0 {
-		res := queue[0]
-		queue = queue[1:]
-		before := res.requiredSessionResources
-		if err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
-			return err
-		}
-		if sessionResourceSetsEqual(before, res.requiredSessionResources) {
-			continue
-		}
-		if res.depParents == nil {
-			continue
-		}
-		for ancestorID := range res.depParents.Items() {
-			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
-				queue = append(queue, ancestor)
-			}
-		}
-	}
-
-	return nil
-}
-
-func sessionResourceSetsEqual(a, b *set.TreeSet[SessionResourceHandle]) bool {
-	if a == nil || a.Empty() {
-		return b == nil || b.Empty()
-	}
-	if b == nil || b.Empty() {
-		return false
-	}
-	// Subset(col) reports whether col is a subset of the receiver.
-	return a.Size() == b.Size() && a.Subset(b)
+	// The parent recompute matters only on the publication attach path, where
+	// deps may carry requirements and the parent is a fresh result with no
+	// depParents yet. The public retention edge refuses requirement-carrying
+	// deps, so no ancestor of an already-settled parent can go stale here.
+	return c.recomputeRequiredSessionResourcesLocked(parentRes)
 }
 
 func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sharedResult) {
@@ -5367,7 +5356,7 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 			continue
 		}
 		seen[attachedDepRes.id] = dep.Owned
-		if err := c.AddExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
+		if err := c.addExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result", true); err != nil {
 			return err
 		}
 		// Owned deps inherit the parent's install span — failures in their
