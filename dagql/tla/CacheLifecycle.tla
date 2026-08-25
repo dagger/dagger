@@ -42,9 +42,9 @@
 (*   - Session-resource gating IS modeled (the Handles constant):          *)
 (*     each result carries handle (mirrors sessionResourceHandle)          *)
 (*     and required (the STORED requiredSessionResources set,              *)
-(*     maintained where the code maintains it, including                   *)
-(*     importPersistedState's arbitrary map order and the                  *)
-(*     post-decode overwrite); each session carries a bound handle         *)
+(*     maintained where the code maintains it: publication and             *)
+(*     attachment recomputes, and the import's dependency-first            *)
+(*     recompute); each session carries a bound handle                     *)
 (*     set; the lookup filter is required subset-of bound.                 *)
 (*     TrueRequired, RequiredExact and ReturnedGated encode intent -       *)
 (*     see the PROPERTIES header for their contract provenance.            *)
@@ -392,7 +392,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
      imported |-> TRUE,
      \* session-resource gating: handle mirrors sessionResourceHandle set by
      \* the import row (env.SessionResourceHandle), required is the STORED set
-     \* after the import fold and, for eager-decoded rows, the decode overwrite.
+     \* from the import's dependency-first recompute.
      handle |-> handleVal, required |-> requiredVal,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
@@ -425,44 +425,21 @@ ImportRowChoices(pos) ==
      payload : {"decoded", "envelope"},
      handle : {"none"} \cup Handles]
 
-\* Every ordering of a slot set S, as a sequence. Import fold order is the
-\* Go map-iteration order (importPersistedState's `for _, res := range
-\* c.resultsByID`, cache_persistence_import.go:359), which is arbitrary; the
-\* model explores every order. Import and restart graphs never exceed two
-\* rows under the current bounds, so |S| stays small.
-RECURSIVE SeqPermsOf(_)
-SeqPermsOf(S) ==
-    IF S = {} THEN {<<>>}
-    ELSE UNION {{<<x>> \o p : p \in SeqPermsOf(S \ {x})} : x \in S}
-
 \* Own-handle contribution of a row: {handle} unless the row has none.
 OwnHandleReq(h) == IF h = "none" THEN {} ELSE {h}
 
-\* Fold recomputeRequiredSessionResourcesLocked over the rows of D in order
-\* ord. Each row's required becomes {own handle} union the CURRENT stored
-\* sets of its deps (recompute reads dep.requiredSessionResources, one level).
-\* A row processed before a dep therefore misses that dep's contribution and
-\* is never revisited - the import-order defect the model must reproduce.
-FoldRequired(D, handleOf, depsOf, ord) ==
-    LET RECURSIVE step(_, _)
-        step(k, acc) ==
-            IF k > Len(ord) THEN acc
-            ELSE LET x == ord[k]
-                     dc == UNION {acc[d] : d \in depsOf[x]}
-                 IN step(k + 1,
-                      [acc EXCEPT ![x] = OwnHandleReq(handleOf[x]) \cup dc])
-    IN step(1, [x \in D |-> {}])
-
-\* The stored required set each row ends the import with: the fold result,
-\* then overwritten for rows whose payload was eagerly decoded at import. The
-\* eager decode (cache_persistence_import.go:423) copies required from the
-\* decoded value, which knows only its own handle - the decode-overwrite
-\* defect, applied here at import for "decoded" rows.
-ImportRequiredFinal(D, handleOf, depsOf, payloadOf, ord) ==
-    LET folded == FoldRequired(D, handleOf, depsOf, ord)
-    IN [x \in D |->
-         IF payloadOf[x] = "decoded" THEN OwnHandleReq(handleOf[x])
-         ELSE folded[x]]
+\* The stored required set each row ends the import with. The import's
+\* recompute walks dependencies first (importPersistedState's memoized DFS
+\* over c.resultsByID), so every row reads its deps' FINAL stored sets and
+\* the result is the transitive requirement, independent of map iteration
+\* order. The decode installs (eager import decode and the hit path in
+\* ensurePersistedHitValueLoaded) leave the session-resource fields alone.
+\* The recursion is well-founded because the import graph is acyclic.
+ImportRequiredFinal(D, handleOf, depsOf) ==
+    LET RECURSIVE reqOf(_)
+        reqOf(x) == OwnHandleReq(handleOf[x])
+                      \cup UNION {reqOf(d) : d \in depsOf[x]}
+    IN [x \in D |-> reqOf(x)]
 
 \* Every row must be retained: a persisted root, or a dependency of some
 \* row. (A flushed store contains only the retained graph.)
@@ -474,12 +451,11 @@ ImportOwn(g, x) ==
     (IF g[x].persisted THEN 1 ELSE 0)
       + Cardinality({y \in 1..Len(g) : x \in g[y].deps})
 
-ImportGraphState(g, ord) ==
+ImportGraphState(g) ==
     LET n        == Len(g)
         handleOf == [x \in 1..n |-> g[x].handle]
         depsOf   == [x \in 1..n |-> g[x].deps]
-        payloadOf == [x \in 1..n |-> g[x].payload]
-        required == ImportRequiredFinal(1..n, handleOf, depsOf, payloadOf, ord)
+        required == ImportRequiredFinal(1..n, handleOf, depsOf)
     IN [x \in 1..n |->
         ImportedResult(g[x].call, g[x].persisted, g[x].deps,
                        ImportOwn(g, x), g[x].payload, FALSE,
@@ -487,16 +463,12 @@ ImportGraphState(g, ord) ==
 
 InitialResStates ==
     IF ModelPersistence /\ ImportInit
-    \* One initial state per (retained graph, fold order): the second bound of
-    \* a TLA+ set comprehension cannot depend on the first, so the fold-order
-    \* choice is nested under the graph choice and the results unioned.
-    THEN UNION {
-           {ImportGraphState(g, ord) : ord \in SeqPermsOf(1..Len(g))} :
+    THEN {ImportGraphState(g) :
              g \in {h \in {<<>>}
                         \cup {<<a>> : a \in ImportRowChoices(1)}
                         \cup {<<a, b>> : a \in ImportRowChoices(1),
                                          b \in ImportRowChoices(2)} :
-                    ImportGraphRetained(h)} }
+                    ImportGraphRetained(h)}}
     ELSE {<<>>}
 
 RegisteredResultIds == {r \in ResultIds : res[r].registered}
@@ -1449,19 +1421,13 @@ DecodeInstall(i) ==
     /\ invocations[i].phase = "decoding"
     /\ LET r == invocations[i].resId IN
        /\ res[r].payload = "envelope"
-       \* Session-resource decode overwrite. The install copies the decoded
-       \* value's session-resource state (cache_persistence_import.go:736-741):
-       \* the handle is the envelope's own handle, unchanged here, but required
-       \* is overwritten to just the own handle because
-       \* decodePersistedResultEnvelope.setHandle knows only the row's own
-       \* handle. A NON-LEAF row whose dependency-derived required was correct
-       \* after import loses it at this instant - the decode-overwrite defect,
-       \* served next to any session by ReadBarrierOk on the fast path. The
-       \* write runs under payloadMu while the lookup filter reads required
-       \* under egraphMu (cache_egraph.go:682) with no common lock, so the
-       \* overwrite is also a data race the model cannot express.
-       /\ res' = [res EXCEPT ![r].payload = "decoded",
-                             ![r].required = OwnHandleReq(res[r].handle)]
+       \* The install leaves the session-resource fields alone: the decoded
+       \* shell only knows the row's own handle (the same envelope value the
+       \* import row was built from), and requiredSessionResources belongs
+       \* to import and publication and is read under egraphMu. (The install
+       \* used to copy both fields from the shell, which reduced a non-leaf's
+       \* stored set to its own handle and raced the lookup filter's read.)
+       /\ res' = [res EXCEPT ![r].payload = "decoded"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -1871,14 +1837,12 @@ Restart ==
     /\ epoch' = 2
     /\ \E pm \in [1..Len(flushed.rows) -> {"decoded", "envelope"}] :
        \* required is recomputed at import exactly as InitialResStates does:
-       \* the one-level fold over the kept rows in a nondeterministic order,
-       \* then the decode overwrite for rows re-imported as "decoded".
-       \E ord \in SeqPermsOf({x \in 1..Len(flushed.rows) : flushed.rows[x].keep}) :
+       \* the dependency-first walk over the kept rows, giving every row its
+       \* transitive requirement regardless of map iteration order.
          LET kept     == {x \in 1..Len(flushed.rows) : flushed.rows[x].keep}
              handleOf == [x \in kept |-> flushed.rows[x].handle]
              depsOf   == [x \in kept |-> flushed.rows[x].deps]
-             payloadOf == [x \in kept |-> pm[x]]
-             required == ImportRequiredFinal(kept, handleOf, depsOf, payloadOf, ord)
+             required == ImportRequiredFinal(kept, handleOf, depsOf)
          IN res' = [x \in 1..Len(flushed.rows) |->
              IF flushed.rows[x].keep
              THEN ImportedResult(
@@ -2524,10 +2488,9 @@ OwnershipExact ==
 
 \* Session-resource accounting is exact: for every registered result, the
 \* STORED required set equals the transitive recount. The same relationship
-\* OwnershipExact has to DerivedOwn. It fails where the code lets the stored
-\* set drift from the truth - the import fold visiting a parent before its
-\* dependency (FoldRequired) and the decode overwrite on a non-leaf row
-\* (DecodeInstall, and the eager-import overwrite in ImportRequiredFinal).
+\* OwnershipExact has to DerivedOwn. It held only outside persistence until
+\* the import recompute became dependency-first and the decode installs
+\* stopped overwriting the stored set; it is a regression gate on both.
 RequiredExact ==
     \A r \in ResultIds :
         res[r].registered => res[r].required = TrueRequired(r)
@@ -2553,11 +2516,10 @@ ReturnedOwned ==
 \* No session is ever handed a result that depends, directly or transitively,
 \* on a handle leaf it never bound: every returned invocation satisfies the
 \* transitive requirement of its result. This is the session-resource gate's
-\* purpose. It fails where a result reaches a session whose bound set does not
-\* cover the result's TrueRequired - for example a non-leaf whose stored set
-\* drifted at import (one unbound session suffices: the drifted {} passes the
-\* filter) or by a decode during the run (two sessions: one holds the leaf,
-\* another unbound receives the drifted result).
+\* purpose. It fails where a result reaches a session whose bound set does
+\* not cover the result's TrueRequired; with exact stored accounting
+\* (RequiredExact) the lookup filter enforces exactly that, so the two
+\* properties gate the accounting and the harm separately.
 ReturnedGated ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retGated
 
