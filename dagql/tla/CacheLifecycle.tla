@@ -105,12 +105,14 @@ CONSTANTS
     MaxResults,         \* bound on allocated sharedResult records
     Handles,            \* session-resource handles a run may involve, a set
                         \* of opaque values (mirrors SessionResourceHandle).
-                        \* Every existing configuration sets Handles = {}:
-                        \* with no handle available BindResource never fires,
-                        \* every result's handle stays "none" and required
-                        \* stays {}, the lookup filter is vacuous, and each
-                        \* new field is constant, so distinct-state counts of
-                        \* the 28 pre-existing configurations are unchanged.
+                        \* With Handles = {} the machinery is inert:
+                        \* BindResource never fires, every result's handle
+                        \* stays "none" and required stays {}, the lookup
+                        \* filter is vacuous, and each gating field is
+                        \* constant, so a configuration's distinct-state
+                        \* count is unchanged by it. Handles = {h1} costs
+                        \* roughly six to ten times the states; enable it
+                        \* wherever the budget allows.
 
     \* --- external events -------------------------------------------------
     AllowRelease,       \* enable session release; off in configs that
