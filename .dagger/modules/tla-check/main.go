@@ -77,15 +77,15 @@ var expectedOutcome = map[string]string{
 	// (addExplicitDependencyLocked's worklist over depParents).
 	"resources_latedep": "",
 
-	// accepted finding: a late explicit dependency can extend a result's
-	// transitive requirement while another session's invocation already
-	// holds it. Nothing synchronizes AddExplicitDependency with in-flight
-	// readers of the parent or its ancestors, and nothing re-validates at
-	// the return boundary, so that invocation exits holding a result that
-	// now depends on a handle leaf its session never bound. The stored
-	// accounting itself stays exact (resources_latedep gates the
-	// cascade); see the config headers.
-	"resources_latedep_gated": "ReturnedGated",
+	// accepted finding: a result's transitive requirement can grow after
+	// the lookup filter has run - a hit on a still-attaching result whose
+	// attachment then adds a handle leaf dep, or a late explicit
+	// dependency on a published result - and nothing re-checks before the
+	// serve, so an invocation exits holding a result that now depends on
+	// a handle leaf its session never bound. The stored accounting stays
+	// exact throughout (resources_latedep gates the cascade); see the
+	// config header.
+	"resources_gated_growth": "ReturnedGated",
 }
 
 type TlaCheck struct {
