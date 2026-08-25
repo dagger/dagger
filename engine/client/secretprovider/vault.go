@@ -27,14 +27,14 @@ var (
 func splitVaultPath(path string) (mount, secretPath, secretField string, err error) {
 	mount, rest, found := strings.Cut(path, "/")
 	if !found  {
-		return "", "", "", fmt.Errorf("missing \"/\" separator", path)
+		return "", "", "", fmt.Errorf("missing \"/\" separator")
 	}
 	if mount == "" {
-		return "", "", "", fmt.Errorf("missing mount", path)
+		return "", "", "", fmt.Errorf("missing mount")
 	}
 	n := strings.LastIndex(rest, ".")
 	if n < 0 {
-		return "", "", "", fmt.Errorf("missing field name after \".\"", path)
+		return "", "", "", fmt.Errorf("missing field name after \".\"")
 	}
 	return mount, rest[:n], rest[n+1:], nil
 }

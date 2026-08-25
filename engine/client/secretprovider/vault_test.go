@@ -5,141 +5,100 @@ import (
 	"time"
 )
 
-func TestSplitVaultKey(t *testing.T) {
+func TestSplitVaultPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		key       string
-		wantPath  string
-		wantField string
-		wantErr   bool
+		name       string
+		path       string
+		wantMount  string
+		wantSecret string
+		wantField  string
+		wantErr    bool
 	}{
 		{
-			name:      "simple key",
-			key:       "my-app.token",
-			wantPath:  "my-app",
-			wantField: "token",
+			name:       "simple path",
+			path:       "my-app/token",
+			wantMount:  "my-app",
+			wantSecret: "token",
+			wantField:  "",
+			wantErr:    true,
 		},
 		{
-			name:      "nested path",
-			key:       "path/to/secret.credential",
-			wantPath:  "path/to/secret",
-			wantField: "credential",
+			name:       "mount with field",
+			path:       "my-app/secret.token",
+			wantMount:  "my-app",
+			wantSecret: "secret",
+			wantField:  "token",
 		},
 		{
-			name:      "field with dot in path (last dot splits)",
-			key:       "foo.bar.baz",
-			wantPath:  "foo.bar",
-			wantField: "baz",
+			name:       "nested secret path with field",
+			path:       "kv/path/to/secret.credential",
+			wantMount:  "kv",
+			wantSecret: "path/to/secret",
+			wantField:  "credential",
 		},
 		{
-			name:    "no separator",
-			key:     "single",
+			name:    "field with dot in path (last dot splits)",
+			path:    "foo.bar.baz.qux",
 			wantErr: true,
 		},
 		{
-			name:      "starts with dot (path is empty)",
-			key:       ".token",
-			wantPath:  "",
-			wantField: "token",
+			name:    "no separator slash",
+			path:    "single",
+			wantErr: true,
+		},
+		{
+			name:    "starts with slash (empty mount)",
+			path:    "/.token",
+			wantErr: true,
+		},
+		{
+			name:       "empty mount after slash",
+			path:       "/secret.field",
+			wantMount:  "",
+			wantSecret: "secret",
+			wantField:  "field",
+			wantErr:    true,
 		},
 		{
 			name:    "empty string",
-			key:     "",
+			path:    "",
 			wantErr: true,
+		},
+		{
+			name:    "slash but no dot",
+			path:    "mount/secret",
+			wantErr: true,
+		},
+		{
+			name:       "secret path with dot in name",
+			path:       "kv/data/config.v2.api_key",
+			wantMount:  "kv",
+			wantSecret: "data/config.v2",
+			wantField:  "api_key",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, field, err := splitVaultKey(tt.key)
+			mount, secretPath, secretField, err := splitVaultPath(tt.path)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("splitVaultKey(%q) expected error, got nil", tt.key)
+					t.Errorf("splitVaultPath(%q) expected error, got nil", tt.path)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("splitVaultKey(%q) unexpected error: %v", tt.key, err)
-				return
-			}
-			if path != tt.wantPath {
-				t.Errorf("splitVaultKey(%q) path = %q, want %q", tt.key, path, tt.wantPath)
-			}
-			if field != tt.wantField {
-				t.Errorf("splitVaultKey(%q) field = %q, want %q", tt.key, field, tt.wantField)
-			}
-		})
-	}
-}
-
-func TestParseVaultFullKey(t *testing.T) {
-	tests := []struct {
-		name      string
-		key       string
-		wantMount string
-		wantPath  string
-		wantField string
-		wantErr   bool
-	}{
-		{
-			name:      "simple full path",
-			key:       "my-engine/my-app.token",
-			wantMount: "my-engine",
-			wantPath:  "my-app",
-			wantField: "token",
-		},
-		{
-			name:      "nested full path",
-			key:       "secret/foo/path/to/secret.credential",
-			wantMount: "secret",
-			wantPath:  "foo/path/to/secret",
-			wantField: "credential",
-		},
-		{
-			name:      "full path with multiple fields (last dot splits)",
-			key:       "my-engine/foo.bar.baz",
-			wantMount: "my-engine",
-			wantPath:  "foo.bar",
-			wantField: "baz",
-		},
-		{
-			name:    "no slash (missing mount)",
-			key:     "my-app.token",
-			wantErr: true,
-		},
-		{
-			name:    "empty string",
-			key:     "",
-			wantErr: true,
-		},
-		{
-			name:    "no field separator",
-			key:     "my-engine/single",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mount, path, field, err := parseVaultFullKey(tt.key)
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("parseVaultFullKey(%q) expected error, got nil", tt.key)
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("parseVaultFullKey(%q) unexpected error: %v", tt.key, err)
+				t.Errorf("splitVaultPath(%q) unexpected error: %v", tt.path, err)
 				return
 			}
 			if mount != tt.wantMount {
-				t.Errorf("parseVaultFullKey(%q) mount = %q, want %q", tt.key, mount, tt.wantMount)
+				t.Errorf("splitVaultPath(%q) mount = %q, want %q", tt.path, mount, tt.wantMount)
 			}
-			if path != tt.wantPath {
-				t.Errorf("parseVaultFullKey(%q) path = %q, want %q", tt.key, path, tt.wantPath)
+			if secretPath != tt.wantSecret {
+				t.Errorf("splitVaultPath(%q) secretPath = %q, want %q", tt.path, secretPath, tt.wantSecret)
 			}
-			if field != tt.wantField {
-				t.Errorf("parseVaultFullKey(%q) field = %q, want %q", tt.key, field, tt.wantField)
+			if secretField != tt.wantField {
+				t.Errorf("splitVaultPath(%q) secretField = %q, want %q", tt.path, secretField, tt.wantField)
 			}
 		})
 	}
