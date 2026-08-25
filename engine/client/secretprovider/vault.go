@@ -26,7 +26,7 @@ var (
 
 func splitVaultPath(path string) (mount, secretPath, secretField string, err error) {
 	mount, rest, found := strings.Cut(path, "/")
-	if !found  {
+	if !found {
 		return "", "", "", fmt.Errorf("missing \"/\" separator")
 	}
 	if mount == "" {
