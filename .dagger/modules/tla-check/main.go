@@ -77,15 +77,13 @@ var expectedOutcome = map[string]string{
 	// (addExplicitDependencyLocked's worklist over depParents).
 	"resources_latedep": "",
 
-	// accepted finding: a result's transitive requirement can grow after
-	// the lookup filter has run - a hit on a still-attaching result whose
-	// attachment then adds a handle leaf dep, or a late explicit
-	// dependency on a published result - and nothing re-checks before the
-	// serve, so an invocation exits holding a result that now depends on
-	// a handle leaf its session never bound. The stored accounting stays
-	// exact throughout (resources_latedep gates the cascade); see the
-	// config header.
-	"resources_gated_growth": "ReturnedGated",
+	// green: requirement growth after the lookup filter. A hit selected
+	// while attachment is in flight is re-checked after the attach
+	// barrier and falls through to the singleflight when the grown set is
+	// no longer satisfied, and explicit retention edges refuse
+	// requirement-carrying deps, so a settled result's stored set is
+	// frozen; see the config header.
+	"resources_gated_growth": "",
 }
 
 type TlaCheck struct {
