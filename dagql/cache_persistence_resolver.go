@@ -11,6 +11,12 @@ type sharedResultLookupMode uint8
 const (
 	sharedResultLookupExact sharedResultLookupMode = iota
 	sharedResultLookupCanonicalEquivalent
+	// sharedResultLookupCanonicalEquivalentGated additionally refuses to
+	// serve a result whose required session resources the session has not
+	// bound. Value loads use it: without the check, an exact-ID load served
+	// the result whenever no canonical candidate passed the session filter,
+	// bypassing the gating that request and digest lookups enforce.
+	sharedResultLookupCanonicalEquivalentGated
 )
 
 func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -49,7 +55,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	if resultID == 0 {
 		return nil, false, 0, fmt.Errorf("resolve result: zero result ID")
 	}
-	if mode == sharedResultLookupCanonicalEquivalent && sessionID == "" {
+	if mode != sharedResultLookupExact && sessionID == "" {
 		return nil, false, 0, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
@@ -68,8 +74,13 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		c.egraphMu.Unlock()
 		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
-	if mode == sharedResultLookupCanonicalEquivalent {
+	if mode != sharedResultLookupExact {
 		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), false)
+	}
+	if mode == sharedResultLookupCanonicalEquivalentGated &&
+		!c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
+		c.egraphMu.Unlock()
+		return nil, false, 0, fmt.Errorf("resolve result %d: session %q has not bound the session resources this result requires", resultID, sessionID)
 	}
 
 	alreadyTracked, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, res)
@@ -84,7 +95,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
 	mode := sharedResultLookupExact
 	if sessionID != "" {
-		mode = sharedResultLookupCanonicalEquivalent
+		mode = sharedResultLookupCanonicalEquivalentGated
 	}
 
 	res, alreadyTracked, trackedCount, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)

@@ -1489,3 +1489,75 @@ func TestCachePersistenceDecodeInstallPreservesRequiredSessionResources(t *testi
 	assertCacheRequiredSessionResourcesExact(t, cacheB)
 	cacheTestReleaseSession(t, cacheB, ctx)
 }
+
+func TestCacheLoadResultByResultIDRefusesUnboundSession(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	handle := cacheTestVolatileSessionResourceHandle("persist-load-gated")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	srvA := newPersistGatedTestServer(handle)
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-load-gated-root",
+	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
+	rootCtxA = srvToContext(rootCtxA, srvA)
+	assert.NilError(t, cacheA.BindSessionResource(rootCtxA, "test-session", "dagql-test-client", handle, "bound"))
+
+	var topA ObjectResult[*persistGatedObj]
+	assert.NilError(t, srvA.Select(rootCtxA, srvA.Root(), &topA, Selector{
+		Field: "gatedChain",
+		Args:  []NamedInput{{Name: "level", Value: NewInt(1)}},
+	}))
+	topID := uint64(topA.cacheSharedResult().id)
+	assert.Assert(t, topID != 0)
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
+	assert.NilError(t, cacheA.persistCurrentState(ctx))
+	assert.NilError(t, cacheA.Close(context.Background()))
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cacheB.Close(context.Background()))
+	}()
+	assert.Equal(t, CachePersistenceResetNone, cacheB.PersistenceResetReason())
+	srvB := newPersistGatedTestServer(handle)
+
+	// A session that never bound the handle replays the stored result ID:
+	// the load must refuse instead of falling back to the exact result.
+	_, err = cacheB.LoadResultByResultID(ctx, "gate-unbound-session", srvB, topID)
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "has not bound the session resources")
+
+	cacheB.sessionMu.Lock()
+	_, recorded := cacheB.sessionResultIDsBySession["gate-unbound-session"][sharedResultID(topID)]
+	cacheB.sessionMu.Unlock()
+	assert.Assert(t, !recorded, "refused load must not leave a session edge")
+	cacheB.egraphMu.RLock()
+	topShared := cacheB.resultsByID[sharedResultID(topID)]
+	topDecoded := topShared != nil && topShared.hasValue
+	cacheB.egraphMu.RUnlock()
+	assert.Assert(t, !topDecoded, "refused load must not decode the payload")
+	assertCacheOwnershipExact(t, cacheB)
+
+	// Call-frame loads serve the recipe, not the value, and stay ungated.
+	frame, err := cacheB.ResultCallByResultID(ctx, "gate-unbound-session", topID)
+	assert.NilError(t, err)
+	assert.Assert(t, frame != nil)
+	assert.NilError(t, cacheB.ReleaseSession(ctx, "gate-unbound-session"))
+
+	// A session that bound the handle is served as before.
+	assert.NilError(t, cacheB.BindSessionResource(ctx, "gate-bound-session", "gate-bound-client", handle, "bound"))
+	loaded, err := cacheB.LoadResultByResultID(ctx, "gate-bound-session", srvB, topID)
+	assert.NilError(t, err)
+	obj, ok := UnwrapAs[*persistGatedObj](loaded.Unwrap())
+	assert.Assert(t, ok)
+	assert.Equal(t, "level-1", obj.Name)
+	assertCacheRequiredSessionResourcesExact(t, cacheB)
+	assert.NilError(t, cacheB.ReleaseSession(ctx, "gate-bound-session"))
+}
