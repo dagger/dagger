@@ -1419,49 +1419,72 @@
   to = "/cli/install"
   status = 301
 
-# TODO: /using-dagger was renamed to /cli.
-# [[redirects]]
-#   from = "/using-dagger/*"
-#   to = "/cli/:splat"
-#   status = 301
-#
-# TODO: the /reference section was removed and its pages have no new home yet.
-# The disabled rules below still point at /reference/*; retarget them once the
-# pages land somewhere.
-#
-# TODO: /extending/sdks moved to /sdks; the rest of /extending was cut.
-# [[redirects]]
-#   from = "/extending/sdks/*"
-#   to = "/sdks/:splat"
-#   status = 301
-#
-# [[redirects]]
-#   from = "/extending"
-#   to = "/sdks"
-#   status = 301
-#
-# TODO: /extending/types moved to /api/reference.
-# [[redirects]]
-#   from = "/extending/types/*"
-#   to = "/api/reference/:splat"
-#   status = 301
-#
-# [[redirects]]
-#   from = "/extending/types"
-#   to = "/api/reference"
-#   status = 301
-#
-# TODO: /reference/cli moved to /cli/reference.
-# [[redirects]]
-#   from = "/reference/cli/*"
-#   to = "/cli/reference/:splat"
-#   status = 301
-#
-# [[redirects]]
-#   from = "/reference/cli"
-#   to = "/cli/reference"
-#   status = 301
-#
+# /using-dagger was renamed to /cli.
+[[redirects]]
+  from = "/using-dagger/*"
+  to = "/cli/:splat"
+  status = 301
+
+# /extending/types moved to /api/reference.
+[[redirects]]
+  from = "/extending/types/*"
+  to = "/api/reference/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/extending/types"
+  to = "/api/reference"
+  status = 301
+
+# /extending/sdks moved to /sdks; the rest of /extending was cut.
+[[redirects]]
+  from = "/extending/sdks/*"
+  to = "/sdks/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/extending"
+  to = "/sdks"
+  status = 301
+
+# /reference/cli moved to /cli/reference.
+[[redirects]]
+  from = "/reference/cli/*"
+  to = "/cli/reference/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/reference/cli"
+  to = "/cli/reference"
+  status = 301
+
+# The trigger guides were cut. Post-push workflow is the surviving page on
+# running checks after a push.
+[[redirects]]
+  from = "/adopting/triggers/*"
+  to = "/getting-started/post-push"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/triggers"
+  to = "/getting-started/post-push"
+  status = 301
+
+# The scaling guides were cut with no equivalent page.
+[[redirects]]
+  from = "/adopting/scaling/*"
+  to = "/getting-started/introduction"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/scaling"
+  to = "/getting-started/introduction"
+  status = 301
+
+# TODO: the rest of /reference was removed and those pages have no new home
+# yet. The disabled rules further down still point at /reference/*; retarget
+# them once the pages land somewhere.
+
 # Catch-all for retired /cli/... pages. Kept last in this block so the specific
 # rules above win; moved here from the wildcard section for the same reason.
 [[redirects]]
