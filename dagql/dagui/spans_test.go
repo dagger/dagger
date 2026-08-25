@@ -55,6 +55,41 @@ func TestProcessAttributeLLMToolResultTokens(t *testing.T) {
 	}
 }
 
+// TestProcessAttributeLLMMessageOrigin covers the ingestion of the
+// dagger.io/llm.origin.* vocabulary: the recorded provenance of a message
+// that arrived through an agent mailbox lands on the snapshot's LLMOrigin*
+// fields, and the kind predicates read it back.
+func TestProcessAttributeLLMMessageOrigin(t *testing.T) {
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindAgent)
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentIDAttr, "agent-b")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentNameAttr, "scout")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginRefAttr, "#3")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginReplyToAttr, "#2")
+
+	if snapshot.LLMOriginKind != "AGENT" ||
+		snapshot.LLMOriginAgentID != "agent-b" ||
+		snapshot.LLMOriginAgentName != "scout" ||
+		snapshot.LLMOriginRef != "#3" ||
+		snapshot.LLMOriginReplyTo != "#2" {
+		t.Fatalf("origin attrs not ingested: %+v", snapshot)
+	}
+	if !snapshot.LLMAgentOriginMessage() || snapshot.LLMEventOriginMessage() {
+		t.Fatal("kind predicates disagree with an AGENT origin")
+	}
+
+	var event SpanSnapshot
+	event.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindEvent)
+	if !event.LLMEventOriginMessage() || event.LLMAgentOriginMessage() {
+		t.Fatal("kind predicates disagree with an EVENT origin")
+	}
+
+	var plain SpanSnapshot
+	if plain.LLMAgentOriginMessage() || plain.LLMEventOriginMessage() {
+		t.Fatal("an unmarked message must not read as origin-carrying")
+	}
+}
+
 func TestSpanNameLogUpdatesLiveSpan(t *testing.T) {
 	db := NewDB()
 	spanID := SpanID{SpanID: trace.SpanID{1}}

@@ -374,7 +374,9 @@ Each step lands alone and pays for itself:
 it records is replaced by step 4's, so it gets re-recorded to the new shape —
 but item 15's seed-divergence question (`message history diverges at index
 0`) is independent of this design and must be answered on its own before any
-re-recording is trusted.
+re-recording is trusted. *(Answered during implementation — see §10: the
+replayer's unconditional leading-SYSTEM trim was eating the worker's real
+system prompt. The seed was never wrong.)*
 
 ## 9. Open questions
 
@@ -399,4 +401,138 @@ re-recording is trusted.
   code (a module function supervising N agents imperatively). Demoted by
   §4.3; revisit on demand, per async-agents §7's original instinct.
 - **Naming.** `notify` vs `watch` (receiver-shaped); `waitSettled` vs
-  `settle`. Bikeshed at implementation.
+  `settle`. Bikeshed at implementation. *(Settled: `notify`, `waitSettled`;
+  §10.)*
+
+## 10. Implementation status
+
+All five build-order steps are BUILT, in order, one commit each (plus
+hardening from the first live runs), with the staff rebuild and tests on
+top. The design survived contact mostly intact; every delta is recorded here
+with its reason.
+
+What landed, by step:
+
+1. **Provenance** (§4.1) — `LLMMessageOrigin` / `LLMMessageOriginKind`
+   (`USER | AGENT | EVENT`) in core/llm.go, resolved once at
+   `AgentRuntimes.Send` and recorded as an optional `withPrompt(origin:)`
+   input object; `renderMessagesForModel` prepends the attribution header at
+   request-build time (the stored history keeps clean text + structured
+   origin); `recipeSelectors` re-emits origins so portable recipes keep
+   provenance; clients read `LLMMessage.origin` (explicit nullable accessor).
+   The cross-boundary half is `core.CallerAgent`: the ambient loop agent, or
+   the calling client's function-call record — modfunc stamps
+   `FunctionCall.callerAgent` from its own `CallerAgent` resolution, so the
+   identity propagates through arbitrarily nested module calls with no
+   forgeable "from" argument anywhere.
+2. **`waitSettled`** (§4.4) — plus `Agent.error`, which the design did not
+   name but §7's collect semantics required: a settled wait that reports
+   FAILED is useless if nothing exposes WHY, and the loop error was
+   previously telemetry-only.
+3. **Cycle refusal** (§4.5) — waits-for edges at FOUR blocking primitives,
+   not the design's three: `messageDelivery` blocks on turn progress too (a
+   STEERED hint confirms only at the target's next step boundary — §2's
+   wedge is precisely a delivery wait that never confirms), so it registers
+   like `awaitMessage`, `waitFor`, and `waitSettled`. Self-waits refused
+   unconditionally; cycle refusals name the full path; non-agent callers
+   register nothing.
+4. **`replyTo`** (§4.2) — resolution in the SENDER's runtime, accepting
+   `"#3"`, `"3"`, or the full message ID; a ref naming nothing is refused
+   loudly (a model mistyping must not strand the asker); an explicit reply
+   resolves a consumed-but-unresolved record so awaiters get the direct
+   answer (first resolution wins; turn-end stays the fallback).
+   `AgentMessage.ref` exposes the short token.
+5. **Subscriptions** (§4.3) — `Agent.notify(subscriber:, on: [IDLE,
+   FAILED])`, edge-triggered on the projection with a subscribe-time level
+   check; IDLE events carry the final reply, FAILED events the loop error;
+   per-runtime FIFO drain delivers outside the watched entry's mutex (two
+   agents watching each other must not order lock acquisition).
+
+Plus §7's staff rebuild verbatim (`ask` deleted, `askChief` non-blocking,
+`collect` on `waitSettled` + `error`, spawn subscribes the chief, both
+DEADLOCK WARNING blocks deleted), with one addition the tests forced and the
+module deserved anyway: `spawn(model:)`, a per-worker model knob.
+
+**Deltas from the design, and why:**
+
+- **Refs are per-runtime ordinals (`#3`), not message IDs.** The design's §5
+  sketch put `messageId` in the origin; implementation replaced it with
+  `ref`. Forced, not preferred: message IDs are minted entropy
+  (`identity.NewID`), attribution headers are wire text, and replay
+  recordings compare wire text byte for byte — a header carrying an ID would
+  make every cross-agent conversation unrecordable. The enqueue ordinal is
+  deterministic for a deterministic flow, shorter for models to echo, and
+  unambiguous within the one runtime that both sides mean (the askee's).
+- **Two origins are deliberately NOT recorded on the chain:** a plain user
+  prompt (the unmarked common case — this is what keeps every
+  pre-provenance chain, cache entry, and recording byte-stable) and a plain
+  self-send (a tool steering its own calling agent: attributing an agent's
+  words to itself is noise, and recording it would have broken the
+  agent-poker recordings for nothing). A reply marker always records.
+- **`Notify` creates the SUBSCRIBER's entry too, and pre-start events queue
+  rather than drop.** The first live run caught this: a spawned-but-never-
+  started subscriber had no runtime entry, so delivery found no mailbox and
+  silently dropped the event. Now only a STOPPED subscriber drops events
+  (the never-relaunch rule); an unstarted one accumulates them for whatever
+  starts it.
+- **The de-race pattern for recorded cross-agent tests** (worth stating
+  because every future recording needs it): never leave a step boundary
+  between starting cross-agent traffic and the dwell that absorbs its
+  effects. Concretely, make each turn ONE tool batch — CallBatch runs
+  destructive calls (spawn, sendTo, withExec rebinds) sequentially before
+  read-only ones (the stdout dwell), so the turn's only boundary comes after
+  the dwell, by which time the other agent's replay-instant activity has
+  landed in the mailbox. Both prior shapes (dwell in a separate response)
+  lost the race in live runs.
+- **Item 15's root cause fell out of step 4's re-recording,** and it was in
+  the REPLAYER, not the seed: `LLMReplayer.SendQuery` dropped the leading
+  SYSTEM message unconditionally, assuming it was the synthesized default
+  prompt — a worker composed with an explicit system prompt and no default
+  lost its real prompt to the trim and diverged at index 0 forever. Fixed:
+  the trim now fires only when the leading system message is not the
+  recording's own. `TestStaff/TestAskAndReply` (the old test's replacement)
+  leads its worker recording with the worker prompt and pins this.
+
+**Tests.** Unit: core/agent_messaging_test.go (header forms, wire render,
+chain-omission rules, waits-for guard incl. named cycle paths, reply
+resolution, event delivery incl. the stopped-subscriber drop). Integration:
+core/integration/agent_notify_test.go (wake-on-event with EVENT origins;
+waitSettled returning on FAILED with `error`), and the staff E2E
+TestStaff/TestAskAndReply — the full choreography with zero blocking edges:
+attributed task, non-blocking askChief, question steering with attribution,
+idle events carrying final replies, mid-turn sendTo(replyTo:) waking the
+worker with the paired answer. The full TestAgentRuntime, TestAgentInjection,
+and TestAgentRestore suites pass unchanged.
+
+**Not built, deliberately — the follow-up list:**
+
+- **TUI styling** (P3's presentation half): *since BUILT.* The recorded
+  origin rides the message's "LLM prompt" span as `dagger.io/llm.origin.*`
+  attributes (engine/telemetryattrs, stamped by `emitUserMessageSpan`), and
+  the pretty frontend renders origin-carrying messages distinctly in both
+  the live transcript and the final report (the shared
+  `styleLLMMessageView` choke point): AGENT-origin messages keep the shaded
+  incoming-prompt block under a sender-attribution header — the sender's
+  name plus the message ref (`scout #3`) or the ref it answers
+  (`chief ↩ #2`) — and EVENT-origin messages collapse to a faint one-liner
+  (first line plus a "(+N lines)" tail; the payload stays in the span's
+  logs). Plain user prompts are untouched, so pre-provenance traces render
+  as before.
+- **Harness-backed loops** record no origins: their prompt submission rides
+  the native CLI's own channel (core/agent_harness.go), not drainMailbox.
+  Provider-backed loops — every staff worker and CLI conversation — are
+  covered.
+- **Telemetry attributes** beyond the call payload: *since BUILT for the
+  message record itself* — the origin now rides the message span as the
+  `dagger.io/llm.origin.*` attributes above, alongside the recorded
+  `withPrompt(origin:)` call and the rendered header. Roster-level "via X"
+  chips (surfacing a sender in the agent roster strip) remain unwired.
+- **modules/staff was temporarily deregistered from dagger.toml** (dev and
+  codex envs) while this landed: it uses Agent fields only a from-source
+  engine serves, and a module that fails to compile takes its whole env's
+  module set down with it. *Since RESTORED, once deployed engines served
+  `notify`/`waitSettled`/`send(replyTo:)`/`error`/`ref` — verified by
+  reloading the env against a live session, which loads staff or fails
+  without side effects.*
+- Everything in §9 (ledger, auto-reply fallback, event truncation,
+  depth/rate limits, combinators-for-code) remains open as written.

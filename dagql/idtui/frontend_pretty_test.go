@@ -2117,6 +2117,90 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	}
 }
 
+// TestConversationTranscriptStylesMessageOrigins covers the live-shell half of
+// message provenance (hack/designs/agent-messaging.md §4.1): a message
+// another agent sent keeps the shaded incoming-prompt block but renders under
+// a sender-attribution header, and an engine lifecycle event renders as a
+// bare faint one-liner — no shaded card, payload elided behind a "(+N
+// lines)" tail.
+func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	agentMsgID := prettyTestSpanID(2)
+	eventMsgID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "shell",
+			StartTime: start, EndTime: start.Add(10 * time.Second), Final: true,
+		},
+		{
+			ID: agentMsgID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			LLMOriginKind: "AGENT", LLMOriginAgentID: "agent-b",
+			LLMOriginAgentName: "scout", LLMOriginRef: "#3",
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: eventMsgID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			LLMOriginKind: "EVENT", LLMOriginAgentID: "agent-b",
+			LLMOriginAgentName: "scout",
+			StartTime:          start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+	setLog := func(id dagui.SpanID, text string) {
+		logs := NewVterm(termenv.ANSI)
+		logs.SetWidth(120)
+		_, _ = logs.Write([]byte(text + "\n"))
+		fe.logs.Logs[id] = logs
+	}
+	setLog(agentMsgID, "what branch should I target?")
+	setLog(eventMsgID, "Agent \"scout\" is now idle.\n\nIts final reply:\n\nall done")
+
+	fe.recalculateViewLocked()
+
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	// The agent's message carries its sender-attribution header, with the
+	// sender's name bold cyan on the shaded block (SGR 1;36;100)...
+	if !strings.Contains(plain, "scout #3") {
+		t.Fatalf("agent message missing sender-attribution header:\n%s", plain)
+	}
+	if !containsStyledLine(frame, "scout #3", "\x1b[1;36;100m") {
+		t.Fatalf("attribution header name is not bold cyan on the shaded block:\n%s", visibleEscapes(frame))
+	}
+	// ...and its body keeps the shaded incoming-prompt background (SGR 100).
+	if !containsStyledLine(frame, "what branch should I target?", "\x1b[100m") {
+		t.Fatalf("agent message body lost the shaded background:\n%s", visibleEscapes(frame))
+	}
+
+	// The event renders as a faint one-liner (SGR 90), payload elided...
+	if !strings.Contains(plain, `Agent "scout" is now idle. (+4 lines)`) {
+		t.Fatalf("event message not collapsed to a one-liner:\n%s", plain)
+	}
+	if !containsStyledLine(frame, `is now idle`, "\x1b[90m") {
+		t.Fatalf("event one-liner is not faint:\n%s", visibleEscapes(frame))
+	}
+	if strings.Contains(plain, "all done") {
+		t.Fatalf("event payload leaked into the transcript:\n%s", plain)
+	}
+	// ...with no shaded card: neither the line itself nor prompt padding.
+	if containsStyledLine(frame, `is now idle`, "\x1b[100m") {
+		t.Fatalf("event one-liner is drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
+	}
+}
+
 func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
 }

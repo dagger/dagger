@@ -799,6 +799,113 @@ func TestPromoteConversationUsesPrimarySpan(t *testing.T) {
 	}
 }
 
+// TestConversationReportStylesMessageOrigins covers the presentation half of
+// message provenance (hack/designs/agent-messaging.md §4.1): a message
+// another agent sent renders under a sender-attribution header (name plus
+// ref, or the ref it replies to) instead of reading as the user's own words,
+// and an engine lifecycle event collapses to a compact one-liner — its first
+// line plus a "(+N lines)" tail — instead of a full prompt bubble. A plain
+// user prompt renders unchanged.
+func TestConversationReportStylesMessageOrigins(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userPromptID := prettyTestSpanID(2)
+	agentMsgID := prettyTestSpanID(3)
+	replyMsgID := prettyTestSpanID(4)
+	eventMsgID := prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	msg := func(id dagui.SpanID, n byte) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id, TraceID: prettyTestTraceID(), ParentID: rootID,
+			Name: "LLM prompt", LLMRole: "user", Message: "sent",
+			StartTime: start.Add(time.Duration(n) * time.Second),
+			EndTime:   start.Add(time.Duration(n+1) * time.Second), Final: true,
+		}
+	}
+	userPrompt := msg(userPromptID, 1)
+	agentMsg := msg(agentMsgID, 2)
+	agentMsg.LLMOriginKind = "AGENT"
+	agentMsg.LLMOriginAgentID = "agent-b"
+	agentMsg.LLMOriginAgentName = "scout"
+	agentMsg.LLMOriginRef = "#3"
+	replyMsg := msg(replyMsgID, 3)
+	replyMsg.LLMOriginKind = "AGENT"
+	replyMsg.LLMOriginAgentID = "agent-a"
+	replyMsg.LLMOriginAgentName = "chief"
+	replyMsg.LLMOriginRef = "#5"
+	replyMsg.LLMOriginReplyTo = "#2"
+	eventMsg := msg(eventMsgID, 4)
+	eventMsg.LLMOriginKind = "EVENT"
+	eventMsg.LLMOriginAgentID = "agent-b"
+	eventMsg.LLMOriginAgentName = "scout"
+
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+		userPrompt, agentMsg, replyMsg, eventMsg,
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	for id, content := range map[dagui.SpanID]string{
+		userPromptID: "the user's own words\n",
+		agentMsgID:   "what branch should I target?\n",
+		replyMsgID:   "target main\n",
+		eventMsgID:   "Agent \"scout\" is now idle.\n\nIts final reply:\n\nall done\n",
+	} {
+		v := NewVterm(termenv.Ascii)
+		v.SetWidth(120)
+		_, _ = v.Write([]byte(content))
+		// A fresh Vterm renders nothing until it has a height; the render
+		// paths under test size it themselves once it is non-empty.
+		v.SetHeight(v.UsedHeight())
+		fe.logs.Logs[id] = v
+	}
+
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	joined := strings.Join(lines, "\n")
+
+	// The agent's message renders under its sender-attribution header...
+	headerIdx, bodyIdx := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "scout #3") {
+			headerIdx = i
+		}
+		if strings.Contains(l, "what branch should I target?") {
+			bodyIdx = i
+		}
+	}
+	if headerIdx == -1 {
+		t.Fatalf("agent message missing sender-attribution header:\n%s", joined)
+	}
+	if bodyIdx == -1 || bodyIdx <= headerIdx {
+		t.Fatalf("agent message body missing or not beneath its header (header=%d body=%d):\n%s", headerIdx, bodyIdx, joined)
+	}
+	// ...a reply pairs itself with the message it answers...
+	if !strings.Contains(joined, "chief ↩ #2") {
+		t.Fatalf("reply message missing reply-attribution header:\n%s", joined)
+	}
+	// ...and the user's own prompt gets no header.
+	if strings.Contains(joined, "user #") {
+		t.Fatalf("plain user prompt grew an attribution header:\n%s", joined)
+	}
+	if !strings.Contains(joined, "the user's own words") {
+		t.Fatalf("plain user prompt content missing:\n%s", joined)
+	}
+
+	// The event collapses to its first line plus an elision tail; the
+	// payload beneath stays in the logs, not the transcript.
+	if !strings.Contains(joined, `Agent "scout" is now idle. (+4 lines)`) {
+		t.Fatalf("event message not collapsed to a one-liner:\n%s", joined)
+	}
+	if strings.Contains(joined, "all done") {
+		t.Fatalf("event payload leaked into the transcript:\n%s", joined)
+	}
+}
+
 // TestConversationIndentsChainedToolCalls is a regression test for the live
 // agent view. A turn that opens with a thinking/response nests its tool call
 // beneath that reply (its span is parented under it), so the first tool call
