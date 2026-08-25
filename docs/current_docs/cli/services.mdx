@@ -85,13 +85,3 @@ dagger api call integration-test --db=tcp://localhost:5432
 ```
 
 Inside the function the argument is an ordinary `Service`, so the same code works whether the upstream runs on your host or in another container.
-
-## Writing services
-
-A service that `dagger up` can start is a module function that returns a `Service` and carries your SDK's up pragma. In Go that is `// +up`, in Python `@up`, in TypeScript `@up()`. The SDKs guide covers how services fit next to checks and generators under [Checks, generators, and services](../sdks/index.mdx#checks-generators-and-services). The syntax for each language lives in its SDK guide:
-
-- [Dang](../sdks/dang.mdx#up-services)
-- [Go](../sdks/go.mdx#up-services)
-- [TypeScript](../sdks/typescript.mdx#up-services)
-- [Python](../sdks/python.mdx#checks-generators-and-services)
-- [Java](../sdks/java.mdx#up-services)

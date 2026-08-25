@@ -55,13 +55,3 @@ In CI you usually want to check that committed files are up to date rather than 
 ```
 
 A failing generator check means the committed output is stale — run `dagger generate` locally, apply the changeset, and commit.
-
-## Writing generators
-
-A generator is a module function that returns a `Changeset` and carries your SDK's generate pragma. In Go that is `// +generate`, in Python `@generate`, in TypeScript `@generate()`. The SDKs guide covers how generators fit next to checks and services under [Checks, generators, and services](../sdks/index.mdx#checks-generators-and-services). The syntax for each language lives in its SDK guide:
-
-- [Dang](../sdks/dang.mdx#generators)
-- [Go](../sdks/go.mdx#generators)
-- [TypeScript](../sdks/typescript.mdx#generators)
-- [Python](../sdks/python.mdx#checks-generators-and-services)
-- [Java](../sdks/java.mdx#generators)
