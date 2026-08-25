@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -389,13 +392,126 @@ type AgentRuntimes struct {
 
 	checkpointSequence  atomic.Uint64
 	checkpointPublisher *agentCheckpointPublisher
+
+	// The waits-for graph (hack/designs/agent-messaging.md §4.5): one edge
+	// per blocking wait issued FROM an agent's turn, waiter instance ID →
+	// target instance ID. Registered at the blocking primitives (await,
+	// delivery, waitFor, waitSettled) and released when the wait returns; a
+	// wait whose edge would close a cycle is refused with the named path.
+	// Non-agent callers (a human client, module code outside any turn)
+	// register nothing: their waits cannot deadlock a turn and can always be
+	// canceled. Guarded by waitsMu, never by mu — wait registration happens
+	// while entry mutexes are free, and must not order against them.
+	waitsMu sync.Mutex
+	waits   map[string]map[string][]agentWaitEdge
+}
+
+// agentWaitEdge is one registered blocking wait: which named agent waits on
+// which, and what it is blocked on — the detail the cycle refusal renders.
+type agentWaitEdge struct {
+	waiterName string
+	targetName string
+	why        string
 }
 
 // NewAgentRuntimes returns a new, empty AgentRuntimes registry.
 func NewAgentRuntimes() *AgentRuntimes {
 	return &AgentRuntimes{
 		entries: map[string]*AgentRuntime{},
+		waits:   map[string]map[string][]agentWaitEdge{},
 	}
+}
+
+// beginAgentWait registers a blocking wait on target for the duration of the
+// wait, when the caller is an agent's turn — the waits-for guard of
+// hack/designs/agent-messaging.md §4.5. Returns a release func to defer, or
+// an error when the wait is refused:
+//
+//   - a self-wait, always: a turn cannot end while a tool call inside it
+//     waits for it to end (async-agents §8's self-await hazard, enforced);
+//   - a wait whose edge closes a cycle, with the full named path — a loud,
+//     teachable error at the moment of cycle formation, landing as the tool
+//     result of the newest edge, in the conversation of the agent that can
+//     act on it.
+//
+// Non-agent callers register nothing and are never refused.
+func (ars *AgentRuntimes) beginAgentWait(ctx context.Context, target *AgentRuntime, why string) (func(), error) {
+	caller, ok := CallerAgent(ctx)
+	if !ok {
+		return func() {}, nil
+	}
+	waiterID := caller.Self().InstanceID
+	waiterName := caller.Self().Name
+	if waiterID == target.key {
+		return nil, fmt.Errorf(
+			"agent %q cannot block on itself from within its own turn (%s): the turn cannot end while a tool call inside it waits for it — send without awaiting instead",
+			target.name, why)
+	}
+	edge := agentWaitEdge{waiterName: waiterName, targetName: target.name, why: why}
+	ars.waitsMu.Lock()
+	defer ars.waitsMu.Unlock()
+	if path, cyclic := ars.waitPathLocked(target.key, waiterID); cyclic {
+		var b strings.Builder
+		fmt.Fprintf(&b, "would deadlock: agent %q → agent %q (%s)", waiterName, target.name, why)
+		for _, hop := range path {
+			fmt.Fprintf(&b, " → agent %q (%s)", hop.targetName, hop.why)
+		}
+		b.WriteString(" — the cycle closes on you. Do not block: send without awaiting; replies and completions arrive as messages.")
+		return nil, errors.New(b.String())
+	}
+	if ars.waits[waiterID] == nil {
+		ars.waits[waiterID] = map[string][]agentWaitEdge{}
+	}
+	ars.waits[waiterID][target.key] = append(ars.waits[waiterID][target.key], edge)
+	released := false
+	return func() {
+		ars.waitsMu.Lock()
+		defer ars.waitsMu.Unlock()
+		if released {
+			return
+		}
+		released = true
+		edges := ars.waits[waiterID][target.key]
+		if len(edges) > 0 {
+			edges = edges[:len(edges)-1]
+		}
+		if len(edges) == 0 {
+			delete(ars.waits[waiterID], target.key)
+			if len(ars.waits[waiterID]) == 0 {
+				delete(ars.waits, waiterID)
+			}
+		} else {
+			ars.waits[waiterID][target.key] = edges
+		}
+	}, nil
+}
+
+// waitPathLocked walks the waits-for graph from `from`, returning the edge
+// path to `to` if one exists. Must be called with waitsMu held.
+func (ars *AgentRuntimes) waitPathLocked(from, to string) ([]agentWaitEdge, bool) {
+	seen := map[string]bool{}
+	var dfs func(cur string) ([]agentWaitEdge, bool)
+	dfs = func(cur string) ([]agentWaitEdge, bool) {
+		if cur == to {
+			return nil, true
+		}
+		if seen[cur] {
+			return nil, false
+		}
+		seen[cur] = true
+		// Deterministic order, so a refusal names the same path every time.
+		for _, next := range slices.Sorted(maps.Keys(ars.waits[cur])) {
+			edges := ars.waits[cur][next]
+			if len(edges) == 0 {
+				continue
+			}
+			if rest, found := dfs(next); found {
+				return append([]agentWaitEdge{edges[0]}, rest...), true
+			}
+		}
+		return nil, false
+	}
+	return dfs(from)
 }
 
 // agentKey is the registry key of an agent value: its instance ID, minted by
@@ -488,6 +604,7 @@ func (ars *AgentRuntimes) newRuntime(ctx context.Context, key string, agent dagq
 		parentID = agentParentID(ctx)
 	}
 	return &AgentRuntime{
+		ars:                      ars,
 		key:                      key,
 		name:                     agent.Self().Name,
 		self:                     agent,
@@ -824,6 +941,11 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 type AgentRuntime struct {
 	key  string
 	name string
+
+	// ars is the registry this entry lives in — the backref the blocking
+	// primitives use to register waits-for edges (§4.5) and the event
+	// dispatcher uses to resolve subscribers.
+	ars *AgentRuntimes
 
 	// self is the agent handle the entry was created from: an honest dagql
 	// instance of the agent value. Immutable after creation (any handle
@@ -1256,7 +1378,16 @@ func (rt *AgentRuntime) failMessage(rec *agentMessageRecord, err error) {
 // messageDelivery waits for the permanent record's conclusive delivery
 // evidence. Canceling this read only detaches the waiter; the record remains
 // pending and a later request can read the eventual immutable result.
+//
+// This is a blocking primitive like awaitMessage — a STEERED hint is only
+// confirmed at the target's next step boundary, which a wedged target never
+// reaches — so it registers a waits-for edge too (§4.5).
 func (rt *AgentRuntime) messageDelivery(ctx context.Context, msgID string) (AgentMessageDelivery, error) {
+	release, err := rt.beginMessageWait(ctx, msgID, "awaiting delivery of message")
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	for {
 		rt.mu.Lock()
 		rec, found := rt.messages[msgID]
@@ -1292,6 +1423,11 @@ func (rt *AgentRuntime) messageDelivery(ctx context.Context, msgID string) (Agen
 // forever — without resolving the record, so a later resume can still
 // consume the message and a re-await then reads its real reply.
 func (rt *AgentRuntime) awaitMessage(ctx context.Context, msgID string) (string, error) {
+	release, err := rt.beginMessageWait(ctx, msgID, "awaiting the reply to message")
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	for {
 		rt.mu.Lock()
 		rec, found := rt.messages[msgID]
@@ -2084,11 +2220,37 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason
 	}
 }
 
+// beginMessageWait registers a waits-for edge for a blocking read of one of
+// this runtime's message records, naming the message by its short ref when
+// the record is known. No-op (and never refused) for non-agent callers; see
+// beginAgentWait.
+func (rt *AgentRuntime) beginMessageWait(ctx context.Context, msgID, verb string) (func(), error) {
+	if rt.ars == nil {
+		// Unit-test runtimes constructed without a registry have no graph to
+		// guard; every real entry is born through newRuntime.
+		return func() {}, nil
+	}
+	rt.mu.Lock()
+	why := verb
+	if rec, found := rt.messages[msgID]; found && rec.seq > 0 {
+		why = fmt.Sprintf("%s #%d", verb, rec.seq)
+	}
+	rt.mu.Unlock()
+	return rt.ars.beginAgentWait(ctx, rt, why)
+}
+
 // WaitFor blocks until the entry's projected state equals want, returning
 // immediately if it already does. STOPPED and FAILED are both dormant rather
 // than terminal: resume or send can relaunch the same entry, so waiting for a
 // later state remains valid until the caller cancels.
 func (rt *AgentRuntime) WaitFor(ctx context.Context, want AgentState) error {
+	if rt.ars != nil {
+		release, err := rt.ars.beginAgentWait(ctx, rt, fmt.Sprintf("waiting for %s", want))
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	for {
 		rt.mu.Lock()
 		cur := rt.stateLocked()
@@ -2113,6 +2275,13 @@ func (rt *AgentRuntime) WaitFor(ctx context.Context, want AgentState) error {
 // loop then fails hangs forever, because a FAILED projection never reaches
 // IDLE on its own. A settled wait cannot hang on an outcome.
 func (rt *AgentRuntime) WaitSettled(ctx context.Context) (AgentState, error) {
+	if rt.ars != nil {
+		release, err := rt.ars.beginAgentWait(ctx, rt, "waiting for it to settle")
+		if err != nil {
+			return "", err
+		}
+		defer release()
+	}
 	for {
 		rt.mu.Lock()
 		cur := rt.stateLocked()
