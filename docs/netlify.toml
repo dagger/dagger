@@ -1391,6 +1391,14 @@
   to = "/getting-started/workspace-setup"
   status = 301
 
+# The workspace migration guide moved into the Configuration section. The CLI
+# prints this URL (core/modulesource.go, engine/server/session_workspaces.go),
+# so released binaries keep depending on it.
+[[redirects]]
+  from = "/reference/upgrade-to-workspaces"
+  to = "/config/migrate"
+  status = 301
+
 # The workspace config schema page moved into the Configuration section.
 [[redirects]]
   from = "/reference/configuration/workspace"

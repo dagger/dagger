@@ -89,6 +89,7 @@ module.exports = {
         "config/environments",
         "config/user",
         "config/module-wiring",
+        "config/migrate",
         {
           type: "category",
           label: "Reference",
