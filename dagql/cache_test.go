@@ -7521,3 +7521,163 @@ func TestCacheLoadResultByResultIDIgnoresUncleanCanonicalSiblings(t *testing.T) 
 	assert.NilError(t, c.ReleaseSession(aCtx, "canon-a"))
 	assert.NilError(t, c.ReleaseSession(loaderCtx, "canon-loader"))
 }
+
+func TestCacheDigestLookupRechecksSessionResourcesAfterAttachBarrier(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("DIGEST_GROWTH")
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "diggrow-a-client",
+		SessionID: "diggrow-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "diggrow-b-client",
+		SessionID: "diggrow-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+	assert.NilError(t, c.BindSessionResource(aCtx, "diggrow-a", "diggrow-a-client", handle, "bound"))
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "digest-growth-parent",
+	}
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	type callOutcome struct {
+		res AnyResult
+		hit bool
+		err error
+	}
+	aDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(aCtx, "diggrow-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
+			if err != nil {
+				return nil, err
+			}
+			obj.leaf = leaf
+			res, err := NewResultForCall(obj, frame)
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		})
+		aDone <- err
+	}()
+
+	<-obj.attachStarted
+	parentID := sharedResultID(obj.selfID)
+	assert.Assert(t, parentID != 0)
+
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, hit, err := c.lookupCacheForDigests(bCtx, "diggrow-b", srv, cacheTestCallDigest(frame), nil)
+		bDone <- callOutcome{res: res, hit: hit, err: err}
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c.sessionMu.Lock()
+		_, selected := c.sessionResultIDsBySession["diggrow-b"][parentID]
+		c.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B's digest lookup to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	close(obj.attachRelease)
+	assert.NilError(t, <-aDone)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Assert(t, !bOut.hit,
+		"the digest lookup must convert the stale hit into a miss after the required set grew")
+	assert.Assert(t, bOut.res == nil)
+
+	assertCacheRequiredSessionResourcesExact(t, c)
+	assert.NilError(t, c.ReleaseSession(aCtx, "diggrow-a"))
+	assert.NilError(t, c.ReleaseSession(bCtx, "diggrow-b"))
+}
+
+func TestCacheWithSessionResourceHandleRefusesAttachedMutation(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(cacheTestContext(baseCtx), c)
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("ATTACHED_MUTATION")
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "attached-mutation-target",
+	}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, frame)
+	})
+	assert.NilError(t, err)
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil && shared.id != 0)
+
+	stamper, ok := res.(interface {
+		WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
+	})
+	assert.Assert(t, ok, "result %T does not support session resource handles", res)
+
+	// A semantic handle change on an attached result must be refused and
+	// must leave the stored requirement set untouched.
+	_, err = stamper.WithSessionResourceHandleAny(ctx, handle)
+	assert.ErrorContains(t, err, "already attached; its session-resource handle cannot change")
+
+	c.egraphMu.RLock()
+	stillEmpty := shared.requiredSessionResources == nil || shared.requiredSessionResources.Empty()
+	unchangedHandle := shared.sessionResourceHandle == ""
+	c.egraphMu.RUnlock()
+	assert.Assert(t, stillEmpty, "refused mutation must not grow the stored requirement set")
+	assert.Assert(t, unchangedHandle)
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// The identical value is a no-op: stamp a detached leaf, attach it, and
+	// re-apply the same handle.
+	leafFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "attached-mutation-leaf",
+	}
+	leafRes, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: leafFrame}, func(ctx context.Context) (AnyResult, error) {
+		res, err := NewResultForCall(&cacheTestObject{Value: 2}, leafFrame)
+		if err != nil {
+			return nil, err
+		}
+		return res.WithSessionResourceHandle(ctx, handle)
+	})
+	assert.NilError(t, err)
+	leafStamper, ok := leafRes.(interface {
+		WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
+	})
+	assert.Assert(t, ok, "result %T does not support session resource handles", leafRes)
+	same, err := leafStamper.WithSessionResourceHandleAny(ctx, handle)
+	assert.NilError(t, err)
+	assert.Equal(t, leafRes.cacheSharedResult().id, same.cacheSharedResult().id)
+
+	cacheTestReleaseSession(t, c, ctx)
+}
