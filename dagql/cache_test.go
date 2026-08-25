@@ -7680,4 +7680,10 @@ func TestCacheWithSessionResourceHandleRefusesAttachedMutation(t *testing.T) {
 	assert.Equal(t, leafRes.cacheSharedResult().id, same.cacheSharedResult().id)
 
 	cacheTestReleaseSession(t, c, ctx)
+
+	// The release collected the leaf (its only owner released), so even the
+	// identical re-stamp must report the collection: the registration guard
+	// still runs before the no-op.
+	_, err = leafStamper.WithSessionResourceHandleAny(ctx, handle)
+	assert.ErrorContains(t, err, "was already collected")
 }
