@@ -713,9 +713,16 @@ FnComplete(o) ==
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
             /\ res[r].barrier \in {"none", "closedOk"}
             \* The reused result was obtained by the fn's resolver through a
-            \* filtered path - lookup, adoption, or a gated result-ID load -
-            \* so it satisfies the fn's session; see the PROPERTIES header
-            \* gating guarantee.
+            \* filtered, OWNED acquisition - every result-returning entry
+            \* point (request lookup, digest lookup, gated result-ID load,
+            \* wait return) records the session edge and its ownership unit
+            \* atomically - so the session holds a counted edge to it, its
+            \* bound set satisfies it (the PROPERTIES header gating
+            \* guarantee), and release cannot collect it out from under the
+            \* fn. Without the counted-edge conjunct the model reused
+            \* results the session never acquired, which the code cannot
+            \* produce.
+            /\ <<ongoingCalls[o].sess, r>> \in countedEdges
             /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
@@ -2656,28 +2663,18 @@ LeaseFailureClean ==
             /\ invocations[i].oc = 0
             /\ invocations[i].resId = 0
 
-\* Racing alone never manufactures an execution failure: with no failure
-\* injection enabled, an invocation ends in "failed" only when its own
-\* session's release is already underway - a caller tearing down its own
-\* session mid-call legitimately fails that call, which is
-\* self-inflicted, not spurious. Cancellation and a released-session
-\* refusal still have their own terminal phases.
-\* OPEN QUESTION, awaiting a ruling: a LIVE session's joiner also fails
-\* when the singleflight leader's session releases mid-publication
-\* (wait's completionErr path returns the leader's failure to every
-\* joiner with no retry) - the same class the lazy and persisted-decode
-\* singleflights were given retries for. Until the ruling (exempt it
-\* here, fix the call singleflight, or pin an accepted red), no
-\* release-enabled configuration lists this invariant.
-\* Caveat for future configurations: Restart resets every session record
-\* to "live" while retaining invocations, so a configuration pairing
-\* this invariant with release AND restart must revisit the exemption;
-\* no current configuration does.
+\* Racing alone never manufactures an execution failure: if no failure
+\* injection is enabled, no invocation ends in "failed". Cancellation and a
+\* released-session refusal have their own terminal phases. This holds
+\* with release enabled too: ongoing calls are keyed by (call, session),
+\* so no invocation waits on another session's singleflight entry, and
+\* every result a session reuses is one it acquired with ownership, so a
+\* release cannot fail anyone's call. (An earlier note that release
+\* trips this invariant traced to a model-only reuse without ownership,
+\* removed by FnComplete's counted-edge guard.)
 NoSpuriousErrors ==
     (~FnCanFail /\ ~AttachCanFail /\ ~LeaseCanFail /\ ~DecodeCanFail) =>
-        \A i \in InvocationIds :
-            invocations[i].phase = "failed" =>
-                sessionRelease[invocations[i].sess].phase # "live"
+        \A i \in InvocationIds : invocations[i].phase # "failed"
 
 \* An invocation reports cancellation only for its own context. Contract:
 \* the ctx.Done arms in wait and ensurePersistedHitValueLoaded return

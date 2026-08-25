@@ -30,9 +30,7 @@ const (
 var expectedOutcome = map[string]string{
 	// green: regression gates over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
-	// strictly more behavior, every core invariant except
-	// NoSpuriousErrors, which awaits a ruling on joiners inheriting a
-	// released leader's publication failure; see the property comment.)
+	// every core invariant, and strictly more behavior.)
 	"release_prune":     "",
 	"liveness":          "",
 	"lazy":              "",
