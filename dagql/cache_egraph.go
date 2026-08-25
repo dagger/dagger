@@ -682,6 +682,29 @@ func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res
 	return available.Subset(res.requiredSessionResources)
 }
 
+// sessionStillSatisfiesResourceRequirements re-runs the lookup filter after a
+// serve path crossed the result's attach barrier. The stored required set can
+// grow while attachment is in flight (an attached dep may carry
+// requirements), so a selection-time check on a hit selected before
+// attachment settled can go stale by the time the barrier opens. A result
+// that never had an attachment phase keeps the required set it was indexed
+// with (the retention-edge path refuses requirement-carrying deps), so the
+// selection-time check still covers it and the re-check is skipped.
+func (c *Cache) sessionStillSatisfiesResourceRequirements(sessionID string, res *sharedResult) bool {
+	if res == nil {
+		return true
+	}
+	res.attachDepsMu.Lock()
+	hadAttachment := res.attachDepsWaitCh != nil
+	res.attachDepsMu.Unlock()
+	if !hadAttachment {
+		return true
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
+}
+
 func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidates *set.TreeSet[*sharedResult]) *sharedResult {
 	if candidates == nil {
 		return nil
@@ -993,6 +1016,14 @@ func (c *Cache) lookupCacheForRequest(
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
 		return nil, false, err
+	}
+	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared) {
+		// Attachment grew the required set after this hit was selected, so
+		// serving would hand the session a result it no longer satisfies.
+		// Fall through to the singleflight instead. The recorded session
+		// edge stays until session release; over-retaining one result is
+		// cheaper than a dedicated decrement-and-collect path here.
+		return nil, false, nil
 	}
 	if req.IsPersistable {
 		// Only persistable hits pay this second graph-lock acquisition. Keep
