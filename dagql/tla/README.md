@@ -16,22 +16,19 @@ fail, and for deliberately accepted model findings.
 `CacheLifecycle_orphaned_lease.cfg` restores the release rule under
 which a completed call's operation and client leases were orphaned when
 its last waiter left through cancellation, and must violate
-`SharedLeaseReleasedWhenRetired`. One
-finding is tracked today: a result's transitive requirement can grow
-after the lookup filter has run - during attachment, or through a late
-explicit dependency - and nothing re-checks before the serve, so an
-invocation can return a result depending on a handle leaf its session
-never bound (`resources_gated_growth`; the accounting itself stays
-exact, gated green by `resources_latedep`). The
-`expectedOutcome` map is the authoritative list; every configuration
-with an empty entry there is a green regression gate. (The two most
-recently closed findings: `decode_cancel` — a decode leader's own
-cancellation failing its parked joiners — fixed by retrying a departed
-leader's cancellation and the post-install lease sync; and
-`resources_restart` — the stored session-resource requirement set
-drifting from the true transitive requirement — fixed by recomputing
-dependency-first at import and leaving the stored set alone at decode
-install.)
+`SharedLeaseReleasedWhenRetired`. No
+such finding is tracked today: every configuration is a green
+regression gate, and the `expectedOutcome` map is the authoritative
+list. (The most recently closed findings: `resources_gated_growth` — a
+result's transitive requirement growing after the lookup filter ran —
+fixed by re-checking the filter after the attach barrier and by
+refusing requirement-carrying deps on explicit retention edges;
+`resources_restart` — the stored requirement set drifting from the true
+transitive requirement — fixed by recomputing dependency-first at
+import and leaving the stored set alone at decode install; and
+`decode_cancel` — a decode leader's own cancellation failing its parked
+joiners — fixed by retrying a departed leader's cancellation and the
+post-install lease sync.)
 
 Run the check:
 
