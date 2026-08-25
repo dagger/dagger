@@ -220,6 +220,17 @@ type agentMessageRecord struct {
 	// text is the message body, recorded as a withPrompt selector when a
 	// turn consumes it.
 	text string
+	// origin is the message's resolved provenance — who sent it and what it
+	// answers (hack/designs/agent-messaging.md §4.1). Resolved once at the
+	// central enqueue path; drainMailbox records it on the withPrompt
+	// selector for every non-trivial case.
+	origin *LLMMessageOrigin
+	// seq is the record's 1-based enqueue ordinal within this runtime entry.
+	// It backs the message's short ref ("#3") — the deterministic,
+	// model-facing correlation token. The opaque message ID cannot serve
+	// there: it is minted entropy, and replay recordings compare wire text
+	// byte for byte.
+	seq uint64
 	// deliveryHint preserves the provider-backed loop's enqueue-boundary
 	// classification until its existing drain boundary conclusively confirms
 	// that the message joined the promised turn. It is not exposed as evidence.
@@ -288,6 +299,42 @@ func agentKey(agent dagql.ObjectResult[*Agent]) (string, error) {
 		return "", fmt.Errorf("agent has no instance ID: only an agent minted by spawn can be addressed")
 	}
 	return self.InstanceID, nil
+}
+
+// resolveMessageOrigin resolves who is sending a message, at the central
+// enqueue path (hack/designs/agent-messaging.md §4.1): the agent whose turn
+// the send descends from (in-process or through a module function's
+// nested calls), or the user. The message's ref is assigned later, by the
+// receiving runtime's enqueue.
+func resolveMessageOrigin(ctx context.Context) *LLMMessageOrigin {
+	if caller, ok := CallerAgent(ctx); ok {
+		return &LLMMessageOrigin{
+			Kind:      LLMMessageOriginAgent,
+			AgentID:   caller.Self().InstanceID,
+			AgentName: caller.Self().Name,
+		}
+	}
+	return &LLMMessageOrigin{Kind: LLMMessageOriginUser}
+}
+
+// originOmittedFromChain reports whether a message's origin is deliberately
+// NOT recorded on the conversation chain: a plain user prompt (the unmarked
+// common case, which keeps every pre-provenance chain and recording
+// byte-stable) and a self-send with nothing else to say (a tool steering its
+// own calling agent — attributing the agent's own words to itself is noise).
+// A reply marker always records, whoever sent it.
+func originOmittedFromChain(origin *LLMMessageOrigin, receiverKey string) bool {
+	if origin.ReplyTo != "" {
+		return false
+	}
+	switch origin.Kind {
+	case LLMMessageOriginUser:
+		return true
+	case LLMMessageOriginAgent:
+		return origin.AgentID == receiverKey
+	default:
+		return false
+	}
 }
 
 // Get returns the runtime entry for the given agent value, if one exists.
@@ -461,7 +508,13 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	if !found {
 		return nil, fmt.Errorf("agent %q has no runtime in this session: it was not spawned here, and an instance restored from a trace must be re-hydrated before anything can address it", agent.Self().Name)
 	}
-	msgID, err := rt.enqueue(text)
+	// Provenance is resolved here, at the one central enqueue path, and
+	// nowhere else (hack/designs/agent-messaging.md §4.1): the ambient agent
+	// (a tool the loop dispatched in-process), the calling client's
+	// function-call record (module functions and their nested API calls), or
+	// the user. There is no "from" argument to forge.
+	origin := resolveMessageOrigin(ctx)
+	msgID, err := rt.enqueue(text, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -601,11 +654,13 @@ type AgentRuntime struct {
 	// the session; consumed is the set of records drained into the current
 	// turn, awaiting its reply. interruptSeq increments whenever Interrupt
 	// discards the mailbox, letting a drain that already popped a record detect
-	// the race before committing it.
+	// the race before committing it. msgSeq numbers records as they enqueue,
+	// backing each message's short ref ("#3").
 	mailbox      []string
 	messages     map[string]*agentMessageRecord
 	consumed     []*agentMessageRecord
 	interruptSeq uint64
+	msgSeq       uint64
 
 	// wake unblocks the loop when it is idle. Stop and enqueue poke it;
 	// the loop re-checks the facts (stop request, mailbox) after every
@@ -799,11 +854,16 @@ func (rt *AgentRuntime) Snapshot() dagql.ObjectResult[*LLM] {
 // cannot dispatch the record before an explicit resume.
 //
 // A STOPPED tombstone is reopened from its preserved snapshot, so the new
-// message restarts the loop instead of being rejected.
-func (rt *AgentRuntime) enqueue(text string) (string, error) {
+// message restarts the loop instead of being rejected — unless the origin is
+// an EVENT: events never relaunch (hack/designs/agent-messaging.md §4.3), so
+// a stopped subscriber reports errAgentEventDropped instead of reopening.
+func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin) (string, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	stopped := rt.stateLocked() == AgentStateStopped
+	if stopped && origin != nil && origin.Kind == LLMMessageOriginEvent {
+		return "", errAgentEventDropped
+	}
 	msgID := identity.NewID()
 	var deliveryHint AgentMessageDelivery
 	switch {
@@ -834,9 +894,18 @@ func (rt *AgentRuntime) enqueue(text string) (string, error) {
 	}
 	rec := &agentMessageRecord{
 		text:          text,
+		origin:        origin,
 		deliveryHint:  deliveryHint,
 		deliveryReady: make(chan struct{}),
 		done:          make(chan struct{}),
+	}
+	rt.msgSeq++
+	rec.seq = rt.msgSeq
+	if origin != nil {
+		// The ref is the message's deterministic public handle within THIS
+		// runtime: what the attribution header shows, and what a reply's
+		// replyTo names.
+		origin.Ref = fmt.Sprintf("#%d", rec.seq)
 	}
 	if deliveryHint == AgentMessageQueued {
 		rt.finalizeDeliveryLocked(rec, deliveryHint, nil)
@@ -1010,15 +1079,33 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			rt.failMessage(rec, err)
 			return err
 		}
+		args := []dagql.NamedInput{
+			{
+				Name:  "prompt",
+				Value: dagql.NewString(rec.text),
+			},
+		}
+		// Record provenance on the chain for every case where it says
+		// something (hack/designs/agent-messaging.md §4.1). Two deliberate
+		// omissions keep pre-provenance chains and recordings byte-stable:
+		// a plain user prompt is the unmarked common case, and a self-send
+		// (a tool steering its own calling agent) attributes the agent's own
+		// words to itself — noise, not provenance.
+		if origin := rec.origin; origin != nil && !originOmittedFromChain(origin, rt.key) {
+			originArg, err := originInput(origin)
+			if err != nil {
+				rt.failMessage(rec, err)
+				return err
+			}
+			args = append(args, dagql.NamedInput{
+				Name:  "origin",
+				Value: dagql.Opt(originArg),
+			})
+		}
 		var next dagql.ObjectResult[*LLM]
 		if err := srv.Select(ctx, inst, &next, dagql.Selector{
 			Field: "withPrompt",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "prompt",
-					Value: dagql.NewString(rec.text),
-				},
-			},
+			Args:  args,
 		}); err != nil {
 			// The message was popped but never joined the turn: resolve
 			// it with the failure rather than leaving awaiters to hang on
@@ -1136,6 +1223,12 @@ func (rt *AgentRuntime) start(ctx context.Context) {
 // messages still pending — from "loop context canceled by stop or session
 // teardown", which tombstones as STOPPED.
 var errAgentInterrupted = errors.New("agent interrupted")
+
+// errAgentEventDropped reports an event that found its subscriber STOPPED.
+// Events never relaunch a runtime (hack/designs/agent-messaging.md §4.3) —
+// resurrection-by-notification would undo an explicit dismissal — so the
+// event is dropped, and the dispatcher treats this as a non-error.
+var errAgentEventDropped = errors.New("agent event dropped: subscriber is stopped")
 
 // loop is the agent's evaluation loop, run on a goroutine under a detached
 // context. It mirrors LLM.Loop (core/llm.go) with the mailbox spliced in:

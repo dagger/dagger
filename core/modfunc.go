@@ -890,6 +890,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if obj, ok := opts.ParentTyped.(dagql.AnyObjectResult); ok {
 		fnCall.parentTyped = obj
 	}
+	// Stamp the agent whose turn dispatched this call, so the function's own
+	// nested API calls can resolve it (core.CallerAgent): message provenance
+	// and the waits-for deadlock guard read it at the engine's central
+	// enqueue/await paths. CallerAgent rather than AgentFromContext, so a
+	// module function calling another module function propagates the agent
+	// through arbitrary nesting.
+	if caller, ok := CallerAgent(ctx); ok {
+		fnCall.SetCallerAgent(caller)
+	}
 
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)

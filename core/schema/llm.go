@@ -85,6 +85,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Queue a user prompt, to be sent to the model on the next step or loop.").
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
+				dagql.Arg("origin").
+					View(AfterVersion("v1.0.0-0")).
+					Doc("The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time."),
 			),
 		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
 			currentSrv, err := core.CurrentDagqlServer(ctx)
@@ -256,12 +259,30 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMSkill](srv).View(AfterVersion("v1.0.0-0")))
-	dagql.Fields[*core.LLMMessage]{}.Install(srv)
+	srv.InstallObject(dagql.NewClass[*core.LLMMessageOrigin](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.LLMMessage]{
+		// Origin is an explicit nullable accessor rather than field:"true":
+		// absent (the user's own prompts, model output, tool results) is the
+		// common case, and a struct-derived pointer field renders non-null.
+		dagql.Func("origin", s.messageOrigin).
+			Doc(`Who put this message on the record, when it arrived through an agent mailbox.`,
+				`Null for the user's own prompts and for everything the model or tools produced.`),
+	}.Install(srv)
 	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
 	dagql.Fields[*core.LLMSkill]{}.Install(srv)
+	dagql.Fields[*core.LLMMessageOrigin]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
+	core.LLMMessageOriginKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.MustInputSpec(core.LLMMessageOriginInput{}).Install(srv, AfterVersion("v1.0.0-0"))
+}
+
+func (s *llmSchema) messageOrigin(_ context.Context, msg *core.LLMMessage, _ struct{}) (dagql.Nullable[*core.LLMMessageOrigin], error) {
+	if msg.Origin == nil {
+		return dagql.Null[*core.LLMMessageOrigin](), nil
+	}
+	return dagql.NonNull(msg.Origin), nil
 }
 
 func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struct {
@@ -364,8 +385,13 @@ func (s *llmSchema) withReasoningEffort(ctx context.Context, llm *core.LLM, args
 
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
+	Origin dagql.Optional[dagql.InputObject[core.LLMMessageOriginInput]]
 }) (*core.LLM, error) {
-	return llm.WithPrompt(args.Prompt), nil
+	var origin *core.LLMMessageOrigin
+	if args.Origin.Valid {
+		origin = args.Origin.Value.Value.ToLLMMessageOrigin()
+	}
+	return llm.WithPromptOrigin(args.Prompt, origin), nil
 }
 
 func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
