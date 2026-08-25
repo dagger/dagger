@@ -72,9 +72,10 @@ var expectedOutcome = map[string]string{
 	// installs leaving the stored set alone; see the config headers.
 	"resources":         "",
 	"resources_restart": "",
-	// green: the upward cascade of stored required sets when an explicit
-	// dependency is added to an already-published result
-	// (addExplicitDependencyLocked's worklist over depParents).
+	// green: explicit retention edges on already-published results
+	// (AddExplicitDependency) refuse requirement-carrying deps, so a
+	// settled result's stored required set is frozen; RequiredExact and
+	// ReturnedGated gate the refusal.
 	"resources_latedep": "",
 
 	// green: requirement growth after the lookup filter. A hit selected
