@@ -126,18 +126,28 @@ function joinUrlPaths(...parts: string[]): string {
 }
 
 export function typePath(name: string): string {
-  return `/extending/types/${typeSlug(name)}`;
+  return `/api/reference/${typeSlug(name)}`;
 }
 
 export function typeHref(name: string, versionPath = "/"): string {
   return joinUrlPaths(versionPath, typePath(name));
 }
 
+// Older versions host the same pages under a different prefix, so resolve the
+// doc id against the active version before falling back to the current path.
+const legacyTypeDocPrefixes = ["extending/types", "reference/api"];
+
 export function useTypeHref(): (name: string) => string {
   const activeVersion = useActiveVersion(undefined);
   return (name: string) => {
-    const docId = `extending/types/${typeSlug(name)}`;
-    const activeVersionDoc = activeVersion?.docs.find((doc) => doc.id === docId);
+    const slug = typeSlug(name);
+    const docIds = [
+      `api/reference/${slug}`,
+      ...legacyTypeDocPrefixes.map((prefix) => `${prefix}/${slug}`),
+    ];
+    const activeVersionDoc = activeVersion?.docs.find((doc) =>
+      docIds.includes(doc.id)
+    );
     return activeVersionDoc?.path ?? typeHref(name, activeVersion?.path ?? "/");
   };
 }

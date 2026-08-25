@@ -47,6 +47,50 @@ func (d DocsDev) Site() *dagger.Directory {
 	return dag.Docusaurus(d.Source, opts).Build()
 }
 
+// Freeze a released version's docs as a versioned snapshot. The docs are pulled
+// from the version's git tag -- not the in-development docs on the current
+// branch -- so the snapshot reflects what actually shipped. Runs docusaurus
+// docs:version and returns a Changeset that adds
+// versioned_docs/version-<version>/ (plus its sidebar) and prepends the version
+// to docs/versions.json, for review before applying.
+func (d DocsDev) SnapshotRelease(
+	// Release version to snapshot, e.g. v1.0.0-beta.10. A leading "v" is dropped
+	// so the snapshot name matches docs/versions.json (bare semver).
+	version string,
+) (*dagger.Changeset, error) {
+	version = strings.TrimPrefix(version, "v")
+	// The released docs, straight from the tag.
+	tagDocs := dag.Git("https://github.com/dagger/dagger").
+		Tag("v" + version).
+		Tree().
+		Directory("docs")
+	// Run docs:version against the current docs tree, but with current_docs and
+	// its sidebar swapped for the release's, so the snapshot captures the
+	// release rather than whatever is in development on this branch.
+	opts := dagger.DocusaurusOpts{
+		Dir:  "./docs",
+		Yarn: true,
+	}
+	built := dag.Docusaurus(
+		d.Source.
+			WithDirectory("docs/current_docs", tagDocs.Directory("current_docs")).
+			WithFile("docs/sidebars.ts", tagDocs.File("sidebars.ts")),
+		opts,
+	).
+		Base().
+		WithExec([]string{"yarn", "docusaurus", "docs:version", version}).
+		Directory("/src")
+	// Keep only the new snapshot artifacts; don't leak the swapped current_docs
+	// or sidebar into the changeset.
+	versionDir := "docs/versioned_docs/version-" + version
+	sidebar := "docs/versioned_sidebars/version-" + version + "-sidebars.json"
+	return d.Source.
+		WithDirectory(versionDir, built.Directory(versionDir)).
+		WithFile(sidebar, built.File(sidebar)).
+		WithFile("docs/versions.json", built.File("docs/versions.json")).
+		Changes(d.Source), nil
+}
+
 // Check the docs website build
 // +check
 func (d DocsDev) Check(ctx context.Context) error {
@@ -89,7 +133,7 @@ func (d DocsDev) References(
 	)
 	// 2. Generate the API reference stubs.
 	//
-	// The reference pages under docs/current_docs/reference/api are rendered
+	// The reference pages under docs/current_docs/api/reference are rendered
 	// from docs-graphql/schema.graphqls at site-build time by the
 	// dagger-api-reference Docusaurus plugin (see docs/plugins and
 	// docs/src/components/api). All this step regenerates is the thin per-type
@@ -103,8 +147,8 @@ func (d DocsDev) References(
 		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
 		Directory("/src").
 		WithoutDirectory("docs/node_modules")
-	// The CLI reference (docs/current_docs/reference/cli/index.mdx) is generated
-	// separately by the go toolchain (see docs/current_docs/reference/generate.go)
+	// The CLI reference (docs/current_docs/cli/reference/index.mdx) is generated
+	// separately by the go toolchain (see docs/current_docs/cli/generate.go)
 	// and committed, so it is already part of src here.
 
 	// 3. Generate config file schemas?

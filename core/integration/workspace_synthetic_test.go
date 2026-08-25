@@ -51,6 +51,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceSourceIsPrivateInSchema(ctx context.
 	requireGraphQLField(t, res.GitRef.Fields, "asWorkspace")
 	requireGraphQLField(t, res.Workspace.Fields, "withNewFile")
 	requireGraphQLField(t, res.Workspace.Fields, "withNewDirectory")
+	requireGraphQLField(t, res.Workspace.Fields, "withDirectory")
 	requireGraphQLField(t, res.Workspace.Fields, "withChanges")
 	requireGraphQLField(t, res.Workspace.Fields, "changes")
 

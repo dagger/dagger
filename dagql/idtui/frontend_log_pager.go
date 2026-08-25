@@ -258,7 +258,7 @@ func (fe *frontendPretty) renderLogPager(ctx tuist.Context) {
 	if fe.logPager == nil {
 		return
 	}
-	height := ctx.ScreenHeight() - 1 // keymap sibling
+	height := ctx.ScreenHeight() - 2 // keymap sibling and its separating blank line
 	if fe.logSearchInput != nil {
 		height--
 	}
