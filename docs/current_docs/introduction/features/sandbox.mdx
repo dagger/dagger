@@ -1,0 +1,18 @@
+---
+title: "Sandboxed Runtime"
+slug: /features/sandbox
+description: "Sandboxed, security-first design"
+toc_max_heading_level: 2
+---
+
+import VideoPlayer from '@components/VideoPlayer';
+
+Dagger is built to protect your host environment by default. All Dagger Functions are fully "sandboxed" and do not have direct access to the host system.
+
+This means that Dagger Functions cannot access host resources - such as the host environment, host services, host filesystem, or host SSH agent - unless you explicitly grant permission by passing them as arguments.
+
+Dagger’s security model treats the top-level module (i.e., the main function or highest-level call) as the single place where sensitive resources are introduced. It is only through this call that a user can explicitly provide directories, services, sockets, or secrets. In turn, the top-level module may pass these resources to other installed modules if needed, but there is never any implicit sharing.
+
+:::important
+By requiring typed arguments such as `Directory`, `Socket`, `Service`, or `Secret`, Dagger ensures users understand exactly what they are sharing with a Dagger Function. This explicit access design helps prevent malicious or untrusted modules from inadvertently obtaining sensitive data.
+:::

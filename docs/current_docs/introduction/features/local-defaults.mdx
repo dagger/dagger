@@ -1,0 +1,111 @@
+---
+title: "Local Defaults (.env)"
+slug: /features/local-defaults
+description: "Persist default arguments for Dagger functions in a .env file"
+toc_max_heading_level: 2
+---
+
+Dagger supports persisting default arguments in a local `.env` file. This avoids typing the same CLI arguments on every call — set them once, and they're applied automatically.
+
+## How it works
+
+1. Create a `.env` file in or above your module directory.
+2. Add variables using the naming convention described below.
+3. Call your module — omitted arguments are filled from `.env`.
+4. Explicit CLI arguments always take priority over `.env` values.
+
+## Variable naming convention
+
+### Inside the module directory
+
+Place an `.env` file next to your `dagger.json`. Variables map directly to argument names without any module-name prefix:
+
+- **Constructor arguments:** `ARGNAME=value`
+- **Function arguments:** `FUNCTIONNAME_ARGNAME=value`
+
+```shell title=".env (next to dagger.json)"
+# Constructor arg --registry
+REGISTRY=ghcr.io/myorg
+
+# Argument --tag on function "push"
+PUSH_TAG=latest
+```
+
+### Outside the module directory
+
+Place an `.env` file in a parent directory (Dagger searches upward automatically). Variables must be prefixed with the module name:
+
+- **Constructor arguments:** `MODULENAME_ARGNAME=value`
+- **Function arguments:** `MODULENAME_FUNCTIONNAME_ARGNAME=value`
+
+```shell title=".env (in a parent directory)"
+# Constructor arg --registry on module "deploy"
+DEPLOY_REGISTRY=ghcr.io/myorg
+
+# Argument --tag on function "push" of module "deploy"
+DEPLOY_PUSH_TAG=latest
+```
+
+:::note
+All variable name matching is **case-insensitive**. `TOKEN`, `token`, and `Token` all match an argument named `token`.
+:::
+
+## Example
+
+Consider a module called `deploy` with a constructor taking `--registry` and a function `push` taking `--tag`.
+
+Without `.env`, you must pass every argument each time:
+
+```shell
+dagger call --registry=ghcr.io/myorg push --tag=latest
+```
+
+With an inner `.env` file (next to `dagger.json`):
+
+```shell title="deploy/.env"
+REGISTRY=ghcr.io/myorg
+PUSH_TAG=latest
+```
+
+```shell
+# Arguments are filled in automatically
+dagger call push
+```
+
+With an outer `.env` file (in a parent directory):
+
+```shell title=".env"
+DEPLOY_REGISTRY=ghcr.io/myorg
+DEPLOY_PUSH_TAG=latest
+```
+
+```shell
+# Same result — module name prefix is stripped automatically
+dagger call push
+```
+
+## Supported values
+
+Values use the same format as CLI arguments: strings, integers, booleans, JSON arrays, local and remote paths for `Directory`/`File` types, secret provider URIs (`env://`, `file://`, `op://`, etc.), and more. See the [Arguments](../../extending/modules/arguments.mdx) reference for the full list.
+
+## Priority
+
+When the same argument is defined in multiple places, the highest-priority source wins:
+
+1. **Explicit CLI arguments** (highest priority)
+2. **`.env` file defaults**
+3. **Module-defined defaults** in source code (lowest priority)
+
+## Tips
+
+:::tip
+- Add `.env` to `.gitignore` if it contains secrets or personal preferences.
+- Inner `.env` files let you skip the module name prefix for shorter variable names.
+- Variables support shell-style expansion (`${VAR}` syntax), with fallback to host environment variables.
+:::
+
+## Learn more
+
+- [Arguments](../../extending/modules/arguments.mdx) — full argument types reference
+- [Secrets Integration](./secrets.mdx) — secret provider URIs you can use in `.env` values
+- [Constructors](../../extending/modules/constructors.mdx) — module constructor arguments

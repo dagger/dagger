@@ -17,6 +17,7 @@ Some of the common operations used on the `Container` type include:
 | `withExec` | Returns the container after executing a command inside it |
 | `withFile` / `withMountedFile` | Returns the container plus a file copied / mounted at the given path |
 | `withMountedCache` | Returns the container plus a cache volume mounted at the given path |
+| `withVolatileVariable` | Sets non-secret env for future `withExec` calls without invalidating exec cache when only the value changes |
 | `withRegistryAuth` | Returns the container with registry authentication configured |
 | `withWorkdir` | Returns the container configured with a specific working directory |
 | `withServiceBinding` | Returns the container with runtime dependency on another `Service` |

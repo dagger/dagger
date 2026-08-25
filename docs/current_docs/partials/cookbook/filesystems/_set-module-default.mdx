@@ -1,0 +1,73 @@
+
+### Set a module-wide default path
+
+The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host. This eliminates the need to pass a common `Directory` argument individually to each Dagger Function in the module. If required, the default path can be overridden by specifying a different `Directory` value at call time.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/set-common-default-path/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/set-common-default-path/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/set-common-default-path/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/set-common-default-path/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+Call the Dagger Function without arguments. The default path (the current directory `.`) is used:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call foo
+    ```
+    </TabItem>
+    </Tabs>
+
+Call the Dagger Function with a constructor argument. The specified directory (`/src/myapp`) is used:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'my-module --source $(host | directory /src/myapp) | foo'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    my-module --source $(host | directory /src/myapp) | foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call --source=/src/myapp foo
+    ```
+    </TabItem>
+    </Tabs>

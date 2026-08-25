@@ -1,0 +1,26 @@
+version: 0.2
+
+env:
+  secrets-manager:
+    # assumes that the Dagger Cloud token is
+    # in a secret with key dagger_cloud_token
+    # set in AWS Secrets Manager
+    DAGGER_CLOUD_TOKEN: "arn:aws:secretsmanager:...:dagger_cloud_token"
+
+phases:
+  install:
+    commands:
+      - echo "Installing Dagger CLI"
+      - curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      - echo "Adding Dagger CLI to $PATH"
+      - export PATH=$PATH:$HOME/.local/bin/
+
+  pre_build:
+    commands:
+      - echo "Test"
+      - dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
+
+  build:
+    commands:
+      - echo "Build"
+      - dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM

@@ -97,7 +97,7 @@ For example, to only show logs of level `warn` and above:
 
 ```json
 {
-  "logLevel": "warn"
+  "logLevel": "error"
 }
 ```
 
@@ -178,7 +178,7 @@ insecure-entitlements = []
 </Tabs>
 
 :::important ROOTLESS MODE
-"Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the `root` user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would currently significantly limit its capabilities and performance.
+"Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the `root` user of the system. Currently, the Dagger Engine cannot be run as a rootless container; [network and filesystem constraints related to rootless usage](../../introduction/faq.mdx#why-does-the-dagger-engine-need-to-run-in-a-privileged-container) would currently significantly limit its capabilities and performance.
 :::
 
 ## Garbage collection
@@ -221,41 +221,6 @@ gc = false
 
 </TabItem>
 </Tabs>
-
-The garbage collector also limits the in-memory metadata retained by Dagger's
-operation cache. This limit is separate from the disk-space policy: pruning can
-run when cached operations use little or no disk, and it does not depend on a
-worker disk policy being configured.
-
-The current provisional metadata estimate limit is 4 GiB. When the estimate
-exceeds that limit, the engine removes cold persisted cache roots toward a 3
-GiB target. These implementation defaults remain subject to final tuning and
-canary evidence. Active results and engine-lifetime unpruneable results remain
-protected. Removed results can be recomputed by later calls.
-
-The limits can be changed in `engine.json` using absolute integer bytes:
-
-```json
-{
-  "gc": {
-    "dagqlCache": {
-      "maxEstimatedBytes": 4294967296,
-      "targetEstimatedBytes": 3221225472
-    }
-  }
-}
-```
-
-`targetEstimatedBytes` must be positive and lower than
-`maxEstimatedBytes`. Omitting either field, or setting it to `0`, uses its
-built-in default. These fields do not accept percentages or size strings.
-Setting `gc.enabled` to `false` disables both disk and operation-metadata
-garbage collection.
-
-The metadata value is a coarse structural estimate based on the number of live
-cached results, symbolic operation terms, and allocated equivalence-class
-slots. It is inexpensive to read, but it is not a measurement or hard limit of
-the engine process's resident memory.
 
 The default cache policy attempts to keep the long-term cache storage under 75%
 of the total disk, while also ensuring that at least 20% of the disk remains

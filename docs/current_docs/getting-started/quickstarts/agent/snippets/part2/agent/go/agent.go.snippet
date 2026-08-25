@@ -1,0 +1,43 @@
+// A coding agent for developing new features
+func (m *HelloDagger) Develop(
+        ctx context.Context,
+        // Assignment to complete
+        assignment string,
+        // +defaultPath="/"
+        source *dagger.Directory,
+) (*dagger.Directory, error) {
+        // Environment with agent inputs and outputs
+        environment := dag.Env().
+                WithStringInput("assignment", assignment, "the assignment to complete").
+                WithWorkspaceInput(
+                        "workspace",
+                        dag.Workspace(source),
+                        "the workspace with tools to edit and test code").
+                WithWorkspaceOutput(
+                        "completed",
+                        "the workspace with the completed assignment")
+
+        // Detailed prompt stored in markdown file
+        promptFile := dag.CurrentModule().Source().File("develop_prompt.md")
+
+        // Put it all together to form the agent
+        work := dag.LLM().
+                WithEnv(environment).
+                WithPromptFile(promptFile)
+
+        // Get the output from the agent
+        completed := work.
+                Env().
+                Output("completed").
+                AsWorkspace()
+        completedDirectory := completed.Source().WithoutDirectory("node_modules")
+
+        // Make sure the tests really pass
+        _, err := m.Test(ctx, completedDirectory)
+        if err != nil {
+                return nil, err
+        }
+
+        // Return the Directory with the assignment completed
+        return completedDirectory, nil
+}

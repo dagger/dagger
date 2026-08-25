@@ -1,0 +1,167 @@
+---
+slug: /extending/packages
+description: "Learn how to use packages in Dagger (e.g. Go modules, Python packages)"
+---
+
+# Third-Party Packages
+
+Dagger Functions are just regular code, written in your usual programming language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily import these packages/modules in your Dagger module via your language's package manager.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+To add a Go module, add it to your `go.mod` file using `go get`. For example:
+
+```shell
+go get github.com/spf13/cobra
+```
+
+Dagger lets you import [private Go modules](https://go.dev/ref/mod#private-modules) in your Dagger module. To do this, add the URL to the private repository(ies) hosting the module(s) in a `config.goprivate` key in the module's `dagger.json` file, as shown below:
+
+```json
+{
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "github.com/user/repository",
+    },
+  },
+}
+```
+
+Multiple URLs can be specified as comma-separated values. The repository name is optional; if left unspecified, all modules under the specified prefix will be included. For example, setting the `goprivate` URL to `github.com/username` will include all private modules with the `github.com/username` prefix.
+
+Note that this feature requires a `.gitconfig` file entry to use SSH instead of HTTPS for the host. Use the command `git config --global url."git@github.com:".insteadOf "https://github.com/"` to create the necessary `.gitconfig` entry.
+</TabItem>
+<TabItem value="python" label="Python">
+
+To add a Python package, add it to your `pyproject.toml` file using your chosen package manager.
+
+<Tabs groupId="python-pm">
+<TabItem value="uv">
+
+```sh
+uv add requests
+```
+
+</TabItem>
+
+<TabItem value="poetry">
+
+```sh
+poetry add requests
+```
+
+</TabItem>
+
+<TabItem value="uv pip">
+
+Add the dependency manually to [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+
+```toml
+[project]
+dependencies = [
+    "requirements>=2.32.3",
+]
+```
+
+Then install into your virtual environment:
+
+```sh
+uv pip install -e ./sdk -e .
+```
+
+:::note
+There's no need to activate the virtual environment before `uv pip install`, but it does need to exist.
+:::
+
+</TabItem>
+<TabItem value="pip">
+
+Add the dependency manually to [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+
+```toml
+[project]
+dependencies = [
+    "requirements>=2.32.3",
+]
+```
+
+Then install into your virtual environment:
+
+```sh
+python -m pip install -e ./sdk -e .
+```
+
+</TabItem>
+</Tabs>
+
+:::tip
+If you haven't setup your local environment yet, see [IDE Integration](../../reference/ide-setup.mdx).
+:::
+
+:::note
+Third-party dependencies are managed in the same way as any normal Python project. The only limitation is in "pinning" the dependencies. Currently, Dagger can install directly from a `uv.lock` file, or a [pip-tools compatible](https://docs.astral.sh/uv/pip/compile/#locking-requirements) `requirements.lock` file (notice `.lock` extension, not `.txt`). See [Language-native packaging](./modules.mdx#language-native-packaging) for more information.
+:::
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+To add TypeScript packages, use the package manager for your chosen runtime. For example:
+
+<Tabs groupId="ts_runtime" queryString="ts_runtime">
+<TabItem value="nodejs" label="Node.js">
+```shell
+npm install pm2
+```
+</TabItem>
+<TabItem value="bun" label="Bun">
+```shell
+bun install pm2
+```
+</TabItem>
+<TabItem value="deno" label="Deno">
+```shell
+deno add jsr:@celusion/simple-validation
+```
+</TabItem>
+</Tabs>
+
+Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+To add a PHP package, add it to the `composer.json` file, the same way as any PHP project. For example:
+
+```shell
+composer require phpunit/phpunit
+```
+
+:::note
+Dagger modules installed as packages via Composer are not registered with Dagger.
+
+You can access its code, like any other PHP package, but this is not the indended use-case of a Dagger module.
+This may lead to unexpected behaviour.
+
+Use Composer for standard third-party packages.
+
+Use Dagger to [install Dagger modules](./module-dependencies.mdx)
+:::
+
+</TabItem>
+    <TabItem value="java" label="Java">
+
+To add a Java package, add it to your `pom.xml` file using Maven. For example:
+
+```xml
+<dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>slf4j-simple</artifactId>
+    <scope>runtime</scope>
+    <version>2.0.16</version>
+</dependency>
+```
+
+    </TabItem>
+</Tabs>
