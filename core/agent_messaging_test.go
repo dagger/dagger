@@ -228,10 +228,22 @@ func TestEventDelivery(t *testing.T) {
 
 	// An edge into a subscribed state fires once; unsubscribed states are
 	// silent. RUNNING (via a fact mutation) is not subscribed; the return
-	// to IDLE is.
-	scout.testTransition(func() { scout.turnOpen = true })
+	// to IDLE is. The turn's commit is what makes the idle edge news —
+	// idleEventDue is set here exactly as a real drain's commitLast would.
+	scout.testTransition(func() { scout.idleEventDue = true; scout.turnOpen = true })
 	scout.testTransition(func() { scout.turnOpen = false })
 	waitForMailbox(t, chief, 2)
+
+	// An idle edge with NO new committed work — a tombstone relaunch that
+	// found nothing to retry, a bare fact toggle — is suppressed: it would
+	// re-announce a final reply the subscriber already heard (the stale
+	// idle event of the resume-retry flow).
+	scout.testTransition(func() { scout.turnOpen = true })
+	scout.testTransition(func() { scout.turnOpen = false })
+	waitForEventQueueDrained(t, scout)
+	chief.mu.Lock()
+	require.Len(t, chief.mailbox, 2, "an idle edge without new committed work must not re-announce the old reply")
+	chief.mu.Unlock()
 
 	// Self-subscription is refused.
 	require.ErrorContains(t, ars.Notify(base, agentB, agentB, []AgentState{AgentStateIdle}),
@@ -246,13 +258,42 @@ func TestEventDelivery(t *testing.T) {
 		chief.stopRequested = true
 	})
 	chief.mu.Unlock()
-	scout.testTransition(func() { scout.turnOpen = true })
+	scout.testTransition(func() { scout.idleEventDue = true; scout.turnOpen = true })
 	scout.testTransition(func() { scout.turnOpen = false })
 	waitForEventQueueDrained(t, scout)
 	chief.mu.Lock()
 	require.Len(t, chief.mailbox, 2, "a stopped subscriber must not receive events")
 	require.Equal(t, AgentStateStopped, chief.stateLocked())
 	chief.mu.Unlock()
+}
+
+// TestDrainWindowProjectsRunning pins the projection across the drain's
+// pop-to-commit window: the mailbox empties at the pop but the turn opens
+// only after the unlocked withPrompt Select, and the draining fact is what
+// keeps the projection from transiently claiming IDLE mid-progress — a lie
+// that let waitSettled return a stale reply and Reseed race the drain's
+// commit. Pause still outranks it: an interrupt mid-drain parks.
+func TestDrainWindowProjectsRunning(t *testing.T) {
+	t.Parallel()
+
+	base := context.Background()
+	ctx := testAgentContext(t, base, "agent-d", "drainer")
+	agent, ok := AgentFromContext(ctx)
+	require.True(t, ok)
+
+	ars := NewAgentRuntimes()
+	rt, err := ars.GetOrCreate(base, agent)
+	require.NoError(t, err)
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	require.Equal(t, AgentStateIdle, rt.stateLocked())
+	rt.draining = true
+	require.Equal(t, AgentStateRunning, rt.stateLocked(),
+		"the pop-to-commit drain window must project RUNNING")
+	rt.paused = true
+	require.Equal(t, AgentStatePaused, rt.stateLocked(),
+		"pause takes priority over the drain window")
 }
 
 func waitForMailbox(t *testing.T, rt *AgentRuntime, want int) {
