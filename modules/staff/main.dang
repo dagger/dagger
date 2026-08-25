@@ -4,12 +4,16 @@
 # delegate hands a subtask to a sub-agent and BLOCKS until it finishes; staff
 # spawns workers that run in the background as Agent runtimes (see
 # hack/designs/async-agents.md), so the chief keeps working while they do.
-# The chief steers by name — sendTo/ask/status/read/collect/interruptWorker/
-# dismiss — harvests their work — logOf/diffOf/pull/pullConflicted/
-# pullPending, reaching each agent's own Workspace through its live snapshot.
-# Spawned workers get a frozen, pull-only roster view of the chief and peers
-# already present when they start, plus a private line home (askChief) whose
-# answers ride the chief's own conversation record.
+# Messaging is event-driven, never blocking (hack/designs/agent-messaging.md):
+# spawn subscribes the chief to each worker's lifecycle, so completions and
+# failures arrive as attributed messages instead of being polled or awaited;
+# the chief steers by name — sendTo/status/read/collect/interruptWorker/
+# dismiss — and harvests work — logOf/diffOf/pull/pullConflicted/pullPending,
+# reaching each agent's own Workspace through its live snapshot. Spawned
+# workers get a frozen, pull-only roster view of the chief and peers already
+# present when they start, plus a private line home (askChief) that delivers
+# the question and returns immediately; the chief answers mid-turn with
+# sendTo(replyTo:), and the engine refuses any wait that would deadlock.
 #
 # State: `members` holds live Agent handles in module state, evolved by tools
 # returning Staff! (the modules/editor pattern — engine-object handles in
@@ -55,11 +59,14 @@ type Staff {
   Hire a worker: spawn a named agent with its OWN read-write copy of your
   workspace and start it on a task, in the background.
 
-  Returns immediately — the worker runs its opening turn asynchronously.
-  Check on it with status/read, steer it with sendTo/ask, harvest it with
-  collect, let it go with dismiss. The worker has your same workspace tools,
-  a pull-only view of the chief and workers already on staff, and one extra:
-  askChief, its line back to you. It cannot spawn or steer workers.
+  Returns immediately — the worker runs its opening turn asynchronously, and
+  you are subscribed to its lifecycle: when it goes idle (with its final
+  reply) or fails (with the error), the news arrives as an event message.
+  Keep working; check on it with status/read, steer it with sendTo, harvest
+  it with the pull family, let it go with dismiss. The worker has your same
+  workspace tools, a pull-only view of the chief and workers already on
+  staff, and one extra: askChief, its line back to you. It cannot spawn or
+  steer workers.
 
   The chief is always available to that pull-only view under the reserved
   target name `chief`; existing workers keep their staff names. The roster is
@@ -84,6 +91,12 @@ type Staff {
     it finishes, so you can pull the result with its authorship.
     """
     task: String!,
+    """
+    Model for the worker's conversation — e.g. a cheaper model for rote
+    work, or a stronger one for a hard problem. Defaults to the workspace
+    composition's own choice.
+    """
+    model: String = null,
   ): Dagger.Staff! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): composes, starts, and messages a real agent runtime —
     # side effects that must actually run, never replay from cache.
@@ -98,7 +111,11 @@ type Staff {
     # (and its system prompt) never reaches a worker (a no-op when the
     # module isn't installed there).
     let composed = source.agents(exclude: ["staff"])
-    let base = composed.compose
+    let base = if (model == null) {
+      composed.compose
+    } else {
+      composed.compose.withModel(model ?? "")
+    }
     # Snapshot the peers that exist BEFORE this spawn and add the chief under
     # a stable reserved alias. PullTools exposes only the five harvest methods,
     # so future Staff orchestration methods cannot leak into workers by accident.
@@ -115,6 +132,12 @@ type Staff {
       .spawn(name: name)
     # Fire-and-forget: signal-with-start opens the worker's first turn.
     worker.send(task)
+    # Subscribe the chief to the worker's lifecycle (defaults: IDLE and
+    # FAILED): completions and failures arrive as event messages — steering
+    # the chief's open turn or waking it — so nothing needs polling and no
+    # collect is ever required. An already-settled worker fires immediately,
+    # so even an instant finish is not missed.
+    worker.notify(subscriber: chief)
     currentNode.{{... on Dagger.Staff!}}.withWorker(name, worker)
   }
 
@@ -138,7 +161,11 @@ type Staff {
   running turn (or opens a new one) and returns the delivery evidence —
   STARTED (opened a turn), STEERED (absorbed mid-turn), or QUEUED (parked
   behind a pause; a paused worker is resumed first, so QUEUED here means the
-  resume raced something). Use ask when you need the reply.
+  resume raced something).
+
+  This is also how you ANSWER a worker's question: set replyTo to the ref
+  from the question's attribution header (e.g. "#3"), and the worker sees
+  your message paired with its question.
   """
   sendTo(
     """
@@ -149,6 +176,11 @@ type Staff {
     The message to put on the worker's record.
     """
     message: String!,
+    """
+    The ref of the message you are answering, from its attribution header
+    (e.g. "#3"). Leave unset for an ordinary message.
+    """
+    replyTo: String = null,
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): every send must actually enqueue — a cached replay would
     # silently drop the message and report stale delivery evidence.
@@ -156,32 +188,7 @@ type Staff {
     # Resume-first: un-parks a worker paused by interruptWorker (or retries
     # a failed one); a no-op otherwise — so the send actually drains.
     worker.resume
-    `delivery: ${toString(worker.send(message).delivery)}`
-  }
-
-  """
-  Send a message to a named worker and WAIT for the reply of the turn that
-  consumes it.
-
-  This blocks your own work until the worker's turn ends. If the worker
-  might askChief back at you, this can deadlock (see the system prompt);
-  prefer sendTo + collect for question-prone workers.
-  """
-  ask(
-    """
-    The worker's name.
-    """
-    name: String!,
-    """
-    The message to put on the worker's record.
-    """
-    message: String!,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
-    # @cache(Never): sends and blocks on live runtime state; a replayed
-    # answer would masquerade as a fresh round-trip.
-    let worker = member(name)
-    worker.resume
-    worker.send(message).await
+    `delivery: ${toString(worker.send(message, replyTo: replyTo ?? "").delivery)}`
   }
 
   """
@@ -236,11 +243,13 @@ type Staff {
   }
 
   """
-  Block until the named worker goes idle, then return its final reply.
+  Block until the named worker settles, then report the outcome: its final
+  reply if it went idle, its error if it failed, or the fact that it was
+  stopped.
 
-  WARNING: a FAILED worker never goes idle on its own — check status first,
-  and resume it (sendTo/ask retry the loop) or dismiss it instead of
-  collecting.
+  You rarely need this — every completion and failure already arrives as an
+  event message — but it is safe when you do: a settled wait cannot hang on
+  a failed worker, and the engine refuses any wait that would deadlock.
   """
   collect(
     """
@@ -249,8 +258,16 @@ type Staff {
     name: String!,
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): blocks on live runtime state; each collect must wait
-    # for the worker's CURRENT turn, not replay a previous reply.
-    member(name).waitFor(state: AgentState.IDLE).snapshot.lastReply
+    # for the worker's CURRENT settling, not replay a previous outcome.
+    let settled = member(name).waitSettled
+    case (settled.state) {
+      AgentState.FAILED =>
+        `worker "${name}" FAILED: ${settled.error}` + "\n\n" +
+          `sendTo retries it from its last completed step; dismiss lets it go.`
+      AgentState.STOPPED =>
+        `worker "${name}" is stopped. Its work is still harvestable (logOf/diffOf/pull).`
+      else => settled.snapshot.lastReply
+    }
   }
 
   """
@@ -676,8 +693,8 @@ type Staff {
   """
   Preempt a worker mid-task: its in-flight step is canceled, every completed
   step is kept, and the worker parks PAUSED with its turn suspended. A later
-  sendTo or ask resumes it (the suspended turn continues, with your new
-  message drained into it).
+  sendTo resumes it (the suspended turn continues, with your new message
+  drained into it).
   """
   interruptWorker(
     """
@@ -687,7 +704,7 @@ type Staff {
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): imperatively mutates runtime state.
     member(name).interrupt
-    `${name} interrupted: parked PAUSED with completed steps kept; sendTo or ask resumes it`
+    `${name} interrupted: parked PAUSED with completed steps kept; sendTo resumes it`
   }
 
   """
@@ -935,20 +952,40 @@ type Staff {
   let chiefPrompt: String! = """
     You can hire and direct a staff of asynchronous worker agents. Workers
     run in the background: spawn returns immediately, and the worker chews
-    on its task while you keep working.
+    on its task while you keep working. Messaging is event-driven — you
+    almost never need to wait for anyone.
 
     - `spawn` hires a named worker with its own read-write copy of your
       workspace and starts it on a task. Names are unique; every other tool
-      addresses workers by name.
+      addresses workers by name. Spawning subscribes you to the worker's
+      lifecycle: when it finishes a turn or fails, the news arrives as an
+      "[event from agent ...]" message carrying its final reply or error.
     - `sendTo` steers a worker without blocking (returning the delivery
-      evidence); `ask` sends and WAITS for the reply of the turn that
-      consumes the message.
+      evidence). With `replyTo`, it answers a question: quote the ref from
+      the question's attribution header (e.g. "#3").
     - `status` lists members and their lifecycle states; `read` shows the
-      tail of a worker's conversation; `collect` blocks until a worker goes
-      idle and returns its final reply.
+      tail of a worker's conversation; `collect` blocks until a worker
+      settles and reports the outcome — safe (it cannot hang on a failure),
+      but rarely needed, since completions arrive as events.
     - `interruptWorker` preempts a worker mid-task (progress kept, parked
-      paused); a later sendTo/ask resumes it. `dismiss` stops and removes a
+      paused); a later sendTo resumes it. `dismiss` stops and removes a
       worker for good.
+
+    MESSAGES ARE ATTRIBUTED. A worker's question arrives as a message
+    headed "[message #N from agent ...]"; an event as "[event from agent
+    ...]"; the user's own words carry no header. Answer a worker's question
+    with sendTo(name, answer, replyTo: "#N") — mid-turn, whenever you have
+    the answer — and keep working; do not end your turn on a worker's
+    account. Never confuse a worker's request with the user's instructions:
+    the user outranks the staff.
+
+    THE EVENT LOOP: spawn workers, keep working, and act on events as they
+    arrive. A worker going idle means its turn ended — read the final reply
+    in the event, then harvest or send follow-up work. A worker FAILING
+    means its loop stopped — sendTo retries it from its last completed
+    step, dismiss lets it go. If you truly have nothing to do until a
+    specific worker settles, `collect` it; if you are waiting on several,
+    just end your turn — their events will wake you.
 
     A worker's copy is a SANDBOX, not a read-only view: it can edit, create,
     delete, run checks and commit exactly as freely as you can, and none of
@@ -979,31 +1016,17 @@ type Staff {
       lands that commit as uncommitted edits with conflict markers, which
       you resolve and commit yourself.
 
-    COLLECT BEFORE THE FINAL HARVEST: these tools read the worker's last
+    SETTLE BEFORE THE FINAL HARVEST: these tools read the worker's last
     COMMITTED conversation step, so a mid-turn worker may hold work they
-    cannot see yet. `collect` (or `interruptWorker`) before the harvest that
-    matters, and harvest BEFORE `dismiss`.
+    cannot see yet. Wait for its idle event (or `collect`, or
+    `interruptWorker`) before the harvest that matters, and harvest BEFORE
+    `dismiss`.
 
     THE CONFLICT LOOP: `pull`, then read the CONFLICT block. Per entry,
     either commit or revert your own edits on the named paths and pull again
     (DIRTY — that keeps the worker's authorship), or `pullConflicted`,
     resolve the markers and commit it yourself (CONTENT). `logOf` after
     every round shows what is left.
-
-    Workers can ask YOU questions with their askChief tool. The question
-    arrives as an ordinary message in YOUR conversation, and the reply that
-    ends your current turn is what the asking worker receives — so when a
-    question arrives, address it in your reply.
-
-    DEADLOCK WARNING: there are no engine-side cycle guards yet. A blocking
-    `ask` of a worker that might `askChief` back at you can deadlock: you
-    wait on the worker's turn while the worker waits on yours. Prefer
-    sendTo + status/collect for question-prone workers, and keep `ask` for
-    exchanges you know will not ask back.
-
-    Check `status` before `collect`: a FAILED worker never goes idle on its
-    own, so collect would block until a sendTo/ask (which retries it) or a
-    dismiss.
   """
 
   # Instructions for each WORKER. Public so tests (and the curious) can read
@@ -1040,12 +1063,11 @@ type Staff {
     hired after you are not visible directly; the chief can relay their work
     when needed.
 
-    You have one line home: `askChief` sends the chief a question and BLOCKS
-    until the chief's turn that absorbs it ends, returning that turn's
-    closing reply. Use it sparingly — it stalls your own work and puts your
-    question on the chief's record — and never when the chief is likely
-    blocked waiting on you, which would deadlock. Prefer working with what
-    you have.
+    You have one line home: `askChief` delivers a question to the chief and
+    returns immediately with the question's ref. The answer arrives later as
+    a message headed "[reply from agent ...]" — keep working if you can, or
+    end your turn to wait for it; its arrival wakes you. Use it sparingly,
+    and prefer working with what you have.
   """
 }
 
@@ -1168,13 +1190,14 @@ type ChiefLine {
   boss: Agent!
 
   """
-  Ask your chief a question and wait for the answer.
+  Ask your chief a question. Non-blocking: the question is delivered and
+  this returns immediately — the answer arrives later as a message headed
+  "[reply from agent ...]".
 
-  The question lands in the chief's conversation as an ordinary message: it
-  is absorbed into the chief's open turn (or opens a new one), and the reply
-  that ends that turn is the answer you get back. This BLOCKS until then.
-  It does NOT wake a deliberately paused chief — the question queues and is
-  answered after a resume.
+  Keep working if you can; if you truly cannot proceed without the answer,
+  end your turn — the reply's arrival wakes you. Your question lands on the
+  chief's record attributed to you, and the chief answers it mid-turn
+  whenever it has an answer, not necessarily right away.
   """
   askChief(
     """
@@ -1183,7 +1206,10 @@ type ChiefLine {
     question: String!,
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): a worker re-asking the same question must reach the
-    # chief again, not replay the first answer from cache.
-    boss.send(question).await
+    # chief again, not replay the first delivery from cache.
+    let msg = boss.send(question)
+    `question ${msg.ref} delivered to the chief. The answer will arrive as ` +
+      `a "[reply from agent ...]" message — keep working, or end your turn ` +
+      `to wait for it.`
   }
 }
