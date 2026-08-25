@@ -17,11 +17,12 @@ fail, and for deliberately accepted model findings.
 which a completed call's operation and client leases were orphaned when
 its last waiter left through cancellation, and must violate
 `SharedLeaseReleasedWhenRetired`. One
-finding is tracked today: a late explicit dependency can extend a
-result's transitive requirement while another session's invocation
-already holds it, so that invocation returns a result depending on a
-handle leaf its session never bound (`resources_latedep_gated`; the
-accounting itself stays exact, gated green by `resources_latedep`). The
+finding is tracked today: a result's transitive requirement can grow
+after the lookup filter has run - during attachment, or through a late
+explicit dependency - and nothing re-checks before the serve, so an
+invocation can return a result depending on a handle leaf its session
+never bound (`resources_gated_growth`; the accounting itself stays
+exact, gated green by `resources_latedep`). The
 `expectedOutcome` map is the authoritative list; every configuration
 with an empty entry there is a green regression gate. (The two most
 recently closed findings: `decode_cancel` — a decode leader's own
