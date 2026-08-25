@@ -14,43 +14,42 @@ New lockfiles use format version 2. Each non-empty file starts with a version he
 
 ```json
 [["version","2"]]
-["","container.from",["docker.io/library/alpine:latest","linux/amd64"],"sha256:..."]
+["","oci-latest",["docker.io/library/alpine"],"3.22.1"]
+["","oci-sha",["docker.io/library/alpine:3.22.1"],"sha256:..."]
 ```
 
 Each entry contains, in order:
 
 1. namespace
 2. operation
-3. lookup inputs
-4. resolved value
+3. required positional inputs, encoded as an array
+4. resolved string value
+5. optional named inputs, encoded as key-value pairs when present
+
+For example, non-default transport options are appended after the value:
+
+```json
+["","oci-latest",["registry.example/acme/image"],"2.0.0",[["protocol","http"]]]
+```
+
+The options array is omitted when every option has its default value. Option
+pairs are sorted by name so equivalent lookups have one canonical identity.
 
 Entries are ordered deterministically by namespace, operation, and inputs.
 
 ### Version compatibility
 
-Dagger reads both version 1 and version 2 lockfiles. Current API versions write
-version 2.
-
-Version 1 entries include a fifth policy value, `pin` or `float`. Current API
-versions preserve that behavior while reading them:
-
-- A legacy `pin` entry is reused.
-- A legacy `float` entry is resolved again when encountered.
-
-Any subsequent write serializes the whole lockfile as version 2 and removes the
-policy from every entry. Values that were not encountered remain unchanged and
-become pinned; encountered `float` entries use their newly resolved values.
-
-Version 2 does not store policies. Every recorded result is pinned until
-explicitly updated.
+Dagger only reads and writes version 2 lockfiles. Version 1 lockfiles are
+rejected and must be regenerated. Version 2 does not store policies: every
+recorded result is pinned until explicitly updated.
 
 Clients using an API view from before pinned-by-default locking ignore the
 lockfile entirely. They neither read nor write it, even when run by a newer
 engine. This prevents an older module from silently acquiring new locking
 semantics.
 
-Unknown future lockfile versions are rejected instead of being interpreted
-with potentially incompatible semantics.
+Unsupported lockfile versions are rejected instead of being interpreted with
+potentially incompatible semantics.
 
 ## Updating lockfiles
 
@@ -68,19 +67,22 @@ Ordinary commands discover and record missing entries automatically. There is no
 
 These operations currently record and resolve lock entries:
 
-| Operation | Inputs | Result |
-| --- | --- | --- |
-| `container.from` | `[imageRef, platform]` | image digest |
-| `git.ref` | `[remoteURL, selector]` | `{"sha":"<commit>","ref":"<canonical-ref>"}` |
+| Operation | Required inputs | Optional inputs | Result |
+| --- | --- | --- | --- |
+| `oci-latest` | image name without a tag | `protocol`, `insecureSkipTLSVerify` | selected stable semantic-version tag, or `latest` |
+| `oci-sha` | tagged image reference | `protocol`, `insecureSkipTLSVerify` | OCI digest |
+| `git-latest` | remote URL | `tagPrefix` | selected stable semantic-version tag ref, or canonical remote HEAD branch ref |
+| `git-sha` | remote URL, Git ref | none | commit SHA |
 
-All symbolic Git lookups use `git.ref`. The selector records the original
-lookup intent: `HEAD` for `git.head`, a fully qualified
-`refs/heads/...` or `refs/tags/...` selector for `git.branch` and
-`git.tag`, and the caller's selector for `git.ref`.
+The latest operations select a mutable name but do not combine it with its
+content pin. A bare image therefore records both `oci-latest` and `oci-sha`;
+an unversioned Git dependency records both `git-latest` and `git-sha`.
+Explicit image tags and Git refs only require their corresponding SHA
+operation.
 
-The result always records the resolved commit SHA. It also records the
-canonical ref when Git reports one. A migrated version 1 `git.head` pin can
-omit `ref` because the old entry did not record the remote's default branch;
-reading it does not contact the remote or guess a branch name.
+`tagPrefix` restricts Git release selection to monorepo tags under that path.
+Registry transport options are
+part of OCI lookup identity, but platform is not: `oci-sha` stores the digest
+of the platform-independent root manifest or index.
 
 `git.commit` is already pinned by its input and does not create a lock entry.

@@ -20,7 +20,11 @@ type CI {
     """
     checks: [String!]! = ["**:*lint*"],
   ): Void @check {
-    let sourceDir = source.directory("/", gitignore: true)
+    # The outer CI engine maintains dagger.lock in its legacy format. The
+    # engine built from this branch must bootstrap against the v2 fixture.
+    let sourceDir = source
+      .directory("/", gitignore: true)
+      .withFile("dagger.lock", source.file("dagger.lock2"))
     engineDev(ws: source)
       .playground
       .withMountedDirectory("./dagger", sourceDir)

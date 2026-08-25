@@ -1088,16 +1088,13 @@ func workspaceMigrationFilterLegacyLockData(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, err := lock.Entries()
-	if err != nil {
-		return nil, err
-	}
+	entries := lock.Entries()
 	filtered := workspace.NewLock()
 	for _, entry := range entries {
 		if entry.Namespace == "" && entry.Operation == workspaceMigrationLockModulesResolveOperation {
 			continue
 		}
-		if err := filtered.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+		if err := filtered.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Value); err != nil {
 			return nil, fmt.Errorf("preserve lock entry %s %v: %w", entry.Operation, entry.Inputs, err)
 		}
 	}

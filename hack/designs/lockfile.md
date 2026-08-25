@@ -1,13 +1,13 @@
 # Lockfile: Lookup Resolution
 
-## Status: Implemented; v1 reading retained for migration
+## Status: Implemented
 
 This is the general design reference for Dagger lockfiles.
 
 It describes:
 
 - the current v2 lock entry format
-- v1 policy migration and API-view compatibility
+- lockfile version and API-view compatibility
 - automatic discovery and explicit update flows
 - what is implemented now
 - what remains to be built
@@ -40,45 +40,42 @@ Lockfiles are JSON lines. The first line is the version tuple:
 [["version","2"]]
 ```
 
-Each entry is a flat ordered tuple:
+Each entry is an ordered tuple:
 
 ```json
-[namespace, operation, inputs, value]
+[namespace, operation, required-inputs, value, optional-options]
 ```
 
 Examples:
 
 ```json
-["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8"]
-["","git.ref",["https://github.com/dagger/dagger.git","refs/heads/main"],{"ref":"refs/heads/main","sha":"495a8c8ce85670e58560a9561626297a436225c0"}]
+["","oci-latest",["alpine"],"3.22.1"]
+["","oci-sha",["docker.io/library/alpine:3.22.1"],"sha256:3d23f8"]
+["","git-latest",["https://github.com/dagger/dagger.git"],"refs/tags/v1.2.3"]
+["","git-sha",["https://github.com/dagger/dagger.git","refs/tags/v1.2.3"],"495a8c8ce85670e58560a9561626297a436225c0"]
+["","oci-latest",["registry.example/acme/image"],"2.0.0",[["protocol","http"]]]
 ```
 
 Rules:
 
 - `namespace` is `""` for core lookups.
-- `operation` is a stable lookup key such as `container.from` or `git.ref`.
-- `inputs` is always an ordered positional array.
-- `value` is the operation-specific resolved immutable result.
-- dictionaries, maps, and named-argument encodings are forbidden in lock inputs
+- `operation` describes the resolver operation, not the Dagger API call that
+  requested it.
+- required inputs are positional values in the third-element array.
+- `value` is always a single operation-specific string.
+- optional inputs are encoded after `value` as one array of key-value pairs.
+- the optional array is omitted when every option has its default value.
+- option pairs are unique and sorted by name.
+- dictionaries, maps, and named-argument objects are forbidden.
 - ordering is deterministic by `(namespace, operation, inputs-json)`
-- structured values use deterministic JSON object key ordering
 - legacy `{"value": ..., "policy": ...}` result envelopes are invalid
 
-Every symbolic Git lookup uses `git.ref` with inputs
-`[remoteURL, selector]`. Its result always contains `sha` and contains the
-canonical `ref` when known. The selector is `HEAD` for `git.head`, fully
-qualified for `git.branch` and `git.tag`, and preserved as supplied for the
-generic `git.ref` API.
+Selection and content resolution are separate. `git-latest` and `oci-latest`
+record the selected ref or tag. `git-sha` and `oci-sha` record the immutable
+commit or digest for that selection.
 
-Version 1 used five-element entries with a final `pin` or `float` policy.
-The v2 reader accepts those entries for migration:
-
-- `pin` is reused.
-- `float` is refreshed when encountered under the default pinned behavior.
-- Any write serializes the whole file as v2 and removes every policy.
-- Entries not encountered before that write retain their values and become pins.
-
-Unknown versions are rejected.
+Version 1 and unknown future versions are rejected. Version 1 lockfiles must be
+regenerated as version 2 lockfiles.
 
 ## API Version Compatibility
 
@@ -86,9 +83,11 @@ Pinned-by-default locking begins with API view `v1.0.0-beta.10`. The API view,
 not the engine binary version, controls the behavior so an older module cannot
 silently acquire new lockfile semantics when run by a newer engine.
 
-Current API views use pinned locking by default. They may read v1 or v2 and
-write v2. Missing entries and encountered v1 `float` entries are resolved and
-recorded; existing pins are reused.
+Automatic latest-release selection for unversioned modules and bare OCI image
+addresses begins with API view `v1.0.0-beta.11`.
+
+Current API views use pinned locking by default. They read and write v2.
+Missing entries are resolved and recorded; existing pins are reused.
 
 Older API views ignore lockfiles entirely. They neither read nor write lock
 state, regardless of which engine version serves the request. There is no lock
@@ -225,24 +224,24 @@ Target model: one lock system for all lookup functions.
 
 Current core operation keys:
 
-| Operation | Inputs | Result |
-| --- | --- | --- |
-| `container.from` | `[imageRef, platform]` | image digest |
-| `git.ref` | `[remoteURL, selector]` | commit SHA and optional canonical ref |
+| Operation | Required inputs | Optional inputs | Result |
+| --- | --- | --- | --- |
+| `oci-latest` | image name | registry transport | tag |
+| `oci-sha` | tagged image reference | registry transport | OCI digest |
+| `git-latest` | remote URL | `tagPrefix` | tag ref or canonical remote HEAD branch ref |
+| `git-sha` | remote URL, ref | none | commit SHA |
 
 Notes:
 
-- `git.head`, `git.branch`, and `git.tag` are public API operations, not
-  distinct lockfile operations
-- v1 Git entries are normalized to `git.ref` in memory; a pinned v1 HEAD
-  result has no canonical ref until an explicit update resolves it
-- reading a pinned v1 HEAD result does not contact the remote or guess its
-  default branch
+- `container.from`, `git.head`, `git.branch`, and `git.tag` are public API
+  operations, not lockfile operations.
+- unsupported lockfile versions, including v1, are rejected.
 - `git.commit` is already pinned by input and does not create lock entries
 - module loading does not create a distinct lock entry; module refs are resolved
   through the underlying Git lookup locks, while declared module dependency pins
   live in module config
-- `git.ref` only creates lock entries for mutable refs
+- symbolic Git refs create `git-sha` entries; unversioned module refs first
+  select through `git-latest`.
 - the recorded Git URL should be the resolved canonical remote URL used for transport
 
 ## Current Implementation
@@ -250,12 +249,12 @@ Notes:
 ### Implemented
 
 - [x] tuple lockfile substrate in `util/lockfile`
-- [x] flat v2 lock entry format `[namespace, operation, inputs, value]`
+- [x] v2 entries with grouped required inputs and trailing options
 - [x] ordered positional tuple keys with operation-specific result values
 - [x] API-view gating for pinned-by-default locking
 - [x] local workspace lockfile read/write helpers
 - [x] serialized lockfile writes with merge against latest on-disk state
-- [x] `container.from` lookup locking
+- [x] OCI tag-selection and digest-resolution locking
 - [x] Git lookup locking for `head`, `branch`, `tag`, and mutable `ref`
 - [x] `currentWorkspace.update(): Changeset!` temporary umbrella API
 - [x] `dagger update`
@@ -282,8 +281,7 @@ Notes:
 ### Current Consumer Defaults
 
 - [x] new v2 entries are pinned until `dagger update`
-- [x] current views honor v1 `float` policies when encountered
-- [x] old views never migrate v1 to v2
+- [x] v1 lockfiles are rejected instead of migrated
 
 ## Current Implementation Constraints
 
@@ -369,18 +367,18 @@ This file should not:
 
 ### `core/schema/container.go`
 
-#### `container.from` lock integration
+#### OCI lock integration
 
 ```go
-lookupLock, err := lookupLockForAPI(ctx, query, lockContainerFromOperation)
-resolution, err := resolveLookupFromLoadedLock(lookupLock, lockContainerFromOperation, inputs, workspace.PolicyPin)
+lookupLock, err := lookupLockForAPI(ctx, query, lockOCISHAOperation)
+resolution, err := resolveLookupFromLoadedLock(lookupLock, operation, inputs)
 ```
 
 After live resolution:
 
 ```go
 if resolution.ShouldWrite {
- err = lookupLock.SetLookup(lockCoreNamespace, lockContainerFromOperation, inputs, result)
+ err = lookupLock.SetLookup(lockCoreNamespace, operation, inputs, result)
 }
 ```
 
@@ -390,9 +388,9 @@ if resolution.ShouldWrite {
 
 #### Git lookup integration
 
-All symbolic Git APIs use the `git.ref` lock operation. The input selector
-preserves the lookup intent, while the result records a SHA and, when known, a
-canonical ref.
+All symbolic Git APIs resolve commits through `git-sha`. Latest-release
+selection uses `git-latest` first, then resolves the selected ref through
+`git-sha`.
 
 Pinned Git lookups such as immutable refs do not create lock entries.
 
