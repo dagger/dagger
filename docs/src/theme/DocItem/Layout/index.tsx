@@ -53,7 +53,7 @@ function useApiReferenceTOC(
     );
     const path = normalizePath(pathname);
     const currentType = Object.values(model.types).find((type) =>
-      path.endsWith(`/extending/types/${typeSlug(type.name)}`)
+      path.endsWith(`/api/reference/${typeSlug(type.name)}`)
     );
     if (!currentType) {
       return { toc: filteredToc, minHeadingLevel, maxHeadingLevel };

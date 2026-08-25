@@ -2,7 +2,7 @@
 // Cobra command tree. It replaces the former hidden `dagger gen` command.
 //
 // It is driven by the //go:generate directive in the CLI-reference docs module
-// (docs/current_docs/reference), which runs it from the repo root so the output
+// (docs/current_docs/cli), which runs it from the repo root so the output
 // lands inside that module's tree.
 package main
 
