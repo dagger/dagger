@@ -62,6 +62,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				`Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.`).
 			Args(
 				dagql.Arg("message").Doc(`The message text, appended to the agent's history as a prompt when a turn consumes it.`),
+				dagql.Arg("replyTo").Doc(`The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.`),
 			),
 
 		// message is deliberately cached (no DoNotCache): the message ID
@@ -149,11 +150,16 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).`,
 				`Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.`),
 
+		dagql.Func("ref", s.messageRef).
+			Doc(`The message's short ref within the receiving agent's runtime, e.g. "#3".`,
+				`This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.`),
+
 		dagql.Func("await", s.messageAwait).
 			DoNotCache("Blocks on live runtime state.").
-			Doc(`Block until the turn that consumed this message ends, and return that turn's reply.`,
+			Doc(`Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.`,
 				`Idempotent: cancel and re-await freely; concurrent waiters share the result.`,
-				`Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.`),
+				`Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.`,
+				`Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.`),
 	}.Install(srv)
 
 	core.AgentStates.Install(srv, AfterVersion("v1.0.0-0"))
@@ -240,6 +246,7 @@ func (s agentSchema) start(ctx context.Context, parent dagql.ObjectResult[*core.
 
 func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
 	Message string
+	ReplyTo string `name:"replyTo" default:""`
 }) (res dagql.Result[core.AgentMessageID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
@@ -247,7 +254,7 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 	}
 	// Signal-with-start plus delivery-evidence computation both live in the
 	// registry's central enqueue path.
-	msg, err := agents.Send(ctx, parent, args.Message)
+	msg, err := agents.Send(ctx, parent, args.Message, args.ReplyTo)
 	if err != nil {
 		return res, err
 	}
@@ -354,6 +361,14 @@ func (s agentSchema) messageDelivery(ctx context.Context, msg *core.AgentMessage
 		return "", err
 	}
 	return agents.MessageDelivery(ctx, msg)
+}
+
+func (s agentSchema) messageRef(ctx context.Context, msg *core.AgentMessage, _ struct{}) (string, error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return "", err
+	}
+	return agents.MessageRef(ctx, msg)
 }
 
 func (s agentSchema) messageAwait(ctx context.Context, msg *core.AgentMessage, _ struct{}) (string, error) {
