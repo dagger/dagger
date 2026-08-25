@@ -2656,12 +2656,28 @@ LeaseFailureClean ==
             /\ invocations[i].oc = 0
             /\ invocations[i].resId = 0
 
-\* Racing alone never manufactures an execution failure: if no failure
-\* injection is enabled, no invocation ends in "failed". Cancellation and a
-\* released-session refusal have their own terminal phases.
+\* Racing alone never manufactures an execution failure: with no failure
+\* injection enabled, an invocation ends in "failed" only when its own
+\* session's release is already underway - a caller tearing down its own
+\* session mid-call legitimately fails that call, which is
+\* self-inflicted, not spurious. Cancellation and a released-session
+\* refusal still have their own terminal phases.
+\* OPEN QUESTION, awaiting a ruling: a LIVE session's joiner also fails
+\* when the singleflight leader's session releases mid-publication
+\* (wait's completionErr path returns the leader's failure to every
+\* joiner with no retry) - the same class the lazy and persisted-decode
+\* singleflights were given retries for. Until the ruling (exempt it
+\* here, fix the call singleflight, or pin an accepted red), no
+\* release-enabled configuration lists this invariant.
+\* Caveat for future configurations: Restart resets every session record
+\* to "live" while retaining invocations, so a configuration pairing
+\* this invariant with release AND restart must revisit the exemption;
+\* no current configuration does.
 NoSpuriousErrors ==
     (~FnCanFail /\ ~AttachCanFail /\ ~LeaseCanFail /\ ~DecodeCanFail) =>
-        \A i \in InvocationIds : invocations[i].phase # "failed"
+        \A i \in InvocationIds :
+            invocations[i].phase = "failed" =>
+                sessionRelease[invocations[i].sess].phase # "live"
 
 \* An invocation reports cancellation only for its own context. Contract:
 \* the ctx.Done arms in wait and ensurePersistedHitValueLoaded return
