@@ -201,7 +201,7 @@ func (m *Alpine) withPkgs(
 		fmt.Printf("unfatal package conflicts: %v\n", conflicts)
 	}
 
-	setupBase := dag.Container().From("busybox:latest")
+	setupBase := dag.Container().From("busybox")
 
 	type apkPkg struct {
 		name string
