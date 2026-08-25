@@ -177,6 +177,8 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		if err := env.assertMockEvents(ctx); err != nil {
 			return err
 		}
+	} else if err := env.assertPrereleaseStableOutputsAbsent(ctx); err != nil {
+		return err
 	}
 	if err := env.assertPackageRegistryRequests(ctx, isPrerelease); err != nil {
 		return err
@@ -636,6 +638,34 @@ func (env *publishCheckEnv) assertInitialCLIReleaseOutputs(ctx context.Context) 
 		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
 	} {
 		if err := requireNotContains(events, needle, "initial main publish should not perform stable CLI publishing"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertPrereleaseStableOutputsAbsent(ctx context.Context) error {
+	events, err := env.mockEvents(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, needle := range []string{
+		`"kind": "github_release_lookup"`,
+		`"kind": "github_release_create"`,
+		`"kind": "github_release_update"`,
+		`"kind": "github_release_asset_list"`,
+		`"kind": "github_release_asset_delete"`,
+		`"kind": "github_release_asset_upload"`,
+		`"kind": "github_release_publish"`,
+		`/api/v3/repos/dagger/nix/contents/pkgs/dagger/default.nix`,
+		`/api/v3/repos/dagger/homebrew-tap/contents/dagger.rb`,
+		`/api/v3/repos/dagger/winget-pkgs/contents/`,
+		`/api/v3/repos/dagger/winget-pkgs/git/refs`,
+		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
+	} {
+		msg := "prerelease should not perform stable release publishing"
+		if err := requireNotContains(events, needle, msg); err != nil {
 			return err
 		}
 	}
