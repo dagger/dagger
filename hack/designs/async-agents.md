@@ -378,6 +378,21 @@ suppresses the native ask-the-user tool in favor of parked approval cards.
 
 So: blocking calls are the *verb*; `WAITING_INPUT` is the *view*.
 
+**Correction, from dogfooding (see hack/designs/agent-messaging.md).** The
+claim above that agent-on-agent asks block safely — "asks landing meanwhile
+queue or steer rather than deadlock, and ask-cycles degrade to steerable
+waits" — conflated receiving with progressing. A blocked agent still
+ENQUEUES fine (the STEERED evidence is honest), but consumption happens only
+at step boundaries and reply resolution only at turn end, and a turn blocked
+inside an ask tool call reaches neither — so ask-cycles wedge hard
+(ask↔askChief, collect↔askChief), and even the non-cycle case breaks: a
+reply delivered as a *message* cannot unblock a waiter blocked in a *tool
+call*, so answering an askChief via sendTo strands the asker until the
+answerer's turn ends. The parked-question argument this section makes for
+the human turns out to apply to agents too; agent-messaging.md carries the
+redesign (turns are the unit of waiting) and this section's human-side
+conclusion stands unchanged.
+
 ### 3.5 Lifecycle details
 
 - **`interrupt`** promotes `Loop`'s existing cancellation semantics
@@ -661,7 +676,10 @@ Middlewares *define* agents; `compose(...).spawn(name)` *instantiates* one.
   combinator, a chief-of-staff monitor loop degenerates to polling `state`.
   The handle type makes combinators possible; whether they land in core or
   wait for demand is open (tailcall's `await_agents` suggests demand is
-  real).
+  real). *Superseded by hack/designs/agent-messaging.md §4.3: lifecycle
+  events delivered as mailbox messages make the combinator unnecessary for
+  agent loops; a combinator for non-model orchestrator code stays open
+  there.*
 - **Windowed reads**: tailcall's most load-bearing chief tool is
   `read_agent` — a bounded, final-responses-only view of a target's
   conversation. Expressible today as a module-side projection over
@@ -1222,9 +1240,16 @@ rather than being renumbered away:
    detection — none exist. Central point: the enqueue path in
    `AgentRuntimes` (`Send`). Until then `modules/staff` documents the
    ask/askChief deadlock and steers the chief around it by prompt.
+   *Designed: hack/designs/agent-messaging.md §4.5 puts waits-for edges and
+   cycle refusal at the blocking primitives (self-await refusal included) —
+   dogfooding showed prompt-steering does not work (its §1–2). Depth/rate
+   limiting stays open there.*
 3. **Provenance stamping** (§3.3): drained messages record plain
    `withPrompt` selectors with no sender identity; no "via X" in history
-   or telemetry.
+   or telemetry. *Designed: hack/designs/agent-messaging.md §4.1 — origin
+   resolved at the enqueue path from `AgentFromContext`, recorded as a
+   `withPrompt` argument, rendered to the model as attribution and to
+   clients via `LLM.messages` and telemetry.*
 4. **`WAITING_INPUT` / `waitingOn`** (§3.4): enum value exists but is
    unreachable; needs the user-ask parking path (the non-modal
    resurrection of the dead `LLM.Interject`). The telemetry half is
@@ -1239,7 +1264,9 @@ rather than being renumbered away:
    evaluation cache-hits `loop` and never reaches the inner spawn.
 6. **`awaitAny`/`awaitAll`** (§7): absent; orchestrators poll
    `state`/`waitFor` per agent (staff's `collect` is a per-worker
-   `waitFor(IDLE)`).
+   `waitFor(IDLE)`). *Superseded by hack/designs/agent-messaging.md §4.3
+   (see §7's note); its §4.4 also fixes `collect`'s hang on FAILED with a
+   settled-state wait.*
 7. **CLI follow-ups**: re-enabling undo/fork in prompt mode (the
    "interrupts lose progress" rationale is retired — server-side
    interrupt is prefix-preserving); `startInteractivePromptMode`
@@ -1287,6 +1314,10 @@ rather than being renumbered away:
     steers an open turn or wakes the chief, with no polling and none of
     `collect`'s deadlock exposure. Could be a spawn opt-in
     (`notifyOnIdle: true`) or an engine-level watch verb on Agent.
+    *Designed: hack/designs/agent-messaging.md §4.3 takes the engine-level
+    verb (`Agent.notify(subscriber:, on:)`), generalized to FAILED (and
+    later WAITING) transitions, with events that never relaunch a stopped
+    subscriber; staff wires it at spawn.*
 12. **Harvest limitations worth revisiting** (§8.1): patch scoping
     matches on `DiffStat.path` only, so a renamed file's old path can be
     dropped from a scoped patch, leaving a half-applied rename
@@ -1558,7 +1589,11 @@ rather than being renumbered away:
     byte-for-byte history matching would be the only thing that ever notices.
     Worth pairing with item 10 (workers not knowing their own name), which
     also wants to interpolate into `workerPrompt` and would move the same
-    seed boundary.
+    seed boundary. *Note: the askChief flow it records is being redesigned
+    (hack/designs/agent-messaging.md §7 makes askChief non-blocking), so the
+    eventual re-recording follows that shape — but the seed-divergence
+    question here is independent of that design and must be answered on its
+    own before any recording is trusted either way.*
 16. **A staff-spawned worker could be unaddressable from the roster in the
     SAME session** (§3.3, §8) — distinct from item 13, which needs a restart.
     **RESOLVED.** The full account — root cause, fix, tests, and what is
