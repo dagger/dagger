@@ -68,10 +68,26 @@ module.exports = {
         "cli/checking",
         "cli/generating",
         "cli/services",
-        "cli/module-wiring",
         "cli/calling-functions",
-        "cli/environments",
         { type: "doc", id: "cli/reference/index", label: "Reference" },
+      ],
+    },
+
+    // ========================================
+    // CONFIGURATION
+    // ========================================
+    {
+      type: "category",
+      label: "Configuration",
+      link: {
+        type: "doc",
+        id: "configuration/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "configuration/environments",
+        "configuration/module-wiring",
       ],
     },
 

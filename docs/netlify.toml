@@ -1333,11 +1333,6 @@
   to = "/configuration/cloud"
   status = 301
 
-[[redirects]]
-  from = "/cli/*"
-  to = "/cli/reference"
-  status = 301
-
 ## end: wildcard redirects ##
 
 [[redirects]]
@@ -1396,6 +1391,17 @@
   to = "/getting-started/workspace-setup"
   status = 301
 
+# Environments and module wiring moved out of the CLI section.
+[[redirects]]
+  from = "/cli/environments"
+  to = "/configuration/environments"
+  status = 301
+
+[[redirects]]
+  from = "/cli/module-wiring"
+  to = "/configuration/module-wiring"
+  status = 301
+
 # The installation page moved under the CLI section.
 [[redirects]]
   from = "/getting-started/installation"
@@ -1450,6 +1456,13 @@
 #   to = "/cli/reference"
 #   status = 301
 #
+# Catch-all for retired /cli/... pages. Kept last in this block so the specific
+# rules above win; moved here from the wildcard section for the same reason.
+[[redirects]]
+  from = "/cli/*"
+  to = "/cli/reference"
+  status = 301
+
 ## end: migration 0.21 -> 1.0 ##
 
 ## start: disabled 1.0 redirects ##
