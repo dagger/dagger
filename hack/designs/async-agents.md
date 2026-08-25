@@ -676,10 +676,10 @@ Middlewares *define* agents; `compose(...).spawn(name)` *instantiates* one.
   combinator, a chief-of-staff monitor loop degenerates to polling `state`.
   The handle type makes combinators possible; whether they land in core or
   wait for demand is open (tailcall's `await_agents` suggests demand is
-  real). *Superseded by hack/designs/agent-messaging.md §4.3: lifecycle
-  events delivered as mailbox messages make the combinator unnecessary for
-  agent loops; a combinator for non-model orchestrator code stays open
-  there.*
+  real). *Superseded by hack/designs/agent-messaging.md §4.3 (BUILT:
+  `Agent.notify`): lifecycle events delivered as mailbox messages make the
+  combinator unnecessary for agent loops; a combinator for non-model
+  orchestrator code stays open there.*
 - **Windowed reads**: tailcall's most load-bearing chief tool is
   `read_agent` — a bounded, final-responses-only view of a target's
   conversation. Expressible today as a module-side projection over
@@ -1181,16 +1181,35 @@ What is BUILT (see also §8 for ratified semantics):
   next submit spawns afresh — instance uniqueness comes from `spawn` itself,
   so the session's old entropy naming is gone.
 - **Async orchestration module** (§3.3 Team sketch, realized):
-  `modules/staff` — spawn/sendTo/ask/status/read/collect/interruptWorker/
+  `modules/staff` — spawn/sendTo/status/read/collect/interruptWorker/
   dismiss over module-held `[Agent!]` state (the `modules/editor`
-  pattern), with each worker given an `askChief` line home whose answers
-  ride the chief's own record. Registered in the repo dagger.toml as
-  `env.dev.modules.staff`. Side-effecting and
+  pattern), with each worker given an `askChief` line home. Rebuilt on
+  the event-driven messaging kernel (below): `ask` is gone, `askChief`
+  delivers without blocking, `sendTo` answers questions via `replyTo`,
+  `collect` rides `waitSettled`, and `spawn` subscribes the chief to each
+  worker's lifecycle. TEMPORARILY deregistered from dagger.toml (dev and
+  codex envs): the module now uses Agent fields only a from-source engine
+  serves, and a module that fails to compile takes its env's whole module
+  set down; restore once sessions run engines with the messaging fields.
+  Side-effecting and
   live-reading tools carry `@cache(policy: FunctionCachePolicy.Never)` —
   load-bearing: dagql otherwise replays identical-arg calls, so a
   zero-arg `status` could never observe a state transition. Windowed
   reads (`read_agent`-style) are the module-side `read` projection over
   `snapshot.messages`, as predicted — no core work needed.
+- **Event-driven messaging kernel** (hack/designs/agent-messaging.md,
+  all five build-order steps): message provenance resolved at the central
+  enqueue path and recorded as `withPrompt(origin:)` with deterministic
+  model-facing attribution headers (`LLMMessage.origin` for clients);
+  reply correlation via `send(replyTo:)` with `AgentMessage.ref` as the
+  short token; lifecycle subscriptions via `Agent.notify` delivering
+  IDLE/FAILED events as mailbox messages; `Agent.waitSettled` +
+  `Agent.error` as the safe supervisor wait; and waits-for edges with
+  cycle refusal at all four blocking primitives (awaitMessage,
+  messageDelivery, waitFor, waitSettled). That doc's §10 carries the
+  as-built record — including the ordinal-ref delta, the replayer
+  leading-SYSTEM trim fix (item 15), and the de-race pattern recorded
+  cross-agent tests need.
 - **Workspace harvesting** (§8.1): the core API is
   `Workspace.commitsFrom` / `withCommitsFrom` (+ the internal
   `__withReplayedCommit`), with `WorkspaceCommitPick` and its
@@ -1208,15 +1227,20 @@ What is BUILT (see also §8 for ratified semantics):
 - **Tests**: `core/integration/agent_runtime_test.go` (fixture
   `testdata/modules/go/agent-hirer`, for the module-internal roster case) +
   `agent_injection_test.go` (fixture
-  `testdata/modules/go/agent-poker`) + `staff_test.go` (E2E over the
-  served `modules/staff`: spawn → askChief steering into the chief's open
-  turn → collect), all against the keyless `replay/` provider, including
+  `testdata/modules/go/agent-poker`) + `staff_test.go`
+  (`TestStaff/TestAskAndReply`, the E2E over the served `modules/staff`:
+  spawn with an attributed task → non-blocking askChief steering into the
+  chief's open turn with its header → idle events carrying final replies →
+  mid-turn sendTo(replyTo:) waking the worker with the paired answer) +
+  `agent_notify_test.go` (wake-on-event, waitSettled-on-FAILED), all
+  against the keyless `replay/` provider, including
   genuinely mid-turn STEERED and mid-step interrupt via a slow-tool
   recording synchronized on a cache-volume marker. Spawn semantics are
   locked in by `TestSpawnInstances` (two spawns of an identical
   composition are distinct, concurrently running agents) and
   `TestSpawnAfterStop` (dismiss-and-rehire works; the predecessor's
-  tombstone stays readable by held ID).
+  tombstone stays readable by held ID). The messaging kernel's pure logic
+  is pinned at the unit level in `core/agent_messaging_test.go`.
 
 What is NOT built — threads to pull, each self-contained. The numbers are
 stable identifiers, cited from code comments and from earlier sessions, so a
@@ -1242,16 +1266,26 @@ rather than being renumbered away:
    detection — none exist. Central point: the enqueue path in
    `AgentRuntimes` (`Send`). Until then `modules/staff` documents the
    ask/askChief deadlock and steers the chief around it by prompt.
-   *Designed: hack/designs/agent-messaging.md §4.5 puts waits-for edges and
-   cycle refusal at the blocking primitives (self-await refusal included) —
-   dogfooding showed prompt-steering does not work (its §1–2). Depth/rate
-   limiting stays open there.*
+   *BUILT, at the blocking primitives rather than the enqueue path
+   (agent-messaging.md §4.5, §10): every blocking wait issued from an
+   agent's turn registers a waits-for edge, a cycle-closing wait is refused
+   with the full named path, and self-waits are refused unconditionally —
+   enforcing §8's self-await hazard. Self-SENDS stay legal (they are
+   steering). The staff prompts' deadlock warnings are deleted, since the
+   verbs they warned about no longer exist and the engine refuses the
+   cycles they described. Depth/rate limiting remains open there.*
 3. **Provenance stamping** (§3.3): drained messages record plain
    `withPrompt` selectors with no sender identity; no "via X" in history
-   or telemetry. *Designed: hack/designs/agent-messaging.md §4.1 — origin
-   resolved at the enqueue path from `AgentFromContext`, recorded as a
-   `withPrompt` argument, rendered to the model as attribution and to
-   clients via `LLM.messages` and telemetry.*
+   or telemetry. *BUILT (agent-messaging.md §4.1, §10): origin resolved at
+   the central enqueue path — the ambient loop agent, or the function-call
+   record modfunc stamps, so module-mediated sends attribute correctly with
+   no forgeable argument — recorded as a `withPrompt(origin:)` selector,
+   rendered to the MODEL as a deterministic attribution header, and exposed
+   via `LLMMessage.origin`. The "via X" this section promised now exists in
+   history and trace, and the TUI styling followed: the origin rides the
+   message span as `dagger.io/llm.origin.*` attributes, agent-origin
+   messages render sender-attributed (name + ref header over the prompt
+   block), and events collapse to a faint one-liner.*
 4. **`WAITING_INPUT` / `waitingOn`** (§3.4): enum value exists but is
    unreachable; needs the user-ask parking path (the non-modal
    resurrection of the dead `LLM.Interject`). The telemetry half is
@@ -1266,9 +1300,14 @@ rather than being renumbered away:
    evaluation cache-hits `loop` and never reaches the inner spawn.
 6. **`awaitAny`/`awaitAll`** (§7): absent; orchestrators poll
    `state`/`waitFor` per agent (staff's `collect` is a per-worker
-   `waitFor(IDLE)`). *Superseded by hack/designs/agent-messaging.md §4.3
-   (see §7's note); its §4.4 also fixes `collect`'s hang on FAILED with a
-   settled-state wait.*
+   `waitFor(IDLE)`). *RETIRED for agent loops, BUILT for the hang
+   (agent-messaging.md §4.3–4.4, §10): lifecycle events delivered as
+   mailbox messages mean a supervisor never waits on N agents — spawn
+   subscribes the chief, completions and failures arrive as they happen,
+   none missed. `Agent.waitSettled` (returns on IDLE/FAILED/STOPPED, with
+   `Agent.error` carrying the why) replaced collect's waitFor(IDLE), which
+   hung forever on FAILED. A combinator for non-model orchestrator CODE
+   remains open there.*
 7. **CLI follow-ups**: re-enabling undo/fork in prompt mode (the
    "interrupts lose progress" rationale is retired — server-side
    interrupt is prefix-preserving); `startInteractivePromptMode`
@@ -1316,10 +1355,13 @@ rather than being renumbered away:
     steers an open turn or wakes the chief, with no polling and none of
     `collect`'s deadlock exposure. Could be a spawn opt-in
     (`notifyOnIdle: true`) or an engine-level watch verb on Agent.
-    *Designed: hack/designs/agent-messaging.md §4.3 takes the engine-level
-    verb (`Agent.notify(subscriber:, on:)`), generalized to FAILED (and
-    later WAITING) transitions, with events that never relaunch a stopped
-    subscriber; staff wires it at spawn.*
+    *BUILT as the engine-level verb (agent-messaging.md §4.3, §10):
+    `Agent.notify(subscriber:, on: [IDLE, FAILED])`, edge-triggered on the
+    projection with a subscribe-time level check (a worker settling before
+    the subscription lands is not missed), IDLE events carrying the final
+    reply and FAILED events the loop error, never relaunching a stopped
+    subscriber, queueing for one that has not started. staff wires it at
+    spawn, exactly as this item predicted.*
 12. **Harvest limitations worth revisiting** (§8.1): patch scoping
     matches on `DiffStat.path` only, so a renamed file's old path can be
     dropped from a scoped patch, leaving a half-applied rename
@@ -1569,33 +1611,33 @@ rather than being renumbered away:
     stack while the remainder applied on top is anchored live — same shape,
     bounded by the read epoch, and it does not match anything that was
     actually observed.
-15. **`TestStaff/TestAskChiefAndCollect` is broken and SKIPPED**: it arrived
-    broken from a session that stopped before resolving it, and it is still
-    unknown whether the test or the code is wrong — hence skipped rather
-    than deleted or "fixed" by adjusting the assertion until it passes. It
-    covers the whole orchestration loop (spawn → askChief steering into the
-    chief's open turn → collect), so leaving it red would mask real
-    regressions in everything around it. What a run establishes: the worker
-    fails at its first step with `message history diverges at index 0`, the
-    replayer expecting `SYSTEM` (the `workerPrompt`) where the live history
-    has `USER` (the opening task) — i.e. the worker's seed is one message
-    short at the front. The compose chain is not obviously at fault: the
-    trace shows `withSystemPrompt` applied (with the exact prompt text)
-    immediately before `spawn`, in the right order, and real staff workers
-    outside the test demonstrably DO carry their system prompt. So suspicion
-    falls on how a spawned agent's `Seed` materializes its messages versus
-    what the replayer compares against, not on `modules/staff`. Two
-    consequences if the code side turns out to be wrong: it would mean an
-    agent's recorded history can disagree with what it actually sends, which
-    §3.2's influence⇔append rule forbids; and the `replay/` provider's
-    byte-for-byte history matching would be the only thing that ever notices.
-    Worth pairing with item 10 (workers not knowing their own name), which
-    also wants to interpolate into `workerPrompt` and would move the same
-    seed boundary. *Note: the askChief flow it records is being redesigned
-    (hack/designs/agent-messaging.md §7 makes askChief non-blocking), so the
-    eventual re-recording follows that shape — but the seed-divergence
-    question here is independent of that design and must be answered on its
-    own before any recording is trusted either way.*
+15. **`TestStaff/TestAskChiefAndCollect` is broken and SKIPPED** —
+    **RESOLVED: the replayer was wrong, not the seed.** The suspicion this
+    item recorded ("how a spawned agent's `Seed` materializes its messages
+    versus what the replayer compares against") was half right: the seed was
+    fine, and the divergence was manufactured by `LLMReplayer.SendQuery`'s
+    leading-SYSTEM trim, which dropped the FIRST system message
+    unconditionally on the assumption that it was always the synthesized
+    default prompt recordings never contain. A worker composed with an
+    explicit system prompt and NO synthesized default lost its real
+    `workerPrompt` to the trim — hence exactly the recorded evidence, the
+    replayer expecting `SYSTEM` where the (trimmed) live history had `USER`.
+    §3.2's influence⇔append rule was never violated. Fixed in
+    core/llm_replay.go: the trim fires only when the leading system message
+    is not the recording's own (compared by stabilized text), so
+    default-prompt histories still trim and explicit-prompt histories keep
+    their seed. The test itself is replaced rather than un-skipped: its
+    blocking askChief flow no longer exists (hack/designs/agent-messaging.md
+    §7), and `TestStaff/TestAskAndReply` covers the event-driven loop end to
+    end, with a worker recording that leads with `workerPrompt` — pinning
+    the replayer fix in the same stroke. Item 10 (workers not knowing their
+    own name) still wants its `workerPrompt` interpolation and is now
+    unblocked: the seed boundary it moves is understood.
+    The original account, for the record: the worker failed at its first
+    step with `message history diverges at index 0`, the compose chain
+    showed `withSystemPrompt` applied correctly before `spawn`, and real
+    staff workers outside the test demonstrably carried their system
+    prompt — all consistent with the trim, none of it with a broken seed.
 16. **A staff-spawned worker could be unaddressable from the roster in the
     SAME session** (§3.3, §8) — distinct from item 13, which needs a restart.
     **RESOLVED.** The full account — root cause, fix, tests, and what is

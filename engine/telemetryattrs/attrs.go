@@ -53,6 +53,45 @@ const (
 	// provider-reported figure. (int64)
 	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens" //nolint:gosec // attribute name, not a credential
 
+	// LLM message origin (dagger.io/llm.origin.*).
+	//
+	// Stamped on a user-role LLM message span whose message arrived through
+	// an agent mailbox with recorded provenance
+	// (hack/designs/agent-messaging.md §4.1): who put it on the record, the
+	// sending (or observed) agent's identity, the message's short ref, and
+	// the ref of the message it answers. Absent on the user's own prompts —
+	// the unmarked common case. Frontends use these to attribute another
+	// agent's words to their sender and to render engine lifecycle events
+	// compactly, instead of drawing every consumed message as if the user
+	// typed it.
+
+	// LLMMessageOriginKindAttr is the origin kind token: one of
+	// LLMMessageOriginKindUser, LLMMessageOriginKindAgent, or
+	// LLMMessageOriginKindEvent. (string)
+	LLMMessageOriginKindAttr  = "dagger.io/llm.origin.kind"
+	LLMMessageOriginKindUser  = "USER"
+	LLMMessageOriginKindAgent = "AGENT"
+	LLMMessageOriginKindEvent = "EVENT"
+
+	// LLMMessageOriginAgentIDAttr is the sending (AGENT) or observed (EVENT)
+	// agent's spawn-minted instance ID — the same identity AgentIDAttr keys
+	// the roster on, so a frontend can correlate a message with its sender's
+	// roster entry. (string)
+	LLMMessageOriginAgentIDAttr = "dagger.io/llm.origin.agent.id"
+
+	// LLMMessageOriginAgentNameAttr is the display name of the agent behind
+	// LLMMessageOriginAgentIDAttr. (string)
+	LLMMessageOriginAgentNameAttr = "dagger.io/llm.origin.agent.name"
+
+	// LLMMessageOriginRefAttr is the message's short ref within the receiving
+	// agent's runtime, e.g. "#3" — the deterministic token replies name.
+	// (string)
+	LLMMessageOriginRefAttr = "dagger.io/llm.origin.ref"
+
+	// LLMMessageOriginReplyToAttr is the ref of the message this one answers,
+	// in the sender's own runtime, when it is a reply. (string)
+	LLMMessageOriginReplyToAttr = "dagger.io/llm.origin.reply_to"
+
 	// ServiceAttr marks the long-lived exec span of a started service. It is
 	// the authoritative "a service instance ran here" marker: the span exists
 	// iff the service actually started, is running exactly while the service
