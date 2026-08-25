@@ -89,6 +89,7 @@ module.exports = {
         "config/environments",
         "config/user",
         "config/module-wiring",
+        { type: "doc", id: "config/reference", label: "Reference" },
       ],
     },
 

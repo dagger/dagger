@@ -1391,6 +1391,12 @@
   to = "/getting-started/workspace-setup"
   status = 301
 
+# The workspace config schema page moved into the Configuration section.
+[[redirects]]
+  from = "/reference/configuration/workspace"
+  to = "/config/reference"
+  status = 301
+
 # Environments and module wiring moved out of the CLI section.
 [[redirects]]
   from = "/cli/environments"
