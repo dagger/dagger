@@ -32,3 +32,26 @@ func AgentFromContext(ctx context.Context) (dagql.ObjectResult[*Agent], bool) {
 	}
 	return dagql.ObjectResult[*Agent]{}, false
 }
+
+// CallerAgent resolves the agent on whose behalf the current execution runs:
+// the ambient loop context (a tool dispatched in-process by an agent's step),
+// or — for module functions and every nested API call they make — the calling
+// client's function-call record, which modfunc stamps with the ambient agent
+// at dispatch time. This is what lets the central enqueue path resolve
+// message provenance (hack/designs/agent-messaging.md §4.1) without any
+// forgeable "from" argument: a module cannot claim an agent it was not
+// actually called from.
+func CallerAgent(ctx context.Context) (dagql.ObjectResult[*Agent], bool) {
+	if agent, ok := AgentFromContext(ctx); ok {
+		return agent, true
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Agent]{}, false
+	}
+	fnCall, err := query.CurrentFunctionCall(ctx)
+	if err != nil || fnCall == nil {
+		return dagql.ObjectResult[*Agent]{}, false
+	}
+	return fnCall.CallerAgent()
+}
