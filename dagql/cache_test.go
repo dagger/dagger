@@ -7070,3 +7070,83 @@ func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
 	assert.Equal(t, candidates[2].ClientID, "alpha-client")
 	assert.Equal(t, candidates[2].Value, "alpha")
 }
+
+func TestCacheAddExplicitDependencyRecomputesAncestors(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("LATE_DEP")
+
+	type slotArgs struct {
+		Slot String `name:"slot"`
+	}
+	Fields[cacheTestQuery]{
+		NodeFunc("gatedLeafParent", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
+			if err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value:             1,
+				dependencyResults: []AnyResult{leaf},
+			})
+		}),
+		NodeFunc("plain", func(ctx context.Context, _ ObjectResult[cacheTestQuery], args slotArgs) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{Value: 2})
+		}),
+		NodeFunc("wrap", func(ctx context.Context, _ ObjectResult[cacheTestQuery], args slotArgs) (Result[*cacheTestObject], error) {
+			var inner Result[*cacheTestObject]
+			if err := srv.Select(ctx, srv.Root(), &inner, Selector{
+				Field: "plain",
+				Args:  []NamedInput{{Name: "slot", Value: args.Slot}},
+			}); err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value:             3,
+				dependencyResults: []AnyResult{inner},
+			})
+		}),
+	}.Install(srv)
+	assert.NilError(t, c.BindSessionResource(ctx, "test-session", "dagql-test-client", handle, "bound"))
+
+	sel := func(field, slot string) Result[*cacheTestObject] {
+		t.Helper()
+		var res Result[*cacheTestObject]
+		selector := Selector{Field: field}
+		if slot != "" {
+			selector.Args = []NamedInput{{Name: "slot", Value: NewString(slot)}}
+		}
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &res, selector))
+		return res
+	}
+
+	gated := sel("gatedLeafParent", "")
+	middle := sel("plain", "a")
+	top := sel("wrap", "a")
+	topShared := top.cacheSharedResult()
+	assert.Assert(t, topShared != nil && topShared.id != 0)
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	c.egraphMu.RLock()
+	topRequiresBefore := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !topRequiresBefore)
+
+	// The late dep on the already-published middle result must cascade to
+	// its ancestor: top depends on middle, middle now depends on the gated
+	// parent, so both stored sets must grow to {handle}.
+	assert.NilError(t, c.AddExplicitDependency(ctx, middle, gated, "test_late_dep"))
+
+	c.egraphMu.RLock()
+	topRequiresAfter := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, topRequiresAfter, "ancestor stored set went stale after a late explicit dependency")
+	assertCacheRequiredSessionResourcesExact(t, c)
+	cacheTestReleaseSession(t, c, ctx)
+}
