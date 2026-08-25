@@ -2106,3 +2106,28 @@ func (rt *AgentRuntime) WaitFor(ctx context.Context, want AgentState) error {
 		}
 	}
 }
+
+// WaitSettled blocks until the entry's projected state is settled — IDLE,
+// FAILED, or STOPPED — and returns which. This is the safe supervisor wait
+// (hack/designs/agent-messaging.md §4.4): waitFor(IDLE) on an agent whose
+// loop then fails hangs forever, because a FAILED projection never reaches
+// IDLE on its own. A settled wait cannot hang on an outcome.
+func (rt *AgentRuntime) WaitSettled(ctx context.Context) (AgentState, error) {
+	for {
+		rt.mu.Lock()
+		cur := rt.stateLocked()
+		ch := rt.stateChanged
+		rt.mu.Unlock()
+
+		switch cur {
+		case AgentStateIdle, AgentStateFailed, AgentStateStopped:
+			return cur, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", context.Cause(ctx)
+		case <-ch:
+		}
+	}
+}

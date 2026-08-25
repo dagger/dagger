@@ -109,6 +109,11 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("state").Doc(`The lifecycle state to wait for.`),
 			),
 
+		dagql.NodeFunc("waitSettled", s.waitSettled).
+			DoNotCache("Blocks on live runtime state.").
+			Doc(`Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.`,
+				`The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.`),
+
 		dagql.NodeFunc("stop", s.stop).
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.`).
@@ -372,6 +377,23 @@ func (s agentSchema) waitFor(ctx context.Context, parent dagql.ObjectResult[*cor
 		return res, err
 	}
 	if err := rt.WaitFor(ctx, args.State); err != nil {
+		return res, err
+	}
+	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) waitSettled(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	// Lazy entry, like waitFor: a never-started agent projects IDLE, which
+	// is settled, so this returns immediately rather than erroring.
+	rt, err := agents.GetOrCreate(ctx, parent)
+	if err != nil {
+		return res, err
+	}
+	if _, err := rt.WaitSettled(ctx); err != nil {
 		return res, err
 	}
 	return agentSelfID(ctx, parent)
