@@ -305,6 +305,23 @@ type agentWaitEdge struct {
 	why        string
 }
 
+// agentSubscription is one agent's standing interest in another's lifecycle
+// (hack/designs/agent-messaging.md §4.3): the states that fire an event
+// message, and the last state this subscriber was notified at — which is
+// what makes the level check at subscribe time and the edge trigger at
+// transition time compose without double-firing.
+type agentSubscription struct {
+	states map[AgentState]bool
+	last   AgentState
+}
+
+// agentEvent is one queued lifecycle notification, waiting on the watched
+// runtime's FIFO drain for delivery into the subscriber's mailbox.
+type agentEvent struct {
+	subscriberKey string
+	text          string
+}
+
 // NewAgentRuntimes returns a new, empty AgentRuntimes registry.
 func NewAgentRuntimes() *AgentRuntimes {
 	return &AgentRuntimes{
@@ -578,8 +595,9 @@ func newAgentRuntime(ars *AgentRuntimes, key string, agent dagql.ObjectResult[*A
 		// wake has a single slot: it only needs to record "something changed,
 		// re-check" (a stop request or a mailbox enqueue), not carry
 		// payloads — the loop re-reads the facts after every wake.
-		wake:         make(chan struct{}, 1),
-		stateChanged: make(chan struct{}),
+		wake:           make(chan struct{}, 1),
+		stateChanged:   make(chan struct{}),
+		lastEventState: AgentStateIdle,
 	}
 }
 
@@ -731,6 +749,159 @@ func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (st
 	return fmt.Sprintf("#%d", rec.seq), nil
 }
 
+// Notify subscribes the subscriber agent to the target agent's lifecycle
+// (hack/designs/agent-messaging.md §4.3): each transition of the target's
+// projected state into one of the given states enqueues an event-origin
+// message to the subscriber's mailbox — steering its open turn or waking it
+// if idle, exactly like any other message. Capability-based: the caller must
+// hold both handles. Idempotent per subscriber; a re-subscribe replaces the
+// state set.
+//
+// Both entries are created if absent: the target's, so there is a lifecycle
+// to watch, and the subscriber's, so delivery always has a mailbox to land
+// in — an event for a subscriber that has not started yet queues until
+// something starts it, rather than being dropped. (Only a STOPPED subscriber
+// drops events: relaunch-by-notification would undo a dismissal.)
+//
+// A level check fires immediately when the target is ALREADY in a subscribed
+// state, closing the race where a fast worker settles between its spawn and
+// the subscription landing — an edge trigger alone would miss that
+// completion forever.
+func (ars *AgentRuntimes) Notify(ctx context.Context, target, subscriber dagql.ObjectResult[*Agent], states []AgentState) error {
+	rt, err := ars.GetOrCreate(ctx, target)
+	if err != nil {
+		return err
+	}
+	sub, err := ars.GetOrCreate(ctx, subscriber)
+	if err != nil {
+		return err
+	}
+	if sub.key == rt.key {
+		return fmt.Errorf("agent %q cannot subscribe to its own lifecycle", rt.name)
+	}
+	set := make(map[AgentState]bool, len(states))
+	for _, state := range states {
+		set[state] = true
+	}
+	rt.mu.Lock()
+	if rt.subs == nil {
+		rt.subs = map[string]*agentSubscription{}
+	}
+	cur := rt.stateLocked()
+	rt.subs[sub.key] = &agentSubscription{states: set, last: cur}
+	if set[cur] {
+		rt.queueEventLocked(sub.key, cur)
+	}
+	rt.mu.Unlock()
+	return nil
+}
+
+// queueEventsLocked fans one projection transition out to every subscriber
+// interested in the new state. Must be called with rt.mu held.
+func (rt *AgentRuntime) queueEventsLocked(state AgentState) {
+	if len(rt.subs) == 0 {
+		return
+	}
+	// Deterministic fan-out order, for the sake of tests and sanity.
+	for _, subKey := range slices.Sorted(maps.Keys(rt.subs)) {
+		sub := rt.subs[subKey]
+		if sub.last == state {
+			// Already notified at this level (the subscribe-time check).
+			continue
+		}
+		sub.last = state
+		if !sub.states[state] {
+			continue
+		}
+		rt.queueEventLocked(subKey, state)
+	}
+}
+
+// queueEventLocked appends one event to the FIFO and ensures a drainer is
+// running. Must be called with rt.mu held; delivery happens outside it.
+func (rt *AgentRuntime) queueEventLocked(subscriberKey string, state AgentState) {
+	rt.eventQueue = append(rt.eventQueue, agentEvent{
+		subscriberKey: subscriberKey,
+		text:          rt.eventTextLocked(state),
+	})
+	if !rt.eventDispatchRunning {
+		rt.eventDispatchRunning = true
+		go rt.dispatchEvents()
+	}
+}
+
+// eventTextLocked renders the message body for a lifecycle event. IDLE
+// carries the turn's final reply — the payload a supervisor's collect
+// exists to fetch — and FAILED carries the loop error. Must be called with
+// rt.mu held.
+func (rt *AgentRuntime) eventTextLocked(state AgentState) string {
+	switch state {
+	case AgentStateIdle:
+		text := fmt.Sprintf("Agent %q is now idle.", rt.name)
+		if last := rt.last.Self(); last != nil {
+			if reply, found := last.LastReply(); found {
+				text += "\n\nIts final reply:\n\n" + reply
+			}
+		}
+		return text
+	case AgentStateFailed:
+		text := fmt.Sprintf("Agent %q FAILED", rt.name)
+		if rt.loopErr != nil {
+			text += ": " + rt.loopErr.Error()
+		}
+		return text + "\n\nSending to it (or resuming it) retries from its last committed step."
+	case AgentStateStopped:
+		return fmt.Sprintf("Agent %q stopped.", rt.name)
+	default:
+		return fmt.Sprintf("Agent %q is now %s.", rt.name, state)
+	}
+}
+
+// dispatchEvents drains the event FIFO, delivering each into its
+// subscriber's mailbox. Runs without rt.mu across deliveries (delivery takes
+// the SUBSCRIBER's entry mutex — two agents watching each other must not
+// order lock acquisition), single-flight so events per watched agent arrive
+// in transition order.
+func (rt *AgentRuntime) dispatchEvents() {
+	for {
+		rt.mu.Lock()
+		if len(rt.eventQueue) == 0 {
+			rt.eventDispatchRunning = false
+			rt.mu.Unlock()
+			return
+		}
+		ev := rt.eventQueue[0]
+		rt.eventQueue = rt.eventQueue[1:]
+		rt.mu.Unlock()
+		rt.ars.deliverEvent(rt, ev)
+	}
+}
+
+// deliverEvent enqueues one lifecycle event into the subscriber's mailbox
+// with an EVENT origin naming the watched agent. Deliberately weaker than
+// send (hack/designs/agent-messaging.md §4.3): a missing subscriber entry
+// drops the event, and a STOPPED subscriber drops it too rather than being
+// relaunched — resurrection-by-notification would undo an explicit
+// dismissal. A live subscriber's loop is woken by the enqueue itself; a
+// never-started one keeps the event queued for whatever starts it.
+func (ars *AgentRuntimes) deliverEvent(source *AgentRuntime, ev agentEvent) {
+	ars.mu.Lock()
+	subscriber := ars.entries[ev.subscriberKey]
+	ars.mu.Unlock()
+	if subscriber == nil {
+		return
+	}
+	origin := &LLMMessageOrigin{
+		Kind:      LLMMessageOriginEvent,
+		AgentID:   source.key,
+		AgentName: source.name,
+	}
+	if _, err := subscriber.enqueue(ev.text, origin); err != nil {
+		// errAgentEventDropped: the subscriber is stopped, by design.
+		return
+	}
+}
+
 // LookupMessage returns the identity-only handle for a message already
 // enqueued into the given agent's permanent runtime record. This is the
 // runtime side of Agent.message — the lookup field send re-execs through to
@@ -873,6 +1044,20 @@ type AgentRuntime struct {
 	// wake, so spurious pokes are harmless.
 	wake chan struct{}
 
+	// Lifecycle subscriptions (hack/designs/agent-messaging.md §4.3),
+	// guarded by mu: subs maps a subscriber's instance ID to the states it
+	// wants event messages for; lastEventState edge-triggers emission on the
+	// projection (transitionLocked fires on every fact change, most of which
+	// move nothing). eventQueue and eventDispatchRunning implement a
+	// mutex-guarded FIFO drain: delivery must happen OUTSIDE mu — it takes
+	// the subscriber's entry mutex, and two agents watching each other would
+	// otherwise deadlock on lock order — while a single drainer preserves
+	// event order per watched agent.
+	subs                 map[string]*agentSubscription
+	lastEventState       AgentState
+	eventQueue           []agentEvent
+	eventDispatchRunning bool
+
 	// stateChanged is closed and replaced on every fact transition, so
 	// WaitFor can block on transitions without polling.
 	stateChanged chan struct{}
@@ -901,6 +1086,19 @@ func (rt *AgentRuntime) Name() string {
 	return rt.name
 }
 
+// LoopError returns why the loop failed, or "" while it has not — the
+// FAILED tombstone's error, as a plain fact for clients and supervisors
+// (Agent.error). A sealed tombstone keeps the fact even though the
+// projection reads STOPPED.
+func (rt *AgentRuntime) LoopError() string {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.loopErr == nil {
+		return ""
+	}
+	return rt.loopErr.Error()
+}
+
 // transitionLocked applies a fact mutation and broadcasts it to any WaitFor
 // blocked on stateChanged. Must be called with rt.mu held.
 //
@@ -912,6 +1110,11 @@ func (rt *AgentRuntime) transitionLocked(mut func()) {
 	close(rt.stateChanged)
 	rt.stateChanged = make(chan struct{})
 	rt.publishStateLocked()
+	state := rt.stateLocked()
+	if state != rt.lastEventState {
+		rt.lastEventState = state
+		rt.queueEventsLocked(state)
+	}
 }
 
 // publishStateLocked emits a state record when the PROJECTED state has
