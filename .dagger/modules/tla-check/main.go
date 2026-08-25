@@ -72,10 +72,10 @@ var expectedOutcome = map[string]string{
 	// from the true transitive requirement. importPersistedState
 	// recomputes it over c.resultsByID in Go map order, so a parent
 	// visited before its dependency ends with an empty set
-	// (cache_persistence_import.go:360, recompute at cache.go:556); and
+	// (cache_persistence_import.go:359, recompute at cache.go:556); and
 	// ensurePersistedHitValueLoaded overwrites it from the decoded value,
 	// which knows only its own handle, dropping a non-leaf's
-	// dependency-derived requirement (cache_persistence_import.go:736-740).
+	// dependency-derived requirement (cache_persistence_import.go:736-741).
 	// Both exist unchanged on upstream/main; see the config header.
 	"resources_restart": "RequiredExact",
 
