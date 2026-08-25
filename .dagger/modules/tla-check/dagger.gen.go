@@ -254,27 +254,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		return dag.Module().
 			WithDescription("TLA+ model checking for the dagql cache spec (dagql/tla).\n\nRuns every TLC configuration of CacheLifecycle.tla. Green configurations\nare regression gates: any violation fails the check. A configuration may\nname an expected invariant only while it deliberately tracks an accepted\nmodel finding.\n").
 			WithObject(
-				dag.TypeDef().WithObject("TlaCheck", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 91, 6)}).
+				dag.TypeDef().WithObject("TlaCheck", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 90, 6)}).
 					WithFunction(
 						dag.Function("CacheLifecycle",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.").
-							WithSourceMap(dag.SourceMap("main.go", 116, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 115, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("One",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("One runs a single TLC configuration and returns the raw TLC output,\nusing the same pinned jar and invocation as the CacheLifecycle check.\nUnlike the check, it applies no expectation: violations come back in\nthe output for the caller to read.\n\nWith invariant set, the configuration's INVARIANTS line is replaced by\nthat single invariant, the specification is forced to the safety-only\nSpec, and PROPERTY lines are dropped, so one question runs in\nisolation. With define also set, the given TLA+ operator definition is\nappended to the spec first; that runs a scratch probe invariant (for\nexample a reachability probe expected to violate) without editing the\nrepository.").
-							WithSourceMap(dag.SourceMap("main.go", 169, 1)).
-							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 172, 2)}).
-							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 175, 2)}).
-							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 178, 2)})).
-					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The dagql/tla spec directory.", SourceMap: dag.SourceMap("main.go", 93, 2)}).
+							WithSourceMap(dag.SourceMap("main.go", 168, 1)).
+							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 171, 2)}).
+							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 174, 2)}).
+							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 177, 2)})).
+					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The dagql/tla spec directory.", SourceMap: dag.SourceMap("main.go", 92, 2)}).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("TlaCheck")).
-							WithSourceMap(dag.SourceMap("main.go", 96, 1)).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 96, 10)}))), nil
+							WithSourceMap(dag.SourceMap("main.go", 95, 1)).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 95, 10)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
