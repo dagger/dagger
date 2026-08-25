@@ -54,8 +54,8 @@ func TestRemoveKeyClearsDefaultModel(t *testing.T) {
 	}
 }
 
-// TestApplyLLMConfigEnvOpenAISlot verifies that when both openai and
-// openrouter are enabled, the shared OPENAI_* variables are owned by exactly
+// TestApplyLLMConfigEnvOpenAISlot verifies that when openai, openrouter and
+// orcarouter are enabled, the shared OPENAI_* variables are owned by exactly
 // one provider, chosen deterministically rather than by map iteration order.
 func TestApplyLLMConfigEnvOpenAISlot(t *testing.T) {
 	for _, tc := range []struct {
@@ -69,6 +69,12 @@ func TestApplyLLMConfigEnvOpenAISlot(t *testing.T) {
 			defaultProvider: "openrouter",
 			wantKey:         "sk-openrouter",
 			wantBaseURL:     "https://openrouter.ai/api/v1",
+		},
+		{
+			name:            "default orcarouter wins the slot",
+			defaultProvider: "orcarouter",
+			wantKey:         "sk-orcarouter",
+			wantBaseURL:     "https://api.orcarouter.ai/v1",
 		},
 		{
 			name:            "openai wins when default is neither",
@@ -103,6 +109,7 @@ func TestApplyLLMConfigEnvOpenAISlot(t *testing.T) {
 					Providers: map[string]llmconfig.Provider{
 						"openai":     {APIKey: "sk-openai", Enabled: true},
 						"openrouter": {APIKey: "sk-openrouter", Enabled: true},
+						"orcarouter": {APIKey: "sk-orcarouter", Enabled: true},
 						"anthropic":  {APIKey: "sk-anthropic", Enabled: true},
 					},
 				},

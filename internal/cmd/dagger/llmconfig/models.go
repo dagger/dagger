@@ -48,6 +48,7 @@ var providerEntries = []ProviderEntry{
 	{"OpenAI (API key)", "openai", "openai", false},
 	{"OpenAI Codex (ChatGPT subscription)", "openai-codex", "openai-codex", true},
 	{"OpenRouter", "openrouter", "openrouter", false},
+	{"OrcaRouter", "orcarouter", "orcarouter", false},
 }
 
 // ProviderEntries returns the ordered list of provider options for setup UIs.
@@ -62,6 +63,7 @@ var catwalkProviderID = map[string]catwalk.InferenceProvider{
 	"openai-codex": catwalk.InferenceProviderOpenAI,
 	"google":       catwalk.InferenceProviderGemini,
 	"openrouter":   catwalk.InferenceProviderOpenRouter,
+	"orcarouter":   catwalk.InferenceProviderOpenRouter,
 }
 
 var (

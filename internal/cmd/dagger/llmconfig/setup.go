@@ -220,6 +220,9 @@ func setupAPIKeyProvider(ctx context.Context, ph PromptHandler, provider string)
 	if provider == "openrouter" {
 		providerCfg.BaseURL = "https://openrouter.ai/api/v1"
 	}
+	if provider == "orcarouter" {
+		providerCfg.BaseURL = "https://api.orcarouter.ai/v1"
+	}
 
 	defaultModel := DefaultModelForProvider(provider)
 
@@ -458,6 +461,8 @@ func promptLiteralKey(ctx context.Context, ph PromptHandler, provider string) (s
 	switch provider {
 	case "openrouter":
 		signupURL = "https://openrouter.ai/keys"
+	case "orcarouter":
+		signupURL = "https://www.orcarouter.ai/console"
 	case "anthropic":
 		signupURL = "https://console.anthropic.com/settings/keys"
 	case "openai":
