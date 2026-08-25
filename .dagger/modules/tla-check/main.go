@@ -34,9 +34,11 @@ const temporalOutcome = "temporal"
 // a temporal property must be violated; any other value names the one
 // invariant that must be violated.
 var expectedOutcome = map[string]string{
-	// green: regression gates over the modeled cache behavior. (The former
-	// core configuration is subsumed by resources: same bounds, every core
-	// invariant, strictly more behavior.)
+	// green: regression gates over the modeled cache behavior. (The
+	// former core configuration is folded into resources: same bounds,
+	// strictly more behavior, every core invariant except
+	// NoSpuriousErrors, which awaits a ruling on joiners inheriting a
+	// released leader's publication failure; see the property comment.)
 	"release_prune":     "",
 	"liveness":          "",
 	"lazy":              "",
