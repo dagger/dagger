@@ -81,13 +81,13 @@ module.exports = {
       label: "Configuration",
       link: {
         type: "doc",
-        id: "configuration/index",
+        id: "config/index",
       },
       collapsible: true,
       collapsed: true,
       items: [
-        "configuration/environments",
-        "configuration/module-wiring",
+        "config/environments",
+        "config/module-wiring",
       ],
     },
 

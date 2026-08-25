@@ -1394,12 +1394,12 @@
 # Environments and module wiring moved out of the CLI section.
 [[redirects]]
   from = "/cli/environments"
-  to = "/configuration/environments"
+  to = "/config/environments"
   status = 301
 
 [[redirects]]
   from = "/cli/module-wiring"
-  to = "/configuration/module-wiring"
+  to = "/config/module-wiring"
   status = 301
 
 # The installation page moved under the CLI section.
