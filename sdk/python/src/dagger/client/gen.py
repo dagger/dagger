@@ -15665,6 +15665,28 @@ class Workspace(Type):
         _ctx = self._select("withConfigValue", _args)
         return Workspace(_ctx)
 
+    def with_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory merged into the given path,
+        without mutating the source.
+
+        Anything already at the path stays, and files the source carries win,
+        as with Directory.withDirectory. Use withNewDirectory to replace the
+        path instead.
+
+        Parameters
+        ----------
+        path:
+            Path to merge into. Relative paths resolve from the workspace cwd.
+        source:
+            Directory to merge there.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withDirectory", _args)
+        return Workspace(_ctx)
+
     def with_init_client(
         self,
         path: str,
@@ -15837,16 +15859,19 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def with_new_directory(self, path: str, source: Directory) -> Self:
-        """Return this workspace with a directory added, without mutating the
-        source.
+        """Return this workspace with the given path replaced by a directory,
+        without mutating the source.
+
+        The source becomes the entire contents of the path: anything already
+        there that the source does not carry is removed. Use withDirectory to
+        keep it instead.
 
         Parameters
         ----------
         path:
-            Path of the added directory. Relative paths resolve from the
-            workspace cwd.
+            Path to replace. Relative paths resolve from the workspace cwd.
         source:
-            Directory to add.
+            Directory to write there.
         """
         _args = [
             Arg("path", path),

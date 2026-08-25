@@ -16748,6 +16748,20 @@ func (r *Workspace) WithConfigValue(key string, value string, opts ...WorkspaceW
 	}
 }
 
+// Return this workspace with a directory merged into the given path, without mutating the source.
+//
+// Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithInitClientOpts contains options for Workspace.WithInitClient
 type WorkspaceWithInitClientOpts struct {
 	// SDK-specific init arguments.
@@ -16899,7 +16913,9 @@ func (r *Workspace) WithMountedFile(path string, source *File) *Workspace {
 	}
 }
 
-// Return this workspace with a directory added, without mutating the source.
+// Return this workspace with the given path replaced by a directory, without mutating the source.
+//
+// The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
 func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
 	assertNotNil("source", source)
 	q := r.query.Select("withNewDirectory")
