@@ -191,6 +191,18 @@ func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
 	return m.selfLLM
 }
 
+// toolCallContext binds the LLM's Workspace into a tool invocation. Every
+// transport must call this before dispatch: in-process tool calls and MCP over
+// stdio inherit their caller's context, while Streamable HTTP starts from a
+// transport request context and would otherwise fall back to the session's
+// ambient currentWorkspace.
+func (m *MCP) toolCallContext(ctx context.Context) context.Context {
+	if m.workspace.Self() == nil {
+		return ctx
+	}
+	return WorkspaceToContext(ctx, m.workspace)
+}
+
 func (m *MCP) Returned() bool {
 	return m.returned
 }
@@ -1185,12 +1197,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		_ = stdio.Close()
 	}()
 
-	toolCtx := ctx
-	if m.workspace.Self() != nil {
-		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
-		// Workspace-typed args resolve against it, not the ambient workspace.
-		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
-	}
+	toolCtx := m.toolCallContext(ctx)
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
 		return toolErrorMessage(err), true

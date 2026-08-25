@@ -16,13 +16,22 @@ import (
 )
 
 type testLLMToolSource struct {
-	mu        sync.Mutex
-	toolLoads int
-	called    chan any
-	callCtx   chan context.Context
+	mu               sync.Mutex
+	toolLoads        int
+	toolContextValue string
+	called           chan any
+	callCtx          chan context.Context
 }
 
 type testLLMToolContextKey struct{}
+type testLLMToolCallContextKey struct{}
+
+func (s *testLLMToolSource) toolCallContext(ctx context.Context) context.Context {
+	s.mu.Lock()
+	value := s.toolContextValue
+	s.mu.Unlock()
+	return context.WithValue(ctx, testLLMToolCallContextKey{}, value)
+}
 
 func (s *testLLMToolSource) DefaultSystemPrompt(context.Context) (string, error) {
 	return "test instructions", nil
@@ -67,7 +76,11 @@ func (s *testLLMToolSource) loadCount() int {
 
 func newTestLLMToolServer(t *testing.T) (*LLMToolServer, *testLLMToolSource) {
 	t.Helper()
-	source := &testLLMToolSource{called: make(chan any, 1), callCtx: make(chan context.Context, 1)}
+	source := &testLLMToolSource{
+		toolContextValue: "tool context",
+		called:           make(chan any, 1),
+		callCtx:          make(chan context.Context, 1),
+	}
 	ctx := context.WithValue(t.Context(), testLLMToolContextKey{}, "server context")
 	server, err := newLLMToolServer(ctx, source)
 	require.NoError(t, err)
@@ -76,6 +89,15 @@ func newTestLLMToolServer(t *testing.T) (*LLMToolServer, *testLLMToolSource) {
 
 func TestLLMToolServerStreamableHTTP(t *testing.T) {
 	server, source := newTestLLMToolServer(t)
+	var loadsAfterCall int
+	server.withCallMiddleware(func(ctx context.Context, next llmToolCallHandler) (*mcp.CallToolResult, error) {
+		source.mu.Lock()
+		source.toolContextValue = "bridged tool context"
+		source.mu.Unlock()
+		result, err := next(ctx)
+		loadsAfterCall = source.loadCount()
+		return result, err
+	})
 	httpServer := httptest.NewServer(server.StreamableHTTPHandler())
 	t.Cleanup(httpServer.Close)
 
@@ -112,8 +134,12 @@ func TestLLMToolServerStreamableHTTP(t *testing.T) {
 	require.Truef(t, ok, "unexpected MCP content type %T", result.Content[0])
 	require.JSONEq(t, `{"echo":"hello"}`, text.Text)
 	require.Equal(t, map[string]any{"message": "hello"}, <-source.called)
-	require.Equal(t, "server context", (<-source.callCtx).Value(testLLMToolContextKey{}))
+	callCtx := <-source.callCtx
+	require.Equal(t, "server context", callCtx.Value(testLLMToolContextKey{}))
+	require.Equal(t, "bridged tool context", callCtx.Value(testLLMToolCallContextKey{}),
+		"tool context must be derived after the workspace bridge pulls native edits")
 	require.Equal(t, 2, source.loadCount(), "tools should refresh after a successful call")
+	require.Equal(t, 2, loadsAfterCall, "middleware must wrap tool refresh as well as dispatch")
 }
 
 func TestLLMToolServerServeStdio(t *testing.T) {

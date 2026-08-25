@@ -16,7 +16,7 @@ workspace, message, lifecycle, and telemetry model.
 - [Turn lifecycle](#turn-lifecycle)
 - [Message compatibility](#message-compatibility)
 - [Live telemetry](#live-telemetry)
-- [HTTP MCP](#http-mcp)
+- [Dagger tool transport](#dagger-tool-transport)
 - [Workspace synchronization](#workspace-synchronization)
 - [Implementation](#implementation)
 - [Failure and cancellation](#failure-and-cancellation)
@@ -66,13 +66,13 @@ constraints:
    interpret them as its canonical mailbox or transcript.
 5. **The workspace has two representations.** Dagger owns an immutable
    `Workspace`; native CLI tools operate on a mutable directory inside the
-   harness container. The two must be synchronized at every Dagger MCP boundary
+   harness container. The two must be synchronized at every Dagger tool boundary
    and at every checkpoint.
 6. **Runtime and checkpoint have different lifetimes.** The CLI process, open
-   pipes, active native turn, in-memory native queue, HTTP listener, and mutable
-   worktree are session-scoped runtime state. Portable history is an immutable
-   `LLM`; high-fidelity cold continuation additionally includes an opaque
-   container/native-session checkpoint.
+   pipes, active native turn, in-memory native queue, tool callback or listener,
+   and mutable worktree are session-scoped runtime state. Portable history is an
+   immutable `LLM`; high-fidelity cold continuation additionally includes an
+   opaque container/native-session checkpoint.
 7. **Commits are atomic.** Projected messages, workspace/tool state, native
    session files, and the cursor describing what the native session has consumed
    may not advance independently. Native execution must be quiescent or
@@ -99,17 +99,23 @@ constraints:
     be controlled exclusively by its parent and reject direct user input.
     Dagger must preserve that capability boundary instead of advertising every
     observed native thread as an ordinary sendable Agent.
+12. **Dagger tools must be active, not merely searchable.** Current Codex forces
+    MCP tools behind its internal deferred-tool catalog even when the MCP server
+    does not advertise `defer_loading: true`. A natural prompt such as “list the
+    checks” can therefore miss `editor_listChecks` and choose a visible skill
+    instead. Harnesses should use the vendor's direct dynamic-tool protocol when
+    available and explicitly disable per-tool deferral.
 
 Trying to disable every built-in native tool is unnecessary and, for Codex, not
-a stable supported configuration. The container sandbox, MCP capability set,
-workspace boundary, and secret policy are the controls.
+a stable supported configuration. The container sandbox, Dagger tool capability
+set, workspace boundary, and secret policy are the controls.
 
 ## Solution
 
 `LLM.withHarness` attaches a vendor kind and a harness container to an immutable
 conversation. Spawning that value creates an ordinary Dagger `Agent`. When the
 agent starts, its runtime starts one live harness process and keeps the process,
-its stdio protocol, HTTP MCP endpoint, and mutable workspace open while the
+its stdio protocol, Dagger tool transport, and mutable workspace open while the
 agent is active.
 
 The driver translates the Dagger Agent protocol onto the native control plane:
@@ -140,10 +146,10 @@ relevant turn, commit a checkpoint, and stop the runtime. They remain blocking
 API sugar. A named `Agent` keeps the harness hot and exposes the full asynchronous
 control plane.
 
-A runtime-scoped workspace bridge preserves the original design's Streamable
-HTTP MCP and bidirectional synchronization. Native tools use the mounted
-working directory; Dagger tools call the live `MCP` through the local HTTP
-server.
+A runtime-scoped workspace bridge is independent of the vendor tool transport.
+Native tools use the mounted working directory; directly registered vendor tools
+or an MCP compatibility endpoint dispatch through the same live `MCP` and the
+same bidirectional synchronization boundary.
 
 ## Core API
 
@@ -650,7 +656,8 @@ Hot, session-scoped state includes:
 - Dagger's canonical mailbox and unresolved `AgentMessage` records;
 - a hot correlation ledger mapping each opaque Dagger ID to its Codex string or
   generated/derived Claude UUID, plus acknowledgement and lifecycle evidence;
-- the HTTP MCP listener and bearer token;
+- the vendor's direct Dagger tool callback, or an HTTP MCP listener and bearer
+  token when direct registration is unavailable;
 - the live `*MCP`, workspace bridge, and mutable working directory; and
 - staged events and filesystem changes not yet checkpointed.
 
@@ -766,7 +773,7 @@ A hot Agent performs the following sequence:
 
 1. Verify the checkpoint cursor against `LLM.Messages`.
 2. Resolve `MCP.workspace`, create the mutable working copy, and start the
-   runtime-scoped workspace bridge and local Streamable HTTP MCP endpoint.
+   runtime-scoped workspace bridge and selected Dagger tool transport.
 3. Start the native control process with stdin kept open.
 4. Resume/fork native state when the checkpoint is valid, otherwise create a
    native session and import the portable history.
@@ -774,8 +781,8 @@ A hot Agent performs the following sequence:
    correlation ID; keep each record at the head through command acceptance until
    definitive lifecycle proves consumption or cancellation.
 6. Translate typed native notifications into live display events and staged
-   `LLMMessage` values while native and MCP tools execute.
-7. At each Dagger MCP call, pull native workspace edits, execute the tool, and
+   `LLMMessage` values while native and Dagger tools execute.
+7. At each Dagger tool call, pull native workspace edits, execute the tool, and
    push Dagger workspace edits back before replying.
 8. On native turn termination, reconcile every correlated message and resolve
    awaits for messages consumed by that turn.
@@ -794,6 +801,21 @@ steer, observe, interrupt, and reconcile while that turn is active.
 The Codex adapter launches `codex app-server` and speaks JSON-RPC over JSONL
 stdio for the life of the Agent runtime. It consumes typed turn, item, and delta
 notifications rather than treating stdout as a final answer.
+
+For a fresh thread, the adapter also supplies the live Dagger tool schemas in
+`thread/start.dynamicTools`. Every function sets `deferLoading: false`, so tools
+such as `editor_listChecks` are present in the model's initial active set rather
+than hidden behind Codex's MCP tool search. App-server persists these definitions
+in rollout metadata and restores them on ordinary resume. When the model calls a
+dynamic tool, app-server sends the client a reverse `item/tool/call` JSON-RPC
+request; the adapter answers it over the same stream after dispatching through
+the common Dagger tool runtime and workspace bridge.
+
+The active tool schema is part of the native checkpoint contract. If rebound
+objects or a returned `LLM` change the advertised names or schemas, resume must
+either replace the dynamic definitions through a proven vendor capability or
+reconstruct a thread from the committed portable history. It must not silently
+resume a native thread with a stale catalog.
 
 Startup chooses one thread operation:
 
@@ -947,7 +969,7 @@ An ordered accumulator projects:
 
 - assistant text to `LLMContentText`;
 - observable reasoning to `LLMContentThinking`;
-- native and MCP calls to `LLMContentToolCall`;
+- native and Dagger calls to `LLMContentToolCall`;
 - results to user-role `LLMContentToolResult` messages; and
 - reported usage to the corresponding assistant response, or the final response
   when the CLI reports only turn totals.
@@ -956,11 +978,13 @@ Observable intermediate calls and results remain in history. This keeps
 `messages`, `transcript`, `lastReply`, replay, provider switching, and persisted
 LLM IDs as close as possible to provider-backed evaluation.
 
-Dagger MCP calls may appear in both the vendor stream and HTTP server. The HTTP
-server is authoritative for execution and result. Correlation uses native call
-IDs and request metadata; ordered name/arguments matching is only a presentation
-fallback and never message-delivery evidence. Native tool calls come from the
-vendor stream.
+Direct Dagger calls have two correlated protocol surfaces: vendor
+`dynamicToolCall` lifecycle items drive presentation, while the reverse
+`item/tool/call` request is authoritative for execution and result. MCP fallback
+calls may similarly appear in both the vendor stream and HTTP server, with HTTP
+authoritative. Correlation uses native call IDs and request metadata; ordered
+name/arguments matching is only a presentation fallback and never
+message-delivery evidence. Native tool calls come from the vendor stream.
 
 Materialization uses shared response/tool-result selector helpers, followed by
 workspace, rebound-tool, and harness-checkpoint selectors. A malformed or
@@ -983,7 +1007,7 @@ projection of every parsed native event into the richer LLM display remains in
 progress.
 
 The runtime now projects submitted prompts, streamed text and thinking, native
-and MCP tool calls, and tool results through the existing `displayPhases`
+and Dagger tool calls, and tool results through the existing `displayPhases`
 implementation. It emits the same `LLMRole`, `LLMTool`, message, call-digest,
 and Agent identity attributes as provider-backed evaluation, so those spans
 participate in the existing reveal-independent conversation report and live
@@ -1014,17 +1038,19 @@ message lifecycle events add correlation attributes for Dagger message ID,
 native turn/command ID, delivery, and terminal status without exposing prompt
 content.
 
-Dagger MCP execution is parented beneath its tool-call span and includes bridge
-pull, evaluation, and push. The existing per-exec OTLP setup remains active for
-native subprocess telemetry. Structured CLI protocol JSON is intercepted before
-ordinary stdio rendering so it is not dumped into user-facing output.
+Dagger execution, whether reached by a direct dynamic-tool callback or MCP, is
+parented beneath its tool-call span and includes bridge pull, evaluation, and
+push. The existing per-exec OTLP setup remains active for native subprocess
+telemetry. Structured CLI protocol JSON is intercepted before ordinary stdio
+rendering so it is not dumped into user-facing output.
 
-An MCP tool result is a content envelope, not itself display text. The live
-tool-call span renders text blocks directly and uses bounded semantic summaries
-for image, audio, and resource blocks. `structuredContent`, `_meta`, and the raw
-vendor envelope remain available in the encapsulated app-server protocol logs,
-but are not serialized into the user-facing stdout log. Error payloads render
-only their message while retaining the tool span's error status.
+A tool result is a content envelope, not itself display text. The live tool-call
+span renders text blocks directly and uses bounded semantic summaries for image,
+audio, and resource blocks. MCP `structuredContent` and `_meta`, dynamic-tool
+`contentItems`, and the raw vendor envelope remain available in encapsulated
+protocol logs, but the envelope is not serialized into user-facing stdout.
+Error payloads render only their message while retaining the tool span's error
+status.
 
 Agent state and snapshot telemetry retain current semantics. `RUNNING` reflects
 real native activity; `PAUSED` is emitted only after the process reaches the
@@ -1032,73 +1058,91 @@ park; `IDLE` follows terminal reconciliation and an atomic checkpoint. Snapshot
 records identify the last committed LLM, not an accumulator containing partial
 uncheckpointed deltas.
 
-## HTTP MCP
+## Dagger tool transport
 
-A hot harness receives one generated Streamable HTTP MCP endpoint containing all
-tools from the live `MCP.Tools` set: bound object tools, skills, builtins, and
-external MCP proxies.
-
-That sentence is the target contract, not current behavior. Core currently
-registers the authenticated Streamable HTTP handler and makes a container-local
-forwarding URL available in `LLMHarnessStart`, but neither adapter configures its
-native CLI to use that URL/token. The harness startup path also constructs the
-server directly from `llm.mcp` without applying the implicit workspace-module
-binding performed by `LLM.MCP`. Consequently, the native model currently sees
-none of the workspace's Dagger tools. Both tool resolution and vendor MCP
-configuration must be completed before the endpoint is usable.
-
-The existing `mark3labs/mcp-go` dependency provides the handler:
+A hot harness exposes all tools from the live `MCP.Tools` set: bound object
+tools, skills, builtins, workspace-module tools, and external MCP proxies. Tool
+generation, dispatch, state-return handling, result bounding, telemetry, and
+workspace synchronization belong to one transport-neutral runtime:
 
 ```go
-handler := mcpserver.NewStreamableHTTPServer(
-    server,
-    mcpserver.WithStateful(true),
-)
-```
-
-The listener is created on `127.0.0.1:0` inside the harness execution network
-namespace, following the internal OTLP listener in
-`engine/engineutil/executor_spec.go`. The handler runs in the engine and owns the
-live `*MCP`; no nested `dagger mcp` process or LLM ID is required.
-
-Core registers a runtime-scoped handler and passes an opaque token through
-execution metadata. Engine execution creates the container-local listener and
-forwards requests to the registered handler. Logical turn spans and correlation
-change while the endpoint remains stable for the long-lived process.
-
-```go
-type ExecHTTPHandlerRegistry interface {
-    Register(http.Handler) (token string, unregister func())
-    ServeHTTP(token string, http.ResponseWriter, *http.Request)
-}
-```
-
-The adapter will write the URL and random bearer token into temporary CLI
-configuration. User/project MCP configuration is ignored where a strict-config
-option exists, preventing accidental access to servers outside the Dagger tool
-environment. Native CLI tools are not disabled.
-
-Tool generation and dispatch become transport-neutral:
-
-```go
-type LLMToolServer struct {
+type LLMToolRuntime struct {
     env    *MCP
     bridge *MCPWorkspaceBridge
 }
 
-func (s *LLMToolServer) StreamableHTTPHandler() http.Handler
-func (s *LLMToolServer) ServeStdio(context.Context, io.ReadWriteCloser) error
+func (r *LLMToolRuntime) Tools(context.Context) ([]LLMTool, error)
+func (r *LLMToolRuntime) Call(context.Context, string, any) (ToolResult, error)
 ```
 
-`dagger mcp` continues to use stdio without a workspace bridge. CLI harnesses
-use HTTP with the bridge.
+The vendor transport only converts schemas, carries call IDs and arguments, and
+projects the common result. It never reimplements Dagger tool semantics.
+
+### Codex dynamic tools
+
+Codex uses app-server's experimental direct dynamic-tool protocol. At
+`thread/start`, Dagger converts every `LLMTool` into a top-level function:
+
+```json
+{
+  "type": "function",
+  "name": "editor_listChecks",
+  "description": "...",
+  "inputSchema": {},
+  "deferLoading": false
+}
+```
+
+App-server invokes the tool with a reverse `item/tool/call` JSON-RPC request on
+the existing JSONL stream. The adapter dispatches by name through
+`LLMToolRuntime` and responds with `success` plus text, image, or audio
+`contentItems`. Its paired `dynamicToolCall` item lifecycle supplies the native
+call ID and presentation span.
+
+This direct path is required for discoverability, not merely an optimization.
+Dagger's `mark3labs/mcp-go` server leaves `Tool.DeferLoading` false and therefore
+omits `defer_loading` from `tools/list`; it never requested deferral. Codex
+0.147.0 nevertheless reports `tool_search_always_defer_mcp_tools` as removed
+with effective state `true`, and configuration overrides cannot disable it.
+Consequently MCP tools are hidden from the initial model-visible set and a
+natural request can choose an unrelated visible skill before searching the MCP
+catalog. Direct functions with `deferLoading: false` also avoid relying on MCP
+tool-list cache invalidation.
+
+The initial direct implementation serializes calls through the existing
+workspace bridge. A follow-up restores `MCP.CallBatch` semantics without
+weakening the boundary invariant: read-only calls run concurrently;
+`ReturnsChangeset` calls evaluate concurrently against one immutable generation,
+then merge through the existing changeset merge/conflict-marker path; workspace,
+LLM, and rebound-object replacements remain serialized.
+
+### MCP compatibility transport
+
+Streamable HTTP and stdio MCP remain compatibility transports. `dagger mcp`
+continues to use stdio without a workspace bridge. A vendor without a proven
+direct registration and callback protocol receives a generated authenticated
+Streamable HTTP endpoint using the same runtime and bridge.
+
+The existing Codex HTTP MCP implementation remains until direct-tool parity is
+verified, then its process-level `mcp_servers.dagger` table and runtime listener
+are removed. Claude's current and emerging dynamic-tool capabilities must be
+compatibility-tested; use direct registration when schemas, callbacks, streaming
+results, and catalog updates are proven, otherwise retain MCP.
+
+For the HTTP fallback, Core registers a runtime-scoped handler, passes an opaque
+token through execution metadata, and forwards a loopback listener inside the
+harness network namespace. Requests retain transport cancellation and protocol
+values, fall back to the server construction context for Dagger query/client
+metadata, and bind the harness workspace only after the bridge pulls native
+changes. Contextual `Workspace!` therefore never resolves against an empty or
+unrelated ambient `currentWorkspace`.
 
 ## Workspace synchronization
 
 The harness has a mutable working copy while `MCP.workspace` is the immutable
 source recorded on a committed `LLM`. The boundary invariant is:
 
-> Immediately before and after every Dagger MCP tool call, the harness
+> Immediately before and after every Dagger tool call, the harness
 > filesystem and `MCP.workspace` represent the same logical tree.
 
 A runtime-scoped bridge owns the mounted directory and serializes tool
@@ -1107,17 +1151,18 @@ boundaries:
 ```go
 type MCPWorkspaceBridge struct {
     mcp     *MCP
-    service *Service
     running *RunningService
     target  string
     synced  dagql.ObjectResult[*Directory]
+    workspaceDigest string
     mu      sync.Mutex
 }
 ```
 
 Before a Dagger tool call, `pullLocked` snapshots the mutable directory, diffs it
 against `synced`, applies the `Changeset` to `MCP.workspace`, and advances
-`synced`. The tool observes every native edit completed before the call.
+`synced`. The tool's contextual Workspace binding is derived only after this
+pull, so it observes every native edit completed before the call.
 
 After the call, including a failed call, `pushLocked` resolves the current
 workspace, detects changes, remounts a mutable copy, and advances `synced`. This
@@ -1125,34 +1170,40 @@ covers tools returning `Changeset` or `Workspace`, existing
 `applyStateReturn` behavior, and future indirect workspace mutations.
 
 ```go
-func (b *MCPWorkspaceBridge) Call(
-    ctx context.Context,
-    tool LLMTool,
-    args any,
-) (any, error) {
+func (b *MCPWorkspaceBridge) Call(ctx context.Context, next llmToolCallHandler) (
+    *mcp.CallToolResult,
+    error,
+) {
     b.mu.Lock()
     defer b.mu.Unlock()
 
     if err := b.pullLocked(ctx); err != nil {
         return nil, err
     }
-    result, callErr := tool.Call(ctx, args)
+    result, callErr := next(ctx)
     pushErr := b.pushLocked(ctx)
     return result, errors.Join(callErr, pushErr)
 }
 ```
 
 A final serialized pull occurs at every checkpoint because the native turn may
-end with an edit and no later MCP call. The first implementation serializes all
-MCP calls; even reads need a preceding pull.
+end with an edit and no later Dagger call. The first implementation serializes
+all tool calls; even reads need a preceding pull.
 
 The bridge generalizes `Service.runAndSnapshotChanges` and
-`MCP.applyWorkspaceSnapshot`. Remounting while the foreground CLI waits for an
-MCP response is a safe boundary. Background writers are different: Codex
-interrupt may leave them running, and either CLI may launch a daemon. The runner
-tracks the process tree, detects generation changes across finalization, and
-must freeze or terminate writers before a checkpoint. A detected race is an
-error, never last-writer-wins.
+`MCP.applyWorkspaceSnapshot`. `RunningService` retains the live writable mount
+state created during service startup. Pull commits that generation under the
+service's durable resource lease, exposes it as an attached synthetic
+`Directory`, creates a fresh mutable child, and atomically remounts it. Push
+performs the corresponding remount from the current Dagger workspace. This
+avoids both the expired operation lease from service startup and borrowing an
+unrelated ambient DAGQL result type from the HTTP request.
+
+Remounting while the foreground CLI waits for a Dagger tool response is a safe
+boundary. Background writers are different: Codex interrupt may leave them
+running, and either CLI may launch a daemon. Detecting generation changes across
+finalization and freezing or terminating writers before checkpoint remain
+required. A detected race must be an error, never last-writer-wins.
 
 Only checkpoint commit advances the immutable `LLM.workspace`. Until then the
 bridge's `MCP.workspace` and mutable directory are hot runtime state. If
@@ -1260,9 +1311,10 @@ The implemented runner materializes the cold seed, attaches the terminal clone
 to the session cache, selects `asService(args:)`, and starts a unique interactive
 service from that attached result. Persistent stdin is bridged through an OS
 pipe so process exit is observable even when the protocol input source remains
-open; service wait no longer hangs on `os/exec`'s stdin-copy goroutine. Rootfs
-and mounted-workspace capture at a verified quiescent boundary remain the next
-container-lifecycle step.
+open; service wait no longer hangs on `os/exec`'s stdin-copy goroutine. The
+workspace mount is now captured at each Dagger tool boundary and terminal commit;
+rootfs capture and proving joint rootfs/workspace consistency at a verified
+quiescent boundary remain the next container-lifecycle step.
 
 For Codex, Dagger's harness container is the execution security boundary.
 `turn/start` selects app-server's `externalSandbox` policy with network access
@@ -1459,6 +1511,15 @@ completed foundation and remaining behavior.
 
 - [x] Implement JSON-RPC request correlation independently of Agent message IDs.
 - [x] Implement app-server initialization and capability negotiation.
+- [ ] Convert the initial live `MCP.Tools` set into
+  `thread/start.dynamicTools` functions with `deferLoading: false`.
+- [ ] Demultiplex app-server-initiated `item/tool/call` requests from responses
+  to Dagger-initiated JSON-RPC requests and answer them concurrently without
+  blocking notification reads.
+- [ ] Dispatch dynamic callbacks through the common Dagger tool runtime and
+  return bounded `contentItems` with exact success/error semantics.
+- [ ] Persist and validate the advertised dynamic-tool schema digest with the
+  native checkpoint; reconstruct safely when a resumed catalog is stale.
 - [x] Implement `thread/start` and valid-checkpoint `thread/resume`.
 - [x] Recover a missing Codex rollout by resuming from the exact portable-history
   prefix represented by the checkpoint, preserving system prompts as developer
@@ -1467,6 +1528,8 @@ completed foundation and remaining behavior.
   `turn/interrupt`.
 - [x] Decode turn, user-message, text, thinking, native-command, MCP-call,
   result, usage, and terminal notifications into the common event vocabulary.
+- [ ] Decode `dynamicToolCall` started/completed items into that same tool-call
+  vocabulary and correlate them exactly with `item/tool/call` requests.
 - [x] Scope turn, item, delta, and usage notifications to the adapter's primary
   thread so spawned Codex agents cannot replace or terminate Dagger's canonical
   turn.
@@ -1509,10 +1572,13 @@ completed foundation and remaining behavior.
   lifecycle or cancellation capabilities.
 - [ ] Add compatibility fixtures for all supported Claude stream-JSON versions.
 
-### Dagger tools, MCP, and workspace synchronization
+### Dagger tools, transport, and workspace synchronization
 
 - [x] Refactor `LLMToolServer` so the same tool set can be served over stdio or
   stateful Streamable HTTP.
+- [ ] Factor schema generation, lookup, dispatch, state returns, result bounds,
+  telemetry, and workspace bridging into a transport-neutral Dagger tool
+  runtime shared by direct callbacks and MCP.
 - [x] Add a session-owned exec HTTP registry with opaque, unique handler tokens.
 - [x] Forward the registered handler through the harness exec's loopback
   listener.
@@ -1529,24 +1595,46 @@ completed foundation and remaining behavior.
 - [x] Configure Codex app-server with one complete process-level Dagger MCP
   table containing the generated URL, bearer-token environment variable,
   required-server policy, and tool approval policy.
+- [ ] After direct dynamic-tool parity is proven, remove Codex's generated
+  `mcp_servers.dagger` table and avoid starting its exec-HTTP listener.
 - [ ] Configure Claude Code to use the generated MCP URL and bearer token.
+- [ ] Compatibility-test Claude's native dynamic-tool registration and callback
+  protocol; prefer it over MCP when it preserves schemas, results, catalog
+  updates, and streaming lifecycle.
 - [ ] Ignore unrelated user/project MCP configuration, using strict native MCP
   configuration where the vendor supports it.
-- [ ] Verify that bound object tools, workspace-module tools, skills, builtins,
-  and external MCP proxies are all visible to the native model.
+- [x] Verify that bound object tools, workspace-module tools, skills, builtins,
+  and external MCP proxies are callable through Codex's MCP catalog after
+  discovery.
+- [ ] Verify that a fresh Codex model sees the complete Dagger dynamic-tool set
+  immediately, without an MCP tool-search step.
 - [x] Preserve the Dagger client/query context across Streamable HTTP tool calls
   while retaining request cancellation and protocol values.
+- [x] Bind the harness LLM's Workspace into every Streamable HTTP tool call so
+  contextual `Workspace!` arguments do not fall back to ambient
+  `currentWorkspace`.
 - [x] Correlate the vendor MCP item with the authoritative HTTP request by native
   call ID without executing or materializing it twice.
 - [x] Parent Dagger MCP evaluation beneath the corresponding live tool-call span.
-- [ ] Pull native workspace changes into `MCP.workspace` immediately before
+- [x] Pull native workspace changes into `MCP.workspace` immediately before
   every Dagger tool call.
-- [ ] Push Dagger workspace/tool changes into the mutable harness mount after
+- [x] Push Dagger workspace changes into the mutable harness mount after
   every tool call, including failures.
-- [ ] Perform a final serialized pull when a native turn ends without a trailing
-  Dagger MCP call.
-- [ ] Persist the final workspace and rebound object tools in the same atomic
-  commit as messages and native state.
+- [ ] Run read-only direct calls concurrently and run `ReturnsChangeset` calls
+  concurrently against one immutable generation, merging their results through
+  the existing `CallBatch` changeset/conflict-marker semantics.
+- [ ] Keep workspace-, LLM-, and rebound-object-returning direct calls
+  serialized while allowing the compatible classes above to overlap.
+- [x] Perform a final serialized pull when a native turn ends without a trailing
+  Dagger tool call.
+- [x] Persist the final workspace in the same atomic commit as messages and
+  native state.
+- [ ] Persist rebound object tools in that atomic commit and push their
+  workspace effects when they indirectly advance the bound workspace.
+- [ ] Detect background writers or mount-generation races during pull, push,
+  interrupt, and terminal finalization; fail instead of losing either side.
+- [x] Exercise native-to-Dagger, Dagger-to-native, and post-checkpoint reads in
+  a fresh Codex `dagger-dev --env dev agent` session.
 
 ### Live telemetry and TUI
 
@@ -1570,6 +1658,8 @@ completed foundation and remaining behavior.
   model response.
 - [x] Emit each Dagger MCP tool call as the same live tool-call shape and nest
   its actual execution span beneath it.
+- [ ] Emit each Codex `dynamicToolCall` as that same live shape, with the
+  authoritative Dagger execution parented beneath it exactly once.
 - [x] Attach native and MCP tool results, error status, output, and result-token
   metadata to their corresponding tool-call spans.
 - [x] Render MCP tool-result `content` blocks in user-facing logs instead of the
@@ -1666,6 +1756,9 @@ completed foundation and remaining behavior.
 - [x] Verify a fresh `dagger-dev --env dev agent` Codex session discovers and
   successfully calls the workspace's `review_status` tool through authenticated
   Streamable HTTP MCP.
+- [ ] Verify a fresh Codex session answers “list the checks” by directly calling
+  `editor_listChecks`, without spelling out the tool name and without an
+  invisible MCP catalog search.
 - [ ] Add equivalent end-to-end Claude module coverage for the persistent
   stream-JSON path.
 
@@ -1681,6 +1774,8 @@ completed foundation and remaining behavior.
   recording `STEERED`.
 - [x] Unit-test Codex's duplicate started/completed user-message lifecycle.
 - [x] Unit-test out-of-order JSON-RPC responses by request ID.
+- [ ] Unit-test interleaved app-server responses, notifications, and concurrent
+  reverse `item/tool/call` requests, including out-of-order completion.
 - [x] Unit-test Claude UUID checkpoint restoration, control receipts, queued
   cancellation, and unknown receipt rejection.
 - [x] Unit-test natural process exit, startup output, stderr visibility, and real
@@ -1725,9 +1820,15 @@ completed foundation and remaining behavior.
   provider-backed LLM.
 - [ ] Integration-test the complete workspace tool set through each native MCP
   client and bidirectional workspace synchronization around every call.
+- [ ] Integration-test direct dynamic-tool discovery, callback execution,
+  checkpoint resume, stale-catalog recovery, and bidirectional workspace
+  synchronization around every call.
+- [ ] Integration-test concurrent direct read-only and `Changeset` calls,
+  including clean merges, overlapping edits with conflict markers, one failed
+  call, and a simultaneous native filesystem edit.
 - [ ] Integration-test live and final conversation telemetry for prompts,
-  streamed text/thinking, native tools, MCP tools, tool results, usage, failure,
-  interruption, and replay.
+  streamed text/thinking, native tools, direct and MCP Dagger tools, tool
+  results, usage, failure, interruption, and replay.
 - [ ] Security-test credential non-disclosure in containers, messages,
   telemetry, call IDs, and checkpoints.
 - [ ] Security-test content-bound interactive consent, remembered-grant

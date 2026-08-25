@@ -27,6 +27,7 @@ func genMcpTool(tool LLMTool) (mcp.Tool, error) {
 type llmToolSource interface {
 	DefaultSystemPrompt(context.Context) (string, error)
 	Tools(context.Context) ([]LLMTool, error)
+	toolCallContext(context.Context) context.Context
 }
 
 // LLMToolServer exposes an MCP tool set independently of its transport.
@@ -35,7 +36,15 @@ type LLMToolServer struct {
 	env         llmToolSource
 	baseCtx     context.Context
 	callContext func(context.Context, mcp.CallToolRequest) context.Context
+	call        llmToolCallMiddleware
 }
+
+type llmToolCallHandler func(context.Context) (*mcp.CallToolResult, error)
+
+// llmToolCallMiddleware wraps one complete MCP tool request. Harnesses use it
+// to synchronize their mutable workspace before toolCallContext binds the
+// Workspace argument and after both dispatch and tool-list refresh complete.
+type llmToolCallMiddleware func(context.Context, llmToolCallHandler) (*mcp.CallToolResult, error)
 
 // llmToolRequestContext takes cancellation and deadlines from the transport
 // request while falling back to the server's construction context for Dagger
@@ -87,27 +96,36 @@ func (s *LLMToolServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFun
 			ctx = s.callContext(ctx, request)
 		}
 
-		result, err := tool.Call(ctx, request.Params.Arguments)
-		// TODO: differentiate user module's error from dagger error for better error message
-		if err != nil {
-			res := mcp.NewToolResultText(toolErrorMessage(err))
-			res.IsError = true
-			return res, nil
-		}
-		text, ok := result.(string)
-		if !ok {
-			b, err := json.Marshal(result)
+		call := func(ctx context.Context) (*mcp.CallToolResult, error) {
+			ctx = s.env.toolCallContext(ctx)
+
+			result, err := tool.Call(ctx, request.Params.Arguments)
+			// TODO: differentiate user module's error from dagger error for better error message
 			if err != nil {
-				return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
+				res := mcp.NewToolResultText(toolErrorMessage(err))
+				res.IsError = true
+				return res, nil
 			}
-			text = string(b)
+			text, ok := result.(string)
+			if !ok {
+				b, err := json.Marshal(result)
+				if err != nil {
+					return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
+				}
+				text = string(b)
+			}
+
+			if err := s.setTools(ctx); err != nil {
+				return nil, err
+			}
+
+			return mcp.NewToolResultText(text), nil
 		}
 
-		if err := s.setTools(ctx); err != nil {
-			return nil, err
+		if s.call != nil {
+			return s.call(ctx, call)
 		}
-
-		return mcp.NewToolResultText(text), nil
+		return call(ctx)
 	}
 }
 
@@ -116,6 +134,13 @@ func (s *LLMToolServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFun
 // before the server starts receiving requests.
 func (s *LLMToolServer) withCallContext(callContext func(context.Context, mcp.CallToolRequest) context.Context) *LLMToolServer {
 	s.callContext = callContext
+	return s
+}
+
+// withCallMiddleware installs a transport-neutral request boundary. It must be
+// configured before the server starts receiving requests.
+func (s *LLMToolServer) withCallMiddleware(call llmToolCallMiddleware) *LLMToolServer {
+	s.call = call
 	return s
 }
 

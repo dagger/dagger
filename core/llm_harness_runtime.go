@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 // LLMHarnessCommit is the complete, quiescent result of one native turn. A
@@ -15,6 +17,7 @@ type LLMHarnessCommit struct {
 	NativeTurnID     string
 	DaggerMessageIDs []string
 	Messages         []*LLMMessage
+	Workspace        dagql.ObjectResult[*Workspace]
 	NativeState      LLMHarnessNativeState
 	Correlations     []LLMHarnessMessageCorrelation
 	Interrupted      bool

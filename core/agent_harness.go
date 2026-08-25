@@ -265,6 +265,13 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		unregister()
 		return nil, nil, err
 	}
+	bridge, err := newMCPWorkspaceBridge(mcp, process, workspace)
+	if err != nil {
+		_ = process.Stop(context.WithoutCancel(ctx))
+		unregister()
+		return nil, nil, fmt.Errorf("create harness workspace bridge: %w", err)
+	}
+	toolServer.withCallMiddleware(bridge.Call)
 	go func() { _, _ = io.Copy(io.Discard, process.Stderr()) }()
 
 	var adapter LLMHarnessAdapter
@@ -293,6 +300,10 @@ func (rt *AgentRuntime) startHarness(ctx context.Context, inst dagql.ObjectResul
 		display:    display,
 	}
 	runtime, err := NewLLMHarnessRuntime(ctx, llm.harnessKind, adapter, start, func(commitCtx context.Context, commit LLMHarnessCommit) (string, error) {
+		if err := bridge.Pull(commitCtx); err != nil {
+			return "", fmt.Errorf("finalize harness workspace: %w", err)
+		}
+		commit.Workspace = bridge.Workspace()
 		return rt.commitHarnessTurn(commitCtx, commit)
 	})
 	if err != nil {
@@ -389,7 +400,7 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 	}
 	rt.mu.Unlock()
 
-	selectors := make([]dagql.Selector, 0, len(texts)+len(commit.Messages))
+	selectors := make([]dagql.Selector, 0, len(texts)+len(commit.Messages)+1)
 	for _, text := range texts {
 		selectors = append(selectors, dagql.Selector{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(text)}}})
 	}
@@ -420,6 +431,18 @@ func (rt *AgentRuntime) commitHarnessTurn(ctx context.Context, commit LLMHarness
 				})
 			}
 		}
+	}
+	if commit.Workspace.Self() != nil {
+		workspaceID, err := commit.Workspace.ID()
+		if err != nil {
+			return "", fmt.Errorf("get harness workspace ID: %w", err)
+		}
+		selectors = append(selectors, dagql.Selector{
+			Field: "withWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "workspace", Value: dagql.NewID[*Workspace](workspaceID)},
+			},
+		})
 	}
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {

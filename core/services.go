@@ -130,6 +130,7 @@ type RunningService struct {
 	clientScopeLease      *engine.ClientLifecycleLease
 
 	workspaceMu sync.Mutex
+	mountStates []*execMountState
 
 	dependencyExitPropagationMu         sync.Mutex
 	dependencyExitPropagationSuppressed int

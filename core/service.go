@@ -710,10 +710,18 @@ func (svc *Service) startContainer(
 		return fmt.Errorf("prepare mounts: %w", err)
 	}
 
+	running.workspaceMu.Lock()
+	running.mountStates = p.States
+	running.workspaceMu.Unlock()
 	cleanup.Add("release active refs", func() error {
+		running.workspaceMu.Lock()
+		defer running.workspaceMu.Unlock()
+		running.mountStates = nil
 		return p.releaseActives(context.WithoutCancel(ctx))
 	})
 	cleanup.Add("release output refs", func() error {
+		running.workspaceMu.Lock()
+		defer running.workspaceMu.Unlock()
 		return p.releaseOutputRefs(context.WithoutCancel(ctx))
 	})
 	protectedSnapshots := make(map[string]struct{})
