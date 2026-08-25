@@ -1346,6 +1346,12 @@ rather than being renumbered away:
     Cheap fix — interpolate it into `workerPrompt` at spawn — with one
     catch: recordings match `workerPrompt` byte for byte, so the
     interpolation has to become part of the public constant's contract.
+    *BUILT: `Staff.workerPromptFor(name:)` — workerPrompt plus a closing
+    "Your staff name is ..." line — is the public constant spawn now
+    composes, so the interpolation IS the contract:
+    `TestStaff/TestAskAndReply` builds its worker recording from it (and
+    asserts the name is really in the text). `workerPrompt` stays public
+    as the base text; both are excluded from the chief's toolset.*
 11. **Idle notification (chief-side)**: the chief only learns a worker
     went idle by polling `status` or blocking in `collect`. Natural fit:
     on turn-end, push a "worker ⟨name⟩ went idle" message onto the
@@ -1629,8 +1635,9 @@ rather than being renumbered away:
     §7), and `TestStaff/TestAskAndReply` covers the event-driven loop end to
     end, with a worker recording that leads with `workerPrompt` — pinning
     the replayer fix in the same stroke. Item 10 (workers not knowing their
-    own name) still wants its `workerPrompt` interpolation and is now
-    unblocked: the seed boundary it moves is understood.
+    own name) got its `workerPrompt` interpolation on top of this — the
+    seed boundary it moves is understood, and the recording now leads with
+    `workerPromptFor(name)`.
     The original account, for the record: the worker failed at its first
     step with `message history diverges at index 0`, the compose chain
     showed `withSystemPrompt` applied correctly before `spawn`, and real

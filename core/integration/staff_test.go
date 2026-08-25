@@ -42,9 +42,11 @@ func TestStaff(t *testing.T) {
 // serveStaffModule serves ./modules/staff — a repo-root module, deliberately
 // not a testdata fixture and not registered in dagger.toml — into the
 // client's session, returning the Staff object's ID for llm.withTools and
-// the worker system prompt spawn composes into every worker (recordings that
-// replay a worker's conversation must match its text exactly).
-func serveStaffModule(ctx context.Context, t *testctx.T, c *dagger.Client) (dagger.ID, string) {
+// the worker system prompt spawn composes into a worker with the given
+// staff name (recordings that replay that worker's conversation must match
+// its text exactly — the name interpolation is part of workerPromptFor's
+// public contract).
+func serveStaffModule(ctx context.Context, t *testctx.T, c *dagger.Client, workerName string) (dagger.ID, string) {
 	t.Helper()
 	modDir := t.TempDir()
 	srcDir, err := filepath.Abs(filepath.Join("..", "..", "modules", "staff"))
@@ -53,14 +55,20 @@ func serveStaffModule(ctx context.Context, t *testctx.T, c *dagger.Client) (dagg
 	require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
 	res, err := testutil.QueryWithClient[struct {
 		Staff struct {
-			ID           string
-			WorkerPrompt string
+			ID              string
+			WorkerPromptFor string
 		}
-	}](c, t, `{ staff { id workerPrompt } }`, nil)
+	}](c, t, fmt.Sprintf(`{ staff { id workerPromptFor(name: %q) } }`, workerName), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Staff.ID)
-	require.NotEmpty(t, res.Staff.WorkerPrompt)
-	return dagger.ID(res.Staff.ID), res.Staff.WorkerPrompt
+	require.NotEmpty(t, res.Staff.WorkerPromptFor)
+	// The composed prompt must actually carry the worker's own staff name
+	// (async-agents.md item 10) — without this, spawn and the recording
+	// would still agree byte for byte on an uninterpolated prompt and the
+	// replay would prove nothing about the name.
+	require.Contains(t, res.Staff.WorkerPromptFor,
+		fmt.Sprintf("Your staff name is %q", workerName))
+	return dagger.ID(res.Staff.ID), res.Staff.WorkerPromptFor
 }
 
 // The deterministic wire forms of hack/designs/agent-messaging.md §4.1,
@@ -100,7 +108,10 @@ func (StaffSuite) TestAskAndReply(ctx context.Context, t *testctx.T) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 
-	staffID, workerPrompt := serveStaffModule(ctx, t, c)
+	// The worker recording's system prompt must be the exact text spawn
+	// composes for a worker named "w1" — workerPromptFor interpolates the
+	// staff name, so the worker knows what to call itself.
+	staffID, workerPrompt := serveStaffModule(ctx, t, c, "w1")
 
 	// spawn auto-injects `source: Workspace!`, preferring the calling LLM's
 	// bound workspace. Bind an explicit empty one to the chief: the fallback

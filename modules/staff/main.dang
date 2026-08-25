@@ -41,10 +41,11 @@ type Staff {
   let tombstones: Map[Agent!]! = [:]
 
   # Not really tools: chiefLine/pullTools are spawn's plumbing, and
-  # workerPrompt is a public constant (tests build worker recordings against
-  # its exact text). Excluded from the chief's binding. Workers bind only the
-  # dedicated PullTools object, never this full Staff object.
-  let plumbing = ["chiefLine", "pullTools", "workerPrompt"]
+  # workerPrompt/workerPromptFor are public constants (tests build worker
+  # recordings against their exact text). Excluded from the chief's binding.
+  # Workers bind only the dedicated PullTools object, never this full Staff
+  # object.
+  let plumbing = ["chiefLine", "pullTools", "workerPrompt", "workerPromptFor"]
 
   """
   Compose the staff-chief tools onto a base LLM.
@@ -126,7 +127,7 @@ type Staff {
       # The line home, minted via a real self-call; the boss handle itself
       # stays out of the tool schema.
       .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
-      .withSystemPrompt(workerPrompt)
+      .withSystemPrompt(workerPromptFor(name))
       # spawn mints a unique agent instance per call, so a re-hired name can
       # never collide with a dismissed predecessor's runtime.
       .spawn(name: name)
@@ -1031,7 +1032,8 @@ type Staff {
 
   # Instructions for each WORKER. Public so tests (and the curious) can read
   # the exact text spawn composes into every worker — recordings that replay
-  # a worker's conversation must match it byte for byte.
+  # a worker's conversation must match it byte for byte. spawn composes
+  # workerPromptFor(name), which appends the worker's own staff name.
   workerPrompt: String! = """
     You are a worker agent on a staff, reporting to a chief agent. Work your
     task autonomously to completion with the available tools. The chief
@@ -1069,6 +1071,19 @@ type Staff {
     end your turn to wait for it; its arrival wakes you. Use it sparingly,
     and prefer working with what you have.
   """
+
+  """
+  The exact system prompt spawn composes into a worker with the given staff
+  name: workerPrompt plus a closing line carrying the name, so a worker can
+  refer to itself the way the chief and its peers address it (attribution
+  headers, the roster, and pull targets all use this name). Public for the
+  same reason as workerPrompt: recordings that replay a worker's
+  conversation must match this text byte for byte, so the interpolation is
+  part of the constant's contract rather than a private spawn detail.
+  """
+  workerPromptFor(name: String!): String! {
+    workerPrompt + "\n\n" + `Your staff name is "${name}": the chief and your peers address you by it, and message attribution headers use it.`
+  }
 }
 
 """
