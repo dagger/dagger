@@ -114,6 +114,50 @@ source = "github.com/dagger/dang-sdk"
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"
 
+[env.codex.modules.codex]
+source = "modules/codex"
+
+[env.codex.modules.engine-lab]
+source = ".dagger/modules/engine-lab"
+
+[env.codex.modules.engine-lab.settings]
+
+# Dagger Cloud auth for the from-source CLI, so commands that talk to Cloud
+# run logged in as you. Resolved from the host on use; commands still work
+# (logged out) when the file isn't there.
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
+
+[env.codex.modules.tui-qa]
+source = ".dagger/modules/tui-qa"
+
+[env.codex.modules.tui-qa.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
+
+[env.codex.modules.mcp-lab]
+source = ".dagger/modules/mcp-lab"
+
+[env.codex.modules.staff]
+source = "modules/staff"
+
+[env.codex.modules.review]
+source = "modules/review"
+
+[env.codex.modules.contributor]
+source = "modules/contributor"
+
+[env.codex.modules.contributor.settings]
+githubToken = "cmd://gh auth token"
+remote = "dagger/dagger"
+
+[env.codex.modules.librarian]
+source = "modules/librarian"
+
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"
 
@@ -178,9 +222,6 @@ source = "modules/history"
 
 [modules.tla-check]
 source = ".dagger/modules/tla-check"
-
-[modules.codex]
-source = "modules/codex"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"

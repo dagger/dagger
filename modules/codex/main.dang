@@ -14,7 +14,7 @@ type Codex {
   agent(base: LLM!): LLM! @agent {
     base.withHarness(
       harness: wolfi
-        .container(["ca-certificates", "npm-12", "nodejs-26", "ripgrep"])
+        .container(["wolfi-base", "ca-certificates", "npm-12", "nodejs-26", "ripgrep"])
         .withExec(["npm", "install", "--global", "@openai/codex@latest"])
         .withWorkdir("/workspace"),
       kind: LLMHarnessKind.CODEX,
