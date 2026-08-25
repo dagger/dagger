@@ -33,8 +33,8 @@ ESLint also exposes a `fix` function that runs `eslint . --fix` and returns the 
 
 List the current settings and their values with `dagger settings eslint`, then set one with `dagger settings eslint <key> <value>`. Settings are stored in `dagger.toml` under `[modules.eslint.settings]`.
 
-- **`packageManager`** (default `npm`): the package manager used to install dependencies before linting. Set it to `yarn` or `pnpm` to match the project, so the same lockfile and dependency versions are used.
-- **`baseImageAddress`** (default `node:25-alpine`): the Node base image ESLint runs in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `packageManager` (default `npm`) is the package manager used to install dependencies before linting. Set it to `yarn` or `pnpm` to match the project, so the same lockfile and dependency versions are used.
+- `baseImageAddress` (default `node:25-alpine`) is the Node base image ESLint runs in. Pin it to the project's Node version, for example `node:22-alpine`.
 
 ```toml
 [modules.eslint.settings]

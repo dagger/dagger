@@ -6,7 +6,7 @@ description: "Personal overrides that stay out of the repository"
 
 # User configuration
 
-Some values shouldn't be committed: private account profiles, local paths, personal development clusters. Those live in your user-level Dagger config file — `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`.
+Some values shouldn't be committed: private account profiles, local paths, personal development clusters. Those live in your user-level Dagger config file, `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`.
 
 The file is shared with other Dagger subsystems (such as `[llm]`). Workspace overrides sit in a `[workspaces.*]` section, keyed by the workspace's Git remote:
 
@@ -22,7 +22,7 @@ region = "us-west-2"
 
 ## Merge order
 
-The effective configuration is merged in a fixed order: the repository's `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments are added to the repository's — all without modifying `dagger.toml`.
+Dagger merges the effective configuration in a fixed order: the repository's `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments add to the repository's, all without modifying `dagger.toml`.
 
 ## Writing values
 
@@ -35,7 +35,7 @@ dagger settings -g -u aws profile                    # remove the override
 dagger workspace config -g modules.aws.settings.profile alice-dev
 ```
 
-`--global` selects where a write is stored; reads always show the effective merged view. Unsetting with `-g` removes only the user-level value — the repository value underneath is untouched.
+`--global` selects where a write is stored; reads always show the effective merged view. Unsetting with `-g` removes only the user-level value. The repository value underneath is untouched.
 
 `-g` also composes with `-W`. A remote workspace is readable but its repository config can't be written, while its user-level overrides live in your local file:
 
@@ -49,6 +49,6 @@ Only module settings: `modules.<name>.settings.*`, optionally under `env.<name>.
 
 ## Workspace key
 
-The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match — `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config.
+The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match: `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config.
 
 A repository with multiple remotes is keyed by `origin` only; a repository with no remote matches no user-level overrides. Remote workspaces selected with `-W` are keyed by their clone address.

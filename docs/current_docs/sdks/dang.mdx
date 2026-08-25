@@ -1,26 +1,26 @@
 ---
 title: "Dang SDK"
 slug: /sdks/dang
-description: "Develop Dagger modules with Dang, Dagger's native DSL — no codegen, no build step, no generated client files."
+description: "Develop Dagger modules with Dang, Dagger's native DSL. No codegen, no build step, no generated client files."
 ---
 
 import { daggerVersion } from '../partials/version.js';
 
 # Dang SDK
 
-Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger-module.toml`.
+Dang is Dagger's native DSL. It maps directly to the Dagger API, so what you write is what runs. There is no codegen, no generated client files to commit, no build step, and no language runtime to carry around. In the common case a Dang module is one `main.dang` file plus a `dagger-module.toml`.
 
-Use Dang when your module is primarily *orchestrating* the Dagger API — containers, files, directories, services, secrets, and other modules. If you need to reach for external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](./go.mdx), [Python](./python.mdx), or [TypeScript](./typescript.mdx) SDK instead, which give you a full host language alongside the Dagger client.
+Use Dang when your module mostly orchestrates the Dagger API: containers, files, directories, services, secrets, and other modules. If you need external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](./go.mdx), [Python](./python.mdx), or [TypeScript](./typescript.mdx) SDK instead. Those give you a full host language alongside the Dagger client.
 
-Before diving in, it helps to understand the platform concepts every SDK shares:
+Every SDK shares a few platform concepts. Read these first if they are new to you:
 
-- [SDKs overview](./index.mdx) — what a module is and how it fits into a workspace.
-- [Types](../api/reference/index.mdx) — the types your functions accept and return.
-- [Generating code](../cli/generating.mdx) — how Dagger represents file diffs (used by `init` and generators).
+- [SDKs overview](./index.mdx) explains what a module is and how it fits into a workspace.
+- [Types](../api/reference/index.mdx) covers the types your functions accept and return.
+- [Generating code](../cli/generating.mdx) shows how Dagger represents file diffs. `init` and generators both use them.
 
 ## A note on tooling: Dang is delivered as a Dagger module
 
-Module development tooling for Dang lives in a Dagger module of its own — **`github.com/dagger/dang-sdk`**, not the `dagger` CLI. You install it into your workspace once, then scaffold and maintain Dang modules by *calling functions on that module by name*:
+The tooling for developing Dang modules lives in a Dagger module of its own, `github.com/dagger/dang-sdk`, not in the `dagger` CLI. Install it into your workspace once. From then on you scaffold and maintain Dang modules by calling functions on that module by name:
 
 ```shell
 # Install the Dang SDK into your workspace (once)
@@ -37,7 +37,7 @@ The functions you will use most often:
 | `init` | Create a new Dang SDK module. Returns a [changeset](../cli/generating.mdx) of files to write. |
 | `mod` | Resolve the Dang module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `path`. |
 | `mod deps` | Add, remove, list, and update module dependencies. |
-| `mod generate` | (Re)generate module metadata. For Dang this is effectively a no-op — there are no client bindings to regenerate. |
+| `mod generate` | Regenerate module metadata. For Dang this is close to a no-op, since there are no client bindings to regenerate. |
 | `mod engine` | Read or set the required Dagger engine version. |
 | `generate-all` | Generate every discovered Dang SDK module in the workspace. |
 | `modules` | List every Dagger module in the workspace whose `runtime.source` is `"dang"`. |
@@ -46,10 +46,10 @@ The functions you will use most often:
 ## Create a module
 
 :::note
-Run these commands from inside a Git repository — that's where the new module is created.
+Run these commands from inside a Git repository. That is where Dagger creates the new module.
 :::
 
-Install the Dang SDK into your workspace, then create a new module with its `init` function. By default the module is created under the nearest `.dagger` directory visible from your current workspace path:
+Install the Dang SDK into your workspace, then create a new module with its `init` function. By default `init` creates the module under the nearest `.dagger` directory visible from your current workspace path:
 
 ```
 <nearest .dagger>/modules/<name>
@@ -60,14 +60,14 @@ dagger install github.com/dagger/dang-sdk
 dagger api call dang-sdk init --name my-ci
 ```
 
-`init` returns a [changeset](../cli/generating.mdx) — which Dagger shows you to review before the files are written into your workspace.
+`init` returns a [changeset](../cli/generating.mdx). Dagger shows it to you for review before writing any files into your workspace.
 
-`init` arguments:
+`init` takes these arguments:
 
-- `--name` (required) — the module name.
-- `--path` — choose a different module location. The target path must not already contain a Dagger module.
-- `--template` — materialize files from `templates/<template>`. The empty default uses the minimal built-in template. Run `dagger api call dang-sdk templates` to see what is available.
-- `--ignore-generated` — configure generation to add generated SDK paths to `.gitignore` instead of checking them in. (For Dang there are no generated client files, so this has little practical effect — see [Generate / module metadata](#generate--module-metadata).)
+- `--name` is required. It sets the module name.
+- `--path` puts the module somewhere else. The target path must not already contain a Dagger module.
+- `--template` writes files from `templates/<template>`. Leave it empty to get the minimal built-in template. Run `dagger api call dang-sdk templates` to see what is available.
+- `--ignore-generated` configures generation to add generated SDK paths to `.gitignore` instead of checking them in. Dang has no generated client files, so this flag does little in practice. See [Generate and module metadata](#generate-and-module-metadata).
 
 ### Generated layout
 
@@ -92,7 +92,7 @@ source = "dang"
 automaticGitignore = false
 ```
 
-`runtime.source` set to `"dang"` is what tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires (see [Engine version](#engine-version)).
+Setting `runtime.source` to `"dang"` tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires. See [Engine version](#engine-version).
 
 The generated `main.dang` entry point:
 
@@ -110,7 +110,7 @@ type MyCi {
 }
 ```
 
-Once applied, call your module by pointing `-m` at it (or running from inside the module's workspace):
+Once you apply the changeset, call your module by pointing `-m` at it, or run from inside the module's workspace:
 
 ```shell
 dagger -m .dagger/modules/my-ci api call hello
@@ -119,17 +119,17 @@ dagger -m .dagger/modules/my-ci api call hello
 
 ## Language basics
 
-Dang is intentionally small. The whole language fits in a short reference:
+Dang is small on purpose. The whole language fits in a short list:
 
-- **Types** are declared with `type Name { ... }`. The first/primary type in a module is its entry point.
-- **Public members** use `pub`; private members use `let`. Only `pub` members are visible to callers.
-- **Functions** are type members that return a value: `pub build: Container! { ... }`.
-- **Arguments** go in parentheses: `pub build(source: Directory!): Container! { ... }`.
-- **Non-null** is marked with `!`; nullable is the default (no marker).
-- **Directives** modify behavior: `@check`, `@generate`, `@up`, `@cache`.
-- **Descriptions** use triple-quoted strings (`""" ... """`) placed above the thing they describe.
-- **Comments** use `#`.
-- **Module metadata** is a triple-quoted docstring at the top of the file, above the primary `type`.
+- **Types.** Declare one with `type Name { ... }`. The first type in a module is the primary type and its entry point.
+- **Public members.** Use `pub`. Private members use `let`. Only `pub` members are visible to callers.
+- **Functions.** A function is a type member that returns a value: `pub build: Container! { ... }`.
+- **Arguments.** They go in parentheses: `pub build(source: Directory!): Container! { ... }`.
+- **Non-null.** Mark it with `!`. Nullable is the default and has no marker.
+- **Directives.** They modify behavior: `@check`, `@generate`, `@up`, `@cache`.
+- **Descriptions.** Put a triple-quoted string (`""" ... """`) above the thing it describes.
+- **Comments.** Start them with `#`.
+- **Module metadata.** A triple-quoted docstring at the top of the file, above the primary `type`.
 
 A minimal module is a type with at least one public function:
 
@@ -147,7 +147,7 @@ type MyCi {
 }
 ```
 
-`pub` makes things visible to callers. The top-of-file docstring is the module's summary, shown in `dagger api functions` and `dagger api call --help`. Per-member docstrings document individual functions and arguments.
+`pub` makes a member visible to callers. The docstring at the top of the file is the module's summary. `dagger api functions` and `dagger api call --help` show it. Per-member docstrings document individual functions and arguments.
 
 Try it:
 
@@ -158,7 +158,7 @@ dagger api call hello
 
 ### Expressions and chaining
 
-Dang uses method chaining over the Dagger API. Each function body is a single expression that evaluates to the return value — the last expression is what's returned. The fluent builder reads top-to-bottom:
+Dang chains method calls on the Dagger API. Each function body is a single expression, and the function returns whatever that last expression evaluates to. The chain reads top to bottom:
 
 ```dang
 container
@@ -168,7 +168,7 @@ container
   .withExec(["npm", "install"])
 ```
 
-Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See the [type reference](../api/reference/index.mdx) for the underlying model.
+Every method returns a new immutable value. Nothing mutates in place. Dagger caches each step by its inputs, so a re-run skips unchanged work. It is the same model as Docker layer caching, applied to the entire API. See the [type reference](../api/reference/index.mdx) for the underlying model.
 
 ## Define objects and functions
 
@@ -192,7 +192,7 @@ type MyCi {
 
 ### Private state with `let`
 
-`let` defines private bindings — internal state and helpers not exposed to callers. They are computed lazily and cached. Use them for shared setup that multiple functions reuse:
+`let` defines a private binding, such as internal state or a helper that callers cannot see. Dang evaluates it lazily and caches the result. Use `let` for shared setup that several functions reuse:
 
 ```dang
 type Security {
@@ -226,7 +226,7 @@ type Security {
 
 ### Custom types
 
-Define additional `type`s to model the artifacts your module produces — for example to return multiple related values from one function:
+Define additional `type`s to model what your module produces, for example to return several related values from one function:
 
 ```dang
 type MyCi {
@@ -256,7 +256,7 @@ type MyCi {
 }
 ```
 
-Dagger prefixes custom type names in the API schema (e.g. `MyCiBuildResult`) to avoid conflicts when multiple modules are loaded together. Custom types are reached by chaining from a function on the primary type.
+Dagger prefixes custom type names in the API schema (for example `MyCiBuildResult`) to avoid conflicts when several modules load together. You reach a custom type by chaining from a function on the primary type.
 
 ### Enumerations
 
@@ -281,7 +281,7 @@ type Security {
 }
 ```
 
-Invalid values produce a clear error listing the allowed choices:
+An invalid value produces an error that lists the allowed choices:
 
 ```shell
 dagger api call scan --ref=alpine:latest --severity=FOO
@@ -290,7 +290,7 @@ dagger api call scan --ref=alpine:latest --severity=FOO
 
 ### Interfaces
 
-Interfaces let your module accept arbitrary types from other modules without being coupled to them. Declare an `interface` at the **top level** of the file (not nested inside a `type`), listing the `pub` members you need — member signatures only, with no body:
+Interfaces let your module accept types from other modules without depending on them. Declare an `interface` at the top level of the file, not nested inside a `type`. List the `pub` members you need as signatures only, with no body:
 
 ```dang
 """
@@ -328,7 +328,7 @@ type WebApp implements Buildable {
 }
 ```
 
-Across module boundaries Dagger also matches **structurally**: any object from another module whose functions match `Buildable` can be passed where the interface is expected, even without an explicit `implements` declaration.
+Across module boundaries Dagger also matches structurally. You can pass any object from another module whose functions match `Buildable` where the interface is expected, even without an explicit `implements` declaration.
 
 ## Arguments and return values
 
@@ -352,19 +352,19 @@ type MyCi {
 }
 ```
 
-Arguments can carry:
+An argument can carry:
 
-- **Types** — `String!`, `Int!`, `Boolean!`, `Directory!`, `File!`, `Secret!`, `Container!`, custom types, enums, interfaces, etc.
-- **Defaults** — `= "20"`, which makes the argument optional.
-- **Descriptions** — a triple-quoted string above the argument.
-- **Non-null markers** — `!` means required (when no default); absence means nullable.
+- **Types.** `String!`, `Int!`, `Boolean!`, `Directory!`, `File!`, `Secret!`, `Container!`, custom types, enums, interfaces, and so on.
+- **Defaults.** `= "20"` makes the argument optional.
+- **Descriptions.** A triple-quoted string above the argument.
+- **Non-null markers.** `!` means required when there is no default. Without it the argument is nullable.
 
 ```shell
 dagger api call build
 dagger api call build --node-version=18
 ```
 
-Constructor-style arguments (members on the primary type, set in `new(...)`) give users knobs they can override globally. The constructor also receives the user's [Workspace](#workspace-inputs) — auto-populated by Dagger — from which the module reads project files:
+Constructor arguments, which are members on the primary type set in `new(...)`, give users knobs they can override globally. The constructor also receives the user's [Workspace](#workspace-inputs). Dagger fills that in, and the module reads project files from it:
 
 ```dang
 type MyCi {
@@ -401,7 +401,7 @@ dagger api call --node-version=18 build
 
 ## Working with core Dagger types
 
-Dang exposes the full Dagger API directly. The most common building blocks:
+Dang exposes the full Dagger API directly. These are the types you will use most:
 
 ### Containers
 
@@ -418,7 +418,7 @@ pub build: Container! {
 
 ### Files and directories
 
-Functions can return `File!` or `Directory!`, and accept them as arguments. Reach into a container's filesystem with `.file(path)` / `.directory(path)`:
+Functions can return `File!` or `Directory!`, and accept them as arguments. Reach into a container's filesystem with `.file(path)` or `.directory(path)`:
 
 ```dang
 pub binary: File! {
@@ -428,7 +428,7 @@ pub binary: File! {
 
 ### Secrets
 
-Accept secrets as the `Secret` type — never as plain strings. Dagger scrubs secret values from all output streams, including crash reports:
+Accept secrets as the `Secret` type, never as plain strings. Dagger scrubs secret values from all output streams, including crash reports:
 
 ```dang
 pub deploy(
@@ -446,7 +446,7 @@ pub deploy(
 }
 ```
 
-Callers provide secrets via providers:
+Callers supply secrets through providers:
 
 ```shell
 dagger api call deploy --token=env:DEPLOY_TOKEN        # environment variable
@@ -457,11 +457,11 @@ dagger api call deploy --token=vault://path/to/secret  # HashiCorp Vault
 dagger api call deploy --token=gcp://secret-name       # Google Cloud Secret Manager
 ```
 
-Secrets are scoped to the module that defines them. To share one across modules, pass it explicitly via a function argument.
+A secret is scoped to the module that defines it. To share one across modules, pass it as a function argument.
 
 ### Services
 
-Start services for integration tests or dev environments. Services are content-addressed — the same definition always gets the same hostname, so there are no port conflicts:
+Start services for integration tests or dev environments. Services are content-addressed, so the same definition always gets the same hostname and there are no port conflicts:
 
 ```dang
 type MyCi {
@@ -495,7 +495,7 @@ type MyCi {
 
 ### Cache volumes
 
-Use cache volumes for package-manager caches and other persistent data that should survive across runs. `cacheVolume("name")` is keyed by name:
+Use cache volumes for package manager caches and other persistent data that should survive across runs. `cacheVolume("name")` is keyed by name:
 
 ```dang
 pub build: Container! {
@@ -509,11 +509,11 @@ pub build: Container! {
 }
 ```
 
-Cache volumes are scoped to the module that defines them. To share one across modules, pass a reference via a function argument.
+A cache volume is scoped to the module that defines it. To share one across modules, pass a reference as a function argument.
 
 ## Module dependencies
 
-A Dang module can depend on other Dagger modules (written in any SDK). Manage dependencies with `mod deps`, which operates on the module at or above the given workspace path.
+A Dang module can depend on other Dagger modules, written in any SDK. Manage dependencies with `mod deps`, which operates on the module at or above the given workspace path.
 
 Add a dependency:
 
@@ -523,7 +523,7 @@ dagger api call dang-sdk mod deps add \
   --name hello
 ```
 
-`mod deps add` returns a changeset that updates `dagger-module.toml`. Arguments are `--source` (required) and an optional `--name`.
+`mod deps add` returns a changeset that updates `dagger-module.toml`. `--source` is required and `--name` is optional.
 
 List, update, and remove:
 
@@ -531,14 +531,14 @@ List, update, and remove:
 # List dependencies
 dagger api call dang-sdk mod deps list
 
-# Update one dependency by name (or all remote deps if omitted) — returns a changeset
+# Update one dependency by name (or all remote deps if omitted). Returns a changeset
 dagger api call dang-sdk mod deps update --name hello
 
-# Remove one by name — returns a changeset
+# Remove one by name. Returns a changeset
 dagger api call dang-sdk mod deps remove --name hello
 ```
 
-The result is reflected in `dagger-module.toml`:
+The result lands in `dagger-module.toml`:
 
 ```toml title="dagger-module.toml" template
 name = "my-ci"
@@ -564,8 +564,8 @@ github.com/shykes/daggerverse/hello@v0.3.0
 #          host   repo          path  version
 ```
 
-- `proto://` is optional (`ssh://` or `https://`); if omitted, Dagger chooses based on available authentication.
-- `@version` can be a tag, branch, or commit; if omitted, the default branch is used.
+- `proto://` is optional (`ssh://` or `https://`). If you omit it, Dagger chooses based on the authentication available.
+- `@version` can be a tag, branch, or commit. If you omit it, Dagger uses the default branch.
 - Local dependencies use a relative path (`./path/to/module`).
 
 Once added, call a dependency in your code by its name, like a function:
@@ -580,7 +580,7 @@ type MyCi {
   }
 
   pub devContainer: Container! {
-    # 'go' is the dependency module — call it like a function
+    # 'go' is the dependency module. Call it like a function
     go(source: source).env.withWorkdir("/app")
   }
 
@@ -591,11 +591,11 @@ type MyCi {
 }
 ```
 
-## Generate / module metadata
+## Generate and module metadata
 
-Most SDKs use a generate step to produce client bindings from the Dagger API schema, which you then commit. **Dang has no such step.** Because Dang maps directly to the Dagger API, there are no generated client files and nothing language-specific to check in — what you write in `main.dang` is what runs.
+Most SDKs use a generate step to produce client bindings from the Dagger API schema, which you then commit. Dang has no such step. Because Dang maps directly to the Dagger API, there are no generated client files and nothing language-specific to check in. What you write in `main.dang` is what runs.
 
-The `mod generate` operation still exists for consistency and for module discovery/metadata. For a Dang module it is effectively a no-op: it returns an (empty) changeset rather than rewriting source.
+The `mod generate` operation still exists, for consistency with the other SDKs and for module discovery and metadata. For a Dang module it is close to a no-op. It returns a changeset, normally an empty one, rather than rewriting source.
 
 ```shell
 # Regenerate a single module (no client bindings for Dang; changeset is typically empty)
@@ -608,23 +608,23 @@ dagger api call dang-sdk generate-all
 dagger api call dang-sdk modules
 ```
 
-You can suppress generation for a module (or subtree) by placing the configured skip-marker file at or above the module root. The marker filename is reported by:
+To skip generation for a module or subtree, place the configured skip-marker file at or above the module root. This reports the marker filename:
 
 ```shell
 dagger api call dang-sdk skip-generate-filename
 ```
 
-Because there is nothing to commit from generation, the `--ignore-generated` flag on `init` has no meaningful effect for Dang — there are no generated SDK paths to add to `.gitignore`.
+Because generation produces nothing to commit, the `--ignore-generated` flag on `init` has no real effect for Dang. There are no generated SDK paths to add to `.gitignore`.
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires via `engineVersion` in `dagger-module.toml`. Manage it with `mod engine`:
+Each module declares the Dagger engine version it requires with `engineVersion` in `dagger-module.toml`. Manage it with `mod engine`:
 
 ```shell template
 # Read the required version (without the leading "v")
 dagger api call dang-sdk mod engine required
 
-# Pin to a specific version — returns a changeset
+# Pin to a specific version. Returns a changeset
 dagger api call dang-sdk mod engine require --version v{{ version }}
 
 # Pin to the current engine
@@ -634,11 +634,11 @@ dagger api call dang-sdk mod engine require-current
 dagger api call dang-sdk mod engine require-latest
 ```
 
-`engineVersion` must be a concrete version (e.g. <code>v{daggerVersion}</code>). `require-latest` resolves the latest stable release to its concrete version and pins that, keeping the module reproducible across machines and CI.
+`engineVersion` must be a concrete version (for example <code>v{daggerVersion}</code>). `require-latest` resolves the latest stable release to its concrete version and pins that, so the module stays reproducible across machines and CI.
 
 ## Workspace inputs
 
-A module reads the surrounding project's files through a `Workspace` argument on its **constructor**. Dagger **auto-populates** this argument from the current workspace — the caller passes nothing, and nothing is uploaded up front. The module then reads project content **lazily, on demand** as it actually uses it:
+A module reads the surrounding project's files through a `Workspace` argument on its constructor. Dagger fills in this argument from the current workspace. The caller passes nothing, and nothing uploads up front. The module reads project content lazily, only when it uses it:
 
 ```dang
 type MyCi {
@@ -652,13 +652,13 @@ type MyCi {
 }
 ```
 
-The `Workspace` exposes three readers:
+`Workspace` has three readers:
 
-- `ws.directory(path)` — read a directory from the workspace.
-- `ws.file(path)` — read a single file.
-- `ws.findUp(name:, from:)` — search **upward** from a start path for a file or directory by name (useful for locating a config file that may live in a parent directory); returns a nullable path.
+- `ws.directory(path)` reads a directory from the workspace.
+- `ws.file(path)` reads a single file.
+- `ws.findUp(name:, from:)` searches upward from a start path for a file or directory by name and returns a nullable path. Use it to locate a config file that may live in a parent directory.
 
-**Path resolution:** relative paths resolve from the workspace **cwd** (where the user invoked `dagger`); absolute paths (beginning with `/`) resolve from the workspace **root**.
+Relative paths resolve from the workspace cwd, where the user invoked `dagger`. Absolute paths, which begin with `/`, resolve from the workspace root.
 
 ```dang
 type MyCi {
@@ -675,7 +675,7 @@ type MyCi {
 }
 ```
 
-**Ignore patterns:** `ws.directory` accepts an `exclude` list to filter out files you don't need. This is important for cache efficiency — excluding `node_modules`, `.git`, build output, and similar paths avoids needless cache invalidations:
+`ws.directory` accepts an `exclude` list to filter out files you don't need. This matters for caching. Excluding `node_modules`, `.git`, build output, and similar paths avoids needless cache invalidations:
 
 ```dang
 type MyCi {
@@ -692,7 +692,7 @@ type MyCi {
 }
 ```
 
-**Principle: read only what you need.** Don't load the whole repo if you only need `src/`. Read specific paths and use tight `exclude` lists to minimize cache invalidations. Because reads are lazy, content the module never touches is never uploaded.
+**Read only what you need.** Don't load the whole repo if you only need `src/`. Read specific paths and use tight `exclude` lists to keep cache invalidations down. Reads are lazy, so content the module never touches never uploads.
 
 A complete example, modeled on [`dagger/eslint`](https://github.com/dagger/eslint):
 
@@ -720,17 +720,17 @@ type Eslint {
 
 ## Checks, generators, services, directives
 
-Dang has three first-class function types, each marked with a directive and run by its own verb. A useful, reusable module provides at least one of them:
+Dang has three first-class function types. Each has a directive that marks it and a verb that runs it. A useful module provides at least one of them:
 
 | Directive | Returns | Run by | Purpose |
 |---|---|---|---|
-| `@check` | `Void` (or a value) | `dagger check` | Validate something — lint, test, scan. |
+| `@check` | `Void` (or a value) | `dagger check` | Validate something, such as a lint, test, or scan. |
 | `@generate` | `Changeset` | `dagger generate` | Produce a diff of generated files for review. |
 | `@up` | `Service!` | `dagger up` | Start a long-running service. |
 
 ### Checks {#checks}
 
-A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code.
+A check validates something without requiring arguments. Mark it with `@check` and `dagger check` discovers and runs it. A check passes if it completes without error. It fails if any `withExec` returns a non-zero exit code.
 
 ```dang
 type MyCi {
@@ -756,7 +756,7 @@ type MyCi {
 }
 ```
 
-A check can also return `Container` — Dagger syncs it and uses the exit code:
+A check can also return `Container`. Dagger syncs it and uses the exit code:
 
 ```dang
 pub lint: Container @check {
@@ -770,7 +770,7 @@ pub lint: Container @check {
 
 ### Generators {#generators}
 
-A generator produces a [changeset](../cli/generating.mdx) — a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source; `dagger generate` runs all generators and presents the unified changeset for review:
+A generator produces a [changeset](../cli/generating.mdx), a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source. `dagger generate` runs all generators and presents the combined changeset for review:
 
 ```dang
 pub generateProto: Changeset @generate {
@@ -784,11 +784,11 @@ pub generateProto: Changeset @generate {
 }
 ```
 
-> Note: these `@generate` generators are *your module's* code-generation pipelines (e.g. protobuf, OpenAPI). They are unrelated to SDK client codegen — which, as noted above, Dang does not have.
+> These `@generate` generators are your module's own code generation pipelines, such as protobuf or OpenAPI. They have nothing to do with SDK client codegen, which Dang does not have.
 
 ### Services {#up-services}
 
-A service function returns a long-running `Service!`. Mark it with `@up` and `dagger up` will start it. Build the service from a container with `.asService`, exposing the ports it should listen on:
+A service function returns a long-running `Service!`. Mark it with `@up` and `dagger up` starts it. Build the service from a container with `.asService`, and expose the ports it should listen on:
 
 ```dang
 pub web: Service! @up {
@@ -799,7 +799,7 @@ pub web: Service! @up {
 }
 ```
 
-A module can expose several `@up` services — `dagger up` starts each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above: a `let` service is internal plumbing (e.g. a database wired into a check via `withServiceBinding`), while an `@up` service is a public entry point users start directly.
+A module can expose several `@up` services, and `dagger up` starts each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. An `@up` service is a public entry point that users start directly.
 
 ### Caching directives
 
@@ -823,7 +823,7 @@ The `policy` values are `Default`, `PerSession`, and `Never`. A function cache h
 The most direct way to test a Dang module is to call its functions and run its checks:
 
 ```shell
-# Smoke test — does it build?
+# Smoke test. Does it build?
 dagger api call build
 
 # Run all checks
@@ -850,11 +850,11 @@ jobs:
           verb: check
 ```
 
-`dagger check` runs every `@check` function in the module, failing the build if any check fails.
+`dagger check` runs every `@check` function in the module and fails the build if any check fails.
 
 ## Packaging and release
 
-A Dang module is just source — `main.dang` and `dagger-module.toml` (and any extra `.dang` files). There is nothing to build or generate before publishing.
+A Dang module is just source: `main.dang`, `dagger-module.toml`, and any extra `.dang` files. There is nothing to build or generate before publishing.
 
 To release:
 
@@ -872,13 +872,13 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 
 ## Troubleshooting
 
-- **`no Dagger module found containing path: .`** — `mod` and its sub-operations resolve the Dang module *at or above* the given workspace path. Run from inside the module's workspace, point `-W`/`--workspace` at it, or pass `--path`. Pass `--find-up` to allow `--path` to point inside the module.
-- **`init` fails with "workspace not loaded"** — `init` writes into the nearest `.dagger` directory of a loaded workspace. Run it from within a workspace (a directory tree containing or under `.dagger`), or use `-W`/`--workspace`.
-- **"The target path must not already contain a Dagger module"** — choose a different `--path`, or remove the existing module first.
-- **Parser/type errors** — Dang surfaces these directly from the module source. Check non-null markers (`!`), that the last expression in a function body matches the declared return type, and that custom-type/enum names referenced actually exist.
-- **A `Void` function must end in `null`** — `Void` functions typically `.sync` a container (or service) to force evaluation, then return `null` as the final expression.
-- **Changeset not written** — most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](../cli/generating.mdx) and do nothing to disk until you review and apply it.
-- **Stale generation expectations** — Dang has no client codegen, so there are no generated bindings to "regenerate." If a tutorial tells you to commit generated SDK files, that step does not apply to Dang.
+- **Module not found.** `no Dagger module found containing path: .` means `mod` and its sub-operations could not resolve a Dang module at or above the given workspace path. Run from inside the module's workspace, point `-W`/`--workspace` at it, or pass `--path`. Pass `--find-up` to let `--path` point inside the module.
+- **Workspace not loaded.** `init` writes into the nearest `.dagger` directory of a loaded workspace. If it fails with "workspace not loaded", run it from within a workspace (a directory tree that contains or sits under `.dagger`), or use `-W`/`--workspace`.
+- **Target path already has a module.** If `init` reports "The target path must not already contain a Dagger module", choose a different `--path` or remove the existing module first.
+- **Parser and type errors.** Dang reports these straight from the module source. Check the non-null markers (`!`), that the last expression in a function body matches the declared return type, and that every custom type and enum name you reference exists.
+- **A `Void` function must end in `null`.** A `Void` function usually calls `.sync` on a container or service to force evaluation, then returns `null` as its final expression.
+- **Changeset not written.** Most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](../cli/generating.mdx) and touch nothing on disk until you review and apply it.
+- **Stale generation expectations.** Dang has no client codegen, so there are no generated bindings to regenerate. If a tutorial tells you to commit generated SDK files, skip that step.
 
 ## Next steps
 

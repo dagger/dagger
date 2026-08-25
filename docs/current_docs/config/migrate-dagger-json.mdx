@@ -12,8 +12,8 @@ If you're new to Dagger, you can skip this page. It's for existing users encount
 
 A workspace separates two things that a legacy `dagger.json` used to hold at once:
 
-- **A module** (`dagger-module.toml`) — a package of code.
-- **A workspace** (`dagger.toml`) — your project's Dagger configuration: which modules to use, and how they're configured.
+- A module, described by `dagger-module.toml`, is a package of code.
+- A workspace, described by `dagger.toml`, is your project's Dagger configuration: which modules to use, and how they're configured.
 
 ## Run the migration
 
@@ -23,19 +23,19 @@ You don't have to migrate right away. Dagger infers a workspace from an existing
 dagger setup
 ```
 
-`dagger setup` prompts before each step. Its migration step writes workspace fields into `dagger.toml`, and converts module-shaped `dagger.json` files to `dagger-module.toml` in place — module files are never moved, and only the root `dagger.json` plus the local dependencies and toolchains it references are touched. If anything needs manual attention, it writes `.dagger/migration-report.md`.
+`dagger setup` prompts before each step. Its migration step writes workspace fields into `dagger.toml` and converts module-shaped `dagger.json` files to `dagger-module.toml` in place. It never moves module files, and it touches only the root `dagger.json` plus the local dependencies and toolchains that file references. If anything needs manual attention, it writes `.dagger/migration-report.md`.
 
 A few behaviors worth knowing:
 
-- If your repo *is* a module — the root `dagger.json` describes a module whose source lives at the repo root — migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module isn't installed into the workspace, so load it explicitly: `dagger -m . call --help`.
-- Run from a module subdirectory, migration converts just that module — `dagger.json` becomes `dagger-module.toml` in place, along with any local dependencies it references — and creates no workspace. Module recommendations are skipped.
-- Nested `dagger.toml` files are never created. Toolchains listed in a subdirectory `dagger.json` are installed into the workspace at the repository root, with local source paths rebased. A subdirectory `dagger.json` with a `blueprint` is left as legacy, with a warning.
-- Modules now commit their generated code (`dagger.gen.go` and friends) instead of regenerating it at runtime. Migration removes the `.gitignore` rules that used to exclude it — afterwards, run `dagger generate` and commit the output.
+- If your repo *is* a module, meaning the root `dagger.json` describes a module whose source lives at the repo root, migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module isn't installed into the workspace, so load it explicitly: `dagger -m . call --help`.
+- Run from a module subdirectory, migration converts just that module and creates no workspace. `dagger.json` becomes `dagger-module.toml` in place, along with any local dependencies it references. Module recommendations are skipped.
+- Migration never creates nested `dagger.toml` files. It installs toolchains listed in a subdirectory `dagger.json` into the workspace at the repository root and rebases their local source paths. It leaves a subdirectory `dagger.json` with a `blueprint` as legacy, with a warning.
+- Modules now commit their generated code (`dagger.gen.go` and friends) instead of regenerating it at runtime. Migration removes the `.gitignore` rules that used to exclude it. Afterwards, run `dagger generate` and commit the output.
 - Applying a migration ends the setup run. Run `dagger setup` again for module recommendations.
 
 ## Where your configuration lands
 
-**Toolchains are modules.** Install one with `dagger install github.com/foo/bar` and it's recorded in `dagger.toml`. Same functionality, one concept instead of two.
+**Toolchains are modules.** Install one with `dagger install github.com/foo/bar` and `dagger.toml` records it. Same functionality, one concept instead of two.
 
 **Blueprints are an entrypoint flag.** A workspace module marked `entrypoint = true` plays the role a blueprint used to.
 
@@ -49,7 +49,7 @@ source = "github.com/dagger/go"
 goVersion = "1.22"
 ```
 
-**Modules are managed from the top level.** `dagger search` finds them, `dagger install` and `dagger uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml` — edit that directly when authoring a module or adding code dependencies.
+**Modules are managed from the top level.** `dagger search` finds them; `dagger install` and `dagger uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml`. Edit that file directly when authoring a module or adding code dependencies.
 
 ## Quick reference
 
