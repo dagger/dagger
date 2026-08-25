@@ -28,8 +28,9 @@ const (
 // "" means the run must complete with no error found; a non-empty value
 // names the one invariant that must be violated.
 var expectedOutcome = map[string]string{
-	// green: regression gates over the modeled cache behavior
-	"core":              "",
+	// green: regression gates over the modeled cache behavior. (The former
+	// core configuration is subsumed by resources: same bounds, every core
+	// invariant, strictly more behavior.)
 	"release_prune":     "",
 	"liveness":          "",
 	"lazy":              "",
