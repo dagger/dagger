@@ -63,27 +63,14 @@ var expectedOutcome = map[string]string{
 	"decode_cancel":          "",
 	"decode_cancel_liveness": "",
 
-	// green: session-resource gating with no persistence (the filter in
+	// green: session-resource gating (the filter in
 	// LookupHit/CanonicalPick/FnComplete, PubIndexFresh/PubAttachAddDep
 	// maintenance, BindResource, RequiredExact and ReturnedGated).
-	"resources": "",
-
-	// accepted finding: the STORED requiredSessionResources set drifts
-	// from the true transitive requirement. importPersistedState
-	// recomputes it over c.resultsByID in Go map order, so a parent
-	// visited before its dependency ends with an empty set
-	// (cache_persistence_import.go:359, recompute at cache.go:556); and
-	// ensurePersistedHitValueLoaded overwrites it from the decoded value,
-	// which knows only its own handle, dropping a non-leaf's
-	// dependency-derived requirement (cache_persistence_import.go:736-741).
-	// Both exist unchanged on upstream/main; see the config header.
-	"resources_restart": "RequiredExact",
-
-	// accepted finding: the harm of that drift. A session that never
-	// bound the handle is handed the re-imported non-leaf, because its
-	// drifted stored set {} passes the lookup filter. resources_restart
-	// tracks the accounting; this tracks the caller's outcome.
-	"resources_restart_gated": "ReturnedGated",
+	// resources_restart additionally gates the import-time accounting:
+	// the dependency-first required recompute at import and the decode
+	// installs leaving the stored set alone; see the config headers.
+	"resources":         "",
+	"resources_restart": "",
 }
 
 type TlaCheck struct {
