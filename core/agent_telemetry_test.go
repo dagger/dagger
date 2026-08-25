@@ -233,7 +233,11 @@ func TestAgentReplacesLaunchingScopeWithDurableTombstoneLease(t *testing.T) {
 	runtime.mu.Unlock()
 	_, err = runtimes.Start(ctx, agent)
 	require.NoError(t, err)
-	require.NoError(t, runtime.WaitFor(ctx, AgentStateStopped))
+	// Wait as the external observer the client would be: ctx above carries
+	// the agent itself (simulating its loop context for lease assertions),
+	// and a wait issued from an agent's own context is a self-wait the
+	// deadlock guard refuses by design.
+	require.NoError(t, runtime.WaitFor(context.Background(), AgentStateStopped))
 	require.Equal(t, int32(2), acquired.Load())
 	require.Equal(t, int32(1), released.Load(), "the executable loop lease must be replaced")
 	runtime.mu.Lock()

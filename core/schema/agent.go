@@ -44,6 +44,11 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`Computed lifecycle state; never stored.`,
 				`An agent that was never started reports IDLE: its mailbox is empty and no turn is open.`),
 
+		dagql.NodeFunc("error", s.loopError).
+			DoNotCache("Projects live runtime state.").
+			Doc(`Why the loop failed, for a FAILED agent; empty otherwise.`,
+				`The snapshot holds the completed prefix — send or resume retries from it.`),
+
 		dagql.NodeFunc("snapshot", s.snapshot).
 			DoNotCache("Reflects the loop's last committed step, which advances as the agent runs.").
 			Doc(`The conversation as of the last committed step: immutable, branchable, persistable.`,
@@ -114,6 +119,17 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.`,
 				`The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.`),
+
+		dagql.NodeFunc("notify", s.notify).
+			DoNotCache("Imperatively mutates runtime state.").
+			Doc(`Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.`,
+				`This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.`,
+				`Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.`,
+				`Idempotent per subscriber; re-subscribing replaces the state set.`).
+			Args(
+				dagql.Arg("subscriber").Doc(`The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.`),
+				dagql.Arg("on").Doc(`The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.`),
+			),
 
 		dagql.NodeFunc("stop", s.stop).
 			DoNotCache("Imperatively mutates runtime state.").
@@ -214,6 +230,23 @@ func (s agentSchema) state(ctx context.Context, parent dagql.ObjectResult[*core.
 		return core.AgentStateIdle, nil
 	}
 	return rt.State(), nil
+}
+
+// loopError projects the FAILED tombstone's error. Like state, absence of a
+// runtime is an honest empty answer, never a creation.
+func (s agentSchema) loopError(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (string, error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return "", err
+	}
+	rt, found, err := agents.Get(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", nil
+	}
+	return rt.LoopError(), nil
 }
 
 func (s agentSchema) snapshot(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {
@@ -409,6 +442,28 @@ func (s agentSchema) waitSettled(ctx context.Context, parent dagql.ObjectResult[
 		return res, err
 	}
 	if _, err := rt.WaitSettled(ctx); err != nil {
+		return res, err
+	}
+	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) notify(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Subscriber core.AgentID
+	On         []core.AgentState `default:"[\"IDLE\",\"FAILED\"]"`
+}) (res dagql.Result[core.AgentID], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	subscriber, err := args.Subscriber.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := agents.Notify(ctx, parent, subscriber, args.On); err != nil {
 		return res, err
 	}
 	return agentSelfID(ctx, parent)
