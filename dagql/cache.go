@@ -4705,6 +4705,12 @@ func (c *Cache) lookupCacheForDigests(
 	if err != nil {
 		return nil, false, err
 	}
+	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared) {
+		// Attachment grew the required set after this hit was selected;
+		// fall through to the singleflight, keeping the recorded session
+		// edge (see lookupCacheForRequest).
+		return nil, false, nil
+	}
 	if c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
 	}

@@ -111,6 +111,12 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 	if err != nil {
 		return nil, err
 	}
+	if sessionID != "" && !c.sessionStillSatisfiesResourceRequirements(sessionID, res) {
+		// Attachment grew the required set after the gated pre-check in
+		// sharedResultByResultID; refuse rather than serve. The session
+		// edge recorded there stays until session release.
+		return nil, fmt.Errorf("resolve result %d: session %q has not bound the session resources this result requires", resultID, sessionID)
+	}
 	if sessionID != "" && c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, loaded, alreadyTracked, trackedCount)
 	}
