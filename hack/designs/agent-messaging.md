@@ -506,18 +506,27 @@ and TestAgentRestore suites pass unchanged.
 
 **Not built, deliberately — the follow-up list:**
 
-- **TUI styling** (P3's presentation half): attribution now reaches every
-  frontend as rendered text and as structured `LLMMessage.origin`, but
-  nothing yet renders agent messages in a distinct style or events as
-  one-liners. The data is all there; this is dagql/idtui work.
+- **TUI styling** (P3's presentation half): *since BUILT.* The recorded
+  origin rides the message's "LLM prompt" span as `dagger.io/llm.origin.*`
+  attributes (engine/telemetryattrs, stamped by `emitUserMessageSpan`), and
+  the pretty frontend renders origin-carrying messages distinctly in both
+  the live transcript and the final report (the shared
+  `styleLLMMessageView` choke point): AGENT-origin messages keep the shaded
+  incoming-prompt block under a sender-attribution header — the sender's
+  name plus the message ref (`scout #3`) or the ref it answers
+  (`chief ↩ #2`) — and EVENT-origin messages collapse to a faint one-liner
+  (first line plus a "(+N lines)" tail; the payload stays in the span's
+  logs). Plain user prompts are untouched, so pre-provenance traces render
+  as before.
 - **Harness-backed loops** record no origins: their prompt submission rides
   the native CLI's own channel (core/agent_harness.go), not drainMailbox.
   Provider-backed loops — every staff worker and CLI conversation — are
   covered.
-- **Telemetry attributes** beyond the call payload: the origin rides the
-  recorded `withPrompt(origin:)` call (so the trace has it) and the rendered
-  header (so transcripts show it); dedicated message-record attributes for
-  roster-level "via X" chips remain unwired, pending the TUI work above.
+- **Telemetry attributes** beyond the call payload: *since BUILT for the
+  message record itself* — the origin now rides the message span as the
+  `dagger.io/llm.origin.*` attributes above, alongside the recorded
+  `withPrompt(origin:)` call and the rendered header. Roster-level "via X"
+  chips (surfacing a sender in the agent roster strip) remain unwired.
 - **modules/staff was temporarily deregistered from dagger.toml** (dev and
   codex envs) while this landed: it uses Agent fields only a from-source
   engine serves, and a module that fails to compile takes its whole env's

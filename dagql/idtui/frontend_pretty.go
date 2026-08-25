@@ -5329,9 +5329,11 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 // above and below, extending its ANSIBrightBlack block by one row each way so
 // the prompt reads as a padded card set apart from the transcript. Only applies
 // in the live shell view; other rows, the final report, and plain mode are
-// unchanged.
+// unchanged. Event-origin messages render as bare one-liners, not cards, so
+// they get no shaded padding either.
 func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []string {
-	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser {
+	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser ||
+		row.Span.LLMEventOriginMessage() {
 		return lines
 	}
 	width := fe.contentWidth
@@ -7728,13 +7730,16 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 
 	if !fe.finalRender && fe.shell != nil {
 		switch {
-		case row.Span.LLMRole == telemetry.LLMRoleUser:
+		case row.Span.LLMRole == telemetry.LLMRoleUser && !row.Span.LLMEventOriginMessage():
 			// The user's prompt sits on a shaded block; its leading gutter -- or
 			// the focus cue ("❯ ") that stands in for it -- must be shaded too so
 			// line 0 matches the continuation lines, which carry the gutter inside
 			// their background (styleLLMMessageView). Otherwise the cue punches an
 			// unshaded hole in the block. The block is padded to the full content
-			// width, so its right edge is clipped and stays flush.
+			// width, so its right edge is clipped and stays flush. Agent-origin
+			// messages keep the shaded block (under their attribution header);
+			// event one-liners have no block, so they fall through to the plain
+			// cue below.
 			cue := out.String("  ")
 			if focused {
 				cue = out.String(LLMPrompt + " ").Bold()
@@ -8206,9 +8211,12 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 // message Vterm view, returning the restyled view (and true) for the roles it
 // handles. Failed messages render in red so a terminal agent failure remains
 // visible in the conversation above the prompt. Otherwise the user's prompt is
-// drawn on a shaded (ANSIBrightBlack) background padded to the content width,
-// and thinking is drawn dim and italic. Other roles -- the assistant's reply,
-// tool calls -- are left verbatim, so this returns false for them.
+// drawn on a shaded (ANSIBrightBlack) background padded to the content width;
+// a message another agent sent renders as the same shaded block under a
+// sender-attribution header; an engine lifecycle event collapses to a compact
+// faint one-liner; and thinking is drawn dim and italic. Other roles -- the
+// assistant's reply, tool calls -- are left verbatim, so this returns false
+// for them.
 func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, logPrefix, view string) (string, bool) {
 	if span.LLMRole == "" || span.LLMTool != "" {
 		return "", false
@@ -8222,6 +8230,19 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 	width := fe.contentWidth
 	if width <= 0 {
 		width = fe.window.Width
+	}
+
+	if user && !failed {
+		// Origin-carrying messages (hack/designs/agent-messaging.md §4.1) do
+		// not read as the user's own words: an agent's message renders under
+		// its sender's name, and an engine lifecycle event collapses to a
+		// one-liner instead of a prompt bubble.
+		switch {
+		case span.LLMEventOriginMessage():
+			return fe.styleLLMEventView(out, view), true
+		case span.LLMAgentOriginMessage():
+			return fe.styleLLMAgentMessageView(out, span, logPrefix, view, width), true
+		}
 	}
 
 	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
@@ -8266,6 +8287,92 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 		b.WriteByte('\n')
 	}
 	return b.String(), true
+}
+
+// styleLLMEventView collapses an engine lifecycle event message (EVENT
+// origin) to a compact one-liner: the event's first line, faint, with a
+// "(+N lines)" tail when the payload beneath it -- e.g. an idle worker's
+// final reply -- is elided. The full text stays in the span's logs, so the
+// zoomed view and ReadLogs remain the discovery path for the rest. The first
+// line renders inline on the already-indented title line, like thinking.
+func (fe *frontendPretty) styleLLMEventView(out TermOutput, view string) string {
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	first := strings.TrimRight(ansi.Strip(lines[0]), " ")
+	var b strings.Builder
+	b.WriteString(out.String(first).Foreground(termenv.ANSIBrightBlack).String())
+	if extra := len(lines) - 1; extra > 0 {
+		b.WriteString(out.String(fmt.Sprintf(" (+%d lines)", extra)).Faint().String())
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// styleLLMAgentMessageView renders a message another agent sent (AGENT
+// origin) as a sender-attributed block: an attribution header naming the
+// sender (plus the message's ref, or the ref it replies to), above the
+// message body on the same shaded background as a user prompt. The shading
+// still says "this steered the turn"; the header stops it from reading as
+// something the user typed (the P3 pitfall in
+// hack/designs/agent-messaging.md).
+//
+// The header takes the inline position on the title line, so the body's
+// first line -- which rendered inline for plain user prompts -- moves down a
+// row and gains the message gutter the continuation lines already carry.
+func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.Span, logPrefix, view string, width int) string {
+	shade := termenv.ANSIBrightBlack
+	name := span.LLMOriginAgentName
+	if name == "" {
+		name = "agent"
+	}
+	detail := span.LLMOriginRef
+	if span.LLMOriginReplyTo != "" {
+		detail = "↩ " + span.LLMOriginReplyTo
+	}
+
+	var b strings.Builder
+	plainHeader := name
+	if detail != "" {
+		plainHeader += " " + detail
+	}
+	if width > 0 && lipgloss.Width(plainHeader) > width {
+		// Too narrow for the styled split: fall back to one clipped segment.
+		b.WriteString(out.String(padANSI(clipPlain(plainHeader, width), width)).Faint().Background(shade).String())
+	} else {
+		rest := ""
+		if detail != "" {
+			rest = " " + detail
+		}
+		if width > 0 {
+			rest = padANSI(rest, width-lipgloss.Width(name))
+		}
+		b.WriteString(out.String(name).Bold().Foreground(termenv.ANSICyan).Background(shade).String())
+		b.WriteString(out.String(rest).Faint().Background(shade).String())
+	}
+
+	gutter := ansi.Strip(logPrefix)
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	for i, line := range lines {
+		b.WriteByte('\n')
+		// Strip existing SGR so the role styling owns the line, as for user
+		// prompts.
+		plain := ansi.Strip(line)
+		if i == 0 {
+			// The body's first line rendered inline for plain user prompts and
+			// so carries no gutter; demoted beneath the header it needs one to
+			// line up with its continuations.
+			plain = gutter + plain
+		}
+		if width > 0 {
+			plain = padANSI(clipPlain(plain, width), width)
+		}
+		b.WriteString(out.String(plain).Background(shade).String())
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // logLinePrefixes builds the per-line prefix applied to a row's inline log

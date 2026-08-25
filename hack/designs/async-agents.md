@@ -1280,8 +1280,10 @@ rather than being renumbered away:
    no forgeable argument — recorded as a `withPrompt(origin:)` selector,
    rendered to the MODEL as a deterministic attribution header, and exposed
    via `LLMMessage.origin`. The "via X" this section promised now exists in
-   history and trace; the TUI's distinct STYLING of attributed messages is
-   the remaining follow-up.*
+   history and trace, and the TUI styling followed: the origin rides the
+   message span as `dagger.io/llm.origin.*` attributes, agent-origin
+   messages render sender-attributed (name + ref header over the prompt
+   block), and events collapse to a faint one-liner.*
 4. **`WAITING_INPUT` / `waitingOn`** (§3.4): enum value exists but is
    unreachable; needs the user-ask parking path (the non-modal
    resurrection of the dead `LLM.Interject`). The telemetry half is

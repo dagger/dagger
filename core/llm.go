@@ -2710,6 +2710,33 @@ func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, re
 	}
 }
 
+// messageOriginAttrs renders a recorded message origin as span attributes for
+// the message's telemetry span, so frontends can attribute another agent's
+// words to their sender and render engine lifecycle events compactly
+// (hack/designs/agent-messaging.md §4.1). Nil — the user's own prompt — emits
+// nothing, keeping pre-provenance spans unchanged.
+func messageOriginAttrs(origin *LLMMessageOrigin) []attribute.KeyValue {
+	if origin == nil {
+		return nil
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetryattrs.LLMMessageOriginKindAttr, string(origin.Kind)),
+	}
+	if origin.AgentID != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginAgentIDAttr, origin.AgentID))
+	}
+	if origin.AgentName != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginAgentNameAttr, origin.AgentName))
+	}
+	if origin.Ref != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginRefAttr, origin.Ref))
+	}
+	if origin.ReplyTo != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginReplyToAttr, origin.ReplyTo))
+	}
+	return attrs
+}
+
 func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
 	var emoji string
 	switch msg.Role {
@@ -2724,6 +2751,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 	}
+	attrs = append(attrs, messageOriginAttrs(msg.Origin)...)
 	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
 	if callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))

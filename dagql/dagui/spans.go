@@ -350,6 +350,18 @@ type SpanSnapshot struct {
 	LLMToolArgValues []string `json:",omitempty"`
 	LLMCallDigest    string   `json:",omitempty"`
 
+	// LLM message origin: recorded provenance for a user-role message that
+	// arrived through an agent mailbox (engine/telemetryattrs' llm.origin.*
+	// vocabulary). Kind is USER, AGENT, or EVENT; the agent fields identify
+	// the sending (AGENT) or observed (EVENT) agent; Ref is the message's
+	// short ref (e.g. "#3") and ReplyTo the ref of the message it answers.
+	// All empty for the user's own prompts, the unmarked common case.
+	LLMOriginKind      string `json:",omitempty"`
+	LLMOriginAgentID   string `json:",omitempty"`
+	LLMOriginAgentName string `json:",omitempty"`
+	LLMOriginRef       string `json:",omitempty"`
+	LLMOriginReplyTo   string `json:",omitempty"`
+
 	// LLMToolResultTokens is an estimate of the token size of a tool call's
 	// result (the output it fed back into the model's context). The TUI shows
 	// it on the tool-call row so an outsized, context-bloating result is easy
@@ -418,6 +430,22 @@ func (link *SpanLink) ProcessAttribute(name string, val any) {
 // IsWait reports whether the link is a well-formed wait edge.
 func (link *SpanLink) IsWait() bool {
 	return link.Purpose == telemetryattrs.LinkPurposeWait && link.WaitEnd.After(link.WaitStart)
+}
+
+// LLMAgentOriginMessage reports whether this span is a conversation message
+// recorded with AGENT provenance: another agent's words, delivered through a
+// mailbox, rather than a prompt the user typed. Frontends render these
+// sender-attributed instead of user-styled.
+func (snapshot *SpanSnapshot) LLMAgentOriginMessage() bool {
+	return snapshot.LLMOriginKind == telemetryattrs.LLMMessageOriginKindAgent
+}
+
+// LLMEventOriginMessage reports whether this span is a conversation message
+// recorded with EVENT provenance: the engine reporting a subscribed agent's
+// lifecycle transition. Frontends render these as compact one-liners rather
+// than prompt bubbles.
+func (snapshot *SpanSnapshot) LLMEventOriginMessage() bool {
+	return snapshot.LLMOriginKind == telemetryattrs.LLMMessageOriginKindEvent
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint: gocyclo
@@ -536,6 +564,21 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)
+
+	case telemetryattrs.LLMMessageOriginKindAttr:
+		snapshot.LLMOriginKind = val.(string)
+
+	case telemetryattrs.LLMMessageOriginAgentIDAttr:
+		snapshot.LLMOriginAgentID = val.(string)
+
+	case telemetryattrs.LLMMessageOriginAgentNameAttr:
+		snapshot.LLMOriginAgentName = val.(string)
+
+	case telemetryattrs.LLMMessageOriginRefAttr:
+		snapshot.LLMOriginRef = val.(string)
+
+	case telemetryattrs.LLMMessageOriginReplyToAttr:
+		snapshot.LLMOriginReplyTo = val.(string)
 
 	case telemetryattrs.LLMToolResultTokensAttr:
 		snapshot.LLMToolResultTokens = asInt64(val)
