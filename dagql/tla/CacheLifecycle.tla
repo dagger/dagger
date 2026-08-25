@@ -920,8 +920,15 @@ PubIndexFresh(o) ==
        \* PROPERTIES header gating guarantee. Without this restriction the
        \* model would reach a session structurally depending on a leaf it
        \* never obtained, which the code cannot produce.
+       \* A dep is a result the resolver held, so its attachment is settled:
+       \* an attached result was handed out only past its read barrier, and
+       \* attachResult completes a detached child's attachment before the
+       \* edge is recorded. A dep edge onto a still-attaching result was a
+       \* harmless over-approximation until the required-set cascade made it
+       \* observable, so the choice is now restricted to settled barriers.
        \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
                        /\ res[r].registered
+                       /\ res[r].barrier \in {"none", "closedOk"}
                        /\ res[r].required
                             \subseteq sessionRelease[ongoingCalls[o].sess].handles}} :
         LET withDeps == [r \in DOMAIN res |->
@@ -1105,6 +1112,10 @@ PubAttachAddDep(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ \E d \in ResultIds :
         /\ res[d].registered
+        \* the dep's own attachment is settled, as in PubIndexFresh: the
+        \* value's embedded children were resolver-held (past their read
+        \* barrier) or attached to completion by attachResult first
+        /\ res[d].barrier \in {"none", "closedOk"}
         /\ d # ongoingCalls[o].resId
         /\ d \notin res[ongoingCalls[o].resId].deps
         \* the stated no-cycle assumption (see the comment block above)
@@ -1786,6 +1797,18 @@ AddDepLate ==
         /\ res[d].barrier \in {"none", "closedOk"}
         /\ d \notin res[p].deps
         /\ ~DepReachable(res, d, p)
+        \* The caller possesses both results: the one production caller
+        \* loads the parent and the dep through its own session context
+        \* before calling AddExplicitDependency, so some session holds a
+        \* counted edge to each, and - having obtained each through a
+        \* filtered path (the gating guarantee) - its bound set satisfies
+        \* both current stored sets. Without this the edge could appear
+        \* with no modeled caller able to produce it.
+        /\ \E s \in Sessions :
+            /\ <<s, p>> \in countedEdges
+            /\ <<s, d>> \in countedEdges
+            /\ res[p].required \subseteq sessionRelease[s].handles
+            /\ res[d].required \subseteq sessionRelease[s].handles
         /\ LET newDeps == res[p].deps \cup {d}
                newReq  == CascadeRequired(res, p, newDeps)
            IN res' = [x \in DOMAIN res |->

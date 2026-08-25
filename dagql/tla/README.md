@@ -11,11 +11,12 @@ it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
 violations are reserved for deliberately accepted model findings. One
-finding is tracked today: a late explicit dependency can extend a
-result's transitive requirement while another session's invocation
-already holds it, so that invocation returns a result depending on a
-handle leaf its session never bound (`resources_latedep_gated`; the
-accounting itself stays exact, gated green by `resources_latedep`). The
+finding is tracked today: a result's transitive requirement can grow
+after the lookup filter has run - during attachment, or through a late
+explicit dependency - and nothing re-checks before the serve, so an
+invocation can return a result depending on a handle leaf its session
+never bound (`resources_gated_growth`; the accounting itself stays
+exact, gated green by `resources_latedep`). The
 `expectedOutcome` map is the authoritative list; every configuration
 with an empty entry there is a green regression gate. (The two most
 recently closed findings: `decode_cancel` — a decode leader's own
