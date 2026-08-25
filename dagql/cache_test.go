@@ -7173,6 +7173,7 @@ func TestCacheAddExplicitDependencyRefusesSessionResourceDeps(t *testing.T) {
 type cacheTestBlockingAttachObj struct {
 	Value         int
 	leaf          AnyResult
+	attachErr     error
 	selfID        uint64
 	attachStarted chan struct{}
 	attachRelease chan struct{}
@@ -7195,6 +7196,12 @@ func (obj *cacheTestBlockingAttachObj) AttachDependencyResults(
 	}
 	close(obj.attachStarted)
 	<-obj.attachRelease
+	if obj.attachErr != nil {
+		return nil, obj.attachErr
+	}
+	if obj.leaf == nil {
+		return nil, nil
+	}
 	attached, err := attach(obj.leaf)
 	if err != nil {
 		return nil, err
@@ -7420,4 +7427,97 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 	assertCacheRequiredSessionResourcesExact(t, c)
 	assert.NilError(t, c.ReleaseSession(aCtx, "loadgrow-a"))
 	assert.NilError(t, c.ReleaseSession(bCtx, "loadgrow-b"))
+}
+
+func TestCacheLoadResultByResultIDIgnoresUncleanCanonicalSiblings(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+	contentDig := digest.FromString("cache-test canonical clean attachment")
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "canon-a-client",
+		SessionID: "canon-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	loaderCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "canon-loader-client",
+		SessionID: "canon-loader",
+	})
+	loaderCtx = ContextWithCache(loaderCtx, c)
+
+	// The sibling registers first (lower result ID, so the canonicalization
+	// iterates it before the exact result) and holds its attachment open.
+	attachFailure := errors.New("cache-test sibling attachment failure")
+	sibling := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachErr:     attachFailure,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+	siblingFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "canon-sibling",
+	}
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	siblingDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(aCtx, "canon-a", srv, &CallRequest{ResultCall: siblingFrame}, func(ctx context.Context) (AnyResult, error) {
+			res, err := NewResultForCall(sibling, siblingFrame)
+			if err != nil {
+				return nil, err
+			}
+			return res.WithContentDigest(ctx, contentDig)
+		})
+		siblingDone <- callOutcome{res: res, err: err}
+	}()
+	<-sibling.attachStarted
+	siblingID := sharedResultID(sibling.selfID)
+	assert.Assert(t, siblingID != 0)
+
+	// The exact result shares the sibling's content digest and settles
+	// cleanly. It cannot adopt the sibling at publication because adoption
+	// already requires clean attachment.
+	exactFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "canon-exact",
+	}
+	exactRes, err := c.GetOrInitCall(aCtx, "canon-a", srv, &CallRequest{ResultCall: exactFrame}, func(ctx context.Context) (AnyResult, error) {
+		res, err := NewResultForCall(&cacheTestObject{Value: 2}, exactFrame)
+		if err != nil {
+			return nil, err
+		}
+		return res.WithContentDigest(ctx, contentDig)
+	})
+	assert.NilError(t, err)
+	exactShared := exactRes.cacheSharedResult()
+	assert.Assert(t, exactShared != nil && exactShared.id != 0)
+	assert.Assert(t, siblingID < exactShared.id, "sibling must sort before the exact result")
+
+	// While the sibling's attachment is still open, an ID load of the exact
+	// result must not be redirected onto the sibling's barrier: it must be
+	// served from the settled exact result immediately.
+	loaded, err := c.LoadResultByResultID(loaderCtx, "canon-loader", srv, uint64(exactShared.id))
+	assert.NilError(t, err)
+	loadedShared := loaded.cacheSharedResult()
+	assert.Assert(t, loadedShared != nil)
+	assert.Equal(t, exactShared.id, loadedShared.id,
+		"ID load must resolve to the exact result, not an unclean canonical sibling")
+
+	// Cleanup: fail the sibling's attachment and collect its call error.
+	close(sibling.attachRelease)
+	siblingOut := <-siblingDone
+	assert.ErrorContains(t, siblingOut.err, attachFailure.Error())
+
+	assert.NilError(t, c.ReleaseSession(aCtx, "canon-a"))
+	assert.NilError(t, c.ReleaseSession(loaderCtx, "canon-loader"))
 }

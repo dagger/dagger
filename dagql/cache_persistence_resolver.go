@@ -75,7 +75,12 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
 	if mode != sharedResultLookupExact {
-		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), false)
+		// Require clean attachment, as publication adoption does: without it
+		// the canonicalization can redirect an ID load onto a sibling whose
+		// attachment is still open or has failed, and the load then inherits
+		// that sibling's barrier wait or attachment error even though the
+		// exact result it asked for is settled and healthy.
+		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), true)
 	}
 	if mode == sharedResultLookupCanonicalEquivalentGated &&
 		!c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
