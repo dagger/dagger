@@ -1,10 +1,10 @@
 ---
-title: "dagger.toml reference"
-slug: /config/reference
+title: "dagger.toml"
+slug: /config/reference/dagger-toml
 description: "The dagger.toml workspace configuration file schema."
 ---
 
-# dagger.toml reference
+# dagger.toml
 
 A workspace is configured by a `dagger.toml` file at its root. It records the modules installed in the workspace, their settings, and any per-environment overrides. `dagger install` creates it on first install.
 
@@ -45,7 +45,7 @@ packageManager = "yarn"
 | `up` | table | `skip = [...]` — services to exclude from `dagger up`. |
 | `as-sdk` | table | SDK-role data, for module entries that act as an SDK in this workspace. See [`as-sdk`](#as-sdk). |
 
-Settings can point at another module's output instead of a literal value — see [Module wiring](./module-wiring.mdx).
+Settings can point at another module's output instead of a literal value — see [Module wiring](../module-wiring.mdx).
 
 ## `as-sdk`
 
@@ -57,7 +57,7 @@ Settings can point at another module's output instead of a literal value — see
 
 ## `[env.<name>]`
 
-An environment overlay carries module settings, and may install modules scoped to itself. See [Environments](./environments.mdx).
+An environment overlay carries module settings, and may install modules scoped to itself. See [Environments](../environments.mdx).
 
 ```toml
 [env.staging.modules.eslint.settings]
@@ -79,4 +79,4 @@ baseImageAddress = "node:22-alpine"
 
 ## User-level file
 
-The same module settings can be set per-user, outside the repository, in `~/.config/dagger/config.toml`. See [User configuration](./user.mdx).
+The same module settings can be set per-user, outside the repository, in `~/.config/dagger/config.toml`. See [User configuration](../user.mdx).

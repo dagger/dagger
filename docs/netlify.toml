@@ -1394,7 +1394,7 @@
 # The workspace config schema page moved into the Configuration section.
 [[redirects]]
   from = "/reference/configuration/workspace"
-  to = "/config/reference"
+  to = "/config/reference/dagger-toml"
   status = 301
 
 # Environments and module wiring moved out of the CLI section.

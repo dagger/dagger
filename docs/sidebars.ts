@@ -89,7 +89,19 @@ module.exports = {
         "config/environments",
         "config/user",
         "config/module-wiring",
-        { type: "doc", id: "config/reference", label: "Reference" },
+        {
+          type: "category",
+          label: "Reference",
+          link: {
+            type: "doc",
+            id: "config/reference/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "config/reference/dagger-toml",
+          ],
+        },
       ],
     },
 
