@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -33,6 +34,10 @@ type Config struct {
 	// Registries configures custom registry mirrors, root CAs, and
 	// insecure/HTTP access.
 	Registries map[string]RegistryConfig `json:"registries,omitempty"`
+
+	// MaxParallelism bounds concurrent build steps. When unset, parallelism is
+	// unbounded.
+	MaxParallelism *MaxParallelism `json:"maxParallelism,omitempty"`
 }
 
 type LogLevel string
@@ -242,4 +247,55 @@ type Security struct {
 	// Disabling this option ensures that dagger build containers do not run as
 	// privileged, and is a basic form of security hardening.
 	InsecureRootCapabilities *bool `json:"insecureRootCapabilities,omitempty"`
+}
+
+// MaxParallelism bounds concurrent build steps via one strategy. At most one
+// may be set; unset means unbounded.
+type MaxParallelism struct {
+	// Num is an absolute number of parallel build steps.
+	Num int `json:"num,omitempty"`
+
+	// CPU is a percentage (1-100) of the engine's CPU cores; resolves to at least 1.
+	CPU int `json:"cpu,omitempty"`
+}
+
+func (p *MaxParallelism) UnmarshalJSON(data []byte) error {
+	type raw MaxParallelism
+	var r raw
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
+		return fmt.Errorf("invalid maxParallelism: %w", err)
+	}
+	*p = MaxParallelism(r)
+	return p.validate()
+}
+
+func (p MaxParallelism) validate() error {
+	if p.Num < 0 {
+		return fmt.Errorf("invalid maxParallelism num %d: must not be negative", p.Num)
+	}
+	if p.CPU < 0 || p.CPU > 100 {
+		return fmt.Errorf("invalid maxParallelism cpu %d: must be a percentage between 1 and 100", p.CPU)
+	}
+	if p.Num > 0 && p.CPU > 0 {
+		return fmt.Errorf("invalid maxParallelism: set only one of num or cpu")
+	}
+	return nil
+}
+
+// Resolve returns the concrete limit for numCPU; 0 means unbounded.
+func (p *MaxParallelism) Resolve(numCPU int) int {
+	if p == nil {
+		return 0
+	}
+	if p.CPU > 0 {
+		// round down to not exceed the requested share
+		n := numCPU * p.CPU / 100
+		if n < 1 {
+			n = 1
+		}
+		return n
+	}
+	return p.Num
 }

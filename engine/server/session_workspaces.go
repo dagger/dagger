@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -693,6 +694,13 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		if err != nil {
 			return err
 		}
+	}
+	if clientMD != nil {
+		limit := 0
+		if wsConfig != nil {
+			limit = wsConfig.MaxParallelism.Resolve(runtime.NumCPU())
+		}
+		srv.engineUtilOpts.SetSessionParallelism(clientMD.SessionID, limit)
 	}
 
 	// --- Compat mode: build the ambient compat workspace from legacy dagger.json ---

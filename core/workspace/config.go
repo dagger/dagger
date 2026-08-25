@@ -24,6 +24,50 @@ type Config struct {
 	CheckGenerated *bool                  `json:"check-generated,omitempty" toml:"check-generated,omitempty"`
 	Env            map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
 	Ports          map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
+	// MaxParallelism bounds concurrent build steps for this workspace's sessions.
+	// Composes with the engine-global engine.json bound (an exec must fit both).
+	MaxParallelism *MaxParallelism `json:"maxParallelism,omitempty" toml:"maxParallelism,omitempty"`
+}
+
+// MaxParallelism bounds concurrent build steps via one strategy. At most one may
+// be set; unset means unbounded.
+type MaxParallelism struct {
+	// Num is an absolute number of parallel build steps.
+	Num int `json:"num,omitempty" toml:"num,omitempty"`
+	// CPU is a percentage (1-100) of the engine's CPU cores; resolves to at least 1.
+	CPU int `json:"cpu,omitempty" toml:"cpu,omitempty"`
+}
+
+func (p *MaxParallelism) validate() error {
+	if p == nil {
+		return nil
+	}
+	if p.Num < 0 {
+		return fmt.Errorf("maxParallelism num %d: must not be negative", p.Num)
+	}
+	if p.CPU < 0 || p.CPU > 100 {
+		return fmt.Errorf("maxParallelism cpu %d: must be a percentage between 1 and 100", p.CPU)
+	}
+	if p.Num > 0 && p.CPU > 0 {
+		return fmt.Errorf("maxParallelism: set only one of num or cpu")
+	}
+	return nil
+}
+
+// Resolve returns the concrete limit for numCPU; 0 means unbounded.
+func (p *MaxParallelism) Resolve(numCPU int) int {
+	if p == nil {
+		return 0
+	}
+	if p.CPU > 0 {
+		// round down to not exceed the requested share
+		n := numCPU * p.CPU / 100
+		if n < 1 {
+			n = 1
+		}
+		return n
+	}
+	return p.Num
 }
 
 // PortMapping declares a host port that forwards to a workspace service.
@@ -187,6 +231,9 @@ func SDKManagedPathFor(configDir, workspacePath string) (string, error) {
 func ParseConfig(data []byte) (*Config, error) {
 	var cfg Config
 	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse dagger.toml: %w", err)
+	}
+	if err := cfg.MaxParallelism.validate(); err != nil {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
 	if err := populateClientOptions(data, &cfg); err != nil {
@@ -424,6 +471,14 @@ func SerializeConfig(cfg *Config) []byte {
 		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
 	}
 
+	if cfg.MaxParallelism != nil {
+		if cfg.MaxParallelism.CPU > 0 {
+			fmt.Fprintf(&b, "maxParallelism = { cpu = %d }\n\n", cfg.MaxParallelism.CPU)
+		} else if cfg.MaxParallelism.Num > 0 {
+			fmt.Fprintf(&b, "maxParallelism = { num = %d }\n\n", cfg.MaxParallelism.Num)
+		}
+	}
+
 	wroteModules := writeModuleEntries(&b, cfg.Modules)
 	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
 		b.WriteString("\n")
@@ -448,6 +503,10 @@ func cloneConfig(cfg *Config) *Config {
 	if cfg.CheckGenerated != nil {
 		checkGenerated := *cfg.CheckGenerated
 		cloned.CheckGenerated = &checkGenerated
+	}
+	if cfg.MaxParallelism != nil {
+		maxParallelism := *cfg.MaxParallelism
+		cloned.MaxParallelism = &maxParallelism
 	}
 	if len(cfg.Modules) > 0 {
 		cloned.Modules = make(map[string]ModuleEntry, len(cfg.Modules))
