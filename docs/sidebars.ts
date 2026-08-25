@@ -89,7 +89,7 @@ module.exports = {
         "config/environments",
         "config/user",
         "config/module-wiring",
-        "config/migrate",
+        "config/migrate-dagger-json",
         {
           type: "category",
           label: "Reference",
