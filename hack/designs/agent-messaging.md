@@ -484,6 +484,20 @@ module deserved anyway: `spawn(model:)`, a per-worker model knob.
   the dwell, by which time the other agent's replay-instant activity has
   landed in the mailbox. Both prior shapes (dwell in a separate response)
   lost the race in live runs.
+- **The projection must never claim parked mid-progress** (a second live-run
+  catch, this one from chief-side dogfooding): resuming a FAILED worker —
+  staff's sendTo is resume-first, send-second — relaunched the loop with the
+  mailbox still empty, and the relaunch window projected a transient IDLE,
+  firing an idle event that carried the PREVIOUS turn's final reply; the
+  same lie let `waitSettled` return the stale reply and `Reseed` slip into
+  a window the loop was about to commit through (drain's pop-to-commit gap
+  had the same shape). Fixed as one class, three facts: the relaunch
+  restores the suspended-turn fact when the snapshot holds a pending step;
+  the drain marks a `draining` fact across its unlocked withPrompt Select;
+  and an IDLE edge fans out only when the conversation advanced since the
+  last one (`idleEventDue`) — the subscribe-time level check deliberately
+  exempt. `TestResumeRetryEmitsNoStaleIdle` pins the flow (and fails
+  against the pre-fix engine with exactly the dogfooded signature).
 - **Item 15's root cause fell out of step 4's re-recording,** and it was in
   the REPLAYER, not the seed: `LLMReplayer.SendQuery` dropped the leading
   SYSTEM message unconditionally, assuming it was the synthesized default
