@@ -171,7 +171,6 @@ func setupAPIKeyProvider(ctx context.Context, ph PromptHandler, provider string)
 				Options(
 					huh.NewOption("1Password (op://)", "op"),
 					huh.NewOption("HashiCorp Vault (vault://)", "vault"),
-					huh.NewOption("HashiCorp Vault Full Path (vault-full://)", "vault-full"),
 					huh.NewOption("Environment variable (env://)", "env"),
 					huh.NewOption("Command (cmd://)", "cmd"),
 					huh.NewOption("File (file://)", "file"),

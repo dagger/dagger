@@ -18,16 +18,15 @@ import (
 type SecretResolver func(context.Context, string) ([]byte, error)
 
 var resolvers = map[string]SecretResolver{
-	"env":        envProvider,
-	"file":       fileProvider,
-	"cmd":        cmdProvider,
-	"op":         opProvider,
-	"vault":      vaultProvider,
-	"vault-full": vaultFullProvider,
-	"libsecret":  libsecretProvider,
-	"gcp":        gcpProvider,
-	"aws+sm":     awsSecretManagerProvider,
-	"aws+ps":     awsParameterStoreProvider,
+	"env":       envProvider,
+	"file":      fileProvider,
+	"cmd":       cmdProvider,
+	"op":        opProvider,
+	"vault":     vaultProvider,
+	"libsecret": libsecretProvider,
+	"gcp":       gcpProvider,
+	"aws+sm":    awsSecretManagerProvider,
+	"aws+ps":    awsParameterStoreProvider,
 }
 
 func Schemes() []string {

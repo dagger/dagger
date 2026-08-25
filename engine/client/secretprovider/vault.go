@@ -24,12 +24,19 @@ var (
 	vaultCache  = make(map[string]dataWithTTL)
 )
 
-func splitVaultKey(key string) (secretPath, secretField string, err error) {
-	n := strings.LastIndex(key, ".")
-	if n < 0 {
-		return "", "", fmt.Errorf("invalid key format: %s", key)
+func splitVaultPath(path string) (mount, secretPath, secretField string, err error) {
+	mount, rest, found := strings.Cut(path, "/")
+	if !found  {
+		return "", "", "", fmt.Errorf("missing \"/\" separator", path)
 	}
-	return key[:n], key[n+1:], nil
+	if mount == "" {
+		return "", "", "", fmt.Errorf("missing mount", path)
+	}
+	n := strings.LastIndex(rest, ".")
+	if n < 0 {
+		return "", "", "", fmt.Errorf("missing field name after \".\"", path)
+	}
+	return mount, rest[:n], rest[n+1:], nil
 }
 
 // HashiCorp Vault provider for SecretProvider
@@ -42,78 +49,35 @@ func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 		return nil, err
 	}
 
-	// this is just path part without the query params such as ttl
-	key := parsed.Path
+	// Vault path, excluding query params such as ttl
+	path := parsed.Path
 
-	secretPath, secretField, err := splitVaultKey(key)
-	if err != nil {
-		return nil, err
+	// Deprecated: Legacy VAULT_PATH_PREFIX variable. It will be removed in a future release. Use the full path in the secret path instead.
+	pathPrefix := os.Getenv("VAULT_PATH_PREFIX")
+	if pathPrefix != "" {
+		path = strings.TrimRight(pathPrefix, "/") + "/" + path
 	}
 
+	// Get the mount, secret path and secret field from the path
+	mount, secretPath, secretField, err := splitVaultPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path %q: %w", path, err)
+	}
+
+	// Get the TTL from the query parameters, if provided
 	var ttl time.Duration
 	ttlStr := strings.TrimSpace(parsed.Query().Get("ttl"))
 	if ttlStr != "" {
 		ttl, err = time.ParseDuration(ttlStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, key, err)
+			return nil, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, path, err)
 		}
 	}
 
-	mount := os.Getenv("VAULT_PATH_PREFIX")
-	if mount == "" {
-		mount = "secret"
-	}
+	// Cache for the whole secret path, not just the field, since Vault returns all fields in a secret at once
+	cacheKey := mount + "/" + secretPath
 
-	return resolveVaultSecret(ctx, mount, secretPath, secretField, key, ttl)
-}
-
-// vaultFullProvider is a HashiCorp Vault provider that reads secrets using a full path
-// including the mount point, e.g. vault-full://my-engine/path/to/secret.field
-// Unlike vaultProvider, this does not use VAULT_PATH_PREFIX and does not require it.
-func vaultFullProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	parsed, err := url.Parse(pathWithQuery)
-	if err != nil {
-		return nil, err
-	}
-
-	key := parsed.Path
-
-	var mount, fullSecretPath, secretField string
-	mount, fullSecretPath, secretField, err = parseVaultFullKey(key)
-	if err != nil {
-		return nil, err
-	}
-
-	var ttl time.Duration
-	ttlStr := strings.TrimSpace(parsed.Query().Get("ttl"))
-	if ttlStr != "" {
-		ttl, err = time.ParseDuration(ttlStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, key, err)
-		}
-	}
-
-	cacheKey := mount + fullSecretPath
-
-	return resolveVaultSecret(ctx, mount, fullSecretPath, secretField, cacheKey, ttl)
-}
-
-// parseVaultFullKey parses a vault-full URL path segment.
-// Expected format: "mount/secretPath.field"
-// Returns (mount, secretPath, secretField).
-func parseVaultFullKey(key string) (mount, secretPath, secretField string, err error) {
-	mount, rest, found := strings.Cut(key, "/")
-	if !found {
-		return "", "", "", fmt.Errorf("invalid vault-full path format: %s (expected mount/secretPath.field)", key)
-	}
-	secretPath, secretField, err = splitVaultKey(rest)
-	return
-}
-
-func resolveVaultSecret(ctx context.Context, mount, secretPath, secretField, cacheKey string, ttl time.Duration) ([]byte, error) {
+	// If the secret is not in the cache or has expired, fetch it from Vault
 	if existing, ok := vaultCache[cacheKey]; !ok || hasExpired(existing) {
 		// check if client is initialized
 		if vaultClient == nil {
@@ -123,10 +87,10 @@ func resolveVaultSecret(ctx context.Context, mount, secretPath, secretField, cac
 			}
 		}
 
-		// read the secret
+		// Read the secret
 		s, err := vaultClient.KVv2(mount).Get(ctx, secretPath)
 		if err != nil {
-			return nil, fmt.Errorf("path %q: %w", secretPath, err)
+			return nil, fmt.Errorf("mount path %q: %w", secretPath, err)
 		}
 		data := dataWithTTL{
 			data: s.Data,
