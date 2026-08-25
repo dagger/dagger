@@ -450,15 +450,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
 					res.objClass = objDecoded.ObjectType()
 				}
-				decodedShared := decoded.cacheSharedResult()
-				if decodedShared != nil {
-					res.sessionResourceHandle = decodedShared.sessionResourceHandle
-					if decodedShared.requiredSessionResources != nil {
-						res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
-					} else if decodedShared.sessionResourceHandle == "" {
-						res.requiredSessionResources = nil
-					}
-				}
+				// The install must not touch the session-resource fields:
+				// the decoded shell only knows the row's own handle (the
+				// same envelope value the import row was built from), and
+				// requiredSessionResources belongs to import/publication
+				// and is read under egraphMu, not payloadMu.
 				res.persistedEnvelope = nil
 			}
 			res.payloadMu.Unlock()
@@ -763,15 +759,11 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
 					res.objClass = objDecoded.ObjectType()
 				}
-				decodedShared := decoded.cacheSharedResult()
-				if decodedShared != nil {
-					res.sessionResourceHandle = decodedShared.sessionResourceHandle
-					if decodedShared.requiredSessionResources != nil {
-						res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
-					} else if decodedShared.sessionResourceHandle == "" {
-						res.requiredSessionResources = nil
-					}
-				}
+				// The install must not touch the session-resource fields:
+				// the decoded shell only knows the row's own handle, so
+				// copying its requiredSessionResources dropped a non-leaf's
+				// dependency-derived requirements, and the write raced the
+				// lookup filter, which reads the field under egraphMu.
 				res.persistedEnvelope = nil
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 			}
