@@ -3153,6 +3153,18 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		return r, fmt.Errorf("set session resource handle on %T: missing shared result", r.Self())
 	}
 	if r.shared.id != 0 {
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return r, fmt.Errorf("set session resource handle on %T: current dagql cache: %w", r.Self(), err)
+		}
+		cache.egraphMu.RLock()
+		defer cache.egraphMu.RUnlock()
+
+		// Numeric result IDs are engine-lifetime unique, so a registered ID
+		// still names this exact result.
+		if _, found := cache.resultsByID[r.shared.id]; !found {
+			return r, fmt.Errorf("set session resource handle on %T: result %d was already collected", r.Self(), r.shared.id)
+		}
 		// A registered result may already have been served through the
 		// session filter, and serve paths rely on its stored required set
 		// being frozen once attachment settles. Changing the handle here
