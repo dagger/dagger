@@ -38,7 +38,7 @@
 (*     approximates candidate selection (the lowest-ID pick, TTL,          *)
 (*     e-graph routing) even though session-resource filtering is now      *)
 (*     modeled, and it exercises the engine's accepted                     *)
-(*     duplicate-execution window (getOrInitCallInner, cache.go:4522).     *)
+(*     duplicate-execution window (getOrInitCallInner, cache.go:4511).     *)
 (*   - MODEL AXIOM, assumed and never verified here: results the cache     *)
 (*     considers equivalent are interchangeable.                           *)
 (*   - Session-resource gating IS modeled (the Handles constant):          *)
@@ -176,7 +176,7 @@ CONSTANTS
                         \* decode itself runs on (DecodeLeadCancel).
     LazyCanFail,        \* the lazy callback may fail. Failure must leave
                         \* the result retryable (lazyEvalComplete is set
-                        \* only on success, evaluateOne, cache.go:3693, 3798).
+                        \* only on success, evaluateOne, cache.go:3682, 3787).
     DecodeCanFail       \* decoding a persisted payload may fail. Failure
                         \* must leave the entry retryable: the decode wait
                         \* channel is cleared at finish, so the next
@@ -570,7 +570,7 @@ SpawnNested ==
 (* refuses the claim without adding an edge. Persistable hits commit their *)
 (* edge only after the read barrier and payload load succeed.               *)
 (*                                                                         *)
-(* Go: lookupCacheForRequest, cache_egraph.go:954-1007. Inside the one     *)
+(* Go: lookupCacheForRequest, cache_egraph.go:977-1038. Inside the one     *)
 (* lock hold:                                                              *)
 (*   - a candidate in the request's equivalence class is selected          *)
 (*   - the session record and ownership unit are added together             *)
@@ -580,7 +580,7 @@ LookupHit(i) ==
     /\ invocations[i].phase = "lookup"
     /\ \E r \in LookupEligibleInClass(ClassOf[invocations[i].call]) :
         \* Session-resource filter (selectLookupCandidateForSessionLocked,
-        \* cache_egraph.go:685 via sessionSatisfiesResourceRequirementsLocked,
+        \* cache_egraph.go:708 via sessionSatisfiesResourceRequirementsLocked,
         \* :671): a candidate is eligible only if its STORED required set is a
         \* subset of the session's bound handles. The direction is
         \* required subset-of bound (available.Subset(required),
@@ -615,7 +615,7 @@ LookupHit(i) ==
 \* over-approximates candidate selection (the lowest-ID pick, TTL, e-graph
 \* routing), which is not modeled even though the session-resource filter
 \* is, and exercises the engine's accepted duplicate-execution window
-\* (getOrInitCallInner, cache.go:4522).
+\* (getOrInitCallInner, cache.go:4511).
 LookupMiss(i) ==
     /\ invocations[i].phase = "lookup"
     /\ invocations' = [invocations EXCEPT ![i].phase = "join"]
@@ -626,7 +626,7 @@ LookupMiss(i) ==
 (* Join: an ongoing call for this (call, session) already exists - become  *)
 (* one of its waiters instead of executing again.                          *)
 (*                                                                         *)
-(* Go: getOrInitCallInner, cache.go:4502-4517, one callsMu critical        *)
+(* Go: getOrInitCallInner, cache.go:4491-4506, one callsMu critical        *)
 (* section: bump oc.waiters, and stamp the persistence intent (the         *)
 (* atomic.Bool oc.isPersistable) onto the shared ongoingCall.              *)
 (*                                                                         *)
@@ -653,7 +653,7 @@ Join(i) ==
 (***************************************************************************)
 (* CreateOc: no ongoing call exists - create one and start executing.      *)
 (*                                                                         *)
-(* Go: getOrInitCallInner miss path, cache.go:4519-4601, still the same    *)
+(* Go: getOrInitCallInner miss path, cache.go:4508-4590, still the same    *)
 (* callsMu hold:                                                           *)
 (*   - the WithCancelCause cancel is created (:4476)                       *)
 (*   - the operation lease is acquired (:4496)                             *)
@@ -694,7 +694,7 @@ CreateOcLeaseFail(i) ==
 
 (***************************************************************************)
 (* FnComplete: the executing fn finishes (the goroutine started at         *)
-(* cache.go:4588). Three possible outcomes:                                *)
+(* cache.go:4577). Three possible outcomes:                                *)
 (*   - "fresh": fn computed a new detached value                           *)
 (*   - "reuse": fn returned an already-attached result (for example, an    *)
 (*     inner call hit cache). This drives publication's canonical-         *)
@@ -712,17 +712,20 @@ FnComplete(o) ==
     /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
             /\ res[r].barrier \in {"none", "closedOk"}
-            \* The reused result was obtained by the fn's resolver through a
-            \* filtered, OWNED acquisition - every result-returning entry
-            \* point (request lookup, digest lookup, gated result-ID load,
-            \* wait return) records the session edge and its ownership unit
-            \* atomically - so the session holds a counted edge to it and
-            \* release cannot collect it out from under the fn. Ownership
-            \* proves the result passed the filter WHEN OBTAINED; its
-            \* requirement may have grown since (the gated-growth finding),
-            \* and the code re-checks nothing at reuse, so no
-            \* current-satisfaction conjunct belongs here.
+            \* The fn's resolver POSSESSES the reused result: it was handed
+            \* the value through a filtered serve (request or digest lookup,
+            \* gated result-ID load, or a wait return), which records the
+            \* session edge and its ownership unit atomically, so release
+            \* cannot collect it out from under the fn. Ownership alone is
+            \* not possession: a hit denied at the post-barrier re-check
+            \* keeps its recorded edge without ever receiving the value
+            \* (ReadBarrierGatedMiss). Since a settled result's required set
+            \* is frozen (retention edges refuse requirement-carrying deps),
+            \* every possessed result still satisfies the session's bound
+            \* set, and a denied edge does not - so ownership plus current
+            \* satisfaction is exactly possession for settled results.
             /\ <<ongoingCalls[o].sess, r>> \in countedEdges
+            /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
@@ -734,7 +737,7 @@ FnComplete(o) ==
 (* WaiterCancel: a waiter's own context is canceled while the fn is still  *)
 (* running.                                                                *)
 (*                                                                         *)
-(* Go: wait's !completed branch, cache.go:4771-4787. Notes:                *)
+(* Go: wait's !completed branch, cache.go:4766-4782. Notes:                *)
 (*   - the LAST canceling waiter removes the entry from the Cache.ongoingCalls index and   *)
 (*     cancels the fn's context. Cancellation is COOPERATIVE: the fn       *)
 (*     goroutine keeps executing until it notices - fnState "canceled"     *)
@@ -793,7 +796,7 @@ PersistThenDropHold(o) ==
 (* WaiterCancelLate: the select takes ctx.Done even though waitCh is       *)
 (* already closed - Go picks among ready select arms nondeterministically, *)
 (* so this is an ordinary code path, not an anomaly. The waiter departs    *)
-(* through the same !completed branch (cache.go:4771-4787): waiters--,     *)
+(* through the same !completed branch (cache.go:4766-4782): waiters--,     *)
 (* and the LAST departing waiter removes a still-indexed entry,            *)
 (* discharges the fn cancel, and then releases the handoff hold - with     *)
 (* the final persistence commit - in a separate egraphMu section (see      *)
@@ -851,7 +854,7 @@ WaiterDropHoldCanceled(i) ==
 
 \* WaiterObserveFnErr: the fn failed; each waiter observes the error and
 \* returns it. The last waiter removes the Cache.ongoingCalls index entry.
-\* Go: wait's completionErr path, cache.go:4789-4799.
+\* Go: wait's completionErr path, cache.go:4784-4794.
 WaiterObserveFnErr(i) ==
     /\ invocations[i].phase = "waiting"
     /\ LET o == invocations[i].oc
@@ -869,13 +872,13 @@ WaiterObserveFnErr(i) ==
 
 (***************************************************************************)
 (* PUBLICATION - initCompletedResult, entered through the sync.Once in     *)
-(* wait (cache.go:4801). The next several actions form its state machine,  *)
+(* wait (cache.go:4796). The next several actions form its state machine,  *)
 (* driven by oc.pubState. The publishing waiter runs it to completion      *)
 (* regardless of its own caller's context (the publication context is      *)
-(* WithoutCancel, cache.go:4821).                                     *)
+(* WithoutCancel, cache.go:4816).                                     *)
 (*                                                                         *)
 (* PubBegin: entering the Once, plus the lock-free prologue - oc.res is    *)
-(* set to a fresh empty &sharedResult{} at cache.go:4945 before any lock   *)
+(* set to a fresh empty &sharedResult{} at cache.go:4940 before any lock   *)
 (* is taken. sync.Once.Do blocks every other waiter until publication      *)
 (* returns, and that blocking is what makes the later                      *)
 (* initCompletedResultErr reads safe.                                      *)
@@ -895,7 +898,7 @@ PubBegin(o) ==
 
 (***************************************************************************)
 (* PubIndexFresh: publish a freshly computed value. One egraphMu critical  *)
-(* section (ending at cache.go:5247) that does, in order:                  *)
+(* section (ending at cache.go:5242) that does, in order:                  *)
 (*   1. allocate and register the sharedResult - it is lookup-visible      *)
 (*      from this instant, before attachment completes                     *)
 (*   2. add exact dependency edges from the result-call refs, each         *)
@@ -909,7 +912,7 @@ PubIndexFresh(o) ==
     /\ Len(res) < MaxResults
     \* A fresh result may carry deferred lazy work (a value implementing
     \* HasLazyEvaluation, whose callback registerLazyEvaluation stores on
-    \* the sharedResult at cache.go:3466). Which results are lazy is the
+    \* the sharedResult at cache.go:3455). Which results are lazy is the
     \* producer's business, so the model picks nondeterministically.
     /\ \E lazyCb \in IF ModelLazy THEN {"none", "armed"} ELSE {"none"} :
        \* The publishing session's own handle for this result: "none", or a
@@ -920,20 +923,23 @@ PubIndexFresh(o) ==
        \* this result's own.
        \E handleChoice \in {"none"} \cup
              {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
-       \* Structural deps are results this session obtained with ownership
-       \* (every acquisition path records the session edge and its unit
-       \* atomically) - without that restriction the model would reach a
+       \* Structural deps are results this session POSSESSES: values handed
+       \* to it through filtered serves, whose edges and units were recorded
+       \* atomically - without that restriction the model would reach a
        \* session structurally depending on a leaf it never obtained, which
-       \* the code cannot produce. Ownership proves each dep passed the
-       \* filter when obtained; its requirement may have grown since, and
-       \* the code re-checks nothing here. A held dep's attachment is also
-       \* settled: an attached result was handed out only past its read
-       \* barrier, and attachResult completes a detached child before the
-       \* edge is recorded.
+       \* the code cannot produce. Ownership alone is not possession (a hit
+       \* denied at the post-barrier re-check keeps its edge without the
+       \* value); since a settled dep's required set is frozen, ownership
+       \* plus current satisfaction is exactly possession - see FnComplete.
+       \* A held dep's attachment is also settled: an attached result was
+       \* handed out only past its read barrier, and attachResult completes
+       \* a detached child before the edge is recorded.
        \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
                        /\ res[r].registered
                        /\ res[r].barrier \in {"none", "closedOk"}
-                       /\ <<ongoingCalls[o].sess, r>> \in countedEdges}} :
+                       /\ <<ongoingCalls[o].sess, r>> \in countedEdges
+                       /\ res[r].required
+                            \subseteq sessionRelease[ongoingCalls[o].sess].handles}} :
         LET withDeps == [r \in DOMAIN res |->
                 IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
                 ELSE res[r]]
@@ -1045,11 +1051,11 @@ PubIndexReuse(o) ==
 
 (***************************************************************************)
 (* ATTACHMENT PHASE for fresh results. attachDependencyResults runs        *)
-(* OUTSIDE egraphMu (cache.go:5249) while the result is already            *)
+(* OUTSIDE egraphMu (cache.go:5244) while the result is already            *)
 (* lookup-visible - that is why the barrier exists. Steps:                 *)
 (*   - PubAttachAddDep: attachment discovers an embedded child result and  *)
 (*     records the dependency edge; each such AddExplicitDependency is     *)
-(*     its own egraphMu critical section (cache.go:2650)              *)
+(*     its own egraphMu critical section (cache.go:2660)              *)
 (*   - PubFinishOk: attachment succeeded; close the barrier clean          *)
 (*   - PubAttachFailDropHold: attachment failed; release the hold and      *)
 (*     cascade in one egraphMu critical section                            *)
@@ -1057,7 +1063,7 @@ PubIndexReuse(o) ==
 (*     following attachDepsMu critical section                             *)
 (*                                                                         *)
 (* STATED ASSUMPTION: dependency edges never form a cycle. The Go cache    *)
-(* does not enforce this - addExplicitDependencyLocked (cache.go:2673)     *)
+(* does not enforce this - addExplicitDependencyLocked (cache.go:2696)     *)
 (* rejects only self-edges - but cycles cannot arise in practice:          *)
 (* structural (call-ref) deps always point from a newer result ID to       *)
 (* older ones (a fresh result gets the highest ID after its refs already   *)
@@ -1085,32 +1091,6 @@ DepReachable(rf, start, target) ==
                     ELSE Reach(next, seen \cup next)
     IN Reach({start}, {start})
 
-\* p together with every registered result that transitively depends on it.
-AncestorClosure(rf, p) ==
-    LET RECURSIVE up(_)
-        up(S) ==
-            LET next == S \cup {q \in DOMAIN rf :
-                                  rf[q].registered /\ rf[q].deps \cap S # {}}
-            IN IF next = S THEN S ELSE up(next)
-    IN up({p})
-
-\* The stored required sets after addExplicitDependencyLocked adds the
-\* edge making p's deps newDepsOfP: the parent is recomputed and the
-\* change cascades upward through depParents until the sets stop changing
-\* (the worklist in addExplicitDependencyLocked). At the fixpoint every
-\* result in p's ancestor closure reads its deps' final stored sets, and
-\* everything outside the closure keeps its stored set - which is why a
-\* drifted set elsewhere would NOT be repaired by the cascade. The
-\* recursion is well-founded because dependency edges are acyclic.
-CascadeRequired(rf, p, newDepsOfP) ==
-    LET A == AncestorClosure(rf, p)
-        depsOf(x) == IF x = p THEN newDepsOfP ELSE rf[x].deps
-        RECURSIVE reqOf(_)
-        reqOf(x) == IF x \notin A THEN rf[x].required
-                    ELSE OwnHandleReq(rf[x].handle)
-                           \cup UNION {reqOf(dd) : dd \in depsOf(x)}
-    IN [x \in DOMAIN rf |-> reqOf(x)]
-
 PubAttachAddDep(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ \E d \in ResultIds :
@@ -1125,23 +1105,23 @@ PubAttachAddDep(o) ==
         /\ ~DepReachable(res, d, ongoingCalls[o].resId)
         \* attachment deps are the value's embedded children, which
         \* attachResult claims for the session (trackSessionResult) before
-        \* the edge is recorded - ownership, as in PubIndexFresh; the
-        \* filter held at acquisition and is not re-checked here.
+        \* the edge is recorded - possession, as in PubIndexFresh: ownership
+        \* plus current satisfaction (a settled dep's required set is
+        \* frozen, so satisfaction at use equals possession; see FnComplete)
         /\ <<ongoingCalls[o].sess, d>> \in countedEdges
+        /\ res[d].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
         /\ LET p == ongoingCalls[o].resId
                newDeps == res[p].deps \cup {d}
-               \* addExplicitDependencyLocked recomputes the parent after
-               \* adding the edge and cascades the change upward through
-               \* depParents (the worklist in cache.go), so an ancestor that
-               \* already depends on p learns about requirements the new
-               \* dep introduces.
-               newReq == CascadeRequired(res, p, newDeps)
-           IN res' = [x \in DOMAIN res |->
-                IF x = p THEN [res[x] EXCEPT !.deps = newDeps,
-                                             !.required = newReq[x]]
-                ELSE IF x = d THEN [res[x] EXCEPT !.own = @ + 1,
-                                                  !.required = newReq[x]]
-                ELSE [res[x] EXCEPT !.required = newReq[x]]]
+           \* addExplicitDependencyLocked recomputes only the parent after
+           \* adding the edge. That is sufficient: the parent is a fresh
+           \* result still behind its open barrier with no depParents, so
+           \* no ancestor exists to go stale, and the retention-edge path
+           \* refuses requirement-carrying deps outright.
+           IN res' = [res EXCEPT
+                ![p].deps = newDeps,
+                ![p].required = OwnHandleReq(res[p].handle)
+                                  \cup UNION {res[dd].required : dd \in newDeps},
+                ![d].own = @ + 1]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1169,7 +1149,7 @@ PubAttachFailCloseBarrier(o) ==
                    sessionRelease, evals, epoch, flushed>>
 
 \* PubUnregister: the entry leaves the Cache.ongoingCalls index - the tail of the Once
-\* (wait, cache.go:4830-4835), in its own callsMu critical section AFTER
+\* (wait, cache.go:4825-4830), in its own callsMu critical section AFTER
 \* publication finished. Joining stays possible until this fires. This is
 \* also where admission closes, so final persistence intent is snapshotted:
 \* publication must have succeeded, a result must exist, and some admitted
@@ -1191,7 +1171,7 @@ PubUnregister(o) ==
 \* departing waiter is the last one and the handoff hold is still active
 \* (the failed-adoption path keeps it held), it goes on to release the
 \* hold in a separate egraphMu section - see WaiterDropHoldPubErr.
-\* Go: wait's initCompletedResultErr path, cache.go:4837-4848.
+\* Go: wait's initCompletedResultErr path, cache.go:4832-4843.
 WaiterObservePubErr(i) ==
     /\ invocations[i].phase = "waiting"
     /\ LET o == invocations[i].oc
@@ -1208,7 +1188,7 @@ WaiterObservePubErr(i) ==
 
 \* WaiterDropHoldPubErr: the last waiter of a failed publication drops the
 \* handoff hold in its own egraphMu section (releaseOngoingCallHandoff,
-\* cache.go:4901-4919). The persistence arm is vacuous here because
+\* cache.go:4896-4914). The persistence arm is vacuous here because
 \* needsPersistedEdge requires a successful publication.
 WaiterDropHoldPubErr(i) ==
     /\ invocations[i].phase = "pubErrDropHold"
@@ -1220,7 +1200,7 @@ WaiterDropHoldPubErr(i) ==
                    evals, epoch, flushed>>
 
 (***************************************************************************)
-(* WAITER SUCCESS PATH. In code order (wait, cache.go:4863-4895):          *)
+(* WAITER SUCCESS PATH. In code order (wait, cache.go:4858-4890):          *)
 (*   1. claim the session edge while the handoff                           *)
 (*      hold still pins the result                                         *)
 (*   2. waiters--                                                          *)
@@ -1256,7 +1236,7 @@ WaiterClaim(i) ==
                    evals, epoch, flushed>>
 
 \* WaiterDepart: waiters--, under callsMu. The last waiter goes on to
-\* release the handoff hold. Go: wait, cache.go:4873-4876.
+\* release the handoff hold. Go: wait, cache.go:4868-4871.
 WaiterDepart(i) ==
     /\ invocations[i].phase \in {"depart", "refusedDepart"}
     /\ LET o == invocations[i].oc
@@ -1274,7 +1254,7 @@ WaiterDepart(i) ==
 \* in its own egraphMu section - releaseOngoingCallHandoff, which first
 \* commits the admission-close persistence intent. From here on, only real
 \* edges (session, dependency, persisted) keep the result alive.
-\* Go: wait, cache.go:4878-4881 -> releaseOngoingCallHandoff.
+\* Go: wait, cache.go:4873-4876 -> releaseOngoingCallHandoff.
 WaiterReleaseHold(i) ==
     /\ invocations[i].phase \in {"releaseHold", "refusedReleaseHold"}
     /\ LET o == invocations[i].oc
@@ -1293,7 +1273,16 @@ WaiterReleaseHold(i) ==
 (* Go: ensurePersistedHitValueLoaded, cache_persistence_import.go:578-604. *)
 (* Outcomes: a clean barrier returns the result; an error returns the      *)
 (* error. In either case the claimed session edge remains until session    *)
-(* release.                                                               *)
+(* release.                                                                *)
+(*                                                                         *)
+(* A hit serve re-runs the session-resource filter after the barrier       *)
+(* (sessionStillSatisfiesResourceRequirements): attachment may have grown  *)
+(* the stored required set after the hit was selected, and a stale         *)
+(* selection must not be served. A hit that no longer satisfies falls      *)
+(* through to the singleflight (ReadBarrierGatedMiss below); gated         *)
+(* result-ID loads refuse instead, which is equally a non-serve. Waiter    *)
+(* returns are the producing session's own results and are not re-checked  *)
+(* in the code either.                                                     *)
 (*                                                                         *)
 (* Completion is also where each invocation records its return-time        *)
 (* evidence (the ret* flags) for the properties to inspect.                *)
@@ -1310,12 +1299,37 @@ ReadBarrierOk(i) ==
           \* joins or leads a sync-only attempt first.
           /\ res[r].payload = "decoded"
           /\ ~res[r].persistSyncPending
+          \* the post-barrier re-check: a hit is served only if the session
+          \* still satisfies the result's stored required set
+          /\ invocations[i].path = "hit" =>
+               res[r].required \subseteq sessionRelease[invocations[i].sess].handles
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF invocations[i].path = "hit"
                                   /\ invocations[i].persistable
                              THEN "persistHit" ELSE "returning"]
           /\ UNCHANGED res
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+\* The post-barrier re-check failed: attachment grew the hit's required set
+\* past the session's bound handles after selection. The serve becomes a
+\* miss and the invocation falls through to the singleflight, exactly as a
+\* selection-time miss does. The session edge and its ownership unit stay
+\* until session release (the code keeps the recorded claim rather than
+\* growing a decrement-and-collect path); the session owns the result but
+\* was never handed its value, which is why held-result guards pair
+\* ownership with current satisfaction.
+ReadBarrierGatedMiss(i) ==
+    /\ invocations[i].phase = "readBarrier"
+    /\ invocations[i].path = "hit"
+    /\ LET r == invocations[i].resId
+       IN /\ res[r].barrier \in {"none", "closedOk"}
+          /\ res[r].payload = "decoded"
+          /\ ~res[r].persistSyncPending
+          /\ ~(res[r].required \subseteq sessionRelease[invocations[i].sess].handles)
+          /\ invocations' = [invocations EXCEPT
+               ![i].phase = "join", ![i].resId = 0, ![i].path = "none"]
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* A persistable cache hit takes one additional egraphMu critical section
@@ -1383,7 +1397,7 @@ ReadBarrierCancelHit(i) ==
                    sessionRelease, evals, epoch, flushed>>
 
 \* The WAIT-path twin: the error propagates and the claimed session edge
-\* simply remains (wait, cache.go:4889-4894) - same as ReadBarrierErrWait.
+\* simply remains (wait, cache.go:4884-4889) - same as ReadBarrierErrWait.
 ReadBarrierCancelWait(i) ==
     /\ ReaderCanCancel
     /\ invocations[i].phase = "readBarrier"
@@ -1639,7 +1653,7 @@ DecodeFailHit(i) ==
                    evals, epoch, flushed>>
 
 \* Decode failed for a WAIT-path caller: the error just propagates; the
-\* session edge claimed after publication remains (wait, cache.go:4878-4881).
+\* session edge claimed after publication remains (wait, cache.go:4873-4876).
 DecodeFailWait(i) ==
     /\ invocations[i].phase = "decodeErr"
     /\ invocations[i].path = "wait"
@@ -1782,14 +1796,18 @@ BindResource ==
                    sessionEdges, countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
-(* AddDepLate: an explicit dependency edge is added to a result that was   *)
+(* AddDepLate: an explicit retention edge is added to a result that was    *)
 (* already published. Go: Cache.AddExplicitDependency ->                   *)
 (* addExplicitDependencyLocked, one egraphMu critical section; the one     *)
-(* caller today attaches generated module types to a published module      *)
-(* container (core/sdk/module_typedefs.go). The caller holds both          *)
-(* results, so both barriers are settled. The edge must not form a cycle   *)
-(* (the stated no-cycle assumption), and the stored required sets cascade  *)
-(* upward exactly as in PubAttachAddDep.                                   *)
+(* caller today retains an SDK-generated typedefs module under a           *)
+(* published container (core/sdk/module_typedefs.go). The caller holds     *)
+(* both results, so both barriers are settled, and the edge must not form  *)
+(* a cycle (the stated no-cycle assumption). The entry point REFUSES a     *)
+(* dep whose stored required set is non-empty: a requirement landing       *)
+(* after the parent settled would be invisible to sessions already         *)
+(* holding the parent or an ancestor. A refused call returns an error and  *)
+(* changes nothing, so only the empty-required edge is modeled; with the   *)
+(* dep requirement-free, no stored required set changes either.            *)
 (***************************************************************************)
 AddDepLate ==
     /\ ModelLateDeps
@@ -1801,24 +1819,18 @@ AddDepLate ==
         /\ res[d].barrier \in {"none", "closedOk"}
         /\ d \notin res[p].deps
         /\ ~DepReachable(res, d, p)
-        \* The caller possesses both results: the one production caller
-        \* loads the parent and the dep through its own session context
-        \* before calling AddExplicitDependency, so some session holds a
-        \* counted edge to each. Ownership proves each passed the filter
-        \* when obtained; requirements may have grown since, and the code
-        \* checks nothing further at this call. Without possession the
-        \* edge could appear with no modeled caller able to produce it.
+        \* the entry-point guard: requirement-carrying deps are refused
+        /\ res[d].required = {}
+        \* The caller possesses both results (loaded through its own
+        \* session before the call): ownership plus current satisfaction,
+        \* as in FnComplete. For d, satisfaction is the empty-set guard
+        \* above; for p it is the possession conjunct below.
         /\ \E s \in Sessions :
             /\ <<s, p>> \in countedEdges
             /\ <<s, d>> \in countedEdges
-        /\ LET newDeps == res[p].deps \cup {d}
-               newReq  == CascadeRequired(res, p, newDeps)
-           IN res' = [x \in DOMAIN res |->
-                IF x = p THEN [res[x] EXCEPT !.deps = newDeps,
-                                             !.required = newReq[x]]
-                ELSE IF x = d THEN [res[x] EXCEPT !.own = @ + 1,
-                                                  !.required = newReq[x]]
-                ELSE [res[x] EXCEPT !.required = newReq[x]]]
+            /\ res[p].required \subseteq sessionRelease[s].handles
+        /\ res' = [res EXCEPT ![p].deps = @ \cup {d},
+                              ![d].own = @ + 1]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -2359,7 +2371,7 @@ Next ==
          \/ WaiterDropHoldCanceled(i)
          \/ WaiterClaim(i)
          \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
-         \/ ReadBarrierOk(i) \/ PersistHit(i)
+         \/ ReadBarrierOk(i) \/ ReadBarrierGatedMiss(i) \/ PersistHit(i)
          \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
          \/ ReadBarrierCancelHit(i) \/ ReadBarrierCancelWait(i)
          \/ DecodeLead(i) \/ DecodeInstall(i) \/ DecodeLeadFinish(i)
@@ -2435,7 +2447,7 @@ WaiterProgress(i) ==
     \/ WaiterDropHoldPubErr(i) \/ WaiterDropHoldCanceled(i)
     \/ WaiterClaim(i)
     \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
-    \/ ReadBarrierOk(i) \/ PersistHit(i)
+    \/ ReadBarrierOk(i) \/ ReadBarrierGatedMiss(i) \/ PersistHit(i)
     \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
     \/ DecodeLead(i) \/ DecodeInstall(i) \/ DecodeLeadFinish(i)
     \/ DecodeJoin(i) \/ DecodeWake(i)
@@ -2501,26 +2513,33 @@ LiveSpec ==
 (* lookups (LookupHit), publication-adoption picks (CanonicalPick /        *)
 (* FnComplete's reuse), waits for a result the session itself produced,    *)
 (* and result-ID value loads, which refuse the session when neither a      *)
-(* canonical candidate nor the exact result satisfies it                   *)
+(* clean canonical candidate nor the exact result satisfies it             *)
 (* (sharedResultLookupCanonicalEquivalentGated,                            *)
 (* cache_persistence_resolver.go; before that check existed, the exact     *)
-(* fallback bypassed the filter). Two kinds of guard follow from it.       *)
-(* SELECTION-TIME checks test current satisfaction, exactly as the code    *)
-(* does at candidate selection: LookupHit and CanonicalPick's candidate    *)
-(* set (selectLookupCandidateForSessionLocked). HELD-RESULT guards use     *)
-(* ownership, never current satisfaction: FnComplete's reuse,              *)
+(* fallback bypassed the filter). The filter runs at selection AND again   *)
+(* after an open attach barrier (the ReadBarrierOk conjunct /              *)
+(* ReadBarrierGatedMiss; Go sessionStillSatisfiesResourceRequirements):    *)
+(* attachment is the one window where a live result's stored required set  *)
+(* can grow, because the retention-edge path (AddDepLate) refuses          *)
+(* requirement-carrying deps, so a settled result's set is FROZEN. Two     *)
+(* kinds of guard follow. SELECTION-TIME checks test current               *)
+(* satisfaction, exactly as the code does at candidate selection:          *)
+(* LookupHit and CanonicalPick's candidate set                             *)
+(* (selectLookupCandidateForSessionLocked). HELD-RESULT guards pair        *)
+(* ownership with current satisfaction: FnComplete's reuse,                *)
 (* PubIndexFresh's structural deps, PubAttachAddDep's attachment deps,     *)
-(* AddDepLate's possession, and CanonicalPick's returned-result fallback   *)
-(* (the publisher owns what it just produced), because ownership proves    *)
-(* only that the result satisfied the session WHEN OBTAINED -              *)
-(* requirement growth after the filter (the gated-growth finding) can      *)
-(* invalidate it, and the code re-checks nothing on held results.          *)
+(* and AddDepLate's possession. Ownership alone is not possession - a hit  *)
+(* denied at the post-barrier re-check keeps its recorded edge without     *)
+(* ever receiving the value - and the freeze makes satisfaction at use     *)
+(* equivalent to having been served, so the pair is exactly possession.    *)
+(* CanonicalPick's returned-result fallback stays ownership-only: the      *)
+(* publisher possesses what it just produced.                              *)
 (* A gated ID load needs no action of its own: refusal returns nothing     *)
-(* and serving is behaviorally a LookupHit. Not yet modeled on this path:  *)
-(* call-frame loads (ResultCallByResultID) serve the recipe ungated, and   *)
-(* the canonical pick for ID loads admits open-barrier siblings            *)
-(* (requireCleanAttachment=false) whose attachment error an ID load can    *)
-(* then surface; both are modelable if an effort takes them up.            *)
+(* and serving is behaviorally a LookupHit; its canonical pick requires    *)
+(* clean attachment exactly like adoption, so the ID-load redirect onto    *)
+(* an unsettled sibling's barrier or attachment error is gone. Not yet     *)
+(* modeled on this path: call-frame loads (ResultCallByResultID) serve     *)
+(* the recipe ungated; modelable if an effort takes it up.                 *)
 (***************************************************************************)
 
 DerivedSessionActive(s) ==
