@@ -24,12 +24,6 @@ region = "us-west-2"
 
 The effective configuration is merged in a fixed order: the repository's `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments are added to the repository's — all without modifying `dagger.toml`.
 
-## Workspace key
-
-The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match — `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config.
-
-A repository with multiple remotes is keyed by `origin` only; a repository with no remote matches no user-level overrides. Remote workspaces selected with `-W` are keyed by their clone address.
-
 ## Writing values
 
 You don't have to edit the file by hand. Pass `-g/--global` to `dagger settings` or `dagger workspace config` to store a value user-level instead of in the repository:
@@ -52,3 +46,9 @@ dagger -W https://github.com/acme/api settings -g aws profile alice-dev
 ## What can be stored
 
 Only module settings: `modules.<name>.settings.*`, optionally under `env.<name>.*`. Because one key spans every branch and clone of a repository, an always-applied entry for a module that doesn't exist in the current checkout is ignored there rather than being an error. User-level environments are validated normally when selected with `--env`.
+
+## Workspace key
+
+The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match — `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config.
+
+A repository with multiple remotes is keyed by `origin` only; a repository with no remote matches no user-level overrides. Remote workspaces selected with `-W` are keyed by their clone address.

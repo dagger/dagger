@@ -728,7 +728,7 @@ Dang has three first-class function types, each marked with a directive and run 
 | `@generate` | `Changeset` | `dagger generate` | Produce a diff of generated files for review. |
 | `@up` | `Service!` | `dagger up` | Start a long-running service. |
 
-### Checks
+### Checks {#checks}
 
 A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code.
 
@@ -768,7 +768,7 @@ pub lint: Container @check {
 }
 ```
 
-### Generators
+### Generators {#generators}
 
 A generator produces a [changeset](../cli/generating.mdx) — a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source; `dagger generate` runs all generators and presents the unified changeset for review:
 
@@ -786,7 +786,7 @@ pub generateProto: Changeset @generate {
 
 > Note: these `@generate` generators are *your module's* code-generation pipelines (e.g. protobuf, OpenAPI). They are unrelated to SDK client codegen — which, as noted above, Dang does not have.
 
-### Services
+### Services {#up-services}
 
 A service function returns a long-running `Service!`. Mark it with `@up` and `dagger up` will start it. Build the service from a container with `.asService`, exposing the ports it should listen on:
 

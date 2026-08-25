@@ -59,7 +59,10 @@ A module is ready for other people when its public API is small and well-named, 
 
 Pick a language to build in. Each guide covers its syntax, project layout, development workflow, dependencies, and testing:
 
-- **[Dang](./dang.mdx)** — Dagger's native DSL. No codegen and no build step: what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
-- **[Go](./go.mdx)** — Build modules in Go with a generated, typed client.
-- **[TypeScript](./typescript.mdx)** — Build modules in TypeScript with decorators and a generated client (Bun, Deno, or Node).
-- **[Python](./python.mdx)** — Build modules in Python with type hints, decorators, and a generated client.
+- **[Dang](./dang.mdx).** Dagger's native DSL. No codegen and no build step, so what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
+- **[Go](./go.mdx).** Plain structs and methods, plus a generated, typed client.
+- **[TypeScript](./typescript.mdx).** Decorators and a generated client, on Bun, Deno, or Node.
+- **[Python](./python.mdx).** Type hints, decorators, and a generated client.
+- **[Java](./java.mdx).** Annotations on plain classes. The SDK is vendored into the module and every generated file is committed, so `mvn package` builds it without Dagger.
+- **[PHP](./php.mdx).** Attributes on plain classes and a generated client. Checks work; generators and `up` services don't exist yet.
+- **[Elixir](./elixir.mdx).** `defn` and typespecs, with a generated client under `dagger_sdk/`. Checks work; generators and `up` services don't exist yet.

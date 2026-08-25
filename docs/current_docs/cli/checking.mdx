@@ -57,3 +57,15 @@ dagger --env staging check
 # GitHub Actions
 - run: dagger check
 ```
+
+## Writing checks
+
+A check is a module function marked with your SDK's check pragma. In Go that is `// +check`, in Python `@check`, in TypeScript `@check()`. It runs tests or a linter and fails the run when it errors. The SDKs guide explains what makes a good check under [Checks, generators, and services](../sdks/index.mdx#checks-generators-and-services). The syntax for each language lives in its SDK guide:
+
+- [Dang](../sdks/dang.mdx#checks)
+- [Go](../sdks/go.mdx#checks)
+- [TypeScript](../sdks/typescript.mdx#checks)
+- [Python](../sdks/python.mdx#checks-generators-and-services)
+- [Java](../sdks/java.mdx#checks)
+- [PHP](../sdks/php.mdx#checks)
+- [Elixir](../sdks/elixir.mdx#checks)

@@ -667,7 +667,7 @@ a **check** (run by `dagger check`), a **generator** (run by `dagger generate`),
 or a **service** (started by `dagger up`). Each is a regular `@func()` annotated
 with an additional decorator.
 
-### Checks
+### Checks {#checks}
 
 A check is a function that validates something and passes or fails by exit code.
 Mark it with `@check()`. `dagger check` discovers and runs every check in the
@@ -725,7 +725,7 @@ dagger check
 A check passes if it returns without throwing; it fails if any `withExec`
 returns a non-zero exit code (which surfaces as a thrown error when you `sync`).
 
-### Generators
+### Generators {#generators}
 
 A generator produces a [changeset](../cli/generating.mdx) — a diff between the
 current source and generated output. Mark it with `@generate()` and return a
@@ -770,7 +770,7 @@ SDK's own typed client in `sdk/`. Your `@generate()` functions produce
 project-specific output (API clients, config, scaffolding) and are run by
 `dagger generate`.
 
-### Services
+### Services {#up-services}
 
 A service is a long-running container — a database, web server, or other
 dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
