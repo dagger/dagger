@@ -2684,11 +2684,46 @@ func (c *Cache) addExplicitDependencyLocked(
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
-	if err := c.recomputeRequiredSessionResourcesLocked(parentRes); err != nil {
-		return err
+
+	// The new dep can extend the parent's stored required set, and every
+	// result already depending on the parent derives its own stored set
+	// from it, so a change must cascade upward through depParents until
+	// the sets stop changing. At publication time the parent is fresh and
+	// has no depParents; the cascade matters for a dep added to an
+	// already-published result.
+	queue := []*sharedResult{parentRes}
+	for len(queue) > 0 {
+		res := queue[0]
+		queue = queue[1:]
+		before := res.requiredSessionResources
+		if err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
+			return err
+		}
+		if sessionResourceSetsEqual(before, res.requiredSessionResources) {
+			continue
+		}
+		if res.depParents == nil {
+			continue
+		}
+		for ancestorID := range res.depParents.Items() {
+			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
+				queue = append(queue, ancestor)
+			}
+		}
 	}
 
 	return nil
+}
+
+func sessionResourceSetsEqual(a, b *set.TreeSet[SessionResourceHandle]) bool {
+	if a == nil || a.Empty() {
+		return b == nil || b.Empty()
+	}
+	if b == nil || b.Empty() {
+		return false
+	}
+	// Subset(col) reports whether col is a subset of the receiver.
+	return a.Size() == b.Size() && a.Subset(b)
 }
 
 func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sharedResult) {
