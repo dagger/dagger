@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -617,7 +618,13 @@ func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*A
 // FAILED tombstone enqueues with QUEUED delivery: an explicit resume drains it
 // (retrying the loop in the FAILED case), and until then awaiting the message
 // projects the tombstone's failure rather than blocking forever.
-func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Agent], text string) (*AgentMessage, error) {
+//
+// replyTo names a message in the SENDER's own mailbox — the ref from its
+// attribution header — marking this send as its answer: the recipient sees
+// the two paired, and anyone awaiting the replied-to message resolves with
+// this reply immediately instead of at the sender's turn end
+// (hack/designs/agent-messaging.md §4.2).
+func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Agent], text, replyTo string) (*AgentMessage, error) {
 	rt, found, err := ars.Get(ctx, agent)
 	if err != nil {
 		return nil, err
@@ -631,6 +638,13 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// function-call record (module functions and their nested API calls), or
 	// the user. There is no "from" argument to forge.
 	origin := resolveMessageOrigin(ctx)
+	if replyTo != "" {
+		normalized, err := ars.resolveReply(origin, replyTo, text)
+		if err != nil {
+			return nil, err
+		}
+		origin.ReplyTo = normalized
+	}
 	msgID, err := rt.enqueue(text, origin)
 	if err != nil {
 		return nil, err
@@ -645,6 +659,76 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 		AgentName: rt.name,
 		MessageID: msgID,
 	}, nil
+}
+
+// resolveReply settles a replyTo marker against the SENDER's own runtime:
+// the replied-to record lives in the mailbox of whoever was asked, and the
+// asked party is the one replying. Returns the normalized ref ("#3") for the
+// recorded origin. An agent naming a message it does not have is refused
+// loudly — that is a model mistyping a ref, and silence would strand the
+// asker. A non-agent sender (a user relaying an answer through the API) has
+// no runtime to resolve within, so the marker passes through for the
+// recipient's pairing only.
+func (ars *AgentRuntimes) resolveReply(origin *LLMMessageOrigin, replyTo, answer string) (string, error) {
+	if origin.Kind != LLMMessageOriginAgent {
+		return replyTo, nil
+	}
+	ars.mu.Lock()
+	sender := ars.entries[origin.AgentID]
+	ars.mu.Unlock()
+	if sender == nil {
+		return replyTo, nil
+	}
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	rec, ref := sender.findRecordByRefLocked(replyTo)
+	if rec == nil {
+		return "", fmt.Errorf("agent %q has no message %s to reply to: replyTo names a message in your OWN mailbox, by the ref from its attribution header", origin.AgentName, replyTo)
+	}
+	if rec.consumed && !rec.resolved {
+		// The direct answer beats the turn-end fallback: awaiters of the
+		// question get THIS text, addressed to them, rather than whatever
+		// reply eventually closes the sender's turn. First resolution wins,
+		// so a question answered mid-turn is settled here and the turn-end
+		// sweep becomes a no-op for it.
+		sender.transitionLocked(func() {
+			sender.resolveLocked(rec, answer, nil)
+		})
+	}
+	return ref, nil
+}
+
+// findRecordByRefLocked resolves a message token — "#3", "3", or a full
+// message ID — to this runtime's record and its normalized ref. Must be
+// called with rt.mu held.
+func (rt *AgentRuntime) findRecordByRefLocked(token string) (*agentMessageRecord, string) {
+	if rec, found := rt.messages[token]; found {
+		return rec, fmt.Sprintf("#%d", rec.seq)
+	}
+	if n, err := strconv.ParseUint(strings.TrimPrefix(token, "#"), 10, 64); err == nil {
+		for _, rec := range rt.messages {
+			if rec.seq == n {
+				return rec, fmt.Sprintf("#%d", n)
+			}
+		}
+	}
+	return nil, ""
+}
+
+// MessageRef returns a message's short ref ("#3") — the deterministic token
+// attribution headers show and replies name.
+func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (string, error) {
+	rt, err := ars.runtimeForMessage(msg)
+	if err != nil {
+		return "", err
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rec, found := rt.messages[msg.MessageID]
+	if !found {
+		return "", fmt.Errorf("agent %q has no record of this message", rt.name)
+	}
+	return fmt.Sprintf("#%d", rec.seq), nil
 }
 
 // LookupMessage returns the identity-only handle for a message already
