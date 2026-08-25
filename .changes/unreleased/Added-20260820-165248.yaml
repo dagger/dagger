@@ -1,6 +1,0 @@
-kind: Added
-body: Add `vault-full://` scheme to vault secret provider that works without the VAULT_PATH_PREFIX variable being set and allows accessing multiple secrets engines within a single call, as well as supporting the full path in IaC form (without additional variables).
-time: 2026-08-20T16:52:48.098363+03:00
-custom:
-    Author: nilune
-    PR: "13941"

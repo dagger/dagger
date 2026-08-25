@@ -1,0 +1,13 @@
+kind: Breaking
+body: |
+    The `vault://` scheme now accepts the full path to secrets,
+    including the kv v2 mount name. The resulting URI format is:
+    `vault://<mount>/<path>.<field>`. The `VAULT_PATH_PREFIX` variable
+    is still prepended to the path for backward compatibility,
+    but in any case, the default behavior (if your `VAULT_PATH_PREFIX`
+    variable is not set and you were relying on the default mount
+    name `secret`) no longer works.
+time: 2026-08-20T16:52:48.098363+03:00
+custom:
+    Author: nilune
+    PR: "13941"
