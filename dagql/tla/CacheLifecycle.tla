@@ -716,14 +716,13 @@ FnComplete(o) ==
             \* filtered, OWNED acquisition - every result-returning entry
             \* point (request lookup, digest lookup, gated result-ID load,
             \* wait return) records the session edge and its ownership unit
-            \* atomically - so the session holds a counted edge to it, its
-            \* bound set satisfies it (the PROPERTIES header gating
-            \* guarantee), and release cannot collect it out from under the
-            \* fn. Without the counted-edge conjunct the model reused
-            \* results the session never acquired, which the code cannot
-            \* produce.
+            \* atomically - so the session holds a counted edge to it and
+            \* release cannot collect it out from under the fn. Ownership
+            \* proves the result passed the filter WHEN OBTAINED; its
+            \* requirement may have grown since (the gated-growth finding),
+            \* and the code re-checks nothing at reuse, so no
+            \* current-satisfaction conjunct belongs here.
             /\ <<ongoingCalls[o].sess, r>> \in countedEdges
-            /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
@@ -921,23 +920,20 @@ PubIndexFresh(o) ==
        \* this result's own.
        \E handleChoice \in {"none"} \cup
              {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
-       \* Structural deps are results this session obtained through filtered
-       \* paths (lookup, adoption, or a gated result-ID load) or created
-       \* itself, so each satisfies the session's bound set; see the
-       \* PROPERTIES header gating guarantee. Without this restriction the
-       \* model would reach a session structurally depending on a leaf it
-       \* never obtained, which the code cannot produce.
-       \* A dep is a result the resolver held, so its attachment is settled:
-       \* an attached result was handed out only past its read barrier, and
-       \* attachResult completes a detached child's attachment before the
-       \* edge is recorded. A dep edge onto a still-attaching result was a
-       \* harmless over-approximation until the required-set cascade made it
-       \* observable, so the choice is now restricted to settled barriers.
+       \* Structural deps are results this session obtained with ownership
+       \* (every acquisition path records the session edge and its unit
+       \* atomically) - without that restriction the model would reach a
+       \* session structurally depending on a leaf it never obtained, which
+       \* the code cannot produce. Ownership proves each dep passed the
+       \* filter when obtained; its requirement may have grown since, and
+       \* the code re-checks nothing here. A held dep's attachment is also
+       \* settled: an attached result was handed out only past its read
+       \* barrier, and attachResult completes a detached child before the
+       \* edge is recorded.
        \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
                        /\ res[r].registered
                        /\ res[r].barrier \in {"none", "closedOk"}
-                       /\ res[r].required
-                            \subseteq sessionRelease[ongoingCalls[o].sess].handles}} :
+                       /\ <<ongoingCalls[o].sess, r>> \in countedEdges}} :
         LET withDeps == [r \in DOMAIN res |->
                 IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
                 ELSE res[r]]
@@ -1127,10 +1123,11 @@ PubAttachAddDep(o) ==
         /\ d \notin res[ongoingCalls[o].resId].deps
         \* the stated no-cycle assumption (see the comment block above)
         /\ ~DepReachable(res, d, ongoingCalls[o].resId)
-        \* attachment deps are the value's embedded children, obtained by the
-        \* resolver through filtered lookups, so each satisfies the session -
-        \* the same assumption as the structural deps in PubIndexFresh.
-        /\ res[d].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        \* attachment deps are the value's embedded children, which
+        \* attachResult claims for the session (trackSessionResult) before
+        \* the edge is recorded - ownership, as in PubIndexFresh; the
+        \* filter held at acquisition and is not re-checked here.
+        /\ <<ongoingCalls[o].sess, d>> \in countedEdges
         /\ LET p == ongoingCalls[o].resId
                newDeps == res[p].deps \cup {d}
                \* addExplicitDependencyLocked recomputes the parent after
@@ -1807,15 +1804,13 @@ AddDepLate ==
         \* The caller possesses both results: the one production caller
         \* loads the parent and the dep through its own session context
         \* before calling AddExplicitDependency, so some session holds a
-        \* counted edge to each, and - having obtained each through a
-        \* filtered path (the gating guarantee) - its bound set satisfies
-        \* both current stored sets. Without this the edge could appear
-        \* with no modeled caller able to produce it.
+        \* counted edge to each. Ownership proves each passed the filter
+        \* when obtained; requirements may have grown since, and the code
+        \* checks nothing further at this call. Without possession the
+        \* edge could appear with no modeled caller able to produce it.
         /\ \E s \in Sessions :
             /\ <<s, p>> \in countedEdges
             /\ <<s, d>> \in countedEdges
-            /\ res[p].required \subseteq sessionRelease[s].handles
-            /\ res[d].required \subseteq sessionRelease[s].handles
         /\ LET newDeps == res[p].deps \cup {d}
                newReq  == CascadeRequired(res, p, newDeps)
            IN res' = [x \in DOMAIN res |->
@@ -2510,8 +2505,11 @@ LiveSpec ==
 (* (sharedResultLookupCanonicalEquivalentGated,                            *)
 (* cache_persistence_resolver.go; before that check existed, the exact     *)
 (* fallback bypassed the filter). The filter conjuncts in LookupHit,       *)
-(* CanonicalPick, FnComplete, PubIndexFresh and PubAttachAddDep rest on    *)
-(* that guarantee: every result a session holds satisfies its bound set.   *)
+(* CanonicalPick, PubIndexFresh, PubAttachAddDep and FnComplete rest on    *)
+(* it as an ACQUISITION-TIME fact: a held result satisfied the session's   *)
+(* bound set when obtained; requirement growth after the filter (the       *)
+(* gated-growth finding) can invalidate it, so held-result guards use      *)
+(* ownership, never current satisfaction.                                  *)
 (* A gated ID load needs no action of its own: refusal returns nothing     *)
 (* and serving is behaviorally a LookupHit. Not yet modeled on this path:  *)
 (* call-frame loads (ResultCallByResultID) serve the recipe ungated, and   *)
