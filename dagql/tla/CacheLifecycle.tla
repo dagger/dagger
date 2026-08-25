@@ -31,7 +31,9 @@
 (*                                                                         *)
 (* ABSTRACTIONS                                                            *)
 (*   - Equivalence is a static partition of call identities (ClassOf).     *)
-(*     The e-graph's class-merging machinery is not modeled.               *)
+(*     The e-graph's runtime class merging (the Teach* helpers) is not     *)
+(*     yet modeled; modeling it means making ClassOf mutable state. Take   *)
+(*     it up when an effort changes equivalence teaching.                  *)
 (*   - Lookup may miss even when a candidate exists. This over-            *)
 (*     approximates candidate selection (the lowest-ID pick, TTL,          *)
 (*     e-graph routing) even though session-resource filtering is now      *)
@@ -48,13 +50,16 @@
 (*     set; the lookup filter is required subset-of bound.                 *)
 (*     TrueRequired, RequiredExact and ReturnedGated encode intent -       *)
 (*     see the PROPERTIES header for their contract provenance.            *)
-(*   - Not modeled: TTL/expiry, DoNotCache,                                *)
-(*     recipe-replay taint, and the arbitrary-value cache                  *)
-(*     (acquireSessionArbitraryLocked - the same atomic record-and-count   *)
-(*     claim as the modeled result claim, under callsMu with sessionMu     *)
-(*     nested; it follows the same operation-accounting and                *)
-(*     deferred-release contract; Go tests carry its coverage).            *)
-(*   - Not modeled: the lock-time registration guards in the e-graph       *)
+(*   - Not yet modeled, each for a stated reason and none forbidden:       *)
+(*     TTL/expiry and DoNotCache (candidate-selection refinements folded   *)
+(*     into the lookup-miss over-approximation above; model them when an   *)
+(*     effort changes their behavior); recipe-replay taint (excluded by    *)
+(*     ruling G31: not an input to this effort); the arbitrary-value       *)
+(*     cache (acquireSessionArbitraryLocked - the same atomic              *)
+(*     record-and-count claim as the modeled result claim, under callsMu   *)
+(*     with sessionMu nested; it follows the same operation-accounting     *)
+(*     and deferred-release contract; Go tests carry its coverage).        *)
+(*   - Not yet modeled: the lock-time registration guards in the e-graph   *)
 (*     mutation helpers (TeachCallEquivalentToResult, TeachContentDigest,  *)
 (*     AddExplicitDependency, WithSessionResourceHandle). Numeric result   *)
 (*     IDs are engine-lifetime unique, so those guards only refuse         *)
@@ -706,9 +711,9 @@ FnComplete(o) ==
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
             /\ res[r].barrier \in {"none", "closedOk"}
             \* The reused result was obtained by the fn's resolver through a
-            \* filtered lookup, so it satisfies the fn's session. The handle-ID
-            \* load fallback that can bypass the filter is excluded; see the
-            \* PROPERTIES header assumption note.
+            \* filtered path - lookup, adoption, or a gated result-ID load -
+            \* so it satisfies the fn's session; see the PROPERTIES header
+            \* gating guarantee.
             /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
@@ -908,10 +913,10 @@ PubIndexFresh(o) ==
        \E handleChoice \in {"none"} \cup
              {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
        \* Structural deps are results this session obtained through filtered
-       \* lookups or created itself, so each satisfies the session's bound set.
-       \* The handle-ID load fallback that can bypass the filter is excluded
-       \* (see the PROPERTIES header assumption note). Without this restriction
-       \* the model would reach a session structurally depending on a leaf it
+       \* paths (lookup, adoption, or a gated result-ID load) or created
+       \* itself, so each satisfies the session's bound set; see the
+       \* PROPERTIES header gating guarantee. Without this restriction the
+       \* model would reach a session structurally depending on a leaf it
        \* never obtained, which the code cannot produce.
        \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
                        /\ res[r].registered
@@ -2464,17 +2469,23 @@ LiveSpec ==
 (* exercises one failure could drown the property under test in violations *)
 (* of unrelated properties.                                                *)
 (*                                                                         *)
-(* ASSUMPTION (session-resource gating). A result carries its STORED       *)
-(* required set to a session only through a filtered path: a request or    *)
-(* digest lookup (LookupHit), a publication-adoption pick (CanonicalPick   *)
-(* / FnComplete's reuse), or a wait for a result the session itself        *)
-(* produced. loadResultByResultID's canonical mode falls back to the       *)
-(* exact result when nothing passes the filter                             *)
-(* (sharedResultByResultID, cache_persistence_resolver.go), which can      *)
-(* hand a session a result whose required set it does not satisfy. That    *)
-(* handle-ID load path is not modeled; the filter conjuncts in LookupHit,  *)
-(* CanonicalPick, FnComplete, PubIndexFresh and PubAttachAddDep assume     *)
-(* every result a session holds satisfies the session's bound set.         *)
+(* GUARANTEE (session-resource gating). Every path that hands a session a  *)
+(* result VALUE filters on the session's bound set: request and digest     *)
+(* lookups (LookupHit), publication-adoption picks (CanonicalPick /        *)
+(* FnComplete's reuse), waits for a result the session itself produced,    *)
+(* and result-ID value loads, which refuse the session when neither a      *)
+(* canonical candidate nor the exact result satisfies it                   *)
+(* (sharedResultLookupCanonicalEquivalentGated,                            *)
+(* cache_persistence_resolver.go; before that check existed, the exact     *)
+(* fallback bypassed the filter). The filter conjuncts in LookupHit,       *)
+(* CanonicalPick, FnComplete, PubIndexFresh and PubAttachAddDep rest on    *)
+(* that guarantee: every result a session holds satisfies its bound set.   *)
+(* A gated ID load needs no action of its own: refusal returns nothing     *)
+(* and serving is behaviorally a LookupHit. Not yet modeled on this path:  *)
+(* call-frame loads (ResultCallByResultID) serve the recipe ungated, and   *)
+(* the canonical pick for ID loads admits open-barrier siblings            *)
+(* (requireCleanAttachment=false) whose attachment error an ID load can    *)
+(* then surface; both are modelable if an effort takes them up.            *)
 (***************************************************************************)
 
 DerivedSessionActive(s) ==
