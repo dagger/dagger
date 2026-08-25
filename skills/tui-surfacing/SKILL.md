@@ -48,7 +48,11 @@ them onto `SpanSnapshot` fields. The load-bearing ones:
 - `CheckNameAttr` → `CheckName`, `CheckPassedAttr` → the pass flag — makes a span
   a **check**.
 - `LLMRoleAttr` → `LLMRole` (`LLMToolAttr` → `LLMTool`, `UIMessageAttr`,
-  `UIActorEmojiAttr`) — makes a span an LLM **message**.
+  `UIActorEmojiAttr`) — makes a span an LLM **message**. The
+  `dagger.io/llm.origin.*` attrs (engine/telemetryattrs) → `LLMOrigin*` —
+  a message's recorded provenance; `styleLLMMessageView` renders
+  AGENT-origin messages sender-attributed and EVENT-origin ones as
+  one-liners.
 
 Where they're emitted:
 

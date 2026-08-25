@@ -5,6 +5,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // TestAttributionHeader pins the deterministic, model-facing header forms
@@ -267,4 +271,54 @@ func waitForEventQueueDrained(t *testing.T, rt *AgentRuntime) {
 		defer rt.mu.Unlock()
 		return len(rt.eventQueue) == 0 && !rt.eventDispatchRunning
 	}, 5e9, 1e6, "expected the event queue to drain")
+}
+
+// TestEmitUserMessageSpanRecordsOrigin covers the telemetry half of §4.1's
+// client-facing promise: a consumed message's recorded origin rides its
+// "LLM prompt" span as dagger.io/llm.origin.* attributes, so frontends can
+// attribute another agent's words (and render events compactly) for agents
+// they merely observe. A plain user prompt stamps nothing, keeping
+// pre-provenance spans unchanged.
+func TestEmitUserMessageSpanRecordsOrigin(t *testing.T) {
+	_, ctx := stateRecorderCtx(t)
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(spans),
+	)
+	ctx, parent := tp.Tracer("origin-attrs-test").Start(ctx, "turn")
+	defer parent.End()
+
+	emitUserMessageSpan(ctx, &LLMMessage{
+		Role:    LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "what branch?"}},
+		Origin: &LLMMessageOrigin{
+			Kind: LLMMessageOriginAgent, AgentID: "agent-b", AgentName: "scout", Ref: "#3",
+		},
+	}, "")
+	emitUserMessageSpan(ctx, &LLMMessage{
+		Role:    LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "hello"}},
+	}, "")
+
+	ended := spans.Ended()
+	require.Len(t, ended, 2)
+
+	attrsOf := func(span sdktrace.ReadOnlySpan) map[string]string {
+		attrs := map[string]string{}
+		for _, attr := range span.Attributes() {
+			attrs[string(attr.Key)] = attr.Value.AsString()
+		}
+		return attrs
+	}
+
+	attributed := attrsOf(ended[0])
+	require.Equal(t, telemetryattrs.LLMMessageOriginKindAgent, attributed[telemetryattrs.LLMMessageOriginKindAttr])
+	require.Equal(t, "agent-b", attributed[telemetryattrs.LLMMessageOriginAgentIDAttr])
+	require.Equal(t, "scout", attributed[telemetryattrs.LLMMessageOriginAgentNameAttr])
+	require.Equal(t, "#3", attributed[telemetryattrs.LLMMessageOriginRefAttr])
+	require.NotContains(t, attributed, telemetryattrs.LLMMessageOriginReplyToAttr)
+
+	plain := attrsOf(ended[1])
+	require.NotContains(t, plain, telemetryattrs.LLMMessageOriginKindAttr)
 }
