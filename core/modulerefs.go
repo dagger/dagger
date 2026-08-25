@@ -202,7 +202,15 @@ func (p *ParsedGitRefString) GitRef(
 			},
 		}
 	case pinIsSHA:
-		refSelector = dagql.Selector{Field: "head"}
+		// A module config pin is authoritative over the consuming workspace's
+		// git-sha lock entries. Pass it through ref's internal commit argument so
+		// ref resolution cannot replay a stale HEAD lock entry.
+		refSelector = withCommitArg(dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String("HEAD")},
+			},
+		})
 	}
 
 	var gitRef dagql.ObjectResult[*GitRef]

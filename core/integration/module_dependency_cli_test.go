@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +28,10 @@ func (CLISuite) TestModuleDependencyUpdate(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 	ctr := goGitBase(t, c).
+		WithNewFile("dagger.toml", `[modules.foo]
+source = "."
+`).
+		WithNewFile("dagger.lock", string(lockContents)).
 		WithNewFile("dagger-module.toml", `name = "foo"
 
 [runtime]
