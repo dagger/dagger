@@ -973,7 +973,22 @@ func (ars *AgentRuntimes) Notify(ctx context.Context, target, subscriber dagql.O
 
 // queueEventsLocked fans one projection transition out to every subscriber
 // interested in the new state. Must be called with rt.mu held.
+//
+// An IDLE edge fans out only when the conversation advanced since the last
+// one (idleEventDue): an IDLE event announces a completed turn and carries
+// its final reply, and a projection that merely passes back through IDLE
+// without new work — a tombstone relaunch that finds nothing to retry, a
+// resume of a stopped agent — would re-announce a reply its subscribers
+// already heard.
 func (rt *AgentRuntime) queueEventsLocked(state AgentState) {
+	suppress := false
+	if state == AgentStateIdle {
+		if rt.idleEventDue {
+			rt.idleEventDue = false
+		} else {
+			suppress = true
+		}
+	}
 	if len(rt.subs) == 0 {
 		return
 	}
@@ -984,8 +999,13 @@ func (rt *AgentRuntime) queueEventsLocked(state AgentState) {
 			// Already notified at this level (the subscribe-time check).
 			continue
 		}
+		// Edge bookkeeping advances even for a suppressed event: the NEXT
+		// transition into this state is still an edge.
 		sub.last = state
 		if !sub.states[state] {
+			continue
+		}
+		if suppress {
 			continue
 		}
 		rt.queueEventLocked(subKey, state)
@@ -1221,6 +1241,7 @@ type AgentRuntime struct {
 	started       bool                         // the loop goroutine was launched
 	stepping      bool                         // a Step is in flight
 	turnOpen      bool                         // a turn has consumed input and not yet resolved
+	draining      bool                         // a popped message is being recorded into the turn
 	paused        bool                         // pause requested: park without draining or stepping
 	stopRequested bool                         // a graceful stop was requested
 	done          bool                         // the loop has ended (tombstone)
@@ -1266,6 +1287,17 @@ type AgentRuntime struct {
 	lastEventState       AgentState
 	eventQueue           []agentEvent
 	eventDispatchRunning bool
+
+	// idleEventDue records that the conversation has advanced since the
+	// last IDLE event fanned out: every commitLast sets it, an IDLE
+	// fan-out consumes it, and an IDLE edge with nothing newly committed
+	// is suppressed. An IDLE event's meaning is "a turn completed; here
+	// is its final reply" (agent-messaging.md §4.3) — a projection that
+	// merely passes through IDLE without new work (a tombstone relaunch,
+	// a fact toggle) would otherwise re-announce a stale reply. The
+	// subscribe-time level check deliberately bypasses this: telling a
+	// new subscriber the current state is news to THAT subscriber.
+	idleEventDue bool
 
 	// stateChanged is closed and replaced on every fact transition, so
 	// WaitFor can block on transitions without polling.
@@ -1446,6 +1478,9 @@ func (rt *AgentRuntime) publishStateLocked() {
 // a state that no longer matches the conversation it is reading.
 func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[*LLM]) {
 	rt.last = next
+	// New committed work makes the next IDLE event news again — see
+	// idleEventDue.
+	rt.idleEventDue = true
 	rt.publishSnapshotLocked(ctx)
 }
 
@@ -1517,6 +1552,21 @@ func (rt *AgentRuntime) stateLocked() AgentState {
 		// (it is between the enqueue's wake and the drain): the agent is
 		// about to run, and IDLE means "mailbox empty, turn complete" —
 		// so this transient is RUNNING.
+		return AgentStateRunning
+	case rt.draining:
+		// The drain popped a message off the mailbox and is recording it
+		// as a prompt (the withPrompt Select runs outside the lock, before
+		// turnOpen is set). Without this fact the pop-to-commit window
+		// would project IDLE — letting waitSettled return a reply that
+		// predates the message, and Reseed swap the conversation out from
+		// under the drain's imminent commit.
+		return AgentStateRunning
+	case rt.started && rt.last.Self() != nil && rt.last.Self().HasPending():
+		// The loop is live and its committed snapshot still holds pending
+		// input it is about to step: a relaunch retrying a FAILED step, or
+		// a start whose seed carries an unstepped prompt. IDLE means the
+		// turn is COMPLETE; pending input is the opposite, and projecting
+		// IDLE here fired stale idle events on the FAILED→relaunch edge.
 		return AgentStateRunning
 	default:
 		// Started with nothing in flight (blocked in receive), or created
@@ -1772,6 +1822,11 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 		}
 		msgID := rt.mailbox[0]
 		rt.mailbox = rt.mailbox[1:]
+		// The pop empties the mailbox before the turn opens; draining keeps
+		// the projection RUNNING across the unlocked withPrompt Select
+		// below. No transition fires: the projection reads RUNNING both
+		// before (mailbox non-empty) and after (draining) this mutation.
+		rt.draining = true
 		rec := rt.messages[msgID]
 		inst := rt.last
 		interruptSeq := rt.interruptSeq
@@ -1824,6 +1879,7 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			// left the mailbox. It never influenced the model and must follow the
 			// rest of the discarded queue, not survive invisibly on the snapshot.
 			rt.transitionLocked(func() {
+				rt.draining = false
 				rt.resolveLocked(rec, "", rt.interruptedMessageError())
 			})
 			rt.mu.Unlock()
@@ -1838,6 +1894,7 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			rt.commitLast(ctx, next)
 			rec.consumed = true
 			rt.consumed = append(rt.consumed, rec)
+			rt.draining = false
 			rt.turnOpen = true
 		})
 		rt.mu.Unlock()
@@ -2039,6 +2096,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			}
 			rt.stepping = false
 			rt.stepCancel = nil
+			rt.draining = false
 			rt.turnOpen = false
 			rt.done = true
 			rt.loopErr = loopErr
@@ -2336,6 +2394,17 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 		previousLease := rt.scopeLease
 		rt.transitionLocked(func() {
 			rt.resetForRelaunchLocked()
+			// A FAILED (or killed) tombstone can hold a suspended turn:
+			// the failed step's input is still pending on the committed
+			// snapshot, and the relaunched loop will step it. Restore the
+			// suspended-turn fact the tombstone reset erased, so the
+			// projection claims RUNNING across the relaunch window — a
+			// transient IDLE here fired a stale idle event carrying the
+			// PREVIOUS turn's reply, and let a racing send hint STARTED
+			// for a message that in fact steers the retried turn.
+			if last := rt.last.Self(); last != nil && last.HasPending() {
+				rt.turnOpen = true
+			}
 			rt.scopeLease = scopeLease
 			rt.cancel = cancel
 			rt.started = true
