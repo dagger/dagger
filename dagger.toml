@@ -143,7 +143,11 @@ source = "dagger.io/sdk/dang@main"
 [modules.go-sdk]
 source = "dagger.io/sdk/go@main"
 
-# Run model checks explicitly in the dev environment.
+# Dev-only: the TLA+ cache-model checks are expensive (the full run takes
+# ~35-40 minutes) and deliberately do not run in CI; use
+# `dagger --env dev check tla-check:quick` while iterating and the full
+# `dagger --env dev check tla-check:cache-lifecycle` before pushing
+# changes under dagql/tla.
 [env.dev.modules.tla-check]
 source = ".dagger/modules/tla-check"
 
