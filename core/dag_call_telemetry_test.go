@@ -132,6 +132,24 @@ func (s *testSeenKeys) StoreTelemetrySeenKey(key string) {
 	s.keys.Store(key, struct{}{})
 }
 
+type alreadySeenTelemetryStore struct{}
+
+func (alreadySeenTelemetryStore) LoadOrStoreTelemetrySeenKey(string) bool { return true }
+func (alreadySeenTelemetryStore) StoreTelemetrySeenKey(string)            {}
+
+type payloadRoutingTestServer struct {
+	*mockServer
+	payloadStore dagql.TelemetrySeenKeyStore
+}
+
+func (s *payloadRoutingTestServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return alreadySeenTelemetryStore{}, nil
+}
+
+func (s *payloadRoutingTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return s.payloadStore, nil
+}
+
 // payloadRecorderCtx returns a context whose logger provider records every
 // call payload emitted through it, plus the nil dagql cache the recipe walk
 // needs (every ref in these fixtures is inline).
@@ -159,6 +177,35 @@ func skillsChain() (agent, withSkills, dir *dagql.ResultCall) {
 	}}
 	agent = testResultCall("agent", &Void{}, withSkills)
 	return agent, withSkills, dir
+}
+
+func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
+	agent, _, _ := skillsChain()
+	req := &dagql.CallRequest{ResultCall: agent}
+
+	runRoute := func(store dagql.TelemetrySeenKeyStore) (*payloadRecorder, context.Context) {
+		recorder, ctx := payloadRecorderCtx(t)
+		ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+			mockServer:   &mockServer{},
+			payloadStore: store,
+		}})
+		AroundFunc(ctx, req)
+		return recorder, ctx
+	}
+
+	routeA := &testSeenKeys{}
+	recorderA, ctxA := runRoute(routeA)
+	require.Equal(t, 5, recorderA.emissionCount(),
+		"a session-deduped span must still receive its route's complete call closure")
+
+	firstRouteA := recorderA.emissionCount()
+	AroundFunc(ctxA, req)
+	require.Equal(t, firstRouteA, recorderA.emissionCount(),
+		"revisiting the same delivery domain must remain idempotent")
+
+	recorderB, _ := runRoute(&testSeenKeys{})
+	require.Equal(t, firstRouteA, recorderB.emissionCount(),
+		"a sibling delivery domain must receive the closure despite session-wide span dedupe")
 }
 
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {

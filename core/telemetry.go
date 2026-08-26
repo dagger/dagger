@@ -78,18 +78,18 @@ func AroundFunc(
 	var payloadKeys dagql.TelemetrySeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
 		q = currentQuery
-		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
-			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
-				return ctx, dagql.NoopDone
-			}
-		}
-		// Payload claims are scoped to the client's delivery domain, NOT the
-		// session: the span dedupe above may be session-wide (display volume),
-		// but a payload claimed where a client never received it would leave
-		// that client's ID rebuilds permanently unservable (see
-		// core/dag_call_telemetry.go).
+		// Payload delivery is scoped per route, unlike the session-wide span
+		// dedupe below. Resolve the route first so a sibling client still receives
+		// exact call data even when another client already spent the presentation
+		// span for this digest.
 		if store, payloadKeysErr := q.CallPayloadSeenKeyStore(ctx); payloadKeysErr == nil {
 			payloadKeys = store
+		}
+		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
+				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
+				return ctx, dagql.NoopDone
+			}
 		}
 	}
 
