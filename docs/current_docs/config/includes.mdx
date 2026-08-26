@@ -34,9 +34,19 @@ Set it with `dagger workspace config`:
 dagger workspace config include ../common
 ```
 
-## Configuration, not code
+## Share modules across a monorepo
 
-A module entry in the included config whose source is a local path names a directory beside *that* config, not beside yours, so it is dropped with a warning naming it. Its remote module refs come through normally.
+The included config's own modules come with it. A module entry there whose source is a local path names a directory beside *that* config, not beside yours, so it is re-addressed rather than resolved as written:
+
+```
+shared/tester/          the module
+common/dagger.toml      [modules.tester] source = "../shared/tester"
+project-a/dagger.toml   [[include]] source = "../common"
+```
+
+From `project-a`, `dagger installed` lists `tester` and `dagger call tester …` runs it. For a Git include the same entry is addressed in the repository the config came from — `modules/ci` becomes `<repo>/modules/ci@<commit>`, pinned to the commit the config itself was read at, so the config and the modules it names always come from one revision.
+
+What has no address on your side is left out, with a warning naming it: built-in SDK installs, absolute paths, and paths escaping the tree the config came from.
 
 ## Override what you inherit
 

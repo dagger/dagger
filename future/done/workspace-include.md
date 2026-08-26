@@ -38,8 +38,9 @@ machine or to the file itself.
 - A git include is pinned in `dagger.lock` like every other git ref this repo
   resolves: later runs reuse the recorded pin, and `dagger update` refreshes it.
   A path include has nothing to pin.
-- Only _remote_ module references survive the include. A local module reference
-  in the included config must not become loadable in the workspace.
+- A module the included config installs is usable here, whether it named a
+  remote ref or a directory beside itself. What it must never do is resolve a
+  path of the included config's against the *consuming* workspace.
 - The merged result is what read surfaces (`dagger workspace config`, module
   listing, env listing) report, so the effect is visible rather than silent.
 
@@ -51,14 +52,14 @@ machine or to the file itself.
   can lift without changing what anyone has written.
 - **No transitive includes.** If the included config itself declares an
   include, that is an error (see
-  [Limitation 1](#limitation-1--one-include-no-chain)), not a second layer.
+  [One include, no chain](#one-include-no-chain)), not a second layer.
 - **No new lock operation kind.** The include reuses the existing git lock
   operations (`git-latest` for a mutable selection, `git-sha` for the
   immutable resolution).
-- **No inheriting the included config's local module tree**, generated clients,
-  or SDK-managed authoring state — see
-  [Limitation 2](#limitation-2--configuration-not-code) for why, and for the
-  sketch of what a later version would do.
+- **No inheriting generated clients or SDK-managed authoring state.** The
+  modules an included config installs come with it, but `as-sdk` state and the
+  client trees it implies do not — see
+  [The included config's own modules](#the-included-configs-own-modules).
 - **No tombstones.** An inherited entry can be overridden but not deleted. See
   [Inherited entries cannot be removed](#inherited-entries-cannot-be-removed).
 - **No write-through.** `dagger install`, `dagger workspace config <key> <value>`
@@ -142,8 +143,8 @@ graph TD
     C2 --> D
     D --> E{"included config<br/>declares an include?"}
     E -->|yes| F["error: nested includes<br/>are not supported"]
-    E -->|no| G["sanitize: classify every included<br/>module source with IsLocalRef"]
-    G --> H["drop local entries + their env<br/>overlays and ports, warn once"]
+    E -->|no| G["classify every included module<br/>source with IsLocalRef"]
+    G --> H["re-address its own modules;<br/>drop what has no address here,<br/>with their env overlays and ports"]
     H --> I[merge]
     A --> I
     I --> J{"merged entry<br/>without a source?"}
@@ -269,7 +270,7 @@ against the raw local config:
   whether the module is still listed after the write and says the overrides were
   removed, rather than "Uninstalled module".
 
-### Limitation 1 — one include, no chain
+### One include, no chain
 
 **Decision: an `[[include]]` block in the included config is an error**, reported at
 workspace load with both refs named.
@@ -281,49 +282,105 @@ actionable and fails closed, which is what this repo does elsewhere. The cost is
 that an include author cannot themselves build on an include; that is the scope control
 being asked for, and the error says so.
 
-### Limitation 2 — configuration, not code
+### The included config's own modules
 
-**Decision: module entries in the included config whose source is a local path
-are dropped, with a warning naming them.**
+**Decision: a module entry whose source is a local path is re-addressed so it
+names the same module from here, and only what has no address on this side is
+left out.**
 
-A local source in an included config means a directory next to _that_ config,
-and resolving it as written resolves it against the **consuming** workspace, via
+A local source in an included config names a directory beside _that_ config.
+Resolving it as written resolves it against the **consuming** workspace, via
 `workspace.ResolveModuleEntrySource(configDir, …)` in
-`workspaceConfigPendingModules` — loading a different module or failing with a
-path the user never wrote. Dropping prevents that, and keeps an include to
-sharing configuration.
+`workspaceConfigPendingModules` — loading a different module, or failing with a
+path the user never wrote. So it cannot be passed through untouched. It also
+must not simply be dropped, because sharing the modules is the point:
 
-Erroring instead was the first choice and is wrong: a normal repository keeps
-project-specific modules under `modules/`, so erroring would make an ordinary
-repo unusable as an include target because of a `ci` module the consuming user
-never asked for.
+```
+monorepo/
+  shared/tester/          the module
+  common/dagger.toml      [modules.tester] source = "../shared/tester"
+  project-a/dagger.toml   [[include]] source = "../common"
+```
 
-**This is a deliberate stopping point, not the end state.** Inheriting the
-included config's own local modules is not implemented in this version. It is
-buildable: a git include's modules _are_ addressable, because the config came
-from a repository at a known commit, so `source = "modules/ci"` could be
-inherited as `<clone-ref>/modules/ci@<commit>`, exactly the rewrite remote
-workspace selection already performs through `core.GitRefString`. Two findings
-from prototyping it are worth keeping:
+`dagger installed` in `project-a` has to list `tester`, and `dagger call tester`
+has to run it. A config that could only pass on modules it had itself installed
+from elsewhere would leave every monorepo re-declaring them per project, which
+is the duplication this feature exists to remove.
 
-- `gitref.Parse` drops an explicit HTTP(S) port when rebuilding a clone ref
-  (only SSH puts it back), which would send a rewritten module to the wrong
-  remote — with different credentials and cache keys;
-- a rewrite must skip built-in SDK runtimes (`source = "dang"` is a name the
-  engine resolves in-process), absolute paths, and paths that escape the
-  repository, which `GitRefString` would silently normalize to a root-level
-  path.
+Re-addressing differs by how the config was reached, because that is what
+decides where its modules live:
+
+```mermaid
+graph TD
+    A["module entry in the included config"] --> B{"IsLocalRef?"}
+    B -->|"a ref already"| K["keep as written"]
+    B -->|"a path"| C{"how was the config reached?"}
+    C -->|"path include"| D["same workspace:<br/>rebase the path onto<br/>the consuming config's dir"]
+    C -->|"git include"| E["same repository:<br/>&lt;clone-ref&gt;/&lt;path&gt;@&lt;commit&gt;"]
+    D --> F{"addressable?"}
+    E --> F
+    F -->|no| G["drop + warn"]
+    F -->|yes| H["re-addressed entry,<br/>pin cleared"]
+```
+
+**A path include re-bases the path.** Both configs live in one workspace, so
+only what the path is relative to changes: `../shared/tester` written beside
+`common/dagger.toml` becomes `../shared/tester` read beside
+`project-a/dagger.toml` — the same directory, named from a different place. The
+result is always dot-prefixed. A bare rewritten path whose first segment carries
+a dot (`shared.v2/ci`) would otherwise read back as a git ref under
+`IsLocalRef`, which is exactly the path-versus-ref confusion this exists to
+prevent.
+
+**A git include addresses the module in its repository.** The config came from a
+repository at a known commit, so `modules/ci` becomes
+`<clone-ref>/modules/ci@<commit>` — the same rewrite remote workspace selection
+already performs for a workspace loaded with `-W`, through the same
+`core.GitRefString`. The **commit**, not the include's symbolic version, for two
+reasons: the config and the modules it names then always come from one revision
+even if the branch moves mid-run, and a commit SHA short-circuits the lock
+lookup, so no per-module lock entry appears. The entry's own pin is cleared —
+it described the source that was just replaced.
+
+Getting the clone ref back out intact is what the rewrite rests on, and it was
+already broken: `gitref.Parse` dropped an explicit HTTP(S) port when rebuilding
+the ref (only SSH put it back), so a re-addressed module on a custom-port remote
+would be sent to a different remote, with different credentials and cache keys.
+A pre-existing round-tripping bug in `core/gitref`, carried here because
+re-addressing would inherit it — nothing on this branch exercises it, since the
+integration fixture serves git on port 80.
+
+**What is left out, and why each one:**
+
+- **built-in SDK runtimes.** `source = "dang"` is a name the engine resolves
+  in-process, not a path — even where the included tree has a directory by that
+  name. Checked _before_ the path classification, because `go@v1.2.3` carries a
+  dot and would otherwise read as a ref. Such an entry only ever appears
+  alongside `as-sdk` state, which the merge strips, so nothing on this side
+  could use it anyway.
+- **absolute paths.** They address the machine the config was authored on;
+  nothing in a shared tree corresponds to them.
+- **paths that escape the tree they came from.** `GitRefString` would quietly
+  normalize `../../elsewhere` into a root-level path and resolve the wrong
+  module instead of failing; for a path include the same escape leaves the
+  workspace.
+- **the included config's own root.** A workspace, not a module.
+
+Erroring on these instead was the first choice and is wrong: an ordinary
+repository keeps project-specific modules under `modules/`, so erroring would
+make it unusable as an include target because of a `ci` module the consuming
+user never asked for.
 
 **Classification is `workspace.IsLocalRef`, the classifier the loader itself
 uses**, with an **empty pin**. Agreeing with the loader is the whole correctness
-criterion: anything sanitization keeps is something the loader will then
-resolve, so the two must not disagree.
+criterion: anything left alone here is something the loader will then resolve as
+written, so the two must not disagree.
 
 The empty pin is the one deliberate difference from a naive call. `IsLocalRef`
 reads _any_ ref carrying a pin as git, so passing the entry's own pin would let
-`source = "./ci", pin = "…"` survive and then be resolved against the consuming
-workspace. `ResolveModuleEntrySource`, which the loader reaches for the same
-decision, passes an empty pin for the same reason.
+`source = "./ci", pin = "…"` through untouched and then be resolved against the
+consuming workspace. `ResolveModuleEntrySource`, which the loader reaches for
+the same decision, passes an empty pin for the same reason.
 
 This is the same classifier that decides whether the **include source itself**
 is a git ref or a path ([Config surface](#config-surface)). The two questions
@@ -335,47 +392,45 @@ paired `FastKindCheck` with a filesystem stat to settle `KindUnknown`. Since
 `12d34c468` the shared classifier settles that case syntactically: only the
 segment ahead of the first separator can be a host, so `common/.dagger/mymod`
 reads as local while `vanity.example.com/acme/toolchain` reads as remote,
-neither needing a filesystem. Converging removed the stat plumbing from the
-include loader and its callers, and closed a real gap — where no filesystem was
-available the old rule fell back to "remote", exactly the mis-resolution this
-limitation exists to prevent.
+neither needing a filesystem. That matters twice over here, because the two
+trees an include is read through — a local workspace and a cloned git tree —
+have no statting in common.
 
 `core.ParseRefString` remains the wrong helper for either: for an ambiguous ref
 it attempts a git parse and **falls back to `Local` on `EndpointError`**, so a
 vanity-domain remote would be classified local whenever endpoint discovery is
 unavailable. Classification must not depend on network reachability.
 
-The warning is emitted **inside the shared loader**, deduplicated per **client**
-and include source through the query's telemetry seen-key store (the mechanism
-`shouldRecordWorkspaceMigrationProgress` already uses), and written through the
-same global-writer + `slog.Warn` path the legacy compat notice uses. Per client,
-not per session: a nested CLI shares its parent's session, so session scope
-would silence every command after the first. Not in the load path:
-`dagger workspace config` connects with `SkipWorkspaceModules`, so a warning
-wired into module loading would never fire on exactly the surface where the
-modules appear to be missing.
+**Existence is not checked.** A re-addressed path that names nothing fails at
+module load, with the address it failed on in the message. Verifying it here
+would mean a stat per entry against whichever tree the config came from, to turn
+one clear failure into a different one.
+
+The warning for what was left out is emitted **inside the shared loader**,
+deduplicated per **client** and include source through the query's telemetry
+seen-key store (the mechanism `shouldRecordWorkspaceMigrationProgress` already
+uses), and written through the same global-writer + `slog.Warn` path the legacy
+compat notice uses. Per client, not per session: a nested CLI shares its
+parent's session, so session scope would silence every command after the first.
+Not in the load path: `dagger workspace config` connects with
+`SkipWorkspaceModules`, so a warning wired into module loading would never fire
+on exactly the surface where the modules appear to be missing.
 
 The warning names entries as the config spells them, so a dropped env overlay
 appears as a dotted path (`env.ci.modules.local-ci`) rather than a bare module
 name.
 
-Dropping cascades, so no orphan state survives:
+Re-addressing and dropping both cascade, so no stale state survives:
 
-- `env.<name>.modules.<dropped>` overlays from the included config are dropped;
+- `env.<name>.modules.<mod>` overlays are re-addressed or dropped by the same
+  rule as base entries; an overlay whose module was dropped and that installs
+  nothing itself goes with it;
 - included `ports.<host>` entries whose `backendService` names a dropped module
   are dropped. `backendService` is a colon-joined service path
   (`hello-with-services:web`) whose first segment is the module's **CLI-cased**
   name, matched at runtime against `Up.Name()` — so the cascade compares the
   segment before the first colon to the dropped module's kebab-cased name, not
-  to its raw config key;
-- an env overlay in the included config that _installs_ a local module is
-  dropped the same way.
-
-**A residual hole the earlier rule had is now closed.** While classification
-depended on statting the tree the config came from, a dotted source that existed
-in neither tree was kept and then resolved locally downstream. The syntactic
-rule has no such gap: the same string classifies the same way for sanitization
-and for the loader, whatever either can see.
+  to its raw config key.
 
 ### Inherited entries cannot be removed
 
@@ -417,6 +472,11 @@ No new lock entry kind. The include ref is resolved through the ordinary
 - follows whatever policy the lock subsystem applies to git refs generally; this
   feature adds no rule of its own.
 
+The modules an include contributes add nothing to the lockfile. A git include's
+own modules are re-addressed at the commit its config was read at, and a commit
+SHA short-circuits the lock lookup, so no per-module entry appears; a path
+include's modules are directories in this workspace, with nothing to pin.
+
 Round trip: an ordinary run resolves the ref and writes the `git-sha` entry on
 session flush; the next run reads the pin back and does not re-resolve the
 symbolic ref — the integration test asserts the lockfile is byte-identical after
@@ -455,8 +515,8 @@ alias was removed in CLI 1.0 (`future/cli-1.0.md`).
   `including workspace config: <ref>`, mirroring the existing
   `applying env: <name>` span, so it is visible in the TUI and in traces and any
   fetch latency is attributed.
-- Dropped local modules from the include produce one warning line naming them,
-  on every command that resolves the include — including
+- Modules the include declares that have no address here produce one warning
+  line naming them, on every command that resolves the include — including
   `dagger workspace config`, which skips workspace modules entirely.
 - `dagger workspace config --help` gains the effective-read / local-write rule
   for includes, next to the `--env` wording it already carries.
@@ -486,8 +546,12 @@ would avoid the source-optional change to the config contract, but it forces a
 downstream repo that wants to bump one setting to copy the module's `source`
 too — re-introducing exactly the duplication this feature removes.
 
-**Erroring on local module entries in the include** instead of dropping them.
-Rejected after review: it makes ordinary repositories unusable as includes. See [Limitation 2](#limitation-2--configuration-not-code).
+**Erroring on local module entries in the include**, and later **dropping them
+outright**. Both rejected: erroring makes an ordinary repository unusable as an
+include target because of a `ci` module the consumer never asked for, and
+dropping leaves every monorepo project re-declaring the modules its shared
+config already installs. Re-addressing them is what both were standing in for.
+See [The included config's own modules](#the-included-configs-own-modules).
 
 **Classifying refs with `gitref.FastKindCheck` alone**, leaving `KindUnknown` to
 a filesystem stat. Rejected for both the include source and the included
@@ -506,7 +570,8 @@ to be right for module loading, which is engine-side anyway.
 | `core/workspace/config.go` | `Config.Include` as `[]IncludeEntry`; `ModuleEntry.Source` gains `omitempty`; serialization; `cloneConfig`; `setConfigValue` case |
 | `core/workspace/config_document.go` | `restoreIncludeSections` puts the `[[include]]` blocks back after the map application, which drops every array of tables it was not given — `configDocumentMap` deliberately does not carry them, since ApplyMap would render one inline. An unchanged list is restored verbatim so an unrelated write keeps its comments and position; explicit-key presence helper |
 | `core/workspace/include.go` (new) | the one-include limit, pure merge, post-merge validation |
-| `core/workspace_include.go` (new, package `core`) | classify the source, load and sanitize the included config; `ApplyIncludes`, the one sequence — validate, load, merge, validate again — that every effective-config path goes through |
+| `core/workspace_include.go` (new, package `core`) | classify the source, load the included config and re-address the modules it installs; `ApplyIncludes`, the one sequence — validate, load, merge, validate again — that every effective-config path goes through |
+| `core/gitref/gitref.go` | keep an explicit HTTP(S) port in the clone ref, so a re-addressed module reaches the remote its config came from |
 | `core/workspace_remote.go` (new, package `core`) | remote-workspace ref parsing and cloning, shared with workspace selection |
 | `engine/server/session_workspaces.go` | the remote-workspace ref helpers **move** to `core`, with their tests moving out of `engine/server/session_test.go`; resolve and merge during workspace load |
 | `core/schema/workspace_config.go` | merge in `readWorkspaceConfig` **and** in `configRead`'s base path; answer `include` from the local file whatever is layered on; strip `include` from the effective view; owner-client context |
@@ -516,9 +581,9 @@ to be right for module loading, which is engine-side anyway.
 | `internal/cmd/dagger/workspace.go` | `dagger workspace config --help` text; `dagger uninstall` reports the override case instead of "Uninstalled module" |
 | `core/integration/workspace_include_test.go` (new) | multi-workspace fixture over a git service |
 | `docs/current_docs/config/includes.mdx` (new) | the user-facing page, next to Environments |
-| `docs/current_docs/config/reference/dagger-toml.mdx` | the `include` key and its `[[include]]` section |
+| `docs/current_docs/reference/config-files/dagger-toml.mdx` | the `include` key and its `[[include]]` section |
 | `docs/static/reference/dagger-workspace.schema.json` | regenerated |
-| `.changes/unreleased/Added-*.yaml` | changelog entry |
+| `.changes/unreleased/*.yaml` | changelog entries for the feature and for the `core/gitref` fix |
 
 Untouched on purpose: every config **write** path, the lockfile format, and the
 `Workspace` GraphQL surface (no new field — the merged config flows through
@@ -548,25 +613,32 @@ Unit (`core`), on classifying an include source, one case per spelling the
 reference page advertises in either direction, plus the path resolver (Windows
 separators, root anchoring, refused escapes) and the file-versus-directory rule.
 
-Unit (`core`), on sanitization, against config text alone — the syntactic
-classifier needs no tree:
+Unit (`core`), on re-addressing the included config's modules, against config
+text alone — the syntactic classifier needs no tree:
 
-- `source = "modules/ci"` → dropped;
-- `source = "./ci", pin = "abc"` → dropped, proving the pin does not launder a
-  local source;
-- `source = "modules/foo.bar"` → dropped, the dotted-path case the earlier stat
-  rule got wrong;
+- `source = "modules/ci"` → `<clone-ref>/modules/ci@<commit>`, and the same from
+  a config in a subdirectory, where the entry's path is relative to the config
+  rather than to the clone;
+- `source = "./ci", pin = "abc"` → re-addressed with the pin cleared, proving
+  the pin neither launders a local source nor survives the source it described;
+- `source = "modules/foo.bar"` → re-addressed, the dotted-path case that only
+  reads as a path because the dot is not in the host segment;
 - `source = "github.com/acme/toolchain@v1"` and
-  `source = "vanity.example.com/acme/toolchain"` → kept, the vanity domain
-  **with no network in play at all**, pinning the reason `ParseRefString` is not
-  used;
-- `source = "php"` — the bare short name `dagger setup` writes for a migrated
-  SDK — → dropped, which is the reasoning the `setupResolveMigratedSDKs` risk
-  below rests on;
-- dropping cascades to the module's env overlays in the included config and to ports whose
-  `backendService` prefix is the module's kebab-cased name (covered with a
-  non-canonical module key such as `MyTool`, and for a module an env overlay
-  alone installs).
+  `source = "vanity.example.com/acme/toolchain"` → kept exactly as written, the
+  vanity domain **with no network in play at all**, pinning the reason
+  `ParseRefString` is not used;
+- dropped: `source = "php"` and `source = "go@v1.2.3"` (the shapes
+  `dagger setup` writes for a migrated SDK, and the reasoning the
+  `setupResolveMigratedSDKs` risk below rests on), `source = "/opt/ci"`,
+  `source = "."`, and a path escaping the tree;
+- the path addresser on the monorepo shape: re-based onto the consuming
+  config's directory, always dot-prefixed, refusing an escape — and each result
+  asserted to read back as a path under `IsLocalRef`, which is the property the
+  dot-prefix exists for;
+- dropping cascades to the module's env overlays in the included config and to
+  ports whose `backendService` prefix is the module's kebab-cased name (covered
+  with a non-canonical module key such as `MyTool`, and for a module an env
+  overlay alone installs).
 
 Integration (`core/integration/workspace_include_test.go`). A git include's
 repository is served by `gitSmartHTTPServiceDirAuth` at an IP-addressable URL —
@@ -589,25 +661,36 @@ path include needs no fixture beyond a second file in the workspace.
 4. **Directory include**: `source = "common"` reaches `common/dagger.toml`.
 5. **More than one include**: two `[[include]]` blocks → error naming the count
    and the limit.
-6. **Local module blocked**: the included config declares a local module _and_
-   the consuming repo contains a same-named directory. The module does not
-   appear in the merged config, and the warning names it under plain
-   `dagger workspace config`, which skips workspace modules entirely.
-7. **No chain**: the included config includes something in turn → explicit error.
-8. **Missing target**: the include points where no config exists → error naming
-   the file.
-9. **Dangling override**: a `[modules.x]` patch entry with no source and an
-   include that does not provide `x` → clear error.
-10. **Env from the include**: an env defined only in the included config is
+6. **The monorepo shape**, end to end: `shared/` holds the modules, `common/`
+   installs them by relative path, `project-a/` and `project-b/` include
+   `../common`. From either project, `dagger installed` lists the shared
+   modules, `dagger call <module> …` runs them, the effective config shows them
+   addressed relative to the *including* project, and `project-b` overrides one
+   of their settings without repeating a source.
+7. **A git include's own modules**: the consuming workspace holds a different
+   module at the very same path the included entry names, which is what the
+   re-addressing has to get right. The effective config shows the entry as a ref
+   into the included repository at a full commit SHA rather than the path it was
+   written as, and the call reaches the included repository's module.
+8. **Modules with no address are left out**: a built-in SDK install and an entry
+   escaping the included repository. Neither appears in the merged config, and
+   the warning names both under plain `dagger workspace config`, which skips
+   workspace modules entirely.
+9. **No chain**: the included config includes something in turn → explicit error.
+10. **Missing target**: the include points where no config exists → error naming
+    the file.
+11. **Dangling override**: a `[modules.x]` patch entry with no source and an
+    include that does not provide `x` → clear error.
+12. **Env from the include**: an env defined only in the included config is
     selectable with `--env` downstream.
-11. **Setting the include through the CLI**:
+13. **Setting the include through the CLI**:
     `dagger workspace config include common/base.toml` writes the block without
     swallowing the bare keys above it, reads back the local source, and the
     effective view then carries what the include provides.
-12. **Writes stay local**: a setting write records only the override — no
+14. **Writes stay local**: a setting write records only the override — no
     inherited ref, no `source = ""` — and uninstalling a module the include
     provides names the include.
-13. **Lockfile**: an ordinary run records a `git-sha` entry naming the included
+15. **Lockfile**: an ordinary run records a `git-sha` entry naming the included
     repository, and a later run resolves the same merged config while leaving
     the lockfile byte-identical.
 
@@ -631,6 +714,12 @@ Error-message assertions use stable substrings.
   ref resolution plus a git tree fetch, both dagql-cached and both skipped
   entirely when no `[[include]]` block exists. Once pinned, the ref resolution
   is replaced by the stored pin, though the tree may still be fetched.
+- **A git include's own modules are fetched as refs**, not read out of the tree
+  already cloned to read its config. They resolve at the same commit, so the
+  content is the same and the fetch is cache-shared with any other consumer of
+  that ref — but it is a second addressing of a tree already in hand. Reading
+  them out of the clone would mean synthesizing a local module source with no
+  path on this filesystem, which the loader has no notion of.
 - **A failed include can read as "module not installed".** Address resolution
   demand-loads workspace modules and deliberately discards config errors
   (`demandLoadInstalledModule` in `core/schema/address.go`), so an unreachable
@@ -652,10 +741,11 @@ Error-message assertions use stable substrings.
 - **One CLI path writes from what `configRead` returned**:
   `setupResolveMigratedSDKs` (`internal/cmd/dagger/setup.go`) parses
   `Workspace.configRead` and writes fixups back. It only rewrites entries whose
-  source is a bare short name (e.g. `php`), which classify as local and are
-  therefore always dropped from an include — so an inherited entry can never
-  reach it. A unit test pins that reasoning; if it ever stops holding, that call
-  site must read the local file instead.
+  source is a bare runtime name (e.g. `php`), which is exactly the shape an
+  include never contributes — a built-in runtime is dropped rather than
+  re-addressed — so an inherited entry can never reach it. A unit test pins that
+  reasoning; if it ever stops holding, that call site must read the local file
+  instead.
 - **Inherited entries cannot be deleted.** Covered above; the mitigation is
   error-message quality, not a mechanism.
 - **An explicit clear reads as "not set".** `SerializeConfig` omits zero values,

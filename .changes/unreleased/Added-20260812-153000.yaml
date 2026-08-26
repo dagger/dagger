@@ -23,10 +23,20 @@ body: |
   naming the include wins every conflict, and a module entry may omit `source`
   to override just the settings of a module the include installs.
 
+  An included config brings its own modules. A module entry there whose source
+  is a local path names a directory beside *that* config, so it is re-addressed
+  rather than resolved as written: within one workspace the path simply changes
+  what it is relative to, and for a Git include `modules/ci` becomes
+  `<repo>/modules/ci@<commit>`, pinned to the commit the config was read at.
+  That is what makes a monorepo work — `common/dagger.toml` installs
+  `../shared/tester`, `project-a/dagger.toml` includes `../common`, and
+  `dagger installed` in `project-a` lists `tester`. What has no address on this
+  side is left out with a warning naming it: built-in SDK installs, absolute
+  paths, and paths escaping the tree the config came from.
+
   Only one include is resolved for now — a config with more is an error — and
   an included config that includes something in turn is rejected rather than
-  followed. Module entries whose source is a local path are dropped with a
-  warning: an include shares configuration, not code.
+  followed.
 
   Reads report the merged result (`dagger workspace config` and the module and
   env listings); writes still only touch the local `dagger.toml`. A Git
