@@ -136,9 +136,9 @@ var quickConfigs = []string{
 // CacheLifecycle model-checks every configuration of the dagql cache spec
 // and verifies each outcome against its expectation.
 //
-// WARNING: the full run is expensive - roughly 35 to 40 minutes wall with
-// four TLC JVMs, and the largest configurations exceed 40 million distinct
-// states each. Run it sparingly: it is required before pushing changes
+// WARNING: the full run is expensive - roughly 50 to 60 minutes wall with
+// four TLC JVMs, and the largest configurations reach 40 to 80+ million
+// distinct states each. Run it sparingly: it is required before pushing changes
 // under dagql/tla (it no longer runs in CI), but for iteration prefer
 // Quick (seconds), Some (chosen configurations with their expectations
 // enforced), or One (a single configuration, raw output, optional probe

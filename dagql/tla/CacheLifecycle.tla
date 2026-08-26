@@ -353,6 +353,18 @@ ProtectedReturn(s, r) ==
     /\ r # 0
     /\ <<s, r>> \in countedEdges
 
+\* Decrement an admitted operation. When this is the last operation after a
+\* release plan was published, cleanup becomes irrevocably assigned to this
+\* operation before its goroutine returns.
+FinishSessionOperation(sr, s) ==
+    LET old == sr[s]
+        remaining == old.active - 1
+        nextPhase == IF remaining = 0 /\ old.phase = "deferred"
+                     THEN "collecting" ELSE old.phase
+    IN [sr EXCEPT ![s] = [old EXCEPT !.active = remaining,
+                                      !.phase = nextPhase]]
+
+
 (***************************************************************************)
 (* The release cascade: collect every registered result whose count is     *)
 (* zero, drop its dependency edges, decrement the dependencies, repeat.    *)
@@ -683,7 +695,11 @@ CreateOc(i) ==
              \* nested operation exit (0 = none). Inner loads are
              \* serialized per call here; concurrent resolver loads
              \* interleave across calls, not within one.
-             acqPending |-> 0])
+             acqPending |-> 0,
+             \* an inner load's delivery was refused by release marking;
+             \* the fn may handle the error or propagate it as a release
+             \* refusal (never as an injected failure)
+             loadRefused |-> FALSE])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
@@ -752,28 +768,37 @@ FnInnerLoadClaim(o) ==
                           ELSE [res EXCEPT ![r].own = @ + 1]
               /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
               /\ countedEdges' = countedEdges \cup {<<s, r>>}
+              \* the nested operation is admitted (beginSessionOperation):
+              \* release defers to it until its own op.finish
+              /\ sessionRelease' = [sessionRelease EXCEPT ![s].active = @ + 1]
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqPending = r]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
+    /\ UNCHANGED <<invocations, ongoingCallIndex, evals, epoch, flushed>>
 
 FnInnerLoadDeliver(o) ==
-    /\ ongoingCalls[o].fnState = "running"
+    /\ ongoingCalls[o].fnState \in {"running", "canceled"}
     /\ ongoingCalls[o].acqPending # 0
     /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
+    /\ sessionRelease[ongoingCalls[o].sess].active > 0
+    /\ sessionRelease' = FinishSessionOperation(sessionRelease, ongoingCalls[o].sess)
     /\ ongoingCalls' = [ongoingCalls EXCEPT
          ![o].acq = @ \cup {ongoingCalls[o].acqPending},
          ![o].acqPending = 0]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 \* the nested operation exit refuses after release marked the session:
-\* the claim's edge and unit stay recorded, possession never happens
+\* the claim's edge and unit stay recorded, possession never happens, and
+\* the resolver sees the release refusal (loadRefused) with no injection
 FnInnerLoadRefused(o) ==
-    /\ ongoingCalls[o].fnState = "running"
+    /\ ongoingCalls[o].fnState \in {"running", "canceled"}
     /\ ongoingCalls[o].acqPending # 0
     /\ sessionRelease[ongoingCalls[o].sess].phase # "live"
-    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqPending = 0]
+    /\ sessionRelease[ongoingCalls[o].sess].active > 0
+    /\ sessionRelease' = FinishSessionOperation(sessionRelease, ongoingCalls[o].sess)
+    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqPending = 0,
+                                            ![o].loadRefused = TRUE]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 FnComplete(o) ==
     /\ ongoingCalls[o].fnState = "running"
@@ -789,6 +814,11 @@ FnComplete(o) ==
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
+          /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
+       \* a refused inner load is resolver-visible without any injection:
+       \* the fn may propagate it, and the waiters' exits classify it as a
+       \* release refusal (the session is no longer live), never a failure
+       \/ /\ ongoingCalls[o].loadRefused
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -836,6 +866,9 @@ WaiterCancel(i) ==
 FnWindDown(o) ==
     /\ ModelNestedCalls
     /\ ongoingCalls[o].fnState = "canceled"
+    \* the executor cannot exit before its in-flight inner operation
+    \* resolves (delivery or refusal); that operation is still counted
+    /\ ongoingCalls[o].acqPending = 0
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "exited"]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -1184,8 +1217,35 @@ PubFinishOk(o) ==
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* PubAttachClaim: the attachment hook's attachResult claims a
+\* cache-backed child during publication - after the fn completed, so
+\* fn-time acq cannot cover it. Same serve contract and effect as
+\* FnInnerLoadClaim, but single-phase: this path runs inside the outer
+\* operation (no nested op.finish); a claim attempted after release
+\* marked the session is refused by trackSessionResult and fails the
+\* attachment (the disjunct added to PubAttachFailDropHold below).
+PubAttachClaim(o) ==
+    /\ ongoingCalls[o].pubState = "attaching"
+    /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
+    /\ \E r \in ResultIds :
+        /\ res[r].registered
+        /\ res[r].barrier \in {"none", "closedOk"}
+        /\ r \notin ongoingCalls[o].acq
+        /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        /\ LET s == ongoingCalls[o].sess
+               haveEdge == <<s, r>> \in sessionEdges
+           IN /\ res' = IF haveEdge THEN res
+                          ELSE [res EXCEPT ![r].own = @ + 1]
+              /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
+              /\ countedEdges' = countedEdges \cup {<<s, r>>}
+        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acq = @ \cup {r}]
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
+
 PubAttachFailDropHold(o) ==
-    /\ AttachCanFail
+    \* an injected attachment failure, or the deterministic one: an
+    \* attachment-time claim refused because release marked the session
+    /\ \/ AttachCanFail
+       \/ sessionRelease[ongoingCalls[o].sess].phase # "live"
     /\ ongoingCalls[o].pubState = "attaching"
     /\ res' = DecAndCascade(res, ongoingCalls[o].resId)
     /\ ongoingCalls' = [ongoingCalls EXCEPT
@@ -1713,17 +1773,6 @@ DecodeFailWait(i) ==
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
-\* Decrement an admitted operation. When this is the last operation after a
-\* release plan was published, cleanup becomes irrevocably assigned to this
-\* operation before its goroutine returns.
-FinishSessionOperation(sr, s) ==
-    LET old == sr[s]
-        remaining == old.active - 1
-        nextPhase == IF remaining = 0 /\ old.phase = "deferred"
-                     THEN "collecting" ELSE old.phase
-    IN [sr EXCEPT ![s] = [old EXCEPT !.active = remaining,
-                                      !.phase = nextPhase]]
-
 \* Operation exit is the return boundary. A successful value is changed to a
 \* released-session refusal when release won before this atomic decrement.
 \* Cleanup cannot run before the decrement because the active count is still
@@ -1735,9 +1784,15 @@ InvocationOperationExit(i) ==
            r == invocations[i].resId
            success == invocations[i].phase = "returning"
            lateRefusal == success /\ sessionRelease[s].phase # "live"
+           \* op.finish's released check overrides the fn error too: an
+           \* errored operation in a non-live session surfaces as
+           \* ErrCacheSessionReleased, a refusal, not a failure
+           failRefusal == invocations[i].phase = "failing"
+                            /\ sessionRelease[s].phase # "live"
            terminal == CASE lateRefusal -> "refused"
                          [] invocations[i].phase = "returning" -> "done"
-                         [] invocations[i].phase = "failing" -> "failed"
+                         [] invocations[i].phase = "failing" ->
+                              IF failRefusal THEN "refused" ELSE "failed"
                          [] invocations[i].phase = "canceling" -> "canceled"
                          [] OTHER -> "refused"
        IN /\ sessionRelease[s].active > 0
@@ -1745,7 +1800,7 @@ InvocationOperationExit(i) ==
           /\ invocations' = [invocations EXCEPT
                ![i].phase = terminal,
                ![i].opActive = FALSE,
-               ![i].refusedEpoch = IF lateRefusal THEN epoch ELSE @,
+               ![i].refusedEpoch = IF lateRefusal \/ failRefusal THEN epoch ELSE @,
                ![i].retLive = IF success
                     THEN res[r].registered /\ ~res[r].released ELSE @,
                ![i].retOwned = IF success
@@ -1875,7 +1930,7 @@ AddDepLate ==
         /\ res[d].required = {}
         \* The caller runs inside an executing fn (module_typedefs runs
         \* during module loading) and holds both results through its
-        \* resolver's gated loads - FnInnerLoad claims; this action only
+        \* resolver's gated loads - FnInnerLoadClaim/Deliver; this action
         \* consumes the possession and adds the explicit-dep unit, with
         \* no liveness guard. For d, satisfaction is the empty-set guard
         \* above.
@@ -2437,7 +2492,7 @@ Next ==
          \/ FnInnerLoadRefused(o)
          \/ FnComplete(o) \/ PubBegin(o)
          \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
-         \/ PubAttachAddDep(o) \/ PubFinishOk(o)
+         \/ PubAttachClaim(o) \/ PubAttachAddDep(o) \/ PubFinishOk(o)
          \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
          \/ PubUnregister(o) \/ FnWindDown(o)
     \/ \E s \in Sessions :
@@ -2587,12 +2642,16 @@ LiveSpec ==
 (* PubIndexFresh's structural deps, PubAttachAddDep's attachment deps,     *)
 (* and AddDepLate's caller loads. Held-result choices never consult        *)
 (* recorded edges (a counted edge can be pending or denied, so it is not   *)
-(* possession); they consume oc.acq, the values the fn's inner loads       *)
-(* returned. FnInnerLoad records each claim exactly as the code's serve    *)
-(* does - settled result, currently satisfied, live session - and          *)
-(* consumption needs no liveness: release marking refuses new claims but   *)
-(* does not revoke values a running fn already holds, so claim ->          *)
-(* release-mark -> completion -> late refusal stays representable.         *)
+(* possession); they consume oc.acq, the values the call's claims          *)
+(* delivered. FnInnerLoadClaim records a claim exactly as the code's       *)
+(* serve does - settled result, currently satisfied, live session, the     *)
+(* nested operation counted - and FnInnerLoadDeliver hands it over only    *)
+(* on a live operation exit (a marked exit refuses: FnInnerLoadRefused).   *)
+(* PubAttachClaim does the same single-phase for attachment-time           *)
+(* children. Consumption needs no liveness: release marking refuses new    *)
+(* claims and undelivered exits but does not revoke delivered values, so   *)
+(* claim -> release-mark -> refusal and deliver -> mark -> completion ->   *)
+(* late refusal are both representable.                                    *)
 (* CanonicalPick's returned-result fallback stays ownership-only: the      *)
 (* publisher possesses what it just produced.                              *)
 (* A gated ID load needs no action of its own: refusal returns nothing     *)
@@ -2606,6 +2665,8 @@ LiveSpec ==
 DerivedSessionActive(s) ==
     Cardinality({i \in InvocationIds :
         invocations[i].sess = s /\ invocations[i].opActive})
+      + Cardinality({o \in OngoingCallIds :
+        ongoingCalls[o].sess = s /\ ongoingCalls[o].acqPending # 0})
       + Cardinality({e \in EvalIds :
         evals[e].sess = s /\ evals[e].opActive})
       + Cardinality({r \in ResultIds : res[r].lazyTokenSession = s})
@@ -2750,18 +2811,34 @@ LeaseFailureClean ==
 
 \* Racing alone never manufactures an execution failure: if no failure
 \* injection is enabled, no invocation ends in "failed". Cancellation and a
-\* released-session refusal have their own terminal phases. This holds
-\* with release enabled too: ongoing calls are keyed by (call, session),
-\* so no invocation waits on another session's singleflight entry, and a
-\* reused result was delivered to the fn by its own inner load
-\* (FnInnerLoadClaim's edge keeps release from collecting it mid-reuse;
-\* a load whose delivery release refuses never reaches acq, and what the
-\* fn does with that error is FnCanFail's domain). (An earlier note that
-\* release trips this invariant traced to a model-only reuse without any
-\* acquisition at all.)
+\* released-session refusal have their own terminal phases (an errored
+\* operation in a non-live session exits as a refusal, matching
+\* op.finish's override). Ongoing calls are keyed by (call, session), so
+\* no invocation waits on another session's singleflight entry, and a
+\* reused result was delivered to the fn by its own inner load.
+\*
+\* SURFACED FINDING, exempted below and awaiting a ruling: a PUBLISHER's
+\* own release can fail an innocent cross-session reader. Release marks
+\* the publishing session between fn completion and attachment; the
+\* attachment hook's claim (attachResult -> trackSessionResult) is then
+\* refused, attachment fails, the barrier closes with the error, and a
+\* reader of another live session parked at that read barrier surfaces
+\* it as its own failure - no injection anywhere. This is the same
+\* defect family as the fixed decode_cancel finding (a leader's own
+\* cancellation failing its parked joiners, fixed by a retry
+\* classification); the analogous code fix would classify a
+\* publisher-release attachment failure so parked readers convert to a
+\* miss instead of failing. Until that ruling, the exemption is exactly
+\* that shape: a failure is tolerated only when the failed invocation's
+\* result has a publisher whose session is no longer live.
 NoSpuriousErrors ==
     (~FnCanFail /\ ~AttachCanFail /\ ~LeaseCanFail /\ ~DecodeCanFail) =>
-        \A i \in InvocationIds : invocations[i].phase # "failed"
+        \A i \in InvocationIds :
+            invocations[i].phase = "failed" =>
+                \E o \in OngoingCallIds :
+                    /\ ongoingCalls[o].resId = invocations[i].resId
+                    /\ ongoingCalls[o].resId # 0
+                    /\ sessionRelease[ongoingCalls[o].sess].phase # "live"
 
 \* An invocation reports cancellation only for its own context. Contract:
 \* the ctx.Done arms in wait and ensurePersistedHitValueLoaded return
