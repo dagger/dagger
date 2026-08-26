@@ -3743,17 +3743,19 @@ func (fe *frontendPretty) promoteChecksLocked() {
 // tool-call span that spawned them, exactly as reveal bubbling used to. Marking
 // the host Passthrough then makes RowsView iterate those revealed spans.
 func (fe *frontendPretty) promoteConversationLocked() {
-	if fe.db == nil || !fe.db.HasConversation() {
+	if fe.db == nil {
 		return
 	}
 	// SetPrimary explicitly zooms interactive commands to the CLI root, while
 	// RootSpan is merely the first parentless span received and may be a remote
-	// query root. Promote the span RowsView is actually zoomed to.
+	// query root. Promote the span RowsView is actually zoomed to, and ask the
+	// surfacing question about that same span: relative to the trace root it
+	// may be unanswerable when the primary is a sibling parentless span.
 	host := fe.db.RootSpan
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil {
+	if host == nil || !fe.db.HasConversationForSpan(host) {
 		return
 	}
 	if host.LLMRole != "" {
@@ -3775,17 +3777,19 @@ func (fe *frontendPretty) promoteConversationLocked() {
 // (via DB.PromoteGeneratorsTo) and marks the host Passthrough so RowsView
 // iterates those revealed spans.
 func (fe *frontendPretty) promoteGeneratorsLocked() {
-	if fe.db == nil || !fe.db.HasGenerators() {
+	if fe.db == nil {
 		return
 	}
 	// SetPrimary explicitly zooms interactive commands to the CLI root, while
 	// RootSpan is merely the first parentless span received and may be a remote
-	// query root. Promote the span RowsView is actually zoomed to.
+	// query root. Promote the span RowsView is actually zoomed to, and ask the
+	// surfacing question about that same span: relative to the trace root it
+	// may be unanswerable when the primary is a sibling parentless span.
 	host := fe.db.RootSpan
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil {
+	if host == nil || !fe.db.HasGeneratorsForSpan(host) {
 		return
 	}
 	if host.GeneratorName != "" {
