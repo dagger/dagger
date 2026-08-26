@@ -38,8 +38,9 @@ func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
 // CacheLifecycle model-checks every configuration of the dagql cache spec
 // and verifies each outcome against its expectation.
 //
-// WARNING: the full run is expensive - roughly 50 to 60 minutes wall with
-// four TLC JVMs, and the largest configurations reach 40 to 80distinct states each. Run it sparingly: it is required before pushing changes
+// WARNING: the full run is expensive - well over an hour wall with four
+// TLC JVMs, and the largest configurations reach more than 110 million
+// distinct states each. Run it sparingly: it is required before pushing changes
 // under dagql/tla (it no longer runs in CI), but for iteration prefer
 // Quick (seconds), Some (chosen configurations with their expectations
 // enforced), or One (a single configuration, raw output, optional probe

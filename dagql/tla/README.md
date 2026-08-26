@@ -10,15 +10,14 @@ explains the modeling rules, and every action's comment names the Go code
 it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
-violations are reserved for deliberately accepted model findings. No
-such finding is tracked today: every configuration is a green
-regression gate, and the `expectedOutcome` map is the authoritative
-list. One surfaced finding awaits a ruling and is documented as a
-precise exemption inside `NoSpuriousErrors` rather than as a red
-configuration: a publisher's own release between fn completion and
-attachment fails innocent cross-session readers parked at the attach
-barrier (the same defect family as the fixed `decode_cancel` joiner
-finding; the analogous fix is a retry/miss classification for readers). (The most recently closed findings: `resources_gated_growth` — a
+violations are reserved for deliberately accepted model findings. One
+is tracked today, awaiting a ruling: a publisher's own release between
+fn completion and attachment fails innocent cross-session readers
+parked at the attach barrier (`attach_release_reader`; the same defect
+family as the fixed `decode_cancel` joiner finding, and the analogous
+fix is a retry/miss classification for parked readers). Every other
+configuration is a green regression gate, and the `expectedOutcome`
+map is the authoritative list. (The most recently closed findings: `resources_gated_growth` — a
 result's transitive requirement growing after the lookup filter ran —
 fixed by re-checking the filter after the attach barrier and by
 refusing requirement-carrying deps on explicit retention edges;
@@ -43,10 +42,10 @@ dagger --env dev call tla-check some --configs=resources,resources_latedep
 dagger --env dev call tla-check one --config=resources
 
 # the full suite: REQUIRED before pushing changes under dagql/tla,
-# expensive otherwise - ~50-60 minutes wall with four TLC JVMs; the
+# expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
-# (resources_gated_growth ~83M, resources_restart ~73M, lazy_import
-# ~47M, persist ~40M)
+# (resources_gated_growth ~114M, resources_restart ~110M, lazy_import
+# ~62M, persist ~47M)
 dagger --env dev check tla-check:cache-lifecycle
 ```
 

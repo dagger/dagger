@@ -85,6 +85,16 @@ var expectedOutcome = map[string]string{
 	// requirement-carrying deps, so a settled result's stored set is
 	// frozen; see the config header.
 	"resources_gated_growth": "",
+
+	// accepted finding: a publisher's own release between fn completion
+	// and the attachment hook's claim refuses that claim, fails the
+	// attachment, closes the barrier with the error, and a live
+	// cross-session reader parked at the read barrier surfaces it as its
+	// own failure - no injection anywhere. Same defect family as the
+	// fixed decode_cancel joiner finding; the analogous fix classifies
+	// the failure so parked readers convert to a miss. Red pending the
+	// ruling; see the config header.
+	"attach_release_reader": "NoSpuriousErrors",
 }
 
 type TlaCheck struct {
@@ -136,8 +146,8 @@ var quickConfigs = []string{
 // CacheLifecycle model-checks every configuration of the dagql cache spec
 // and verifies each outcome against its expectation.
 //
-// WARNING: the full run is expensive - roughly 50 to 60 minutes wall with
-// four TLC JVMs, and the largest configurations reach 40 to 80+ million
+// WARNING: the full run is expensive - well over an hour wall with four
+// TLC JVMs, and the largest configurations reach more than 110 million
 // distinct states each. Run it sparingly: it is required before pushing changes
 // under dagql/tla (it no longer runs in CI), but for iteration prefer
 // Quick (seconds), Some (chosen configurations with their expectations
