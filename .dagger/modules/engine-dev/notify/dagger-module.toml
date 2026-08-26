@@ -1,5 +1,5 @@
 name = "notify"
-engineVersion = "v0.21.7"
+engineVersion = "v0.21.9"
 disableDefaultFunctionCaching = true
 
 [runtime]
