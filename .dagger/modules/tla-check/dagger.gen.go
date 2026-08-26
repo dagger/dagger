@@ -279,7 +279,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("CacheLifecycle",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.\n\nWARNING: the full run is expensive - roughly 35 to 40 minutes wall with\nfour TLC JVMs, and the largest configurations exceed 40 million distinct\nstates each. Run it sparingly: it is required before pushing changes\nunder dagql/tla (it no longer runs in CI), but for iteration prefer\nQuick (seconds), Some (chosen configurations with their expectations\nenforced), or One (a single configuration, raw output, optional probe\ninjection).").
+							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.\n\nWARNING: the full run is expensive - roughly 50 to 60 minutes wall with\nfour TLC JVMs, and the largest configurations reach 40 to 80distinct states each. Run it sparingly: it is required before pushing changes\nunder dagql/tla (it no longer runs in CI), but for iteration prefer\nQuick (seconds), Some (chosen configurations with their expectations\nenforced), or One (a single configuration, raw output, optional probe\ninjection).").
 							WithSourceMap(dag.SourceMap("main.go", 147, 1)).
 							WithCheck()).
 					WithFunction(

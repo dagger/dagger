@@ -13,7 +13,12 @@ is expected to pass or to violate one named invariant. Expected
 violations are reserved for deliberately accepted model findings. No
 such finding is tracked today: every configuration is a green
 regression gate, and the `expectedOutcome` map is the authoritative
-list. (The most recently closed findings: `resources_gated_growth` — a
+list. One surfaced finding awaits a ruling and is documented as a
+precise exemption inside `NoSpuriousErrors` rather than as a red
+configuration: a publisher's own release between fn completion and
+attachment fails innocent cross-session readers parked at the attach
+barrier (the same defect family as the fixed `decode_cancel` joiner
+finding; the analogous fix is a retry/miss classification for readers). (The most recently closed findings: `resources_gated_growth` — a
 result's transitive requirement growing after the lookup filter ran —
 fixed by re-checking the filter after the attach barrier and by
 refusing requirement-carrying deps on explicit retention edges;
@@ -38,10 +43,10 @@ dagger --env dev call tla-check some --configs=resources,resources_latedep
 dagger --env dev call tla-check one --config=resources
 
 # the full suite: REQUIRED before pushing changes under dagql/tla,
-# expensive otherwise - ~35-40 minutes wall with four TLC JVMs; the
+# expensive otherwise - ~50-60 minutes wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
-# (resources_gated_growth ~66M, resources_restart ~53M, lazy_import
-# ~43M, persist ~40M)
+# (resources_gated_growth ~83M, resources_restart ~73M, lazy_import
+# ~47M, persist ~40M)
 dagger --env dev check tla-check:cache-lifecycle
 ```
 
