@@ -13,6 +13,7 @@
 ["","git.latest",["https://github.com/dagger/go-sdk",false],"refs/heads/main@9b6c556101f8fdace897aa3ed1ff9e3efb344e34"]
 ["","git.latest",["https://github.com/vito/editor",false],"refs/heads/main@1e1ded886d1252071f8b50ada6a4580af8c53866"]
 ["","git.ref",["https://github.com/containernetworking/plugins","refs/tags/v1.9.0"],{"ref":"refs/tags/v1.9.0","sha":"9b3772e1a7abf93cbb7c6526a28bc0d27b830e02"}]
+["","git.ref",["https://github.com/dagger/dagger","v0.21.9"],{"ref":"refs/tags/v0.21.9","sha":"f2aefc20cf41b5ed7922df7244e0f10ddc6031f7"}]
 ["","git.ref",["https://github.com/dagger/dang-sdk","HEAD"],{"ref":"refs/heads/main","sha":"c724eec4270870aae489daa9f3cb8cbacfb44680"}]
 ["","git.ref",["https://github.com/dagger/go-sdk","HEAD"],{"ref":"refs/heads/main","sha":"9b6c556101f8fdace897aa3ed1ff9e3efb344e34"}]
 ["","git.ref",["https://github.com/gogo/googleapis.git","refs/tags/v1.4.1"],{"ref":"refs/tags/v1.4.1","sha":"1f0e43f50bc0606e385ffae1bc80b5b231dcd042"}]
