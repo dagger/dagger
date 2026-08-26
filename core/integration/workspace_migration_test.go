@@ -430,10 +430,14 @@ type Myapp {
   "source": "ci",
   "toolchains": [{"name": "tc", "source": "./toolchain"}]
 }`, func(ctr *dagger.Container) *dagger.Container {
+			// In 0.21 a module's toolchains were also loaded into its own API,
+			// so module code could call them like dependencies. This module
+			// does exactly that and must keep working after migration.
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! { "hello from root" }
+  pub viaToolchain: String! { tc.message }
 }
 `).
 				With(legacyDangModule("toolchain", "tc", "Tc", "hello from toolchain"))
@@ -459,10 +463,23 @@ type Myapp {
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
 		require.Contains(t, wsOut, `path = "toolchain"`)
 
+		// The toolchain is also a dependency of the migrated root module, so
+		// code that called it in 0.21 still resolves.
+		mainCfg, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, mainCfg, `name = "tc"`)
+		require.Contains(t, mainCfg, `source = "./toolchain"`)
+		require.NotContains(t, mainCfg, "toolchains")
+
 		// The converted module loads from its own runtime field.
 		callOut, err := ctr.With(daggerCallAt("toolchain", "message")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from toolchain", strings.TrimSpace(callOut))
+
+		// The root module can still reach the toolchain as a dependency.
+		viaOut, err := ctr.With(daggerCall("via-toolchain")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from toolchain", strings.TrimSpace(viaOut))
 	})
 
 	t.Run("local dependency migrates in place behind rebased reference", func(ctx context.Context, t *testctx.T) {

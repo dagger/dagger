@@ -30,6 +30,7 @@ A few behaviors worth knowing:
 - If your repo *is* a module — the root `dagger.json` describes a module whose source lives at the repo root — migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module isn't installed into the workspace, so load it explicitly: `dagger -m . call --help`.
 - Run from a module subdirectory, migration converts just that module — `dagger.json` becomes `dagger-module.toml` in place, along with any local dependencies it references — and creates no workspace. Module recommendations are skipped.
 - Nested `dagger.toml` files are never created. Toolchains listed in a subdirectory `dagger.json` are installed into the workspace at the repository root, with local source paths rebased. A subdirectory `dagger.json` with a `blueprint` is left as legacy, with a warning.
+- When a `dagger.json` has both an `sdk` and `toolchains`, the toolchains are installed into `dagger.toml` **and** recorded as dependencies in the migrated `dagger-module.toml`. In 0.21 a module could call its toolchains from code the same way as dependencies (for example `dag.Go()`), so this keeps that code working. Remove any dependency the module code does not use.
 - Modules now commit their generated code (`dagger.gen.go` and friends) instead of regenerating it at runtime. Migration removes the `.gitignore` rules that used to exclude it — afterwards, run `dagger generate` and commit the output.
 - Applying a migration ends the setup run. Run `dagger setup` again for module recommendations.
 
