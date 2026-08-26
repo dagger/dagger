@@ -1,9 +1,0 @@
-kind: Fixed
-body: |
-  Session teardown now runs in the background after the main client disconnects,
-  preventing shutdown responses from timing out while the engine releases
-  session-owned cache results.
-time: 2026-08-12T21:24:29Z
-custom:
-  Author: sipsma
-  PR: 13681

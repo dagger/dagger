@@ -1,9 +1,0 @@
-kind: Fixed
-body: |
-  Engine client enumeration no longer blocks behind another session's
-  initialization or teardown, preventing Cloud keeper heartbeats from stalling
-  and live engines from being suspended.
-time: 2026-08-10T15:06:51Z
-custom:
-  Author: sipsma
-  PR: 13542
