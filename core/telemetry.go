@@ -102,6 +102,19 @@ func AroundFunc(
 		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
 	}
 
+	// Also carry this frame's payload on the span itself. Newer clients rebuild
+	// IDs from the call-payload log records published below, but older CLIs
+	// only read DagCallAttr and, without it, fall back to walking creator
+	// spans -- which self-reference for object results and recurse forever.
+	// Keep the legacy attribute until those CLIs are out of circulation.
+	if callPB, err := req.ResultCall.CallPB(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to build call payload", "field", spanName, "err", err)
+	} else if callAttr, err := callPB.Encode(); err != nil {
+		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
+	} else {
+		attrs = append(attrs, attribute.String(telemetry.DagCallAttr, callAttr))
+	}
+
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
@@ -154,9 +167,9 @@ func AroundFunc(
 	initCacheEvidence(span, req)
 
 	// Publish this call and its complete recipe closure over the log channel.
-	// The span retains only the call digest and presentation metadata; keeping
-	// payloads out of span attributes gives every frame one transport path while
-	// legacy consumers may still ingest old span-carried payloads.
+	// This is the primary transport for every frame (including those that never
+	// get a span of their own); the span attribute above is only for legacy
+	// consumers.
 	recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
