@@ -161,9 +161,10 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions   map[string]*daggerSession // session id -> session state
-	daggerSessionsMu sync.RWMutex
-	clientDBs        *clientdb.DBs
+	daggerSessions     map[string]*daggerSession // session id -> session state
+	releasedSessionIDs map[string]struct{}
+	daggerSessionsMu   sync.RWMutex
+	clientDBs          *clientdb.DBs
 
 	locker *locker.Locker
 
@@ -212,7 +213,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		daggerSessions: make(map[string]*daggerSession),
+		daggerSessions:     make(map[string]*daggerSession),
+		releasedSessionIDs: make(map[string]struct{}),
 
 		locker: locker.New(),
 	}
@@ -821,13 +823,20 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	for _, s := range daggerSessions {
 		s.lifecycleMu.Lock()
 		// Wait out any in-flight init (lifecycleMu serializes it), then tear down
-		// only if the session actually initialized; an already-removed tombstone
-		// or a still-uninitialized session has nothing (more) to remove here.
-		if s.state.Load() == sessionStateInitialized {
+		// only if the session actually initialized. An already-removed tombstone
+		// belongs to the teardown or failed-initialization path that published it;
+		// that path also owns the matching retire-or-delete decision.
+		state := s.state.Load()
+		retire := state == sessionStateInitialized
+		if retire {
 			err = errors.Join(err, srv.removeDaggerSession(ctx, s))
 		}
 		s.lifecycleMu.Unlock()
-		srv.deleteSession(s)
+		if retire {
+			srv.retireSession(s)
+		} else if state == sessionStateUninitialized {
+			srv.deleteSession(s)
+		}
 	}
 
 	if srv.engineCache != nil && srv.localCacheGCEnabled {

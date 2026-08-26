@@ -191,8 +191,12 @@ User-visible persistable behavior is driven by `Field.IsPersistable()`.
 
 At execution time this becomes `CallRequest.IsPersistable`.
 
-When a persistable result is completed, `initCompletedResult` calls
-`upsertPersistedEdgeLocked`.
+When a persistable result completes dependency attachment successfully, the
+final publication handoff calls `upsertPersistedEdgeLocked` before dropping its
+temporary ownership.
+
+For a persistable cache hit, the upsert instead happens after its attachment
+barrier and persisted-payload load both succeed.
 
 That:
 

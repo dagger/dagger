@@ -608,6 +608,9 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res == nil {
 			continue
 		}
+		if res.attachmentState() == resultAttachmentFailed {
+			continue
+		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			if sawExpired != nil {
 				*sawExpired = true
@@ -627,6 +630,9 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 		for resID := range c.termResults[termID] {
 			res := c.resultsByID[resID]
 			if res == nil {
+				continue
+			}
+			if res.attachmentState() == resultAttachmentFailed {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -879,12 +885,13 @@ func (c *Cache) lookupCacheForRequestLocked(
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
-) (AnyResult, bool, error) {
+) (AnyResult, bool, int64, error) {
 	if req == nil || req.ResultCall == nil {
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
+	persistedEdgeExpiresAtUnix := candidateSharedResultExpiryUnix(nowUnix, req.TTL)
 	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
@@ -909,7 +916,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 
 	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
@@ -920,7 +927,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 			hitCache: true,
 		}
 		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
-		return retRes, true, nil
+		return retRes, true, 0, nil
 	}
 
 	// We have a cache hit. Teach this request identity onto the existing shared
@@ -930,21 +937,18 @@ func (c *Cache) lookupCacheForRequestLocked(
 	// conservative expiry merge policy here so TTL remains effective on hits.
 	res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(nowUnix, req.TTL),
+		persistedEdgeExpiresAtUnix,
 	)
 	touchSharedResultLastUsed(res, now.UnixNano())
-	if req.IsPersistable {
-		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL), false)
-	}
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
-	return retRes, true, nil
+	return retRes, true, persistedEdgeExpiresAtUnix, nil
 }
 
 func (c *Cache) lookupCacheForRequest(
@@ -968,7 +972,7 @@ func (c *Cache) lookupCacheForRequest(
 	}
 
 	c.egraphMu.Lock()
-	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	retRes, hit, persistedEdgeExpiresAtUnix, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil || !hit {
 		c.egraphMu.Unlock()
 		return retRes, hit, err
@@ -980,44 +984,23 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
 	}
 
-	trackedCount := 0
-	alreadyTracked := false
-	c.sessionMu.Lock()
-	if c.sessionResultIDsBySession == nil {
-		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-	}
-	if c.sessionResultIDsBySession[sessionID] == nil {
-		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-	}
-	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
-		alreadyTracked = true
-	} else {
-		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, hitShared)
-	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
+	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
 	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, false, err
+	}
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
+		return nil, false, err
+	}
+	if req.IsPersistable {
+		// Only persistable hits pay this second graph-lock acquisition. Keep
+		// the expiry captured at hit selection even if the barrier wait took
+		// long enough to cross a wall-clock second.
 		c.egraphMu.Lock()
-		c.sessionMu.Lock()
-		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
-			delete(resultIDs, hitShared.id)
-			if len(resultIDs) == 0 {
-				delete(c.sessionResultIDsBySession, sessionID)
-			}
-		}
-		c.sessionMu.Unlock()
-		queue := []*sharedResult(nil)
-		var decErr error
-		if !alreadyTracked {
-			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
-		}
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+		c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
 		c.egraphMu.Unlock()
-		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
 	}
 
 	if c.traceEnabled() {
@@ -1544,8 +1527,10 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	// after its last owner released it: its OnRelease already ran, so its
 	// payload may reference released resources. Refuse to resurrect it rather
 	// than re-publish a dead payload into the cache.
-	if res.id != 0 && c.resultsByID[res.id] != res {
-		return fmt.Errorf("index result %d: result was already collected", res.id)
+	if res.id != 0 {
+		if _, found := c.resultsByID[res.id]; !found {
+			return fmt.Errorf("index result %d: result was already collected", res.id)
+		}
 	}
 
 	digestSet := make(map[string]struct{}, 6)
@@ -1851,7 +1836,13 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultsByID = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
-	c.nextSharedResultID = 0
+	// nextSharedResultID deliberately survives the reset: numeric result IDs
+	// must be engine-lifetime unique because they outlive this index (session
+	// records, dependency edges, persisted rows, results held by in-flight
+	// callers). Recycling a number could alias two different results. Class
+	// and term IDs never leave the index maps cleared above, so their
+	// counters can restart. Import seeds nextSharedResultID past the highest
+	// persisted ID at startup for the same reason.
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity

@@ -10,7 +10,7 @@ You've seen Dagger work on [hello-dagger](./quickstart.mdx). Now set it up on yo
 
 ## Install modules
 
-The quickest path is the same one the quickstart uses — `dagger setup` scans your project and recommends suitable modules:
+The quickest path is the same one the quickstart uses. `dagger setup` scans your project and recommends suitable modules:
 
 ```shell
 dagger setup
@@ -23,7 +23,7 @@ dagger search eslint
 dagger install github.com/dagger/eslint
 ```
 
-The first install creates `dagger.toml` at the workspace root. To create it in the current directory instead — for a workspace nested inside a larger repository — pass `--here`:
+The first install creates `dagger.toml` at the workspace root. To create it in the current directory instead, for a workspace nested inside a larger repository, pass `--here`:
 
 ```shell
 dagger install --here github.com/dagger/eslint
@@ -38,7 +38,7 @@ dagger check
 
 ## Configure modules
 
-Many modules expose settings — a base image, a package manager, and so on. List the settings for your installed modules:
+Many modules expose settings, such as a base image or a package manager. List the settings for your installed modules:
 
 ```shell
 dagger settings

@@ -125,17 +125,17 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	checks := []publishCheck{
 		{fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", env.releaseTag), "release publish should publish the engine"},
 		{fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", env.releaseTag), "release publish should publish the CLI"},
+		{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
+		{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
+		{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
+		{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
+		{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
+		{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
+		{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
 	}
 	if !isPrerelease {
 		checks = append(checks,
 			publishCheck{"- [x] 📖 Docs", "release publish should publish docs"},
-			publishCheck{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
-			publishCheck{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
-			publishCheck{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
-			publishCheck{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
-			publishCheck{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
-			publishCheck{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
-			publishCheck{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
 		)
 	}
 	for _, check := range checks {
@@ -174,23 +174,23 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		if err := env.assertComponentGitHubReleases(ctx); err != nil {
 			return err
 		}
-		if err := env.assertPackageRegistryRequests(ctx); err != nil {
-			return err
-		}
-
 		if err := env.assertMockEvents(ctx); err != nil {
 			return err
 		}
-
-		if err := env.assertNpmVersion(ctx); err != nil {
-			return err
-		}
-		if err := env.assertHelmTags(ctx); err != nil {
-			return err
-		}
-		if err := env.assertSDKTags(ctx); err != nil {
-			return err
-		}
+	} else if err := env.assertPrereleaseStableOutputsAbsent(ctx); err != nil {
+		return err
+	}
+	if err := env.assertPackageRegistryRequests(ctx, isPrerelease); err != nil {
+		return err
+	}
+	if err := env.assertNpmVersion(ctx, isPrerelease); err != nil {
+		return err
+	}
+	if err := env.assertHelmTags(ctx); err != nil {
+		return err
+	}
+	if err := env.assertSDKTags(ctx); err != nil {
+		return err
 	}
 	return nil
 }
@@ -638,6 +638,34 @@ func (env *publishCheckEnv) assertInitialCLIReleaseOutputs(ctx context.Context) 
 		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
 	} {
 		if err := requireNotContains(events, needle, "initial main publish should not perform stable CLI publishing"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertPrereleaseStableOutputsAbsent(ctx context.Context) error {
+	events, err := env.mockEvents(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, needle := range []string{
+		`"kind": "github_release_lookup"`,
+		`"kind": "github_release_create"`,
+		`"kind": "github_release_update"`,
+		`"kind": "github_release_asset_list"`,
+		`"kind": "github_release_asset_delete"`,
+		`"kind": "github_release_asset_upload"`,
+		`"kind": "github_release_publish"`,
+		`/api/v3/repos/dagger/nix/contents/pkgs/dagger/default.nix`,
+		`/api/v3/repos/dagger/homebrew-tap/contents/dagger.rb`,
+		`/api/v3/repos/dagger/winget-pkgs/contents/`,
+		`/api/v3/repos/dagger/winget-pkgs/git/refs`,
+		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
+	} {
+		msg := "prerelease should not perform stable release publishing"
+		if err := requireNotContains(events, needle, msg); err != nil {
 			return err
 		}
 	}
@@ -1402,15 +1430,24 @@ PY
 	return nil
 }
 
-func (env *publishCheckEnv) assertPackageRegistryRequests(ctx context.Context) error {
+func (env *publishCheckEnv) assertPackageRegistryRequests(
+	ctx context.Context,
+	isPrerelease bool,
+) error {
+	prerelease := "0"
+	if isPrerelease {
+		prerelease = "1"
+	}
 	_, err := dag.Container().
 		From("python:3.12-alpine").
 		WithMountedCache("/records", env.mockRecords).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
+		WithEnvVariable("IS_PRERELEASE", prerelease).
 		WithExec([]string{"python", "-c", `
 import base64
 import json
 import os
+import re
 import sys
 
 def fail(msg):
@@ -1428,29 +1465,62 @@ def auth_payload(header):
 
 events = [json.loads(line) for line in open("/records/events.jsonl", encoding="utf-8") if line.strip()]
 version = os.environ["RELEASE_VERSION"]
+is_prerelease = os.environ["IS_PRERELEASE"] == "1"
+
+registry_version = version
+match = re.fullmatch(r"(\d+\.\d+\.\d+)-(alpha|beta|rc)\.?([0-9]+)", version)
+if match:
+    prefix, prerelease, number = match.groups()
+    prerelease = {"alpha": "a", "beta": "b", "rc": "rc"}[prerelease]
+    registry_version = prefix + prerelease + number
 
 netlify_lists = [e for e in events if e.get("kind") == "netlify_list_deploys"]
-need(len(netlify_lists) == 1, f"expected one Netlify deploy list request, got {len(netlify_lists)}")
-need("branch=main" in netlify_lists[0].get("path", ""), f"Netlify deploy list should filter branch=main: {netlify_lists[0].get('path')}")
-need(netlify_lists[0].get("auth_header") == "Bearer fake-netlify-token", f"unexpected Netlify list auth header: {netlify_lists[0].get('auth_header')!r}")
 netlify_restores = [e for e in events if e.get("kind") == "netlify_restore"]
-need(len(netlify_restores) == 1, f"expected one Netlify restore request, got {len(netlify_restores)}")
-need(netlify_restores[0].get("path", "").endswith("/deploys/deploy-1/restore"), f"Netlify restore should use listed deploy: {netlify_restores[0].get('path')}")
-need(netlify_restores[0].get("auth_header") == "Bearer fake-netlify-token", f"unexpected Netlify restore auth header: {netlify_restores[0].get('auth_header')!r}")
+if is_prerelease:
+    need(not netlify_lists, f"prerelease should not deploy docs: {netlify_lists}")
+    need(not netlify_restores, f"prerelease should not restore docs: {netlify_restores}")
+else:
+    need(
+        len(netlify_lists) == 1,
+        f"expected one Netlify deploy list request, got {len(netlify_lists)}",
+    )
+    need(
+        "branch=main" in netlify_lists[0].get("path", ""),
+        f"Netlify deploy list should filter branch=main: {netlify_lists[0].get('path')}",
+    )
+    need(
+        netlify_lists[0].get("auth_header") == "Bearer fake-netlify-token",
+        f"unexpected Netlify list auth header: {netlify_lists[0].get('auth_header')!r}",
+    )
+    need(
+        len(netlify_restores) == 1,
+        f"expected one Netlify restore request, got {len(netlify_restores)}",
+    )
+    need(
+        netlify_restores[0].get("path", "").endswith("/deploys/deploy-1/restore"),
+        f"Netlify restore should use listed deploy: {netlify_restores[0].get('path')}",
+    )
+    need(
+        netlify_restores[0].get("auth_header") == "Bearer fake-netlify-token",
+        f"unexpected Netlify restore auth header: {netlify_restores[0].get('auth_header')!r}",
+    )
 
 pypi = [e for e in events if e.get("kind") == "pypi_publish"]
 need(len(pypi) == 2, f"expected exactly two PyPI uploads, got {len(pypi)}")
 pypi_filetypes = {e.get("filetype") for e in pypi}
 need(pypi_filetypes == {"sdist", "bdist_wheel"}, f"PyPI should upload exactly sdist and wheel, got {pypi_filetypes}")
 expected_pypi_filenames = {
-    f"dagger_io-{version}.tar.gz",
-    f"dagger_io-{version}-py3-none-any.whl",
+    f"dagger_io-{registry_version}.tar.gz",
+    f"dagger_io-{registry_version}-py3-none-any.whl",
 }
 pypi_filenames = {e.get("filename") for e in pypi}
 need(pypi_filenames == expected_pypi_filenames, f"PyPI upload filenames mismatch: expected {expected_pypi_filenames}, got {pypi_filenames}")
 for event in pypi:
     need(event.get("package_name") in {"dagger-io", "dagger_io"}, f"unexpected PyPI package name: {event.get('package_name')!r}")
-    need(event.get("package_version") == version, f"PyPI upload version mismatch: {event.get('package_version')!r}")
+    need(
+        event.get("package_version") == registry_version,
+        f"PyPI upload version mismatch: {event.get('package_version')!r}",
+    )
     need("fake-pypi-token" in auth_payload(event.get("auth_header", "")), f"PyPI upload missing fake token auth: {event.get('auth_header')!r}")
 
 hex_publish = [e for e in events if e.get("kind") == "hex_publish"]
@@ -1665,14 +1735,25 @@ tar -xzf /tmp/dagger.tgz -C /tmp/dagger
 	return requireContains(version, env.releaseTag, "published CLI binary should report release tag")
 }
 
-func (env *publishCheckEnv) assertNpmVersion(ctx context.Context) error {
+func (env *publishCheckEnv) assertNpmVersion(
+	ctx context.Context,
+	isPrerelease bool,
+) error {
+	distTag := "latest"
+	if isPrerelease {
+		distTag = strings.SplitN(env.releaseVersion, "-", 2)[1]
+		distTag = strings.SplitN(distTag, ".", 2)[0]
+	}
 	_, err := dag.Container().
 		From("node:20-alpine").
 		WithServiceBinding("verdaccio", env.verdaccio).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
+		WithEnvVariable("NPM_DIST_TAG", distTag).
 		WithExec([]string{"sh", "-ec", `
 	set -eu
 	npm view "@dagger.io/dagger@$RELEASE_VERSION" --registry "http://verdaccio:4873" --json > /tmp/npm-view.json
+	npm view "@dagger.io/dagger" dist-tags \
+	  --registry "http://verdaccio:4873" --json > /tmp/npm-tags.json
 	npm pack "@dagger.io/dagger@$RELEASE_VERSION" --registry "http://verdaccio:4873" --pack-destination /tmp --json > /tmp/npm-pack.json
 	node <<'JS'
 	const fs = require("fs");
@@ -1687,11 +1768,14 @@ func (env *publishCheckEnv) assertNpmVersion(ctx context.Context) error {
 	}
 
 	const version = process.env.RELEASE_VERSION;
+	const distTag = process.env.NPM_DIST_TAG;
 	const view = JSON.parse(fs.readFileSync("/tmp/npm-view.json", "utf8"));
 		need(view.name === "@dagger.io/dagger", "unexpected npm package name: " + view.name);
 		need(view.version === version, "unexpected npm package version: " + view.version);
 		need(typeof view.dist?.tarball === "string" && view.dist.tarball.endsWith("@dagger.io/dagger/-/dagger-" + version + ".tgz"), "unexpected npm tarball URL: " + view.dist?.tarball);
 		need(typeof view.dist?.integrity === "string" && view.dist.integrity.startsWith("sha512-"), "unexpected npm integrity: " + view.dist?.integrity);
+	const tags = JSON.parse(fs.readFileSync("/tmp/npm-tags.json", "utf8"));
+		need(tags[distTag] === version, "unexpected npm " + distTag + " tag: " + tags[distTag]);
 
 	const pack = JSON.parse(fs.readFileSync("/tmp/npm-pack.json", "utf8"))[0];
 		need(pack.name === "@dagger.io/dagger", "unexpected packed npm package name: " + pack.name);

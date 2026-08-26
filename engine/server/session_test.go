@@ -378,6 +378,7 @@ func newTeardownTestServer(t *testing.T) *Server {
 	require.NoError(t, err)
 	return &Server{
 		daggerSessions:     map[string]*daggerSession{},
+		releasedSessionIDs: map[string]struct{}{},
 		engineCache:        cache,
 		wcprofSpanCount:    newWcprofSpanCounter(),
 		throttledSessionGC: func() {},
@@ -427,6 +428,13 @@ func sessionInRegistry(srv *Server, sessionID string) bool {
 	return ok
 }
 
+func sessionIDReleased(srv *Server, sessionID string) bool {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	_, ok := srv.releasedSessionIDs[sessionID]
+	return ok
+}
+
 func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	t.Parallel()
 
@@ -461,6 +469,7 @@ func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return !sessionInRegistry(srv, "s")
 	}, 10*time.Second, 10*time.Millisecond, "session never finished background teardown")
+	require.True(t, sessionIDReleased(srv, "s"))
 	select {
 	case <-sess.shutdownCh:
 	case <-time.After(10 * time.Second):
@@ -500,11 +509,23 @@ func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("same-id getOrInitClient blocked on background teardown")
 	}
+	require.False(t, sessionIDReleased(srv, "s"), "session ID retired before teardown completed")
 
 	releaseTeardownDrain(sess)
 	require.Eventually(t, func() bool {
-		return !sessionInRegistry(srv, "s")
+		return !sessionInRegistry(srv, "s") && sessionIDReleased(srv, "s")
 	}, 10*time.Second, 10*time.Millisecond)
+
+	_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata: &engine.ClientMetadata{
+			SessionID:         "s",
+			ClientID:          "m",
+			ClientSecretToken: "token",
+		},
+	})
+	require.ErrorContains(t, err, "already used and released")
+	var retryable flightcontrol.RetryableError
+	require.False(t, errors.As(err, &retryable))
 }
 
 func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
@@ -526,11 +547,42 @@ func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
 
 	require.Equal(t, sessionStateInitialized, sess.state.Load())
 	require.True(t, sessionInRegistry(srv, "s"))
+	require.False(t, sessionIDReleased(srv, "s"))
 	select {
 	case <-sess.shutdownCh:
 		t.Fatal("reap tore down a session with a live main client")
 	default:
 	}
+}
+
+func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{
+		daggerSessions:     map[string]*daggerSession{},
+		releasedSessionIDs: map[string]struct{}{},
+	}
+	srv.daggerSessionsMu.Lock()
+	failed, created, err := srv.getOrCreateSessionLocked("s", "m")
+	srv.daggerSessionsMu.Unlock()
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// This is the getOrInitClient failed-initialization cleanup: publish removed,
+	// release lifecycleMu, then delete without retiring the ID.
+	failed.state.Store(sessionStateRemoved)
+	failed.lifecycleMu.Unlock()
+	srv.deleteSession(failed)
+	require.False(t, sessionIDReleased(srv, "s"))
+
+	srv.daggerSessionsMu.Lock()
+	retry, created, err := srv.getOrCreateSessionLocked("s", "m")
+	srv.daggerSessionsMu.Unlock()
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotSame(t, failed, retry)
+	retry.lifecycleMu.Unlock()
+	srv.deleteSession(retry)
 }
 
 func TestConcurrentReapsSingleTeardown(t *testing.T) {

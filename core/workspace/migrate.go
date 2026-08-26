@@ -150,6 +150,9 @@ type MigrationPlan struct {
 // (toolchains) are installed into a dagger.toml at the workspace root with
 // their local sources rebased, while the module config still converts in
 // place at its own directory and the module itself is not installed.
+//
+// When the config has an SDK, its toolchains are also recorded as
+// dependencies of the migrated module config (see buildMigratedModuleConfig).
 func PlanMigration(compatWorkspace *CompatWorkspace, workspaceRoot string) (*MigrationPlan, error) {
 	if compatWorkspace == nil || compatWorkspace.Config == nil {
 		return nil, fmt.Errorf("compat workspace is required")
@@ -300,6 +303,13 @@ func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) (
 // source, dependency, and include paths are preserved as-is; only the
 // workspace-level fields (toolchains, blueprint, customizations) are dropped —
 // those migrate into dagger.toml instead.
+//
+// Toolchains are additionally recorded as plain dependencies of the migrated
+// module: in 0.21 a module's toolchains were also loaded into its own API, so
+// module code could call them (e.g. dag.Go) exactly like a dependency. Keeping
+// them as dependencies is what keeps that code compiling after migration. The
+// workspace-only fields of a toolchain (customizations, ignore lists, port
+// mappings) belong to the dagger.toml install and are not carried over.
 func buildMigratedModuleConfig(cfg *modules.ModuleConfig) ([]byte, error) {
 	if cfg.Source != "" && filepath.IsAbs(cfg.Source) {
 		return nil, fmt.Errorf("source path %q is absolute", cfg.Source)
@@ -313,7 +323,8 @@ func buildMigratedModuleConfig(cfg *modules.ModuleConfig) ([]byte, error) {
 		source = ""
 	}
 
-	deps := make([]*modules.ModuleConfigDependency, 0, len(cfg.Dependencies))
+	deps := make([]*modules.ModuleConfigDependency, 0, len(cfg.Dependencies)+len(cfg.Toolchains))
+	depNames := make(map[string]struct{}, len(cfg.Dependencies)+len(cfg.Toolchains))
 	for _, dep := range cfg.Dependencies {
 		if dep == nil {
 			continue
@@ -326,6 +337,23 @@ func buildMigratedModuleConfig(cfg *modules.ModuleConfig) ([]byte, error) {
 			IgnoreChecks:     append([]string(nil), dep.IgnoreChecks...),
 			IgnoreGenerators: append([]string(nil), dep.IgnoreGenerators...),
 		})
+		depNames[dep.Name] = struct{}{}
+	}
+	for _, tc := range cfg.Toolchains {
+		if tc == nil {
+			continue
+		}
+		if _, dup := depNames[tc.Name]; dup {
+			// Already an explicit dependency under the same name; the
+			// dependency entry wins so the module keeps the ref it declared.
+			continue
+		}
+		deps = append(deps, &modules.ModuleConfigDependency{
+			Name:   tc.Name,
+			Source: tc.Source,
+			Pin:    tc.Pin,
+		})
+		depNames[tc.Name] = struct{}{}
 	}
 
 	newCfg := modules.ModuleConfig{

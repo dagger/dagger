@@ -230,12 +230,10 @@ func (r *Release) Publish( //nolint:gocyclo
 	}
 
 	isPrerelease := semver.IsValid(version) && semver.Prerelease(version) != ""
-	if isPrerelease {
-		// early-exit if this is a pre-release
-		return &report, nil
-	}
+	// Prereleases publish SDK artifacts, but skip stable release promotion,
+	// release notes, docs, follow-ups, and notifications.
 
-	if semver.IsValid(version) {
+	if semver.IsValid(version) && !isPrerelease {
 		artifact = &ReleaseReportArtifact{
 			Name: "📖 Docs",
 			Link: "https://docs.dagger.io",
@@ -374,7 +372,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			// FIXME: use parallel
 			eg.Go(func() error {
 				target := ""
-				if semver.IsValid(version) {
+				if semver.IsValid(version) && !isPrerelease {
 					target = strings.TrimSuffix(component.tag, "/") + "/" + version
 				}
 
@@ -410,7 +408,7 @@ func (r *Release) Publish( //nolint:gocyclo
 					return nil
 				}()
 
-				if semver.IsValid(version) {
+				if semver.IsValid(version) && !isPrerelease {
 					notes := dag.Changelog(r.Workspace).LookupEntry(component.path, version)
 					repo := "https://github.com/dagger/dagger"
 					if githubHost != "" {
@@ -436,7 +434,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		report.Artifacts = append(report.Artifacts, artifact)
 	}
 
-	if semver.IsValid(version) {
+	if semver.IsValid(version) && !isPrerelease {
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
 			Name: "❄️ Nix",
 			Link: "https://github.com/dagger/nix",
@@ -461,7 +459,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		})
 	}
 
-	if semver.IsValid(version) && discordWebhook != nil {
+	if semver.IsValid(version) && !isPrerelease && discordWebhook != nil {
 		if err := report.notify(ctx, discordWebhook); err != nil {
 			report.Errors = append(report.Errors, dag.Error(err.Error()))
 		}

@@ -5,6 +5,7 @@ import {
   useLatestVersion,
   useVersions,
 } from "@docusaurus/plugin-content-docs/client";
+import type { GlobalVersion } from "@docusaurus/plugin-content-docs/client";
 
 type Props = {
   className?: string;
@@ -23,9 +24,22 @@ export default function DocsVersionSelect({ className }: Props) {
   const history = useHistory();
   const versions = useVersions(DOCS_PLUGIN_ID);
   const latestVersion = useLatestVersion(DOCS_PLUGIN_ID);
-  const { activeVersion } = useActiveDocContext(DOCS_PLUGIN_ID);
+  const { activeVersion, alternateDocVersions } =
+    useActiveDocContext(DOCS_PLUGIN_ID);
   // activeVersion is undefined off the docs routes (404, /restricted).
   const selected = activeVersion ?? latestVersion;
+
+  // A version's root path is not always a page: the unreleased docs at /next
+  // have no doc at slug "/", so /next/ is a bare directory (404 in the app,
+  // 403 from the nginx preview). Resolve to a doc instead, the same way the
+  // built-in docsVersionDropdown does: the page being read if it exists in
+  // the target version, otherwise that version's main doc.
+  function targetPath(version: GlobalVersion): string {
+    const doc =
+      alternateDocVersions[version.name] ??
+      version.docs.find((d) => d.id === version.mainDocId);
+    return doc?.path ?? version.path;
+  }
 
   // Released versions first, unreleased last, matching how readers scan the
   // list. useVersions() orders newest-first, which would put "Next" on top.
@@ -44,7 +58,7 @@ export default function DocsVersionSelect({ className }: Props) {
           (version) => version.name === event.currentTarget.value,
         );
         if (target) {
-          history.push(target.path);
+          history.push(targetPath(target));
         }
       }}
     >

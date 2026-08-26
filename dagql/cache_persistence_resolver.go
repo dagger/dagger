@@ -2,7 +2,6 @@ package dagql
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -70,31 +69,14 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
 	if mode == sharedResultLookupCanonicalEquivalent {
-		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix())
-		if res == nil {
-			c.egraphMu.Unlock()
-			return nil, false, 0, fmt.Errorf("resolve result %d: canonical shared result missing", resultID)
-		}
+		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), false)
 	}
 
-	trackedCount := 0
-	alreadyTracked := false
-	c.sessionMu.Lock()
-	if c.sessionResultIDsBySession == nil {
-		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-	}
-	if c.sessionResultIDsBySession[sessionID] == nil {
-		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-	}
-	if _, found := c.sessionResultIDsBySession[sessionID][res.id]; found {
-		alreadyTracked = true
-	} else {
-		c.sessionResultIDsBySession[sessionID][res.id] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, res)
-	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
+	alreadyTracked, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, res)
 	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, false, 0, err
+	}
 
 	return res, alreadyTracked, trackedCount, nil
 }
@@ -116,25 +98,6 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 	}
 	loaded, err := c.ensurePersistedHitValueLoaded(ctx, dag, wrapped)
 	if err != nil {
-		if sessionID != "" {
-			c.egraphMu.Lock()
-			c.sessionMu.Lock()
-			if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
-				delete(resultIDs, res.id)
-				if len(resultIDs) == 0 {
-					delete(c.sessionResultIDsBySession, sessionID)
-				}
-			}
-			c.sessionMu.Unlock()
-			queue := []*sharedResult(nil)
-			var decErr error
-			if !alreadyTracked {
-				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, res, nil)
-			}
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
-			return nil, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-		}
 		return nil, err
 	}
 	if sessionID != "" && c.traceEnabled() {

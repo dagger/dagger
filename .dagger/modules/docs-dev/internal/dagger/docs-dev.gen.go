@@ -50,6 +50,41 @@ func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secr
 	return response, q.Execute(ctx)
 }
 
+// DocsDevGenerateVersionOpts contains options for DocsDev.GenerateVersion
+type DocsDevGenerateVersionOpts struct {
+	// Collapse a trailing numeric prerelease identifier, e.g.
+	// 1.0.0-beta.10 to 1.0.0-beta.
+	//
+	// Default: true
+	CollapsePreReleases bool
+	// Omit a zero patch component, e.g. 1.0.0-beta to 1.0-beta.
+	//
+	// Default: true
+	OmitZeroPatch bool
+}
+
+// Generate a docs version from a Git ref. Numbered prereleases are collapsed
+// into rolling channels and zero patch components are omitted by default.
+func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersionOpts) *Changeset {
+	assertNotNil("source", source)
+	q := r.query.Select("generateVersion")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `collapsePreReleases` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CollapsePreReleases) {
+			q = q.Arg("collapsePreReleases", opts[i].CollapsePreReleases)
+		}
+		// `omitZeroPatch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OmitZeroPatch) {
+			q = q.Arg("omitZeroPatch", opts[i].OmitZeroPatch)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this DocsDev.
 func (r *DocsDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -171,21 +206,6 @@ func (r *DocsDev) Site() *Directory {
 	q := r.query.Select("site")
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Freeze a released version's docs as a versioned snapshot. The docs are pulled
-// from the version's git tag -- not the in-development docs on the current
-// branch -- so the snapshot reflects what actually shipped. Runs docusaurus
-// docs:version and returns a Changeset that adds
-// versioned_docs/version-<version>/ (plus its sidebar) and prepends the version
-// to docs/versions.json, for review before applying.
-func (r *DocsDev) SnapshotRelease(version string) *Changeset {
-	q := r.query.Select("snapshotRelease")
-	q = q.Arg("version", version)
-
-	return &Changeset{
 		query: q,
 	}
 }
