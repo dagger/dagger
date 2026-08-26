@@ -421,6 +421,11 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// dagql call payload, not log text
 			continue
 		}
+		if log.Body().Kind() != otellog.KindString {
+			// Never log text, whatever produced it; checking the kind first
+			// also keeps AsString from reporting to the global error handler.
+			continue
+		}
 		if log.Body().AsString() == "" {
 			// eof; ignore
 			continue

@@ -61,8 +61,11 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 	setFrontendTestLogScope(&markedBytes, telemetryattrs.CallPayloadInstrumentationScope)
 	scopedText := frontendTestLogRecord(spanID, otellog.StringValue("reserved malformed payload\n"))
 	setFrontendTestLogScope(&scopedText, telemetryattrs.CallPayloadInstrumentationScope)
+	// A bytes body with no marker and no reserved scope: not a call payload at
+	// all, but still binary data that must never render as log text.
+	unmarkedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNMARKED-BYTES")))
 	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
-	return []sdklog.Record{before, markedBytes, scopedText, after}
+	return []sdklog.Record{before, markedBytes, scopedText, unmarkedBytes, after}
 }
 
 func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
@@ -79,7 +82,7 @@ func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
 	unknownRecords := frontendMixedLogRecords(t, unknownSpanID)
 
 	t.Run("filter preserves ordinary order", func(t *testing.T) {
-		requireOnlyOrdinaryFrontendLogs(t, withoutCallPayloadRecords(knownRecords))
+		requireOnlyOrdinaryFrontendLogs(t, renderableLogRecords(knownRecords))
 	})
 
 	t.Run("streaming", func(t *testing.T) {

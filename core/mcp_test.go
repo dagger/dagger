@@ -141,6 +141,9 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 			}),
 		persistedCaptureLog(t, traceID, spanID, telemetryattrs.CallPayloadInstrumentationScope,
 			stringLogBody("SCOPE-ONLY-WRONG-BODY\n")),
+		// Neither marked nor scope-reserved: not a call payload, but binary
+		// data all the same. Only string bodies may become LLM-visible text.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("UNMARKED-BYTES"))),
 		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("after\n")),
 	}
 	_, err = store.AppendLogs(logs)

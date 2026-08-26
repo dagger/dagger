@@ -26,13 +26,15 @@ type streamingLogExporter struct {
 	testLogs    map[dagui.SpanID]*Vterm
 }
 
-// withoutCallPayloadRecords returns records with the reserved call-payload
-// channel removed. The DB consumes those records during ingestion, but
-// frontends still hold the original exporter batch and must not render it.
-func withoutCallPayloadRecords(records []sdklog.Record) []sdklog.Record {
+// renderableLogRecords returns the subset of records that may render as log
+// text: only string-bodied records outside the reserved call-payload channel.
+// The DB consumes payload records during ingestion, but frontends still hold
+// the original exporter batch and must not render it — and no non-string body
+// (bytes, structured values, unset) is ever log text, whatever produced it.
+func renderableLogRecords(records []sdklog.Record) []sdklog.Record {
 	var filtered []sdklog.Record
 	for i, record := range records {
-		if dagui.IsCallPayloadRecord(record) {
+		if record.Body().Kind() != log.KindString || dagui.IsCallPayloadRecord(record) {
 			if filtered == nil {
 				filtered = make([]sdklog.Record, 0, len(records)-1)
 				filtered = append(filtered, records[:i]...)
@@ -57,7 +59,7 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 		return err
 	}
 
-	records = withoutCallPayloadRecords(records)
+	records = renderableLogRecords(records)
 	if len(records) == 0 {
 		return nil
 	}

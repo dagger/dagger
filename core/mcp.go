@@ -1410,11 +1410,11 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			switch x := bodyPb.GetValue().(type) {
 			case *otlpcommonv1.AnyValue_StringValue:
 				text = x.StringValue
-			case *otlpcommonv1.AnyValue_BytesValue:
-				text = string(x.BytesValue)
 			default:
-				// default to something troubleshootable
-				text = fmt.Sprintf("UNHANDLED: %+v", x)
+				// Only string bodies are log text. Bytes and structured values
+				// are data transports (whatever produced them), and must never
+				// be stringified into something an LLM reads as output.
+				continue
 			}
 			if text == "" {
 				continue

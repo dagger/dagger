@@ -6964,7 +6964,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	for _, log := range withoutCallPayloadRecords(logs) {
+	for _, log := range renderableLogRecords(logs) {
 		// Check for Markdown content type
 		contentType := ""
 		eof := false

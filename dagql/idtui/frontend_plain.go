@@ -340,7 +340,7 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	if err != nil {
 		return err
 	}
-	for _, record := range withoutCallPayloadRecords(logs) {
+	for _, record := range renderableLogRecords(logs) {
 		// Check if this log is marked as verbose
 		isVerbose := false
 		record.WalkAttributes(func(kv log.KeyValue) bool {
