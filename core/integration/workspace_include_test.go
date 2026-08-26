@@ -155,7 +155,107 @@ source = "`+baseRef+`"
 	require.Equal(t, "false", strings.TrimSpace(out))
 }
 
-func (WorkspaceIncludeSuite) TestLocalModulesAreNotInherited(ctx context.Context, t *testctx.T) {
+// workspaceIncludeMonorepoIn runs a command from dir inside the consuming
+// repository, which is what a monorepo's per-project workspace looks like: the
+// git root is the workspace, and each project's dagger.toml sits below it.
+func workspaceIncludeMonorepoIn(dir string, args ...string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithWorkdir(dir).WithExec(
+			append([]string{"dagger", "--progress=report"}, args...),
+			dagger.ContainerWithExecOpts{
+				UseEntrypoint:                 true,
+				ExperimentalPrivilegedNesting: true,
+			},
+		)
+	}
+}
+
+func (WorkspaceIncludeSuite) TestMonorepoProjectsShareModulesThroughAnInclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The shape this feature exists for: shared/ holds the modules, common/
+	// packages them as configuration, and each project includes common/. Every
+	// config lives in one workspace — the git root — so common's own relative
+	// paths only have to change what they are relative to.
+	monorepo := workspaceBase(t, c).
+		// shared/ is a workspace in its own right — that is where someone
+		// authoring the modules works. Nothing includes it, and it must not
+		// interfere with a project that includes common/.
+		WithNewFile("/work/shared/dagger.toml", `[modules.dagger-dang-sdk]
+source = "github.com/dagger/dang-sdk"
+
+[modules.dagger-dang-sdk.as-sdk]
+name = "dang"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "tester"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "builder"
+`).
+		WithNewFile("/work/shared/tester/dagger.json", `{"name":"tester","sdk":{"source":"dang"}}`).
+		WithNewFile("/work/shared/tester/main.dang", workspaceSelectionDangSource("Tester", "identify", "shared tester")).
+		WithNewFile("/work/shared/builder/dagger.json", `{"name":"builder","sdk":{"source":"dang"}}`).
+		WithNewFile("/work/shared/builder/main.dang", workspaceSelectionDangSource("Builder", "identify", "shared builder")).
+		WithNewFile("/work/common/dagger.toml", `[modules.tester]
+source = "../shared/tester"
+
+[modules.builder]
+source = "../shared/builder"
+`).
+		WithNewFile("/work/project-a/dagger.toml", `[[include]]
+source = "../common"
+`).
+		WithNewFile("/work/project-b/dagger.toml", `[[include]]
+source = "../common"
+
+[modules.builder.settings]
+platform = "arm64"
+`)
+
+	t.Run("dagger installed lists the shared modules", func(ctx context.Context, t *testctx.T) {
+		out, err := monorepo.With(workspaceIncludeMonorepoIn("/work/project-a", "installed")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "tester")
+		require.Contains(t, out, "builder")
+	})
+
+	t.Run("they can be called", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []struct{ project, module, want string }{
+			{project: "/work/project-a", module: "tester", want: "shared tester"},
+			{project: "/work/project-a", module: "builder", want: "shared builder"},
+			{project: "/work/project-b", module: "tester", want: "shared tester"},
+		} {
+			out, err := monorepo.
+				With(workspaceIncludeMonorepoIn(tc.project, "call", tc.module, "identify")).
+				Stdout(ctx)
+			require.NoError(t, err, "%s %s", tc.project, tc.module)
+			require.Equal(t, tc.want, strings.TrimSpace(out))
+		}
+	})
+
+	t.Run("the effective config addresses them from the including project", func(ctx context.Context, t *testctx.T) {
+		out, err := monorepo.
+			With(workspaceIncludeMonorepoIn("/work/project-a", "--silent", "workspace", "config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		// Relative to project-a, not to common, and dot-prefixed so it can
+		// never read back as a git ref.
+		require.Contains(t, out, `source = "../shared/tester"`)
+		require.Contains(t, out, "# included: ../common")
+	})
+
+	t.Run("a project overrides a shared module's settings without repeating its source", func(ctx context.Context, t *testctx.T) {
+		out, err := monorepo.
+			With(workspaceIncludeMonorepoIn("/work/project-b", "--silent", "workspace", "config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `platform = "arm64"`)
+		require.Contains(t, out, `source = "../shared/builder"`)
+	})
+}
+
+func (WorkspaceIncludeSuite) TestLocalModulesOfAGitIncludeAreInherited(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	baseRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
@@ -168,8 +268,9 @@ source = "github.com/acme/tool@v1"
 		WithNewFile(".dagger/modules/local-ci/dagger.json", `{"name":"local-ci","sdk":{"source":"dang"}}`).
 		WithNewFile(".dagger/modules/local-ci/main.dang", workspaceSelectionDangSource("LocalCi", "identify", "base local module")))
 
-	// The consuming workspace has a directory at the very same path: without
-	// the drop, the inherited source would resolve here instead.
+	// The consuming workspace holds a different module at the very same path,
+	// which is what the rewrite has to get right: the entry must reach the
+	// included repository's module, not the one next to the consumer.
 	ctr := workspaceIncludeConsumer(t, c, `
 [[include]]
 source = "`+baseRef+`"
@@ -177,14 +278,105 @@ source = "`+baseRef+`"
 		WithNewFile("/work/.dagger/modules/local-ci/dagger.json", `{"name":"local-ci","sdk":{"source":"dang"}}`).
 		WithNewFile("/work/.dagger/modules/local-ci/main.dang", workspaceSelectionDangSource("LocalCi", "identify", "consumer local module"))
 
-	t.Run("drops the entry", func(ctx context.Context, t *testctx.T) {
+	t.Run("the entry becomes a ref into the included repository", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, out, "local-ci", "a local module of the included config must not be usable here")
-		require.Contains(t, out, `source = "github.com/acme/tool@v1"`, "remote entries still come through")
+		require.Contains(t, out, "/.dagger/modules/local-ci@", "addressed in the repository the config came from")
+		require.NotContains(t, out, `source = ".dagger/modules/local-ci"`, "not left as a path the consumer would resolve")
+		require.Contains(t, out, `source = "github.com/acme/tool@v1"`, "remote entries are untouched")
 	})
 
-	t.Run("says so", func(ctx context.Context, t *testctx.T) {
+	t.Run("it is pinned to the commit the config was read at", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
+		require.NoError(t, err)
+		ref := ""
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "/.dagger/modules/local-ci@") {
+				ref = line
+			}
+		}
+		require.NotEmpty(t, ref)
+		_, version, _ := strings.Cut(ref, "/.dagger/modules/local-ci@")
+		version = strings.Trim(strings.TrimSpace(version), `"`)
+		require.Len(t, version, 40, "a full commit SHA, not the symbolic version: %q", version)
+	})
+
+	t.Run("calling it reaches the included repository's module", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(workspaceSelectionDaggerCall("local-ci", "identify")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "base local module", strings.TrimSpace(out))
+	})
+}
+
+func (WorkspaceIncludeSuite) TestGitIncludeNamesAConfigInsideTheRepository(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The fragment spelling the reference page advertises, and the one place
+	// the file-versus-directory rule meets a parsed subdir: the config is not
+	// at the repository root, so the modules beside it have to be re-addressed
+	// against its directory rather than against the clone.
+	moduleRef := workspaceIncludeModuleRepo(ctx, t, c, "greeter", "Greeter", "hello from the base")
+	baseRepo := c.Directory().
+		WithNewFile("dagger/base.toml", `[modules.greeter]
+source = "`+moduleRef+`"
+
+[modules.local-ci]
+source = "modules/ci"
+`).
+		WithNewFile("dagger/modules/ci/dagger.json", `{"name":"local-ci","sdk":{"source":"dang"}}`).
+		WithNewFile("dagger/modules/ci/main.dang", workspaceSelectionDangSource("LocalCi", "identify", "ci beside the base config"))
+	baseRef := strings.TrimSuffix(workspaceSelectionRemoteRef(ctx, t, c, baseRepo), "@main") + "#main:dagger/base.toml"
+
+	ctr := workspaceIncludeConsumer(t, c, `
+[[include]]
+source = "`+baseRef+`"
+`)
+
+	out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `source = "`+moduleRef+`"`, "a remote entry comes through untouched")
+	require.Contains(t, out, "/dagger/modules/ci@", "a local entry is addressed against the config's own directory")
+
+	out, err = ctr.With(workspaceSelectionDaggerCall("local-ci", "identify")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ci beside the base config", strings.TrimSpace(out))
+}
+
+func (WorkspaceIncludeSuite) TestModulesWithNoAddressAreDropped(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// A built-in SDK install is the shape that is easiest to get wrong: its
+	// source is a runtime name the engine resolves in-process, not a path, so
+	// it has no address in the included repository. An entry escaping that
+	// repository has none either.
+	baseRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		WithNewFile("dagger.toml", `[modules.dagger-dang-sdk]
+source = "dang"
+
+[modules.dagger-dang-sdk.as-sdk]
+name = "dang"
+
+[modules.escaping]
+source = "../outside/ci"
+
+[modules.remote-tool]
+source = "github.com/acme/tool@v1"
+`))
+
+	ctr := workspaceIncludeConsumer(t, c, `
+[[include]]
+source = "`+baseRef+`"
+`)
+
+	t.Run("they do not appear in the effective config", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "dagger-dang-sdk")
+		require.NotContains(t, out, "escaping")
+		require.Contains(t, out, `source = "github.com/acme/tool@v1"`)
+	})
+
+	t.Run("and the run says so", func(ctx context.Context, t *testctx.T) {
 		// Reported without --silent, which suppresses progress output. The
 		// warning has to reach a command that skips workspace modules
 		// entirely, which is exactly what `workspace config` does.
@@ -193,13 +385,8 @@ source = "`+baseRef+`"
 			dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 		).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "local-ci")
-		require.Contains(t, out, "Only its remote modules are inherited")
-	})
-
-	t.Run("does not resolve the same-named local directory", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.With(workspaceSelectionDaggerCallFail("local-ci", "identify")).Sync(ctx)
-		require.NoError(t, err)
+		require.Contains(t, out, "dagger-dang-sdk (built-in SDK runtime)")
+		require.Contains(t, out, "escaping (no address outside the config it came from)")
 	})
 }
 
