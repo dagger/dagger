@@ -711,7 +711,10 @@ CreateOc(i) ==
              attachTarget |-> 0,
              \* an attachment-time claim was refused by release marking;
              \* consumed by the deterministic attach-failure branch
-             attachRefused |-> FALSE])
+             attachRefused |-> FALSE,
+             \* an attachment-time claim found its target collected (the
+             \* registration guard); an ordinary attachment failure
+             attachGone |-> FALSE])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
@@ -866,9 +869,9 @@ FnComplete(o) ==
     /\ ~ongoingCalls[o].acqAdmitted
     /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
-            \* the fn returns a result its resolver acquired (FnInnerLoad);
-            \* possession only - no claim, no liveness: release marking
-            \* does not revoke a value the fn already holds
+            \* the fn returns a result its resolver acquired
+            \* (FnInnerLoadClaim/Deliver); possession only - no claim, no
+            \* liveness: release marking does not revoke a held value
             /\ res[r].barrier \in {"none", "closedOk"}
             /\ r \in ongoingCalls[o].acq
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
@@ -1085,7 +1088,7 @@ PubIndexFresh(o) ==
        \E handleChoice \in {"none"} \cup
              {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
        \* Structural deps are results the fn's resolver acquired through
-       \* inner loads (FnInnerLoad): the claim and its session unit were
+       \* inner loads (FnInnerLoadClaim/Deliver): claim and session unit
        \* recorded there, so publication only adds the structural edge's
        \* unit and consumes possession - no liveness guard, because
        \* release marking does not revoke values the fn already holds.
@@ -1258,8 +1261,8 @@ PubAttachAddDep(o) ==
         \* the stated no-cycle assumption (see the comment block above)
         /\ ~DepReachable(res, d, ongoingCalls[o].resId)
         \* attachment deps are the value's embedded children, which the
-        \* fn's resolver acquired through inner loads (FnInnerLoad):
-        \* possession only - the claim and session unit landed at the
+        \* fn's resolver acquired through inner loads or attachment-time
+        \* claims: possession only - the claim and session unit landed at
         \* load; this edge adds the explicit-dep unit, with no liveness
         \* guard, as in PubIndexFresh
         /\ d \in ongoingCalls[o].acq
@@ -1280,8 +1283,12 @@ PubAttachAddDep(o) ==
 
 PubFinishOk(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
-    \* the hook returns only after its in-flight claim attempt resolved
+    \* the hook returns only after its in-flight claim attempt resolved,
+    \* and a claim error (refused or unregistered) fails the attachment:
+    \* initCompletedResult closes the barrier with that error
     /\ ongoingCalls[o].attachTarget = 0
+    /\ ~ongoingCalls[o].attachRefused
+    /\ ~ongoingCalls[o].attachGone
     /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedOk"]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done"]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
@@ -1313,6 +1320,9 @@ PubAttachClaimOk(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ ongoingCalls[o].attachTarget # 0
     /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
+    \* the claim runs under the graph lock and re-checks registration
+    \* (acquireSessionResultLocked's guard): selection was lock-free
+    /\ res[ongoingCalls[o].attachTarget].registered
     /\ LET r == ongoingCalls[o].attachTarget
            s == ongoingCalls[o].sess
            haveEdge == <<s, r>> \in sessionEdges
@@ -1324,6 +1334,18 @@ PubAttachClaimOk(o) ==
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acq = @ \cup {r},
                                                   ![o].attachTarget = 0]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
+
+\* the target was collected between the lock-free selection and the
+\* claim: the registration guard refuses ("result is not registered"),
+\* an ordinary attachment failure - not a release refusal
+PubAttachClaimGone(o) ==
+    /\ ongoingCalls[o].pubState = "attaching"
+    /\ ongoingCalls[o].attachTarget # 0
+    /\ ~res[ongoingCalls[o].attachTarget].registered
+    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].attachTarget = 0,
+                                            ![o].attachGone = TRUE]
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
 
 \* release marked the session between target selection and the claim:
 \* trackSessionResult refuses, nothing is recorded, and the attachment
@@ -1342,6 +1364,7 @@ PubAttachFailDropHold(o) ==
     \* attachment-time claim attempt was refused by release marking
     /\ \/ AttachCanFail
        \/ ongoingCalls[o].attachRefused
+       \/ ongoingCalls[o].attachGone
     /\ ongoingCalls[o].pubState = "attaching"
     /\ res' = DecAndCascade(res, ongoingCalls[o].resId)
     /\ ongoingCalls' = [ongoingCalls EXCEPT
@@ -2599,7 +2622,7 @@ Next ==
          \/ FnComplete(o) \/ PubBegin(o)
          \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
          \/ PubAttachTarget(o) \/ PubAttachClaimOk(o)
-         \/ PubAttachClaimRefused(o)
+         \/ PubAttachClaimRefused(o) \/ PubAttachClaimGone(o)
          \/ PubAttachAddDep(o) \/ PubFinishOk(o)
          \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
          \/ PubUnregister(o) \/ FnWindDown(o)
@@ -2627,7 +2650,10 @@ Spec == Init /\ [][Next]_vars
 (* FAIRNESS - which actions must eventually run if they stay enabled.      *)
 (* Needed only for the liveness property; safety checking ignores this.    *)
 (*                                                                         *)
-(* Weak fairness on SYSTEM progress only:                                  *)
+(* Weak fairness on SYSTEM progress, plus one explicit strong-fairness     *)
+(* term: FnComplete, the executor-termination assumption, because          *)
+(* admission/exit cycles of inner loads toggle its enabledness and         *)
+(* defeat weak fairness. Everything else is weak:                          *)
 (*   - fn completion, the publication chain, unregistration                *)
 (*   - each waiter's own forward steps                                     *)
 (* These correspond to goroutines the engine runs to completion. Without   *)
@@ -2659,6 +2685,7 @@ SystemProgress(o) ==
     \/ FnInnerLoadDeliver(o) \/ FnInnerLoadRefused(o)
     \* an in-flight attachment claim attempt always resolves too
     \/ PubAttachClaimOk(o) \/ PubAttachClaimRefused(o)
+    \/ PubAttachClaimGone(o)
     \/ FnComplete(o) \/ PubBegin(o)
     \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
     \/ PubFinishOk(o) \/ PubAttachFailDropHold(o)
@@ -2932,8 +2959,10 @@ LeaseFailureClean ==
 
 \* Racing alone never manufactures an execution failure: if no failure
 \* injection is enabled, no invocation ends in "failed". Cancellation and a
-\* released-session refusal have their own terminal phases (an errored
-\* operation in a non-live session exits as a refusal, matching
+\* released-session refusal have their own terminal phases
+\* (release-caused errors enter provenance-specific refusing phases
+\* where they are observed - fnErrRefusal, attachRefused - while
+\* unrelated errors remain failures, matching
 \* op.finish's override). Ongoing calls are keyed by (call, session), so
 \* no invocation waits on another session's singleflight entry, and a
 \* reused result was delivered to the fn by its own inner load.
