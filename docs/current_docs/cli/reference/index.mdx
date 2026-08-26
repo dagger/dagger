@@ -2609,6 +2609,10 @@ config lists toolchains, they are installed into a dagger.toml at the
 repository root — never a nested one. A subdirectory config with a
 blueprint is left as legacy with a warning.
 
+Toolchains of a module with an SDK are also added as dependencies in the
+migrated dagger-module.toml, since 0.21 exposed toolchains to module code
+the same way as dependencies. Remove any the module code does not use.
+
 Idempotent: safe to run anytime. No-ops what's already in good shape.
 Each step can be skipped at the prompt. With --auto-apply, workspace
 changes and module recommendations are applied without prompting. Cloud

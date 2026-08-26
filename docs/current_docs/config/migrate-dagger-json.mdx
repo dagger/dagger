@@ -30,6 +30,7 @@ A few behaviors worth knowing:
 - If your repo *is* a module, meaning the root `dagger.json` describes a module whose source lives at the repo root, migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module isn't installed into the workspace, so load it explicitly: `dagger -m . call --help`.
 - Run from a module subdirectory, migration converts just that module and creates no workspace. `dagger.json` becomes `dagger-module.toml` in place, along with any local dependencies it references. Module recommendations are skipped.
 - Migration never creates nested `dagger.toml` files. It installs toolchains listed in a subdirectory `dagger.json` into the workspace at the repository root and rebases their local source paths. It leaves a subdirectory `dagger.json` with a `blueprint` as legacy, with a warning.
+- When a `dagger.json` has both an `sdk` and `toolchains`, the toolchains are installed into `dagger.toml` **and** recorded as dependencies in the migrated `dagger-module.toml`. In 0.21 a module could call its toolchains from code the same way as dependencies (for example `dag.Go()`), so this keeps that code working. Remove any dependency the module code does not use.
 - Modules now commit their generated code (`dagger.gen.go` and friends) instead of regenerating it at runtime. Migration removes the `.gitignore` rules that used to exclude it. Afterwards, run `dagger generate` and commit the output.
 - Applying a migration ends the setup run. Run `dagger setup` again for module recommendations.
 
@@ -50,6 +51,36 @@ goVersion = "1.22"
 ```
 
 **Modules are managed from the top level.** `dagger search` finds them; `dagger install` and `dagger uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml`. Edit that file directly when authoring a module or adding code dependencies.
+
+## Workspace arguments in generated Go bindings
+
+A `*dagger.Workspace` argument that isn't marked `// +optional` used to be published as optional in the module's API, because Dagger fills it in automatically. It is now published as required, matching the declaration. Nothing changes when you call such a function from the CLI, a check, or a generator — Dagger still supplies the current workspace.
+
+What does change is calling that function **from another module's Go code**. The Go SDK puts required arguments in the function signature and optional ones in an `Opts` struct, so after `dagger generate` the workspace moves out of the options struct and into the argument list. Code that used to pass it through `Opts` (or not at all) fails to compile with errors like:
+
+```
+unknown field Workspace in struct literal of type dagger.FooOpts
+cannot use dagger.FooOpts{…} (value of struct type dagger.FooOpts) as *dagger.Workspace value in argument to dag.Foo
+not enough arguments in call to dag.Foo
+```
+
+To fix it, pass the workspace positionally. Take a `*dagger.Workspace` in your own constructor and hand it to the dependency:
+
+```go
+func New(ws *dagger.Workspace) *MyModule {
+	return &MyModule{Workspace: ws}
+}
+
+func (m *MyModule) Build(ctx context.Context) (string, error) {
+	// Before: dag.Foo(dagger.FooOpts{Workspace: m.Workspace})
+	// or:     dag.Foo()
+	return dag.Foo(m.Workspace).Build(ctx)
+}
+```
+
+If `Foo` has other optional arguments, they stay in the options struct: `dag.Foo(m.Workspace, dagger.FooOpts{...})`.
+
+This only surfaces at compile time what was already true at runtime: a workspace is never inherited across a module-to-module call, so a dependency that needs one has to be given it explicitly.
 
 ## Quick reference
 
