@@ -11,6 +11,23 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Bytes(pub String);
+impl From<&str> for Bytes {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for Bytes {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl Bytes {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Id(pub String);
 impl From<&str> for Id {
     fn from(value: &str) -> Self {
@@ -12417,6 +12434,12 @@ pub struct Query {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryBlobOpts {
+    /// Permissions of the new file. Example: 0600
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryCacheVolumeOpts<'a> {
     /// A user:group to set for the cache volume root.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -12582,6 +12605,43 @@ impl Query {
         let mut query = self.selection.select("address");
         query = query.arg("value", value.into());
         Address {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a file from arbitrary binary contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new file. Example: "archive.tar"
+    /// * `contents` - Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn blob(&self, name: impl Into<String>, contents: Bytes) -> File {
+        let mut query = self.selection.select("blob");
+        query = query.arg("name", name.into());
+        query = query.arg("contents", contents);
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a file from arbitrary binary contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new file. Example: "archive.tar"
+    /// * `contents` - Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn blob_opts(&self, name: impl Into<String>, contents: Bytes, opts: QueryBlobOpts) -> File {
+        let mut query = self.selection.select("blob");
+        query = query.arg("name", name.into());
+        query = query.arg("contents", contents);
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -134,6 +134,9 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
+// Arbitrary binary data, represented as a base64-encoded string.
+type Bytes string
+
 // A unique identifier for an object.
 type ID string
 
@@ -13181,6 +13184,31 @@ func (r *Query) Address(value string) *Address {
 	q = q.Arg("value", value)
 
 	return &Address{
+		query: q,
+	}
+}
+
+// BlobOpts contains options for Query.Blob
+type BlobOpts struct {
+	// Permissions of the new file. Example: 0600
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Creates a file from arbitrary binary contents.
+func (r *Query) Blob(name string, contents Bytes, opts ...BlobOpts) *File {
+	q := r.query.Select("blob")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("contents", contents)
+
+	return &File{
 		query: q,
 	}
 }
