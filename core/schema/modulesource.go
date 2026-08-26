@@ -498,7 +498,7 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 			return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
 		}
 	}
-	cfg, err = core.ApplyIncludes(ctx, includeSource, cfg, explicitKeys)
+	cfg, err = core.ApplyIncludes(ctx, includeSource, cfg, explicitKeys, nil)
 	if err != nil {
 		return inst, false, err
 	}

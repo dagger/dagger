@@ -203,7 +203,7 @@ func applyWorkspaceIncludes(
 	data []byte,
 ) (*workspace.Config, error) {
 	if cfg == nil || len(cfg.Include) == 0 {
-		return core.ApplyIncludes(ctx, core.IncludeSource{}, cfg, nil)
+		return core.ApplyIncludes(ctx, core.IncludeSource{}, cfg, nil, nil)
 	}
 
 	if ws.ClientID != "" {
@@ -233,7 +233,7 @@ func applyWorkspaceIncludes(
 	if err != nil {
 		return nil, err
 	}
-	return core.ApplyIncludes(ctx, source, cfg, explicitKeys)
+	return core.ApplyIncludes(ctx, source, cfg, explicitKeys, ws.UserConfigOverlay())
 }
 
 // workspaceIncludeSource lets an include address a config in this workspace,

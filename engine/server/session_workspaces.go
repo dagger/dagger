@@ -754,7 +754,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			return readFile(ctx, filepath.Join(ws.Root, wsPath))
 		},
 	}
-	effective, configErr := core.ApplyIncludes(ctx, includeSource, wsConfig, wsConfigKeys)
+	effective, configErr := core.ApplyIncludes(ctx, includeSource, wsConfig, wsConfigKeys, coreWS.UserConfigOverlay())
 	if configErr == nil {
 		wsConfig = effective
 	}
