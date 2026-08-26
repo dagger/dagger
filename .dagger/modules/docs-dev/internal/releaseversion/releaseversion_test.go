@@ -105,25 +105,75 @@ func TestCollapsePrerelease(t *testing.T) {
 	}
 }
 
-func TestOmitZeroPatch(t *testing.T) {
+func TestCollapsePatch(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]string{
-		"1.0.0-beta":         "1.0-beta",
-		"4.2.0-demo.42":      "4.2-demo.42",
-		"1.0.0":              "1.0",
-		"1.0.1":              "1.0.1",
-		"1.0.0-beta+build.7": "1.0-beta+build.7",
-		"1.0":                "1.0",
-		"1":                  "1",
-		"not-semver":         "not-semver",
+	tests := []struct {
+		version   string
+		want      string
+		collapsed bool
+	}{
+		{version: "1.0.0-beta", want: "1.0-beta", collapsed: true},
+		{version: "4.2.0-demo.42", want: "4.2-demo.42", collapsed: true},
+		{version: "1.0.0", want: "1.0", collapsed: true},
+		{version: "1.0.1", want: "1.0", collapsed: true},
+		{version: "1.0.0-beta+build.7", want: "1.0-beta+build.7", collapsed: true},
+		{version: "1.0", want: "1.0"},
+		{version: "1", want: "1"},
+		{version: "not-semver", want: "not-semver"},
 	}
 
-	for version, want := range tests {
-		t.Run(version, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
 			t.Parallel()
-			if got := OmitZeroPatch(version); got != want {
-				t.Errorf("OmitZeroPatch(%q) = %q, want %q", version, got, want)
+			got, collapsed := CollapsePatch(tt.version)
+			if got != tt.want || collapsed != tt.collapsed {
+				t.Errorf("CollapsePatch(%q) = (%q, %t), want (%q, %t)", tt.version, got, collapsed, tt.want, tt.collapsed)
+			}
+		})
+	}
+}
+
+func TestRename(t *testing.T) {
+	t.Parallel()
+
+	versions := []string{"1.0-beta", "0.21.4", "0.20.2"}
+	got, err := Rename(versions, "0.21.4", "0.21")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"1.0-beta", "0.21", "0.20.2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Rename() = %v, want %v", got, want)
+	}
+	if versions[1] != "0.21.4" {
+		t.Error("Rename mutated its input")
+	}
+}
+
+func TestRenameRejectsInvalidChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr string
+	}{
+		{name: "missing source", from: "0.19.11", to: "0.19", wantErr: `docs version "0.19.11" does not exist`},
+		{name: "existing destination", from: "0.21.4", to: "0.20.2", wantErr: `docs version "0.20.2" already exists`},
+		{name: "same version", from: "0.21.4", to: "0.21.4", wantErr: `docs versions are both "0.21.4"`},
+		{name: "invalid source", from: "../0.21.4", to: "0.21", wantErr: `docs version "../0.21.4" is not semantic`},
+		{name: "invalid destination", from: "0.21.4", to: "../0.21", wantErr: `docs version "../0.21" is not semantic`},
+	}
+
+	versions := []string{"0.21.4", "0.20.2"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Rename(versions, tt.from, tt.to)
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("Rename() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}

@@ -57,14 +57,14 @@ type DocsDevGenerateVersionOpts struct {
 	//
 	// Default: true
 	CollapsePreReleases bool
-	// Omit a zero patch component, e.g. 1.0.0-beta to 1.0-beta.
+	// Collapse the patch component, e.g. 0.21.8 to 0.21.
 	//
 	// Default: true
-	OmitZeroPatch bool
+	CollapsePatch bool
 }
 
-// Generate a docs version from a Git ref. Numbered prereleases are collapsed
-// into rolling channels and zero patch components are omitted by default.
+// Generate a docs version from a Git ref. Numbered prereleases and patch
+// components are collapsed into rolling channels by default.
 func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersionOpts) *Changeset {
 	assertNotNil("source", source)
 	q := r.query.Select("generateVersion")
@@ -73,9 +73,9 @@ func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersion
 		if !querybuilder.IsZeroValue(opts[i].CollapsePreReleases) {
 			q = q.Arg("collapsePreReleases", opts[i].CollapsePreReleases)
 		}
-		// `omitZeroPatch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OmitZeroPatch) {
-			q = q.Arg("omitZeroPatch", opts[i].OmitZeroPatch)
+		// `collapsePatch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CollapsePatch) {
+			q = q.Arg("collapsePatch", opts[i].CollapsePatch)
 		}
 	}
 	q = q.Arg("source", source)
@@ -186,6 +186,17 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset {
 			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Rename an existing docs version without changing its contents.
+func (r *DocsDev) RenameVersion(from string, to string) *Changeset {
+	q := r.query.Select("renameVersion")
+	q = q.Arg("from", from)
+	q = q.Arg("to", to)
 
 	return &Changeset{
 		query: q,
