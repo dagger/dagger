@@ -6,7 +6,7 @@ description: "Get CI running in your project in 5 minutes"
 
 # Quickstart
 
-In this quickstart, you'll fork an example project, add automated checks, and open a pull request that runs those checks in Dagger Cloud — no CI YAML required.
+In this quickstart, you'll fork an example project, add automated checks, and open a pull request that runs those checks in Dagger Cloud. No CI YAML required.
 
 ## Requirements
 
@@ -36,15 +36,15 @@ If you use the GitHub web UI instead, clone your fork locally before continuing.
 git checkout -b add-dagger-checks
 ```
 
-## Setup your workspace
+## Set up your workspace
 
-`dagger setup` walks through a few prompts: logging in to Dagger Cloud, then — since this project has no legacy Dagger configuration to migrate — installing recommended modules based on a scan of your project.
+`dagger setup` walks through a few prompts. It logs you in to Dagger Cloud, then installs recommended modules based on a scan of your project. This project has no legacy Dagger configuration, so there is no migration step.
 
 ```shell
 dagger setup
 ```
 
-Log in to Dagger Cloud when prompted — you'll use it later to enable automatic checks — and select `Install` to install the recommended modules.
+Log in to Dagger Cloud when prompted; you'll use it later to enable automatic checks. Then select `Install` to install the recommended modules.
 This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
 
 ## Run checks
@@ -53,7 +53,7 @@ This creates a `dagger.toml` configuration file and adds three modules: a linter
 dagger check
 ```
 
-All three modules run their checks concurrently. Some checks pass, but `prettier:check` fails — the example project has some unformatted files, so `dagger check` exits non-zero.
+All three modules run their checks concurrently. Some checks pass, but `prettier:check` fails because the example project has unformatted files, so `dagger check` exits non-zero.
 
 ## Fix the formatting
 
@@ -63,7 +63,7 @@ Let Prettier rewrite the files for you:
 dagger api call prettier write
 ```
 
-This returns a [changeset](../cli/generating.mdx) — the reformatted files — and offers to apply it to your working tree; confirm to apply it. Run the checks again:
+This returns a [changeset](../cli/generating.mdx) with the reformatted files and offers to apply it to your working tree. Confirm to apply it. Run the checks again:
 
 ```shell
 dagger check
@@ -121,4 +121,4 @@ dagger activity
 
 ## Next steps
 
-Now do it on your own project — see [Workspace setup](./workspace-setup.mdx).
+Now do it on your own project. See [Workspace setup](./workspace-setup.mdx).

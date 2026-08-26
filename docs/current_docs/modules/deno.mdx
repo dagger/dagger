@@ -9,9 +9,9 @@ description: "Test, lint, format, and type-check Deno projects across a workspac
 The Deno module gives a Deno workspace one shared way to test, lint, format, and
 type-check. It scans the workspace for `deno.json`/`deno.jsonc` files, treats
 each as a Deno project, reads the `workspace` array to fan out across members,
-and exposes workspace-level functions that run across all of them — a good fit
-for monorepos and repos where every project should share one Deno version and
-the same CI checks.
+and exposes workspace-level functions that run across all of them. That makes
+it a good fit for monorepos and repos where every project should share one Deno
+version and the same CI checks.
 
 Rather than wrapping the `deno` CLI, it models a Deno project as a typed object
 graph and maps Deno's toolchain onto Dagger's first-class verbs, so the same
@@ -50,7 +50,7 @@ dagger call deno project --path apps/api type-check
 ## Format the source
 
 `format-check` only reports whether files are formatted; `format` rewrites them.
-Because formatting mutates the workspace, `format` returns a changeset: Dagger
+Because formatting mutates the workspace, `format` returns a changeset. Dagger
 prints the diff and asks before writing. Add `-y` to apply it without prompting:
 
 ```bash
@@ -75,14 +75,14 @@ List the current settings with `dagger settings deno`, then change one with
 `dagger settings deno <key> <value>`. They live in `dagger.toml` under
 `[modules.deno.settings]`:
 
-- **`version`** (default `2.9.3`): the Deno version used to build the check
+- `version` (default `2.9.3`) is the Deno version used to build the check
   containers. Pin this so every project is tested, linted, and formatted against
   the same Deno release.
-- **`base`**: the base container image Deno runs in (for example
+- `base` is the base container image Deno runs in (for example
   `docker.io/denoland/deno:debian`). Override it to control the OS or runtime the
   toolchain runs on.
 
-`base` and `version` are mutually exclusive: when `base` is set it already pins a
+`base` and `version` are mutually exclusive. When `base` is set it already pins a
 Deno release, so `version` is ignored.
 
 ```bash
@@ -100,6 +100,6 @@ base = "docker.io/denoland/deno:debian"
 
 Reach for this module whenever the repo contains one or more Deno projects,
 especially when they should share the same Deno version and CI checks. It
-composes with the rest of your workspace — the `base` and `install` functions
+composes with the rest of your workspace. The `base` and `install` functions
 expose a Deno-ready container you can hand to other modules, and `version` prints
 the configured toolchain version.

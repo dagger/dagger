@@ -1,0 +1,1203 @@
+---
+title: "Java SDK"
+slug: /sdks/java
+description: "Develop Dagger modules in Java: create modules with the Java SDK module, define objects and functions with annotations, manage dependencies, regenerate the vendored SDK and entrypoint, and ship releases."
+---
+
+# Java SDK
+
+The Java SDK lets you write Dagger modules in Java. You write plain Java classes and methods, mark them with a few annotations, and the SDK turns them into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. Your module also gets a generated, typed Java client, `dag()`, for the whole Dagger API: containers, directories, files, secrets, services, and every module you depend on.
+
+This page is a standalone guide to the Java SDK. It assumes you already know the platform concepts covered in the [SDKs overview](./index.mdx):
+
+- [Types](../api/reference/index.mdx) covers how SDK types map to the Dagger API
+- [Generating code](../cli/generating.mdx) covers how generators and tooling return diffs for you to apply
+
+A module worth sharing provides at least one of the three first-class function types: a check, a generator, or a service. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Java syntax.
+
+The Java SDK is itself a Dagger module, `github.com/dagger/java-sdk`. Install it into your workspace once, then use Dagger's SDK and module commands to scaffold, generate, and maintain Java modules:
+
+```shell
+# Install the Java SDK into your workspace (once)
+dagger sdk install java
+
+# Create a Java module
+dagger module init java my-module
+```
+
+Java modules are self-contained. The SDK library, annotation processor, and generated client bindings live in the module as real, buildable source, and the generated entrypoint is committed next to your code. Nothing is generated when the module loads; the runtime builds and packages only what is in Git. The Go SDK works differently. The upside of the Java approach is that a plain `mvn package` builds the module in an IDE or CI without Dagger. The cost is that you commit generated files and regenerate them yourself when the module's shape changes. See [Resulting file layout](#resulting-file-layout).
+
+## Create a module
+
+:::note
+Run these commands from inside a Git repository. That's where Dagger creates the new module.
+:::
+
+Install the Java SDK into your workspace, then create a new module. The required arguments are the SDK and module name:
+
+```shell
+dagger sdk install java
+dagger module init java my-module
+```
+
+Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../cli/generating.mdx), a structured diff of the files to create. Dagger shows it to you for review before writing anything to disk.
+
+:::tip
+If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here java` to create it in the current directory.
+:::
+
+### Where the module is created
+
+By default, `dagger module init` places the new module beside the `dagger.toml`
+it is editing:
+
+```
+<dagger.toml directory>/.dagger/modules/<name>
+```
+
+That is the workspace root unless the config lives in a subdirectory, as it does
+when several projects share one repository.
+
+Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type; a leading `/` means the workspace root.
+
+```shell
+dagger module init java my-module --path ci     # ./ci
+dagger module init java my-module --path /ci    # <workspace root>/ci
+```
+
+Dagger registers a module at a custom path as authored by the SDK, but does not install it as a callable workspace module. Use `dagger install ./ci` to install it too.
+
+The Java SDK ships three starter templates. Pick one with `--template`:
+
+| Template | Contents |
+|---|---|
+| `default` | A main object with a constructor that reads the workspace and a `container` function (shown below) |
+| `empty` | The `pom.xml` and an empty main object, for starting from scratch |
+| `legacy` | The classic `containerEcho` / `grepDir` starter from earlier Dagger versions |
+
+```shell
+dagger module init java my-module --template empty
+```
+
+List the Java SDK's module initialization options with:
+
+```shell
+dagger module init java --help
+```
+
+### Resulting file layout
+
+Once initialized and generated, a Java module looks like this:
+
+```text
+my-module/
+├── dagger-module.toml
+├── pom.xml                       # Maven build; also registers the vendored sources
+├── .gitattributes                # marks generated files for linguist
+├── .gitignore                    # ignores target/ and local-only files such as .env
+├── src/
+│   ├── main/java/io/dagger/modules/mymodule/
+│   │   ├── MyModule.java         # your code: the main object
+│   │   └── package-info.java     # the @Module annotation
+│   └── generated/java/io/dagger/gen/entrypoint/
+│       └── Entrypoint.java       # generated: registers and dispatches your functions
+└── sdk/                          # generated: the vendored Java SDK
+    └── src/
+        ├── main/java/            # the SDK library (io.dagger.client, io.dagger.module.annotation)
+        ├── processor/java/       # the annotation processor that produces Entrypoint.java
+        ├── processor/resources/  # META-INF service descriptor for the processor
+        └── generated/java/       # the typed client bindings from the engine schema
+```
+
+The module name drives every Java identifier: `my-module` becomes the `mymodule` package segment, the `MyModule` class, and the `my-module` Maven `artifactId`.
+
+:::note
+`dagger module init` writes `dagger-module.toml`, updates the workspace config, and applies the SDK template (`pom.xml`, `.gitignore`, `.gitattributes`, and the `src/main/java` sources). It then runs the Java SDK's generator for the new module, so `sdk/` and `src/generated/` land in the same changeset. Commit the generated files with the rest of the module. Dagger needs them to load the module, from your local checkout and from a Git reference alike, and never regenerates them at load time. Pass `--no-generate` to scaffold without generating.
+:::
+
+The module config records the runtime separately from the SDK that authors it. The Java SDK splits authoring, which is the code generation that `dagger generate` runs, from execution, which is the build and package step that runs when the module loads. So the runtime is the SDK's dedicated runtime module rather than the SDK itself:
+
+```toml title="dagger-module.toml" template
+name = "my-module"
+engineVersion = "v{{ version }}"
+
+[runtime]
+source = "github.com/dagger/java-sdk/runtime"
+```
+
+The workspace's `dagger.toml` records the module separately under `modules.dagger-java-sdk.as-sdk`. That entry is how the Java SDK discovers which modules to generate. You never write the files under `sdk/` and `src/generated/` by hand; see [Regenerate the SDK and entrypoint](#regenerate-bindings-and-generated-files).
+
+### How the module is built and run
+
+When Dagger loads the module, the Java runtime mounts the committed sources into a Maven container, runs `mvn package -DskipTests`, and runs the resulting jar in a JRE container. The `pom.xml` compiles the module in two passes from that single command: first the vendored SDK, processor, and bindings; then your `io.dagger.modules.*` classes together with the committed `io.dagger.gen.*` entrypoint. The `pom.xml` switches the annotation processor off by default (`<dagger.proc>none</dagger.proc>`); only `dagger generate` turns it on, to regenerate `Entrypoint.java`.
+
+The build downloads third-party Maven dependencies and caches them in a shared Maven cache volume. The build container never takes `target/` from your checkout, so stale IDE build output cannot leak into the packaged module.
+
+## Define objects and functions
+
+A Java module is a Maven project whose sources live in the package `io.dagger.modules.<name>`. `package-info.java` annotates the package with `@Module`. The main object is a public class annotated with `@Object` whose name is the PascalCase form of your module name, so a module named `my-module` has a `MyModule` class. Every public method annotated with `@Function` becomes a callable Dagger Function.
+
+```java title="src/main/java/io/dagger/modules/mymodule/package-info.java"
+/** A simple example module to say hello. */
+@Module
+package io.dagger.modules.mymodule;
+
+import io.dagger.module.annotation.Module;
+```
+
+```java title="src/main/java/io/dagger/modules/mymodule/MyModule.java"
+package io.dagger.modules.mymodule;
+
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+
+@Object
+public class MyModule {
+  /**
+   * Return a greeting.
+   *
+   * @param name Who to greet
+   * @param greeting The greeting to display
+   */
+  @Function
+  public String hello(String name, String greeting) {
+    return "%s, %s!".formatted(greeting, name);
+  }
+
+  /**
+   * Return a loud greeting.
+   *
+   * @param name Who to greet
+   * @param greeting The greeting to display
+   */
+  @Function
+  public String loudHello(String name, String greeting) {
+    return "%s, %s!".formatted(greeting, name).toUpperCase();
+  }
+}
+```
+
+The rules:
+
+- Every class annotated with `@Object` must be `public` and must have a public no-argument constructor (or no constructors at all). The runtime instantiates objects reflectively and restores their state between calls.
+- Dagger exposes only methods annotated with `@Function`, and they must be `public`. Other methods stay private Java helpers that callers never see.
+- A method may throw any exception. A thrown exception fails the function, and its message is the error the caller sees, so make it actionable (`throw new IllegalArgumentException("cannot divide by zero")`). Generated client calls that resolve against the engine declare `ExecutionException`, `DaggerQueryException`, and `InterruptedException`. A container command that exits non-zero throws `DaggerExecException`, which forwards the exit code, command, and output to the caller. Functions that use these calls declare those exceptions, or a broad `throws Exception`.
+- `@Function(value = "name")` renames a function in the API; `@Function(description = "...")` and `@Object(description = "...")` override the Javadoc description.
+
+Call your functions like any other module's, from the directory that contains `dagger-module.toml` or with `-m <path>`:
+
+```shell
+dagger api call hello --name=World --greeting=Hello
+# Hello, World!
+
+dagger api call loud-hello --name=World --greeting=Hello
+# HELLO, WORLD!
+```
+
+The CLI converts Java method and argument names to kebab-case: `loudHello` becomes `loud-hello`, and `name` becomes `--name`.
+
+### The constructor
+
+If the main object declares a public constructor with parameters, that constructor becomes the module's constructor. Its parameters become arguments of the main object, and the instance it builds is the main object. Use it for module-wide configuration and shared state. The main object may declare only one such constructor, and it must keep a public no-argument constructor too.
+
+A common pattern is to accept a `Workspace` so the module can read the project it runs against (see [Workspace inputs](#workspace-inputs)). Dagger auto-populates it from the current workspace and pulls content lazily, so you store the project directory once and reuse it. The default template does exactly this:
+
+```java title="MyModule.java"
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
+import io.dagger.client.Workspace;
+import io.dagger.module.annotation.Default;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+
+@Object
+public class MyModule {
+  private Directory source;
+  private String baseImageAddress;
+
+  public MyModule() {}
+
+  /**
+   * @param ws The current workspace, auto-populated by Dagger.
+   * @param baseImageAddress The image to build on
+   */
+  public MyModule(Workspace ws, @Default("alpine:3.24") String baseImageAddress) {
+    // Read the workspace root; nothing is uploaded until a function uses it.
+    this.source = ws.directory("/");
+    this.baseImageAddress = baseImageAddress;
+  }
+
+  /** A container with the workspace source, ready to build. */
+  @Function
+  public Container container() {
+    return dag()
+        .container()
+        .from(this.baseImageAddress)
+        .withDirectory("/src", this.source)
+        .withWorkdir("/src");
+  }
+}
+```
+
+### Object state and fields
+
+Non-static, non-final fields are the object's state. Dagger serializes them between functions in a chain, whether they are public or private. What differs is API visibility:
+
+- A `public` field, or a field annotated with `@Function`, appears in the API as a readable value.
+- A `private` field without `@Function` stays as state but is hidden from callers. It is the Java equivalent of Go's `+private`.
+- A `transient` field is not state at all. Dagger never serializes it, so its value does not survive between function calls.
+
+```java
+@Object
+public class LintRun {
+  /** The report format */
+  public String format;
+
+  @Function
+  private String version;     // exposed as `version`, despite being private
+
+  private Directory source;   // state only, not in the API
+
+  private transient String scratch;  // neither state nor API
+
+  public LintRun() {}
+}
+```
+
+## Arguments and return values
+
+Dagger derives a function's argument and return types from the Java signature. The mapping is:
+
+| Java type | Dagger type |
+|---|---|
+| `String` | `String` |
+| `int`, `long`, `short`, `byte` (and boxed forms) | `Int` |
+| `float`, `double` (and boxed forms) | `Float` |
+| `boolean` / `Boolean` | `Boolean` |
+| `void` | no return value (functions and checks) |
+| `List<T>` or `T[]` | `[T]` (list) |
+| `Optional<T>` | optional argument, or nullable object return |
+| `io.dagger.client.Directory` | `Directory` |
+| `io.dagger.client.File` | `File` |
+| `io.dagger.client.Container` | `Container` |
+| `io.dagger.client.Secret` | `Secret` |
+| `io.dagger.client.Service` | `Service` |
+| `io.dagger.client.Changeset` | `Changeset` |
+| a class annotated with `@Object` | object |
+| an enum annotated with `@Enum` | enum |
+
+### Documentation
+
+Javadoc comments become API documentation, shown by `dagger api functions` and `dagger api call --help`. A method's Javadoc description documents the function, and each `@param` tag documents the matching argument. The Javadoc on an `@Object` class documents the object. The Javadoc on the `@Module` package declaration (or `@Module(description = "...")`) documents the whole module.
+
+```java
+/**
+ * Return a greeting.
+ *
+ * @param name Who to greet
+ */
+@Function
+public String hello(String name) {
+  return "Hello, " + name + "!";
+}
+```
+
+### Optional and default arguments
+
+Dagger arguments are required by default. Make one optional by wrapping its type in `Optional<T>`, or give it a default with the `@Default` annotation on the parameter:
+
+```java title="optional"
+@Function
+public String hello(Optional<String> name) {
+  return "Hello, " + name.orElse("world");
+}
+```
+
+```java title="default value"
+@Function
+public String hello(@Default("world") String name) {
+  return "Hello, " + name;
+}
+```
+
+- `Optional<T>` makes the argument optional. When the caller omits it, the function receives `Optional.empty()`, so you can detect "not passed."
+- `@Default("...")` makes the argument optional and supplies a default value when the caller omits it. The value is a JSON literal: `@Default("true")` is a boolean, `@Default("3")` an integer. For `String` parameters the SDK adds the quotes for you, so `@Default("world")` and `@Default("\"world\"")` are equivalent.
+- The two combine. `@Default("world") Optional<String> name` is optional with a default, and the `Optional` is always present.
+- `@Default("null")` on a non-primitive parameter marks it nullable with a `null` default.
+
+### Nullability
+
+Use `Optional<T>` for an argument or return value that may be absent. A function can return `Optional<Directory>` (or any other object type) to signal "no result". Return `Optional.empty()` and the caller sees a null. Primitive scalars such as `int` and `boolean` are always present; use boxed types (`Integer`, `Boolean`) when the value itself may be null.
+
+:::note
+Nullable object return values require engine `v1.0.0-beta.10` or later. Against older engines the generated client returns object types directly.
+:::
+
+### Enums
+
+Model a closed set of values as a Java `enum` annotated with `@Enum`. Dagger turns it into an enum and validates inputs. Javadoc on the constants becomes the value descriptions:
+
+```java title="Severity.java"
+package io.dagger.modules.mymodule;
+
+import io.dagger.module.annotation.Enum;
+
+/** Vulnerability severity levels */
+@Enum
+public enum Severity {
+  /** Undetermined risk; analyze further. */
+  UNKNOWN,
+  /** Minimal risk; routine fix. */
+  LOW,
+  /** Moderate risk; timely fix. */
+  MEDIUM,
+  /** Serious risk; quick fix needed. */
+  HIGH,
+  /** Severe risk; immediate action. */
+  CRITICAL
+}
+```
+
+```java title="MyModule.java"
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class MyModule {
+  /**
+   * Scan an image for vulnerabilities.
+   *
+   * @param ref The image to scan
+   * @param severity The minimum severity to report
+   */
+  @Function
+  public String scan(String ref, Severity severity) throws Exception {
+    return dag()
+        .container()
+        .from("aquasec/trivy:0.50.4")
+        .withExec(List.of("trivy", "image", "--severity=" + severity.name(), ref))
+        .stdout();
+  }
+}
+```
+
+Enums also work as return values and inside lists (`List<Severity>`, `Severity[]`). Pass a value outside the enum and you get an error listing the allowed choices:
+
+```shell
+dagger api call scan --ref=alpine:latest --severity=FOO
+# Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+```
+
+Enum simple names must be unique within a module, even across packages.
+
+### Custom object types
+
+Return a class annotated with `@Object` to expose a custom object. Public fields become readable values, and `@Function` methods on the type become chainable functions. Like the main object, a custom object must be public with a public no-argument constructor. Dagger prefixes custom type names with the module name in the API schema (e.g. `MyModuleOrganization`) to avoid collisions:
+
+```java title="MyModule.java"
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class MyModule {
+  @Function
+  public Organization daggerOrganization() {
+    String url = "https://github.com/dagger";
+    Organization org = new Organization();
+    org.url = url;
+    org.repositories = List.of(dag().git(url + "/dagger"));
+    org.members = List.of(new Account("jane", "jane@example.com"), new Account("john", "john@example.com"));
+    return org;
+  }
+}
+```
+
+```java title="Organization.java"
+package io.dagger.modules.mymodule;
+
+import io.dagger.client.GitRepository;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class Organization {
+  public String url;
+  public List<GitRepository> repositories;
+  public List<Account> members;
+
+  public Organization() {}
+}
+```
+
+```java title="Account.java"
+package io.dagger.modules.mymodule;
+
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+
+@Object
+public class Account {
+  public String username;
+  public String email;
+
+  public Account() {}
+
+  public Account(String username, String email) {
+    this.username = username;
+    this.email = email;
+  }
+
+  @Function
+  public String url() {
+    return "https://github.com/" + username;
+  }
+}
+```
+
+Only the main object's parameterized constructor becomes a Dagger constructor. On other objects, extra constructors are plain Java conveniences.
+
+You can then chain on the CLI and API:
+
+```shell
+dagger api call dagger-organization members url
+```
+
+### Interfaces
+
+The Java SDK does not currently support interfaces that accept arbitrary objects from other modules. Accept concrete core types or your own `@Object` types instead.
+
+## Working with core Dagger types
+
+The vendored client exposes the entire Dagger API through the static `dag()` method of `io.dagger.client.Dagger`, usually imported with `import static io.dagger.client.Dagger.dag;`. You use it to build containers, mount directories and files, handle secrets, and run services. Core types live in the `io.dagger.client` package.
+
+### Containers
+
+Each builder method returns a new, immutable `Container`. Nothing mutates in place, and Dagger content-addresses and caches every step. Builder methods are lazy. Methods that return data from the engine (`stdout`, `entries`, `contents`, `sync`, and so on) run the pipeline and declare checked exceptions.
+
+```java
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class MyModule {
+  /** Build and return a container */
+  @Function
+  public Container build(Directory source) {
+    return dag()
+        .container()
+        .from("node:20")
+        .withDirectory("/app", source)
+        .withWorkdir("/app")
+        .withExec(List.of("npm", "install"))
+        .withExec(List.of("npm", "run", "build"));
+  }
+}
+```
+
+### Directories and files
+
+`Directory` and `File` are first-class, "just-in-time" artifacts. You can accept them as arguments, return them, mount them into containers, and export them to the host. Methods with optional parameters have an overload that takes a generated `XxxArguments` builder. For example, `withDirectory` accepts a `Container.WithDirectoryArguments`:
+
+```java
+/**
+ * Copy a directory into a container, leaving some paths out.
+ *
+ * @param source Source directory
+ * @param exclude Exclusion patterns
+ */
+@Function
+public Container copyDirectoryWithExclusions(Directory source, Optional<List<String>> exclude) {
+  return dag()
+      .container()
+      .from("alpine:latest")
+      .withDirectory(
+          "/src",
+          source,
+          new Container.WithDirectoryArguments().withExclude(exclude.orElse(List.of())));
+}
+```
+
+The pattern is the same everywhere. Required parameters are positional Java arguments. Optional ones live in a generated `XxxArguments` inner class of the type that declares the method, and you set them with `withXxx` methods.
+
+### Workspace inputs {#workspace-inputs}
+
+A module that needs to read the user's project, whether its source tree, config files, or lockfiles, takes a `Workspace` argument, almost always on the constructor. You don't pass it. Dagger auto-populates it from the current workspace and uploads nothing up front. Dagger pulls project content lazily, when a function actually reads a path, so a module can declare access to the whole workspace cheaply and pay only for what it touches.
+
+```java title="MyModule.java"
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
+import io.dagger.client.Workspace;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class MyModule {
+  private Directory source;
+
+  public MyModule() {}
+
+  /** @param ws The current workspace, auto-populated by Dagger. */
+  public MyModule(Workspace ws) {
+    // Pull the workspace root as a Directory (lazy, no upload yet).
+    this.source = ws.directory("/");
+  }
+
+  /** Functions reuse the pulled Directory like any other. */
+  @Function
+  public Container build() {
+    return dag()
+        .container()
+        .from("node:20")
+        .withDirectory("/app", source)
+        .withWorkdir("/app")
+        .withExec(List.of("npm", "install"))
+        .withExec(List.of("npm", "run", "build"));
+  }
+}
+```
+
+The `Workspace` client type has these accessors for reading project content:
+
+| Accessor | Signature | Returns |
+|---|---|---|
+| `directory` | `ws.directory(String path)` / `ws.directory(String path, Workspace.DirectoryArguments opts)` | a `Directory` at `path` |
+| `file` | `ws.file(String path)` | a `File` at `path` |
+| `findUp` | `ws.findUp(String name)` / `ws.findUp(String name, Workspace.FindUpArguments opts)` | the workspace path of `name`, searching upward, or `null` |
+
+**Path resolution.** A relative path resolves from the workspace's current working directory. An absolute path (starting with `/`) resolves from the workspace root, also called the boundary. So `ws.directory("/")` is the whole project root, while `ws.directory(".")` is wherever the user invoked Dagger from.
+
+**Excluding files.** `directory` takes a `Workspace.DirectoryArguments` builder to filter what gets pulled. Tight filters matter for caching. The less you load, the fewer cache invalidations you get:
+
+```java
+public MyModule(Workspace ws) {
+  this.source =
+      ws.directory(
+          "/",
+          new Workspace.DirectoryArguments()
+              .withExclude(List.of("node_modules", ".git", "dist")));
+              // .withInclude(List.of("app/", "package.*"))  // allowlist instead
+              // .withGitignore(true)                        // apply .gitignore rules
+}
+```
+
+`findUp` walks up from a start path and returns the absolute workspace path of the first match, stopping at the workspace boundary. Relative start paths resolve from the workspace cwd; pass `new Workspace.FindUpArguments().withFrom("...")` to change that. Because it resolves against the engine, it declares checked exceptions. Use it to find a project root marker such as `pom.xml` or `package.json`.
+
+:::tip
+To use the current workspace, declare a `Workspace` parameter on the module constructor or a function. Dagger injects it and leaves it out of the CLI arguments.
+:::
+
+### Path-defaulted directories and files
+
+For a function that needs a specific file or directory rather than the whole workspace, annotate a `Directory`, `File`, `GitRepository`, or `GitRef` parameter with `@DefaultPath`. Dagger resolves the path when the caller omits the argument, and callers can still pass their own:
+
+```java
+/**
+ * Print the project's dependencies.
+ *
+ * @param pom The Maven project file
+ */
+@Function
+public String dependencies(@DefaultPath("pom.xml") File pom) throws Exception {
+  return pom.contents();
+}
+```
+
+A `Directory` parameter may also carry `@Ignore` to filter what is loaded; see [Ignore patterns](#ignore-patterns).
+
+### Secrets
+
+Accept sensitive values as `Secret`, never as plain strings. Dagger scrubs secret plaintext from logs, caches, and crash reports:
+
+```java
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.Secret;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class MyModule {
+  /**
+   * Query the GitHub API
+   *
+   * @param token GitHub API token
+   */
+  @Function
+  public String githubApi(Secret token) throws Exception {
+    return dag()
+        .container()
+        .from("alpine:3.17")
+        .withSecretVariable("GITHUB_API_TOKEN", token)
+        .withExec(List.of("apk", "add", "curl"))
+        .withExec(
+            List.of(
+                "sh",
+                "-c",
+                "curl \"https://api.github.com/repos/dagger/dagger/issues\""
+                    + " --header \"Authorization: Bearer $GITHUB_API_TOKEN\""))
+        .stdout();
+  }
+}
+```
+
+Callers supply secrets through providers on the CLI:
+
+```shell
+dagger api call github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger api call github-api --token=file:./token.txt      # file
+dagger api call github-api --token=cmd:"gh auth token"   # command output
+dagger api call github-api --token=op://vault/item/field # 1Password
+```
+
+### Services
+
+Return `Service` to expose a long-running service, and bind it into other containers with `withServiceBinding`. Services are content-addressed, so a given definition always gets the same hostname and port conflicts never come up:
+
+```java
+package io.dagger.modules.mymodule;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.Container;
+import io.dagger.client.Service;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.List;
+
+@Object
+public class MyModule {
+  /** Start and return an HTTP service */
+  @Function
+  public Service httpService() {
+    return dag()
+        .container()
+        .from("python")
+        .withWorkdir("/srv")
+        .withNewFile("index.html", "Hello, world!")
+        .withExposedPort(8080)
+        .asService(
+            new Container.AsServiceArguments()
+                .withArgs(List.of("python", "-m", "http.server", "8080")));
+  }
+
+  /** Send a request to an HTTP service and return the response */
+  @Function
+  public String get() throws Exception {
+    return dag()
+        .container()
+        .from("alpine")
+        .withServiceBinding("www", httpService())
+        .withExec(List.of("wget", "-O-", "http://www:8080"))
+        .stdout();
+  }
+}
+```
+
+### A larger example
+
+Real modules combine these pieces. This lint module takes a source directory, returns a custom `LintRun` object, and exposes both a report file and an assertion on it. Note the custom type, the chaining, and `dag().currentModule().source()`, which reaches the module's own files:
+
+```java title="Ruff.java"
+package io.dagger.modules.ruff;
+
+import io.dagger.client.Directory;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+
+/** Ruff is a fast Python linter implemented in Rust */
+@Object
+public class Ruff {
+  /**
+   * Lint a Python codebase
+   *
+   * @param source The Python source directory to lint
+   */
+  @Function
+  public LintRun lint(Directory source) {
+    return new LintRun(source);
+  }
+}
+```
+
+```java title="LintRun.java"
+package io.dagger.modules.ruff;
+
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
+import io.dagger.client.File;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import java.io.StringReader;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/** The result of running the Ruff lint tool */
+@Object
+public class LintRun {
+  private Directory source;
+
+  public LintRun() {}
+
+  public LintRun(Directory source) {
+    this.source = source;
+  }
+
+  /** Return a JSON report file for this run */
+  @Function
+  public File report() {
+    List<String> cmd = List.of("/ruff", "check", "--exit-zero", "--output-format", "json", ".");
+    return dag()
+        .currentModule()
+        .source()
+        .directory("build")
+        .dockerBuild()
+        .withMountedDirectory("/src", source)
+        .withWorkdir("/src")
+        .withExec(cmd, new Container.WithExecArguments().withRedirectStdout("ruff-report.json"))
+        .file("ruff-report.json");
+  }
+
+  /** Fail if the run reported any issues */
+  @Function
+  public void assertClean() throws Exception {
+    JsonArray issues = Json.createReader(new StringReader(report().contents())).readArray();
+    if (!issues.isEmpty()) {
+      String lines =
+          issues.stream()
+              .map(v -> " - " + ((JsonObject) v).getString("message"))
+              .collect(Collectors.joining("\n"));
+      throw new RuntimeException("%d issues\n%s".formatted(issues.size(), lines));
+    }
+  }
+}
+```
+
+The Jakarta JSON API used here is already a dependency of every Java module, because the SDK itself uses it. Add other libraries to the `<dependencies>` section of your `pom.xml` as you would in any Maven project.
+
+## Module dependencies
+
+A module can depend on other Dagger modules and call them through `dag()`, for example `dag().golang()` once `golang` is a dependency. `dagger-module.toml` records dependencies under `dependencies`:
+
+```toml title="dagger-module.toml" template
+name = "dev"
+engineVersion = "v{{ version }}"
+
+[runtime]
+source = "github.com/dagger/java-sdk/runtime"
+
+[[dependencies]]
+name = "golang"
+source = "github.com/dagger/dagger/modules/go"
+
+[[dependencies]]
+name = "wolfi"
+source = "../wolfi"
+```
+
+A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, e.g. `github.com/shykes/daggerverse/hello@v0.3.0`.
+
+Manage dependencies with the CLI's `dagger module deps` commands from the module directory rather than hand-editing `dagger-module.toml`.
+
+Add a dependency by source:
+
+```shell
+dagger module deps add github.com/shykes/daggerverse/hello@v0.3.0
+```
+
+List the current dependencies:
+
+```shell
+dagger module deps list
+```
+
+Remove a dependency by name:
+
+```shell
+dagger module deps rm hello
+```
+
+After changing dependencies, [regenerate](#regenerate-bindings-and-generated-files) so the new module's functions appear on `dag()`. A dependency's functions follow the same conventions as the core API. Required arguments are positional, and optional ones go in an `XxxArguments` builder:
+
+```java
+@Function
+public Directory example(Directory buildSrc, List<String> buildArgs) {
+  return dag()
+      .golang()
+      .build(buildArgs, new Golang.BuildArguments().withSource(buildSrc))
+      .terminal();
+}
+```
+
+## Regenerate the SDK and entrypoint {#regenerate-bindings-and-generated-files}
+
+A Java module uses generated code alongside your handwritten sources:
+
+- `sdk/src/main/java/` holds the Java SDK library: the `io.dagger.client` runtime and the `io.dagger.module.annotation` annotations
+- `sdk/src/processor/java/` and `sdk/src/processor/resources/` hold the annotation processor that turns your annotated classes into the entrypoint
+- `sdk/src/generated/java/` holds the typed client bindings, including `dag()`, all core types (`Container`, `Directory`, and the rest), every dependency's functions, and the `XxxArguments` builders
+- `src/generated/java/io/dagger/gen/entrypoint/Entrypoint.java` is the entrypoint that registers your objects and functions with the engine and dispatches calls to them
+
+You do not edit these files by hand, but you do commit them. Dagger does not regenerate them when it loads a module, including a module installed from Git. If the entrypoint is missing, the module fails to load with an error telling you to run `dagger generate`. The generated `.gitattributes` marks them as `linguist-generated`:
+
+```text title=".gitattributes"
+/sdk/** linguist-generated
+/src/generated/** linguist-generated
+```
+
+Regenerate them whenever you change your module's objects, functions, or annotations, bump the engine version, or add or remove a dependency. Use `dagger generate`, which returns a changeset:
+
+```shell
+# Review the regenerated files, then apply
+dagger generate
+```
+
+`dagger generate` discovers and runs every generator in the workspace. For modules registered under the Java SDK, that includes regenerating the vendored SDK and entrypoint. Generation runs Maven in containers Dagger controls. It builds the SDK against the engine's current schema, vendors the result under `sdk/`, and compiles your module once with the annotation processor enabled to produce `Entrypoint.java`. It never touches your local Maven installation.
+
+:::note
+Editing a function's body needs no regeneration. Changing the *shape* of your module does, and not only when dependencies change: a new `@Function`, a renamed argument, a new `@Object`. If you forget, the module still builds but the new function is not registered. `dagger check --generate` catches this drift.
+:::
+
+Apply and commit the resulting changeset. This keeps the generated client in sync with the functions and dependencies available to your module.
+
+:::note
+A `.dagger-java-sdk-skip-generate` marker in a module or one of its ancestors skips Java generation for that module.
+:::
+
+:::tip
+The `.gitignore` does not cover generated files; commit them with your module. It ignores only `target/` (Maven build output) and local-only files such as `.env`.
+:::
+
+### Committing a prebuilt SDK jar
+
+By default the runtime compiles the vendored SDK sources on every fresh build. To shorten module builds, the SDK can also commit a compiled SDK jar under `sdk/repo/`. The `pom.xml` detects it and compiles only your own code against it, while the sources stay checked in for IDE navigation. This is opt-in because it puts a binary in version control, and that is a trade-off worth making on purpose rather than by default. Enable it as a setting on the SDK module in `dagger.toml`, then regenerate:
+
+```toml title="dagger.toml"
+[modules.dagger-java-sdk.settings]
+vendorSdkJar = true
+```
+
+## Engine version
+
+Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the CLI's `dagger module engine` commands from the module directory.
+
+Read the currently required version:
+
+```shell
+dagger module engine required
+```
+
+Pin a specific version, the current engine, or the latest stable release:
+
+```shell template
+# A specific version
+dagger module engine require v{{ version }}
+
+# Whatever engine you're running now
+dagger module engine require-current
+
+# Latest stable release
+dagger module engine require-latest
+```
+
+Bumping the engine version usually means the generated client bindings should change too, so follow with `dagger generate`.
+
+## Checks, generators, services, directives, and ignore patterns
+
+A module worth reusing provides at least one of the three first-class function types, a check, a generator, or a service, so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. These work the same in Java as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Java, you mark each one with an annotation next to `@Function`. Both annotations are required:
+
+| Annotation | Return type | Run by | Purpose |
+|---|---|---|---|
+| `@Check` | `void` (or `Container`) | `dagger check` | validate the project (test/lint/scan) |
+| `@Generate` | `Changeset` | `dagger generate` | produce a diff to apply to the workspace |
+| `@Up` | `Service` | `dagger up` | start a long-running service |
+
+The parts specific to Java follow.
+
+### Annotations
+
+Java modules use annotations from `io.dagger.module.annotation` to add Dagger metadata that Java's type system can't express:
+
+| Annotation | Placement | Meaning |
+|---|---|---|
+| `@Module` | the package (`package-info.java`) | marks the package as the module; optional `description` |
+| `@Object` | a class | expose the class as a Dagger object; optional `value` (name) and `description` |
+| `@Function` | a public method, or a field | expose the method as a function, or the field as a readable value |
+| `@Enum` | an enum | expose the enum as a Dagger enum |
+| `@Default("json")` | a parameter | optional argument with a default value |
+| `@DefaultPath("path")` | a `Directory`, `File`, `GitRepository`, or `GitRef` parameter | load from this path when the caller omits the argument |
+| `@Ignore({...})` | a `Directory` parameter | patterns to leave out when loading the directory |
+| `@Check` | a `@Function` method | mark the function as a [check](#checks) |
+| `@Generate` | a `@Function` method | mark the function as a [generator](#generators) |
+| `@Up` | a `@Function` method | mark the function as a [service](#up-services) |
+
+### Ignore patterns {#ignore-patterns}
+
+A module reads the user's project through a `Workspace` argument (see [Workspace inputs](#workspace-inputs)) and filters what gets pulled with the exclude option when reading a workspace directory. Tight filters matter for caching. The less you load, the fewer cache invalidations you get:
+
+```java
+public MyModule(Workspace ws) {
+  this.source =
+      ws.directory(
+          "/",
+          new Workspace.DirectoryArguments()
+              .withExclude(List.of("node_modules", ".git", "dist")));
+}
+```
+
+For a `Directory` parameter loaded with `@DefaultPath`, use `@Ignore` instead. Patterns are gitignore-style; a leading `!` re-includes a path, so `{"**", "!**/*.java"}` keeps only Java sources:
+
+```java
+/**
+ * @param source The Java sources to compile
+ */
+@Function
+public Container compile(
+    @DefaultPath(".") @Ignore({"**", "!src/**/*.java", "!pom.xml"}) Directory source) {
+  return dag().container().from("maven:3.9-eclipse-temurin-21").withDirectory("/src", source);
+}
+```
+
+### Checks {#checks}
+
+Annotate a function with `@Check` (in addition to `@Function`) to make it a check, a validation function such as a test, lint, or scan that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it throws, or when it returns a `Container` whose execution exits non-zero.
+
+```java
+/** Lint the project. */
+@Function
+@Check
+public void lint() throws Exception {
+  dag()
+      .container()
+      .from("golangci/golangci-lint:latest")
+      .withMountedDirectory("/src", source)
+      .withWorkdir("/src")
+      .withExec(List.of("golangci-lint", "run"))
+      .sync();
+}
+
+/** A check can also return a container; a non-zero exit fails the check. */
+@Function
+@Check
+public Container build() {
+  return dag().container().from("alpine:3").withExec(List.of("true"));
+}
+```
+
+A `void` check must actually execute something, such as `sync()`, `stdout()`, or another resolving call, because builder methods alone are lazy. You can also declare checks on custom object types to group them, for example a `Test` object with `lint` and `unit` checks reached through a `test()` function on the main object.
+
+### Generators {#generators}
+
+Annotate a function with `@Generate` (in addition to `@Function`) to make it a generator. It runs a tool, captures the resulting directory, diffs that against the source, and returns the result as a `Changeset`. `dagger generate` discovers and runs every generator and presents the combined [changeset](../cli/generating.mdx) for you to review and apply.
+
+```java
+/** Format the source. */
+@Function
+@Generate
+public Changeset format() {
+  Directory formatted =
+      dag()
+          .container()
+          .from("maven:3.9-eclipse-temurin-21")
+          .withMountedDirectory("/src", source)
+          .withWorkdir("/src")
+          .withExec(List.of("mvn", "-q", "com.spotify.fmt:fmt-maven-plugin:format"))
+          .directory("/src");
+  return formatted.changes(source);
+}
+```
+
+:::note
+A `@Generate` function you write is distinct from the SDK's own generator, which vendors the SDK and entrypoint. `dagger generate` runs both kinds.
+:::
+
+See [Generating code](../cli/generating.mdx).
+
+### Services {#up-services}
+
+Annotate a function with `@Up` (in addition to `@Function`) to make it a service. It returns a `Service`. `dagger up` discovers and starts every service the module exposes and opens their ports on the host.
+
+```java
+/** Run the web server. */
+@Function
+@Up
+public Service web() {
+  return dag().container().from("nginx:alpine").withExposedPort(80).asService();
+}
+```
+
+Like checks, `@Up` services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger up -l` lists as `infra:database`. This is the same `Service` type described under [Services](#services) above. The `@Up` annotation is what makes a service function runnable directly with `dagger up`.
+
+## Testing Java modules
+
+Because a Java module is an ordinary Maven project, you can test it two ways, and they complement each other.
+
+### Idiomatic Java tests
+
+Pure Java logic, such as parsing reports, formatting summaries, or computing counts, can be unit-tested with JUnit with no engine involved. Add JUnit to the `<dependencies>` in your `pom.xml` (the Surefire plugin is already configured):
+
+```xml title="pom.xml"
+<dependency>
+  <groupId>org.junit.jupiter</groupId>
+  <artifactId>junit-jupiter</artifactId>
+  <version>5.11.4</version>
+  <scope>test</scope>
+</dependency>
+```
+
+```java title="src/test/java/io/dagger/modules/mymodule/IssueTest.java"
+package io.dagger.modules.mymodule;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.Test;
+
+class IssueTest {
+  @Test
+  void summary() {
+    Issue issue = new Issue("/src/app/main.py", "undefined name", 12);
+    assertEquals("app/main.py:12 error: undefined name", issue.summary());
+  }
+}
+```
+
+Run them like any Maven test. They don't need the engine, because the vendored SDK and committed entrypoint compile without Dagger:
+
+```shell
+mvn test
+```
+
+The Dagger runtime packages the module with `-DskipTests`, so unit tests never run as part of loading the module. They run when you, or a check, invoke Maven.
+
+### Functional tests via checks
+
+For behavior that exercises containers and the Dagger API, write functions in your module and invoke them, or model them as checks so they run under `dagger check`. A check that builds, lints, or tests your project doubles as both a CI gate and a smoke test:
+
+```shell
+# Smoke test: does it build?
+dagger api call build
+
+# Run all checks
+dagger check
+
+# Run generators and confirm there's no drift
+dagger check --generate
+```
+
+### In CI
+
+Run `dagger check` in CI to run every check the module exposes. The heavy lifting happens in content-addressed containers, so the same command behaves the same on a laptop and on a CI runner, with full caching:
+
+```yaml title=".github/workflows/ci.yml"
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@v6
+        with:
+          verb: check
+```
+
+## IDE and Maven setup
+
+Open the module's `pom.xml` as a Maven project in your IDE. The `build-helper-maven-plugin` configuration registers the vendored SDK (`sdk/src/main/java`, `sdk/src/processor/java`, `sdk/src/generated/java`) and the committed entrypoint (`src/generated/java`) as source roots. Code completion and go-to-definition work for `dag()`, every core type, and every dependency with no extra setup, because all of it is ordinary source in your checkout.
+
+A few things to keep in mind:
+
+- **Java version.** The module compiles with `<maven.compiler.release>17</maven.compiler.release>`; the Dagger runtime builds and runs it on a Temurin 21 JDK/JRE. Use JDK 17 or newer locally.
+- **Do not edit generated files.** The next `dagger generate` overwrites anything under `sdk/` or `src/generated/`.
+- **Keep the Dagger plugin configuration.** Dagger needs the `maven-compiler-plugin` two-pass setup and the `maven-shade-plugin` execution that sets `io.dagger.gen.entrypoint.Entrypoint` as the main class to build and run the module. Add your own plugins and dependencies around them.
+- **`target/` is build output only.** It is git-ignored, and the runtime and generator both exclude it, so an IDE build never affects what Dagger packages.
+- **Formatting.** The SDK sources follow [google-java-format](https://github.com/google/google-java-format); the samples in this guide use the same style.
+
+## Packaging and release
+
+You distribute a Java SDK module as a Git repository. There is no build artifact to publish. Consumers fetch the source by reference, and the committed `sdk/` and `src/generated/` directories are what make that work. A consumer's engine builds the module from source and never has to run code generation.
+
+Recommended release checklist:
+
+1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+2. **Commit the generated files.** Run `dagger generate`, review the changes, and commit `sdk/` and `src/generated/` with your module.
+3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
+
+Before publishing, run `dagger check --generate` to confirm that the committed files are up to date.
+
+Consumers can install your module into a workspace with:
+
+```shell
+dagger install github.com/you/your-module@v1.2.0
+```
+
+To add it as a dependency of another module, run these commands from that module's directory:
+
+```shell
+dagger module deps add github.com/you/your-module@v1.2.0
+dagger generate
+```
+
+A module reference follows `[proto://]host/repo[/subpath][@version]`. The version may be a tag, branch, or commit. Dagger resolves it over HTTPS or SSH depending on the authentication available.
+
+## Troubleshooting
+
+**`dagger init` / `dagger develop` not found.** Install the Java SDK with `dagger sdk install java`, scaffold with `dagger module init java <name>`, and regenerate with `dagger generate`.
+
+**`dagger sdk install java` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger sdk install --here java`.
+
+**Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
+
+**"is missing its generated file `src/generated/java/io/dagger/gen/entrypoint/Entrypoint.java`".** The runtime refuses to build a module without a committed entrypoint. Run `dagger generate`, apply the changeset, and commit the result. That applies when the module is consumed from Git too.
+
+**A new function or object doesn't show up.** Run `dagger generate`. The entrypoint under `src/generated/java` registers your functions with the engine and must be regenerated whenever annotated code changes, not only when dependencies change.
+
+**`dagger generate` does not regenerate the module.** Look for a `.dagger-java-sdk-skip-generate` marker in the module or one of its ancestors.
+
+**"The class … must be public if annotated with @Object" / "must have a public no-argument constructor".** Every `@Object` class must be public and instantiable without arguments. Keep the no-argument constructor even when you add a parameterized one.
+
+**"The class … must have a single non-empty constructor".** The main object may have only one parameterized constructor, since that one becomes the module constructor. Move the alternatives to static factory methods.
+
+**Compile errors mentioning `io.dagger.client` or `dag()`.** The vendored SDK is stale or missing. Regenerate as above. If you bumped the engine version, regenerate after `dagger module engine require …` so the bindings match the schema.
+
+**Maven build failures at module load.** The runtime prints Maven's output in the trace, and `mvn package` locally reproduces the same build. The processor reports annotation misuse during `dagger generate`, for example `@DefaultPath` on a type other than `Directory`, `File`, `GitRepository`, or `GitRef`, `@Ignore` on a non-`Directory`, or `@Default` combined with `@DefaultPath`.
+
+**Engine version mismatch.** Align the module with `dagger module engine require <version>` (or `require-current` / `require-latest`), then regenerate.
+
+## Next steps
+
+- [SDKs overview](./index.mdx) for the platform concepts that apply to every SDK
+- [Types](../api/reference/index.mdx)
+- [Generating code](../cli/generating.mdx)
+- [Workspace setup](../getting-started/workspace-setup.mdx)

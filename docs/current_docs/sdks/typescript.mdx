@@ -13,16 +13,16 @@ the API. Inside your functions you orchestrate containers, files, services, and
 secrets through a generated, fully-typed client.
 
 This page assumes you already understand the Dagger module model. If you don't,
-read these first — this page stays light on platform concepts and links back
+read these first. This page stays light on platform concepts and links back
 where relevant:
 
-- [SDKs overview](./index.mdx) — what a module is and how it runs
-- [Types](../api/reference/index.mdx) — how language types map to the Dagger API
-- [Generating code](../cli/generating.mdx) — how generated files are reviewed and applied
+- [SDKs overview](./index.mdx) covers what a module is and how it runs
+- [Types](../api/reference/index.mdx) covers how language types map to the Dagger API
+- [Generating code](../cli/generating.mdx) covers how generated files are reviewed and applied
 
 :::important
-Module development tooling lives in the SDK module, not the `dagger` CLI:
-**the TypeScript SDK is itself a Dagger module** —
+Module development tooling lives in the SDK module, not the `dagger` CLI.
+**The TypeScript SDK is itself a Dagger module**,
 `github.com/dagger/typescript-sdk`. You install it into your workspace once,
 then create and maintain TypeScript modules by calling its functions by name.
 :::
@@ -30,7 +30,7 @@ then create and maintain TypeScript modules by calling its functions by name.
 ## Create a module
 
 :::note
-Run these commands from inside a Git repository — that's where the new module is created.
+Run these commands from inside a Git repository. That's where the new module is created.
 :::
 
 Install the TypeScript SDK into your workspace, then scaffold a new module with
@@ -42,7 +42,7 @@ dagger api call typescript-sdk init --name=my-module
 ```
 
 `init` returns a [changeset](../cli/generating.mdx) describing the files to
-create — which Dagger shows you to review before anything is written to disk.
+create, which Dagger shows you to review before anything is written to disk.
 
 `init` arguments (from `dagger api call typescript-sdk init --help`):
 
@@ -78,7 +78,7 @@ my-module/
 ```
 
 :::note
-`init` writes only your source (`dagger-module.toml`, `package.json`, `tsconfig.json`, `src/`). The generated `sdk/` client is produced by the first [binding regeneration](#regenerate-bindings) — committed by default — not by `init` itself.
+`init` writes only your source (`dagger-module.toml`, `package.json`, `tsconfig.json`, `src/`). The generated `sdk/` client is produced by the first [binding regeneration](#regenerate-bindings), not by `init` itself. It is committed by default.
 :::
 
 `dagger-module.toml` declares the SDK source:
@@ -164,7 +164,7 @@ Key points:
 - `dag` is the generated Dagger client. Every core type (`Container`,
   `Directory`, `File`, `Service`, `Secret`, …) is imported from
   `@dagger.io/dagger`.
-- The Dagger API is lazy and immutable: each builder method returns a new value
+- The Dagger API is lazy and immutable. Each builder method returns a new value
   and nothing executes until you `await` a leaf operation (`publish`, `stdout`,
   `sync`, `entries`, …). You can return an unresolved `Container`/`Directory`
   and the caller decides when to evaluate it.
@@ -173,7 +173,7 @@ Key points:
 
 ### The constructor
 
-A class constructor becomes the module's constructor — its parameters become
+A class constructor becomes the module's constructor. Its parameters become
 arguments that callers (or workspace config) can set when they reference the
 module. Store them as fields so other functions can use them.
 
@@ -209,8 +209,8 @@ undecorated field is private internal state.
 ### Workspace inputs
 
 To read the user's project files, give your `@object()` constructor a
-`Workspace` parameter. Dagger **auto-populates** it from the current workspace —
-the caller passes nothing, and nothing is uploaded up front. The module then
+`Workspace` parameter. Dagger **auto-populates** it from the current workspace.
+The caller passes nothing, and nothing is uploaded up front. The module then
 reads project content **lazily, on demand**, so only the paths you actually
 touch are loaded (and become part of the cache key).
 
@@ -241,14 +241,14 @@ class MyModule {
 ```
 
 :::note
-The `@object()` constructor declares the `Workspace` as a plain typed parameter —
-no decorator — that Dagger fills from the current workspace; the caller passes
+The `@object()` constructor declares the `Workspace` as a plain typed parameter
+with no decorator. Dagger fills it from the current workspace; the caller passes
 nothing. The `Workspace` type is imported from `@dagger.io/dagger`.
 :::
 
 A `Workspace` exposes lazy accessors for project content:
 
-- `ws.directory(path, opts?)` — return a `Directory` for `path`. Takes an
+- `ws.directory(path, opts?)` returns a `Directory` for `path`. Takes an
   options object with `exclude`, `include`, and `gitignore`. Use `exclude`
   aggressively to keep the cache key tight:
 
@@ -256,21 +256,21 @@ A `Workspace` exposes lazy accessors for project content:
   this.source = ws.directory("/", { exclude: ["node_modules", ".git", "dist"] })
   ```
 
-- `ws.file(path)` — return a `File` for `path`.
+- `ws.file(path)` returns a `File` for `path`.
 
   ```typescript
   const pkg = ws.file("package.json")
   ```
 
-- `ws.findUp(name, opts?)` — walk up from a start path (`opts.from`) within the
-  workspace looking for `name`; returns the absolute workspace path, or null if
-  not found. The search stops at the workspace root.
+- `ws.findUp(name, opts?)` walks up from a start path (`opts.from`) within the
+  workspace looking for `name`. It returns the absolute workspace path, or null
+  if not found. The search stops at the workspace root.
 
   ```typescript
   const modRoot = await ws.findUp("package.json")
   ```
 
-**Path resolution:** relative paths (e.g. `"src"`, `"package.json"`) resolve
+**Path resolution.** Relative paths (e.g. `"src"`, `"package.json"`) resolve
 from the workspace **cwd**; absolute paths (e.g. `"/src"`, `"/go.mod"`) resolve
 from the workspace **root**.
 
@@ -429,8 +429,8 @@ avoid collisions when multiple modules are loaded together.
 
 Interfaces let your module accept arbitrary objects from other modules without
 depending on their concrete types. Declare a plain TypeScript `interface` whose
-members are the functions you need — written as fields with function types that
-return `Promise`s (every call is remote). Any object that provides matching
+members are the functions you need. Write them as fields with function types
+that return `Promise`s (every call is remote). Any object that provides matching
 functions can be passed in:
 
 ```typescript
@@ -456,7 +456,7 @@ export class MyModule {
 }
 ```
 
-Methods that take arguments are typed the same way —
+Methods that take arguments are typed the same way, e.g.
 `withName: (name: string) => Promise<Duck>`. Any object whose functions match
 the interface, including objects returned by other modules, can be passed where
 the interface is expected.
@@ -535,7 +535,7 @@ integrationTest(source: Directory): Container {
 }
 ```
 
-Services are content-addressed: the same definition always resolves to the same
+Services are content-addressed. The same definition always resolves to the same
 hostname, so there are no port conflicts.
 
 ### Concurrency
@@ -619,7 +619,7 @@ dagger api call typescript-sdk mod generate
 ```
 
 If the generate skip marker is present in the module (or an ancestor), the
-changeset is empty — see `mod skip-generate`.
+changeset is empty. See `mod skip-generate`.
 
 You can also use the top-level CLI shortcut, which runs the configured SDK's
 generators for the module in the current workspace:
@@ -667,7 +667,7 @@ a **check** (run by `dagger check`), a **generator** (run by `dagger generate`),
 or a **service** (started by `dagger up`). Each is a regular `@func()` annotated
 with an additional decorator.
 
-### Checks
+### Checks {#checks}
 
 A check is a function that validates something and passes or fails by exit code.
 Mark it with `@check()`. `dagger check` discovers and runs every check in the
@@ -725,9 +725,9 @@ dagger check
 A check passes if it returns without throwing; it fails if any `withExec`
 returns a non-zero exit code (which surfaces as a thrown error when you `sync`).
 
-### Generators
+### Generators {#generators}
 
-A generator produces a [changeset](../cli/generating.mdx) — a diff between the
+A generator produces a [changeset](../cli/generating.mdx), a diff between the
 current source and generated output. Mark it with `@generate()` and return a
 `Changeset`. `dagger generate` runs every generator and presents the combined
 changeset for review.
@@ -770,9 +770,9 @@ SDK's own typed client in `sdk/`. Your `@generate()` functions produce
 project-specific output (API clients, config, scaffolding) and are run by
 `dagger generate`.
 
-### Services
+### Services {#up-services}
 
-A service is a long-running container — a database, web server, or other
+A service is a long-running container, such as a database, web server, or other
 dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
 starts every service in the module. See [Services](../cli/services.mdx).
 
@@ -821,7 +821,7 @@ async latestRelease(): Promise<string> { /* ... */ }
 @func({ cache: "session" })
 async sessionId(): Promise<string> { /* ... */ }
 
-// Never cache — re-execute every call
+// Never cache, re-execute every call
 @func({ cache: "never" })
 async currentTime(): Promise<string> { /* ... */ }
 ```
@@ -847,7 +847,7 @@ this.source = ws.directory("/", { exclude: ["node_modules", ".git", "dist"] })
 The primary way to test a module is to call its functions and run its checks:
 
 ```shell
-# Smoke test — does it build?
+# Smoke test. Does it build?
 dagger -m ./my-module api call build --src=.
 
 # Run all checks
@@ -888,11 +888,11 @@ running `dagger check --generate`.
 ### Runtimes and package managers
 
 `init --runtime` selects the runtime: `NODE` (default), `BUN`, or `DENO`. For
-Node, the SDK works with npm, yarn, and pnpm — the package manager is detected
+Node, the SDK works with npm, yarn, and pnpm. The package manager is detected
 from your lockfile (`package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`).
 Commit the lockfile so builds are reproducible. Bun and Deno manage dependencies
 through their own native tooling; the module code and decorators are identical
-across runtimes — only dependency installation and lockfiles differ.
+across runtimes. Only dependency installation and lockfiles differ.
 
 ### Editor type resolution
 
