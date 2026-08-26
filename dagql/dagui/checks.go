@@ -1,9 +1,5 @@
 package dagui
 
-import (
-	"sort"
-)
-
 // CheckNode is a surfaced trace-level check (deduped by check name), with any
 // nested child checks beneath it.
 type CheckNode struct {
@@ -66,70 +62,14 @@ func (db *DB) SurfacedChecksForSpan(root *Span) []*CheckNode {
 }
 
 func (db *DB) buildSurfacedChecks(root *Span) []*CheckNode {
-	type info struct {
-		span       *Span
-		parentName string
-		failed     bool
-	}
-	byName := map[string]*info{}
-	for span := range db.Spans.Iter() {
-		if span.CheckName == "" {
-			continue
-		}
-		// Remember the nearest ancestor check while the shared walk decides
-		// whether Boundary/Encapsulate contains this span relative to root.
-		parentName := ""
-		if !spanMayRollUp(span, root, func(parent *Span) {
-			if parentName == "" && parent.CheckName != "" && parent.CheckName != span.CheckName {
-				parentName = parent.CheckName
-			}
-		}) {
-			continue
-		}
-		failed := span.IsFailedOrCausedFailure()
-		cur, ok := byName[span.CheckName]
-		switch {
-		case !ok:
-			byName[span.CheckName] = &info{span: span, parentName: parentName, failed: failed}
-		case failed && !cur.failed:
-			// prefer a failed representative so the rendered detail points at the
-			// failure
-			cur.span = span
-			cur.failed = true
-			cur.parentName = parentName
-		default:
-			cur.failed = cur.failed || failed
-		}
-	}
-
-	nodes := make(map[string]*CheckNode, len(byName))
-	for name, in := range byName {
-		nodes[name] = &CheckNode{Name: name, Span: in.span, Failed: in.failed}
-	}
-	var roots []*CheckNode
-	for name, in := range byName {
-		node := nodes[name]
-		if parent, ok := nodes[in.parentName]; ok && in.parentName != "" {
-			parent.Children = append(parent.Children, node)
-		} else {
-			roots = append(roots, node)
-		}
-	}
-
-	var sortNodes func(ns []*CheckNode)
-	sortNodes = func(ns []*CheckNode) {
-		sort.SliceStable(ns, func(i, j int) bool {
-			if ns[i].Failed != ns[j].Failed {
-				return ns[i].Failed // failed first
-			}
-			return ns[i].Name < ns[j].Name
-		})
-		for _, n := range ns {
-			sortNodes(n.Children)
-		}
-	}
-	sortNodes(roots)
-	return roots
+	return buildSurfacedTree(db, root,
+		func(s *Span) string { return s.CheckName },
+		func(name string, span *Span, failed bool) *CheckNode {
+			return &CheckNode{Name: name, Span: span, Failed: failed}
+		},
+		func(n *CheckNode) *[]*CheckNode { return &n.Children },
+		func(n *CheckNode) (bool, string) { return n.Failed, n.Name },
+	)
 }
 
 // HasFailedChild reports whether any descendant check failed, so a failing
