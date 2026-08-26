@@ -674,7 +674,10 @@ CreateOc(i) ==
              \* final-handoff persistence bookkeeping; see PubUnregister:
              needsPersistedEdge |-> FALSE,
              pubState |-> "none", pubBy |-> 0, hold |-> FALSE, resId |-> 0,
-             inIndex |-> TRUE])
+             inIndex |-> TRUE,
+             \* results this fn's resolver acquired via inner loads
+             \* (FnInnerLoad); possession survives release marking
+             acq |-> {}])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
@@ -708,38 +711,53 @@ CreateOcLeaseFail(i) ==
 (*     back a value whose clean attachment was already established.        *)
 (*   - error: only when FnCanFail is on                                    *)
 (***************************************************************************)
+\* FnInnerLoad: the running fn's resolver loads a cached result. The serve
+\* runs the session filter and records the claim in its own critical
+\* section (trackSessionResult inside attachResult / the hit claim in
+\* lookupCacheForRequest), and the fn holds the returned value from then
+\* on (oc.acq). The claim carries the serve's contract - settled result,
+\* currently satisfied, live session; for a settled result the selection
+\* check and the post-barrier re-check coincide because the required set
+\* is frozen. Possession survives release marking: release refuses NEW
+\* claims but does not revoke values a running fn already holds, so the
+\* consumers (FnComplete's reuse, PubIndexFresh, PubAttachAddDep,
+\* AddDepLate) read acq later with no liveness guard and no edge writes,
+\* and the claim -> release-mark -> completion -> late-refusal ordering
+\* stays representable. No consumer reads recorded edges, so a hit still
+\* parked at (or denied by) the read barrier neither enables nor blocks
+\* anything.
+FnInnerLoad(o) ==
+    /\ ongoingCalls[o].fnState = "running"
+    /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
+    /\ \E r \in ResultIds :
+        /\ res[r].registered
+        /\ res[r].barrier \in {"none", "closedOk"}
+        /\ r \notin ongoingCalls[o].acq
+        /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        /\ LET s == ongoingCalls[o].sess
+               haveEdge == <<s, r>> \in sessionEdges
+           IN /\ res' = IF haveEdge THEN res
+                          ELSE [res EXCEPT ![r].own = @ + 1]
+              /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
+              /\ countedEdges' = countedEdges \cup {<<s, r>>}
+        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acq = @ \cup {r}]
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
+
 FnComplete(o) ==
     /\ ongoingCalls[o].fnState = "running"
-    /\ \/ /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
-          /\ UNCHANGED <<res, sessionEdges, countedEdges>>
+    /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
-            \* The fn's resolver ACQUIRES the reused result the way any
-            \* consumer does: an inner load runs the filtered lookup and
-            \* records the session edge and its ownership unit atomically
-            \* (trackSessionResult inside attachResult / the hit claim in
-            \* lookupCacheForRequest), so release cannot collect it out
-            \* from under the fn. The guard is the inner serve's own
-            \* contract - settled, currently satisfied, live session - and
-            \* the claim is this action's effect; no pre-existing edge is
-            \* consulted, so a hit still parked at (or denied by) the read
-            \* barrier neither enables nor blocks the reuse. For a settled
-            \* result the selection check and the post-barrier re-check
-            \* coincide: the required set is frozen.
+            \* the fn returns a result its resolver acquired (FnInnerLoad);
+            \* possession only - no claim, no liveness: release marking
+            \* does not revoke a value the fn already holds
             /\ res[r].barrier \in {"none", "closedOk"}
-            /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
-            /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
-            /\ LET s == ongoingCalls[o].sess
-                   haveEdge == <<s, r>> \in sessionEdges
-               IN /\ res' = IF haveEdge THEN res
-                              ELSE [res EXCEPT ![r].own = @ + 1]
-                  /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
-                  /\ countedEdges' = countedEdges \cup {<<s, r>>}
+            /\ r \in ongoingCalls[o].acq
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
-          /\ UNCHANGED <<res, sessionEdges, countedEdges>>
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* WaiterCancel: a waiter's own context is canceled while the fn is still  *)
@@ -931,29 +949,18 @@ PubIndexFresh(o) ==
        \* this result's own.
        \E handleChoice \in {"none"} \cup
              {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
-       \* Structural deps are results the fn's resolver ACQUIRED through
-       \* inner loads: each inner serve ran the filter and recorded the
-       \* session edge with its ownership unit (see FnComplete), so the
-       \* dep choice carries the inner serve's own contract - settled,
-       \* currently satisfied, live session - and this action records the
-       \* claim; no pre-existing edge is consulted. The structural edge
-       \* adds its own unit on top, and a dep whose session edge is new
-       \* gains the session unit too. Narrowing, stated: the code claims
-       \* deps during the fn and may publish after release marking begins;
-       \* here claim and publication collapse into one action, so a
-       \* marking-session publication with cached deps is not explored.
-       \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
+       \* Structural deps are results the fn's resolver acquired through
+       \* inner loads (FnInnerLoad): the claim and its session unit were
+       \* recorded there, so publication only adds the structural edge's
+       \* unit and consumes possession - no liveness guard, because
+       \* release marking does not revoke values the fn already holds.
+       \* A dep collected after its session's release is skipped here;
+       \* the code's attach would fail on its registration guard.
+       \E deps \in {{}} \cup {{d} : d \in {r \in ongoingCalls[o].acq :
                        /\ res[r].registered
-                       /\ res[r].barrier \in {"none", "closedOk"}
-                       /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
-                       /\ res[r].required
-                            \subseteq sessionRelease[ongoingCalls[o].sess].handles}} :
-        LET sessEdgeNew == {d \in deps :
-                              <<ongoingCalls[o].sess, d>> \notin sessionEdges}
-            withDeps == [r \in DOMAIN res |->
-                IF r \in deps
-                THEN [res[r] EXCEPT !.own = @ + 1 +
-                        (IF r \in sessEdgeNew THEN 1 ELSE 0)]
+                       /\ res[r].barrier \in {"none", "closedOk"}}} :
+        LET withDeps == [r \in DOMAIN res |->
+                IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
                 ELSE res[r]]
             newRes == [call |-> ongoingCalls[o].call, registered |-> TRUE,
                        released |-> FALSE,
@@ -986,14 +993,10 @@ PubIndexFresh(o) ==
                        lazyRunning |-> 0,        \* callbacks actually running
                        lazyTokenSession |-> 0]   \* active callback token owner
         IN /\ res' = Append(withDeps, newRes)
-           /\ sessionEdges' = sessionEdges \cup
-                {<<ongoingCalls[o].sess, d>> : d \in deps}
-           /\ countedEdges' = countedEdges \cup
-                {<<ongoingCalls[o].sess, d>> : d \in deps}
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
                                  ![o].resId = Len(res) + 1]
-    /\ UNCHANGED <<invocations, ongoingCallIndex,
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1120,31 +1123,25 @@ PubAttachAddDep(o) ==
         \* the stated no-cycle assumption (see the comment block above)
         /\ ~DepReachable(res, d, ongoingCalls[o].resId)
         \* attachment deps are the value's embedded children, which the
-        \* fn's resolver acquired through inner loads: settled, currently
-        \* satisfied, live session, with the claim recorded here
-        \* (attachResult runs trackSessionResult before the edge lands) -
-        \* the same acquisition contract and marking-narrowing as
-        \* PubIndexFresh's structural deps
-        /\ res[d].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
-        /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
+        \* fn's resolver acquired through inner loads (FnInnerLoad):
+        \* possession only - the claim and session unit landed at the
+        \* load; this edge adds the explicit-dep unit, with no liveness
+        \* guard, as in PubIndexFresh
+        /\ d \in ongoingCalls[o].acq
         /\ LET p == ongoingCalls[o].resId
-               s == ongoingCalls[o].sess
                newDeps == res[p].deps \cup {d}
-               sessEdgeNew == <<s, d>> \notin sessionEdges
            \* addExplicitDependencyLocked recomputes only the parent after
            \* adding the edge. That is sufficient: the parent is a fresh
            \* result still behind its open barrier with no depParents, so
            \* no ancestor exists to go stale, and the retention-edge path
            \* refuses requirement-carrying deps outright.
-           IN /\ res' = [res EXCEPT
-                   ![p].deps = newDeps,
-                   ![p].required = OwnHandleReq(res[p].handle)
-                                     \cup UNION {res[dd].required : dd \in newDeps},
-                   ![d].own = @ + 1 + (IF sessEdgeNew THEN 1 ELSE 0)]
-              /\ sessionEdges' = sessionEdges \cup {<<s, d>>}
-              /\ countedEdges' = countedEdges \cup {<<s, d>>}
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionRelease, evals, epoch, flushed>>
+           IN res' = [res EXCEPT
+                ![p].deps = newDeps,
+                ![p].required = OwnHandleReq(res[p].handle)
+                                  \cup UNION {res[dd].required : dd \in newDeps},
+                ![d].own = @ + 1]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
 
 PubFinishOk(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
@@ -1842,24 +1839,19 @@ AddDepLate ==
         /\ ~DepReachable(res, d, p)
         \* the entry-point guard: requirement-carrying deps are refused
         /\ res[d].required = {}
-        \* The caller acquires both results through its own session's
-        \* gated loads immediately before the call, so the guard is the
-        \* inner serves' contract - settled, currently satisfied, live
-        \* session - and the claims are recorded here, as in FnComplete.
-        \* For d, satisfaction is the empty-set guard above.
-        /\ \E s \in Sessions :
-            /\ sessionRelease[s].phase = "live"
-            /\ res[p].required \subseteq sessionRelease[s].handles
-            /\ LET newP == <<s, p>> \notin sessionEdges
-                   newD == <<s, d>> \notin sessionEdges
-               IN /\ res' = [res EXCEPT
-                       ![p].deps = @ \cup {d},
-                       ![p].own = @ + (IF newP THEN 1 ELSE 0),
-                       ![d].own = @ + 1 + (IF newD THEN 1 ELSE 0)]
-                  /\ sessionEdges' = sessionEdges \cup {<<s, p>>, <<s, d>>}
-                  /\ countedEdges' = countedEdges \cup {<<s, p>>, <<s, d>>}
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionRelease, evals, epoch, flushed>>
+        \* The caller runs inside an executing fn (module_typedefs runs
+        \* during module loading) and holds both results through its
+        \* resolver's gated loads - FnInnerLoad claims; this action only
+        \* consumes the possession and adds the explicit-dep unit, with
+        \* no liveness guard. For d, satisfaction is the empty-set guard
+        \* above.
+        /\ \E o \in OngoingCallIds :
+            /\ ongoingCalls[o].fnState = "running"
+            /\ {p, d} \subseteq ongoingCalls[o].acq
+        /\ res' = [res EXCEPT ![p].deps = @ \cup {d},
+                              ![d].own = @ + 1]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
@@ -2407,7 +2399,7 @@ Next ==
          \/ DecodeLeadCancel(i) \/ DecodeJoinCancel(i)
          \/ InvocationOperationExit(i)
     \/ \E o \in OngoingCallIds :
-         \/ FnComplete(o) \/ PubBegin(o)
+         \/ FnInnerLoad(o) \/ FnComplete(o) \/ PubBegin(o)
          \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
          \/ PubAttachAddDep(o) \/ PubFinishOk(o)
          \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
@@ -2555,11 +2547,14 @@ LiveSpec ==
 (* (selectLookupCandidateForSessionLocked). HELD-RESULT guards pair        *)
 (* ownership with current satisfaction: FnComplete's reuse,                *)
 (* PubIndexFresh's structural deps, PubAttachAddDep's attachment deps,     *)
-(* and AddDepLate's acquisitions. Held-result choices never consult        *)
+(* and AddDepLate's possession. Held-result choices never consult          *)
 (* recorded edges (a counted edge can be pending or denied, so it is not   *)
-(* possession); each models the fn's or caller's own inner load - the      *)
-(* result is settled, currently satisfied, the session live - and records  *)
-(* the claim exactly as the code's serve does.                             *)
+(* possession); they consume oc.acq, the values the fn's inner loads       *)
+(* returned. FnInnerLoad records each claim exactly as the code's serve    *)
+(* does - settled result, currently satisfied, live session - and          *)
+(* consumption needs no liveness: release marking refuses new claims but   *)
+(* does not revoke values a running fn already holds, so claim ->          *)
+(* release-mark -> completion -> late refusal stays representable.         *)
 (* CanonicalPick's returned-result fallback stays ownership-only: the      *)
 (* publisher possesses what it just produced.                              *)
 (* A gated ID load needs no action of its own: refusal returns nothing     *)
@@ -2600,6 +2595,7 @@ TypeOK ==
          /\ sessionRelease[s].phase = "released"
               => sessionRelease[s].snap = {}
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
+    /\ \A o \in OngoingCallIds : ongoingCalls[o].acq \subseteq 1..Len(res)
     /\ \A r \in ResultIds :
          /\ res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
          /\ res[r].imported \in BOOLEAN
