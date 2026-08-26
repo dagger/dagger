@@ -345,6 +345,9 @@ type UpID string
 type Void string
 
 // A unique identifier for an object.
+type VolumeID string
+
+// A unique identifier for an object.
 type WorkspaceID string
 
 // Key value object that represents a build argument.
@@ -878,6 +881,15 @@ func (r *Binding) AsUpGroup() *UpGroup {
 	q := r.query.Select("asUpGroup")
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Volume
+func (r *Binding) AsVolume() *Volume {
+	q := r.query.Select("asVolume")
+
+	return &Volume{
 		query: q,
 	}
 }
@@ -3397,6 +3409,36 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 		}
 	}
 	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// ContainerWithMountedVolumeOpts contains options for Container.WithMountedVolume
+type ContainerWithMountedVolumeOpts struct {
+	// Mount the volume read-only.
+	ReadOnly bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
+}
+
+// Retrieves this container plus a volume mounted at the given path.
+func (r *Container) WithMountedVolume(path string, volume *Volume, opts ...ContainerWithMountedVolumeOpts) *Container {
+	assertNotNil("volume", volume)
+	q := r.query.Select("withMountedVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("volume", volume)
 
 	return &Container{
 		query: q,
@@ -6403,6 +6445,30 @@ func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
 // Declare a desired Up output to be assigned in the environment
 func (r *Env) WithUpOutput(name string, description string) *Env {
 	q := r.query.Select("withUpOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Volume in the environment
+func (r *Env) WithVolumeInput(name string, value *Volume, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withVolumeInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Volume output to be assigned in the environment
+func (r *Env) WithVolumeOutput(name string, description string) *Env {
+	q := r.query.Select("withVolumeOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -13378,6 +13444,16 @@ func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
 	}
 }
 
+// Load a Volume from its ID.
+func (r *Query) LoadVolumeFromID(id VolumeID) *Volume {
+	q := r.query.Select("loadVolumeFromID")
+	q = q.Arg("id", id)
+
+	return &Volume{
+		query: q,
+	}
+}
+
 // Load a Workspace from its ID.
 func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
@@ -15599,6 +15675,76 @@ func (r *UpGroup) Run() *UpGroup {
 // AsNode returns this UpGroup as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *UpGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A filesystem volume that can be mounted into containers.
+type Volume struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
+	return &Volume{
+		query: q,
+	}
+}
+
+// A unique identifier for this Volume.
+func (r *Volume) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Volume) XXX_GraphQLType() string {
+	return "Volume"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Volume) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Volume) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Volume) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Volume) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = Volume{query: selectNode(dag.query, id, "Volume")}
+	return nil
+}
+
+// AsNode returns this Volume as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Volume) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
