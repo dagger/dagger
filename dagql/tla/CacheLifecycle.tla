@@ -1250,6 +1250,9 @@ DepReachable(rf, start, target) ==
 
 PubAttachAddDep(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
+    \* no dependency edge lands after a claim error: the hook returned
+    /\ ~ongoingCalls[o].attachRefused
+    /\ ~ongoingCalls[o].attachGone
     /\ \E d \in ResultIds :
         /\ res[d].registered
         \* the dep's own attachment is settled, as in PubIndexFresh: the
@@ -1298,13 +1301,18 @@ PubFinishOk(o) ==
 \* publication - after the fn completed, so fn-time acq cannot cover it.
 \* Three steps, as in the code: the hook SELECTS the child it will
 \* attach (no lock), then the claim (trackSessionResult) either records
-\* the edge or, if release marked the session in between, refuses - and
-\* only a refused attempt enables the deterministic attachment failure.
-\* This path runs inside the outer operation (no nested op.finish).
+\* the edge, refuses on the session tombstone if release marked in
+\* between, or errors on the registration guard if the child was
+\* collected - and only an actual failed attempt (refused or gone)
+\* enables the deterministic attachment failure. This path runs inside
+\* the outer operation (no nested op.finish).
 PubAttachTarget(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ ongoingCalls[o].attachTarget = 0
+    \* the hook returns on its first claim error: no further child is
+    \* selected once either error latched
     /\ ~ongoingCalls[o].attachRefused
+    /\ ~ongoingCalls[o].attachGone
     /\ \E r \in ResultIds :
         /\ res[r].registered
         /\ res[r].barrier \in {"none", "closedOk"}
@@ -1341,6 +1349,10 @@ PubAttachClaimOk(o) ==
 PubAttachClaimGone(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ ongoingCalls[o].attachTarget # 0
+    \* the claim checks the session tombstone FIRST, then registration,
+    \* in one critical section: a released session gets the release
+    \* refusal (PubAttachClaimRefused), never this error
+    /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
     /\ ~res[ongoingCalls[o].attachTarget].registered
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].attachTarget = 0,
                                             ![o].attachGone = TRUE]
@@ -1360,8 +1372,9 @@ PubAttachClaimRefused(o) ==
                    sessionRelease, evals, epoch, flushed>>
 
 PubAttachFailDropHold(o) ==
-    \* an injected attachment failure, or the deterministic one: an
-    \* attachment-time claim attempt was refused by release marking
+    \* an injected attachment failure, or a deterministic one: an
+    \* attachment-time claim attempt was refused by release marking or
+    \* hit the registration guard on a collected target
     /\ \/ AttachCanFail
        \/ ongoingCalls[o].attachRefused
        \/ ongoingCalls[o].attachGone
@@ -2792,8 +2805,9 @@ LiveSpec ==
 (* serve does - settled result, currently satisfied, live session, the     *)
 (* nested operation counted - and FnInnerLoadDeliver hands it over only    *)
 (* on a live operation exit (a marked exit refuses: FnInnerLoadRefused).   *)
-(* PubAttachTarget/ClaimOk/ClaimRefused do the same for attachment-time    *)
-(* children. Consumption needs no liveness: release marking refuses new    *)
+(* PubAttachTarget/ClaimOk/ClaimRefused/ClaimGone do the same for          *)
+(* attachment-time children (ClaimGone is the registration-guard error on  *)
+(* a collected target). Consumption needs no liveness: marking refuses new *)
 (* claims and undelivered exits but does not revoke delivered values, so   *)
 (* claim -> release-mark -> refusal and deliver -> mark -> completion ->   *)
 (* late refusal are both representable.                                    *)
