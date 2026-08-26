@@ -354,16 +354,16 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Check",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check the docs website build").
-							WithSourceMap(dag.SourceMap("main.go", 140, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 156, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Deploy",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Deploys a current build of the docs.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 214, 1)).
-							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 216, 2)}).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 217, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 230, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 232, 2)}).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 233, 2)})).
 					WithFunction(
 						dag.Function("GenerateVersion",
 							dag.TypeDef().WithObject("Changeset")).
@@ -377,23 +377,23 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish a previous deployment to production - defaults to the latest deployment on the main branch.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 243, 1)).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 245, 2)}).
-							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 247, 2)}).
-							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 249, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 259, 1)).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 261, 2)}).
+							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 263, 2)}).
+							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 265, 2)})).
 					WithFunction(
 						dag.Function("References",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate the API schema and CLI reference docs").
-							WithSourceMap(dag.SourceMap("main.go", 159, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 175, 1)).
 							WithGenerator().
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 162, 2)}).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping (References is the\nonly docs-dev method that builds). Auto-injected on a direct call;\ndependencies don't inherit it.", SourceMap: dag.SourceMap("main.go", 168, 2)})).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 178, 2)}).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping (References is the\nonly docs-dev method that builds). Auto-injected on a direct call;\ndependencies don't inherit it.", SourceMap: dag.SourceMap("main.go", 184, 2)})).
 					WithFunction(
 						dag.Function("Server",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Build the docs server").
-							WithSourceMap(dag.SourceMap("main.go", 146, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 162, 1))).
 					WithFunction(
 						dag.Function("Site",
 							dag.TypeDef().WithObject("Directory")).

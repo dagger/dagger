@@ -708,7 +708,11 @@ func (s *workspaceSchema) withUpdatedLock(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := core.UpdateWorkspaceLock(operationCtx, query, lock); err != nil {
+	// The update loop writes refreshed values itself. Keep the lock visible to
+	// credential discovery, but make nested resolver calls ignore stale pins
+	// and avoid writing entries of their own.
+	updateCtx := withWorkspaceLookupLockRefresh(operationCtx)
+	if err := core.UpdateWorkspaceLock(updateCtx, query, lock); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update workspace lock: %w", err)
 	}
 

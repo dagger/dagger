@@ -1247,20 +1247,17 @@ type Myapp {
 
 	t.Run("apply moves legacy lockfile while staging migrated pins", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		platform, err := c.DefaultPlatform(ctx)
-		require.NoError(t, err)
 
 		source := "github.com/dagger/dagger/modules/wolfi@main"
 		pin := strings.Repeat("1", 40)
 		legacyLock := workspace.NewLock()
-		require.NoError(t, legacyLock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest", string(platform)}, workspace.LookupResult{
-			Value:  "sha256:" + strings.Repeat("0", 64),
-			Policy: workspace.PolicyPin,
-		}))
-		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, workspace.LookupResult{
-			Value:  pin,
-			Policy: workspace.PolicyFloat,
-		}))
+		require.NoError(t, legacyLock.SetLookup(
+			"",
+			"oci-sha",
+			[]any{"docker.io/library/alpine:latest"},
+			"sha256:"+strings.Repeat("0", 64),
+		))
+		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, pin))
 		existingLockBytes, err := legacyLock.Marshal()
 		require.NoError(t, err)
 
@@ -1279,7 +1276,7 @@ type Myapp {
 
 		lockOut, err := migrated.File("/work/dagger.lock").Contents(ctx)
 		require.NoError(t, err)
-		assertContainerFromLockEntry(t, []byte(lockOut))
+		assertOCISHALockEntry(t, []byte(lockOut))
 		assertNoModuleResolveLockEntry(t, []byte(lockOut))
 		_, err = migrated.WithExec([]string{"test", "!", "-e", ".dagger/lock"}).Sync(ctx)
 		require.NoError(t, err)

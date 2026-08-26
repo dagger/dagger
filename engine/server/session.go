@@ -2221,7 +2221,7 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 	namespace string,
 	operation string,
 	inputs []any,
-	result workspace.LookupResult,
+	value string,
 ) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
@@ -2244,10 +2244,10 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 	if err != nil {
 		return err
 	}
-	if err := state.lock.SetLookup(namespace, operation, inputs, result); err != nil {
+	if err := state.lock.SetLookup(namespace, operation, inputs, value); err != nil {
 		return err
 	}
-	if err := state.delta.SetLookup(namespace, operation, inputs, result); err != nil {
+	if err := state.delta.SetLookup(namespace, operation, inputs, value); err != nil {
 		return err
 	}
 	state.dirty = true

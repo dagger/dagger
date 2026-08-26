@@ -1764,6 +1764,10 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
+	// Updating a module dependency is an explicit request to resolve it live.
+	// Do not let the consuming workspace's lock replay the old resolution or
+	// record this module-authoring operation back into that workspace's lock.
+	updateCtx := withoutWorkspaceLookupLock(ctx)
 
 	type updateReq struct {
 		symbolic string
@@ -1784,11 +1788,11 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 			}
 
 			var updatedItem dagql.ObjectResult[*core.ModuleSource]
-			err := dag.Select(ctx, dag.Root(), &updatedItem,
+			err := dag.Select(updateCtx, dag.Root(), &updatedItem,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(existingItem.Self().AsString())},
+						{Name: "refString", Value: dagql.String(moduleSourceDeclaredRef(existingItem.Self()))},
 					},
 				},
 			)
@@ -1835,7 +1839,6 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		}
 
 		existingName := existingItem.Self().ModuleName
-		existingVersion := existingItem.Self().Git.Version
 		existingSymbolic := existingItem.Self().Git.CloneRef
 		if itemSrcRoot := existingItem.Self().SourceRootSubpath; itemSrcRoot != "" {
 			existingSymbolic += "/" + strings.TrimPrefix(itemSrcRoot, "/")
@@ -1855,17 +1858,13 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 			matched = true
 			delete(updateReqs, updateReq)
 
-			updateVersion := updateReq.version
-			if updateVersion == "" {
-				updateVersion = existingVersion
-			}
-			updateRef := existingSymbolic
-			if updateVersion != "" {
-				updateRef += "@" + updateVersion
+			updateRef := moduleSourceDeclaredRef(existingItem.Self())
+			if updateReq.version != "" {
+				updateRef = replaceModuleRefVersion(updateRef, updateReq.version)
 			}
 
 			var updatedItem dagql.ObjectResult[*core.ModuleSource]
-			err := dag.Select(ctx, dag.Root(), &updatedItem,
+			err := dag.Select(updateCtx, dag.Root(), &updatedItem,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
@@ -2063,7 +2062,7 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 			}
 			depCfg.Source = rel
 		case core.ModuleSourceKindGit:
-			depCfg.Source = relatedSrc.AsString()
+			depCfg.Source = moduleSourceDeclaredRef(relatedSrc)
 			depCfg.Pin = relatedSrc.Git.Commit
 		default:
 			return nil, fmt.Errorf("unhandled module source kind: %s", relatedSrc.Kind.HumanString())
@@ -2082,7 +2081,7 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 				}
 				depCfg.Source = rel
 			} else {
-				depCfg.Source = relatedSrc.AsString()
+				depCfg.Source = moduleSourceDeclaredRef(relatedSrc)
 				depCfg.Pin = relatedSrc.Git.Commit
 			}
 		default:
@@ -2099,7 +2098,7 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 			}
 			depCfg.Source = rel
 		case core.ModuleSourceKindGit:
-			depCfg.Source = relatedSrc.AsString()
+			depCfg.Source = moduleSourceDeclaredRef(relatedSrc)
 			depCfg.Pin = relatedSrc.Git.Commit
 		default:
 			return nil, fmt.Errorf(
@@ -2113,6 +2112,13 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 	}
 
 	return depCfg, nil
+}
+
+func moduleSourceDeclaredRef(src *core.ModuleSource) string {
+	if src.OriginalRefString != "" {
+		return src.OriginalRefString
+	}
+	return src.AsString()
 }
 
 func replaceModuleRefVersion(refString, version string) string {

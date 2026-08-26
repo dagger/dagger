@@ -253,7 +253,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 		"v0.6.1^{}",
 	})
 	// latest tag
-	latestTag := repo.LatestVersion()
+	latestTag := repo.Latest()
 	requireSampleGitRootDir(ctx, t, c, latestTag.Tree())
 	requireGitRefIsTag(ctx, t, c, `^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`, "", latestTag)
 	// sample tag
@@ -1274,7 +1274,7 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	require.Equal(t, hostname(c1), hostname(c2))
 }
 
-func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
+func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := c.Container().
 		From(alpineImage).
@@ -1282,19 +1282,48 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 		With(gitUserConfig).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "init"}).
-		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v2.0 && touch abc && git add abc && git commit -m "abc" && git tag v1.0`})
-	v2commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag 2.0 && touch abc && git add abc && git commit -m "abc" && git tag v1.0`})
+	latestCommit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
 	require.NoError(t, err)
-	v2commit = strings.TrimSpace(v2commit)
+	latestCommit = strings.TrimSpace(latestCommit)
 
 	git := ctr.Directory(".").AsGit()
 
-	ref, err := git.LatestVersion().Name(ctx)
+	latest := git.Latest()
+	ref, err := latest.Name(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "refs/tags/v2.0", ref)
-	commit, err := git.LatestVersion().CommitSHA(ctx)
+	require.Equal(t, "refs/tags/2.0", ref)
+	commit, err := latest.CommitSHA(ctx)
 	require.NoError(t, err)
-	require.Equal(t, v2commit, commit)
+	require.Equal(t, latestCommit, commit)
+}
+
+func (GitSuite) TestGitLatestFallsBackToHead(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `touch file && git add file && git commit -m "initial"`})
+
+	headRef, err := ctr.WithExec([]string{"git", "symbolic-ref", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	headRef = strings.TrimSpace(headRef)
+
+	headCommit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	headCommit = strings.TrimSpace(headCommit)
+
+	latest := ctr.Directory(".").AsGit().Latest()
+	ref, err := latest.Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, headRef, ref)
+
+	commit, err := latest.CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, headCommit, commit)
 }
 
 func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {

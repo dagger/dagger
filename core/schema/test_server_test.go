@@ -169,6 +169,6 @@ func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) 
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 
-func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspace.LookupResult) error {
+func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
 	return nil
 }
