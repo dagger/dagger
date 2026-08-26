@@ -184,6 +184,90 @@ func TestPlanMigrationModuleRepoSkipsSDKInstall(t *testing.T) {
 	require.Contains(t, configData, "[modules.tools]")
 }
 
+// TestPlanMigrationRecordsToolchainsAsModuleDependencies covers the 0.21
+// semantics where a module's toolchains were also loaded into its own API:
+// module code could call them like dependencies (e.g. dag.Go). Migration must
+// therefore install the toolchains into dagger.toml AND record them as
+// dependencies of the migrated dagger-module.toml, or that code stops
+// compiling after `dagger setup`.
+func TestPlanMigrationRecordsToolchainsAsModuleDependencies(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": ".dagger",
+  "dependencies": [
+    {"name": "lib", "source": "./libs/lib"},
+    {"name": "shared", "source": "github.com/acme/shared@main", "pin": "aaaaaaa"}
+  ],
+  "toolchains": [
+    {"name": "go", "source": "github.com/acme/go@main", "pin": "1111111",
+     "customizations": [{"argument": "version", "default": "1.22"}],
+     "ignoreChecks": ["lint"]},
+    {"name": "local-tc", "source": "./toolchain"},
+    {"name": "shared", "source": "github.com/acme/shared@main", "pin": "bbbbbbb"}
+  ]
+}`)
+
+	require.Equal(t, ModuleConfigFileName, plan.MigratedModuleConfigPath)
+	cfg, err := modules.ParseModuleConfigForFilename(plan.MigratedModuleConfigData, ModuleConfigFileName)
+	require.NoError(t, err)
+	require.Empty(t, cfg.Toolchains, "toolchains never survive as a module config field")
+
+	byName := map[string]*modules.ModuleConfigDependency{}
+	for _, dep := range cfg.Dependencies {
+		byName[dep.Name] = dep
+	}
+	require.Len(t, cfg.Dependencies, 4, "explicit deps plus each toolchain, deduplicated by name")
+
+	require.Equal(t, "./libs/lib", byName["lib"].Source)
+
+	goDep := byName["go"]
+	require.NotNil(t, goDep, "a toolchain becomes a dependency of the migrated module")
+	require.Equal(t, "github.com/acme/go@main", goDep.Source)
+	require.Equal(t, "1111111", goDep.Pin, "the toolchain pin is preserved on the dependency")
+	require.Empty(t, goDep.Customizations, "toolchain customizations belong to the dagger.toml install")
+	require.Empty(t, goDep.IgnoreChecks)
+
+	localTC := byName["local-tc"]
+	require.NotNil(t, localTC)
+	require.Equal(t, "./toolchain", localTC.Source,
+		"the module config does not move, so a local toolchain ref is preserved as-is")
+
+	shared := byName["shared"]
+	require.NotNil(t, shared)
+	require.Equal(t, "aaaaaaa", shared.Pin,
+		"an explicit dependency wins over a same-named toolchain")
+
+	// The toolchains are still installed into the workspace with their
+	// workspace-only settings.
+	wsCfg, err := ParseConfig(plan.WorkspaceConfigData)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/go@1111111", wsCfg.Modules["go"].Source)
+	require.Equal(t, []string{"lint"}, wsCfg.Modules["go"].Check.Skip)
+	require.Contains(t, wsCfg.Modules, "local-tc")
+	require.Contains(t, wsCfg.Modules, "shared")
+}
+
+// TestPlanMigrationToolchainsWithoutSDKWriteNoModuleConfig verifies that a
+// toolchains-only dagger.json (no sdk, so no module code that could have
+// called them) still produces no dagger-module.toml.
+func TestPlanMigrationToolchainsWithoutSDKWriteNoModuleConfig(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "go", "source": "github.com/acme/go@main", "pin": "1111111"}
+  ]
+}`)
+
+	require.Empty(t, plan.MigratedModuleConfigPath)
+	require.Empty(t, plan.MigratedModuleConfigData)
+	require.Contains(t, string(plan.WorkspaceConfigData), "[modules.go]")
+}
+
 func TestPlanMigrationRejectsAbsoluteMainModuleSource(t *testing.T) {
 	t.Parallel()
 
