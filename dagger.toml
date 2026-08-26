@@ -219,7 +219,7 @@ path = ".dagger/modules/release/registry-config"
 path = ".dagger/modules/rust-client-dev"
 
 # Dev-only: the TLA+ cache-model checks are expensive (the full run takes
-# ~50-60 minutes) and deliberately do not run in CI; use
+# well over an hour) and deliberately do not run in CI; use
 # `dagger --env dev check tla-check:quick` while iterating and the full
 # `dagger --env dev check tla-check:cache-lifecycle` before pushing
 # changes under dagql/tla.
