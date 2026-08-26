@@ -109,7 +109,7 @@ const config: Config = {
           versions: {
             // Keep the old-version banner suppressed; path/label are derived
             // (non-default versions are served at /<version>/).
-            "0.21.4": {
+            "0.21": {
               banner: "none",
               badge: false,
             },

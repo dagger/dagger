@@ -8,10 +8,10 @@ description: "Run Go tests, lint, and generators across a workspace."
 
 The Go module gives a Go workspace one shared way to test, lint, and run
 `go generate`. It scans the workspace for `go.mod` files, treats each one as a Go
-module, and exposes workspace-level functions that run across all of them — a
-good fit for monorepos, service repos, and libraries with generated code,
-especially when several modules should share one Go version and the same CI
-checks.
+module, and exposes workspace-level functions that run across all of them. That
+makes it a good fit for monorepos, service repos, and libraries with generated
+code, especially when several modules should share one Go version and the same
+CI checks.
 
 Official module: [dagger/go](https://github.com/dagger/go)
 
@@ -37,8 +37,9 @@ module's `.golangci.*` config.
 
 ## Generate code
 
-Run the generator when generated Go files are part of normal development — mocks,
-embedded assets, protobuf output, or anything produced by `go generate`:
+Run the generator when generated Go files are part of normal development, such
+as mocks, embedded assets, protobuf output, or anything produced by
+`go generate`:
 
 ```bash
 dagger generate go:generate-all
@@ -53,17 +54,17 @@ List the current settings with `dagger settings go`, then change one with
 `dagger settings go <key> <value>`. They live in `dagger.toml` under
 `[modules.go.settings]`:
 
-- **`version`** (default `1.26`): the Go toolchain version used to build the test
+- `version` (default `1.26`) is the Go toolchain version used to build the test
   and generate containers (`golang:<version>-alpine`). Set this so every module
   is tested and generated against the same Go version. Lint uses a pinned
   `golangci-lint` image and is unaffected.
-- **`includeExtraFiles`** (default empty): extra workspace-root path patterns
+- `includeExtraFiles` (default empty) are extra workspace-root path patterns
   mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`,
   and `testdata/` directories are already included automatically; use this for
   inputs those patterns miss, such as embedded non-Go assets, generator inputs,
   or fixtures kept outside `testdata/`.
-- **`lint`**, **`test`**, and **`generate`** (each defaults to `["**"]`):
-  module-root selector arrays for `lint-all`, `test-all`, and `generate-all`.
+- `lint`, `test`, and `generate` (each defaults to `["**"]`) are module-root
+  selector arrays for `lint-all`, `test-all`, and `generate-all`.
   A bare pattern includes modules, a `!`-prefixed pattern excludes them, and
   exclusions always win. `"**"` and `"*"` match every module; `"path"` and
   `"path/**"` match the module at `path` and any modules below it. With no

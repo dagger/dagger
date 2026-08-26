@@ -1,0 +1,95 @@
+---
+title: "Migrate from dagger.json"
+slug: /config/migrate-dagger-json
+description: "Convert a legacy dagger.json project to a workspace"
+---
+
+# Migrate from dagger.json
+
+:::note
+If you're new to Dagger, you can skip this page. It's for existing users encountering changes.
+:::
+
+A workspace separates two things that a legacy `dagger.json` used to hold at once:
+
+- A module, described by `dagger-module.toml`, is a package of code.
+- A workspace, described by `dagger.toml`, is your project's Dagger configuration: which modules to use, and how they're configured.
+
+## Run the migration
+
+You don't have to migrate right away. Dagger infers a workspace from an existing `dagger.json` and warns you, so your project keeps working. When you're ready:
+
+```shell
+dagger setup
+```
+
+`dagger setup` prompts before each step. Its migration step writes workspace fields into `dagger.toml` and converts module-shaped `dagger.json` files to `dagger-module.toml` in place. It never moves module files, and it touches only the root `dagger.json` plus the local dependencies and toolchains that file references. If anything needs manual attention, it writes `.dagger/migration-report.md`.
+
+A few behaviors worth knowing:
+
+- If your repo *is* a module, meaning the root `dagger.json` describes a module whose source lives at the repo root, migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module isn't installed into the workspace, so load it explicitly: `dagger -m . call --help`.
+- Run from a module subdirectory, migration converts just that module and creates no workspace. `dagger.json` becomes `dagger-module.toml` in place, along with any local dependencies it references. Module recommendations are skipped.
+- Migration never creates nested `dagger.toml` files. It installs toolchains listed in a subdirectory `dagger.json` into the workspace at the repository root and rebases their local source paths. It leaves a subdirectory `dagger.json` with a `blueprint` as legacy, with a warning.
+- When a `dagger.json` has both an `sdk` and `toolchains`, the toolchains are installed into `dagger.toml` **and** recorded as dependencies in the migrated `dagger-module.toml`. In 0.21 a module could call its toolchains from code the same way as dependencies (for example `dag.Go()`), so this keeps that code working. Remove any dependency the module code does not use.
+- Modules now commit their generated code (`dagger.gen.go` and friends) instead of regenerating it at runtime. Migration removes the `.gitignore` rules that used to exclude it. Afterwards, run `dagger generate` and commit the output.
+- Applying a migration ends the setup run. Run `dagger setup` again for module recommendations.
+
+## Where your configuration lands
+
+**Toolchains are modules.** Install one with `dagger install github.com/foo/bar` and `dagger.toml` records it. Same functionality, one concept instead of two.
+
+**Blueprints are an entrypoint flag.** A workspace module marked `entrypoint = true` plays the role a blueprint used to.
+
+**Customizations are settings.** The deprecated `customizations` array becomes `[modules.*.settings]`:
+
+```toml
+[modules.go]
+source = "github.com/dagger/go"
+
+[modules.go.settings]
+goVersion = "1.22"
+```
+
+**Modules are managed from the top level.** `dagger search` finds them; `dagger install` and `dagger uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml`. Edit that file directly when authoring a module or adding code dependencies.
+
+## Workspace arguments in generated Go bindings
+
+A `*dagger.Workspace` argument that isn't marked `// +optional` used to be published as optional in the module's API, because Dagger fills it in automatically. It is now published as required, matching the declaration. Nothing changes when you call such a function from the CLI, a check, or a generator — Dagger still supplies the current workspace.
+
+What does change is calling that function **from another module's Go code**. The Go SDK puts required arguments in the function signature and optional ones in an `Opts` struct, so after `dagger generate` the workspace moves out of the options struct and into the argument list. Code that used to pass it through `Opts` (or not at all) fails to compile with errors like:
+
+```
+unknown field Workspace in struct literal of type dagger.FooOpts
+cannot use dagger.FooOpts{…} (value of struct type dagger.FooOpts) as *dagger.Workspace value in argument to dag.Foo
+not enough arguments in call to dag.Foo
+```
+
+To fix it, pass the workspace positionally. Take a `*dagger.Workspace` in your own constructor and hand it to the dependency:
+
+```go
+func New(ws *dagger.Workspace) *MyModule {
+	return &MyModule{Workspace: ws}
+}
+
+func (m *MyModule) Build(ctx context.Context) (string, error) {
+	// Before: dag.Foo(dagger.FooOpts{Workspace: m.Workspace})
+	// or:     dag.Foo()
+	return dag.Foo(m.Workspace).Build(ctx)
+}
+```
+
+If `Foo` has other optional arguments, they stay in the options struct: `dag.Foo(m.Workspace, dagger.FooOpts{...})`.
+
+This only surfaces at compile time what was already true at runtime: a workspace is never inherited across a module-to-module call, so a dependency that needs one has to be given it explicitly.
+
+## Quick reference
+
+| Before | Now |
+|---|---|
+| `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
+| `dagger toolchain install <module>` | `dagger install <module>` |
+| `dagger install <dep>` (module code dependency) | Add the dependency to `[[dependencies]]` in `dagger-module.toml` |
+| `toolchains` array in `dagger.json` | `[modules.*]` in `dagger.toml` |
+| `blueprint` in `dagger.json` | `entrypoint = true` in `dagger.toml` |
+| `customizations` in `dagger.json` | `[modules.*.settings]` in `dagger.toml` |
+| `.env` for constructor defaults | `[modules.*.settings]` in `dagger.toml` |

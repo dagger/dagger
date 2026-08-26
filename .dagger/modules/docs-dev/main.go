@@ -48,38 +48,34 @@ func (d DocsDev) Site() *dagger.Directory {
 	return dag.Docusaurus(d.Source, opts).Build()
 }
 
-// Generate a docs version from a Git ref. Numbered prereleases are collapsed
-// into rolling channels and zero patch components are omitted by default.
+// Generate a docs version from a Git ref. Numbered prereleases and patch
+// components are collapsed into rolling channels by default.
 func (d DocsDev) GenerateVersion(
 	ctx context.Context,
 	// Git ref whose docs will populate the version, e.g.
 	// https://github.com/dagger/dagger#v1.0.0-beta.10.
 	source *dagger.GitRef,
+	// Exact destination docs version. Allows a branch or commit source and
+	// replaces an existing version; collapse options are ignored when set.
+	// +optional
+	as string,
 	// Collapse a trailing numeric prerelease identifier, e.g.
 	// 1.0.0-beta.10 to 1.0.0-beta.
 	// +optional
 	// +default=true
 	collapsePreReleases bool,
-	// Omit a zero patch component, e.g. 1.0.0-beta to 1.0-beta.
+	// Collapse the patch component, e.g. 0.21.8 to 0.21.
 	// +optional
 	// +default=true
-	omitZeroPatch bool,
+	collapsePatch bool,
 ) (*dagger.Changeset, error) {
 	ref, err := source.Ref(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get source ref name: %w", err)
 	}
-	sourceVersion, err := releaseversion.Parse(ref)
+	version, rolling, err := releaseversion.Resolve(ref, as, collapsePreReleases, collapsePatch)
 	if err != nil {
 		return nil, err
-	}
-	version := sourceVersion
-	rolling := false
-	if collapsePreReleases {
-		version, rolling = releaseversion.CollapsePrerelease(version)
-	}
-	if omitZeroPatch {
-		version = releaseversion.OmitZeroPatch(version)
 	}
 
 	versionDir := "docs/versioned_docs/version-" + version
@@ -148,6 +144,65 @@ func (d DocsDev) GenerateVersion(
 		}
 		result = result.WithNewFile("docs/versions.json", string(contentsJSON)+"\n")
 	}
+	return result.Changes(d.Source), nil
+}
+
+// Rename an existing docs version without changing its contents.
+func (d DocsDev) RenameVersion(
+	ctx context.Context,
+	// Existing docs version.
+	from string,
+	// New docs version.
+	to string,
+) (*dagger.Changeset, error) {
+	contents, err := d.Source.File("docs/versions.json").Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read docs versions: %w", err)
+	}
+	var versions []string
+	if err := json.Unmarshal([]byte(contents), &versions); err != nil {
+		return nil, fmt.Errorf("parse docs versions: %w", err)
+	}
+	versions, err = releaseversion.Rename(versions, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	fromDir := "docs/versioned_docs/version-" + from
+	toDir := "docs/versioned_docs/version-" + to
+	fromSidebar := "docs/versioned_sidebars/version-" + from + "-sidebars.json"
+	toSidebar := "docs/versioned_sidebars/version-" + to + "-sidebars.json"
+	for _, artifact := range []struct {
+		path   string
+		exists bool
+	}{
+		{path: fromDir, exists: true},
+		{path: fromSidebar, exists: true},
+		{path: toDir, exists: false},
+		{path: toSidebar, exists: false},
+	} {
+		exists, err := d.Source.Exists(ctx, artifact.path)
+		if err != nil {
+			return nil, fmt.Errorf("check docs version artifact %q: %w", artifact.path, err)
+		}
+		if exists != artifact.exists {
+			if artifact.exists {
+				return nil, fmt.Errorf("docs version artifact %q does not exist", artifact.path)
+			}
+			return nil, fmt.Errorf("docs version artifact %q already exists", artifact.path)
+		}
+	}
+
+	contentsJSON, err := json.MarshalIndent(versions, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal docs versions: %w", err)
+	}
+	result := d.Source.
+		WithDirectory(toDir, d.Source.Directory(fromDir)).
+		WithFile(toSidebar, d.Source.File(fromSidebar)).
+		WithoutDirectory(fromDir).
+		WithoutFile(fromSidebar).
+		WithNewFile("docs/versions.json", string(contentsJSON)+"\n")
 	return result.Changes(d.Source), nil
 }
 

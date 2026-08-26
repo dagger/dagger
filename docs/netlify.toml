@@ -2337,20 +2337,20 @@
 ## 0.21 stable docs, so old links keep resolving instead of 404ing.
 ##
 ## To retarget (e.g. when 0.21 is retired, or a newer stable snapshot exists),
-## change /0.21.4/ in BOTH rules below. To drop the fallback entirely, delete
+## change /0.21/ in BOTH rules below. To drop the fallback entirely, delete
 ## this block -- old 0.21 URLs then 404.
 ##
-## The first rule is a loop guard: a /0.21.4/* path that itself 404s must not
-## fall through to the catch-all and get another /0.21.4/ prefix.
+## The first rule is a loop guard: a /0.21/* path that itself 404s must not
+## fall through to the catch-all and get another /0.21/ prefix.
 
 [[redirects]]
-  from = "/0.21.4/*"
+  from = "/0.21/*"
   to = "/404.html"
   status = 404
 
 [[redirects]]
   from = "/*"
-  to = "/0.21.4/:splat"
+  to = "/0.21/:splat"
   status = 301
 ## end: 1.0 fallback ##
 

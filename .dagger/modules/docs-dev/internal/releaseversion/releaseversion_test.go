@@ -77,6 +77,86 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestResolve(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		ref                 string
+		as                  string
+		collapsePrereleases bool
+		collapsePatch       bool
+		version             string
+		rolling             bool
+		wantErr             string
+	}{
+		{
+			name:          "stable tag defaults to minor channel",
+			ref:           "refs/tags/v0.21.9",
+			collapsePatch: true,
+			version:       "0.21",
+			rolling:       true,
+		},
+		{
+			name:                "prerelease tag defaults to prerelease minor channel",
+			ref:                 "refs/tags/v1.0.0-beta.42",
+			collapsePrereleases: true,
+			collapsePatch:       true,
+			version:             "1.0-beta",
+			rolling:             true,
+		},
+		{
+			name:                "explicit branch destination is exact and rolling",
+			ref:                 "refs/heads/main",
+			as:                  "1.0-beta",
+			collapsePrereleases: true,
+			collapsePatch:       true,
+			version:             "1.0-beta",
+			rolling:             true,
+		},
+		{
+			name:                "explicit tag destination ignores collapsing",
+			ref:                 "refs/tags/v0.21.9",
+			as:                  "0.21.9",
+			collapsePrereleases: true,
+			collapsePatch:       true,
+			version:             "0.21.9",
+			rolling:             true,
+		},
+		{
+			name:    "branch requires explicit destination",
+			ref:     "refs/heads/main",
+			wantErr: `source ref "refs/heads/main" is not a semantic version`,
+		},
+		{
+			name:    "explicit destination must be semantic",
+			ref:     "refs/heads/main",
+			as:      "../1.0-beta",
+			wantErr: `docs version "../1.0-beta" is not semantic`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			version, rolling, err := Resolve(tt.ref, tt.as, tt.collapsePrereleases, tt.collapsePatch)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("Resolve() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if version != tt.version || rolling != tt.rolling {
+				t.Errorf("Resolve() = (%q, %t), want (%q, %t)", version, rolling, tt.version, tt.rolling)
+			}
+		})
+	}
+}
+
 func TestCollapsePrerelease(t *testing.T) {
 	t.Parallel()
 
@@ -105,25 +185,75 @@ func TestCollapsePrerelease(t *testing.T) {
 	}
 }
 
-func TestOmitZeroPatch(t *testing.T) {
+func TestCollapsePatch(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]string{
-		"1.0.0-beta":         "1.0-beta",
-		"4.2.0-demo.42":      "4.2-demo.42",
-		"1.0.0":              "1.0",
-		"1.0.1":              "1.0.1",
-		"1.0.0-beta+build.7": "1.0-beta+build.7",
-		"1.0":                "1.0",
-		"1":                  "1",
-		"not-semver":         "not-semver",
+	tests := []struct {
+		version   string
+		want      string
+		collapsed bool
+	}{
+		{version: "1.0.0-beta", want: "1.0-beta", collapsed: true},
+		{version: "4.2.0-demo.42", want: "4.2-demo.42", collapsed: true},
+		{version: "1.0.0", want: "1.0", collapsed: true},
+		{version: "1.0.1", want: "1.0", collapsed: true},
+		{version: "1.0.0-beta+build.7", want: "1.0-beta+build.7", collapsed: true},
+		{version: "1.0", want: "1.0"},
+		{version: "1", want: "1"},
+		{version: "not-semver", want: "not-semver"},
 	}
 
-	for version, want := range tests {
-		t.Run(version, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
 			t.Parallel()
-			if got := OmitZeroPatch(version); got != want {
-				t.Errorf("OmitZeroPatch(%q) = %q, want %q", version, got, want)
+			got, collapsed := CollapsePatch(tt.version)
+			if got != tt.want || collapsed != tt.collapsed {
+				t.Errorf("CollapsePatch(%q) = (%q, %t), want (%q, %t)", tt.version, got, collapsed, tt.want, tt.collapsed)
+			}
+		})
+	}
+}
+
+func TestRename(t *testing.T) {
+	t.Parallel()
+
+	versions := []string{"1.0-beta", "0.21.4", "0.20.2"}
+	got, err := Rename(versions, "0.21.4", "0.21")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"1.0-beta", "0.21", "0.20.2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Rename() = %v, want %v", got, want)
+	}
+	if versions[1] != "0.21.4" {
+		t.Error("Rename mutated its input")
+	}
+}
+
+func TestRenameRejectsInvalidChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr string
+	}{
+		{name: "missing source", from: "0.19.11", to: "0.19", wantErr: `docs version "0.19.11" does not exist`},
+		{name: "existing destination", from: "0.21.4", to: "0.20.2", wantErr: `docs version "0.20.2" already exists`},
+		{name: "same version", from: "0.21.4", to: "0.21.4", wantErr: `docs versions are both "0.21.4"`},
+		{name: "invalid source", from: "../0.21.4", to: "0.21", wantErr: `docs version "../0.21.4" is not semantic`},
+		{name: "invalid destination", from: "0.21.4", to: "../0.21", wantErr: `docs version "../0.21" is not semantic`},
+	}
+
+	versions := []string{"0.21.4", "0.20.2"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Rename(versions, tt.from, tt.to)
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("Rename() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}
