@@ -231,12 +231,6 @@ VARIABLES
                         \* present. Claims add both sets atomically. The sets
                         \* differ only while release has removed records and
                         \* has not yet removed their snapshotted units.
-    deniedEdges,        \* counted edges whose hit was denied at the
-                        \* post-barrier re-check before any value was handed
-                        \* over: the session owns the result (the code keeps
-                        \* the recorded claim) but never possessed it, so
-                        \* held-result guards exclude these until a later
-                        \* successful serve of the same pair clears them.
     sessionRelease,     \* per-session lifecycle. active counts admitted
                         \* cache operations. phase is live, marking,
                         \* deferred, collecting, deleting, or released.
@@ -252,7 +246,7 @@ VARIABLES
                         \* record per result captured by persistence.
 
 vars == <<invocations, res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-          deniedEdges, sessionRelease, evals, epoch, flushed>>
+          sessionRelease, evals, epoch, flushed>>
 
 
 \* The currently-allocated ID ranges (sequences are 1-indexed).
@@ -500,7 +494,6 @@ Init ==
     /\ ongoingCallIndex = [k \in Calls \X Sessions |-> 0]
     /\ sessionEdges = {}
     /\ countedEdges = {}
-    /\ deniedEdges = {}
     /\ sessionRelease = [s \in Sessions |->
          [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
           handles |-> {}]]
@@ -550,7 +543,7 @@ Spawn ==
            /\ sessionRelease' = IF admitted
                 THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                 ELSE sessionRelease
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    evals, epoch, flushed>>
 
 SpawnNested ==
@@ -567,7 +560,7 @@ SpawnNested ==
            /\ sessionRelease' = IF admitted
                 THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                 ELSE sessionRelease
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -614,8 +607,8 @@ LookupHit(i) ==
                                         ![i].path = "hit",
                                         ![i].lookupBarrierAtSelection = res[r].barrier,
                                         ![i].refusedEpoch = epoch]
-                /\ UNCHANGED <<sessionEdges, countedEdges, deniedEdges>>
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, deniedEdges, sessionRelease,
+                /\ UNCHANGED <<sessionEdges, countedEdges>>
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionRelease,
                    evals, epoch, flushed>>
 
 \* LookupMiss: the lookup finds nothing usable; fall through to the
@@ -627,7 +620,7 @@ LookupHit(i) ==
 LookupMiss(i) ==
     /\ invocations[i].phase = "lookup"
     /\ invocations' = [invocations EXCEPT ![i].phase = "join"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -655,7 +648,7 @@ Join(i) ==
                 ![o].isPersistable = @ \/ invocations[i].persistable]
           /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = o,
                                   ![i].path = "wait"]
-    /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -685,7 +678,7 @@ CreateOc(i) ==
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
-    /\ UNCHANGED <<res, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* CreateOcLeaseFail: the operation lease cannot be acquired. The call
@@ -697,7 +690,7 @@ CreateOcLeaseFail(i) ==
     /\ ongoingCallIndex[<<invocations[i].call, invocations[i].sess>>] = 0
     /\ invocations' = [invocations EXCEPT ![i].phase = "failing",
                                            ![i].path = "leaseFailure"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -717,30 +710,36 @@ CreateOcLeaseFail(i) ==
 (***************************************************************************)
 FnComplete(o) ==
     /\ ongoingCalls[o].fnState = "running"
-    /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
+    /\ \/ /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
+          /\ UNCHANGED <<res, sessionEdges, countedEdges>>
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
+            \* The fn's resolver ACQUIRES the reused result the way any
+            \* consumer does: an inner load runs the filtered lookup and
+            \* records the session edge and its ownership unit atomically
+            \* (trackSessionResult inside attachResult / the hit claim in
+            \* lookupCacheForRequest), so release cannot collect it out
+            \* from under the fn. The guard is the inner serve's own
+            \* contract - settled, currently satisfied, live session - and
+            \* the claim is this action's effect; no pre-existing edge is
+            \* consulted, so a hit still parked at (or denied by) the read
+            \* barrier neither enables nor blocks the reuse. For a settled
+            \* result the selection check and the post-barrier re-check
+            \* coincide: the required set is frozen.
             /\ res[r].barrier \in {"none", "closedOk"}
-            \* The fn's resolver POSSESSES the reused result: it was handed
-            \* the value through a filtered serve (request or digest lookup,
-            \* gated result-ID load, or a wait return), which records the
-            \* session edge and its ownership unit atomically, so release
-            \* cannot collect it out from under the fn. Ownership alone is
-            \* not possession: a hit denied at the post-barrier re-check
-            \* keeps its recorded edge without ever receiving the value, so
-            \* possession is a counted edge OUTSIDE deniedEdges. (Current
-            \* satisfaction alone cannot stand in for possession either: a
-            \* later BindResource can satisfy a denied edge without any
-            \* value changing hands.) The satisfaction conjunct is kept as
-            \* the frozen-set corollary every possessed settled result
-            \* obeys: served satisfied, frozen since, handles only grow.
-            /\ <<ongoingCalls[o].sess, r>> \in countedEdges \ deniedEdges
             /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+            /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
+            /\ LET s == ongoingCalls[o].sess
+                   haveEdge == <<s, r>> \in sessionEdges
+               IN /\ res' = IF haveEdge THEN res
+                              ELSE [res EXCEPT ![r].own = @ + 1]
+                  /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
+                  /\ countedEdges' = countedEdges \cup {<<s, r>>}
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r]
        \/ /\ FnCanFail
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
-                   sessionRelease, evals, epoch, flushed>>
+          /\ UNCHANGED <<res, sessionEdges, countedEdges>>
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* WaiterCancel: a waiter's own context is canceled while the fn is still  *)
@@ -775,7 +774,7 @@ WaiterCancel(i) ==
                         ELSE ongoingCallIndex
           /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
                                                  ![i].ownCancel = TRUE]
-    /\ UNCHANGED <<res, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* FnWindDown: the cancel-requested executor finally exits. Until it does,
@@ -786,7 +785,7 @@ FnWindDown(o) ==
     /\ ModelNestedCalls
     /\ ongoingCalls[o].fnState = "canceled"
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "exited"]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* Commit aggregate persistence intent and release the publication handoff
@@ -845,7 +844,7 @@ WaiterCancelLate(i) ==
                 IF last /\ postOnce /\ ongoingCalls[o].hold
                 THEN "cancelDropHold" ELSE "canceling",
                 ![i].ownCancel = TRUE]
-    /\ UNCHANGED <<res, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* WaiterDropHoldCanceled: the canceled final waiter drops the handoff
@@ -858,7 +857,7 @@ WaiterDropHoldCanceled(i) ==
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
        /\ res' = PersistThenDropHold(o)
        /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
-    /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* WaiterObserveFnErr: the fn failed; each waiter observes the error and
@@ -876,7 +875,7 @@ WaiterObserveFnErr(i) ==
                                 ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
                         ELSE ongoingCallIndex
           /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
-    /\ UNCHANGED <<res, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -902,7 +901,7 @@ PubBegin(o) ==
         \* ctx.Done arm again, so pubBy is excluded from WaiterCancelLate.
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "begun",
                                                 ![o].pubBy = w]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -932,25 +931,29 @@ PubIndexFresh(o) ==
        \* this result's own.
        \E handleChoice \in {"none"} \cup
              {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
-       \* Structural deps are results this session POSSESSES: values handed
-       \* to it through filtered serves, whose edges and units were recorded
-       \* atomically - without that restriction the model would reach a
-       \* session structurally depending on a leaf it never obtained, which
-       \* the code cannot produce. Ownership alone is not possession (a hit
-       \* denied at the post-barrier re-check keeps its edge without the
-       \* value); since a settled dep's required set is frozen, ownership
-       \* plus current satisfaction is exactly possession - see FnComplete.
-       \* A held dep's attachment is also settled: an attached result was
-       \* handed out only past its read barrier, and attachResult completes
-       \* a detached child before the edge is recorded.
+       \* Structural deps are results the fn's resolver ACQUIRED through
+       \* inner loads: each inner serve ran the filter and recorded the
+       \* session edge with its ownership unit (see FnComplete), so the
+       \* dep choice carries the inner serve's own contract - settled,
+       \* currently satisfied, live session - and this action records the
+       \* claim; no pre-existing edge is consulted. The structural edge
+       \* adds its own unit on top, and a dep whose session edge is new
+       \* gains the session unit too. Narrowing, stated: the code claims
+       \* deps during the fn and may publish after release marking begins;
+       \* here claim and publication collapse into one action, so a
+       \* marking-session publication with cached deps is not explored.
        \E deps \in {{}} \cup {{d} : d \in {r \in ResultIds :
                        /\ res[r].registered
                        /\ res[r].barrier \in {"none", "closedOk"}
-                       /\ <<ongoingCalls[o].sess, r>> \in countedEdges \ deniedEdges
+                       /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
                        /\ res[r].required
                             \subseteq sessionRelease[ongoingCalls[o].sess].handles}} :
-        LET withDeps == [r \in DOMAIN res |->
-                IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
+        LET sessEdgeNew == {d \in deps :
+                              <<ongoingCalls[o].sess, d>> \notin sessionEdges}
+            withDeps == [r \in DOMAIN res |->
+                IF r \in deps
+                THEN [res[r] EXCEPT !.own = @ + 1 +
+                        (IF r \in sessEdgeNew THEN 1 ELSE 0)]
                 ELSE res[r]]
             newRes == [call |-> ongoingCalls[o].call, registered |-> TRUE,
                        released |-> FALSE,
@@ -983,10 +986,14 @@ PubIndexFresh(o) ==
                        lazyRunning |-> 0,        \* callbacks actually running
                        lazyTokenSession |-> 0]   \* active callback token owner
         IN /\ res' = Append(withDeps, newRes)
+           /\ sessionEdges' = sessionEdges \cup
+                {<<ongoingCalls[o].sess, d>> : d \in deps}
+           /\ countedEdges' = countedEdges \cup
+                {<<ongoingCalls[o].sess, d>> : d \in deps}
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
                                  ![o].resId = Len(res) + 1]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCallIndex,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1034,7 +1041,7 @@ PubAdopt(o) ==
         /\ res' = [res EXCEPT ![r].own = @ + 1]
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "adopted",
                               ![o].hold = TRUE, ![o].resId = r]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1055,7 +1062,7 @@ PubIndexReuse(o) ==
             /\ UNCHANGED res
        ELSE /\ UNCHANGED res
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done"]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1112,33 +1119,38 @@ PubAttachAddDep(o) ==
         /\ d \notin res[ongoingCalls[o].resId].deps
         \* the stated no-cycle assumption (see the comment block above)
         /\ ~DepReachable(res, d, ongoingCalls[o].resId)
-        \* attachment deps are the value's embedded children, which
-        \* attachResult claims for the session (trackSessionResult) before
-        \* the edge is recorded - possession, as in PubIndexFresh: ownership
-        \* plus current satisfaction (a settled dep's required set is
-        \* frozen, so satisfaction at use equals possession; see FnComplete)
-        /\ <<ongoingCalls[o].sess, d>> \in countedEdges \ deniedEdges
+        \* attachment deps are the value's embedded children, which the
+        \* fn's resolver acquired through inner loads: settled, currently
+        \* satisfied, live session, with the claim recorded here
+        \* (attachResult runs trackSessionResult before the edge lands) -
+        \* the same acquisition contract and marking-narrowing as
+        \* PubIndexFresh's structural deps
         /\ res[d].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
         /\ LET p == ongoingCalls[o].resId
+               s == ongoingCalls[o].sess
                newDeps == res[p].deps \cup {d}
+               sessEdgeNew == <<s, d>> \notin sessionEdges
            \* addExplicitDependencyLocked recomputes only the parent after
            \* adding the edge. That is sufficient: the parent is a fresh
            \* result still behind its open barrier with no depParents, so
            \* no ancestor exists to go stale, and the retention-edge path
            \* refuses requirement-carrying deps outright.
-           IN res' = [res EXCEPT
-                ![p].deps = newDeps,
-                ![p].required = OwnHandleReq(res[p].handle)
-                                  \cup UNION {res[dd].required : dd \in newDeps},
-                ![d].own = @ + 1]
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+           IN /\ res' = [res EXCEPT
+                   ![p].deps = newDeps,
+                   ![p].required = OwnHandleReq(res[p].handle)
+                                     \cup UNION {res[dd].required : dd \in newDeps},
+                   ![d].own = @ + 1 + (IF sessEdgeNew THEN 1 ELSE 0)]
+              /\ sessionEdges' = sessionEdges \cup {<<s, d>>}
+              /\ countedEdges' = countedEdges \cup {<<s, d>>}
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionRelease, evals, epoch, flushed>>
 
 PubFinishOk(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedOk"]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done"]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 PubAttachFailDropHold(o) ==
@@ -1147,14 +1159,14 @@ PubAttachFailDropHold(o) ==
     /\ res' = DecAndCascade(res, ongoingCalls[o].resId)
     /\ ongoingCalls' = [ongoingCalls EXCEPT
          ![o].pubState = "attachFailClosing", ![o].hold = FALSE]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 PubAttachFailCloseBarrier(o) ==
     /\ ongoingCalls[o].pubState = "attachFailClosing"
     /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedErr"]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed"]
-    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* PubUnregister: the entry leaves the Cache.ongoingCalls index - the tail of the Once
@@ -1172,7 +1184,7 @@ PubUnregister(o) ==
               /\ ongoingCalls[o].pubState = "done"
               /\ ongoingCalls[o].resId # 0
               /\ ongoingCalls[o].isPersistable]
-    /\ UNCHANGED <<invocations, res, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<invocations, res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* WaiterObservePubErr: publication failed; each waiter observes the error
@@ -1192,7 +1204,7 @@ WaiterObservePubErr(i) ==
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].waiters = @ - 1]
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF dropHold THEN "pubErrDropHold" ELSE "failing"]
-    /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* WaiterDropHoldPubErr: the last waiter of a failed publication drops the
@@ -1205,7 +1217,7 @@ WaiterDropHoldPubErr(i) ==
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
        /\ res' = PersistThenDropHold(o)
        /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
-    /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1240,8 +1252,8 @@ WaiterClaim(i) ==
           ELSE /\ invocations' = [invocations EXCEPT ![i].phase = "refusedDepart",
                                         ![i].resId = r,
                                         ![i].refusedEpoch = epoch]
-               /\ UNCHANGED <<res, sessionEdges, countedEdges, deniedEdges>>
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, deniedEdges, sessionRelease,
+               /\ UNCHANGED <<res, sessionEdges, countedEdges>>
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionRelease,
                    evals, epoch, flushed>>
 
 \* WaiterDepart: waiters--, under callsMu. The last waiter goes on to
@@ -1256,7 +1268,7 @@ WaiterDepart(i) ==
                ![i].phase = IF last /\ ongoingCalls[o].hold
                          THEN IF refused THEN "refusedReleaseHold" ELSE "releaseHold"
                          ELSE IF refused THEN "refusing" ELSE "readBarrier"]
-    /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* WaiterReleaseHold: the last waiter drops the publication handoff hold,
@@ -1272,7 +1284,7 @@ WaiterReleaseHold(i) ==
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
        /\ res' = PersistThenDropHold(o)
        /\ invocations' = [invocations EXCEPT ![i].phase = IF refused THEN "refusing" ELSE "readBarrier"]
-    /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1316,9 +1328,6 @@ ReadBarrierOk(i) ==
                ![i].phase = IF invocations[i].path = "hit"
                                   /\ invocations[i].persistable
                              THEN "persistHit" ELSE "returning"]
-          \* a successful serve hands the value over: possession is
-          \* established, so a stale denial for this pair is cleared
-          /\ deniedEdges' = deniedEdges \ {<<invocations[i].sess, r>>}
           /\ UNCHANGED res
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -1329,8 +1338,8 @@ ReadBarrierOk(i) ==
 \* selection-time miss does. The session edge and its ownership unit stay
 \* until session release (the code keeps the recorded claim rather than
 \* growing a decrement-and-collect path); the session owns the result but
-\* was never handed its value, which is why the pair lands in deniedEdges
-\* and held-result guards exclude it.
+\* was never handed its value; held-result choices never consult the
+\* recorded edges, so the kept edge cannot masquerade as possession.
 ReadBarrierGatedMiss(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
@@ -1341,8 +1350,6 @@ ReadBarrierGatedMiss(i) ==
           /\ ~(res[r].required \subseteq sessionRelease[invocations[i].sess].handles)
           /\ invocations' = [invocations EXCEPT
                ![i].phase = "join", ![i].resId = 0, ![i].path = "none"]
-          \* the session keeps the edge but never received the value
-          /\ deniedEdges' = deniedEdges \cup {<<invocations[i].sess, r>>}
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1361,7 +1368,7 @@ PersistHit(i) ==
        IN /\ res' = persisted
           /\ invocations' = [invocations EXCEPT
                ![i].phase = "returning"]
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 ReadBarrierErrHit(i) ==
@@ -1369,7 +1376,7 @@ ReadBarrierErrHit(i) ==
     /\ invocations[i].path = "hit"
     /\ res[invocations[i].resId].barrier = "closedErr"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 ReadBarrierErrWait(i) ==
@@ -1377,7 +1384,7 @@ ReadBarrierErrWait(i) ==
     /\ invocations[i].path = "wait"
     /\ res[invocations[i].resId].barrier = "closedErr"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1407,7 +1414,7 @@ ReadBarrierCancelHit(i) ==
     /\ res[invocations[i].resId].barrier # "none"
     /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
                                            ![i].ownCancel = TRUE]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* The WAIT-path twin: the error propagates and the claimed session edge
@@ -1419,7 +1426,7 @@ ReadBarrierCancelWait(i) ==
     /\ res[invocations[i].resId].barrier # "none"
     /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
                                            ![i].ownCancel = TRUE]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1489,7 +1496,7 @@ DecodeLead(i) ==
        /\ res' = [res EXCEPT ![r].decodePhase = "running",
                              ![r].decodeErr = "none"]
        /\ invocations' = [invocations EXCEPT ![i].phase = "decoding"]
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* DecodeInstall: DecodeResult returned a value and the leader installs it
@@ -1514,7 +1521,7 @@ DecodeInstall(i) ==
        \* stored set to its own handle and raced the lookup filter's read.)
        /\ res' = [res EXCEPT ![r].payload = "decoded"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
-                   countedEdges, deniedEdges, sessionRelease, evals, epoch, flushed>>
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
 
 \* DecodeLeadFinish: the leader's attempt ends and finishPersistDecode
 \* latches the outcome, clears the channel, and closes it: decodeGen moves
@@ -1552,7 +1559,7 @@ DecodeLeadFinish(i) ==
                                      outcome # "ok" /\ installed]
           /\ invocations' = [invocations EXCEPT ![i].phase =
                IF outcome = "ok" THEN "readBarrier" ELSE "decodeErr"]
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* DecodeJoin: a reader finds an attempt published and parks on its
@@ -1570,7 +1577,7 @@ DecodeJoin(i) ==
        /\ res[r].decodePhase = "running"
        /\ invocations' = [invocations EXCEPT ![i].phase = "decodeJoined",
                                               ![i].joinedGen = res[r].decodeGen]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* DecodeWake: the joiner's select took its closed channel - its attempt's
@@ -1596,7 +1603,7 @@ DecodeWake(i) ==
        /\ invocations' = [invocations EXCEPT ![i].phase =
             IF res[r].decodeErr = "fail"
             THEN "decodeErr" ELSE "readBarrier"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1642,7 +1649,7 @@ DecodeLeadCancel(i) ==
                                   res[r].payload = "decoded"]
        /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
                                               ![i].ownCancel = TRUE]
-    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* DecodeJoinCancel: a parked joiner's select takes its own ctx.Done arm
@@ -1655,7 +1662,7 @@ DecodeJoinCancel(i) ==
     /\ invocations[i].phase = "decodeJoined"
     /\ invocations' = [invocations EXCEPT ![i].phase = "canceling",
                                            ![i].ownCancel = TRUE]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* Decode failed for a HIT-path caller.
@@ -1663,7 +1670,7 @@ DecodeFailHit(i) ==
     /\ invocations[i].phase = "decodeErr"
     /\ invocations[i].path = "hit"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges, sessionRelease,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* Decode failed for a WAIT-path caller: the error just propagates; the
@@ -1672,7 +1679,7 @@ DecodeFailWait(i) ==
     /\ invocations[i].phase = "decodeErr"
     /\ invocations[i].path = "wait"
     /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
-    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 \* Decrement an admitted operation. When this is the last operation after a
@@ -1721,7 +1728,7 @@ InvocationOperationExit(i) ==
                ![i].retGated = IF success
                     THEN TrueRequired(r) \subseteq sessionRelease[s].handles ELSE @]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges,
-                   countedEdges, deniedEdges, evals, epoch, flushed>>
+                   countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* Release first sets the tombstone with an atomic compare-and-swap. It    *)
@@ -1744,7 +1751,7 @@ ReleaseSessionMark(s) ==
                  => invocations[i].phase \in TerminalPhases
     /\ sessionRelease' = [sessionRelease EXCEPT ![s].phase = "marking"]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, evals, epoch, flushed>>
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 \* The session-mutex section snapshots records. The release mutex prevents a
 \* last-operation cleanup from consuming the plan before it is published.
@@ -1757,7 +1764,7 @@ ReleaseSessionSnapshot(s) ==
                                      THEN "collecting" ELSE "deferred",
                             !.snap = snap]]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, evals, epoch, flushed>>
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 \* The egraphMu section: remove one unit per snapshotted, still-registered
 \* result, then collect. Session records remain until hooks and arbitrary
@@ -1773,7 +1780,6 @@ ReleaseSessionCollect(s) ==
                      ELSE res[r]]
        IN /\ res' = Cascade(rf0)
           /\ countedEdges' = countedEdges \ {<<s, r>> : r \in snap}
-          /\ deniedEdges' = deniedEdges \ {<<s, r>> : r \in snap}
           /\ sessionRelease' = [sessionRelease EXCEPT ![s].phase = "deleting"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, evals, epoch, flushed>>
@@ -1787,7 +1793,7 @@ ReleaseSessionDelete(s) ==
          [sessionRelease[s] EXCEPT !.phase = "released", !.snap = {},
                                    !.handles = {}]]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   countedEdges, deniedEdges, evals, epoch, flushed>>
+                   countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* BindResource: a session binds a session-resource handle. Go:            *)
@@ -1808,7 +1814,7 @@ BindResource ==
         /\ h \notin sessionRelease[s].handles
         /\ sessionRelease' = [sessionRelease EXCEPT ![s].handles = @ \cup {h}]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, evals, epoch, flushed>>
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* AddDepLate: an explicit retention edge is added to a result that was    *)
@@ -1836,18 +1842,24 @@ AddDepLate ==
         /\ ~DepReachable(res, d, p)
         \* the entry-point guard: requirement-carrying deps are refused
         /\ res[d].required = {}
-        \* The caller possesses both results (loaded through its own
-        \* session before the call): ownership plus current satisfaction,
-        \* as in FnComplete. For d, satisfaction is the empty-set guard
-        \* above; for p it is the possession conjunct below.
+        \* The caller acquires both results through its own session's
+        \* gated loads immediately before the call, so the guard is the
+        \* inner serves' contract - settled, currently satisfied, live
+        \* session - and the claims are recorded here, as in FnComplete.
+        \* For d, satisfaction is the empty-set guard above.
         /\ \E s \in Sessions :
-            /\ <<s, p>> \in countedEdges \ deniedEdges
-            /\ <<s, d>> \in countedEdges \ deniedEdges
+            /\ sessionRelease[s].phase = "live"
             /\ res[p].required \subseteq sessionRelease[s].handles
-        /\ res' = [res EXCEPT ![p].deps = @ \cup {d},
-                              ![d].own = @ + 1]
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
-                   countedEdges, deniedEdges, sessionRelease, evals, epoch, flushed>>
+            /\ LET newP == <<s, p>> \notin sessionEdges
+                   newD == <<s, d>> \notin sessionEdges
+               IN /\ res' = [res EXCEPT
+                       ![p].deps = @ \cup {d},
+                       ![p].own = @ + (IF newP THEN 1 ELSE 0),
+                       ![d].own = @ + 1 + (IF newD THEN 1 ELSE 0)]
+                  /\ sessionEdges' = sessionEdges \cup {<<s, p>>, <<s, d>>}
+                  /\ countedEdges' = countedEdges \cup {<<s, p>>, <<s, d>>}
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
+                   sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
@@ -1863,7 +1875,7 @@ PruneCut(r) ==
     /\ r \in ResultIds
     /\ res[r].persisted
     /\ res' = DecAndCascade([res EXCEPT ![r].persisted = FALSE], r)
-    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, deniedEdges,
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
@@ -1914,7 +1926,7 @@ BeginClose ==
          sessionRelease[s].phase \in {"deferred", "collecting", "deleting", "released"}
     /\ flushed' = [flushed EXCEPT !.closing = TRUE]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease, evals, epoch>>
+                   sessionEdges, countedEdges, sessionRelease, evals, epoch>>
 
 Flush ==
     /\ ModelPersistence
@@ -1938,7 +1950,7 @@ Flush ==
           ownClean  |-> res[r].own =
               PersistedCount(r) + DepParentCount(r)]]]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    evals, epoch>>
 
 (***************************************************************************)
@@ -2001,7 +2013,6 @@ Restart ==
     /\ evals' = <<>>
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
-    /\ deniedEdges' = {}
     /\ sessionRelease' = [s \in Sessions |->
          [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
           handles |-> {}]]
@@ -2102,7 +2113,7 @@ EvalSpawn ==
                 THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                 ELSE sessionRelease
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 \* A hit loads an imported result's value and registers its lazy work:
 \* ensurePersistedHitValueLoaded calls registerLazyEvaluation after the
@@ -2129,7 +2140,7 @@ ImportedLazyArm(r) ==
     /\ res[r].lazyPhase = "idle"
     /\ res' = [res EXCEPT ![r].lazyCb = "armed"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
-                   countedEdges, deniedEdges, sessionRelease, evals, epoch, flushed>>
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
 
 \* Fast path under lazyMu: evaluation already completed, or nothing
 \* deferred remains anywhere - no published attempt, no object-side
@@ -2148,7 +2159,7 @@ EvalNoWork(e) ==
     /\ evals' = [evals EXCEPT ![e].phase = "returnDone",
                               ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* Start an attempt: no attempt is published, so this caller becomes the
@@ -2181,7 +2192,7 @@ EvalStartAttempt(e) ==
                                  ![e].foreignCancel = FALSE]
        /\ sessionRelease' = [sessionRelease EXCEPT ![s].active = @ + 1]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 \* Release may win after the Evaluate waiter entered but before it tries to
 \* create an attempt. Callback-token admission then refuses the start.
@@ -2196,7 +2207,7 @@ EvalStartAttemptRefused(e) ==
           /\ evals' = [evals EXCEPT ![e].phase = "returnRefused",
                                     ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* Join a published attempt in either stage, canceled or not: Go's join
@@ -2212,7 +2223,7 @@ EvalJoin(e) ==
        /\ evals' = [evals EXCEPT ![e].phase = "waiting",
                                  ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* The callback body finishes while the attempt keeps running. Success
@@ -2253,7 +2264,7 @@ EvalBodyFinish(r) ==
                   THEN [sessionRelease EXCEPT ![s].exitingLazy = 1]
                   ELSE FinishSessionOperation(sessionRelease, s)
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 \* The cache-side bookkeeping finishes and the attempt is retired under
 \* lazyMu. Success marks evaluation complete. Any failure here records
@@ -2289,7 +2300,7 @@ EvalSyncFinish(r) ==
              THEN [sessionRelease EXCEPT ![s].exitingLazy = 1]
              ELSE FinishSessionOperation(sessionRelease, s)
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 \* The callback goroutine's deferred token release occurs after done closes.
 \* Multiple completed attempts may be in this tail at once. The saturating
@@ -2300,7 +2311,7 @@ EvalCallbackTokenExit(s) ==
     /\ LET finished == FinishSessionOperation(sessionRelease, s) IN
        sessionRelease' = [finished EXCEPT ![s].exitingLazy = @ - 1]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, evals, epoch, flushed>>
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 \* Closing the retired attempt's done channel is the lock-free region after
 \* callback finish. Each transition below represents that broadcast becoming
@@ -2313,7 +2324,7 @@ EvalCallbackClose(e) ==
            [] @ = "latchedFail" -> "wakeFail"
            [] OTHER -> "wakeCancel"]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* The completion arm consumes one retired attempt's outcome. Success and
@@ -2328,7 +2339,7 @@ EvalWake(e) ==
                            [] OTHER -> "demand",
          ![e].foreignCancel = (evals[e].phase = "wakeCancel")]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* A waiter gives up because its own context was canceled. While the attempt
@@ -2349,7 +2360,7 @@ EvalAbandon(e) ==
           /\ evals' = [evals EXCEPT ![e].phase = "returnAbandoned",
                                      ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, sessionRelease,
+                   sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
 \* Evaluate's outer operation exits after its final return decision. A
@@ -2371,7 +2382,7 @@ EvalOperationExit(e) ==
           /\ evals' = [evals EXCEPT ![e].phase = terminal,
                                     ![e].opActive = FALSE]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, deniedEdges, epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 ---------------------------------------------------------------------------
 \* Everything that can happen, from any state: some invocation takes its
@@ -2544,10 +2555,11 @@ LiveSpec ==
 (* (selectLookupCandidateForSessionLocked). HELD-RESULT guards pair        *)
 (* ownership with current satisfaction: FnComplete's reuse,                *)
 (* PubIndexFresh's structural deps, PubAttachAddDep's attachment deps,     *)
-(* and AddDepLate's possession. Ownership alone is not possession - a hit  *)
-(* denied at the post-barrier re-check keeps its recorded edge without     *)
-(* ever receiving the value - so possession is a counted edge outside      *)
-(* deniedEdges, with satisfaction kept as the frozen-set corollary.        *)
+(* and AddDepLate's acquisitions. Held-result choices never consult        *)
+(* recorded edges (a counted edge can be pending or denied, so it is not   *)
+(* possession); each models the fn's or caller's own inner load - the      *)
+(* result is settled, currently satisfied, the session live - and records  *)
+(* the claim exactly as the code's serve does.                             *)
 (* CanonicalPick's returned-result fallback stays ownership-only: the      *)
 (* publisher possesses what it just produced.                              *)
 (* A gated ID load needs no action of its own: refusal returns nothing     *)
@@ -2573,7 +2585,6 @@ TypeOK ==
     /\ Len(res) <= MaxResults
     /\ Len(evals) <= MaxEvals
     /\ countedEdges \subseteq sessionEdges
-    /\ deniedEdges \subseteq countedEdges
     /\ epoch \in {1, 2}
     /\ flushed.closing \in BOOLEAN
     /\ \A s \in Sessions :
