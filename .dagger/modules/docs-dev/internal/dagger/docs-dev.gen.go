@@ -52,6 +52,9 @@ func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secr
 
 // DocsDevGenerateVersionOpts contains options for DocsDev.GenerateVersion
 type DocsDevGenerateVersionOpts struct {
+	// Exact destination docs version. Allows a branch or commit source and
+	// replaces an existing version; collapse options are ignored when set.
+	As string
 	// Collapse a trailing numeric prerelease identifier, e.g.
 	// 1.0.0-beta.10 to 1.0.0-beta.
 	//
@@ -69,6 +72,10 @@ func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersion
 	assertNotNil("source", source)
 	q := r.query.Select("generateVersion")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `as` optional argument
+		if !querybuilder.IsZeroValue(opts[i].As) {
+			q = q.Arg("as", opts[i].As)
+		}
 		// `collapsePreReleases` optional argument
 		if !querybuilder.IsZeroValue(opts[i].CollapsePreReleases) {
 			q = q.Arg("collapsePreReleases", opts[i].CollapsePreReleases)

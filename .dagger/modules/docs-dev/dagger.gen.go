@@ -243,6 +243,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
 				}
 			}
+			var as string
+			if inputArgs["as"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["as"]), &as)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg as", err))
+				}
+			}
 			var collapsePreReleases bool
 			if inputArgs["collapsePreReleases"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["collapsePreReleases"]), &collapsePreReleases)
@@ -250,14 +257,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg collapsePreReleases", err))
 				}
 			}
-			var omitZeroPatch bool
-			if inputArgs["omitZeroPatch"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["omitZeroPatch"]), &omitZeroPatch)
+			var collapsePatch bool
+			if inputArgs["collapsePatch"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["collapsePatch"]), &collapsePatch)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg omitZeroPatch", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg collapsePatch", err))
 				}
 			}
-			return (*DocsDev).GenerateVersion(&parent, ctx, source, collapsePreReleases, omitZeroPatch)
+			return (*DocsDev).GenerateVersion(&parent, ctx, source, as, collapsePreReleases, collapsePatch)
 		case "Publish":
 			var parent DocsDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -307,6 +314,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*DocsDev).References(&parent, version, ws)
+		case "RenameVersion":
+			var parent DocsDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var from string
+			if inputArgs["from"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["from"]), &from)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg from", err))
+				}
+			}
+			var to string
+			if inputArgs["to"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["to"]), &to)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg to", err))
+				}
+			}
+			return (*DocsDev).RenameVersion(&parent, ctx, from, to)
 		case "Server":
 			var parent DocsDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -354,46 +382,54 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Check",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check the docs website build").
-							WithSourceMap(dag.SourceMap("main.go", 156, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 211, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Deploy",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Deploys a current build of the docs.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 230, 1)).
-							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 232, 2)}).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 233, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 285, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 287, 2)}).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 288, 2)})).
 					WithFunction(
 						dag.Function("GenerateVersion",
 							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Generate a docs version from a Git ref. Numbered prereleases are collapsed\ninto rolling channels and zero patch components are omitted by default.").
+							WithDescription("Generate a docs version from a Git ref. Numbered prereleases and patch\ncomponents are collapsed into rolling channels by default.").
 							WithSourceMap(dag.SourceMap("main.go", 53, 1)).
 							WithArg("source", dag.TypeDef().WithObject("GitRef"), dagger.FunctionWithArgOpts{Description: "Git ref whose docs will populate the version, e.g.\nhttps://github.com/dagger/dagger#v1.0.0-beta.10.", SourceMap: dag.SourceMap("main.go", 57, 2)}).
-							WithArg("collapsePreReleases", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Collapse a trailing numeric prerelease identifier, e.g.\n1.0.0-beta.10 to 1.0.0-beta.", SourceMap: dag.SourceMap("main.go", 62, 2), DefaultValue: dagger.JSON("true")}).
-							WithArg("omitZeroPatch", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Omit a zero patch component, e.g. 1.0.0-beta to 1.0-beta.", SourceMap: dag.SourceMap("main.go", 66, 2), DefaultValue: dagger.JSON("true")})).
+							WithArg("as", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Exact destination docs version. Allows a branch or commit source and\nreplaces an existing version; collapse options are ignored when set.", SourceMap: dag.SourceMap("main.go", 61, 2)}).
+							WithArg("collapsePreReleases", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Collapse a trailing numeric prerelease identifier, e.g.\n1.0.0-beta.10 to 1.0.0-beta.", SourceMap: dag.SourceMap("main.go", 66, 2), DefaultValue: dagger.JSON("true")}).
+							WithArg("collapsePatch", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Collapse the patch component, e.g. 0.21.8 to 0.21.", SourceMap: dag.SourceMap("main.go", 70, 2), DefaultValue: dagger.JSON("true")})).
 					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish a previous deployment to production - defaults to the latest deployment on the main branch.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 259, 1)).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 261, 2)}).
-							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 263, 2)}).
-							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 265, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 314, 1)).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 316, 2)}).
+							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 318, 2)}).
+							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 320, 2)})).
 					WithFunction(
 						dag.Function("References",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate the API schema and CLI reference docs").
-							WithSourceMap(dag.SourceMap("main.go", 175, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 230, 1)).
 							WithGenerator().
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 178, 2)}).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping (References is the\nonly docs-dev method that builds). Auto-injected on a direct call;\ndependencies don't inherit it.", SourceMap: dag.SourceMap("main.go", 184, 2)})).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 233, 2)}).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping (References is the\nonly docs-dev method that builds). Auto-injected on a direct call;\ndependencies don't inherit it.", SourceMap: dag.SourceMap("main.go", 239, 2)})).
+					WithFunction(
+						dag.Function("RenameVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Rename an existing docs version without changing its contents.").
+							WithSourceMap(dag.SourceMap("main.go", 151, 1)).
+							WithArg("from", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Existing docs version.", SourceMap: dag.SourceMap("main.go", 154, 2)}).
+							WithArg("to", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "New docs version.", SourceMap: dag.SourceMap("main.go", 156, 2)})).
 					WithFunction(
 						dag.Function("Server",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Build the docs server").
-							WithSourceMap(dag.SourceMap("main.go", 162, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 217, 1))).
 					WithFunction(
 						dag.Function("Site",
 							dag.TypeDef().WithObject("Directory")).

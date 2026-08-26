@@ -77,6 +77,86 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestResolve(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		ref                 string
+		as                  string
+		collapsePrereleases bool
+		collapsePatch       bool
+		version             string
+		rolling             bool
+		wantErr             string
+	}{
+		{
+			name:          "stable tag defaults to minor channel",
+			ref:           "refs/tags/v0.21.9",
+			collapsePatch: true,
+			version:       "0.21",
+			rolling:       true,
+		},
+		{
+			name:                "prerelease tag defaults to prerelease minor channel",
+			ref:                 "refs/tags/v1.0.0-beta.42",
+			collapsePrereleases: true,
+			collapsePatch:       true,
+			version:             "1.0-beta",
+			rolling:             true,
+		},
+		{
+			name:                "explicit branch destination is exact and rolling",
+			ref:                 "refs/heads/main",
+			as:                  "1.0-beta",
+			collapsePrereleases: true,
+			collapsePatch:       true,
+			version:             "1.0-beta",
+			rolling:             true,
+		},
+		{
+			name:                "explicit tag destination ignores collapsing",
+			ref:                 "refs/tags/v0.21.9",
+			as:                  "0.21.9",
+			collapsePrereleases: true,
+			collapsePatch:       true,
+			version:             "0.21.9",
+			rolling:             true,
+		},
+		{
+			name:    "branch requires explicit destination",
+			ref:     "refs/heads/main",
+			wantErr: `source ref "refs/heads/main" is not a semantic version`,
+		},
+		{
+			name:    "explicit destination must be semantic",
+			ref:     "refs/heads/main",
+			as:      "../1.0-beta",
+			wantErr: `docs version "../1.0-beta" is not semantic`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			version, rolling, err := Resolve(tt.ref, tt.as, tt.collapsePrereleases, tt.collapsePatch)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("Resolve() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if version != tt.version || rolling != tt.rolling {
+				t.Errorf("Resolve() = (%q, %t), want (%q, %t)", version, rolling, tt.version, tt.rolling)
+			}
+		})
+	}
+}
+
 func TestCollapsePrerelease(t *testing.T) {
 	t.Parallel()
 

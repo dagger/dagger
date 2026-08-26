@@ -55,6 +55,10 @@ func (d DocsDev) GenerateVersion(
 	// Git ref whose docs will populate the version, e.g.
 	// https://github.com/dagger/dagger#v1.0.0-beta.10.
 	source *dagger.GitRef,
+	// Exact destination docs version. Allows a branch or commit source and
+	// replaces an existing version; collapse options are ignored when set.
+	// +optional
+	as string,
 	// Collapse a trailing numeric prerelease identifier, e.g.
 	// 1.0.0-beta.10 to 1.0.0-beta.
 	// +optional
@@ -69,19 +73,9 @@ func (d DocsDev) GenerateVersion(
 	if err != nil {
 		return nil, fmt.Errorf("get source ref name: %w", err)
 	}
-	sourceVersion, err := releaseversion.Parse(ref)
+	version, rolling, err := releaseversion.Resolve(ref, as, collapsePreReleases, collapsePatch)
 	if err != nil {
 		return nil, err
-	}
-	version := sourceVersion
-	rolling := false
-	if collapsePreReleases {
-		version, rolling = releaseversion.CollapsePrerelease(version)
-	}
-	if collapsePatch {
-		var patchCollapsed bool
-		version, patchCollapsed = releaseversion.CollapsePatch(version)
-		rolling = rolling || patchCollapsed
 	}
 
 	versionDir := "docs/versioned_docs/version-" + version

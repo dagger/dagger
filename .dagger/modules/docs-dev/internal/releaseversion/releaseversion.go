@@ -21,6 +21,33 @@ func Parse(ref string) (string, error) {
 	return version, nil
 }
 
+// Resolve determines the destination docs version for a source ref. An
+// explicit destination is exact and rolling, so it may replace an existing
+// snapshot sourced from a branch or commit.
+func Resolve(ref, as string, collapsePreReleases, collapsePatch bool) (string, bool, error) {
+	if as != "" {
+		if _, err := semanticVersion(as); err != nil {
+			return "", false, err
+		}
+		return as, true, nil
+	}
+
+	version, err := Parse(ref)
+	if err != nil {
+		return "", false, err
+	}
+	rolling := false
+	if collapsePreReleases {
+		version, rolling = CollapsePrerelease(version)
+	}
+	if collapsePatch {
+		var patchCollapsed bool
+		version, patchCollapsed = CollapsePatch(version)
+		rolling = rolling || patchCollapsed
+	}
+	return version, rolling, nil
+}
+
 // CollapsePrerelease removes a trailing numeric prerelease identifier.
 func CollapsePrerelease(version string) (string, bool) {
 	v := "v" + version
