@@ -1,4 +1,5 @@
 [["version","2"]]
+["","container.from",["docker.io/library/alpine:latest","linux/amd64"],"sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b"]
 ["","container.from",["docker.io/library/busybox:latest","linux/amd64"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]
 ["","container.from",["docker.io/library/busybox:latest","linux/arm64"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]
 ["","container.from",["docker.io/library/golang:1.26-alpine","linux/amd64"],"sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83"]

@@ -318,6 +318,168 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 	require.Contains(t, out, "generated from: B-OVERLAY")
 }
 
+// TestToolLogsExcludeInternal locks in captureLogs' internal-span filtering:
+// a tool result surfaces the print output of the tool's real work, but not
+// logs from beneath spans marked dagger.io/ui.internal — e.g. ComputePaths'
+// "computing paths" task prints (added:/removed:/...), which used to leak
+// into Workspace-returning tool results ahead of the patch summary.
+func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/go-programmer/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	// Mirrors GoProgrammer.drive's conversation (the first user message must
+	// match its withPrompt byte for byte): write main.go, then build it. Tool
+	// results are placeholders — the real tools run during replay.
+	// Give the workspace a fresh digest so the nested execs actually run. If
+	// they hit the shared cache, there is no live stdout for captureLogs to
+	// surface and the build result correctly collapses to "(done)".
+	source := fmt.Sprintf("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n\n// cache-buster: %s\n", identity.NewID())
+	writeArgs, err := json.Marshal(map[string]string{"content": source})
+	require.NoError(t, err)
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
+			"Use the read, write, build tools to complete the following assignment.\n"+
+			"Do not try to access the container directly.\n"+
+			"Don't stop until your code builds.\n"+
+			"\n"+
+			"Assignment: write a hello world program\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Writing main.go."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
+				Arguments: dagger.JSON(writeArgs)},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Building."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "build"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "write a hello world program" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The write tool (Workspace-returning) reports the patch summary...
+	require.Contains(t, out, "diff --git")
+	// ...without the internal "computing paths" span's prints leaking in.
+	require.NotContains(t, out, "added: [")
+	// The build tool's real work still surfaces: its exec output sits beneath
+	// non-internal spans, so logsOrDone returns it rather than "(done)".
+	require.Contains(t, out, "creating new go.mod")
+}
+
+// TestToolLogsExcludeService locks in captureLogs' service-span filtering:
+// a tool result surfaces the tool's deliberate print output, but not logs
+// from long-lived service exec spans (dagger.io/service) — those enter the
+// tool-call subtree via cause links (gaining new links per session, e.g.
+// when a later tool call reloads the started service) and would otherwise
+// drown out the print signal in the 8-line tail. ReadLogs remains the
+// deliberate discovery path for service logs.
+func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/svc-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	// Mirrors SvcAgent.drive's conversation (the first user message must
+	// match its withPrompt byte for byte): start the noisy service, then
+	// stop it. Tool results are placeholders — the real tools run during
+	// replay.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that manages a service.\n"+
+			"Use the start tool to start the service, then the stop tool to stop it.\n"+
+			"\n"+
+			"Assignment: start and stop the service\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Starting the service."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "start"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Now stopping the service."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "stop"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: service started and stopped."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "start and stop the service" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The start tool's deliberate print survives into its tool result: the
+	// service's 200 noise lines all land before the healthcheck passes, so
+	// without service filtering they'd swamp the 8-line tail.
+	require.Contains(t, out, "SERVICE-READY")
+	// The service exec span's logs stay out of tool results entirely.
+	require.NotContains(t, out, "SVC-NOISE")
+	// stop's print also surfaces — this exercises the late-cause-link route:
+	// stop reloads the started service, re-linking the exec span (and its
+	// full log history) beneath the stop tool call.
+	require.Contains(t, out, "SERVICE-STOPPED")
+}
+
+// TestToolLogsKeepReport locks in that a module function's own print output
+// reaches the tool result in full, even after noisy nested work. It covers
+// both halves: the Dang runtime routes stdio to the user-facing span (the
+// function call the user sees) rather than the passthrough call_exec
+// profiling span it currently runs under — as containerized SDKs do via the
+// injected traceparent — and captureLogLines then classifies that output as
+// the tool's own and keeps it verbatim, abridging only nested work.
+func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	// Mirrors ReportAgent.drive's conversation (the first user message must
+	// match its withPrompt byte for byte). Tool results are placeholders —
+	// the real tool runs during replay.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// Every line of the tool's own report survives into the tool result.
+	for i := 1; i <= 14; i++ {
+		require.Contains(t, out, fmt.Sprintf("LINE-%02d", i))
+	}
+	// The nested exec's output is still abridged to its trailing lines.
+	require.NotContains(t, out, "NESTED-NOISE-01")
+	require.Contains(t, out, "NESTED-NOISE-20")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
