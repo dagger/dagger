@@ -425,8 +425,11 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 	// service's 200 noise lines all land before the healthcheck passes, so
 	// without service filtering they'd swamp the 8-line tail.
 	require.Contains(t, out, "SERVICE-READY")
-	// The service exec span's logs stay out of tool results entirely.
-	require.NotContains(t, out, "SVC-NOISE")
+	// The service exec span's emitted logs stay out of tool results entirely.
+	// The surfaced SERVICES row includes the service command itself, so assert
+	// against a concrete expanded loop line rather than the marker in that
+	// command ("echo SVC-NOISE-$i").
+	require.NotContains(t, out, "SVC-NOISE-200")
 	// stop's print also surfaces — this exercises the late-cause-link route:
 	// stop reloads the started service, re-linking the exec span (and its
 	// full log history) beneath the stop tool call.
@@ -434,17 +437,16 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 }
 
 // TestToolLogsKeepReport locks in that a module function's own print output
-// reaches the tool result in full, even after noisy nested work. It covers
-// both halves: the Dang runtime routes stdio to the user-facing span (the
-// function call the user sees) rather than the passthrough call_exec
-// profiling span it currently runs under — as containerized SDKs do via the
-// injected traceparent — and the tool result then classifies that output as
-// the tool's own and keeps it verbatim, abridging only nested work.
+// reaches the tool result in full, even after noisy nested work. The Dang
+// runtime routes stdio to the user-facing span (the function call the user
+// sees) rather than the passthrough call_exec profiling span it currently runs
+// under — as containerized SDKs do via the injected traceparent — and the tool
+// result classifies that output as the tool's own and keeps it verbatim.
 //
-// It also locks in the shape of the result: a tool call that produced child
-// telemetry is rendered as the pretty report (the span tree), scoped to
-// the tool call, rather than a flat log dump — with the same abridging
-// guarantees and a ReadLogs breadcrumb for the rest.
+// A successful tool result now contains its own output and surfaced sections,
+// falling back to abridged flat logs when nothing was surfaced. The raw span
+// tree itself remains available through ReadTrace instead of being transcribed
+// into every result.
 func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -456,7 +458,8 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 
 	// Mirrors ReportAgent.drive's conversation (the first user message must
 	// match its withPrompt text byte for byte). Tool results are placeholders —
-	// the real tool runs during replay.
+	// the real tool runs during replay. Give its nested exec a fresh cache key:
+	// a shared-cache hit has no live stdout for the tool result to abridge.
 	model := cannedReplayModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
@@ -464,7 +467,8 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 			"Assignment: do the work and write the report\n").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
 		}).
 		WithToolResult("call_1", "", false).
 		WithResponse([]dagger.LLMContentBlockInput{
@@ -480,15 +484,11 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	for i := 1; i <= 14; i++ {
 		require.Contains(t, out, fmt.Sprintf("LINE-%02d", i))
 	}
-	// The nested exec's output is still abridged to its trailing lines.
+	// With no surfaced sections, useful nested output is still abridged into
+	// the flat result, while the raw span-tree rows stay out.
 	require.NotContains(t, out, "NESTED-NOISE-01")
 	require.Contains(t, out, "NESTED-NOISE-20")
-
-	// The tool call produced child telemetry, so its result is the rendered
-	// span tree — the function call the tool ran — not a bare log dump...
-	require.Contains(t, out, "ReportAgent.report")
-	// ...closed by the breadcrumb that keeps the full logs reachable.
-	require.Contains(t, out, "to read the full logs")
+	require.NotContains(t, out, "ReportAgent.report")
 	require.Contains(t, out, "ReadLogs(span:")
 }
 

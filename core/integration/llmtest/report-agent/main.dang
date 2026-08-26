@@ -18,11 +18,16 @@ type ReportAgent {
   """
   Do noisy nested work, then print a multi-line report.
   """
-  report: ReportAgent! {
+  report(cacheBuster: String!): ReportAgent! {
     # Nested work: 20 lines of noise, well past the 8-line indirect tail.
     container
       .from("alpine")
-      .withExec(["sh", "-c", "for i in $(seq 20); do printf 'NESTED-NOISE-%02d\\n' $i; done"])
+      .withExec([
+        "sh",
+        "-c",
+        "for i in $(seq 20); do printf 'NESTED-NOISE-%02d\\n' $i; done",
+        cacheBuster,
+      ])
       .sync
     # The report itself: every line must survive into the tool result.
     print("LINE-01\nLINE-02\nLINE-03\nLINE-04\nLINE-05\nLINE-06\nLINE-07\nLINE-08\nLINE-09\nLINE-10\nLINE-11\nLINE-12\nLINE-13\nLINE-14")
