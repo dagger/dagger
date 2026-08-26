@@ -894,8 +894,14 @@ func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChe
 	return roots, nil
 }
 
+// upsertPersistedEdgeLocked requires egraphMu for writing.
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
 	if c == nil || res == nil || res.id == 0 {
+		return
+	}
+	// Collection can legitimately win a race with deferred callers, so a stale
+	// upsert is a no-op rather than an error.
+	if _, found := c.resultsByID[res.id]; !found {
 		return
 	}
 	if c.persistedEdgesByResult == nil {
@@ -936,6 +942,10 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 	}
 
 	c.egraphMu.Lock()
+	if _, found := c.resultsByID[shared.id]; !found {
+		c.egraphMu.Unlock()
+		return fmt.Errorf("make result unpruneable: result %d was already collected", shared.id)
+	}
 	c.upsertPersistedEdgeLocked(ctx, shared, 0, true)
 	c.egraphMu.Unlock()
 	return nil
@@ -1634,6 +1644,35 @@ type sharedResult struct {
 	lazyEvalSpanCtx trace.SpanContext
 }
 
+type resultAttachmentState uint8
+
+const (
+	resultAttachmentClean resultAttachmentState = iota
+	resultAttachmentOpen
+	resultAttachmentFailed
+)
+
+func (res *sharedResult) attachmentState() resultAttachmentState {
+	if res == nil {
+		return resultAttachmentFailed
+	}
+
+	res.attachDepsMu.Lock()
+	defer res.attachDepsMu.Unlock()
+	if res.attachDepsWaitCh == nil {
+		return resultAttachmentClean
+	}
+	select {
+	case <-res.attachDepsWaitCh:
+		if res.attachDepsErr != nil {
+			return resultAttachmentFailed
+		}
+		return resultAttachmentClean
+	default:
+		return resultAttachmentOpen
+	}
+}
+
 type sharedResultPayloadState struct {
 	self               Typed
 	isObject           bool
@@ -1884,14 +1923,12 @@ func wrapSharedResultWithResolver(ctx context.Context, res *sharedResult, hitCac
 type ongoingCall struct {
 	callConcurrencyKeys callConcurrencyKeys
 	// isPersistable is monotonic persistence intent aggregated from every
-	// request admitted to this call. Late joiners update it under callsMu while
-	// publication reads it under egraphMu, so all accesses must be atomic.
+	// request admitted to this call. The call-state path uses callsMu, while
+	// debug snapshots can read independently, so all accesses remain atomic.
 	isPersistable atomic.Bool
-	// persistedDuringPublication records whether the publication-time intent
-	// snapshot installed the persisted edge. If a late joiner arrives after
-	// that snapshot, needsPersistRepair is set when callsMu closes admission.
-	persistedDuringPublication bool
-	needsPersistRepair         bool
+	// needsPersistedEdge records that successful publication must commit the
+	// aggregate persistence intent before dropping its handoff ownership.
+	needsPersistedEdge         bool
 	persistedEdgeExpiresAtUnix int64
 	ttlSeconds                 int64
 	initCompletedResultOnce    sync.Once
@@ -1956,7 +1993,14 @@ func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *Resul
 	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
 }
 
-func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64) *sharedResult {
+// canonicalEquivalentSharedResultLocked picks the canonical equivalent of res
+// from its output classes, falling back to res itself when no candidate is
+// selectable. requireCleanAttachment restricts candidates to results whose
+// dependency attachment finished cleanly: publication adoption skips the
+// attach barrier and commits persistence at the handoff without re-checking
+// attachment, so adoption must never swap to a result whose attachment could
+// still fail.
+func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64, requireCleanAttachment bool) *sharedResult {
 	if res == nil || res.id == 0 {
 		return nil
 	}
@@ -1971,10 +2015,16 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, nil)
 		}
 	}
-
-	if candidates.Empty() {
-		return res
+	if requireCleanAttachment {
+		clean := newSharedResultSet()
+		for cand := range candidates.Items() {
+			if cand.attachmentState() == resultAttachmentClean {
+				clean.Insert(cand)
+			}
+		}
+		candidates = clean
 	}
+
 	if canonical := c.selectLookupCandidateForSessionLocked(sessionID, candidates); canonical != nil {
 		return canonical
 	}
@@ -3963,6 +4013,7 @@ func (c *Cache) getOrInitCallInner(
 	sharedWorkCtx, releaseSharedWorkLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
 		c.callsMu.Unlock()
+		cancel(err)
 		execOp.End(wcprof.OutcomeError)
 		if execSpan != nil {
 			execSpan.End()
@@ -4240,9 +4291,8 @@ func (c *Cache) wait(
 		}
 		EndProfSpan(pubSpan, &oc.initCompletedResultErr)
 		c.callsMu.Lock()
-		oc.needsPersistRepair = oc.initCompletedResultErr == nil &&
+		oc.needsPersistedEdge = oc.initCompletedResultErr == nil &&
 			oc.res != nil &&
-			!oc.persistedDuringPublication &&
 			oc.isPersistable.Load()
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()
@@ -4290,7 +4340,7 @@ func (c *Cache) wait(
 	var handoffErr error
 	if lastWaiter && oc.handoffHoldActive {
 		// The final waiter always completes the centralized handoff so late
-		// persistence intent is repaired before its temporary ownership drops.
+		// persistence intent is committed before its temporary ownership drops.
 		handoffErr = c.releaseOngoingCallHandoff(ctx, oc)
 	}
 	if claimErr != nil {
@@ -4308,17 +4358,16 @@ func (c *Cache) wait(
 }
 
 // releaseOngoingCallHandoff releases the temporary ownership that protects a
-// published result until every admitted waiter has finished. If persistence
-// intent arrived after publication's initial snapshot, repair the missed edge
-// inside this already-required egraph critical section before dropping the
-// handoff ownership.
+// published result until every admitted waiter has finished. Successful
+// publication commits aggregate persistence intent inside the same egraph
+// critical section before dropping the handoff ownership.
 func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) error {
 	if c == nil || oc == nil || oc.res == nil || !oc.handoffHoldActive {
 		return nil
 	}
 
 	c.egraphMu.Lock()
-	if oc.needsPersistRepair {
+	if oc.needsPersistedEdge {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
 	}
 	queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
@@ -4360,7 +4409,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if oc.val != nil {
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
 			c.egraphMu.Lock()
-			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix())
+			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix(), true)
 			// Take the publication handoff hold inside the same critical
 			// section as the canonical pick: the adopted result may be owned
 			// only by another session, and a concurrent session release must
@@ -4642,10 +4691,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		c.egraphMu.Unlock()
 		return err
-	}
-	if oc.isPersistable.Load() {
-		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
-		oc.persistedDuringPublication = true
 	}
 	// The cache-backed path already took the handoff hold when it adopted the
 	// canonical result above; only fresh results take it here.
