@@ -139,6 +139,7 @@ type persistedEdge struct {
 const cachePersistenceSchemaVersion = "17"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
+var ErrCacheSessionReleased = errors.New("cache session released")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
 type CachePersistenceResetReason string
@@ -257,42 +258,59 @@ func NewCache(
 	return c, nil
 }
 
-func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res AnyResult, hitCache bool) {
-	if c == nil || sessionID == "" || res == nil {
-		return
-	}
-	shared := res.cacheSharedResult()
-	if shared == nil || shared.id == 0 {
-		return
+// acquireSessionResultLocked records a session edge and its ownership unit in
+// one critical section. The caller must hold egraphMu; this function nests
+// sessionMu inside it.
+func (c *Cache) acquireSessionResultLocked(ctx context.Context, sessionID string, shared *sharedResult) (bool, int, error) {
+	if c == nil || sessionID == "" || shared == nil || shared.id == 0 {
+		return false, 0, nil
 	}
 
-	acquired := false
-	trackedCount := 0
 	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if _, released := c.releasedSessionIDs[sessionID]; released {
+		return false, 0, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
+	if _, found := c.resultsByID[shared.id]; !found {
+		return false, 0, fmt.Errorf("track session result %d: result is not registered", shared.id)
+	}
 	if c.sessionResultIDsBySession == nil {
 		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
 	}
 	if c.sessionResultIDsBySession[sessionID] == nil {
 		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
 	}
-	if _, found := c.sessionResultIDsBySession[sessionID][shared.id]; !found {
-		c.sessionResultIDsBySession[sessionID][shared.id] = struct{}{}
-		acquired = true
+	if _, found := c.sessionResultIDsBySession[sessionID][shared.id]; found {
+		return true, len(c.sessionResultIDsBySession[sessionID]), nil
 	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
+	c.sessionResultIDsBySession[sessionID][shared.id] = struct{}{}
+	if c.testAfterSessionResultRecord != nil {
+		c.testAfterSessionResultRecord()
+	}
+	c.incrementIncomingOwnershipLocked(ctx, shared)
+	return false, len(c.sessionResultIDsBySession[sessionID]), nil
+}
 
-	if acquired {
-		c.egraphMu.Lock()
-		if c.resultsByID[shared.id] == shared {
-			c.incrementIncomingOwnershipLocked(ctx, shared)
-		}
-		c.egraphMu.Unlock()
+func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res AnyResult, hitCache bool) error {
+	if c == nil || sessionID == "" || res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil
+	}
+
+	c.egraphMu.Lock()
+	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, shared)
+	c.egraphMu.Unlock()
+	if err != nil {
+		return err
 	}
 
 	if c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, res, hitCache, trackedCount)
 	}
+	return nil
 }
 
 func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error {
@@ -727,34 +745,34 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	return lazyEvalFuncOfResult(res) != nil
 }
 
-func (c *Cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResult) {
-	if c == nil || sessionID == "" || res == nil {
-		return
-	}
-	shared, ok := res.(arbitraryResult)
-	if !ok || shared.shared == nil {
-		return
+// acquireSessionArbitraryLocked records an arbitrary-value session edge and
+// its ownership unit in one critical section. The caller must hold callsMu;
+// this function nests sessionMu inside it.
+func (c *Cache) acquireSessionArbitraryLocked(sessionID string, shared *sharedArbitraryResult) error {
+	if c == nil || sessionID == "" || shared == nil {
+		return nil
 	}
 
-	acquired := false
 	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if _, released := c.releasedSessionIDs[sessionID]; released {
+		return fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
 	if c.sessionArbitraryCallKeysBySession == nil {
 		c.sessionArbitraryCallKeysBySession = make(map[string]map[string]struct{})
 	}
 	if c.sessionArbitraryCallKeysBySession[sessionID] == nil {
 		c.sessionArbitraryCallKeysBySession[sessionID] = make(map[string]struct{})
 	}
-	if _, found := c.sessionArbitraryCallKeysBySession[sessionID][shared.shared.callKey]; !found {
-		c.sessionArbitraryCallKeysBySession[sessionID][shared.shared.callKey] = struct{}{}
-		acquired = true
+	if _, found := c.sessionArbitraryCallKeysBySession[sessionID][shared.callKey]; found {
+		return nil
 	}
-	c.sessionMu.Unlock()
-
-	if acquired {
-		c.callsMu.Lock()
-		shared.shared.ownerSessionCount++
-		c.callsMu.Unlock()
+	c.sessionArbitraryCallKeysBySession[sessionID][shared.callKey] = struct{}{}
+	if c.testAfterSessionArbitraryRecord != nil {
+		c.testAfterSessionArbitraryRecord()
 	}
+	shared.ownerSessionCount++
+	return nil
 }
 
 func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
@@ -766,6 +784,10 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	}
 
 	c.sessionMu.Lock()
+	if c.releasedSessionIDs == nil {
+		c.releasedSessionIDs = make(map[string]struct{})
+	}
+	c.releasedSessionIDs[sessionID] = struct{}{}
 	resultIDs := c.sessionResultIDsBySession[sessionID]
 	arbitraryCallKeys := c.sessionArbitraryCallKeysBySession[sessionID]
 	delete(c.sessionResultIDsBySession, sessionID)
@@ -776,6 +798,9 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	delete(c.sessionVolatileVarsBySession, sessionID)
 	delete(c.sessionHandlesBySession, sessionID)
 	c.sessionMu.Unlock()
+	if c.testAfterSessionReleaseRecord != nil {
+		c.testAfterSessionReleaseRecord()
+	}
 
 	var (
 		rerr       error
@@ -784,16 +809,8 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	c.egraphMu.Lock()
 	queue := make([]*sharedResult, 0, len(resultIDs))
 	for resultID := range resultIDs {
-		shared := c.resultsByID[resultID]
-		if shared == nil {
-			continue
-		}
-		res := Result[Typed]{shared: shared}
-		if c.traceEnabled() {
-			c.traceSessionResultReleasing(ctx, sessionID, res, "release_session", 1, len(resultIDs))
-		}
 		var err error
-		queue, err = c.decrementIncomingOwnershipLocked(ctx, shared, queue)
+		queue, err = c.removeSessionResultLocked(ctx, sessionID, resultID, len(resultIDs), queue)
 		rerr = errors.Join(rerr, err)
 	}
 	collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
@@ -815,10 +832,10 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 				res.ownerSessionCount = 0
 			}
 			if res.ownerSessionCount == 0 && res.waiters == 0 {
-				if existing := c.ongoingArbitraryCalls[callKey]; existing == res {
+				if existing := c.ongoingArbitraryCalls[callKey]; existing != nil && existing.id == res.id {
 					delete(c.ongoingArbitraryCalls, callKey)
 				}
-				if existing := c.completedArbitraryCalls[callKey]; existing == res {
+				if existing := c.completedArbitraryCalls[callKey]; existing != nil && existing.id == res.id {
 					delete(c.completedArbitraryCalls, callKey)
 				}
 				onRelease = res.onRelease
@@ -830,6 +847,20 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 		}
 	}
 	return rerr
+}
+
+// removeSessionResultLocked removes the ownership unit for a snapshotted
+// session edge when its result is still registered. The caller must hold
+// egraphMu.
+func (c *Cache) removeSessionResultLocked(ctx context.Context, sessionID string, resultID sharedResultID, trackedCount int, queue []*sharedResult) ([]*sharedResult, error) {
+	shared := c.resultsByID[resultID]
+	if shared == nil {
+		return queue, nil
+	}
+	if c.traceEnabled() {
+		c.traceSessionResultReleasing(ctx, sessionID, Result[Typed]{shared: shared}, "release_session", 1, trackedCount)
+	}
+	return c.decrementIncomingOwnershipLocked(ctx, shared, queue)
 }
 
 func (c *Cache) snapshotSessionResultIDs() map[sharedResultID]struct{} {
@@ -954,7 +985,7 @@ func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *share
 	if c == nil || res == nil || res.id == 0 {
 		return queue
 	}
-	if c.resultsByID[res.id] != res {
+	if _, found := c.resultsByID[res.id]; !found {
 		return queue
 	}
 	if res.incomingOwnershipCount != 0 {
@@ -990,7 +1021,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		res := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 
-		if c.resultsByID[res.id] != res {
+		if _, found := c.resultsByID[res.id]; !found {
 			continue
 		}
 		if res.incomingOwnershipCount != 0 {
@@ -1381,9 +1412,13 @@ type Cache struct {
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
 	completedArbitraryCalls map[string]*sharedArbitraryResult
+	// nextArbitraryResultID allocates engine-lifetime-unique identities for
+	// arbitrary entries; guarded by callsMu.
+	nextArbitraryResultID uint64
 
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
+	releasedSessionIDs                map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
 	// sessionResultInstallSpans records which API spans returned/own which
 	// results in a session. Lazy resume spans cause-link the install spans of
@@ -1408,6 +1443,13 @@ type Cache struct {
 
 	snapshotManager bkcache.SnapshotManager
 	snapshotGC      func(context.Context) error
+
+	// Test hooks are nil in production. Tests use them to pause inside or
+	// between lifecycle critical sections without timing-based coordination.
+	testAfterSessionResultRecord    func()
+	testAfterSessionArbitraryRecord func()
+	testAfterSessionReleaseRecord   func()
+	testAfterHandoffHoldAcquired    func(*ongoingCall)
 
 	closeOnce sync.Once
 	closeErr  error
@@ -2058,7 +2100,9 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		}
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
 		c.traceAttachResultReusedCacheBacked(ctx, sessionID, shared)
-		c.trackSessionResult(ctx, sessionID, loaded, true)
+		if err := c.trackSessionResult(ctx, sessionID, loaded, true); err != nil {
+			return nil, fmt.Errorf("attach dependency result: claim cache-backed result: %w", err)
+		}
 		return loaded, nil
 	}
 	frame := shared.loadResultCall()
@@ -2109,16 +2153,14 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	if oc.res == nil {
 		return nil, fmt.Errorf("attach dependency result: completed without initialized result")
 	}
-	c.trackSessionResult(ctx, sessionID, Result[Typed]{shared: oc.res}, false)
-	if oc.handoffHoldActive {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		oc.handoffHoldActive = false
-		if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
-			return nil, fmt.Errorf("attach dependency result: release publication hold: %w", relErr)
-		}
+	if err := c.trackSessionResult(ctx, sessionID, Result[Typed]{shared: oc.res}, false); err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("attach dependency result: claim initialized result: %w", err),
+			c.releaseOngoingCallHandoff(ctx, oc),
+		)
+	}
+	if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
+		return nil, fmt.Errorf("attach dependency result: release publication hold: %w", relErr)
 	}
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
 
@@ -2434,7 +2476,9 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
 		}
-		cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true)
+		if err := cache.trackSessionResult(ctx, clientMetadata.SessionID, retResAny, true); err != nil {
+			return nil, fmt.Errorf("load %dth value from %T: claim cache-backed result: %w", nth, self, err)
+		}
 		return retResAny, nil
 	}
 
@@ -3772,7 +3816,9 @@ func (c *Cache) getOrInitCallInner(
 			if err != nil {
 				return nil, fmt.Errorf("normalize do-not-cache attached result: %w", err)
 			}
-			c.trackSessionResult(ctx, sessionID, normalized, false)
+			if err := c.trackSessionResult(ctx, sessionID, normalized, false); err != nil {
+				return nil, fmt.Errorf("claim do-not-cache attached result: %w", err)
+			}
 			c.captureSessionResultInstallSpan(ctx, sessionID, normalized)
 			return normalized, nil
 		}
@@ -4066,44 +4112,15 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, fmt.Errorf("lookup cache for digests: hit missing shared result ID")
 	}
 
-	trackedCount := 0
-	alreadyTracked := false
-	c.sessionMu.Lock()
-	if c.sessionResultIDsBySession == nil {
-		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-	}
-	if c.sessionResultIDsBySession[sessionID] == nil {
-		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-	}
-	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
-		alreadyTracked = true
-	} else {
-		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, hitShared)
-	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
+	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
 	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, false, err
+	}
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
-		c.egraphMu.Lock()
-		c.sessionMu.Lock()
-		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
-			delete(resultIDs, hitShared.id)
-			if len(resultIDs) == 0 {
-				delete(c.sessionResultIDsBySession, sessionID)
-			}
-		}
-		c.sessionMu.Unlock()
-		queue := []*sharedResult(nil)
-		var decErr error
-		if !alreadyTracked {
-			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
-		}
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		return nil, false, err
 	}
 	if c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
@@ -4261,17 +4278,26 @@ func (c *Cache) wait(
 		shared:   oc.res,
 		hitCache: false,
 	}
-	c.trackSessionResult(ctx, sessionID, retRes, false)
-	c.captureSessionLazySpanContext(ctx, sessionID, retRes)
-	c.captureSessionResultInstallSpan(ctx, sessionID, retRes)
+	claimErr := c.trackSessionResult(ctx, sessionID, retRes, false)
+	if claimErr == nil {
+		c.captureSessionLazySpanContext(ctx, sessionID, retRes)
+		c.captureSessionResultInstallSpan(ctx, sessionID, retRes)
+	}
 	c.callsMu.Lock()
 	oc.waiters--
 	lastWaiter := oc.waiters == 0
 	c.callsMu.Unlock()
+	var handoffErr error
 	if lastWaiter && oc.handoffHoldActive {
-		if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
-			return nil, relErr
-		}
+		// The final waiter always completes the centralized handoff so late
+		// persistence intent is repaired before its temporary ownership drops.
+		handoffErr = c.releaseOngoingCallHandoff(ctx, oc)
+	}
+	if claimErr != nil {
+		return nil, errors.Join(fmt.Errorf("wait: claim result: %w", claimErr), handoffErr)
+	}
+	if handoffErr != nil {
+		return nil, handoffErr
 	}
 
 	retResAny, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
@@ -4343,6 +4369,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			// ownership.
 			c.incrementIncomingOwnershipLocked(ctx, oc.res)
 			oc.handoffHoldActive = true
+			if c.testAfterHandoffHoldAcquired != nil {
+				c.testAfterHandoffHoldAcquired(oc)
+			}
 			c.egraphMu.Unlock()
 			if objVal, ok := oc.val.(AnyObjectResult); ok {
 				oc.res.setObjClass(objVal.ObjectType())
@@ -4623,6 +4652,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if !oc.handoffHoldActive {
 		c.incrementIncomingOwnershipLocked(ctx, oc.res)
 		oc.handoffHoldActive = true
+		if c.testAfterHandoffHoldAcquired != nil {
+			c.testAfterHandoffHoldAcquired(oc)
+		}
 	}
 	if !resWasCacheBacked {
 		oc.res.attachDepsMu.Lock()

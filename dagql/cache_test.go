@@ -4716,12 +4716,19 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 			default:
 			}
 
-			if _, err := buildArray(ownerCtx, ownerSessionID); err != nil {
+			producerSessionID := fmt.Sprintf("stress-array-producer-session-%d", iter)
+			producerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-array-producer-client-%d", iter),
+				SessionID: producerSessionID,
+			})
+			producerCtx = ContextWithCache(producerCtx, c)
+			producerCtx = srvToContext(producerCtx, srv)
+			if _, err := buildArray(producerCtx, producerSessionID); err != nil {
 				producerErrCh <- err
 				return
 			}
 			time.Sleep(50 * time.Microsecond)
-			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+			if err := c.ReleaseSession(producerCtx, producerSessionID); err != nil {
 				producerErrCh <- err
 				return
 			}
@@ -4805,6 +4812,7 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 		err = errors.Join(err, producerErr)
 	default:
 	}
+	assert.NilError(t, c.ReleaseSession(ownerCtx, ownerSessionID))
 	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-array-seed-session"))
 	if msg := failure.Load(); msg != nil {
 		t.Fatalf("reproduced array hit call-frame race after %d attempts and %d hits: %s", attempts.Load(), hitCount.Load(), *msg)
@@ -5273,14 +5281,21 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 	go func() {
 		defer close(ownerDone)
 		<-start
-		for {
+		for iter := 0; ; iter++ {
 			select {
 			case <-stopOwner:
 				return
 			default:
 			}
 
-			res, err := buildArray(ownerCtx, ownerSessionID)
+			producerSessionID := fmt.Sprintf("stress-load-by-id-owner-session-%d", iter)
+			producerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-load-by-id-owner-client-%d", iter),
+				SessionID: producerSessionID,
+			})
+			producerCtx = ContextWithCache(producerCtx, c)
+			producerCtx = srvToContext(producerCtx, srv)
+			res, err := buildArray(producerCtx, producerSessionID)
 			if err != nil {
 				ownerErrCh <- err
 				return
@@ -5294,7 +5309,7 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 
 			time.Sleep(50 * time.Microsecond)
 
-			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+			if err := c.ReleaseSession(producerCtx, producerSessionID); err != nil {
 				ownerErrCh <- err
 				return
 			}
@@ -5764,7 +5779,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 1, len(c.resultOutputEqClasses))
 
 	initCallsAfter := 0
-	resC, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+	resC, err := c.GetOrInitCall(ctx, "persistable-hit-after-release", noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		initCallsAfter++
@@ -5774,7 +5789,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 0, initCallsAfter)
 	assert.Assert(t, resC.HitCache())
 	assert.Equal(t, 17, cacheTestUnwrapInt(t, resC))
-	cacheTestReleaseSession(t, c, ctx)
+	assert.NilError(t, c.ReleaseSession(ctx, "persistable-hit-after-release"))
 }
 
 func TestCacheMakeResultUnpruneableRetainsAcrossSessionClose(t *testing.T) {

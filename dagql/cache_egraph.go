@@ -980,44 +980,15 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
 	}
 
-	trackedCount := 0
-	alreadyTracked := false
-	c.sessionMu.Lock()
-	if c.sessionResultIDsBySession == nil {
-		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-	}
-	if c.sessionResultIDsBySession[sessionID] == nil {
-		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-	}
-	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
-		alreadyTracked = true
-	} else {
-		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, hitShared)
-	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
+	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
 	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, false, err
+	}
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
-		c.egraphMu.Lock()
-		c.sessionMu.Lock()
-		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
-			delete(resultIDs, hitShared.id)
-			if len(resultIDs) == 0 {
-				delete(c.sessionResultIDsBySession, sessionID)
-			}
-		}
-		c.sessionMu.Unlock()
-		queue := []*sharedResult(nil)
-		var decErr error
-		if !alreadyTracked {
-			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
-		}
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		return nil, false, err
 	}
 
 	if c.traceEnabled() {
@@ -1544,8 +1515,10 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	// after its last owner released it: its OnRelease already ran, so its
 	// payload may reference released resources. Refuse to resurrect it rather
 	// than re-publish a dead payload into the cache.
-	if res.id != 0 && c.resultsByID[res.id] != res {
-		return fmt.Errorf("index result %d: result was already collected", res.id)
+	if res.id != 0 {
+		if _, found := c.resultsByID[res.id]; !found {
+			return fmt.Errorf("index result %d: result was already collected", res.id)
+		}
 	}
 
 	digestSet := make(map[string]struct{}, 6)
@@ -1851,7 +1824,13 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultsByID = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
-	c.nextSharedResultID = 0
+	// nextSharedResultID deliberately survives the reset: numeric result IDs
+	// must be engine-lifetime unique because they outlive this index (session
+	// records, dependency edges, persisted rows, results held by in-flight
+	// callers). Recycling a number could alias two different results. Class
+	// and term IDs never leave the index maps cleared above, so their
+	// counters can restart. Import seeds nextSharedResultID past the highest
+	// persisted ID at startup for the same reason.
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
