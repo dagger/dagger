@@ -109,17 +109,87 @@ func (m *TlaCheck) base() *dagger.Container {
 		WithWorkdir("/spec")
 }
 
+// quickConfigs is the curated cheap subset for Quick: every configuration
+// that finishes in seconds (roughly 100k distinct states or fewer). It
+// catches a spec that stops parsing and registration drift without paying
+// for the big state spaces. Keep it in sync when configurations are added
+// or their costs change materially.
+var quickConfigs = []string{
+	"drain_escape",
+	"drain_orphan",
+	"flush_closure",
+	"flush_drained",
+	"flush_inflight",
+	"flush_roundtrip",
+	"lazy_liveness",
+	"lazy_release",
+	"lazy_stale_cancel",
+	"liveness",
+	"lost_cancel",
+	"orphan_edges",
+	"poisoned",
+	"poisoned_restart",
+	"release_inflight",
+	"release_steal",
+}
+
 // CacheLifecycle model-checks every configuration of the dagql cache spec
 // and verifies each outcome against its expectation.
+//
+// WARNING: the full run is expensive - roughly 35 to 40 minutes wall with
+// four TLC JVMs, and the largest configurations exceed 40 million distinct
+// states each. Run it sparingly: it is required before pushing changes
+// under dagql/tla (it no longer runs in CI), but for iteration prefer
+// Quick (seconds), Some (chosen configurations with their expectations
+// enforced), or One (a single configuration, raw output, optional probe
+// injection).
 // +check
 func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
-	base := m.base()
-
 	names := make([]string, 0, len(expectedOutcome))
 	for name := range expectedOutcome {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	return m.runConfigs(ctx, names)
+}
+
+// Quick model-checks only the cheap configurations (quickConfigs), with
+// their expectations enforced. It finishes in about a minute and is the
+// right default while iterating; it does not replace the full
+// CacheLifecycle run before a push.
+// +check
+func (m *TlaCheck) Quick(ctx context.Context) error {
+	return m.runConfigs(ctx, quickConfigs)
+}
+
+// Some model-checks the named configurations (without the CacheLifecycle_
+// prefix), with their expectations enforced - the middle ground between
+// the full check and One, which enforces nothing.
+func (m *TlaCheck) Some(
+	ctx context.Context,
+	// configuration names without the CacheLifecycle_ prefix, e.g.
+	// "resources,resources_latedep"
+	configs []string,
+) error {
+	if len(configs) == 0 {
+		return fmt.Errorf("some: no configurations named")
+	}
+	var unknown []string
+	for _, name := range configs {
+		if _, ok := expectedOutcome[name]; !ok {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return fmt.Errorf("some: unknown configurations %s (see expectedOutcome in this module)", strings.Join(unknown, ", "))
+	}
+	return m.runConfigs(ctx, configs)
+}
+
+func (m *TlaCheck) runConfigs(ctx context.Context, names []string) error {
+	base := m.base()
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
 
 	var (
 		mu       sync.Mutex
@@ -129,7 +199,7 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 		// over 30 configurations exhausted a 64 GiB host.
 		sem = make(chan struct{}, 4)
 	)
-	for _, name := range names {
+	for _, name := range sorted {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
@@ -148,7 +218,7 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 		sort.Strings(failures)
 		return fmt.Errorf(
 			"TLA+ cache model check failed (%d of %d configurations):\n%s\n\nEach configuration's comment in dagql/tla/ describes its scenario and expected outcome.",
-			len(failures), len(names), strings.Join(failures, "\n"))
+			len(failures), len(sorted), strings.Join(failures, "\n"))
 	}
 	return nil
 }

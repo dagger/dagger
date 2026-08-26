@@ -233,6 +233,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*TlaCheck).One(&parent, ctx, config, invariant, define)
+		case "Quick":
+			var parent TlaCheck
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*TlaCheck).Quick(&parent, ctx)
+		case "Some":
+			var parent TlaCheck
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var configs []string
+			if inputArgs["configs"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["configs"]), &configs)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg configs", err))
+				}
+			}
+			return nil, (*TlaCheck).Some(&parent, ctx, configs)
 		case "":
 			var parent TlaCheck
 			err = json.Unmarshal(parentJSON, &parent)
@@ -258,17 +279,29 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("CacheLifecycle",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.").
-							WithSourceMap(dag.SourceMap("main.go", 115, 1)).
+							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.\n\nWARNING: the full run is expensive - roughly 35 to 40 minutes wall with\nfour TLC JVMs, and the largest configurations exceed 40 million distinct\nstates each. Run it sparingly: it is required before pushing changes\nunder dagql/tla (it no longer runs in CI), but for iteration prefer\nQuick (seconds), Some (chosen configurations with their expectations\nenforced), or One (a single configuration, raw output, optional probe\ninjection).").
+							WithSourceMap(dag.SourceMap("main.go", 147, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("One",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("One runs a single TLC configuration and returns the raw TLC output,\nusing the same pinned jar and invocation as the CacheLifecycle check.\nUnlike the check, it applies no expectation: violations come back in\nthe output for the caller to read.\n\nWith invariant set, the configuration's INVARIANTS line is replaced by\nthat single invariant, the specification is forced to the safety-only\nSpec, and PROPERTY lines are dropped, so one question runs in\nisolation. With define also set, the given TLA+ operator definition is\nappended to the spec first; that runs a scratch probe invariant (for\nexample a reachability probe expected to violate) without editing the\nrepository.").
-							WithSourceMap(dag.SourceMap("main.go", 168, 1)).
-							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 171, 2)}).
-							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 174, 2)}).
-							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 177, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 238, 1)).
+							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 241, 2)}).
+							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 244, 2)}).
+							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 247, 2)})).
+					WithFunction(
+						dag.Function("Quick",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Quick model-checks only the cheap configurations (quickConfigs), with\ntheir expectations enforced. It finishes in about a minute and is the\nright default while iterating; it does not replace the full\nCacheLifecycle run before a push.").
+							WithSourceMap(dag.SourceMap("main.go", 160, 1)).
+							WithCheck()).
+					WithFunction(
+						dag.Function("Some",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Some model-checks the named configurations (without the CacheLifecycle_\nprefix), with their expectations enforced - the middle ground between\nthe full check and One, which enforces nothing.").
+							WithSourceMap(dag.SourceMap("main.go", 167, 1)).
+							WithArg("configs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "configuration names without the CacheLifecycle_ prefix, e.g.\n\"resources,resources_latedep\"", SourceMap: dag.SourceMap("main.go", 171, 2)})).
 					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The dagql/tla spec directory.", SourceMap: dag.SourceMap("main.go", 92, 2)}).
 					WithConstructor(
 						dag.Function("New",

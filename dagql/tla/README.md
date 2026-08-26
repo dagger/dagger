@@ -24,13 +24,30 @@ import and leaving the stored set alone at decode install; and
 joiners — fixed by retrying a departed leader's cancellation and the
 post-install lease sync.)
 
-Run the check:
+Run the checks (the module is dev-env scoped and deliberately does NOT
+run in CI):
 
 ```sh
-dagger check tla-check:cache-lifecycle
+# fast subset (~1 minute): the right default while iterating
+dagger --env dev check tla-check:quick
+
+# chosen configurations, expectations enforced
+dagger --env dev call tla-check some --configs=resources,resources_latedep
+
+# one configuration, raw TLC output, optional probe injection
+dagger --env dev call tla-check one --config=resources
+
+# the full suite: REQUIRED before pushing changes under dagql/tla,
+# expensive otherwise - ~35-40 minutes wall with four TLC JVMs; the
+# largest configurations each exceed 40 million distinct states
+# (resources_gated_growth ~66M, resources_restart ~53M, lazy_import
+# ~43M, persist ~40M)
+dagger --env dev check tla-check:cache-lifecycle
 ```
 
-This runs every configuration in parallel and compares each outcome to
-the `expectedOutcome` map in `.dagger/modules/tla-check/main.go` (a new
-config must be added to that map). On failure, the message names the
-configuration and how its outcome diverged from the expectation.
+Every run compares each configuration's outcome to the `expectedOutcome`
+map in `.dagger/modules/tla-check/main.go` (a new config must be added
+to that map; cheap ones belong in `quickConfigs` too). On failure, the
+message names the configuration and how its outcome diverged from the
+expectation. Because CI no longer runs any of this, the full suite
+before pushing is the only line of defense: do not skip it.
