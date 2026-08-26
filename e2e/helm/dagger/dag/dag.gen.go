@@ -615,6 +615,12 @@ func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
 	return client.LoadUpGroupFromID(id)
 }
 
+// Load a Volume from its ID.
+func LoadVolumeFromID(id dagger.VolumeID) *dagger.Volume {
+	client := initClient()
+	return client.LoadVolumeFromID(id)
+}
+
 // Load a Workspace from its ID.
 func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
 	client := initClient()
@@ -657,6 +663,12 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()
 	return client.SourceMap(filename, line, column)
+}
+
+// Constructs an SSHFS volume.
+func SshfsVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.SshfsVolumeOpts) *dagger.Volume {
+	client := initClient()
+	return client.SshfsVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
