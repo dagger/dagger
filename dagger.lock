@@ -4,7 +4,7 @@
 ["","git-latest",["https://github.com/vito/editor"],"refs/heads/main"]
 ["","git-sha",["https://github.com/containernetworking/plugins","refs/tags/v1.9.0"],"9b3772e1a7abf93cbb7c6526a28bc0d27b830e02"]
 ["","git-sha",["https://github.com/dagger/dang-sdk","refs/heads/main"],"5da26366fca40ccbb66ac2f97f57ed95a8f3c17a"]
-["","git-sha",["https://github.com/dagger/go-sdk","refs/heads/main"],"902440e3e097a42cf16354e5eba6b2f0b86194e3"]
+["","git-sha",["https://github.com/dagger/go-sdk","refs/heads/main"],"9b6c556101f8fdace897aa3ed1ff9e3efb344e34"]
 ["","git-sha",["https://github.com/gogo/googleapis.git","refs/tags/v1.4.1"],"1f0e43f50bc0606e385ffae1bc80b5b231dcd042"]
 ["","git-sha",["https://github.com/gogo/protobuf.git","refs/tags/v1.3.2"],"b03c65ea87cdc3521ede29f62fe3ce239267c1bc"]
 ["","git-sha",["https://github.com/libfuse/sshfs.git","refs/tags/sshfs-3.7.6"],"7a2d988775446ebe7af9b01c99b3b8e86bddb05a"]
