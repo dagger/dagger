@@ -35,7 +35,7 @@ source = "../common"
 | --- | --- | --- |
 | `source` | string | Config file to inherit from — a workspace-relative path, or a Git ref such as `github.com/org/base@version`. A source with no file extension names a directory and reaches the `dagger.toml` inside it. |
 
-The included config is merged **underneath** this one, so this workspace wins every conflict. Only one `[[include]]` is resolved for now. See [Includes](../../config/includes.mdx).
+The included config is merged **underneath** this one, so this workspace wins every conflict, and its own modules come with it. Only one `[[include]]` is resolved for now. See [Includes](../../config/includes.mdx).
 
 ## `[modules.<name>]`
 
