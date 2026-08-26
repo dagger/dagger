@@ -1,0 +1,95 @@
+---
+title: "Installation"
+slug: /cli/install
+description: "Install the Dagger CLI"
+---
+
+import { daggerVersion } from '../partials/version.js';
+
+Dagger needs a container runtime. Docker works out of the box; Podman, nerdctl, and Apple Container also work.
+
+## Install the Dagger CLI
+
+The commands below install Dagger v{daggerVersion}, the version this documentation covers.
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+
+If your user can't write to `/usr/local/bin`, run the script with `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="Linux">
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=$HOME/.local/bin sh`}
+</CodeBlock>
+
+Make sure `$HOME/.local/bin` is in your `PATH`. To install system-wide instead, set `BIN_DIR=/usr/local/bin` and run the script with `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="Windows">
+
+In PowerShell 7 or later:
+
+<CodeBlock language="powershell">
+{`iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -DaggerVersion ${daggerVersion} -AddToPath`}
+</CodeBlock>
+
+This installs `dagger.exe` in `%USERPROFILE%\dagger` and adds it to your user `PATH`.
+
+</TabItem>
+</Tabs>
+
+Verify the installation:
+
+<CodeBlock language="shell">
+{`dagger version\n# version:     v${daggerVersion}`}
+</CodeBlock>
+
+To upgrade or switch versions, re-run the install command with the version you want.
+
+## Package managers
+
+Homebrew and winget carry the latest stable release only, which may differ from the version this documentation covers.
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+
+```shell
+brew install dagger/tap/dagger
+```
+
+</TabItem>
+<TabItem value="Windows">
+
+```powershell
+winget install Dagger.Cli
+```
+
+</TabItem>
+</Tabs>
+
+To run v{daggerVersion} from a package-managed CLI, set `DAGGER_X_RELEASE` or pass `--x-release`. The CLI builds and caches that release on first use, then runs as that version:
+
+<CodeBlock language="shell">
+{`# Every command in this shell session
+export DAGGER_X_RELEASE=v${daggerVersion}
+dagger version
+
+# Or per command
+dagger --x-release=v${daggerVersion} version`}
+</CodeBlock>
+
+Unset the variable or drop the flag to return to the installed version. Commands in this documentation omit the prefix and assume the matching release is active.

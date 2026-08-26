@@ -1,0 +1,1083 @@
+---
+title: "PHP SDK"
+slug: /sdks/php
+description: "Develop Dagger modules in PHP: create modules with the PHP SDK module, define objects and functions with attributes, manage dependencies, regenerate bindings, run checks, and ship releases."
+---
+
+# PHP SDK
+
+The PHP SDK lets you write Dagger modules in PHP. You define plain PHP classes and methods, mark them with attributes, and the SDK turns them into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. In return, your module gets a generated, fully typed PHP client, `dag()`, for the whole Dagger API. That covers containers, directories, files, secrets, services, and every module you depend on.
+
+This page is a standalone guide to the PHP SDK. It assumes you already understand the platform concepts covered in the [SDKs overview](./index.mdx):
+
+- [Types](../api/reference/index.mdx) explains how SDK types map to the Dagger API
+- [Generating code](../cli/generating.mdx) explains how generators and tooling return diffs for you to apply
+
+A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The PHP SDK currently supports checks. See [Checks, directives, and ignore patterns](#checks-directives-and-ignore-patterns) for the PHP syntax and what is still missing.
+
+The PHP SDK is itself a Dagger module, `github.com/dagger/php-sdk`. Install it into your workspace once, then use Dagger's SDK and module commands to scaffold, generate, and maintain PHP modules:
+
+```shell
+# Install the PHP SDK into your workspace (once)
+dagger sdk install php
+
+# Create a PHP module
+dagger module init php my-module
+```
+
+## Create a module
+
+:::note
+Run these commands from inside a Git repository. That's where the new module goes.
+:::
+
+Install the PHP SDK into your workspace, then create a new module. The required arguments are the SDK and module name:
+
+```shell
+dagger sdk install php
+dagger module init php my-module
+```
+
+Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../cli/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
+
+:::tip
+If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here php` to create it in the current directory.
+:::
+
+### Where the module is created
+
+By default, `dagger module init` places the new module beside the `dagger.toml`
+it is editing:
+
+```
+<dagger.toml directory>/.dagger/modules/<name>
+```
+
+That is the workspace root unless the config lives in a subdirectory, as it does
+when several projects share one repository.
+
+Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
+
+```shell
+dagger module init php my-module --path ci     # ./ci
+dagger module init php my-module --path /ci    # <workspace root>/ci
+```
+
+Dagger registers a module at a custom path as authored by the SDK but does not install it as a callable workspace module. Run `dagger install ./ci` to install it too.
+
+The PHP SDK ships one starter template, `minimal`, and uses it by default. Pass `--template` to pick a template by name:
+
+```shell
+dagger module init php my-module --template minimal
+```
+
+List the PHP SDK's module initialization options with:
+
+```shell
+dagger module init php --help
+```
+
+### Resulting file layout
+
+Once initialized and generated, a PHP module looks like this:
+
+```text
+my-module/
+├── dagger-module.toml
+├── composer.json
+├── composer.lock                 # generated: written by the first composer install
+├── entrypoint.php                # generated: called by the engine, do not edit
+├── src/
+│   └── MyModule.php              # your code
+├── sdk/                          # generated: the typed Dagger client (gitignored)
+├── vendor/                       # composer dependencies (gitignored)
+├── .gitattributes                # marks generated files for linguist
+└── .gitignore                    # ignores sdk/, vendor/, and .env
+```
+
+:::note
+`dagger module init` writes `dagger-module.toml`, `composer.json`, `entrypoint.php`, and `src/MyModule.php`, updates the workspace config, and runs the PHP SDK's generator for the new module. That is why `composer.lock`, `.gitattributes`, and `.gitignore` land in the same changeset. Pass `--no-generate` to scaffold without generating.
+:::
+
+Unlike some other SDKs, you do not commit the generated PHP client in `sdk/`. The runtime regenerates it from the engine's schema every time it loads the module, so `.gitignore` excludes it along with `vendor/`. A fresh clone never carries a stale client, which is a nice property. The cost is that your editor is blind until you generate the client locally. See [Regenerate bindings](#regenerate-bindings-and-generated-files).
+
+The module config records the runtime separately from the SDK that authors it:
+
+```toml title="dagger-module.toml" template
+name = "my-module"
+engineVersion = "v{{ version }}"
+
+[runtime]
+source = "php"
+```
+
+`runtime.source = "php"` tells the engine to use the PHP runtime. The workspace's `dagger.toml` separately records the module under `modules.dagger-php-sdk.as-sdk`. That authoring relationship is how the PHP SDK's generator finds workspace modules.
+
+`composer.json` declares the module as a Composer package in the `DaggerModule` namespace and depends on the generated client through a path repository:
+
+```json title="composer.json"
+{
+  "name": "daggermodule/my-module",
+  "repositories": [
+    { "type": "path", "url": "./sdk" }
+  ],
+  "require": {
+    "php": "^8.1",
+    "dagger/dagger": "*@dev"
+  },
+  "autoload": {
+    "psr-4": { "DaggerModule\\": "src/" }
+  }
+}
+```
+
+## Define objects and functions
+
+A PHP module is a set of classes in the `DaggerModule` namespace under `src/`. The main object is a class whose name matches your module, PascalCased. A module named `my-module` has a `MyModule` class in `src/MyModule.php`. Mark classes with `#[DaggerObject]`, and every public method marked with `#[DaggerFunction]` becomes a callable Dagger Function.
+
+```php title="src/MyModule.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
+
+#[DaggerObject]
+#[Doc('A simple example module to say hello.')]
+class MyModule
+{
+    #[DaggerFunction]
+    #[Doc('Return a greeting')]
+    public function hello(
+        #[Doc('Who to greet')]
+        string $name,
+        #[Doc('The greeting to display')]
+        string $greeting,
+    ): string {
+        return "{$greeting}, {$name}!";
+    }
+
+    #[DaggerFunction]
+    #[Doc('Return a loud greeting')]
+    public function loudHello(
+        #[Doc('Who to greet')]
+        string $name,
+        #[Doc('The greeting to display')]
+        string $greeting,
+    ): string {
+        return strtoupper("{$greeting}, {$name}!");
+    }
+}
+```
+
+Key rules:
+
+- Classes live in the `DaggerModule` namespace under `src/`; the SDK scans that directory for classes with the `#[DaggerObject]` attribute.
+- A method becomes a Dagger Function only when it is `public` and has the `#[DaggerFunction]` attribute. Private methods, and public methods without the attribute, are ordinary PHP helpers, invisible to callers.
+- Every parameter and return type needs a type hint. The SDK supports named types and nullable named types (`?string`). It does not support union or intersection types.
+- Throw an exception to fail a function. The caller sees the message.
+
+Call your functions like any other module, from the directory that contains `dagger-module.toml` or with `-m <path>`:
+
+```shell
+dagger api call hello --name=World --greeting=Hello
+# Hello, World!
+
+dagger api call loud-hello --name=World --greeting=Hello
+# HELLO, WORLD!
+```
+
+The CLI converts PHP method and argument names to kebab-case (`loudHello` becomes `loud-hello`, `$name` becomes `--name`).
+
+### The constructor
+
+Mark `__construct` on the main class with `#[DaggerFunction]` to make it the module's constructor. Its arguments become arguments of the main object, and the initialized instance is the main object. Use it for module-wide configuration and shared state.
+
+A common pattern is to accept a `Workspace` so the module can read the project it runs against (see [Workspace inputs](#workspace-inputs)). Dagger fills it in from the current workspace and pulls content lazily, so you store the project directory once and reuse it:
+
+```php title="src/MyModule.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
+use Dagger\Attribute\ReturnsListOfType;
+use Dagger\Directory;
+use Dagger\Workspace;
+
+use function Dagger\dag;
+
+#[DaggerObject]
+class MyModule
+{
+    private Directory $source;
+
+    #[DaggerFunction]
+    public function __construct(
+        #[Doc('The current workspace, auto-populated by Dagger.')]
+        Workspace $ws,
+    ) {
+        // Read the workspace root; nothing is uploaded until a function uses it.
+        $this->source = $ws->directory('/');
+    }
+
+    #[DaggerFunction]
+    #[ReturnsListOfType('string')]
+    public function foo(): array
+    {
+        return dag()
+            ->container()
+            ->from('alpine:latest')
+            ->withMountedDirectory('/app', $this->source)
+            ->directory('/app')
+            ->entries();
+    }
+}
+```
+
+Every property on the object, public or private, is part of its state, and Dagger serializes it between functions in a chain. Only public properties marked with `#[DaggerFunction]` show up in the API as readable fields. Everything else stays private to Dagger:
+
+```php
+#[DaggerObject]
+class LintRun
+{
+    #[DaggerFunction]
+    #[Doc('The directory that was linted')]
+    public Directory $source;
+
+    // Present in PHP, hidden from the API.
+    private string $report = '';
+}
+```
+
+Constructor promotion works too, so `public function __construct(private readonly string $greeting = 'Hello')` both declares the argument and stores it. A class that declares fields but no constructor gets an implicit argument-less constructor.
+
+## Arguments and return values
+
+Dagger derives a function's argument and return types from the PHP signature. The mapping is:
+
+| PHP type | Dagger type |
+|---|---|
+| `string` | `String` |
+| `int` | `Int` |
+| `float` | `Float` |
+| `bool` | `Boolean` |
+| `void` or `null` | `Void` |
+| `array` with `#[ListOfType('T')]` / `#[ReturnsListOfType('T')]` | `[T]` (list) |
+| `Dagger\Directory` | `Directory` |
+| `Dagger\File` | `File` |
+| `Dagger\Container` | `Container` |
+| `Dagger\Secret` | `Secret` |
+| `Dagger\Service` | `Service` |
+| a `#[DaggerObject]` class `T` | object `T` |
+
+### Lists
+
+PHP's `array` type carries no element type, so a list argument or return value must declare its element type with an attribute. Use `#[ListOfType]` on parameters and fields, and `#[ReturnsListOfType]` on methods. The SDK does not read docblock annotations such as `@param string[]`.
+
+```php
+use Dagger\Attribute\ListOfType;
+use Dagger\Attribute\ReturnsListOfType;
+use Dagger\Directory;
+
+#[DaggerFunction]
+#[ReturnsListOfType('string')]
+public function capitalizeStrings(
+    #[ListOfType('string')]
+    array $values,
+): array {
+    return array_map(fn(string $v) => ucwords($v), $values);
+}
+
+#[DaggerFunction]
+#[ReturnsListOfType(Directory::class)]
+public function split(
+    #[ListOfType(Directory::class)]
+    array $dirs,
+): array {
+    return $dirs;
+}
+```
+
+The element type may be a scalar name (`'string'`, `'int'`, `'float'`, `'bool'`), a class name, or a nested `ListOfType` for lists of lists.
+
+### Documentation
+
+The `#[Doc]` attribute becomes API documentation, shown by `dagger api functions` and `dagger api call --help`. Place it on a method to document the function, on a parameter to document that argument, and on the main class to document the whole module. The SDK ignores PHP docblocks.
+
+```php
+#[DaggerFunction]
+#[Doc('Return a greeting')]
+public function hello(
+    #[Doc('Who to greet')]
+    string $name,
+): string {
+    return "Hello, {$name}!";
+}
+```
+
+### Optional and default arguments
+
+Dagger arguments are required by default. Make one optional with a PHP default value or a nullable type:
+
+```php title="default value"
+#[DaggerFunction]
+public function hello(string $name = 'world'): string
+{
+    return "Hello, {$name}";
+}
+```
+
+```php title="optional"
+#[DaggerFunction]
+public function hello(?string $name): string
+{
+    if ($name !== null) {
+        return "Hello, {$name}";
+    }
+    return 'Hello, world';
+}
+```
+
+- A PHP default value (`string $name = 'world'`) makes the argument optional and supplies the default when the caller omits it.
+- A nullable type with no default (`?string $name`) makes the argument optional and passes `null` when omitted, so you can detect "not passed."
+- A `Directory` or `File` parameter with `#[DefaultPath]` is also optional; see [Default paths](#default-paths).
+
+### Nullability
+
+Use a nullable type (`?Dagger\Secret`, `?Dagger\Container`) when an argument may be absent. `null` means the caller passed null or nothing at all. Non-nullable scalars are always present. A common constructor pattern falls back to a computed default:
+
+```php
+#[DaggerFunction]
+public function __construct(?Container $ctr = null)
+{
+    $this->ctr = $ctr ?? dag()->container()->from('alpine:3');
+}
+```
+
+### Enums
+
+The PHP SDK does not currently register custom enums defined in your module. To accept a closed set of values, take a `string` argument and validate it yourself. Throw an exception that lists the allowed choices:
+
+```php
+#[DaggerFunction]
+public function scan(string $ref, string $severity = 'HIGH'): string
+{
+    $allowed = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+    if (!in_array($severity, $allowed, true)) {
+        throw new \InvalidArgumentException(
+            'severity should be one of ' . implode(', ', $allowed),
+        );
+    }
+
+    return dag()
+        ->container()
+        ->from('aquasec/trivy:0.50.4')
+        ->withExec(['trivy', 'image', "--severity={$severity}", $ref])
+        ->stdout();
+}
+```
+
+The generated client includes enums that already exist in the Dagger API (for example `Dagger\ImageLayerCompression`) as PHP enums, and you can pass them to core API calls as usual.
+
+### Custom object types
+
+Return an instance of another `#[DaggerObject]` class to expose a custom object. Public properties marked `#[DaggerFunction]` become readable fields, and `#[DaggerFunction]` methods on the class become chainable functions. Dagger prefixes custom type names with the module name in the API schema (for example `MyModuleOrganization`) to avoid collisions:
+
+```php title="src/MyModule.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\ListOfType;
+
+#[DaggerObject]
+class MyModule
+{
+    #[DaggerFunction]
+    public function daggerOrganization(): Organization
+    {
+        return new Organization(
+            url: 'https://github.com/dagger',
+            members: [
+                new Account('jane', 'jane@example.com'),
+                new Account('john', 'john@example.com'),
+            ],
+        );
+    }
+}
+
+#[DaggerObject]
+class Organization
+{
+    public function __construct(
+        #[DaggerFunction]
+        public string $url,
+        #[DaggerFunction]
+        #[ListOfType(Account::class)]
+        public array $members,
+    ) {
+    }
+}
+
+#[DaggerObject]
+class Account
+{
+    public function __construct(
+        #[DaggerFunction]
+        public string $username,
+        #[DaggerFunction]
+        public string $email,
+    ) {
+    }
+
+    #[DaggerFunction]
+    public function url(): string
+    {
+        return 'https://github.com/' . $this->username;
+    }
+}
+```
+
+Each class can live in its own file under `src/`; the SDK discovers every `#[DaggerObject]` in the directory. You can then chain calls on the CLI and API:
+
+```shell
+dagger api call dagger-organization members url
+```
+
+### Interfaces
+
+The PHP SDK does not currently support Dagger interfaces as argument or return types. Accept a concrete object from a dependency instead, or take the values you need (a `Container`, a `Directory`, a string) directly.
+
+## Working with core Dagger types
+
+The generated client exposes the whole Dagger API through the `dag()` function, imported with `use function Dagger\dag;`. You use it to build containers, mount directories and files, handle secrets, and run services. Core types live in the `Dagger` namespace (`Dagger\Container`, `Dagger\Directory`, and so on).
+
+### Containers
+
+Each builder method returns a new, immutable `Container`. Nothing mutates in place, and Dagger content-addresses and caches every step for you.
+
+```php
+use Dagger\Container;
+use Dagger\Directory;
+
+#[DaggerFunction]
+#[Doc('Build and return a container')]
+public function build(Directory $source): Container
+{
+    return dag()
+        ->container()
+        ->from('node:20')
+        ->withDirectory('/app', $source)
+        ->withWorkdir('/app')
+        ->withExec(['npm', 'install'])
+        ->withExec(['npm', 'run', 'build']);
+}
+```
+
+### Directories and files
+
+`Directory` and `File` are first-class, "just-in-time" artifacts. You can accept them as arguments, return them, mount them into containers, and export them to the host. Less common parameters are optional PHP arguments, so pass them by name. For example, `withDirectory` accepts `exclude`:
+
+```php
+#[DaggerFunction]
+public function copyDirectoryWithExclusions(
+    #[Doc('Source directory')]
+    Directory $source,
+    #[Doc('Exclusion patterns')]
+    #[ListOfType('string')]
+    array $exclude = [],
+): Container {
+    return dag()
+        ->container()
+        ->from('alpine:latest')
+        ->withDirectory('/src', $source, exclude: $exclude);
+}
+```
+
+The same pattern holds across the whole client. Required parameters are positional, and optional ones are named arguments with defaults.
+
+### Workspace inputs {#workspace-inputs}
+
+When a module needs to read the user's project, whether the source tree, config files, or lockfiles, it takes a `Dagger\Workspace` argument, almost always on the constructor. You don't pass it. Dagger fills it in from the current workspace and uploads nothing up front. Dagger pulls project content only when a function actually reads a path, so a module can declare access to the whole workspace cheaply and pay only for what it touches.
+
+```php title="src/MyModule.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
+use Dagger\Container;
+use Dagger\Directory;
+use Dagger\Workspace;
+
+use function Dagger\dag;
+
+#[DaggerObject]
+class MyModule
+{
+    private Directory $source;
+
+    #[DaggerFunction]
+    public function __construct(
+        #[Doc('The current workspace, auto-populated by Dagger.')]
+        Workspace $ws,
+    ) {
+        // Pull the workspace root as a Directory (lazy, no upload yet).
+        $this->source = $ws->directory('/');
+    }
+
+    // Functions reuse the pulled Directory like any other.
+    #[DaggerFunction]
+    public function build(): Container
+    {
+        return dag()
+            ->container()
+            ->from('node:20')
+            ->withDirectory('/app', $this->source)
+            ->withWorkdir('/app')
+            ->withExec(['npm', 'install'])
+            ->withExec(['npm', 'run', 'build']);
+    }
+}
+```
+
+The `Workspace` client type exposes accessors for reading project content:
+
+| Accessor | Signature | Returns |
+|---|---|---|
+| `directory` | `$ws->directory(string $path, ?array $exclude = [], ?array $include = [], ?bool $gitignore = false): Directory` | a `Directory` at `$path` |
+| `file` | `$ws->file(string $path): File` | a `File` at `$path` |
+| `findUp` | `$ws->findUp(string $name, ?string $from = '.'): string` | the workspace path of `$name`, searching upward |
+
+**Path resolution.** A relative path resolves from the workspace's current working directory. An absolute path (starting with `/`) resolves from the workspace root, also called the boundary. So `$ws->directory('/')` is the whole project root, while `$ws->directory('.')` is wherever the user invoked Dagger from.
+
+**Excluding files.** `directory` takes named `exclude`, `include`, and `gitignore` arguments to filter what gets pulled. Tight filters matter for caching. Every file you load is a file whose change can invalidate the cache, so load only what the build needs:
+
+```php
+#[DaggerFunction]
+public function __construct(Workspace $ws)
+{
+    $this->source = $ws->directory(
+        '/',
+        exclude: ['vendor', '.git', 'dist'],
+        // include: ['app/', 'composer.*'],   // allowlist instead
+        // gitignore: true,                   // apply .gitignore rules
+    );
+}
+```
+
+`findUp` walks up from a start path and returns the absolute workspace path of the first match, stopping at the workspace boundary. Relative start paths resolve from the workspace cwd; pass `from:` to change it. Use it to find a project root marker such as `composer.json`.
+
+:::tip
+To use the current workspace, declare a `Dagger\Workspace` argument on the module constructor or function. Dagger injects it automatically and omits it from the CLI arguments.
+:::
+
+### Default paths {#default-paths}
+
+When someone calls a function from a module directory rather than a workspace, a `Directory` or `File` argument can default to a path in the caller's project with the `#[DefaultPath]` attribute. The argument becomes optional. When the caller omits it, Dagger loads the path from the caller's context (the Git repository root for absolute paths, the module directory for relative ones):
+
+```php
+use Dagger\Attribute\DefaultPath;
+use Dagger\Attribute\Ignore;
+
+#[DaggerFunction]
+#[ReturnsListOfType('string')]
+public function readDir(
+    #[DefaultPath('.')]
+    #[Ignore('vendor/', 'tests/')]
+    Directory $source,
+): array {
+    return $source->entries();
+}
+```
+
+`#[Ignore]` filters what gets loaded for a `Directory` argument, using `.gitignore` syntax. Prefer the `Workspace` pattern above for new modules. Default paths are still useful for functions that must work when no workspace is present.
+
+### Secrets
+
+Accept sensitive values as `Dagger\Secret`, never as plain strings. Dagger scrubs secret plaintext from logs, caches, and crash reports:
+
+```php
+use Dagger\Secret;
+
+#[DaggerFunction]
+#[Doc('Query the GitHub API')]
+public function githubApi(
+    #[Doc('GitHub API token')]
+    Secret $token,
+): string {
+    return dag()
+        ->container()
+        ->from('alpine:3.17')
+        ->withSecretVariable('GITHUB_API_TOKEN', $token)
+        ->withExec(['apk', 'add', 'curl'])
+        ->withExec(['sh', '-c', 'curl "https://api.github.com/repos/dagger/dagger/issues" --header "Authorization: Bearer $GITHUB_API_TOKEN"'])
+        ->stdout();
+}
+```
+
+Callers supply secrets through providers on the CLI:
+
+```shell
+dagger api call github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger api call github-api --token=file:./token.txt      # file
+dagger api call github-api --token=cmd:"gh auth token"   # command output
+dagger api call github-api --token=op://vault/item/field # 1Password
+```
+
+### Services
+
+Return `Dagger\Service` to expose a long-running service, and bind it into other containers with `withServiceBinding`. Services are content-addressed, so a given definition always gets the same hostname and port conflicts never come up:
+
+```php
+use Dagger\Service;
+
+#[DaggerFunction]
+#[Doc('Start and return an HTTP service')]
+public function httpService(): Service
+{
+    return dag()
+        ->container()
+        ->from('python')
+        ->withWorkdir('/srv')
+        ->withNewFile('index.html', 'Hello, world!')
+        ->withExposedPort(8080)
+        ->asService(args: ['python', '-m', 'http.server', '8080']);
+}
+
+#[DaggerFunction]
+#[Doc('Send a request to an HTTP service and return the response')]
+public function get(): string
+{
+    return dag()
+        ->container()
+        ->from('alpine')
+        ->withServiceBinding('www', $this->httpService())
+        ->withExec(['wget', '-O-', 'http://www:8080'])
+        ->stdout();
+}
+```
+
+### A larger example
+
+Real modules combine these pieces. This module reads the workspace once in its constructor, caches Composer downloads in a cache volume, exposes a build function, and turns a test run into a check:
+
+```php title="src/MyModule.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\Check;
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
+use Dagger\Container;
+use Dagger\Directory;
+use Dagger\Workspace;
+
+use function Dagger\dag;
+
+#[DaggerObject]
+#[Doc('Build and test a PHP application')]
+class MyModule
+{
+    private Directory $source;
+
+    #[DaggerFunction]
+    public function __construct(Workspace $ws)
+    {
+        $this->source = $ws->directory('/', exclude: ['vendor', '.git']);
+    }
+
+    #[DaggerFunction]
+    #[Doc('Return a container with the application and its dependencies installed')]
+    public function build(): Container
+    {
+        return dag()
+            ->container()
+            ->from('composer:2')
+            ->withMountedCache('/tmp/cache', dag()->cacheVolume('composer'))
+            ->withDirectory('/app', $this->source)
+            ->withWorkdir('/app')
+            ->withExec(['composer', 'install', '--no-interaction']);
+    }
+
+    #[DaggerFunction, Check]
+    #[Doc('Run the test suite')]
+    public function test(): Container
+    {
+        return $this->build()->withExec(['vendor/bin/phpunit']);
+    }
+
+    #[DaggerFunction]
+    #[Doc('Return the number of failing tests, parsed from the report')]
+    public function failures(): int
+    {
+        $report = $this->build()
+            ->withExec(['vendor/bin/phpunit', '--log-junit', 'report.xml'], expect: \Dagger\ReturnType::ANY)
+            ->file('report.xml')
+            ->contents();
+
+        $xml = new \SimpleXMLElement($report);
+
+        return (int) $xml->testsuite['failures'];
+    }
+}
+```
+
+## Module dependencies
+
+A module can depend on other Dagger modules and call them through `dag()`. Once `wolfi` is a dependency, for example, `dag()->wolfi()` works. `dagger-module.toml` records dependencies under `dependencies`:
+
+```toml title="dagger-module.toml" template
+name = "dev"
+engineVersion = "v{{ version }}"
+
+[runtime]
+source = "php"
+
+[[dependencies]]
+name = "go"
+source = "../../modules/go"
+
+[[dependencies]]
+name = "wolfi"
+source = "../wolfi"
+```
+
+A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, such as `github.com/shykes/daggerverse/hello@v0.3.0`.
+
+Manage dependencies with the CLI's `dagger module deps` commands from the module directory rather than hand-editing `dagger-module.toml`.
+
+Add a dependency by source:
+
+```shell
+dagger module deps add github.com/shykes/daggerverse/hello@v0.3.0
+```
+
+List the current dependencies:
+
+```shell
+dagger module deps list
+```
+
+Remove a dependency by name:
+
+```shell
+dagger module deps rm hello
+```
+
+After changing dependencies, [regenerate bindings](#regenerate-bindings-and-generated-files) so the new module's functions appear on `dag()`.
+
+:::note
+Use Composer for ordinary PHP packages (`composer require`), and Dagger for Dagger modules. Installing a Dagger module through Composer does not register it with Dagger, so you cannot call it through `dag()`.
+:::
+
+## Regenerate bindings and generated files {#regenerate-bindings-and-generated-files}
+
+A PHP module uses generated code alongside your handwritten `src/`:
+
+- `sdk/` is the typed Dagger client, including `dag()`, all core types (`Container`, `Directory`, and the rest), and every dependency's functions
+- `entrypoint.php` is the script the engine runs to register and call your functions
+- `composer.lock` and `vendor/` are the resolved Composer dependencies, including the generated client
+
+Don't edit `sdk/` or `entrypoint.php` by hand. The PHP runtime regenerates `sdk/` from the engine's schema and runs `composer install` every time it loads the module, so the client is never stale at runtime and you don't need to commit it. The generated `.gitignore` and `.gitattributes` match:
+
+```text title=".gitignore"
+/sdk
+/vendor
+/.env
+```
+
+```text title=".gitattributes"
+/sdk/** linguist-generated
+/entrypoint.php linguist-generated
+```
+
+Regenerate the local copy whenever you add or remove a dependency, bump the engine version, or want up-to-date completions in your IDE. Use `dagger generate`, which returns a changeset:
+
+```shell
+# Review the regenerated files, then apply
+dagger generate
+```
+
+`dagger generate` discovers and runs every generator in the workspace. For modules registered under the PHP SDK, that includes binding regeneration.
+
+:::note
+A `.dagger-php-sdk-skip-generate` marker in a module or one of its ancestors skips PHP binding regeneration for that module.
+:::
+
+## Engine version
+
+Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the CLI's `dagger module engine` commands from the module directory.
+
+Read the currently required version:
+
+```shell
+dagger module engine required
+```
+
+Pin a specific version, the current engine, or the latest stable release:
+
+```shell template
+# A specific version
+dagger module engine require v{{ version }}
+
+# Whatever engine you're running now
+dagger module engine require-current
+
+# Latest stable release
+dagger module engine require-latest
+```
+
+Bumping the engine version usually means the generated bindings change too, so follow up with `dagger generate`.
+
+## Checks, directives, and ignore patterns {#checks-directives-and-ignore-patterns}
+
+A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger up`) something to run. See the [SDKs overview](./index.mdx) for the full treatment.
+
+The PHP SDK currently implements checks only:
+
+| Attribute | Return type | Run by | Purpose |
+|---|---|---|---|
+| `#[Check]` | `void` or `Container` | `dagger check` | validate the project (test/lint/scan) |
+
+There is no PHP attribute for generators (`dagger generate`) or `up` services (`dagger up`) yet. A PHP function can still return a `Changeset` or a `Service`, and you can call it explicitly with `dagger api call`, but those verbs will not discover it. If a module's main job is to generate code or start services, write it with the [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx) SDK instead.
+
+### Attributes
+
+PHP modules use attributes from the `Dagger\Attribute` namespace to add Dagger metadata that PHP's type system can't express:
+
+| Attribute | Placement | Meaning |
+|---|---|---|
+| `#[DaggerObject]` | class | expose the class as a Dagger object |
+| `#[DaggerFunction]` | public method or property | expose the method as a function, or the property as a field |
+| `#[Doc('...')]` | class, method, or parameter | API documentation |
+| `#[Check]` | method (with `#[DaggerFunction]`) | mark the function as a [check](#checks) |
+| `#[ListOfType('T')]` | `array` parameter or property | element type of a list |
+| `#[ReturnsListOfType('T')]` | method returning `array` | element type of the returned list |
+| `#[DefaultPath('...')]` | `Directory` or `File` parameter | default the argument to a path in the caller's project |
+| `#[Ignore('...', ...)]` | `Directory` parameter | exclude paths when loading the argument |
+
+Attributes can be combined on one line: `#[DaggerFunction, Check]`.
+
+### Ignore patterns
+
+A module reads the user's project through a `Workspace` argument (see [Workspace inputs](#workspace-inputs)), not a path-defaulted `Directory`. To filter what gets pulled, use the `exclude` argument when reading a workspace directory. Tight filters matter for caching, since loading less means fewer cache invalidations:
+
+```php
+#[DaggerFunction]
+public function __construct(Workspace $ws)
+{
+    $this->source = $ws->directory('/', exclude: ['vendor', '.git', 'dist']);
+}
+```
+
+For `Directory` arguments that callers pass explicitly (or that use `#[DefaultPath]`), the `#[Ignore]` attribute applies the same filtering with `.gitignore` syntax; see [Default paths](#default-paths).
+
+### Checks {#checks}
+
+Add the `#[Check]` attribute next to `#[DaggerFunction]` to make a function a check, a validation function (test, lint, scan) that takes no required arguments. `dagger check` discovers and runs every check a module exposes. A check must return `void` or `Container`. It fails when it throws an exception or when the returned `Container` exits non-zero.
+
+```php
+use Dagger\Attribute\Check;
+
+#[DaggerFunction, Check]
+#[Doc('Lint the project')]
+public function lint(): void
+{
+    $output = dag()
+        ->container()
+        ->from('php:8.4-cli-alpine')
+        ->withMountedDirectory('/src', $this->source)
+        ->withWorkdir('/src')
+        ->withExec(['sh', '-c', 'find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;'])
+        ->stdout();
+
+    if (str_contains($output, 'Parse error')) {
+        throw new \RuntimeException($output);
+    }
+}
+
+// A check can also return a container; a non-zero exit fails the check.
+#[DaggerFunction, Check]
+#[Doc('Run the test suite')]
+public function test(): Container
+{
+    return $this->build()->withExec(['vendor/bin/phpunit']);
+}
+```
+
+You can also declare checks on custom object types to group them, for example a `Test` object with `lint` and `unit` checks. List a module's checks with `dagger check -l`, and run a subset by name pattern with `dagger check 'test*'`.
+
+## Testing PHP modules
+
+Because a PHP module is an ordinary Composer package, you can test it two ways. Unit tests are fast and need no engine. Checks need an engine, but they test the thing you actually ship.
+
+### Idiomatic PHP tests
+
+You can unit-test functions that contain pure PHP logic, such as parsing a report or formatting a summary, with [PHPUnit](https://phpunit.de/) and no engine involved. Add it as a development dependency and put tests in a `tests/` directory:
+
+```shell
+composer require --dev phpunit/phpunit
+```
+
+```php title="tests/IssueTest.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule\Tests;
+
+use DaggerModule\Issue;
+use PHPUnit\Framework\TestCase;
+
+final class IssueTest extends TestCase
+{
+    public function testSummary(): void
+    {
+        $issue = new Issue(
+            filename: '/src/app/main.php',
+            message: 'undefined variable',
+            row: 12,
+        );
+
+        $this->assertSame('app/main.php:12 error: undefined variable', $issue->summary());
+    }
+}
+```
+
+Run them like any PHPUnit suite. They don't need the engine, but they do need the generated client installed locally (see [IDE and Composer setup](#ide-and-composer-setup)):
+
+```shell
+vendor/bin/phpunit tests
+```
+
+### Functional tests via checks
+
+For behavior that exercises containers and the Dagger API, write functions in your module and call them, or make them checks so they run under `dagger check`. A check that builds, lints, or tests your project is both a CI gate and a smoke test:
+
+```shell
+# Smoke test: does it build?
+dagger api call build
+
+# Run all checks
+dagger check
+
+# Run generators and confirm there's no drift
+dagger check --generate
+```
+
+### In CI
+
+Run `dagger check` in CI to run every check the module exposes. The heavy lifting happens in content-addressed containers, so the same command behaves the same on a laptop and on a CI runner, with full caching:
+
+```yaml title=".github/workflows/ci.yml"
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@v6
+        with:
+          verb: check
+```
+
+## IDE and Composer setup {#ide-and-composer-setup}
+
+The module's `composer.json` resolves the `dagger/dagger` client from the local `./sdk` path repository. Because `sdk/` and `vendor/` are gitignored, a fresh checkout has neither, and your editor cannot resolve `Dagger\Container` or `dag()` until they exist. To get autocompletion and go-to-definition:
+
+```shell
+# Materialize the generated client into ./sdk
+dagger generate
+
+# Install it, and any other dependencies, into ./vendor
+composer install
+```
+
+Repeat `dagger generate` after adding a dependency or bumping the engine version so the local client matches what the runtime will generate.
+
+Local development needs PHP 8.2 or newer and [Composer](https://getcomposer.org/). The runtime container uses PHP 8.4, so anything that runs locally on a recent PHP also runs in the engine.
+
+Third-party packages are ordinary Composer dependencies. Add them with `composer require`; the runtime runs `composer install` when it loads the module, so they are available inside your functions. Keep `composer.json` and `composer.lock` in version control.
+
+:::tip
+Do not publish Dagger modules to Packagist. Consumers install modules through Dagger (`dagger install`), not Composer. Dagger does not register a module pulled in as a Composer package, so you cannot call its functions.
+:::
+
+## Packaging and release
+
+You distribute a PHP SDK module as a Git repository. There is no build artifact to publish. Consumers fetch the source by reference, and the runtime generates the client and installs Composer dependencies when it loads the module.
+
+Recommended release checklist:
+
+1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+2. **Commit the lockfile.** Run `dagger generate`, review the changes, and commit `composer.json` and `composer.lock` with your module. `sdk/` and `vendor/` stay gitignored.
+3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
+
+Before publishing, run `dagger check --generate` to confirm that the committed files are up to date.
+
+Consumers can install your module into a workspace with:
+
+```shell
+dagger install github.com/you/your-module@v1.2.0
+```
+
+To add it as a dependency of another module, run these commands from that module's directory:
+
+```shell
+dagger module deps add github.com/you/your-module@v1.2.0
+dagger generate
+```
+
+A module reference follows `[proto://]host/repo[/subpath][@version]`. The version may be a tag, branch, or commit, and Dagger resolves it over HTTPS or SSH depending on the authentication available.
+
+## Troubleshooting
+
+**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger sdk install php`, scaffold with `dagger module init php <name>`, and regenerate with `dagger generate`.
+
+**`dagger sdk install php` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger sdk install --here php`.
+
+**Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
+
+**A function doesn't show up.** It must be `public`, carry the `#[DaggerFunction]` attribute, and live on a class marked `#[DaggerObject]` under `src/`. Every parameter and the return value need a type hint.
+
+**"Argument ... cannot be supported without a typehint" or "cannot be supported without a return type".** Add the missing type declaration; the SDK builds the API schema from PHP types, not docblocks.
+
+**A missing `ListOfType` / `ReturnsListOfType` attribute error.** `array` parameters, fields, and return values must declare their element type with the matching attribute.
+
+**A new dependency doesn't show up on `dag()`.** Run `dagger generate`, then `composer install` locally. The functions available on `dag()` come from the generated `sdk/` client, which must match `dagger-module.toml`.
+
+**`dagger generate` does not regenerate bindings.** Look for a `.dagger-php-sdk-skip-generate` marker in the module or one of its ancestors.
+
+**Editor cannot resolve `Dagger\...` classes or `dag()`.** The generated client is missing locally. Run `dagger generate` and `composer install`; both `sdk/` and `vendor/` are gitignored, so this is expected on a fresh clone.
+
+**A check is rejected at registration.** Checks take no required arguments (give every argument a default or make it nullable) and must return `void` or `Container`.
+
+**Engine version mismatch.** Align the module with `dagger module engine require <version>` (or `require-current` / `require-latest`), then regenerate.
+
+## Next steps
+
+- [SDKs overview](./index.mdx) covers platform concepts that apply to every SDK
+- [Types](../api/reference/index.mdx)
+- [Generating code](../cli/generating.mdx)
+- [Workspace setup](../getting-started/workspace-setup.mdx)
