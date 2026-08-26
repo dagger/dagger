@@ -8,10 +8,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 )
@@ -120,19 +122,20 @@ func LoadIncludedConfig(
 	defer telemetry.EndWithCause(span, &rerr)
 
 	var (
-		cfg *workspace.Config
-		err error
+		cfg     *workspace.Config
+		address includedModuleAddresser
+		err     error
 	)
 	if IncludeSourceIsGit(include) {
-		cfg, err = source.loadGitInclude(ctx, include)
+		cfg, address, err = source.loadGitInclude(ctx, include)
 	} else {
-		cfg, err = source.loadLocalInclude(ctx, include)
+		cfg, address, err = source.loadLocalInclude(ctx, include)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("workspace include %q: %w", include, err)
 	}
 
-	warnDroppedIncludedModules(callerCtx, include, dropLocalIncludedModules(cfg))
+	warnDroppedIncludedModules(callerCtx, include, addressIncludedModules(address, cfg))
 
 	return cfg, nil
 }
@@ -154,9 +157,9 @@ func IncludeSourceIsGit(source string) bool {
 func (s IncludeSource) loadGitInclude(
 	ctx context.Context,
 	include string,
-) (*workspace.Config, error) {
+) (*workspace.Config, includedModuleAddresser, error) {
 	if s.Dag == nil {
-		return nil, fmt.Errorf("git includes cannot be resolved here")
+		return nil, nil, fmt.Errorf("git includes cannot be resolved here")
 	}
 
 	parsedRef, err := ParseWorkspaceRemoteRef(ctx, include)
@@ -165,42 +168,70 @@ func (s IncludeSource) loadGitInclude(
 			// The source read as a ref only because its first segment has a
 			// dot, which is also true of a filename. Say so, since the file it
 			// names is otherwise reported as a repository nobody can find.
-			return nil, fmt.Errorf("parsing git ref: %w (a config file beside this one is spelled %q)", err, "./"+include)
+			return nil, nil, fmt.Errorf("parsing git ref: %w (a config file beside this one is spelled %q)", err, "./"+include)
 		}
-		return nil, fmt.Errorf("parsing git ref: %w", err)
+		return nil, nil, fmt.Errorf("parsing git ref: %w", err)
 	}
 
-	tree, _, err := CloneWorkspaceGitTree(ctx, s.Dag, parsedRef.CloneRef, parsedRef.Version)
+	tree, gitRef, err := CloneWorkspaceGitTree(ctx, s.Dag, parsedRef.CloneRef, parsedRef.Version)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	commit, err := includedGitCommit(gitRef)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	configPath := includeConfigPath(parsedRef.WorkspaceSubdir)
 	data, err := DirectoryReadFile(ctx, tree, configPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("reading %s: %w", configPath, err)
 	}
-	return workspace.ParseConfig(data)
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, gitIncludedModuleAddresser(parsedRef.CloneRef, commit, path.Dir(configPath)), nil
 }
 
 func (s IncludeSource) loadLocalInclude(
 	ctx context.Context,
 	include string,
-) (*workspace.Config, error) {
+) (*workspace.Config, includedModuleAddresser, error) {
 	if s.ReadWorkspaceFile == nil {
-		return nil, fmt.Errorf("path includes cannot be resolved here")
+		return nil, nil, fmt.Errorf("path includes cannot be resolved here")
 	}
 
 	resolved, err := s.resolveIncludePath(include)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	configPath := includeConfigPath(resolved)
 	data, err := s.ReadWorkspaceFile(ctx, configPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("reading %s: %w", configPath, err)
 	}
-	return workspace.ParseConfig(data)
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, pathIncludedModuleAddresser(path.Dir(configPath), s.ConfigDir), nil
+}
+
+// includedGitCommit is the commit an included config was read at. Every module
+// re-addressed into its repository is pinned to it, so the config and the
+// modules it names always come from one revision even if the branch moves
+// mid-run — and a commit SHA short-circuits the lock lookup, so no per-module
+// lock entry appears.
+func includedGitCommit(gitRef dagql.ObjectResult[*GitRef]) (string, error) {
+	if gitRef.Self() == nil || gitRef.Self().Ref == nil {
+		return "", fmt.Errorf("resolving the included commit: no git ref")
+	}
+	commit := gitRef.Self().Ref.SHA
+	if !gitutil.IsCommitSHA(commit) {
+		return "", fmt.Errorf("resolving the included commit: %q is not a commit SHA", commit)
+	}
+	return commit, nil
 }
 
 // looksLikeSiblingConfigFile reports whether a source that failed to parse as a
@@ -233,49 +264,83 @@ func includeConfigPath(p string) string {
 	return path.Join(p, DefaultIncludeConfigFile)
 }
 
-// dropLocalIncludedModules removes the module entries a workspace must not load
-// through an include: the included config's own local modules. It returns the
-// dropped entries, labelled the way the config spells them — including dotted
-// `env.<name>.modules.<mod>` paths for env overlays.
+// includedModuleAddresser re-addresses one local module source of an included
+// config so that it names the same module from the consuming workspace, or
+// reports that it cannot be named from here at all.
+type includedModuleAddresser func(source string) (string, bool)
+
+// addressIncludedModules makes the included config's own modules usable here,
+// and removes the ones that cannot be. It returns what was removed, labelled
+// the way the config spells it — including dotted `env.<name>.modules.<mod>`
+// paths for env overlays.
 //
-// A local source in an included config means a directory next to *that* config,
-// and resolving it as written would resolve it against the consuming workspace
-// instead — a different module, or none. Addressing them properly is possible
-// (an included git config's modules are reachable as refs into its repository)
-// but is deliberately left for later; for now an include shares configuration,
-// not code.
-func dropLocalIncludedModules(cfg *workspace.Config) []string {
-	// The labels name config paths, so they cannot be used to match ports: the
-	// module names the dropped entries denote are tracked separately.
-	var dropped, droppedModules []string
+// A local source in an included config names a directory next to *that* config,
+// so resolving it as written would resolve it against the consuming workspace
+// instead — a different module, or none. Re-addressing is what makes the
+// primary monorepo shape work: a shared config installs the modules beside it,
+// and the projects that include it get them.
+func addressIncludedModules(address includedModuleAddresser, cfg *workspace.Config) []string {
+	// The labels carry a reason and name config paths, so they can match
+	// neither modules nor ports: what each set is keyed by is tracked
+	// separately.
+	var dropped []string
+	droppedModules := map[string]bool{}
+	readdressedModules := map[string]bool{}
 	for name, entry := range cfg.Modules {
-		if !includedSourceIsLocal(entry.Source) {
-			continue
+		// The as-sdk marker is what makes a bare runtime name a built-in
+		// install rather than a directory, which is the same condition the
+		// loader skips on.
+		readdressed, verdict, why := addressIncludedSource(address, entry.Source, entry.AsSDK != nil)
+		switch verdict {
+		case includedSourceKeep:
+		case includedSourceReaddress:
+			// The pin described the source that was just replaced; what the new
+			// ref resolves to is fixed by the ref itself.
+			entry.Source = readdressed
+			entry.Pin = ""
+			cfg.Modules[name] = entry
+			readdressedModules[name] = true
+		case includedSourceDrop:
+			delete(cfg.Modules, name)
+			dropped = append(dropped, name+" ("+why+")")
+			droppedModules[name] = true
 		}
-		delete(cfg.Modules, name)
-		dropped = append(dropped, name)
-		droppedModules = append(droppedModules, name)
 	}
 
 	for envName, env := range cfg.Env {
 		for moduleName, overlay := range env.Modules {
 			_, installed := cfg.Modules[moduleName]
+			// An overlay never carries as-sdk state, so a runtime name there is
+			// an ordinary source.
+			readdressed, verdict, why := addressIncludedSource(address, overlay.Source, false)
 			switch {
-			case includedSourceIsLocal(overlay.Source):
-				// An overlay that installs a local module is the same
-				// violation as a base entry that does.
+			case verdict == includedSourceReaddress:
+				overlay.Source = readdressed
+				overlay.Pin = ""
+				env.Modules[moduleName] = overlay
+				// The overlay installs the module even where the base entry
+				// could not be addressed, so a port forwarding to it still has
+				// something to reach.
+				delete(droppedModules, moduleName)
+			case verdict == includedSourceDrop:
+				// An overlay that installs a module with no address here is the
+				// same problem as a base entry that does.
 				delete(env.Modules, moduleName)
-				dropped = append(dropped, workspace.JoinConfigPath("env", envName, "modules", moduleName))
+				dropped = append(dropped, workspace.JoinConfigPath("env", envName, "modules", moduleName)+" ("+why+")")
 				if !installed {
 					// Nothing installs the module any more, so a port
 					// forwarding to it has nothing left to reach.
-					droppedModules = append(droppedModules, moduleName)
+					droppedModules[moduleName] = true
 				}
 			case overlay.Source == "" && !installed:
 				// Settings for a module that was just dropped configure
-				// nothing. An overlay with its own remote source stands on its
-				// own and stays.
+				// nothing. An overlay with its own source stands on its own.
 				delete(env.Modules, moduleName)
+			case overlay.Source == "" && readdressedModules[moduleName] && overlay.Pin != "":
+				// A lone pin updates the base entry's pin, and that entry now
+				// names something else entirely.
+				overlay.Pin = ""
+				env.Modules[moduleName] = overlay
 			}
 		}
 		if len(env.Modules) == 0 {
@@ -289,33 +354,151 @@ func dropLocalIncludedModules(cfg *workspace.Config) []string {
 	return dropped
 }
 
+type includedSourceVerdict int
+
+const (
+	// includedSourceKeep is a source that already addresses something outside
+	// the included config's own tree: a remote ref, or nothing at all.
+	includedSourceKeep includedSourceVerdict = iota
+	// includedSourceReaddress is one of the included config's own modules,
+	// nameable from the consuming workspace.
+	includedSourceReaddress
+	// includedSourceDrop is local to the included config and has no address
+	// here.
+	includedSourceDrop
+)
+
+// addressIncludedSource decides what becomes of one source string. It returns
+// the re-addressed ref when the verdict is includedSourceReaddress, and why the
+// source has no address here when it is includedSourceDrop.
+//
+// sdkInstall says the entry carries as-sdk state, which is what makes a bare
+// runtime name a built-in install rather than a directory that happens to be
+// called "go". The loader draws the line in the same place, so an entry without
+// it is an ordinary path however it is spelled.
+func addressIncludedSource(address includedModuleAddresser, source string, sdkInstall bool) (string, includedSourceVerdict, string) {
+	if source == "" {
+		return "", includedSourceKeep, ""
+	}
+	// Ahead of the path check, because "go@v1.2.3" carries a dot and so reads
+	// as a ref rather than a path. The runtime resolves in-engine either way,
+	// not by fetching, and the as-sdk state that gave the entry its purpose
+	// does not survive the merge.
+	if name, _, _ := strings.Cut(source, "@"); sdkInstall && sdkmeta.IsBuiltin(name) {
+		return "", includedSourceDrop, "built-in SDK runtime"
+	}
+	if !includedSourceIsLocal(source) {
+		return "", includedSourceKeep, ""
+	}
+	if readdressed, ok := address(source); ok {
+		return readdressed, includedSourceReaddress, ""
+	}
+	return "", includedSourceDrop, "no address outside the config it came from"
+}
+
 // includedSourceIsLocal reports whether a module source in an included config
 // addresses something next to that config.
 //
 // This is workspace.IsLocalRef, the same classifier the module loader reaches
 // through ResolveModuleEntrySource, and with the same empty pin: agreeing with
-// it is the whole correctness criterion here, because anything this keeps is
-// something the loader will then resolve. Passing the entry's own pin would
-// disagree — any non-empty pin reads as git — and let `source = "./ci",
-// pin = "…"` through to be resolved against the consuming workspace.
+// it is the whole correctness criterion here, because anything this leaves
+// alone is something the loader will then resolve as written. Passing the
+// entry's own pin would disagree — any non-empty pin reads as git — and let
+// `source = "./ci", pin = "…"` through to be resolved against the consuming
+// workspace.
 func includedSourceIsLocal(source string) bool {
 	return source != "" && workspace.IsLocalRef(source, "")
+}
+
+// gitIncludedModuleAddresser names an included config's own modules as refs
+// into the repository the config came from, pinned to the commit it was read
+// at: `modules/ci` beside a config at the repository root becomes
+// `<clone-ref>/modules/ci@<commit>`. That is the same rewrite remote workspace
+// selection already performs for a workspace loaded with -W.
+func gitIncludedModuleAddresser(cloneRef, commit, configDir string) includedModuleAddresser {
+	return func(source string) (string, bool) {
+		treePath, ok := includedModulePath(configDir, source)
+		if !ok {
+			return "", false
+		}
+		if strings.ContainsAny(treePath, "@#") {
+			// Both spell "version" in a ref, so a path carrying either would be
+			// cut short by the parser and resolve somewhere else entirely.
+			return "", false
+		}
+		return GitRefString(cloneRef, treePath, commit), true
+	}
+}
+
+// pathIncludedModuleAddresser names an included config's own modules the way
+// the consuming config would have written them itself. Both configs live in one
+// workspace, so only what the path is relative to changes.
+//
+// The result is always dot-prefixed, because a bare rewritten path whose first
+// segment carries a dot ("shared.v2/ci") would otherwise read back as a git
+// ref — the very confusion between a path and a ref this exists to prevent.
+func pathIncludedModuleAddresser(includedDir, consumerDir string) includedModuleAddresser {
+	if consumerDir == "" {
+		consumerDir = "."
+	}
+	return func(source string) (string, bool) {
+		wsPath, ok := includedModulePath(includedDir, source)
+		if !ok {
+			return "", false
+		}
+		rel, err := filepath.Rel(filepath.FromSlash(consumerDir), filepath.FromSlash(wsPath))
+		if err != nil {
+			return "", false
+		}
+		rel = filepath.ToSlash(rel)
+		if !strings.HasPrefix(rel, ".") {
+			rel = "./" + rel
+		}
+		return rel, true
+	}
+}
+
+// includedModulePath turns a local module source in an included config into the
+// path it names inside that config's own tree, or reports that it names nothing
+// addressable from outside it.
+func includedModulePath(configDir, source string) (string, bool) {
+	// Normalize separators first: a path spelled on Windows reaches a Linux
+	// engine with backslashes, and \\server\share would otherwise read as
+	// relative and be rebased under the config's directory.
+	source = strings.ReplaceAll(source, `\`, "/")
+	if path.IsAbs(source) || filepath.IsAbs(source) {
+		// An absolute path addresses the machine the config was authored on.
+		// Nothing in a shared tree corresponds to it.
+		return "", false
+	}
+	treePath := path.Clean(path.Join(filepath.ToSlash(configDir), source))
+	if treePath == "." {
+		// The tree's own root is a workspace, not a module.
+		return "", false
+	}
+	if !filepath.IsLocal(filepath.FromSlash(treePath)) {
+		// Escapes the tree it came from. GitRefString would quietly normalize
+		// this to a root-level path, resolving the wrong module rather than
+		// failing.
+		return "", false
+	}
+	return treePath, true
 }
 
 // dropPortsForDroppedModules removes included port mappings that forward to a
 // module that no longer exists here. BackendService is a colon-joined service
 // path whose first segment is the module's CLI-cased name.
-func dropPortsForDroppedModules(cfg *workspace.Config, droppedNames []string) {
+func dropPortsForDroppedModules(cfg *workspace.Config, droppedNames map[string]bool) {
 	if len(cfg.Ports) == 0 || len(droppedNames) == 0 {
 		return
 	}
-	droppedModules := make(map[string]bool, len(droppedNames))
-	for _, name := range droppedNames {
-		droppedModules[strcase.ToKebab(name)] = true
+	kebab := make(map[string]bool, len(droppedNames))
+	for name := range droppedNames {
+		kebab[strcase.ToKebab(name)] = true
 	}
 	for host, mapping := range cfg.Ports {
 		module, _, _ := strings.Cut(mapping.BackendService, ":")
-		if droppedModules[strcase.ToKebab(module)] {
+		if kebab[strcase.ToKebab(module)] {
 			delete(cfg.Ports, host)
 		}
 	}
@@ -331,7 +514,7 @@ func warnDroppedIncludedModules(ctx context.Context, include string, dropped []s
 	}
 
 	msg := fmt.Sprintf(
-		"Included config %s declares local modules that cannot be used here: %s. Only its remote modules are inherited.",
+		"Included config %s declares modules that were left out, with the reason for each: %s.",
 		include, strings.Join(dropped, ", "),
 	)
 	slog.Warn(msg, "include", include, "dropped", dropped)

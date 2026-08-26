@@ -7,7 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDropLocalIncludedModules(t *testing.T) {
+const testIncludeCommit = "0123456789abcdef0123456789abcdef01234567"
+
+// testGitAddresser stands in for an include resolved from
+// https://github.com/acme/base, whose config sits at the repository root.
+func testGitAddresser() includedModuleAddresser {
+	return gitIncludedModuleAddresser("https://github.com/acme/base", testIncludeCommit, ".")
+}
+
+func TestAddressIncludedModules(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := workspace.ParseConfig([]byte(`[modules.ci]
@@ -19,6 +27,9 @@ pin = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 [modules.dotted-local]
 source = "modules/foo.bar"
+
+[modules.escaping]
+source = "../outside/ci"
 
 [modules.toolchain]
 source = "github.com/acme/toolchain@v1"
@@ -33,7 +44,7 @@ greeting = "hello"
 version = "1.24"
 
 [env.ci.modules.extra-local]
-source = "modules/ci"
+source = "modules/extra"
 
 [ports.3000]
 backendService = "ci:web"
@@ -42,76 +53,226 @@ backendPort = 8080
 [ports.4000]
 backendService = "toolchain:api"
 backendPort = 9090
+
+[ports.5000]
+backendService = "escaping:web"
+backendPort = 7070
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(cfg)
+	dropped := addressIncludedModules(testGitAddresser(), cfg)
 
-	require.Equal(t, []string{
-		"ci",
-		"dotted-local",
-		"env.ci.modules.extra-local",
-		"pinned-local",
-	}, dropped)
+	// Only what has no address in the included repository is left out.
+	require.Equal(t, []string{"escaping (no address outside the config it came from)"}, dropped)
 
-	require.NotContains(t, cfg.Modules, "ci")
-	require.NotContains(t, cfg.Modules, "pinned-local", "a pin must not launder a local source")
-	require.NotContains(t, cfg.Modules, "dotted-local", "an ambiguous ref that is a directory in the included tree is local")
-	require.Contains(t, cfg.Modules, "toolchain")
-	require.Contains(t, cfg.Modules, "scheme")
+	// The included config's own modules become refs into its repository, at the
+	// commit its config was read from.
+	require.Equal(t, "https://github.com/acme/base/modules/ci@"+testIncludeCommit, cfg.Modules["ci"].Source)
+	require.Equal(t, "https://github.com/acme/base/ci@"+testIncludeCommit, cfg.Modules["pinned-local"].Source)
+	require.Empty(t, cfg.Modules["pinned-local"].Pin, "the pin described the source that was replaced")
+	require.Equal(t, "https://github.com/acme/base/modules/foo.bar@"+testIncludeCommit, cfg.Modules["dotted-local"].Source,
+		"a dot outside the host segment is a path, not a ref")
 
-	// The dropped module's env overlay goes with it; the surviving module's
-	// overlay stays.
-	require.NotContains(t, cfg.Env["ci"].Modules, "ci")
-	require.NotContains(t, cfg.Env["ci"].Modules, "extra-local")
+	// Sources that already address something outside the tree are untouched.
+	require.Equal(t, "github.com/acme/toolchain@v1", cfg.Modules["toolchain"].Source)
+	require.Equal(t, "https://example.com/acme/mod.git", cfg.Modules["scheme"].Source)
+
+	// Env overlays follow their module, whether they install one or only
+	// configure it.
+	require.Equal(t, "https://github.com/acme/base/modules/extra@"+testIncludeCommit, cfg.Env["ci"].Modules["extra-local"].Source)
+	require.Contains(t, cfg.Env["ci"].Modules, "ci")
 	require.Contains(t, cfg.Env["ci"].Modules, "toolchain")
 
-	// Ports forwarding to a dropped module go too; the others stay.
-	require.NotContains(t, cfg.Ports, "3000")
+	// Ports keep pointing at modules that survived, and lose the one whose
+	// module did not.
+	require.Contains(t, cfg.Ports, "3000")
 	require.Contains(t, cfg.Ports, "4000")
+	require.NotContains(t, cfg.Ports, "5000")
 }
 
-func TestDropLocalIncludedModulesKeepsAVanityRemote(t *testing.T) {
+func TestAddressIncludedModulesFromAConfigInASubdirectory(t *testing.T) {
 	t.Parallel()
 
-	// A schemeless remote whose host carries the dot: kept, and without asking
-	// the network — classification is syntactic, so it cannot depend on
-	// reachability.
+	// The included config is not at the repository root, so its own paths are
+	// relative to where it sits rather than to the clone.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.ci]
+source = "ci"
+
+[modules.sibling]
+source = "../tools/lint"
+`))
+	require.NoError(t, err)
+
+	address := gitIncludedModuleAddresser("https://github.com/acme/base", testIncludeCommit, "dagger/common")
+	require.Empty(t, addressIncludedModules(address, cfg))
+
+	require.Equal(t, "https://github.com/acme/base/dagger/common/ci@"+testIncludeCommit, cfg.Modules["ci"].Source)
+	require.Equal(t, "https://github.com/acme/base/dagger/tools/lint@"+testIncludeCommit, cfg.Modules["sibling"].Source)
+}
+
+func TestAddressIncludedModulesKeepsAVanityRemote(t *testing.T) {
+	t.Parallel()
+
+	// A schemeless remote whose host carries the dot: kept as written, and
+	// without asking the network — classification is syntactic, so it cannot
+	// depend on reachability.
 	cfg, err := workspace.ParseConfig([]byte(`[modules.toolchain]
 source = "vanity.example.com/acme/toolchain"
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(cfg)
-	require.Empty(t, dropped)
-	require.Contains(t, cfg.Modules, "toolchain")
+	require.Empty(t, addressIncludedModules(testGitAddresser(), cfg))
+	require.Equal(t, "vanity.example.com/acme/toolchain", cfg.Modules["toolchain"].Source)
 }
 
-func TestDropLocalIncludedModulesDropsBareShortNameSource(t *testing.T) {
+func TestAddressIncludedModulesDropsABuiltinSDKInstall(t *testing.T) {
 	t.Parallel()
 
-	// The shape `dagger setup` writes for a migrated SDK. Nothing named php
-	// exists in the included tree, so this pins the classification rather than
-	// the stat — and with it the reasoning that lets setupResolveMigratedSDKs
-	// keep writing back what configRead returned: it only rewrites entries of
-	// this shape, and an entry of this shape is never inherited from an include.
+	// The shape `dagger setup` writes for a migrated SDK: a runtime name the
+	// engine resolves in-process, not a path. It is also the reasoning that
+	// lets setupResolveMigratedSDKs keep writing back what configRead
+	// returned: it only rewrites entries of this shape, and an entry of this
+	// shape is never inherited from an include.
 	cfg, err := workspace.ParseConfig([]byte(`[modules.php]
 source = "php"
+
+[modules.php.as-sdk]
+name = "php"
+
+[modules.go]
+source = "go@v1.2.3"
+
+[modules.go.as-sdk]
+name = "go"
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(cfg)
-	require.Equal(t, []string{"php"}, dropped)
+	dropped := addressIncludedModules(testGitAddresser(), cfg)
+	require.Len(t, dropped, 2)
+	require.Contains(t, dropped[0], "built-in SDK runtime")
 	require.NotContains(t, cfg.Modules, "php")
+	require.NotContains(t, cfg.Modules, "go")
 }
 
-func TestDropLocalIncludedModulesCascadesToPortsOfNonCanonicalNames(t *testing.T) {
+func TestAddressIncludedModulesKeepsADirectoryNamedAfterAnSDK(t *testing.T) {
+	t.Parallel()
+
+	// Without as-sdk the entry is an ordinary module that happens to live in a
+	// directory called "go", and the loader reads it that way too. Dropping it
+	// on the name alone would lose a module nobody said was a runtime.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.compiler]
+source = "go"
+`))
+	require.NoError(t, err)
+
+	require.Empty(t, addressIncludedModules(testGitAddresser(), cfg))
+	require.Equal(t, "https://github.com/acme/base/go@"+testIncludeCommit, cfg.Modules["compiler"].Source)
+}
+
+func TestAddressIncludedModulesDropsAPathAGitRefCannotSpell(t *testing.T) {
+	t.Parallel()
+
+	// "@" and "#" both mean "version" in a ref, so a path carrying either
+	// would be cut short by the parser and resolve somewhere else entirely.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.scoped]
+source = "modules/@scope/tool"
+
+[modules.fragment]
+source = "modules/a#b"
+`))
+	require.NoError(t, err)
+
+	require.Len(t, addressIncludedModules(testGitAddresser(), cfg), 2)
+	require.NotContains(t, cfg.Modules, "scoped")
+	require.NotContains(t, cfg.Modules, "fragment")
+}
+
+func TestAddressIncludedModulesDropsAWindowsAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	// A UNC path reaches a Linux engine with backslashes: normalizing after the
+	// absolute check would read it as relative and rebase it under the included
+	// config's directory.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.unc]
+source = '\\server\share\mod'
+`))
+	require.NoError(t, err)
+
+	require.Len(t, addressIncludedModules(testGitAddresser(), cfg), 1)
+	require.NotContains(t, cfg.Modules, "unc")
+}
+
+func TestAddressIncludedModulesKeepsAPortAnEnvOverlayStillInstalls(t *testing.T) {
+	t.Parallel()
+
+	// The base entry has no address here, but the env overlay installs the same
+	// module with one that does — so the port still has something to reach.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.api]
+source = "../../outside"
+
+[env.ci.modules.api]
+source = "modules/api"
+
+[ports.3000]
+backendService = "api:web"
+backendPort = 8080
+`))
+	require.NoError(t, err)
+
+	require.Len(t, addressIncludedModules(testGitAddresser(), cfg), 1)
+	require.Equal(t, "https://github.com/acme/base/modules/api@"+testIncludeCommit, cfg.Env["ci"].Modules["api"].Source)
+	require.Contains(t, cfg.Ports, "3000")
+}
+
+func TestAddressIncludedModulesClearsAPinOnlyOverlayOfAReaddressedModule(t *testing.T) {
+	t.Parallel()
+
+	// A lone pin updates the base entry's pin, and that entry now names
+	// something else entirely.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.ci]
+source = "./ci"
+
+[env.prod.modules.ci]
+pin = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+`))
+	require.NoError(t, err)
+
+	require.Empty(t, addressIncludedModules(testGitAddresser(), cfg))
+	require.Equal(t, "https://github.com/acme/base/ci@"+testIncludeCommit, cfg.Modules["ci"].Source)
+	require.Empty(t, cfg.Env["prod"].Modules["ci"].Pin, "the pin described the source that was replaced")
+}
+
+func TestAddressIncludedModulesDropsTheIncludedRootItself(t *testing.T) {
+	t.Parallel()
+
+	// The tree the config came from is a workspace, not a module.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.self]
+source = "."
+`))
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"self (no address outside the config it came from)"}, addressIncludedModules(testGitAddresser(), cfg))
+}
+
+func TestAddressIncludedModulesDropsAnAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	// An absolute path addresses the machine the config was authored on.
+	cfg, err := workspace.ParseConfig([]byte(`[modules.abs]
+source = "/opt/ci"
+`))
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"abs (no address outside the config it came from)"}, addressIncludedModules(testGitAddresser(), cfg))
+}
+
+func TestAddressIncludedModulesCascadesToPortsOfNonCanonicalNames(t *testing.T) {
 	t.Parallel()
 
 	// backendService names the module CLI-cased, which is not how the config
 	// spells the key it was declared under.
 	cfg, err := workspace.ParseConfig([]byte(`[modules.MyTool]
-source = "modules/my-tool"
+source = "../../my-tool"
 
 [ports.3000]
 backendService = "my-tool:web"
@@ -119,18 +280,17 @@ backendPort = 8080
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(cfg)
-	require.Equal(t, []string{"MyTool"}, dropped)
+	require.Equal(t, []string{"MyTool (no address outside the config it came from)"}, addressIncludedModules(testGitAddresser(), cfg))
 	require.NotContains(t, cfg.Ports, "3000")
 }
 
-func TestDropLocalIncludedModulesCascadesToPortsOfEnvOnlyInstalls(t *testing.T) {
+func TestAddressIncludedModulesCascadesToPortsOfEnvOnlyInstalls(t *testing.T) {
 	t.Parallel()
 
 	// The module is installed by an env overlay only, so dropping that overlay
 	// leaves nothing for the port to forward to.
 	cfg, err := workspace.ParseConfig([]byte(`[env.ci.modules.local-ci]
-source = "modules/ci"
+source = "/opt/ci"
 
 [ports.3000]
 backendService = "local-ci:web"
@@ -142,23 +302,52 @@ backendPort = 9090
 `))
 	require.NoError(t, err)
 
-	dropped := dropLocalIncludedModules(cfg)
-	require.Equal(t, []string{"env.ci.modules.local-ci"}, dropped)
+	require.Equal(t, []string{"env.ci.modules.local-ci (no address outside the config it came from)"}, addressIncludedModules(testGitAddresser(), cfg))
 	require.NotContains(t, cfg.Ports, "3000")
 	require.Contains(t, cfg.Ports, "4000")
 }
 
-func TestDropLocalIncludedModulesDropsADottedPath(t *testing.T) {
+func TestPathIncludedModuleAddresser(t *testing.T) {
 	t.Parallel()
 
-	// The dot is in a path segment rather than the host, so this is a path.
-	cfg, err := workspace.ParseConfig([]byte(`[modules.nested]
-source = "modules/foo.bar"
-`))
-	require.NoError(t, err)
+	// The monorepo shape: common/dagger.toml installs the modules under
+	// shared/, and project-a/dagger.toml includes it. Both paths are
+	// workspace-relative, so only what they are relative to changes.
+	address := pathIncludedModuleAddresser("common", "project-a")
 
-	dropped := dropLocalIncludedModules(cfg)
-	require.Equal(t, []string{"nested"}, dropped)
+	for _, tc := range []struct {
+		source string
+		want   string
+		ok     bool
+	}{
+		{source: "../shared/tester", want: "../shared/tester", ok: true},
+		{source: "modules/ci", want: "../common/modules/ci", ok: true},
+		// Dot-prefixed even when the target sits below the consumer, so the
+		// result can never read back as a git ref.
+		{source: "../project-a/ci", want: "./ci", ok: true},
+		{source: "../shared.v2/ci", want: "../shared.v2/ci", ok: true},
+		{source: "../../elsewhere", ok: false},
+		{source: "/opt/ci", ok: false},
+		{source: "..", ok: false},
+	} {
+		got, ok := address(tc.source)
+		require.Equal(t, tc.ok, ok, "source %q", tc.source)
+		if tc.ok {
+			require.Equal(t, tc.want, got, "source %q", tc.source)
+			require.True(t, workspace.IsLocalRef(got, ""), "%q must read back as a path", got)
+		}
+	}
+}
+
+func TestPathIncludedModuleAddresserFromTheWorkspaceRoot(t *testing.T) {
+	t.Parallel()
+
+	// A consuming config at the workspace root: the rewritten path is the
+	// workspace-relative one, still dot-prefixed.
+	address := pathIncludedModuleAddresser("common", "")
+	got, ok := address("../shared/tester")
+	require.True(t, ok)
+	require.Equal(t, "./shared/tester", got)
 }
 
 func TestIncludedSourceIsLocal(t *testing.T) {
