@@ -65,10 +65,8 @@ This will install all dependencies, start the docs web server locally and open [
 
 - Normal docs PRs update `/current_docs`, which publishes at `/next`.
 - The latest release line is published at `/`; older release lines use `/<version>/`.
-- Before cutting a release docs version, regenerate generated references first.
-- From `/docs`, run `yarn docs:version <version>` to snapshot `/current_docs` into `/versioned_docs/version-<version>`.
-- Review `/`, `/next/`, and older `/<version>/` routes before publishing.
-- After release, keep normal docs edits in `/current_docs`. Patch `/versioned_docs/version-<version>` only for fixes that must apply to that maintained release line.
+- Regenerate references with `dagger generate`.
+- Version snapshots are managed at release time; see [RELEASING.md](../RELEASING.md).
 
 ### With a Dagger module
 
