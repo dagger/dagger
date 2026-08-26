@@ -4,7 +4,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"slices"
 	"sync"
 
 	"dagger.io/dagger"
@@ -116,12 +115,4 @@ func (sink *agentTraceSink) read(fn func(db *dagui.DB)) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	fn(sink.db)
-}
-
-// capture returns the OTLP export requests the session forwarded, in arrival
-// order — the raw material a fake Cloud serves back.
-func (sink *agentTraceSink) capture() ([]*coltracepb.ExportTraceServiceRequest, []*collogspb.ExportLogsServiceRequest) {
-	sink.mu.Lock()
-	defer sink.mu.Unlock()
-	return slices.Clone(sink.traces), slices.Clone(sink.logs)
 }

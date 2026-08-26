@@ -149,7 +149,7 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 // minimal reproduction of the leak a trace-global CHECKS section causes -- the
 // DB behind a scoped report holds the WHOLE session, not just the tool call
 // being reported on.
-func twoToolCallChecksDB(t *testing.T) (db *dagui.DB, callA, callB dagui.SpanID) {
+func twoToolCallChecksDB(t *testing.T) (db *dagui.DB, callB dagui.SpanID) {
 	t.Helper()
 	db = dagui.NewDB()
 	rootID := prettyTestSpanID(1)
@@ -209,7 +209,7 @@ func twoToolCallChecksDB(t *testing.T) (db *dagui.DB, callA, callB dagui.SpanID)
 			Final:     true,
 		},
 	})
-	return db, callAID, callBID
+	return db, callBID
 }
 
 // TestASCIIReporterScopedChecksExcludeOtherToolCalls covers the CHECKS section
@@ -219,7 +219,7 @@ func twoToolCallChecksDB(t *testing.T) (db *dagui.DB, callA, callB dagui.SpanID)
 // would see work it never asked for.
 func TestASCIIReporterScopedChecksExcludeOtherToolCalls(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	db, _, callB := twoToolCallChecksDB(t)
+	db, callB := twoToolCallChecksDB(t)
 	db.SetPrimarySpan(callB)
 
 	fe := NewASCIIReporterWithDB(io.Discard, db)
@@ -270,7 +270,7 @@ func TestASCIIReporterScopedChecksExcludeOtherToolCalls(t *testing.T) {
 // call used to swallow this call's own printed output entirely.
 func TestASCIIReporterScopedReportWithoutChecksKeepsOwnOutput(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	db, _, _ := twoToolCallChecksDB(t)
+	db, _ := twoToolCallChecksDB(t)
 
 	// A third tool call that matched no checks: it ran a module function that
 	// printed a warning, and nothing else.

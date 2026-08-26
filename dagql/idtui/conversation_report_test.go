@@ -26,7 +26,7 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 		workerToolByte
 		workerTestByte
 	)
-	id := func(n byte) dagui.SpanID { return prettyTestSpanID(n) }
+	id := prettyTestSpanID
 	start := time.Unix(100, 0)
 	tool := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
 		return dagui.SpanSnapshot{
