@@ -83,14 +83,12 @@ const (
 // transitive closure as log records when they emit that call's span, minus
 // frames already sent to the same delivery domain.
 //
-// CallPayloadInstrumentationScope names the logger dedicated to these records.
-// DagCallPayloadAttr marks a record whose body is one deterministic protobuf
-// encoding of callpbv1.Call. The payload omits Call.Digest; consumers compute
-// the canonical digest from the body instead. (bool)
-const (
-	CallPayloadInstrumentationScope = "dagger.io/dag.call.payload"
-	DagCallPayloadAttr              = "dagger.io/dag.call.payload"
-)
+// CallPayloadContentType is the dagger.io/content.type value identifying such
+// a record: its body is one deterministic protobuf encoding of callpbv1.Call.
+// The payload omits Call.Digest; consumers compute the canonical digest from
+// the body instead. Like every content type, it describes the body — records
+// carry it under the ordinary core instrumentation scope.
+const CallPayloadContentType = "application/vnd.dagger.call+proto"
 
 // wcprof × OTel vocabulary.
 //

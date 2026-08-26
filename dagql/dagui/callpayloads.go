@@ -1,63 +1,42 @@
 package dagui
 
 import (
-	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// IsCallPayloadRecord reports whether record belongs to the reserved
-// call-payload channel. The marker key reserves a record regardless of its
-// value, and the instrumentation scope independently reserves it. This
-// deliberately includes malformed records so no downstream renderer treats
-// their bodies as log text.
+// IsCallPayloadRecord reports whether record belongs to the call-payload
+// channel: its content type declares the body to be an encoded call. This
+// deliberately includes malformed records (a payload content type over a
+// non-bytes body) so no downstream renderer treats them as log text.
 func IsCallPayloadRecord(record sdklog.Record) bool {
-	_, markerPresent, _ := callPayloadRecordReservation(record)
-	return IsCallPayloadRecordMetadata(record.InstrumentationScope().Name, markerPresent)
-}
-
-// IsCallPayloadRecordMetadata applies the call-payload channel reservation to
-// decoded record metadata. It exists for consumers of persisted OTLP records,
-// which no longer have an sdklog.Record to classify directly.
-func IsCallPayloadRecordMetadata(instrumentationScope string, markerPresent bool) bool {
-	return instrumentationScope == telemetryattrs.CallPayloadInstrumentationScope || markerPresent
-}
-
-func callPayloadRecordReservation(record sdklog.Record) (reservedByScope, markerPresent, markerValid bool) {
-	reservedByScope = record.InstrumentationScope().Name == telemetryattrs.CallPayloadInstrumentationScope
-	markerValid = true
+	payload := false
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
-		if kv.Key == telemetryattrs.DagCallPayloadAttr {
-			markerPresent = true
-			markerValid = markerValid && kv.Value.Kind() == otellog.KindBool && kv.Value.AsBool()
+		if kv.Key == telemetry.ContentTypeAttr {
+			payload = kv.Value.Kind() == otellog.KindString &&
+				kv.Value.AsString() == telemetryattrs.CallPayloadContentType
+			return false
 		}
 		return true
 	})
-	return reservedByScope, markerPresent, markerValid
+	return payload
 }
 
-// ingestCallPayload folds one reserved call-payload log record into db.Calls.
-// It reports whether the record belongs to the call-payload channel. Reserved
-// records are always consumed, including malformed ones, so protobuf bytes and
-// tampered data can never fall through to ordinary log rendering.
+// ingestCallPayload folds one call-payload log record into db.Calls. It
+// reports whether the record belongs to the call-payload channel. Payload
+// records are always consumed, including malformed ones, so protobuf bytes
+// and tampered data can never fall through to ordinary log rendering.
 func (db *DB) ingestCallPayload(record sdklog.Record) bool {
-	reservedByScope, markerPresent, markerValid := callPayloadRecordReservation(record)
-
-	if !markerPresent && !reservedByScope {
+	if !IsCallPayloadRecord(record) {
 		return false
 	}
 
-	if !markerPresent || !markerValid {
-		slog.Warn("dropping malformed call payload record", "reason", "marker must be boolean true")
-		return true
-	}
-	if !reservedByScope {
-		slog.Warn("dropping malformed call payload record", "reason", "wrong instrumentation scope", "scope", record.InstrumentationScope().Name)
-		return true
-	}
 	if record.Body().Kind() != otellog.KindBytes {
 		slog.Warn("dropping malformed call payload record", "reason", "body must be bytes", "kind", record.Body().Kind())
 		return true

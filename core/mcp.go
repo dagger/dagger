@@ -33,7 +33,6 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1346,22 +1345,18 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				continue
 			}
 
-			// Call payloads are an internal binary transport, not log output. Their
-			// marker key and instrumentation scope each reserve the record
-			// independently, including malformed records, so classify them before
-			// span handling or body conversion can surface them to an LLM.
-			var scopePB otlpcommonv1.InstrumentationScope
-			if err := protojson.Unmarshal(log.InstrumentationScope, &scopePB); err != nil {
-				slog.Warn("failed to unmarshal log instrumentation scope", "error", err, "log", log.ID)
-			}
-			var callPayloadMarker bool
+			// Call payloads are an internal binary transport, not log output.
+			// Their content type reserves the record, including malformed ones,
+			// so classify them before span handling or body conversion can
+			// surface them to an LLM.
+			var callPayload bool
 			for _, attr := range logAttrs {
-				if attr.Key == telemetryattrs.DagCallPayloadAttr {
-					callPayloadMarker = true
+				if attr.Key == telemetry.ContentTypeAttr {
+					callPayload = attr.Value.GetStringValue() == telemetryattrs.CallPayloadContentType
 					break
 				}
 			}
-			if dagui.IsCallPayloadRecordMetadata(scopePB.Name, callPayloadMarker) {
+			if callPayload {
 				continue
 			}
 

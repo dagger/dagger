@@ -20,12 +20,12 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -33,39 +33,43 @@ import (
 )
 
 func frontendTestLogRecord(spanID trace.SpanID, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
-	var record sdklog.Record
+	record := new(sdklog.Record)
+
+	// A zero-value Record carries zero attribute limits, truncating every
+	// string attribute value to ""; lift them like the SDK logger would.
+	rf := reflect.ValueOf(record).Elem()
+	for _, field := range []string{"attributeCountLimit", "attributeValueLengthLimit"} {
+		limit := rf.FieldByName(field)
+		limit = reflect.NewAt(limit.Type(), unsafe.Pointer(limit.UnsafeAddr())).Elem()
+		limit.SetInt(-1)
+	}
+
 	record.SetSpanID(spanID)
 	record.SetBody(body)
 	record.SetAttributes(attrs...)
-	return record
-}
-
-func setFrontendTestLogScope(record *sdklog.Record, name string) {
-	rf := reflect.ValueOf(record).Elem()
-	scope := rf.FieldByName("scope")
-	scope = reflect.NewAt(scope.Type(), unsafe.Pointer(scope.UnsafeAddr())).Elem()
-	scope.Set(reflect.ValueOf(&instrumentation.Scope{Name: name}))
+	return *record
 }
 
 func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record {
 	t.Helper()
 	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&callpbv1.Call{
-		Field: "loadTypeDefs",
-		Type:  &callpbv1.Type{NamedType: "TypeDef"},
+		Field:  "loadTypeDefs",
+		Type:   &callpbv1.Type{NamedType: "TypeDef"},
+		Digest: "xxh3:fixture-loadtypedefs",
 	})
 	require.NoError(t, err)
 
 	before := frontendTestLogRecord(spanID, otellog.StringValue("before\n"))
-	markedBytes := frontendTestLogRecord(spanID, otellog.BytesValue(payload),
-		otellog.Bool(telemetryattrs.DagCallPayloadAttr, true))
-	setFrontendTestLogScope(&markedBytes, telemetryattrs.CallPayloadInstrumentationScope)
-	scopedText := frontendTestLogRecord(spanID, otellog.StringValue("reserved malformed payload\n"))
-	setFrontendTestLogScope(&scopedText, telemetryattrs.CallPayloadInstrumentationScope)
-	// A bytes body with no marker and no reserved scope: not a call payload at
-	// all, but still binary data that must never render as log text.
-	unmarkedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNMARKED-BYTES")))
+	payloadBytes := frontendTestLogRecord(spanID, otellog.BytesValue(payload),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	// Malformed: a text body under the payload content type is still reserved.
+	typedText := frontendTestLogRecord(spanID, otellog.StringValue("reserved malformed payload\n"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	// A bytes body with no content type: not a call payload at all, but still
+	// binary data that must never render as log text.
+	untypedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNTYPED-BYTES")))
 	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
-	return []sdklog.Record{before, markedBytes, scopedText, unmarkedBytes, after}
+	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, after}
 }
 
 func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {

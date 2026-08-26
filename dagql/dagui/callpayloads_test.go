@@ -2,16 +2,14 @@ package dagui
 
 import (
 	"context"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	otellog "go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
@@ -70,22 +68,14 @@ func rawCallPayload(t *testing.T, callPB *callpbv1.Call) []byte {
 	return payload
 }
 
-func setTestLogScope(record *sdklog.Record, name string) {
-	rf := reflect.ValueOf(record).Elem()
-	scope := rf.FieldByName("scope")
-	scope = reflect.NewAt(scope.Type(), unsafe.Pointer(scope.UnsafeAddr())).Elem()
-	scope.Set(reflect.ValueOf(&instrumentation.Scope{Name: name}))
-}
-
 // newTestCallPayloadRecord builds the record the engine emits for one frame of
 // a call's transitive closure.
 func newTestCallPayloadRecord(t *testing.T, span SpanID, callPB *callpbv1.Call) sdklog.Record {
 	t.Helper()
 	record := newTestLogRecord(trace.TraceID{1}, span.SpanID, "",
-		otellog.Bool(telemetryattrs.DagCallPayloadAttr, true),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 	)
 	record.SetBody(otellog.BytesValue(rawCallPayload(t, callPB)))
-	setTestLogScope(&record, telemetryattrs.CallPayloadInstrumentationScope)
 	return record
 }
 
@@ -105,10 +95,9 @@ func TestCallPayloadRecordReservationAndValidation(t *testing.T) {
 	callPB := frames[1]
 	payload := rawCallPayload(t, callPB)
 
-	newRecord := func(scope string, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	newRecord := func(body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
 		record := newTestLogRecord(trace.TraceID{1}, trace.SpanID{1}, "", attrs...)
 		record.SetBody(body)
-		setTestLogScope(&record, scope)
 		return record
 	}
 	for _, test := range []struct {
@@ -118,44 +107,33 @@ func TestCallPayloadRecordReservationAndValidation(t *testing.T) {
 		valid    bool
 	}{
 		{
-			name: "valid marker scope and bytes body",
-			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload),
-				otellog.Bool(telemetryattrs.DagCallPayloadAttr, true)),
+			name: "call content type with bytes body",
+			record: newRecord(otellog.BytesValue(payload),
+				otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)),
 			reserved: true,
 			valid:    true,
 		},
 		{
-			name:     "scope reserves absent marker",
-			record:   newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload)),
+			name: "call content type reserves non-bytes body",
+			record: newRecord(otellog.StringValue(string(payload)),
+				otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)),
 			reserved: true,
 		},
 		{
-			name: "false marker reserves",
-			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload),
-				otellog.Bool(telemetryattrs.DagCallPayloadAttr, false)),
-			reserved: true,
+			name: "other content type is not reserved",
+			record: newRecord(otellog.BytesValue(payload),
+				otellog.String(telemetry.ContentTypeAttr, "application/json")),
+			reserved: false,
 		},
 		{
-			name: "wrong marker kind reserves",
-			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.BytesValue(payload),
-				otellog.String(telemetryattrs.DagCallPayloadAttr, "true")),
-			reserved: true,
+			name: "wrong content type value kind is not reserved",
+			record: newRecord(otellog.BytesValue(payload),
+				otellog.Bool(telemetry.ContentTypeAttr, true)),
+			reserved: false,
 		},
 		{
-			name: "marker reserves wrong scope",
-			record: newRecord("wrong.scope", otellog.BytesValue(payload),
-				otellog.Bool(telemetryattrs.DagCallPayloadAttr, true)),
-			reserved: true,
-		},
-		{
-			name: "marker reserves wrong body kind",
-			record: newRecord(telemetryattrs.CallPayloadInstrumentationScope, otellog.StringValue(string(payload)),
-				otellog.Bool(telemetryattrs.DagCallPayloadAttr, true)),
-			reserved: true,
-		},
-		{
-			name:     "unmarked unrelated record",
-			record:   newRecord("wrong.scope", otellog.BytesValue(payload)),
+			name:     "record without content type is not reserved",
+			record:   newRecord(otellog.BytesValue(payload)),
 			reserved: false,
 		},
 	} {

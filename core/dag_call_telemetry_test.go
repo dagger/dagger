@@ -25,15 +25,15 @@ import (
 
 // recordedPayload is one call-payload record as it crossed the logger API.
 type recordedPayload struct {
-	scope         string
-	bodyKind      otellog.Kind
-	body          []byte
-	marker        bool
-	markerKind    otellog.Kind
-	hasDigestAttr bool
-	call          *callpbv1.Call
-	digest        string
-	err           error
+	scope           string
+	bodyKind        otellog.Kind
+	body            []byte
+	contentType     string
+	contentTypeKind otellog.Kind
+	hasDigestAttr   bool
+	call            *callpbv1.Call
+	digest          string
+	err             error
 }
 
 // payloadRecorder captures call payload records and indexes decoded calls by
@@ -53,9 +53,9 @@ func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error 
 	}
 	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
 		switch kv.Key {
-		case telemetryattrs.DagCallPayloadAttr:
-			got.markerKind = kv.Value.Kind()
-			got.marker = kv.Value.AsBool()
+		case telemetry.ContentTypeAttr:
+			got.contentTypeKind = kv.Value.Kind()
+			got.contentType = kv.Value.AsString()
 		case "dagger.io/dag.call.payload.digest":
 			got.hasDigestAttr = true
 		}
@@ -223,10 +223,10 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	fields := make([]string, 0, len(records))
 	for _, record := range records {
 		require.NoError(t, record.err)
-		require.Equal(t, telemetryattrs.CallPayloadInstrumentationScope, record.scope)
+		require.Equal(t, InstrumentationLibrary, record.scope)
 		require.Equal(t, otellog.KindBytes, record.bodyKind)
-		require.Equal(t, otellog.KindBool, record.markerKind)
-		require.True(t, record.marker)
+		require.Equal(t, otellog.KindString, record.contentTypeKind)
+		require.Equal(t, telemetryattrs.CallPayloadContentType, record.contentType)
 		require.False(t, record.hasDigestAttr)
 		require.NotNil(t, record.call)
 		require.NotEmpty(t, record.call.Digest, "the payload must carry its own digest")

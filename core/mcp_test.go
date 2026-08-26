@@ -123,27 +123,22 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 	require.NoError(t, err)
 
 	ordinaryScope := "ordinary.logs"
+	callContentType := &otlpcommonv1.KeyValue{
+		Key: telemetry.ContentTypeAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{
+			StringValue: telemetryattrs.CallPayloadContentType,
+		}},
+	}
 	logs := []clientdb.Log{
 		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("before\n")),
-		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("MARKER-FALSE-BYTES")),
-			&otlpcommonv1.KeyValue{
-				Key: telemetryattrs.DagCallPayloadAttr,
-				Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{
-					BoolValue: false,
-				}},
-			}),
-		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("MARKER-WRONG-TYPE\n"),
-			&otlpcommonv1.KeyValue{
-				Key: telemetryattrs.DagCallPayloadAttr,
-				Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{
-					StringValue: "not-a-bool",
-				}},
-			}),
-		persistedCaptureLog(t, traceID, spanID, telemetryattrs.CallPayloadInstrumentationScope,
-			stringLogBody("SCOPE-ONLY-WRONG-BODY\n")),
-		// Neither marked nor scope-reserved: not a call payload, but binary
-		// data all the same. Only string bodies may become LLM-visible text.
-		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("UNMARKED-BYTES"))),
+		// A well-formed payload record: reserved by content type.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("CALL-PAYLOAD-BYTES")), callContentType),
+		// Malformed: the payload content type over a text body is still
+		// reserved, never rendered.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("CONTENT-TYPE-WRONG-BODY\n"), callContentType),
+		// No content type at all: not a call payload, but binary data all the
+		// same. Only string bodies may become LLM-visible text.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("UNTYPED-BYTES"))),
 		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("after\n")),
 	}
 	_, err = store.AppendLogs(logs)

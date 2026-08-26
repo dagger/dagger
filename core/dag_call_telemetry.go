@@ -17,7 +17,7 @@ import (
 // Call payloads over the log channel: the sole transport for newly emitted
 // replayable call data.
 //
-// This file is the producer half of the dagger.io/dag.call.payload.* contract
+// This file is the producer half of the CallPayloadContentType contract
 // (engine/telemetryattrs), modelled on the agent-state producer next door for
 // the same structural reason: a span attribute can only describe a span that
 // exists. A client rebuilding a call ID needs a payload for EVERY frame the
@@ -93,7 +93,7 @@ func recordCallPayloads(
 		return
 	}
 
-	logger := telemetry.Logger(ctx, telemetryattrs.CallPayloadInstrumentationScope)
+	logger := telemetry.Logger(ctx, InstrumentationLibrary)
 	emit := func(dgst string, callPB *callpbv1.Call) {
 		// The root was claimed before rebuilding. Claim every other frame before
 		// encoding so repeated closure walks skip work already delivered.
@@ -113,7 +113,7 @@ func recordCallPayloads(
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
 		rec.SetBody(log.BytesValue(payload))
-		rec.AddAttributes(log.Bool(telemetryattrs.DagCallPayloadAttr, true))
+		rec.AddAttributes(log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 		logger.Emit(ctx, rec)
 	}
 
