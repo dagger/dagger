@@ -1,6 +1,0 @@
-kind: Added
-body: Added SSHFS-backed volumes, allowing remote filesystems to be mounted into containers without copying their contents into Dagger's content store.
-time: 2026-08-24T17:50:48Z
-custom:
-    Author: sipsma
-    PR: "13462"

@@ -1,9 +1,0 @@
-kind: Fixed
-body: |
-  Registry protocol probes no longer appear as scary errors in progress output
-  when image pulls or publishes succeed, while genuine registry failures remain
-  visible.
-time: 2026-08-12T21:33:33Z
-custom:
-  Author: vito
-  PR: 13410
