@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
@@ -122,4 +124,73 @@ func TestNamedFetchRefSpecsChangesWithPinnedSHA(t *testing.T) {
 	require.Len(t, baseSpecs, 1)
 	require.Len(t, updatedSpecs, 1)
 	require.NotEqual(t, baseSpecs[0], updatedSpecs[0], "fallback destination should track pinned ref+sha pair")
+}
+
+func TestRetryTransient(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("retries until success", func(t *testing.T) {
+		calls := 0
+		err := retryTransient(ctx, "fetch", func(context.Context) error {
+			calls++
+			if calls < 2 {
+				return errors.Join(gitutil.ErrTransient, errors.New("exit status 128"))
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, 2, calls)
+	})
+
+	t.Run("gives up and returns the last error", func(t *testing.T) {
+		calls := 0
+		boom := errors.Join(gitutil.ErrTransient, errors.New("exit status 128"))
+		err := retryTransient(ctx, "fetch", func(context.Context) error {
+			calls++
+			return boom
+		})
+		require.ErrorIs(t, err, gitutil.ErrTransient)
+		require.Equal(t, 3, calls)
+		require.ErrorContains(t, err, "after 3 attempts")
+	})
+
+	t.Run("does not retry other failures", func(t *testing.T) {
+		calls := 0
+		err := retryTransient(ctx, "fetch", func(context.Context) error {
+			calls++
+			return gitutil.ErrGitAuthFailed
+		})
+		require.ErrorIs(t, err, gitutil.ErrGitAuthFailed)
+		require.Equal(t, 1, calls)
+		require.NotContains(t, err.Error(), "attempts", "a first-try failure is reported as-is")
+	})
+
+	t.Run("stops when the context is done", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		calls := 0
+		err := retryTransient(ctx, "fetch", func(context.Context) error {
+			calls++
+			cancel()
+			return errors.Join(gitutil.ErrTransient, errors.New("exit status 128"))
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Equal(t, 1, calls)
+	})
+
+	t.Run("bounds the retries but not the first attempt", func(t *testing.T) {
+		calls := 0
+		err := retryTransient(ctx, "fetch", func(ctx context.Context) error {
+			calls++
+			deadline, ok := ctx.Deadline()
+			if calls == 1 {
+				require.False(t, ok, "a cold fetch of a large repository keeps the caller's deadline")
+			} else {
+				require.True(t, ok, "retries share one budget")
+				require.LessOrEqual(t, time.Until(deadline), transientRetryBudget)
+			}
+			return errors.Join(gitutil.ErrTransient, errors.New("exit status 128"))
+		})
+		require.ErrorIs(t, err, gitutil.ErrTransient)
+		require.Equal(t, 3, calls)
+	})
 }

@@ -38,8 +38,9 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    timeout: String,
   ): Void {
-    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, timeout: timeout)
   }
 
   """
@@ -83,6 +84,11 @@ type TestSplit {
       ],
       pkg: "./...",
       race: true,
+      # Successful runs of this shard sit at a 12m median and a 19m maximum, and
+      # CI kills the check at 30m. Keeping go test's own timeout under that cap
+      # is what turns a hang into a goroutine dump instead of an opaque
+      # 'max execution time exceeded'.
+      timeout: "25m",
     )
   }
 
