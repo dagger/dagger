@@ -1,0 +1,14 @@
+kind: Fixed
+body: |
+  `Container.withServiceBinding` now works for a service whose custom hostname
+  was scoped to another module's DNS domain. A service created with
+  `withHostname` is namespaced into the domain of whichever module first starts
+  it, so a module that started its own service before handing it to a caller
+  left that caller's `withExec` failing at hosts-file setup with
+  `lookup <hostname> ... no such host`. Binding the service explicitly now
+  resolves it by the name it actually registered under. Reaching a module's
+  custom hostname by bare DNS remains scoped to that module.
+time: 2026-07-27T19:30:00Z
+custom:
+  Author: Zaba505
+  PR: 13751

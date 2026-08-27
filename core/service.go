@@ -607,6 +607,11 @@ func (svc *Service) startContainer(
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
 
+	// A service binding another module's custom-hostname service hits the same
+	// resolution problem its consumers do; see recordBoundServiceFQDNs. execMD
+	// is cloned above, so this never mutates shared state.
+	recordBoundServiceFQDNs(execMD, ctr.Services, runningDeps)
+
 	propagateDependencyExits := len(runningDeps) > 0 &&
 		running.Key.Kind != ServiceRuntimeInteractive &&
 		(opts.IO == nil || !opts.IO.Interactive)
@@ -1605,6 +1610,53 @@ type ServiceBinding struct {
 	Service  dagql.ObjectResult[*Service]
 	Hostname string
 	Aliases  AliasSet
+}
+
+// recordBoundServiceFQDNs notes, for each freshly started binding, the fully
+// qualified name the running service registered in DNS under, so the executor
+// can resolve it directly instead of re-deriving the bare hostname against the
+// consuming exec's search domains.
+//
+// A service with a custom hostname is namespaced into the domain of whichever
+// module happened to start it (see startContainer), and the running instance is
+// then shared session-wide by content digest without the domain forming part of
+// its identity. A consumer in another module therefore holds a perfectly valid
+// handle to a running service whose only registered name it cannot resolve.
+// Binding a service explicitly is a capability the consumer already has, so it
+// keeps working here; bare-hostname DNS stays namespaced as before.
+//
+// running is index-aligned with bindings, per Services.StartBindings.
+func recordBoundServiceFQDNs(
+	execMD *engineutil.ExecutionMetadata,
+	bindings ServiceBindings,
+	running []*RunningService,
+) {
+	if execMD == nil {
+		return
+	}
+	// Built locally and assigned once: callers may hand us a shallow clone of an
+	// ExecutionMetadata whose maps are still shared with the original.
+	fqdns := map[string]string{}
+	for i, bnd := range bindings {
+		if i >= len(running) {
+			break
+		}
+		svc := running[i]
+		if svc == nil || svc.Host == "" || svc.Host == bnd.Hostname {
+			continue
+		}
+		// Only services on the engine network get a name in the engine's DNS
+		// domain. A tunnel service reports a host-side dial address instead,
+		// which is meaningless inside the container and must keep resolving
+		// through the existing search-domain sweep.
+		if !strings.HasSuffix(svc.Host, network.DomainSuffix) {
+			continue
+		}
+		fqdns[bnd.Hostname] = svc.Host
+	}
+	if len(fqdns) > 0 {
+		execMD.HostAliasFQDNs = fqdns
+	}
 }
 
 func (bndp ServiceBindings) AttachDependencyResults(
