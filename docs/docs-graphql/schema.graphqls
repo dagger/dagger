@@ -620,7 +620,10 @@ type Container implements Exportable & Node & Syncer {
   """
   from(
     """
-    Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+
+    An address without a tag or digest selects the greatest stable release tag,
+    falling back to the literal "latest" tag when no eligible release exists.
     """
     address: String!
 
@@ -3329,8 +3332,13 @@ type GitRepository implements Node {
   """A unique identifier for this GitRepository."""
   id: ID!
 
-  """Returns details for the latest semver tag."""
-  latestVersion: GitRef!
+  """
+  Return the latest stable release tag, falling back to HEAD when no release exists.
+
+  Release selection accepts an optional "v" prefix, incomplete versions, and
+  zero-padded numeric components. This operation is pinned.
+  """
+  latest: GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -5912,6 +5920,20 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with a directory merged into the given path, without mutating the source.
+
+  Anything already at the path stays, and files the source carries win, as with
+  Directory.withDirectory. Use withNewDirectory to replace the path instead.
+  """
+  withDirectory(
+    """Path to merge into. Relative paths resolve from the workspace cwd."""
+    path: String!
+
+    """Directory to merge there."""
+    source: ID! @expectedType(name: "Directory")
+  ): Workspace!
+
+  """
   Return this workspace with a generated API client initialized.
 
   The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
@@ -6027,15 +6049,17 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with a directory added, without mutating the source.
+  Return this workspace with the given path replaced by a directory, without mutating the source.
+
+  The source becomes the entire contents of the path: anything already there
+  that the source does not carry is removed. Use withDirectory to keep it
+  instead.
   """
   withNewDirectory(
-    """
-    Path of the added directory. Relative paths resolve from the workspace cwd.
-    """
+    """Path to replace. Relative paths resolve from the workspace cwd."""
     path: String!
 
-    """Directory to add."""
+    """Directory to write there."""
     source: ID! @expectedType(name: "Directory")
   ): Workspace!
 

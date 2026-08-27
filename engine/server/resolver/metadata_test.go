@@ -70,6 +70,42 @@ func TestResolveImageConfigFallsBackWhenLocalMetadataIncomplete(t *testing.T) {
 	require.JSONEq(t, string(image.configBytes), string(configBytes))
 }
 
+func TestResolveImageDigestReturnsRootDescriptor(t *testing.T) {
+	t.Parallel()
+
+	image := newTestOCIIndexImage(t)
+	registry := newTestOCIRegistry(t, image)
+	t.Cleanup(registry.Close)
+	registryHost := strings.TrimPrefix(registry.URL, "http://")
+
+	rslvr := New(Opts{
+		Hosts: func(domain string) ([]docker.RegistryHost, error) {
+			require.Equal(t, registryHost, domain)
+			return []docker.RegistryHost{
+				{
+					Scheme: "http",
+					Host:   registryHost,
+					Path:   "/v2",
+					Capabilities: docker.HostCapabilityPull |
+						docker.HostCapabilityResolve,
+				},
+			}, nil
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(t, rslvr.Close())
+	})
+
+	ref := fmt.Sprintf("%s/dagger/partial:latest", registryHost)
+	_, resolvedDigest, err := rslvr.ResolveImageDigest(
+		context.Background(),
+		ref,
+		ResolveImageDigestOpts{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, image.rootDesc.Digest, resolvedDigest)
+}
+
 type testOCIIndexImage struct {
 	rootDesc     ocispecs.Descriptor
 	manifestDesc ocispecs.Descriptor

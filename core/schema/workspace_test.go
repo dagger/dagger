@@ -1031,14 +1031,8 @@ func TestWorkspaceMigrationHiddenPath(t *testing.T) {
 
 func TestWorkspaceMigrationFilterLegacyLockDataRemovesModuleResolve(t *testing.T) {
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
-		Value:  "sha256:deadbeef",
-		Policy: workspace.PolicyPin,
-	}))
-	require.NoError(t, lock.SetLookup("", workspaceMigrationLockModulesResolveOperation, []any{"github.com/acme/mod@main"}, workspace.LookupResult{
-		Value:  "0123456789abcdef0123456789abcdef01234567",
-		Policy: workspace.PolicyFloat,
-	}))
+	require.NoError(t, lock.SetLookup("", "oci-sha", []any{"alpine:latest"}, "sha256:deadbeef"))
+	require.NoError(t, lock.SetLookup("", workspaceMigrationLockModulesResolveOperation, []any{"github.com/acme/mod@main"}, "0123456789abcdef0123456789abcdef01234567"))
 
 	data, err := lock.Marshal()
 	require.NoError(t, err)
@@ -1048,13 +1042,11 @@ func TestWorkspaceMigrationFilterLegacyLockDataRemovesModuleResolve(t *testing.T
 	filtered, err := workspace.ParseLock(filteredData)
 	require.NoError(t, err)
 
-	container, ok, err := filtered.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
-	require.NoError(t, err)
+	container, ok := filtered.GetLookup("", "oci-sha", []any{"alpine:latest"})
 	require.True(t, ok)
-	require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, container)
+	require.Equal(t, "sha256:deadbeef", container)
 
-	_, ok, err = filtered.GetLookup("", workspaceMigrationLockModulesResolveOperation, []any{"github.com/acme/mod@main"})
-	require.NoError(t, err)
+	_, ok = filtered.GetLookup("", workspaceMigrationLockModulesResolveOperation, []any{"github.com/acme/mod@main"})
 	require.False(t, ok)
 }
 

@@ -1093,9 +1093,9 @@
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::loadFailures</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
                     <dd><p>Load failures tolerated while collecting the generators.</p></dd><dt><a href="Dagger/GitRef.html#method_log">
 <abbr title="Dagger\GitRef">GitRef</abbr>::log</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
-                    <dd><p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p></dd><dt><a href="Dagger/GitRepository.html#method_latestVersion">
-<abbr title="Dagger\GitRepository">GitRepository</abbr>::latestVersion</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Returns details for the latest semver tag.</p></dd><dt><a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p></dd><dt><a href="Dagger/GitRepository.html#method_latest">
+<abbr title="Dagger\GitRepository">GitRepository</abbr>::latest</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
+                    <dd><p>Return the latest stable release tag, falling back to HEAD when no release exists.</p></dd><dt><a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.</p></dd><dt><a href="Dagger/LLM.html#method_lastReply">
 <abbr title="Dagger\LLM">LLM</abbr>::lastReply</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>The text of the model's most recent reply.</p></dd><dt><a href="Dagger/LLM.html#method_loop">
@@ -2178,7 +2178,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigValue">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigValue</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a configuration value written.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitClient">
+                    <dd><p>Return this workspace with a configuration value written.</p></dd><dt><a href="Dagger/Workspace.html#method_withDirectory">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a directory merged into the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitClient">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a generated API client initialized.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2190,7 +2192,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withMountedFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a file mounted read-only at the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a directory added, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewFile">
+                    <dd><p>Return this workspace with the given path replaced by a directory, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a new or replaced file, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

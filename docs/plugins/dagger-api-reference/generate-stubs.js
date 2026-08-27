@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-check
-// Regenerates the thin per-type MDX stubs under current_docs/extending/types.
+// Regenerates the thin per-type MDX stubs under current_docs/api/reference.
 // Each stub just renders <ApiType name="..." />; all content comes from
 // docs-graphql/schema.graphqls at build time via the dagger-api-reference
 // plugin. The set of stubs is derived from the schema (every core type, with
@@ -29,8 +29,8 @@ function typeSlug(name) {
     .toLowerCase();
 }
 
-const oldOutDir = path.resolve(__dirname, "../../current_docs/reference/api");
-const outDir = path.resolve(__dirname, "../../current_docs/extending/types");
+const oldOutDir = path.resolve(__dirname, "../../current_docs/extending/types");
+const outDir = path.resolve(__dirname, "../../current_docs/api/reference");
 fs.mkdirSync(outDir, { recursive: true });
 
 const banner =
@@ -61,9 +61,9 @@ function removeGeneratedStubs(dir) {
   return removed;
 }
 
-// Drop generated stubs from the old duplicate Reference > API section, and
-// clear stale generated stubs in the new canonical Types Reference section
-// without touching hand-written type pages.
+// Drop generated stubs from the old Types Reference location, and clear
+// stale generated stubs in the current API Reference section without
+// touching hand-written type pages.
 const removedOld = removeGeneratedStubs(oldOutDir);
 const removedNew = removeGeneratedStubs(outDir);
 
@@ -82,7 +82,7 @@ coreTypes.forEach((name, index) => {
 title: "${name}"
 description: "${name} API reference, generated from the Dagger GraphQL schema."
 sidebar_position: ${index + 2}
-slug: /extending/types/${slug}
+slug: /api/reference/${slug}
 ---
 
 ${banner}

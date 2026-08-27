@@ -232,17 +232,19 @@ imported-layer indexes on restart.
 
 On graceful shutdown, the cache snapshots and writes:
 
-- all live `sharedResult`s in `resultsByID`
-- all live terms
-- all live eq-classes and their digests
+- complete, clean result dependency closures reachable from persisted edges
+- terms whose output eq-classes contain those retained results
+- the eq-classes and digests referenced by retained results and terms
 - result-to-output-eq-class associations
 - exact result dependency edges
 - persisted root edges
 - result snapshot ownership links
 - snapshot manager persistent metadata rows
 
-That is important: the store does not just save a small set of "roots." It
-saves the live retained cache graph and the metadata needed to reconstruct it.
+That is important: the store does not save only the root rows. It validates each
+persisted root's full dependency closure and saves the complete clean closures
+plus the metadata needed to reconstruct them. A root is omitted if any result in
+its closure is still attaching, finished attachment with an error, or is missing.
 
 In other words, persistence is trying to serialize the current cache state, not
 just enough information to replay everything later.
@@ -285,7 +287,9 @@ At the dagql field-definition level, `Field.IsPersistable()` sets the field spec
 to mark results of that field as eligible for persistence.
 
 At execution time, that turns into `CallRequest.IsPersistable`, and the cache
-responds by adding a persisted edge for the completed result.
+adds a persisted edge after the completed result finishes dependency attachment
+successfully. A persistable cache hit adds or updates its edge only after the
+hit's attachment barrier and persisted-payload load both succeed.
 
 That persisted edge does two things:
 

@@ -559,7 +559,10 @@ type Container implements Exportable & Node & Syncer {
   """
   from(
     """
-    Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+
+    An address without a tag or digest selects the greatest stable release tag,
+    falling back to the literal "latest" tag when no eligible release exists.
     """
     address: String!
   ): Container!
@@ -2919,9 +2922,6 @@ type GitRepository implements Node {
 
   """A unique identifier for this GitRepository."""
   id: ID!
-
-  """Returns details for the latest semver tag."""
-  latestVersion: GitRef!
 
   """Returns details of a ref."""
   ref(

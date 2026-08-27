@@ -77,6 +77,11 @@ type ResolveImageConfigOpts struct {
 	RegistryTransport RegistryTransport
 }
 
+type ResolveImageDigestOpts struct {
+	Network           NetworkConfig
+	RegistryTransport RegistryTransport
+}
+
 type PullOpts struct {
 	Platform          ocispecs.Platform
 	ResolveMode       ResolveMode
@@ -263,6 +268,31 @@ func (r *Resolver) ResolveImageConfig(
 		return "", "", nil, err
 	}
 	return resolved.ref, resolved.digest, resolved.config, nil
+}
+
+// ResolveImageDigest resolves an image reference to its root descriptor
+// digest without selecting a platform-specific manifest.
+func (r *Resolver) ResolveImageDigest(
+	ctx context.Context,
+	ref string,
+	opts ResolveImageDigestOpts,
+) (_ string, _ digest.Digest, rerr error) {
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref,
+		telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+
+	resolvedRef, rootDesc, _, err := r.resolveRemoteRootDescriptor(
+		ctx,
+		ref,
+		opts.Network,
+		opts.RegistryTransport,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	return resolvedRef, rootDesc.Digest, nil
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {

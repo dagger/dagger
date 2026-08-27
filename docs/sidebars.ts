@@ -20,7 +20,7 @@ function typeSlug(name: string): string {
 }
 
 function apiTypeSidebarItem(name: string) {
-  const id = `extending/types/${typeSlug(name)}`;
+  const id = `api/reference/${typeSlug(name)}`;
   const label = promotedApiTypeLabels[name];
   return label ? { type: "doc", id, label } : id;
 }
@@ -39,91 +39,79 @@ const otherApiTypeItems = allApiTypes
 module.exports = {
   current: [
     // ========================================
-    // OVERVIEW
-    // ========================================
-    "index",
-
-    // ========================================
-    // INSTALLATION
-    // ========================================
-    "getting-started/installation",
-
-    // ========================================
-    // ADOPTING DAGGER
+    // GETTING STARTED
     // ========================================
     {
       type: "category",
-      label: "Adopting Dagger",
+      label: "Getting Started",
       collapsible: true,
       collapsed: false,
       items: [
+        "getting-started/introduction",
         "getting-started/quickstart",
-        "adopting/workspace-setup",
-        "adopting/secrets",
-        "adopting/observability",
-        {
-          type: "category",
-          label: "Triggers",
-          link: {
-            type: "doc",
-            id: "adopting/triggers/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "adopting/triggers/github-actions",
-            "adopting/triggers/gitlab",
-            "adopting/triggers/circleci",
-            "adopting/triggers/jenkins",
-            "adopting/triggers/azure-pipelines",
-            "adopting/triggers/aws-codebuild",
-            "adopting/triggers/argo-workflows",
-            "adopting/triggers/tekton",
-            "adopting/triggers/teamcity",
-          ],
-        },
-        {
-          type: "category",
-          label: "Scaling",
-          link: {
-            type: "doc",
-            id: "adopting/scaling/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "adopting/scaling/kubernetes",
-            "adopting/scaling/openshift",
-          ],
-        },
+        "getting-started/workspace-setup",
+        "getting-started/pre-push",
+        "getting-started/post-push",
       ],
     },
 
     // ========================================
-    // USING DAGGER
+    // CLI
     // ========================================
     {
       type: "category",
-      label: "Using Dagger",
+      label: "CLI",
       collapsible: true,
       collapsed: false,
       items: [
-        "using-dagger/checking",
-        "using-dagger/generating",
-        "using-dagger/changesets",
-        "using-dagger/services",
-        "using-dagger/module-wiring",
-        "using-dagger/calling-functions",
-        "using-dagger/environments",
+        "cli/install",
+        "cli/checking",
+        "cli/generating",
+        "cli/services",
+        "cli/calling-functions",
+        { type: "doc", id: "cli/reference/index", label: "Reference" },
       ],
     },
 
     // ========================================
-    // SETUP GUIDES
+    // CONFIGURATION
     // ========================================
     {
       type: "category",
-      label: "Setup Guides",
+      label: "Configuration",
+      link: {
+        type: "doc",
+        id: "config/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "config/environments",
+        "config/user",
+        "config/module-wiring",
+        "config/migrate-dagger-json",
+        {
+          type: "category",
+          label: "Reference",
+          link: {
+            type: "doc",
+            id: "config/reference/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "config/reference/dagger-toml",
+          ],
+        },
+      ],
+    },
+
+    // ========================================
+    // MODULES
+    // ========================================
+    {
+      type: "category",
+      label: "Modules",
       link: {
         type: "doc",
         id: "modules/index",
@@ -147,79 +135,51 @@ module.exports = {
     },
 
     // ========================================
-    // MODULE DEVELOPER GUIDE
+    // SDKS
     // ========================================
     {
       type: "category",
-      label: "Module Developer Guide",
+      label: "SDKs",
       link: {
         type: "doc",
-        id: "extending/index",
+        id: "sdks/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "sdks/dang",
+        "sdks/go",
+        "sdks/typescript",
+        "sdks/python",
+        "sdks/java",
+        "sdks/php",
+        "sdks/elixir",
+      ],
+    },
+
+    // ========================================
+    // API
+    // ========================================
+    {
+      type: "category",
+      label: "API",
+      link: {
+        type: "doc",
+        id: "api/index",
       },
       collapsible: true,
       collapsed: true,
       items: [
         {
           type: "category",
-          label: "How Dagger Works",
+          label: "Reference",
           link: {
             type: "doc",
-            id: "extending/how-dagger-works/index",
+            id: "api/reference/index",
           },
           collapsible: true,
           collapsed: true,
           items: [
-            "extending/how-dagger-works/workspaces",
-            "extending/how-dagger-works/modules",
-            "extending/how-dagger-works/functions",
-            "extending/how-dagger-works/checks",
-            "extending/how-dagger-works/cache",
-            "extending/how-dagger-works/execution",
-          ],
-        },
-        {
-          type: "category",
-          label: "Type System",
-          link: {
-            type: "doc",
-            id: "extending/type-system/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/type-system/core-types",
-            "extending/type-system/scalars-lists-nullability-defaults",
-            "extending/type-system/enums-and-validation",
-            "extending/type-system/arguments-and-return-values",
-            "extending/type-system/user-defined-object-types",
-            "extending/type-system/constructors-fields-methods",
-            "extending/type-system/designing-for-composability",
-            "extending/type-system/type-design-clinics",
-          ],
-        },
-        {
-          type: "category",
-          label: "SDKs",
-          link: {
-            type: "doc",
-            id: "extending/sdks/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/sdks/dang",
-            "extending/sdks/go",
-            "extending/sdks/typescript",
-            "extending/sdks/python",
-          ],
-        },
-        {
-          type: "category",
-          label: "Types Reference",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extending/types/index",
             ...promotedApiTypeItems,
             {
               type: "category",
@@ -228,45 +188,10 @@ module.exports = {
               collapsed: true,
               items: otherApiTypeItems,
             },
-            "extending/types/all",
+            "api/reference/all",
           ],
         },
-      ],
-    },
-
-    // ========================================
-    // REFERENCE
-    // ========================================
-    {
-      type: "category",
-      label: "Reference",
-      link: {
-        type: "doc",
-        id: "reference/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "category",
-          label: "CLI",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "reference/cli/index",
-            "reference/cli/lockfiles",
-          ],
-        },
-        "reference/configuration/workspace",
-        "reference/configuration/modules",
-        "reference/configuration/engine",
-        "reference/configuration/cloud",
-        "reference/configuration/cache",
-        "reference/configuration/llm",
-        "reference/configuration/custom-runner",
-        "reference/configuration/custom-ca",
-        "reference/configuration/proxy",
-        "reference/upgrade-to-workspaces",
+        { type: "doc", id: "api/clients/index", label: "Clients" },
       ],
     },
   ],

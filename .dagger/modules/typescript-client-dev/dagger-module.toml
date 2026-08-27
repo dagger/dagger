@@ -1,6 +1,5 @@
 name = "typescript-client-dev"
 engineVersion = "v0.21.7"
-include = ["is-semver"]
 
 [runtime]
   source = "dang"

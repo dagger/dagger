@@ -5,7 +5,7 @@ type MarkdownLint {
   """
   The version of markdownlint to use.
   """
-  pub version: String! = "latest"
+  pub version: String! = ""
 
   """
   Filter the current workspace for use by markdownlint.
@@ -18,8 +18,13 @@ type MarkdownLint {
   Build a sandbox with markdownlint installed and input files mounted.
   """
   pub sandbox(ws: Workspace!): Container! {
+    let image = if (version == "") {
+      "tmknom/markdownlint"
+    } else {
+      "tmknom/markdownlint:" + version
+    }
     container
-      .from("tmknom/markdownlint:" + version)
+      .from(image)
       .withWorkdir("/app")
       .withMountedDirectory(".", inputs(ws), owner: "nonroot")
   }

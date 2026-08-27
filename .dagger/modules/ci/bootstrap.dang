@@ -20,10 +20,9 @@ type CI {
     """
     checks: [String!]! = ["**:*lint*"],
   ): Void @check {
-    let sourceDir = source.directory("/", gitignore: true)
     engineDev(ws: source)
       .playground
-      .withMountedDirectory("./dagger", sourceDir)
+      .withMountedDirectory("./dagger", source.directory("/", gitignore: true))
       .withWorkdir("./dagger")
       # TODO: change back to `.withExec(["dagger check"] + checks)`
       # The mounted Workspace is a plain snapshot with no .git, so the

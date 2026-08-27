@@ -136,7 +136,7 @@ func (ms *mockServer) CurrentWorkspaceLock(context.Context, bool) (*workspacepkg
 	return nil, false, nil
 }
 
-func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error {
+func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
 	return nil
 }
 

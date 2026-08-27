@@ -252,10 +252,9 @@ func AutoSetupIfNeeded(ctx context.Context, promptHandler PromptHandler, interac
 	var runSetup bool
 	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewConfirm().
+			idtui.NewExplicitConfirm("Yes", "No", &runSetup).
 				Title("No LLM configuration found").
-				Description("Would you like to configure it now?").
-				Value(&runSetup),
+				Description("Would you like to configure it now?"),
 		),
 	)
 
@@ -718,11 +717,10 @@ func promptSetDefault(ctx context.Context, ph PromptHandler, cfg *Config, provid
 	var setDefault bool
 	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewConfirm().
+			idtui.NewExplicitConfirm("Yes", "No", &setDefault).
 				Title("Set as default provider?").
 				Description(fmt.Sprintf("Current default is %q. Use %q instead?",
-					cfg.LLM.DefaultProvider, provider)).
-				Value(&setDefault),
+					cfg.LLM.DefaultProvider, provider)),
 		),
 	)
 	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {

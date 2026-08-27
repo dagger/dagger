@@ -5504,9 +5504,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\GitRepository::latestVersion",
-			"p": "Dagger/GitRepository.html#method_latestVersion",
-			"d": "<p>Returns details for the latest semver tag.</p>"
+			"n": "Dagger\\GitRepository::latest",
+			"p": "Dagger/GitRepository.html#method_latest",
+			"d": "<p>Return the latest stable release tag, falling back to HEAD when no release exists.</p>"
 		},
 		{
 			"t": "M",
@@ -7454,6 +7454,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withDirectory",
+			"p": "Dagger/Workspace.html#method_withDirectory",
+			"d": "<p>Return this workspace with a directory merged into the given path, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withInitClient",
 			"p": "Dagger/Workspace.html#method_withInitClient",
 			"d": "<p>Return this workspace with a generated API client initialized.</p>"
@@ -7486,7 +7492,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::withNewDirectory",
 			"p": "Dagger/Workspace.html#method_withNewDirectory",
-			"d": "<p>Return this workspace with a directory added, without mutating the source.</p>"
+			"d": "<p>Return this workspace with the given path replaced by a directory, without mutating the source.</p>"
 		},
 		{
 			"t": "M",

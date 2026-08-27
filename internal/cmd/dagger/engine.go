@@ -210,6 +210,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 // session would keep seeing the legacy dagger.json ("run dagger setup first").
 func withSetupSessions(
 	ctx context.Context,
+	before func(context.Context),
 	fn func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error,
 ) (rerr error) {
 	params := client.Params{
@@ -224,7 +225,12 @@ func withSetupSessions(
 	}
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
+		if before != nil {
+			before(ctx)
+		}
 
+		// Telemetry deliberately starts after the untraced setup phase (Cloud
+		// login), so credentials established there apply to the whole trace.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {

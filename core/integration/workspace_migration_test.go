@@ -430,10 +430,14 @@ type Myapp {
   "source": "ci",
   "toolchains": [{"name": "tc", "source": "./toolchain"}]
 }`, func(ctr *dagger.Container) *dagger.Container {
+			// In 0.21 a module's toolchains were also loaded into its own API,
+			// so module code could call them like dependencies. This module
+			// does exactly that and must keep working after migration.
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! { "hello from root" }
+  pub viaToolchain: String! { tc.message }
 }
 `).
 				With(legacyDangModule("toolchain", "tc", "Tc", "hello from toolchain"))
@@ -459,10 +463,23 @@ type Myapp {
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
 		require.Contains(t, wsOut, `path = "toolchain"`)
 
+		// The toolchain is also a dependency of the migrated root module, so
+		// code that called it in 0.21 still resolves.
+		mainCfg, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, mainCfg, `name = "tc"`)
+		require.Contains(t, mainCfg, `source = "./toolchain"`)
+		require.NotContains(t, mainCfg, "toolchains")
+
 		// The converted module loads from its own runtime field.
 		callOut, err := ctr.With(daggerCallAt("toolchain", "message")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from toolchain", strings.TrimSpace(callOut))
+
+		// The root module can still reach the toolchain as a dependency.
+		viaOut, err := ctr.With(daggerCall("via-toolchain")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from toolchain", strings.TrimSpace(viaOut))
 	})
 
 	t.Run("local dependency migrates in place behind rebased reference", func(ctx context.Context, t *testctx.T) {
@@ -1230,20 +1247,17 @@ type Myapp {
 
 	t.Run("apply moves legacy lockfile while staging migrated pins", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		platform, err := c.DefaultPlatform(ctx)
-		require.NoError(t, err)
 
 		source := "github.com/dagger/dagger/modules/wolfi@main"
 		pin := strings.Repeat("1", 40)
 		legacyLock := workspace.NewLock()
-		require.NoError(t, legacyLock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest", string(platform)}, workspace.LookupResult{
-			Value:  "sha256:" + strings.Repeat("0", 64),
-			Policy: workspace.PolicyPin,
-		}))
-		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, workspace.LookupResult{
-			Value:  pin,
-			Policy: workspace.PolicyFloat,
-		}))
+		require.NoError(t, legacyLock.SetLookup(
+			"",
+			"oci-sha",
+			[]any{"docker.io/library/alpine:latest"},
+			"sha256:"+strings.Repeat("0", 64),
+		))
+		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, pin))
 		existingLockBytes, err := legacyLock.Marshal()
 		require.NoError(t, err)
 
@@ -1262,7 +1276,7 @@ type Myapp {
 
 		lockOut, err := migrated.File("/work/dagger.lock").Contents(ctx)
 		require.NoError(t, err)
-		assertContainerFromLockEntry(t, []byte(lockOut))
+		assertOCISHALockEntry(t, []byte(lockOut))
 		assertNoModuleResolveLockEntry(t, []byte(lockOut))
 		_, err = migrated.WithExec([]string{"test", "!", "-e", ".dagger/lock"}).Sync(ctx)
 		require.NoError(t, err)

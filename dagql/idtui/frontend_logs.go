@@ -189,7 +189,7 @@ func (fe *frontendLogs) HandlePrompt(ctx context.Context, _, prompt string, dest
 }
 
 func (fe *frontendLogs) HandleForm(ctx context.Context, form *huh.Form) error {
-	return form.RunWithContext(ctx)
+	return form.WithTheme(huh.ThemeBase16()).RunWithContext(ctx)
 }
 
 // logsSpanExporter implements trace.SpanExporter for the logs frontend

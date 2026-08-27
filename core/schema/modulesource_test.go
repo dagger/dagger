@@ -129,7 +129,7 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 	)
 }
 
-func TestLoadCurrentModuleSourceConfigPreservesGitDependencyPin(t *testing.T) {
+func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
@@ -140,6 +140,7 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencyPin(t *testing.T) {
 	dep := &core.ModuleSource{
 		Kind:              core.ModuleSourceKindGit,
 		ModuleName:        "dep",
+		OriginalRefString: "https://github.com/acme/dep/sdk",
 		SourceRootSubpath: "sdk",
 		Git: &core.GitModuleSource{
 			CloneRef: "https://github.com/acme/dep",
@@ -171,7 +172,7 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencyPin(t *testing.T) {
 	require.Contains(t, string(out), `name = "parent"`)
 	require.Contains(t, string(out), `engineVersion = "`+engine.Version+`"`)
 	require.Contains(t, string(out), `name = "dep"`)
-	require.Contains(t, string(out), `source = "https://github.com/acme/dep/sdk@v1.2.3"`)
+	require.Contains(t, string(out), `source = "https://github.com/acme/dep/sdk"`)
 	require.Contains(t, string(out), `pin = "1234567890abcdef"`)
 }
 

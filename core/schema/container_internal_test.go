@@ -7,12 +7,48 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
+
+func TestShouldSelectLatestImageRelease(t *testing.T) {
+	t.Parallel()
+
+	bare, err := reference.ParseNormalizedNamed("alpine")
+	require.NoError(t, err)
+	explicitLatest, err := reference.ParseNormalizedNamed("alpine:latest")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name    string
+		version string
+		ref     reference.Named
+		want    bool
+	}{
+		{name: "legacy bare address", version: "v1.0.0-beta.9", ref: bare},
+		{name: "locking without latest release", version: workspaceLockingVersion, ref: bare},
+		{name: "new bare address", version: workspace.LatestReleaseVersion, ref: bare, want: true},
+		{name: "explicit latest", version: workspace.LatestReleaseVersion, ref: explicitLatest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{
+				View: call.View(tc.version),
+			})
+			require.Equal(t, tc.want, shouldSelectLatestImageRelease(
+				ctx,
+				tc.ref,
+			))
+		})
+	}
+}
 
 func TestContainerDefaultPlatformCacheIdentity(t *testing.T) {
 	ctx := context.Background()

@@ -96,8 +96,8 @@ type Server interface {
 	// true, returns ok=false for read-only workspace lock sources.
 	CurrentWorkspaceLock(ctx context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error)
 
-	// Stage a lockfile lookup result for the current workspace's live lock state.
-	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
+	// Stage a lockfile value for the current workspace's live lock state.
+	SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error
 
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
