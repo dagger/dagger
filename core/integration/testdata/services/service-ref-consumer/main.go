@@ -1,5 +1,5 @@
-// A module whose constructor accepts optional core-type args (Service,
-// Container), used to test wiring another module's function output in via
+// A module whose constructor accepts optional core-type args, used to test
+// wiring another module's function output in via
 // workspace settings.
 package main
 
@@ -11,8 +11,11 @@ import (
 )
 
 type ServiceRefConsumer struct {
-	App  *dagger.Service
-	Base *dagger.Container
+	App             *dagger.Service
+	Base            *dagger.Container
+	Directory       *dagger.Directory
+	File            *dagger.File
+	WorkspaceMarker *dagger.File
 }
 
 func New(
@@ -20,8 +23,21 @@ func New(
 	app *dagger.Service,
 	// +optional
 	base *dagger.Container,
+	// +optional
+	directory *dagger.Directory,
+	// +optional
+	file *dagger.File,
+	// +optional
+	sourceWorkspace *dagger.Workspace,
 ) *ServiceRefConsumer {
-	return &ServiceRefConsumer{App: app, Base: base}
+	var workspaceMarker *dagger.File
+	if sourceWorkspace != nil {
+		workspaceMarker = sourceWorkspace.File("marker.txt")
+	}
+	return &ServiceRefConsumer{
+		App: app, Base: base, Directory: directory, File: file,
+		WorkspaceMarker: workspaceMarker,
+	}
 }
 
 // Returns "true" if a Service was provided, "false" otherwise.
@@ -39,6 +55,33 @@ func (m *ServiceRefConsumer) ContainerProvidedBy(ctx context.Context) (string, e
 		return "none", nil
 	}
 	return m.Base.EnvVariable(ctx, "PROVIDED_BY")
+}
+
+// Returns the contents of the marker in the provided directory, or "none" if
+// no directory was provided.
+func (m *ServiceRefConsumer) DirectoryProvidedBy(ctx context.Context) (string, error) {
+	if m.Directory == nil {
+		return "none", nil
+	}
+	return m.Directory.File("provided-by").Contents(ctx)
+}
+
+// Returns the contents of the provided file, or "none" if no file was
+// provided.
+func (m *ServiceRefConsumer) FileProvidedBy(ctx context.Context) (string, error) {
+	if m.File == nil {
+		return "none", nil
+	}
+	return m.File.Contents(ctx)
+}
+
+// Returns the contents of the marker in the provided workspace, or "none" if
+// no workspace was provided.
+func (m *ServiceRefConsumer) WorkspaceProvidedBy(ctx context.Context) (string, error) {
+	if m.WorkspaceMarker == nil {
+		return "none", nil
+	}
+	return m.WorkspaceMarker.Contents(ctx)
 }
 
 // CheckService passes only when a Service was provided, used to test that

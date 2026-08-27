@@ -480,6 +480,15 @@ impl Address {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a workspace from a module reference.
+    pub fn workspace(&self) -> Workspace {
+        let query = self.selection.select("workspace");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 impl Node for Address {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {

@@ -182,6 +182,20 @@ defmodule Dagger.Address do
       client: address.client
     }
   end
+
+  @doc """
+  Load a workspace from a module reference.
+  """
+  @spec workspace(t()) :: Dagger.Workspace.t()
+  def workspace(%__MODULE__{} = address) do
+    query_builder =
+      address.query_builder |> QB.select("workspace")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: address.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Address do

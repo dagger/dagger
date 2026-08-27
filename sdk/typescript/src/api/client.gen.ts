@@ -3523,6 +3523,14 @@ export class Address extends BaseClient {
     const ctx = this._ctx.select("volume")
     return new Volume(ctx)
   }
+
+  /**
+   * Load a workspace from a module reference.
+   */
+  workspace = (): Workspace => {
+    const ctx = this._ctx.select("workspace")
+    return new Workspace(ctx)
+  }
 }
 
 export class Agent extends BaseClient {

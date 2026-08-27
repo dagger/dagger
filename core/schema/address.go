@@ -299,6 +299,10 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
 			Doc(`Load a volume from the address.`),
+		dagql.NodeFunc("workspace", s.workspace).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc(`Load a workspace from a module reference.`),
 	}.Install(srv)
 }
 
@@ -334,6 +338,9 @@ func (s *addressSchema) file(
 ) {
 	var q []dagql.Selector
 	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
 	gitURL, err := gitutil.ParseURL(addr)
 	if err == nil {
 		// Remote file
@@ -423,6 +430,9 @@ func (s *addressSchema) directory(
 ) {
 	var q []dagql.Selector
 	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
 	gitURL, err := gitutil.ParseURL(addr)
 	if err == nil {
 		// Remote directory (using git remote)
@@ -823,6 +833,21 @@ func (s *addressSchema) service(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *addressSchema) workspace(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.Address],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.Workspace],
+	err error,
+) {
+	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
+	return inst, fmt.Errorf("workspace address %q must reference an installed module as <module>:<function>", addr)
 }
 
 func (s *addressSchema) volume(
