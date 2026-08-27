@@ -58,6 +58,9 @@ func recordCallPayloadsForSpan(
 	frame *dagql.ResultCall,
 	rootOnSpan bool,
 ) {
+	if store == nil || frame == nil {
+		return
+	}
 	if rootOnSpan {
 		if !store.CallPayloadNeedsEmission(callDigest) {
 			return

@@ -138,6 +138,19 @@ type alreadySeenTelemetryStore struct{}
 func (alreadySeenTelemetryStore) LoadOrStoreTelemetrySeenKey(string) bool { return true }
 func (alreadySeenTelemetryStore) StoreTelemetrySeenKey(string)            {}
 
+type testSpanSeenKeys struct {
+	keys sync.Map
+}
+
+func (s *testSpanSeenKeys) LoadOrStoreTelemetrySeenKey(key string) bool {
+	_, seen := s.keys.LoadOrStore(key, struct{}{})
+	return seen
+}
+
+func (s *testSpanSeenKeys) StoreTelemetrySeenKey(key string) {
+	s.keys.Store(key, struct{}{})
+}
+
 type payloadRoutingTestServer struct {
 	*mockServer
 	payloadStore dagql.CallPayloadSeenKeyStore
@@ -227,7 +240,7 @@ func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
 	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
 		mockServer:   &mockServer{},
 		payloadStore: &testSeenKeys{},
-		spanStore:    &testSeenKeys{},
+		spanStore:    &testSpanSeenKeys{},
 	}})
 	req := &dagql.CallRequest{ResultCall: agent}
 	_, done := AroundFunc(ctx, req)
