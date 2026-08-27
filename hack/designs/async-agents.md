@@ -1966,11 +1966,13 @@ has no `KindBytes` case and silently encodes such a value as the string
 this repo still pins `v1.43.1-0.20260515012101-af7cd0684887`, so until that
 bump lands base64 remains a requirement rather than a preference.
 
-*Still open, deliberately.* (1) **Array members** — `TestArrayMemberSubSelection`
-(core/integration/callid_rebuild_test.go) is SKIPPED, and its comment carries
-the measurement and the next move; the closure walk goes through
-`ResultCall.RecipeID`, which an array-member receiver appears to defeat.
-(2) ~~**Dedupe is session-wide but delivery is per-client**~~ RESOLVED: this
+*Array members.* RESOLVED: `TestArrayMemberSubSelection`
+(core/integration/callid_rebuild_test.go) now runs. The apparent recipe gap was
+a test race: spans and call-payload logs are independently batched, and the
+test inspected the span before its array-member receiver payload arrived. It
+now waits for both channels before rebuilding and loading the member ID.
+
+*~~Dedupe is session-wide but delivery is per-client~~* RESOLVED: this
 bit for real — a nested `dagger agent` attaching to a long-running session
 (the tui-qa harness shape, and any CI nesting) could never rebuild worker
 IDs, because shared frames (the bare `Query.llm` root every compose selects)
@@ -1981,7 +1983,8 @@ and its ancestors, exactly PubSub's fan-out set — via
 so a later client's first closure walk re-publishes into its own domain. The
 session-wide SPAN dedupe is unchanged. Pinned by
 `TestCallPayloadDeliveryStore` (engine/server/session_test.go).
-(3) `DB.CallPayloads` still has no pruning path.
+
+*Still open.* `DB.CallPayloads` has no pruning path.
 
 *Tests that pin this.* `TestRosterAddressingWithSkills`
 (core/integration/agent_roster_skills_test.go) — three cases by who built the
@@ -2023,4 +2026,3 @@ revives workers on receiver load, including reads. Item 14 used to be a second
 hazard, misreporting this section's own commits as whole-file adds and making
 a worker's commit unpullable; it is fixed, but an engine built before the fix
 still shows it (§10.1).
-
