@@ -846,7 +846,7 @@ func toolCallReportOpts() traceReportOpts {
 		// a tool did would render as a bare status line. See expandedSpans:
 		// this unwrap is tuned for a tool-call scope and stops at the first
 		// real work span.
-		ExpandAll: true,
+		ExpandWrappers: true,
 		// Same reason captureLogLines excludes them: a long-lived service's
 		// exec span joins the subtree via cause links and streams noise that
 		// drowns out deliberate output, and the LLM's own message spans are

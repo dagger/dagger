@@ -2032,7 +2032,7 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 // A span target keeps the tool-call options: the caller named that subtree, so
 // it wants that subtree unwrapped.
 //
-// A test or check target does not. ExpandAll's unwrap ("descend through
+// A test or check target does not. ExpandWrappers' unwrap ("descend through
 // wrapper spans to the first real work, then stop") is tuned for a tool-call
 // scope, where the scope root is a roll-up boundary that would otherwise
 // swallow the tool's output. A test or check span is not that: it is the head
@@ -2057,7 +2057,7 @@ func readTraceReportOpts(target traceTarget) traceReportOpts {
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
 	if target.Span == "" {
-		opts.ExpandAll = false
+		opts.ExpandWrappers = false
 	}
 	return opts
 }

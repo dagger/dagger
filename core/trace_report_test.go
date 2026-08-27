@@ -12,7 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
-// TestTraceReportGuardPassesThroughSmallReports covers the common case: the
+// TestTraceReportGuardPassesThroughSmallReports verifies the common case: the
 // measured real-world reports (59 B for a single check, ~2 KB scoped) must
 // reach the caller byte-identical.
 func TestTraceReportGuardPassesThroughSmallReports(t *testing.T) {
