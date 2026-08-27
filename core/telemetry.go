@@ -174,13 +174,8 @@ func AroundFunc(
 	// recording span already carries its own frame for legacy consumers, so
 	// claim that payload before the closure walk and emit logs only for frames
 	// that have not crossed this delivery domain by either transport.
-	if callPayloadOnSpan && span.IsRecording() {
-		if dagql.ShouldEmitCallPayload(payloadKeys, callDigest.String()) {
-			recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, true)
-		}
-	} else {
-		recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, false)
-	}
+	recordCallPayloadsForSpan(ctx, payloadKeys, callDigest.String(), req.ResultCall,
+		callPayloadOnSpan && span.IsRecording())
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",

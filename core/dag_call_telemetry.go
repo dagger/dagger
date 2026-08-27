@@ -55,6 +55,22 @@ import (
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
 // cannot rebuild that one chain, which is exactly the status quo.
+func recordCallPayloadsForSpan(
+	ctx context.Context,
+	store dagql.TelemetrySeenKeyStore,
+	callDigest string,
+	frame *dagql.ResultCall,
+	rootOnSpan bool,
+) {
+	if rootOnSpan {
+		if dagql.ShouldEmitCallPayload(store, callDigest) {
+			recordCallPayloads(ctx, store, callDigest, frame, true)
+		}
+		return
+	}
+	recordCallPayloads(ctx, store, callDigest, frame, false)
+}
+
 func recordCallPayloads(
 	ctx context.Context,
 	store dagql.TelemetrySeenKeyStore,
