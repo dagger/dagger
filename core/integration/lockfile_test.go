@@ -370,7 +370,7 @@ func mustMarshalGitRefLock(t *testctx.T, operation, name, commit string) string 
 
 func assertOCISHALockEntry(t *testctx.T, lockBytes []byte) {
 	t.Helper()
-	require.True(t, strings.HasPrefix(string(lockBytes), `[["version","2"]]`), "lockfile: %q", string(lockBytes))
+	require.True(t, strings.HasPrefix(string(lockBytes), lockfile.HeaderComment+"\n"+`[["version","2"]]`), "lockfile: %q", string(lockBytes))
 	parsed, err := lockfile.Parse(lockBytes)
 	require.NoError(t, err)
 
@@ -395,7 +395,7 @@ func assertOCISHALockEntry(t *testctx.T, lockBytes []byte) {
 
 func assertGitLockEntry(t *testctx.T, lockBytes []byte, expectedInputs []any) {
 	t.Helper()
-	require.True(t, strings.HasPrefix(string(lockBytes), `[["version","2"]]`), "lockfile: %q", string(lockBytes))
+	require.True(t, strings.HasPrefix(string(lockBytes), lockfile.HeaderComment+"\n"+`[["version","2"]]`), "lockfile: %q", string(lockBytes))
 	parsed, err := lockfile.Parse(lockBytes)
 	require.NoError(t, err)
 

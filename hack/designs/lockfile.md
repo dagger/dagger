@@ -34,11 +34,19 @@ It describes:
 
 ## Lock Entry Format
 
-Lockfiles are JSON lines. The first line is the version tuple:
+Lockfiles are JSON lines. Lines starting with `#` are comments and are
+ignored by the parser. The first non-comment line is the version tuple:
 
 ```json
 [["version","2"]]
 ```
+
+Every written lockfile starts with a fixed header comment explaining that the
+file is generated, that it changes as a side effect of running Dagger, and that
+those changes should always be committed. This steers readers (especially
+coding agents, who tend to see lockfile diffs as unrelated to their change and
+discard them) towards checking the file in. Comments are not preserved across
+a parse/marshal round trip; only the fixed header is ever written.
 
 Each entry is an ordered tuple:
 

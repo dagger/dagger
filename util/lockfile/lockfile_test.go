@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var headerLineCount = len(strings.Split(HeaderComment, "\n"))
+
 func TestParseRejectsV1(t *testing.T) {
 	input := strings.Join([]string{
 		`[["version","1"]]`,
@@ -27,6 +29,7 @@ func TestMarshalDeterministicOrdering(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, strings.Join([]string{
+		HeaderComment,
 		`[["version","2"]]`,
 		`["","git.resolveRef",["a","b"],"r2"]`,
 		`["","git.resolveRef",["c","d"],"r1"]`,
@@ -48,6 +51,7 @@ func TestOptionsFollowValueAndAreCanonical(t *testing.T) {
 	output, err := lock.Marshal()
 	require.NoError(t, err)
 	require.Equal(t, strings.Join([]string{
+		HeaderComment,
 		`[["version","2"]]`,
 		`["","oci-latest",["registry.example/acme/image"],"2.0.0",[["insecureSkipTLSVerify",true],["protocol","https"]]]`,
 	}, "\n"), string(output))
@@ -75,7 +79,7 @@ func TestParseDuplicateTupleOverwrites(t *testing.T) {
 
 	output, err := lock.Marshal()
 	require.NoError(t, err)
-	require.Equal(t, 2, len(strings.Split(string(output), "\n")))
+	require.Equal(t, headerLineCount+2, len(strings.Split(string(output), "\n")))
 	require.Contains(t, string(output), `"new"`)
 	require.NotContains(t, string(output), `"old"`)
 }
@@ -139,6 +143,7 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		data, err := lock.Marshal()
 		require.NoError(t, err)
 		require.Equal(t, strings.Join([]string{
+			HeaderComment,
 			`[["version","2"]]`,
 			`["","oci-sha",["alpine:latest"],"sha256:abc"]`,
 		}, "\n"), string(data))
@@ -170,6 +175,7 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		data, err := lock.Marshal()
 		require.NoError(t, err)
 		require.Equal(t, strings.Join([]string{
+			HeaderComment,
 			`[["version","2"]]`,
 			`["","git-sha",["repo","main"],"abc"]`,
 		}, "\n"), string(data))
@@ -181,4 +187,74 @@ func TestSetRejectsUnorderedInputObjects(t *testing.T) {
 	err := lock.Set("", "git.resolveRef", []any{map[string]any{"ref": "main"}}, "abc")
 	require.Error(t, err)
 	require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
+}
+
+func TestComments(t *testing.T) {
+	t.Run("marshal emits header comment before version", func(t *testing.T) {
+		lock := New()
+		require.NoError(t, lock.Set("", "oci-sha", []any{"alpine:latest"}, "sha256:abc"))
+		output, err := lock.Marshal()
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(string(output), HeaderComment+"\n"+`[["version","2"]]`+"\n"))
+		for _, line := range strings.Split(HeaderComment, "\n") {
+			require.True(t, strings.HasPrefix(line, "#"), "header line %q is not a comment", line)
+		}
+	})
+
+	t.Run("comments are ignored anywhere", func(t *testing.T) {
+		lock, err := Parse([]byte(strings.Join([]string{
+			`# leading comment`,
+			`  # indented comment`,
+			`[["version","2"]]`,
+			`# between entries`,
+			`["","oci-sha",["alpine:latest"],"sha256:abc"]`,
+			`#["","oci-sha",["busybox:latest"],"sha256:def"]`,
+			`# trailing comment`,
+		}, "\n")))
+		require.NoError(t, err)
+		require.Len(t, lock.Entries(), 1)
+		value, ok := lock.Get("", "oci-sha", []any{"alpine:latest"})
+		require.True(t, ok)
+		require.Equal(t, "sha256:abc", value)
+		_, ok = lock.Get("", "oci-sha", []any{"busybox:latest"})
+		require.False(t, ok)
+	})
+
+	t.Run("comment-only file is empty", func(t *testing.T) {
+		lock, err := Parse([]byte("# nothing here\n"))
+		require.NoError(t, err)
+		require.Empty(t, lock.Entries())
+		output, err := lock.Marshal()
+		require.NoError(t, err)
+		require.Empty(t, output)
+	})
+
+	t.Run("custom comments are not preserved", func(t *testing.T) {
+		lock, err := Parse([]byte(strings.Join([]string{
+			`# custom comment`,
+			`[["version","2"]]`,
+			`["","oci-sha",["alpine:latest"],"sha256:abc"]`,
+		}, "\n")))
+		require.NoError(t, err)
+		output, err := lock.Marshal()
+		require.NoError(t, err)
+		require.NotContains(t, string(output), "custom comment")
+		require.Equal(t, strings.Join([]string{
+			HeaderComment,
+			`[["version","2"]]`,
+			`["","oci-sha",["alpine:latest"],"sha256:abc"]`,
+		}, "\n"), string(output))
+	})
+
+	t.Run("marshal output round-trips", func(t *testing.T) {
+		lock := New()
+		require.NoError(t, lock.Set("", "oci-sha", []any{"alpine:latest"}, "sha256:abc"))
+		output, err := lock.Marshal()
+		require.NoError(t, err)
+		reparsed, err := Parse(output)
+		require.NoError(t, err)
+		again, err := reparsed.Marshal()
+		require.NoError(t, err)
+		require.Equal(t, string(output), string(again))
+	})
 }
