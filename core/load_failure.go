@@ -47,7 +47,7 @@ func DescribeLoadFailure(err error) string {
 // with the original error's origins so EndWithCause still links the span to
 // the failing exec.
 func LoadFailureCause(prefix string, err error) error {
-	var cause error = errors.New(prefix + DescribeLoadFailure(err))
+	cause := errors.New(prefix + DescribeLoadFailure(err))
 	for _, origin := range telemetry.ParseErrorOrigins(err.Error()) {
 		cause = telemetry.TrackOrigin(cause, origin)
 	}
