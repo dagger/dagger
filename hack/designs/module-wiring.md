@@ -20,14 +20,17 @@ together, defeating the purpose of reusable modules.
 
 Extend the address mechanism that already backs `settings.*` values and CLI flags to
 support **module wiring**: a value that resolves to the output of a function on
-another installed workspace module. Two types are supported today:
+another installed workspace module. Five types are supported today:
 
 - **`Service`** — conventionally referencing a `+up` function (the original
   motivation), though any `Service`-returning function resolves.
 - **`Container`** — referencing any function that returns a `Container`.
+- **`Directory`** — referencing any function that returns a `Directory`.
+- **`File`** — referencing any function that returns a `File`.
+- **`Workspace`** — referencing any function that returns a `Workspace`.
 
-Other core types (`Directory`, `File`, `Secret`) may follow; the resolution
-mechanism is type-agnostic.
+Other core types (`Secret`, for example) may follow; the resolution mechanism
+is type-agnostic.
 
 ### Config Syntax
 
@@ -105,11 +108,16 @@ service addresses are `tcp://`/`udp://` URLs, so the `://` alone disambiguates.
   module prefix followed by extra colons (e.g. `docusaurus:sites:serve`) is rejected
   with a clear error, not silently treated as an image ref. Deeper traversal is a
   forward-compatibility concern, addressed below.
-- Supported arg types are scoped to `Service` and `Container` by documentation and
-  test coverage, not by an engine-side type check. It is not (yet) a general-purpose
-  cross-module reference for arbitrary types.
-- The target constructor argument must accept `*dagger.Service` or `*dagger.Container`
-  (typically optional).
+- Supported arg types are scoped to `Service`, `Container`, `Directory`, `File`,
+  and `Workspace` by documentation and test coverage, not by an engine-side type
+  check. It is not (yet) a general-purpose cross-module reference for arbitrary
+  types.
+- The target constructor argument must accept `*dagger.Service`, `*dagger.Container`,
+  `*dagger.Directory`, `*dagger.File`, or `*dagger.Workspace` (typically optional).
+- A constructor must consume a wired `Workspace` rather than storing it directly on
+  the returned module object; module object fields cannot have the core `Workspace`
+  type. It can store values derived from that workspace, such as a `File` or
+  `Directory`.
 - Referenced functions take no arguments; a provider is parameterized via its own
   `settings.*` block, not at the reference site.
 - Invalid references (nonexistent function on a matched module, type mismatch, cycle)
@@ -198,16 +206,19 @@ The mechanics:
   carry the module entrypoints.)
 - **Typed Select for mismatch errors.** Once committed, resolution runs a two-step
   dagql `Select` from the `Query` root — module field, then function field — into the
-  **typed** destination (`*dagql.ObjectResult[*core.Service]` /
-  `[*core.Container]`). dagql's own typed Select produces the type-mismatch error when
-  the function's return type doesn't match, so the error message is dagql-native.
+  **typed** destination (for example, `*dagql.ObjectResult[*core.Service]` or
+  `*dagql.ObjectResult[*core.Directory]`). dagql's own typed Select produces the
+  type-mismatch error when the function's return type doesn't match, so the error
+  message is dagql-native.
 - **Context-chain cycle guard.** The chain of in-flight module-ref strings is
   carried on the `context.Context`. Context values propagate through dagql `Select`
   into nested module construction, so re-entry of an in-flight ref is detectable, and
   a cycle fails fast with a clean `a -> b -> a` error rather than hanging the engine
   with unbounded goroutine growth.
-Only `.container()` and `.service()` decode module refs today; the same hook can be
-added to `.directory()`, `.file()`, `.secret()` when those target types are in scope.
+
+The `.container()`, `.service()`, `.directory()`, `.file()`, and `.workspace()`
+decoders resolve module refs today; the same hook can be added to `.secret()` when
+that target type is in scope.
 
 ### Lint: shadowing warning
 
@@ -247,8 +258,9 @@ fully-qualified registry path is the documented remedy.
 - **Service groups / profiles**: Running a named subset of services via `dagger up` is
   out of scope for this design. Will be addressed separately.
 - **General-purpose cross-module wiring**: today's references are scoped to
-  `Service` (via `+up`) and `Container`. Wiring other types (Directory, File, Secret)
-  across modules is a natural follow-up but not in scope yet.
+  `Service` (via `+up`), `Container`, `Directory`, `File`, and `Workspace`. Wiring
+  other types (such as `Secret`) across modules is a natural follow-up but not in
+  scope yet.
 - **Config-time validation**: References are validated at runtime. Static config
   validation may be added later.
 - **Deep / collection traversal**: only two segments are accepted. Deeper paths and

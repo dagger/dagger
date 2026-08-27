@@ -677,11 +677,6 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			//  3) "workspace args" that are automatically injected
 			continue
 		}
-		// Check for Workspace arguments first - they're always injected
-		if argMetadata.IsWorkspace() {
-			workspaceArgs = append(workspaceArgs, argMetadata)
-			continue
-		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
 		if err != nil {
 			return fmt.Errorf("%s.%s(%s=): load user default: %w",
@@ -693,6 +688,12 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 		if hasUserDefault {
 			userDefaults = append(userDefaults, userDefault)
+		} else if argMetadata.IsWorkspace() {
+			// Workspace args inherit the workspace in scope only when the user
+			// did not configure one explicitly. A settings value may itself be
+			// a module reference, so it must go through the ordinary object
+			// default resolver above instead of being shadowed by injection.
+			workspaceArgs = append(workspaceArgs, argMetadata)
 		} else if argMetadata.isContextual() {
 			ctxArgs = append(ctxArgs, argMetadata)
 		}
