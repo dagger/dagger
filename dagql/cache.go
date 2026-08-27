@@ -3209,15 +3209,21 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		}
 
 		// No attempt is in flight, so object-side lazy state is settled and
-		// safe to read. A nil object-side callback with no pending bookkeeping
-		// means nothing deferred remains anywhere; a nil callback with pending
-		// bookkeeping leads an attempt that retries only the bookkeeping.
-		currentLazyEval := lazyEvalFuncOfResult(res)
-		if currentLazyEval == nil && !shared.lazySyncPending {
-			shared.lazyEval = nil
-			shared.lazyEvalComplete = true
-			shared.lazyMu.Unlock()
-			return nil
+		// safe to read. Pending bookkeeping takes precedence over the
+		// object-side callback: it means a previous attempt's body already
+		// succeeded and consumed the value's deferred work, so the next
+		// attempt retries only the bookkeeping even if the value still
+		// exposes a non-nil callback. Otherwise a nil object-side callback
+		// means nothing deferred remains anywhere.
+		var currentLazyEval LazyEvalFunc
+		if !shared.lazySyncPending {
+			currentLazyEval = lazyEvalFuncOfResult(res)
+			if currentLazyEval == nil {
+				shared.lazyEval = nil
+				shared.lazyEvalComplete = true
+				shared.lazyMu.Unlock()
+				return nil
+			}
 		}
 		shared.lazyEval = currentLazyEval
 

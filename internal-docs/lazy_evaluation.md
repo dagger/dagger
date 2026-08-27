@@ -114,7 +114,7 @@ For a single result, `Cache.evaluateOne` works roughly like this:
 3. Detect recursive lazy evaluation using a stack of `sharedResultID`s stored in context.
 4. If the result is already fully materialized, return.
 5. If another goroutine is already evaluating this result, retain its attempt record and wait on its channel. This check comes before reading any object-side lazy state: callback bodies (Directory, File, Container) clear their object-side `Lazy` pointer while their attempt is still running cache-side bookkeeping, so object-side state is only trustworthy once no attempt is published.
-6. With no attempt in flight, re-read the current `LazyEvalFunc` from the wrapped value. If it is nil and no bookkeeping is pending, mark the result complete and return.
+6. With no attempt in flight, check pending bookkeeping first: `lazySyncPending` means a previous attempt's body already succeeded and consumed the value's deferred work, so the value's callback is not re-read and the next attempt retries only the bookkeeping. Otherwise re-read the current `LazyEvalFunc` from the wrapped value; if it is nil, mark the result complete and return.
 7. Otherwise start an attempt in a background goroutine and wait for it: the callback body if one is armed, then the cache-side bookkeeping; or only the bookkeeping when `lazySyncPending` is set.
 
 Two details are especially important.

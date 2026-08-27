@@ -164,6 +164,14 @@ type OnReleaser interface {
 
 type LazyEvalFunc func(context.Context) error
 
+// HasLazyEvaluation is implemented by values carrying deferred work that
+// Cache.Evaluate forces. A successful callback run consumes the value's
+// deferred work; implementations should return nil from LazyEvalFunc
+// afterwards (core types clear their object-side Lazy pointer on success).
+// The cache enforces the consumption independently: once a callback body has
+// succeeded, later attempts retry only cache-side bookkeeping and never
+// re-read the value's callback, so an implementation that keeps returning a
+// non-nil function cannot cause the body to run twice.
 type HasLazyEvaluation interface {
 	LazyEvalFunc() LazyEvalFunc
 }

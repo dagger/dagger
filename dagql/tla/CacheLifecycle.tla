@@ -1552,9 +1552,13 @@ EvalNoWork(e) ==
 \* Start an attempt: no attempt is published, so this caller becomes the
 \* leader. One lazyMu critical section publishes a fresh attempt record whose
 \* wait targets, done channel, cancel function, and waiter count are already
-\* initialized. An armed callback leads a full attempt ("running"); a nil
-\* object-side callback with pending bookkeeping leads a bookkeeping-only
-\* attempt that starts directly in "syncing".
+\* initialized. An armed callback leads a full attempt ("running"); pending
+\* bookkeeping leads a bookkeeping-only attempt that starts directly in
+\* "syncing". Here an armed callback and pending bookkeeping cannot coexist
+\* (body success consumes lazyCb before bookkeeping can fail); Go's
+\* evaluateOne enforces the same precedence directly by not re-reading the
+\* value's callback while lazySyncPending is set, so the correspondence does
+\* not depend on implementations clearing their callback.
 EvalStartAttempt(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN

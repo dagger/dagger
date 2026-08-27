@@ -490,6 +490,96 @@ func TestCacheEvaluateSettlesBookkeepingBeforeReportingComplete(t *testing.T) {
 	})
 }
 
+// A previous attempt's body succeeded but its bookkeeping failed, and the
+// value keeps exposing a non-nil callback: nothing forces HasLazyEvaluation
+// implementations to clear their callback on success. Pending bookkeeping
+// must take precedence over the re-read object-side callback, so the retry
+// runs bookkeeping only and the body executes exactly once.
+func TestCacheEvaluatePendingBookkeepingSkipsUnclearedCallback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mgr := &lazyBookkeepingSnapshotManager{
+			attachEntered: make(chan struct{}),
+			attachResult:  make(chan error),
+		}
+
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", mgr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx = ContextWithCache(ctx, c)
+		srv := cacheTestServer(t)
+		sessionID := cacheTestSessionID(t, ctx)
+
+		var bodyRuns atomic.Int32
+		var obj *cacheTestObject
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-uncleared-callback",
+		}
+		resAny, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			obj = &cacheTestObject{Value: 1}
+			// The body deliberately leaves obj.lazyEval armed after success.
+			obj.lazyEval = func(context.Context) error {
+				bodyRuns.Add(1)
+				obj.snapshotLinks = []PersistedSnapshotRefLink{{
+					RefKey: "lazy-produced-snapshot",
+					Role:   "snapshot",
+				}}
+				return nil
+			}
+			return cacheTestObjectResultWithValue(t, srv, frame, obj), nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := resAny.(ObjectResult[*cacheTestObject])
+		shared := res.cacheSharedResult()
+
+		eval1 := make(chan error, 1)
+		go func() { eval1 <- c.Evaluate(ctx, res) }()
+		waitLazyRetrySignal(t, mgr.attachEntered, "first bookkeeping attach")
+		injected := errors.New("attach owner lease failed")
+		mgr.attachResult <- injected
+		if err := waitLazyRetryError(t, eval1, "first Evaluate outcome"); !errors.Is(err, injected) {
+			t.Fatalf("first Evaluate error = %v, want the injected bookkeeping failure", err)
+		}
+		if pending, complete := lazySyncState(shared); !pending || complete {
+			t.Fatalf("after failed bookkeeping: pending=%v complete=%v, want pending and not complete", pending, complete)
+		}
+
+		// The retry must lead a bookkeeping-only attempt even though the
+		// value still exposes its callback.
+		eval2 := make(chan error, 1)
+		go func() { eval2 <- c.Evaluate(ctx, res) }()
+		waitLazyRetrySignal(t, mgr.attachEntered, "retried bookkeeping attach")
+		mgr.attachResult <- nil
+		if err := waitLazyRetryError(t, eval2, "second Evaluate outcome"); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := bodyRuns.Load(); got != 1 {
+			t.Fatalf("callback body ran %d times, want exactly 1", got)
+		}
+		if got := len(mgr.fakeSnapshotManager.attachCalls); got != 2 {
+			t.Fatalf("AttachLease called %d times, want 2 (failed then retried)", got)
+		}
+		if pending, complete := lazySyncState(shared); pending || !complete {
+			t.Fatalf("after settled bookkeeping: pending=%v complete=%v, want complete and not pending", pending, complete)
+		}
+
+		// Completed evaluation short-circuits before the still-armed
+		// callback can be observed again.
+		if err := c.Evaluate(ctx, res); err != nil {
+			t.Fatal(err)
+		}
+		if got := bodyRuns.Load(); got != 1 {
+			t.Fatalf("callback body ran %d times after completion, want exactly 1", got)
+		}
+	})
+}
+
 // An ordinary cache hit re-registers lazy evaluation through
 // ensurePersistedHitValueLoaded while another caller's callback body may be
 // clearing the same object-side lazy pointer. Registration must therefore
