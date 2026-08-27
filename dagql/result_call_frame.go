@@ -128,6 +128,7 @@ const (
 	ResultCallLiteralKindInt            ResultCallLiteralKind = "int"
 	ResultCallLiteralKindFloat          ResultCallLiteralKind = "float"
 	ResultCallLiteralKindString         ResultCallLiteralKind = "string"
+	ResultCallLiteralKindBytes          ResultCallLiteralKind = "bytes"
 	ResultCallLiteralKindEnum           ResultCallLiteralKind = "enum"
 	ResultCallLiteralKindDigestedString ResultCallLiteralKind = "digested_string"
 	ResultCallLiteralKindResultRef      ResultCallLiteralKind = "result_ref"
@@ -142,6 +143,7 @@ type ResultCallLiteral struct {
 	IntValue    int64   `json:"intValue,omitempty"`
 	FloatValue  float64 `json:"floatValue,omitempty"`
 	StringValue string  `json:"stringValue,omitempty"`
+	BytesValue  []byte  `json:"bytesValue,omitempty"`
 	EnumValue   string  `json:"enumValue,omitempty"`
 
 	DigestedStringValue  string        `json:"digestedStringValue,omitempty"`
@@ -162,6 +164,7 @@ func (lit *ResultCallLiteral) cloneWith(memo resultCallCloneMemo) *ResultCallLit
 		IntValue:             lit.IntValue,
 		FloatValue:           lit.FloatValue,
 		StringValue:          lit.StringValue,
+		BytesValue:           slices.Clone(lit.BytesValue),
 		EnumValue:            lit.EnumValue,
 		DigestedStringValue:  lit.DigestedStringValue,
 		DigestedStringDigest: lit.DigestedStringDigest,
@@ -595,6 +598,8 @@ func resultCallLiteralPB(c *Cache, lit *ResultCallLiteral) (*callpbv1.Literal, e
 		return &callpbv1.Literal{Value: &callpbv1.Literal_Float{Float: lit.FloatValue}}, nil
 	case ResultCallLiteralKindString:
 		return &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: lit.StringValue}}, nil
+	case ResultCallLiteralKindBytes:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Bytes{Bytes: slices.Clone(lit.BytesValue)}}, nil
 	case ResultCallLiteralKindEnum:
 		return &callpbv1.Literal{Value: &callpbv1.Literal_Enum{Enum: lit.EnumValue}}, nil
 	case ResultCallLiteralKindDigestedString:
@@ -1272,6 +1277,9 @@ func appendResultCallLiteralBytes(
 	case lit.Kind == ResultCallLiteralKindString:
 		const prefix = '6'
 		h = h.WithByte(prefix).WithString(lit.StringValue)
+	case lit.Kind == ResultCallLiteralKindBytes:
+		const prefix = 'A'
+		h = h.WithByte(prefix).WithBytes(lit.BytesValue...)
 	case lit.Kind == ResultCallLiteralKindList:
 		const prefix = '7'
 		h = h.WithByte(prefix)
@@ -1343,6 +1351,9 @@ func appendResultCallLiteralContentPreferredBytes(
 	case lit.Kind == ResultCallLiteralKindString:
 		const prefix = '6'
 		h = h.WithByte(prefix).WithString(lit.StringValue)
+	case lit.Kind == ResultCallLiteralKindBytes:
+		const prefix = 'A'
+		h = h.WithByte(prefix).WithBytes(lit.BytesValue...)
 	case lit.Kind == ResultCallLiteralKindList:
 		const prefix = '7'
 		h = h.WithByte(prefix)
@@ -1412,6 +1423,9 @@ func appendResultCallLiteralSelfRefs(
 	case lit.Kind == ResultCallLiteralKindString:
 		const prefix = '6'
 		h = h.WithByte(prefix).WithString(lit.StringValue)
+	case lit.Kind == ResultCallLiteralKindBytes:
+		const prefix = 'A'
+		h = h.WithByte(prefix).WithBytes(lit.BytesValue...)
 	case lit.Kind == ResultCallLiteralKindList:
 		const prefix = '7'
 		h = h.WithByte(prefix)
@@ -1631,6 +1645,8 @@ func (frame *ResultCall) callLiteral(
 		return call.NewLiteralFloat(frameLit.FloatValue), nil
 	case ResultCallLiteralKindString:
 		return call.NewLiteralString(frameLit.StringValue), nil
+	case ResultCallLiteralKindBytes:
+		return call.NewLiteralBytes(frameLit.BytesValue), nil
 	case ResultCallLiteralKindEnum:
 		return call.NewLiteralEnum(frameLit.EnumValue), nil
 	case ResultCallLiteralKindDigestedString:

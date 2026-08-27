@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -955,6 +956,8 @@ func pruneLogLiteralValue(arg *ResultCallArg, lit *ResultCallLiteral, depth int)
 		return strconv.FormatFloat(lit.FloatValue, 'g', -1, 64)
 	case ResultCallLiteralKindString:
 		return strconv.Quote(pruneLogTruncateString(lit.StringValue, 120))
+	case ResultCallLiteralKindBytes:
+		return call.DisplayBytes(lit.BytesValue)
 	case ResultCallLiteralKindEnum:
 		return lit.EnumValue
 	case ResultCallLiteralKindDigestedString:

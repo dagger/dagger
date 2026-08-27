@@ -6,13 +6,19 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -85,6 +91,108 @@ func TestAssembleLines(t *testing.T) {
 			}
 		})
 	}
+}
+
+type logCaptureTestServer struct {
+	*mockServer
+	dbs *clientdb.DBs
+}
+
+func (srv *logCaptureTestServer) ClientTelemetry(ctx context.Context, _, _ string) (*clientdb.DB, error) {
+	return srv.dbs.Open(ctx, "capture-test")
+}
+
+// TestCallPayloadRecordsExcludedFromLLMLogs covers both LLM-facing consumers
+// of captureLogLines: the explicit ReadLogs builtin and automatic tool-result
+// log capture. A marker key reserves its record regardless of value or type;
+// the dedicated scope independently reserves malformed records with no marker.
+func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
+	const (
+		traceID = "000102030405060708090a0b0c0d0e0f"
+		spanID  = "0000000000000001"
+	)
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		Attributes: marshalSpanAttrs(t),
+	}})
+	require.NoError(t, err)
+
+	ordinaryScope := "ordinary.logs"
+	callContentType := &otlpcommonv1.KeyValue{
+		Key: telemetry.ContentTypeAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{
+			StringValue: telemetryattrs.CallPayloadContentType,
+		}},
+	}
+	logs := []clientdb.Log{
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("before\n")),
+		// A well-formed payload record: reserved by content type.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("CALL-PAYLOAD-BYTES")), callContentType),
+		// Malformed: the payload content type over a text body is still
+		// reserved, never rendered.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("CONTENT-TYPE-WRONG-BODY\n"), callContentType),
+		// No content type at all: not a call payload, but binary data all the
+		// same. Only string bodies may become LLM-visible text.
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, bytesLogBody([]byte("UNTYPED-BYTES"))),
+		persistedCaptureLog(t, traceID, spanID, ordinaryScope, stringLogBody("after\n")),
+	}
+	_, err = store.AppendLogs(logs)
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{},
+		dbs:        dbs,
+	}})
+	traceIDValue, err := trace.TraceIDFromHex(traceID)
+	require.NoError(t, err)
+	spanIDValue, err := trace.SpanIDFromHex(spanID)
+	require.NoError(t, err)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceIDValue,
+		SpanID:  spanIDValue,
+	}))
+	m := newMCP()
+
+	t.Run("ReadLogs", func(t *testing.T) {
+		got, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": spanID})
+		require.NoError(t, err)
+		require.Equal(t, "     1→before\n     2→after", got)
+	})
+
+	t.Run("automatic tool result", func(t *testing.T) {
+		require.Equal(t, "before\nafter", m.toolLogs(ctx))
+	})
+}
+
+func persistedCaptureLog(t *testing.T, traceID, spanID, scope string, body *otlpcommonv1.AnyValue, attrs ...*otlpcommonv1.KeyValue) clientdb.Log {
+	t.Helper()
+	bodyBytes, err := proto.Marshal(body)
+	require.NoError(t, err)
+	attrBytes, err := clientdb.MarshalProtoJSONs(attrs)
+	require.NoError(t, err)
+	scopeBytes, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: scope})
+	require.NoError(t, err)
+	return clientdb.Log{
+		TraceID:              sql.NullString{String: traceID, Valid: true},
+		SpanID:               sql.NullString{String: spanID, Valid: true},
+		Body:                 bodyBytes,
+		Attributes:           attrBytes,
+		InstrumentationScope: scopeBytes,
+	}
+}
+
+func stringLogBody(value string) *otlpcommonv1.AnyValue {
+	return &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: value}}
+}
+
+func bytesLogBody(value []byte) *otlpcommonv1.AnyValue {
+	return &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: value}}
 }
 
 // TestLimitIndirectLines locks in the tool-result abridging rule: whatever the
@@ -253,6 +361,177 @@ func requireLines(t *testing.T, got, want []string) {
 		if got[i] != want[i] {
 			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestGuardToolResult covers the last-resort bound on a tool's return value.
+// The motivating case: editor_read on a 6-line JSON file whose second line is
+// a ~400 KB base64 blob (a saved session's llm_id). The call's own `limit: 15`
+// counted LINES, so the module's limit never fired and the blob landed
+// verbatim in the model's context.
+// TestGuardToolResult: a result within both limits is byte-identical.
+func TestGuardToolResultInBudgetIsIdentical(t *testing.T) {
+	for _, res := range []string{
+		"",
+		"(done)",
+		"{\"ok\":true}",
+		strings.Repeat("a line of ordinary tool output\n", 500),
+		strings.Repeat("x", llmLogsMaxLineLen), // exactly at the line clamp
+	} {
+		if got := guardToolResult(res); got != res {
+			t.Fatalf("guardToolResult modified an in-budget result of %d bytes:\ngot  %.80q\nwant %.80q",
+				len(res), got, res)
+		}
+	}
+}
+
+// TestGuardToolResult: a single monster line is clamped, the rest survives.
+func TestGuardToolResultClampsMonsterLine(t *testing.T) {
+	blob := strings.Repeat("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=", 12000) // ~420 KB
+	res := "{\n" +
+		"  \"llm_id\": \"" + blob + "\",\n" +
+		"  \"model\": \"claude\",\n" +
+		"  \"messages\": 3,\n" +
+		"  \"tokens\": 1234\n" +
+		"}"
+
+	got := guardToolResult(res)
+	if len(got) > llmToolResultMaxBytes {
+		t.Fatalf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+	}
+	lines := strings.Split(got, "\n")
+	if len(lines) != 6 {
+		t.Fatalf("expected the 6 lines to survive as lines, got %d", len(lines))
+	}
+	for i, want := range map[int]string{
+		0: "{",
+		2: "  \"model\": \"claude\",",
+		3: "  \"messages\": 3,",
+		4: "  \"tokens\": 1234",
+		5: "}",
+	} {
+		if lines[i] != want {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want)
+		}
+	}
+	if !strings.HasPrefix(lines[1], "  \"llm_id\": \""+blob[:100]) {
+		t.Errorf("clamped line lost its head: %.60q", lines[1])
+	}
+	if !strings.HasSuffix(lines[1], " bytes truncated]") {
+		t.Errorf("clamped line lacks its inline marker: %.60q", lines[1][max(0, len(lines[1])-60):])
+	}
+	if n := len(lines[1]); n > llmLogsMaxLineLen+64 {
+		t.Errorf("clamped line is %d bytes, want ~%d", n, llmLogsMaxLineLen)
+	}
+	// The whole point: the blob does not reach the model.
+	if len(got) > 4*1024 {
+		t.Errorf("guarded result is %d bytes (from %d), want the blob gone", len(got), len(res))
+	}
+}
+
+// TestGuardToolResult: a total-budget blowout drops the middle.
+func TestGuardToolResultDropsMiddleOverBudget(t *testing.T) {
+	var lines []string
+	lines = append(lines, "FIRST LINE OF THE RESULT")
+	for i := range 20000 {
+		lines = append(lines, fmt.Sprintf("%6d: some ordinary line of file content", i))
+	}
+	lines = append(lines, "LAST LINE OF THE RESULT")
+	res := strings.Join(lines, "\n")
+
+	got := guardToolResult(res)
+	if len(got) > llmToolResultMaxBytes {
+		t.Fatalf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+	}
+	if !strings.HasPrefix(got, "FIRST LINE OF THE RESULT\n") {
+		t.Errorf("head did not survive: %.60q", got)
+	}
+	if !strings.HasSuffix(got, "\nLAST LINE OF THE RESULT") {
+		t.Errorf("tail did not survive: %.60q", got[max(0, len(got)-60):])
+	}
+
+	// Exactly one marker, and every other line is a whole input line.
+	input := map[string]bool{}
+	for _, line := range lines {
+		input[line] = true
+	}
+	var markers int
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "omitted from the middle of this result") {
+			markers++
+			if !strings.Contains(line, "re-run the call more narrowly") {
+				t.Errorf("marker doesn't say what to do about it: %q", line)
+			}
+			continue
+		}
+		if !input[line] {
+			t.Errorf("kept line is not a whole input line: %q", line)
+		}
+	}
+	if markers != 1 {
+		t.Fatalf("expected exactly one marker, got %d", markers)
+	}
+
+	// Both ends are generous: the head keeps its two-thirds share, and the
+	// tail is not a token gesture.
+	head, tail, ok := strings.Cut(got, "... ")
+	if !ok {
+		t.Fatal("expected to find the marker")
+	}
+	if len(head) < llmToolResultMaxBytes/2 {
+		t.Errorf("head is only %d bytes of a %d-byte budget", len(head), llmToolResultMaxBytes)
+	}
+	if len(tail) < 1024 {
+		t.Errorf("tail is only %d bytes", len(tail))
+	}
+}
+
+// TestGuardToolResult: multi-byte runes are never split.
+func TestGuardToolResultNeverSplitsRunes(t *testing.T) {
+	// A tree-drawing report: 3-byte runes straddling both the per-line
+	// clamp and the total budget.
+	res := strings.Repeat("┃", 5000) + "\n" +
+		strings.Repeat(strings.Repeat("◼ ┃ a nested span row\n", 1), 5000)
+
+	got := guardToolResult(res)
+	if !utf8.ValidString(got) {
+		t.Fatal("guard split a rune: result is not valid UTF-8")
+	}
+	if len(got) > llmToolResultMaxBytes {
+		t.Fatalf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+	}
+}
+
+// TestGuardToolResult: degenerate sizes.
+func TestGuardToolResultDegenerateSizes(t *testing.T) {
+	// One line, longer than the whole budget: the per-line clamp alone
+	// brings it back inside.
+	single := strings.Repeat("y", llmToolResultMaxBytes+1)
+	got := guardToolResult(single)
+	if len(got) > llmToolResultMaxBytes {
+		t.Errorf("single-line result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
+	}
+	if !strings.HasPrefix(got, strings.Repeat("y", llmLogsMaxLineLen)) {
+		t.Errorf("single-line result lost its head: %.40q", got)
+	}
+
+	// A result exactly at the budget passes through; one line more does
+	// not, and still comes back within budget.
+	line := strings.Repeat("z", 63) // 64 bytes with its newline
+	atBudget := strings.TrimSuffix(strings.Repeat(line+"\n", llmToolResultMaxBytes/64), "\n")
+	if len(atBudget) != llmToolResultMaxBytes-1 {
+		t.Fatalf("test setup: %d bytes, want %d", len(atBudget), llmToolResultMaxBytes-1)
+	}
+	if got := guardToolResult(atBudget); got != atBudget {
+		t.Errorf("a result at the budget was modified (%d -> %d bytes)", len(atBudget), len(got))
+	}
+	overBudget := atBudget + "\n" + line
+	got = guardToolResult(overBudget)
+	if got == overBudget {
+		t.Error("a result over the budget passed through untouched")
+	}
+	if len(got) > llmToolResultMaxBytes {
+		t.Errorf("guarded result is %d bytes, over the %d-byte budget", len(got), llmToolResultMaxBytes)
 	}
 }
 

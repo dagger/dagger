@@ -925,9 +925,9 @@ type FieldSpec struct {
 	NoTelemetry bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
-	// than performing meaningful work. Used to suppress install-span capture
-	// for synthetic accessors (e.g. auto-generated module object field
-	// accessors) so they don't claim ownership of values they merely return.
+	// than performing meaningful work. Their telemetry spans are internal, and
+	// they skip install-span capture so they don't claim ownership of values
+	// they merely return.
 	Trivial bool
 
 	// PassthroughTelemetry keeps this field's telemetry span available for call
@@ -1377,6 +1377,9 @@ func (fields Fields[T]) Install(server *Server) {
 			Description:        field.Field.Tag.Get("doc"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
+			// Reflected struct fields are pure getter accessors. Keep their spans
+			// available as internal trace detail without presenting them as work.
+			Trivial: true,
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()

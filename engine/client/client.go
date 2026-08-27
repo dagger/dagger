@@ -1528,6 +1528,9 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 		req.Header[k] = v
 	}
 	telemetry.Propagator.Inject(req.Context(), propagation.HeaderCarrier(req.Header))
+	if engine.TelemetrySuppressedFromContext(req.Context()) {
+		req.Header.Set(engine.SuppressTelemetryHeader, "true")
+	}
 	req.SetBasicAuth(c.secretToken, "")
 
 	// We're making a request to the engine HTTP/2 server, but these headers are not

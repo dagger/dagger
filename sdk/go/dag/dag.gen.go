@@ -52,6 +52,12 @@ func Address(value string) *dagger.Address {
 	return client.Address(value)
 }
 
+// Creates a file from arbitrary binary contents.
+func Blob(name string, contents dagger.Bytes, opts ...dagger.BlobOpts) *dagger.File {
+	client := initClient()
+	return client.Blob(name, contents, opts...)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()

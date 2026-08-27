@@ -75,6 +75,21 @@ const (
 	ProgressUnitAttr = "dagger.io/progress.unit"
 )
 
+// Call payloads over OTel logs.
+//
+// A client rebuilds a dagql call ID by walking the chain a call references
+// and looking up a payload for EVERY frame it reaches (dagui's
+// extractIntoDAG). New engines therefore publish a call's root and complete
+// transitive closure as log records when they emit that call's span, minus
+// frames already sent to the same delivery domain.
+//
+// CallPayloadContentType is the dagger.io/content.type value identifying such
+// a record: its body is one deterministic protobuf encoding of callpbv1.Call.
+// The payload omits Call.Digest; consumers compute the canonical digest from
+// the body instead. Like every content type, it describes the body — records
+// carry it under the ordinary core instrumentation scope.
+const CallPayloadContentType = "application/vnd.dagger.call+proto"
+
 // wcprof × OTel vocabulary.
 //
 // These attributes let the engine emit, on its ordinary OTel spans, the

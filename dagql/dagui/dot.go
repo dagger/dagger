@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
@@ -296,6 +297,8 @@ func displayLit(lit *callpbv1.Literal) string {
 			return "ETOOBIG"
 		}
 		return fmt.Sprintf("%q", val.String_)
+	case *callpbv1.Literal_Bytes:
+		return call.DisplayBytes(val.Bytes)
 	case *callpbv1.Literal_CallDigest:
 		return "<input>"
 	case *callpbv1.Literal_Enum:

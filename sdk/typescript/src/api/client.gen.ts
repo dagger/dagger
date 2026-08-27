@@ -50,6 +50,11 @@ export type BuildArg = {
 }
 
 /**
+ * Arbitrary binary data, represented as a base64-encoded string.
+ */
+export type Bytes = string & { __Bytes: never }
+
+/**
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
@@ -2481,6 +2486,13 @@ export type PortForward = {
    * Transport layer protocol to use for traffic.
    */
   protocol?: NetworkProtocol
+}
+
+export type ClientBlobOpts = {
+  /**
+   * Permissions of the new file. Example: 0600
+   */
+  permissions?: number
 }
 
 export type ClientCacheVolumeOpts = {
@@ -13039,6 +13051,17 @@ export class Client extends BaseClient {
   address = (value: string): Address => {
     const ctx = this._ctx.select("address", { value })
     return new Address(ctx)
+  }
+
+  /**
+   * Creates a file from arbitrary binary contents.
+   * @param name Name of the new file. Example: "archive.tar"
+   * @param contents Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+   * @param opts.permissions Permissions of the new file. Example: 0600
+   */
+  blob = (name: string, contents: Bytes, opts?: ClientBlobOpts): File => {
+    const ctx = this._ctx.select("blob", { name, contents, ...opts })
+    return new File(ctx)
   }
 
   /**

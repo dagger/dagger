@@ -1827,6 +1827,8 @@ func (state *recipeLoadState) loadedResultCallLiteralFromRecipeLiteral(lit call.
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
 	case *call.LiteralString:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralBytes:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBytes, BytesValue: v.Value()}, nil
 	case *call.LiteralEnum:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
 	case *call.LiteralDigestedString:

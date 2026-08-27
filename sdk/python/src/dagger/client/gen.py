@@ -12,6 +12,10 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
+class Bytes(Scalar):
+    """Arbitrary binary data, represented as a base64-encoded string."""
+
+
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
@@ -12593,6 +12597,33 @@ class Query(Root):
         _ctx = self._select("address", _args)
         return Address(_ctx)
 
+    def blob(
+        self,
+        name: str,
+        contents: Bytes,
+        *,
+        permissions: int | None = 420,
+    ) -> File:
+        """Creates a file from arbitrary binary contents.
+
+        Parameters
+        ----------
+        name:
+            Name of the new file. Example: "archive.tar"
+        contents:
+            Binary contents of the new file, encoded as base64 at the GraphQL
+            boundary.
+        permissions:
+            Permissions of the new file. Example: 0600
+        """
+        _args = [
+            Arg("name", name),
+            Arg("contents", contents),
+            Arg("permissions", permissions, 420),
+        ]
+        _ctx = self._select("blob", _args)
+        return File(_ctx)
+
     def cache_volume(
         self,
         key: str,
@@ -16620,6 +16651,7 @@ __all__ = [
     "Agent",
     "AgentGroup",
     "BuildArg",
+    "Bytes",
     "CacheSharingMode",
     "CacheVolume",
     "Changeset",

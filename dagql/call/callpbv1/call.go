@@ -8,6 +8,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Encode and Decode carry the LEGACY base64 wire form of a call: the
+// dagger.io/dag.call span attribute still written for older consumers, and
+// span-embedded payloads read back from older engines and archived traces.
+// New payloads travel as raw deterministic protobuf log bodies instead
+// (core/dag_call_telemetry.go).
+
 func (call *Call) Encode() (string, error) {
 	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto
 	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(call)

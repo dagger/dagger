@@ -1,6 +1,7 @@
 package clientdb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -9,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"sync"
 
 	telemetry "github.com/dagger/otel-go"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -25,6 +28,28 @@ type spanLookup struct {
 
 	// The composite key preserves SelectSpan's trace_id + span_id predicate.
 	firstRow map[spanLookupKey]int64
+	// lastRow maps each span ID to its NEWEST snapshot row. OTel span
+	// snapshots are cumulative — a later row carries the span's full current
+	// state (name, attributes, links, status, end time) — so the last row
+	// alone reconstructs the state a sequential replay of every snapshot
+	// would end with. This is what lets a scoped reader materialize a span
+	// subtree without replaying the whole stream. Keyed by span ID only,
+	// following the children map's identity.
+	lastRow map[string]int64
+	// parent maps each span ID to its parent span ID, from the first
+	// snapshot that carries one. Together with children it makes ancestor
+	// chains answerable from the index alone — a scoped load includes the
+	// chain from every scope member up to the trace root, so no member's
+	// parent pointer dangles at a placeholder.
+	parent map[string]string
+	// checkSpans/testSpans remember the spans whose attributes mark them as
+	// named checks or tests (telemetry.CheckNameAttr, semconv test.case.name
+	// / test.suite.name). Detected with a raw byte scan of the encoded
+	// attributes — no decode — so a name lookup (e.g. ReadTrace(check:))
+	// answers from the index instead of scanning the stream. A false
+	// positive (marker bytes inside a value) merely loads one extra span.
+	checkSpans map[string]struct{}
+	testSpans  map[string]struct{}
 	// Duplicate snapshots are suppressed when firstRow is populated, leaving
 	// one copy of each child span ID in its parent's slice.
 	children map[string][]string
@@ -53,6 +78,10 @@ type spanLookup struct {
 func newSpanLookup() *spanLookup {
 	return &spanLookup{
 		firstRow:       make(map[spanLookupKey]int64),
+		lastRow:        make(map[string]int64),
+		parent:         make(map[string]string),
+		checkSpans:     make(map[string]struct{}),
+		testSpans:      make(map[string]struct{}),
 		children:       make(map[string][]string),
 		causalChildren: make(map[string][]string),
 		causalParents:  make(map[string][]string),
@@ -92,6 +121,22 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 			l.causalParents[row.SpanID] = append(parents, target)
 		}
 	}
+	// Likewise per-row, not per-span: the newest snapshot is the span's
+	// current state, and check/test markers may only appear on a snapshot
+	// taken after the attribute was set.
+	l.lastRow[row.SpanID] = row.ID
+	if _, marked := l.checkSpans[row.SpanID]; !marked && bytes.Contains(row.Attributes, checkNameAttrMarker) {
+		l.checkSpans[row.SpanID] = struct{}{}
+	}
+	if _, marked := l.testSpans[row.SpanID]; !marked &&
+		(bytes.Contains(row.Attributes, testCaseNameAttrMarker) || bytes.Contains(row.Attributes, testSuiteNameAttrMarker)) {
+		l.testSpans[row.SpanID] = struct{}{}
+	}
+	if row.ParentSpanID.Valid {
+		if _, known := l.parent[row.SpanID]; !known {
+			l.parent[row.SpanID] = row.ParentSpanID.String
+		}
+	}
 	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
 	if _, exists := l.firstRow[key]; exists {
 		return
@@ -110,6 +155,15 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		l.children[row.ParentSpanID.String] = append(children, row.SpanID)
 	}
 }
+
+// Marker byte strings for the raw-attribute prefilter in addLocked. The
+// attributes column is a protojson-encoded KeyValue list, so an attribute's
+// presence implies its quoted key appears verbatim.
+var (
+	checkNameAttrMarker     = []byte(`"` + telemetry.CheckNameAttr + `"`)
+	testCaseNameAttrMarker  = []byte(`"` + string(semconv.TestCaseNameKey) + `"`)
+	testSuiteNameAttrMarker = []byte(`"` + string(semconv.TestSuiteNameKey) + `"`)
+)
 
 // causalLinkTargets decodes row's span links and returns the span IDs it
 // cause-links to. Purpose handling mirrors dagui's link ingestion
@@ -244,12 +298,125 @@ func (l *spanLookup) logScope(root string) map[string]struct{} {
 	return scope
 }
 
+// ancestorClosure returns ids plus every member's ancestor chain, walked over
+// the parent index up to each trace root. Cycle-safe: a span already in the
+// set ends its walk, so a (malformed) parent cycle cannot loop.
+func (l *spanLookup) ancestorClosure(ids map[string]struct{}) map[string]struct{} {
+	closure := make(map[string]struct{}, len(ids))
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	for id := range ids {
+		for id != "" {
+			if _, seen := closure[id]; seen {
+				break
+			}
+			closure[id] = struct{}{}
+			id = l.parent[id]
+		}
+	}
+	return closure
+}
+
+// latestRowIDs returns the newest snapshot row ID of every span in ids that
+// the index knows, in ascending row order — append order, which is the order
+// a sequential replay would have delivered them in.
+func (l *spanLookup) latestRowIDs(ids map[string]struct{}) []int64 {
+	rowIDs := make([]int64, 0, len(ids))
+	l.mu.RLock()
+	for id := range ids {
+		if rowID, found := l.lastRow[id]; found {
+			rowIDs = append(rowIDs, rowID)
+		}
+	}
+	l.mu.RUnlock()
+	sort.Slice(rowIDs, func(i, j int) bool { return rowIDs[i] < rowIDs[j] })
+	return rowIDs
+}
+
+func (l *spanLookup) hasSpan(spanID string) bool {
+	l.mu.RLock()
+	_, found := l.lastRow[spanID]
+	l.mu.RUnlock()
+	return found
+}
+
+// markedSpanIDs snapshots the check- and test-marked span ID sets.
+func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	checks = make(map[string]struct{}, len(l.checkSpans))
+	for id := range l.checkSpans {
+		checks[id] = struct{}{}
+	}
+	tests = make(map[string]struct{}, len(l.testSpans))
+	for id := range l.testSpans {
+		tests[id] = struct{}{}
+	}
+	return checks, tests
+}
+
+// logLookup indexes log rows by the span they're attributed to, so scoped log
+// reads (SelectLogsBeneathSpan, SelectLogsForSpans) resolve to direct row
+// reads instead of scanning the whole log stream — a scan that is linear in
+// SESSION size, paid per read, on paths that run per LLM tool call. The cost
+// is 8 bytes per log row plus per-span slice overhead; rows are appended with
+// monotonic IDs, so each span's slice is ascending by construction.
+type logLookup struct {
+	mu         sync.RWMutex
+	rowsBySpan map[string][]int64
+}
+
+func newLogLookup() *logLookup {
+	return &logLookup{rowsBySpan: make(map[string][]int64)}
+}
+
+func (l *logLookup) add(row Log) {
+	if !row.SpanID.Valid {
+		return
+	}
+	l.mu.Lock()
+	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
+	l.mu.Unlock()
+}
+
+func (l *logLookup) addAll(rows []Log) {
+	l.mu.Lock()
+	for _, row := range rows {
+		if !row.SpanID.Valid {
+			continue
+		}
+		l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
+	}
+	l.mu.Unlock()
+}
+
+// rowIDsForSpans returns the row IDs of every log row attributed to a span in
+// ids, ascending. perSpanTail > 0 keeps only each span's newest perSpanTail
+// rows — the shape report renderers need, which bound every span's rendered
+// log output to a tail anyway — so one pathological span (e.g. a service that
+// streamed millions of lines) cannot balloon a scoped load.
+func (l *logLookup) rowIDsForSpans(ids map[string]struct{}, perSpanTail int) []int64 {
+	var rowIDs []int64
+	l.mu.RLock()
+	for id := range ids {
+		rows := l.rowsBySpan[id]
+		if perSpanTail > 0 && len(rows) > perSpanTail {
+			rows = rows[len(rows)-perSpanTail:]
+		}
+		rowIDs = append(rowIDs, rows...)
+	}
+	l.mu.RUnlock()
+	sort.Slice(rowIDs, func(i, j int) bool { return rowIDs[i] < rowIDs[j] })
+	return rowIDs
+}
+
 // DB is one client's standalone append-only telemetry store.
 type DB struct {
 	spans   *logStream[Span]
 	logs    *logStream[Log]
 	metrics *logStream[Metric]
 	lookup  *spanLookup
+	logIdx  *logLookup
 
 	clientID string
 	refCount int
@@ -263,6 +430,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 
 	store := &DB{
 		lookup:   newSpanLookup(),
+		logIdx:   newLogLookup(),
 		clientID: clientID,
 	}
 	defer func() {
@@ -288,8 +456,8 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".logs.log"),
 		logCodec,
 		tailBudget,
-		nil,
-		nil,
+		store.logIdx.add,
+		store.logIdx.addAll,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("open log stream: %w", err)
@@ -401,6 +569,69 @@ func (s *DB) HasDescendants(spanID string) bool {
 	return s.lookup.hasDescendants(spanID)
 }
 
+// HasSpan reports whether the store has seen any snapshot of spanID.
+func (s *DB) HasSpan(spanID string) bool {
+	return s.lookup.hasSpan(spanID)
+}
+
+// AncestorClosure returns ids plus every member's ancestor chain up to its
+// trace root. A scoped span load includes it so that no loaded span's parent
+// pointer resolves to an unreceived placeholder — dagui would otherwise
+// mistake a placeholder for a root and lose the chain's UI flags.
+func (s *DB) AncestorClosure(ids map[string]struct{}) map[string]struct{} {
+	return s.lookup.ancestorClosure(ids)
+}
+
+// CheckTestSpanIDs returns the spans marked as named checks and as test cases
+// or suites, answered from the span index. This is the seed for resolving a
+// check/test NAME to a span: load these spans (plus ancestors, for the test
+// view's containment walks) into a throwaway dagui.DB and match names there,
+// instead of retaining a whole-session DB just to answer name lookups.
+func (s *DB) CheckTestSpanIDs() (checks, tests map[string]struct{}) {
+	return s.lookup.markedSpanIDs()
+}
+
+// SelectSpansLatest returns the newest snapshot row of every span in ids, in
+// append order. A span's snapshots are cumulative, so its newest row alone
+// reconstructs the state a full sequential replay would end with — this is
+// the span half of a scoped load, sized by the scope instead of the session.
+func (s *DB) SelectSpansLatest(ctx context.Context, ids map[string]struct{}) ([]Span, error) {
+	rowIDs := s.lookup.latestRowIDs(ids)
+	rows := make([]Span, 0, len(rowIDs))
+	for _, rowID := range rowIDs {
+		row, found, err := s.spans.readID(ctx, rowID)
+		if err != nil {
+			return nil, fmt.Errorf("read span row %d: %w", rowID, err)
+		}
+		if !found {
+			return nil, fmt.Errorf("indexed span row %d: %w", rowID, sql.ErrNoRows)
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+// SelectLogsForSpans returns the log rows attributed to any span in ids, in
+// append order — the log half of a scoped load. perSpanTail > 0 bounds each
+// span to its newest perSpanTail rows; renderers bound every span's log
+// output to a tail anyway, and the cap keeps one pathological span (e.g. a
+// service that streamed millions of lines) from ballooning the load.
+func (s *DB) SelectLogsForSpans(ctx context.Context, ids map[string]struct{}, perSpanTail int) ([]Log, error) {
+	rowIDs := s.logIdx.rowIDsForSpans(ids, perSpanTail)
+	rows := make([]Log, 0, len(rowIDs))
+	for _, rowID := range rowIDs {
+		row, found, err := s.logs.readID(ctx, rowID)
+		if err != nil {
+			return nil, fmt.Errorf("read log row %d: %w", rowID, err)
+		}
+		if !found {
+			return nil, fmt.Errorf("indexed log row %d: %w", rowID, sql.ErrNoRows)
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
 // SelectLogsBeneathSpan returns the log rows of the capture rooted at
 // arg.SpanID — the rows attributed to any span in its log scope (the span
 // itself, its cause-link targets, and both sets' subtrees; see SpanLogScope)
@@ -408,37 +639,35 @@ func (s *DB) HasDescendants(spanID string) bool {
 // root's own rows are part of the capture: a span's directly-attributed
 // output (e.g. the service stdio records routed to an install span) is
 // exactly what a reader asking about that span wants.
+//
+// Resolved through the per-span log index: the row IDs come straight from
+// the scope's index entries, so the cost scales with the capture, not with
+// the session — the previous implementation scanned the whole log stream
+// past the cursor, linear in session size, on a path that runs per LLM tool
+// call.
 func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
 	limit := storeLimit(arg.Limit)
 	if limit == 0 || !arg.SpanID.Valid {
 		return nil, nil
 	}
 	scope := s.lookup.logScope(arg.SpanID.String)
-
-	const scanBatch = int(sparseIndexStride)
-	logs := make([]Log, 0, limit)
-	cursor := arg.ID
-	for len(logs) < limit {
-		page, err := s.logs.Since(ctx, cursor, scanBatch)
+	rowIDs := s.logIdx.rowIDsForSpans(scope, 0)
+	// Skip rows at or before the cursor; rowIDs is ascending.
+	start := sort.Search(len(rowIDs), func(i int) bool { return rowIDs[i] > arg.ID })
+	rowIDs = rowIDs[start:]
+	if len(rowIDs) > limit {
+		rowIDs = rowIDs[:limit]
+	}
+	logs := make([]Log, 0, len(rowIDs))
+	for _, rowID := range rowIDs {
+		row, found, err := s.logs.readID(ctx, rowID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read log row %d: %w", rowID, err)
 		}
-		if len(page) == 0 {
-			return logs, nil
+		if !found {
+			return nil, fmt.Errorf("indexed log row %d: %w", rowID, sql.ErrNoRows)
 		}
-		for _, row := range page {
-			cursor = row.ID
-			if !row.SpanID.Valid {
-				continue
-			}
-			if _, found := scope[row.SpanID.String]; !found {
-				continue
-			}
-			logs = append(logs, row)
-			if len(logs) == limit {
-				return logs, nil
-			}
-		}
+		logs = append(logs, row)
 	}
 	return logs, nil
 }
