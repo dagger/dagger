@@ -14,8 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// Call payloads over the log channel: the sole transport for newly emitted
-// replayable call data.
+// Call payloads over the log channel fill the gaps left by span attributes.
 //
 // This file is the producer half of the CallPayloadContentType contract
 // (engine/telemetryattrs), modelled on the agent-state producer next door for
@@ -27,9 +26,9 @@ import (
 // flattens them to a bare digest), and array members that are only ever
 // sub-selected.
 //
-// The legacy span attribute dagger.io/dag.call remains readable by consumers,
-// but producers no longer write it. Root and transitive frames share this one
-// log transport and claim digests from the same delivery-domain store.
+// Calls that do get a recording span carry dagger.io/dag.call there. Both
+// transports claim digests from the same delivery-domain store, so the closure
+// walk below publishes logs only for frames a span did not already deliver.
 //
 // The claim store is scoped to the emitting client's DELIVERY DOMAIN — the
 // client and its ancestors, exactly the per-client DBs telemetry fans out to
@@ -42,16 +41,16 @@ import (
 // closure walk re-publishes into its own domain; consumers dedupe by digest,
 // so the bounded re-publication is harmless.
 
-// recordCallPayloads publishes the transitive closure of a call's ID over the
-// log channel — every frame the chain references, through receivers, modules,
-// arguments (ID literals inside lists and objects included) and implicit
-// inputs — minus digests already claimed in the client's delivery domain.
+// recordCallPayloads publishes the missing frames in the transitive closure of
+// a call's ID over the log channel — through receivers, modules, arguments (ID
+// literals inside lists and objects included) and implicit inputs — minus
+// digests already delivered by a span or log in the client's delivery domain.
 //
-// It is called after the call's span starts and claims the root digest before
-// rebuilding the recipe. A second selection of that root short-circuits the
-// whole walk; reachability is transitive, so the first walk already published
-// every frame in its closure. This makes the cost at most one closure walk per
-// distinct root digest in the emitting client's delivery domain.
+// rootOnSpan means the caller already claimed the root for a recording span;
+// the walk skips its log but still visits the closure. Otherwise this function
+// claims the root itself and emits it as a log. A previously claimed root
+// short-circuits the whole walk: reachability is transitive, so its first claim
+// already accompanied a walk that delivered every then-missing frame.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
@@ -61,11 +60,12 @@ func recordCallPayloads(
 	store dagql.TelemetrySeenKeyStore,
 	callDigest string,
 	frame *dagql.ResultCall,
+	rootOnSpan bool,
 ) {
 	if store == nil || frame == nil {
 		return
 	}
-	if !dagql.ShouldEmitCallPayload(store, callDigest) {
+	if !rootOnSpan && !dagql.ShouldEmitCallPayload(store, callDigest) {
 		// Someone already published this call's payload, and whoever did also
 		// walked its closure — reachability is transitive, so that walk
 		// covered everything this one would.
@@ -95,10 +95,18 @@ func recordCallPayloads(
 
 	logger := telemetry.Logger(ctx, InstrumentationLibrary)
 	emit := func(dgst string, callPB *callpbv1.Call) {
-		// The root was claimed before rebuilding. Claim every other frame before
-		// encoding so repeated closure walks skip work already delivered.
-		if dgst != callDigest && !dagql.ShouldEmitCallPayload(store, dgst) {
-			return
+		if dgst == callDigest {
+			// The root was claimed before rebuilding. When its payload rode the
+			// span, only its closure needs the log fallback.
+			if rootOnSpan {
+				return
+			}
+		} else {
+			// Claim every other frame before encoding so repeated closure walks
+			// skip payloads already delivered by either transport.
+			if !dagql.ShouldEmitCallPayload(store, dgst) {
+				return
+			}
 		}
 
 		// The payload carries its own digest: it is the key the producer files

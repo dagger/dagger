@@ -1,11 +1,11 @@
 package core
 
-// The producer half of the call-payload log transport. What must not regress
-// silently: the root and complete closure have to ride logs, including frames
-// buried inside an ID-literal argument — those are the ones LiteralID.pb
-// flattens to a bare digest, so they can never ride a span attribute — and a
-// digest must cross the wire at most once per delivery target, or an LLM loop
-// re-sending the same chain drowns the log stream.
+// The producer half of the call-payload transport. What must not regress
+// silently: frames absent from spans have to ride logs, including frames buried
+// inside an ID-literal argument — those are the ones LiteralID.pb flattens to a
+// bare digest, so they can never ride a span attribute — and a digest must cross
+// the wire at most once per delivery target, or an LLM loop re-sending the same
+// chain drowns the log stream.
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
@@ -140,9 +141,13 @@ func (alreadySeenTelemetryStore) StoreTelemetrySeenKey(string)            {}
 type payloadRoutingTestServer struct {
 	*mockServer
 	payloadStore dagql.TelemetrySeenKeyStore
+	spanStore    dagql.TelemetrySeenKeyStore
 }
 
 func (s *payloadRoutingTestServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	if s.spanStore != nil {
+		return s.spanStore, nil
+	}
 	return alreadySeenTelemetryStore{}, nil
 }
 
@@ -158,6 +163,12 @@ func payloadRecorderCtx(t *testing.T) (*payloadRecorder, context.Context) {
 	rec := &payloadRecorder{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(rec))
 	ctx := telemetry.WithLoggerProvider(context.Background(), provider)
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	ctx, root := tp.Tracer("call-payload-test").Start(ctx, "root")
+	t.Cleanup(func() {
+		root.End()
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
 	return rec, dagql.ContextWithCache(ctx, nil)
 }
 
@@ -208,6 +219,27 @@ func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
 		"a sibling delivery domain must receive the closure despite session-wide span dedupe")
 }
 
+func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
+	agent, _, _ := skillsChain()
+	recorder, ctx := payloadRecorderCtx(t)
+	rootDigest, err := agent.RecipeDigest(ctx)
+	require.NoError(t, err)
+	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+		mockServer:   &mockServer{},
+		payloadStore: &testSeenKeys{},
+		spanStore:    &testSeenKeys{},
+	}})
+	req := &dagql.CallRequest{ResultCall: agent}
+	_, done := AroundFunc(ctx, req)
+	var callErr error
+	done(nil, false, &callErr)
+
+	require.Equal(t, 4, recorder.emissionCount(),
+		"the root payload rides its span; only the four unspanned frames need logs")
+	require.Nil(t, recorder.get(rootDigest.String()),
+		"a payload carried by a recording span must not also be logged")
+}
+
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, withSkills, dir := skillsChain()
@@ -215,7 +247,7 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	rootDigest, err := agent.RecipeDigest(ctx)
 	require.NoError(t, err)
 
-	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent)
+	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent, false)
 	require.Equal(t, rootDigest.String(), rec.firstDigest(), "the requested root must lead its closure")
 
 	records := rec.snapshot()
@@ -261,6 +293,26 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.Equal(t, "agent", rootCall.Field)
 }
 
+func TestRecordCallPayloadsSkipsFramesDeliveredBySpans(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	agent, withSkills, _ := skillsChain()
+	rootDigest, err := agent.RecipeDigest(ctx)
+	require.NoError(t, err)
+	spannedDigest, err := withSkills.RecipeDigest(ctx)
+	require.NoError(t, err)
+
+	seen := &testSeenKeys{}
+	require.True(t, dagql.ShouldEmitCallPayload(seen, spannedDigest.String()),
+		"fixture must claim the transitive frame as span-delivered")
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+
+	require.Equal(t, 4, rec.emissionCount())
+	require.Nil(t, rec.get(spannedDigest.String()),
+		"a transitive frame carried by a span must not also be logged")
+	require.NotNil(t, rec.get(rootDigest.String()),
+		"an unspanned root must retain the log fallback")
+}
+
 func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, _, _ := skillsChain()
@@ -268,13 +320,13 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	require.NoError(t, err)
 
 	seen := &testSeenKeys{}
-	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
 	first := rec.emissionCount()
 	require.Equal(t, 5, first, "the initial root and its complete closure must be emitted")
 
 	// A second selection of the same call publishes nothing in this synchronous
 	// delivery fixture: the first walk covered the whole transitive closure.
-	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
 	require.Equal(t, first, rec.emissionCount())
 
 	// A LONGER chain over the same frames publishes only what is NEW: its own
@@ -291,7 +343,7 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	}}
 	longerDigest, err := longer.RecipeDigest(ctx)
 	require.NoError(t, err)
-	recordCallPayloads(ctx, seen, longerDigest.String(), longer)
+	recordCallPayloads(ctx, seen, longerDigest.String(), longer, false)
 	require.Equal(t, first+2, rec.emissionCount(), "only the new root and referenced frame should be published")
 	require.NotNil(t, rec.get(longerDigest.String()), "the new root frame was not published")
 	promptDigest, err := prompt.RecipeDigest(ctx)
@@ -307,6 +359,6 @@ func TestRecordCallPayloadsRequiresSeenKeyStore(t *testing.T) {
 	rootDigest, err := agent.RecipeDigest(ctx)
 	require.NoError(t, err)
 
-	recordCallPayloads(ctx, nil, rootDigest.String(), agent)
+	recordCallPayloads(ctx, nil, rootDigest.String(), agent, false)
 	require.Equal(t, 0, rec.len())
 }

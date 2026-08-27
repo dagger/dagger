@@ -84,9 +84,9 @@ const callPayloadSeenKeyPrefix = "dag.call.payload:"
 // outlives the set of clients it was delivered to.
 //
 // Producers claim every root and transitive frame through this function before
-// emitting its log record. Consumers may also populate the same payload store
-// from legacy dagger.io/dag.call span attributes, but those old attributes do
-// not participate in producer-side claims.
+// carrying it on a span or emitting its log record. Consumers may also populate
+// the same payload store from legacy dagger.io/dag.call span attributes, but
+// those ingested attributes do not participate in producer-side claims.
 //
 // Unlike ShouldEmitTelemetry this is deliberately NOT sensitive to
 // WithRepeatedTelemetry or to DoNotCache. Both exist so the same work can be

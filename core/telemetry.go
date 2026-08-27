@@ -87,7 +87,7 @@ func AroundFunc(
 		}
 		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
 			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
-				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
+				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, false)
 				return ctx, dagql.NoopDone
 			}
 		}
@@ -101,6 +101,7 @@ func AroundFunc(
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
 	}
+	callPayloadOnSpan := false
 
 	// Also carry this frame's payload on the span itself. Newer clients rebuild
 	// IDs from the call-payload log records published below, but older CLIs
@@ -113,6 +114,7 @@ func AroundFunc(
 		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
 	} else {
 		attrs = append(attrs, attribute.String(telemetry.DagCallAttr, callAttr))
+		callPayloadOnSpan = true
 	}
 
 	// if inside a module call, add call trace metadata. this is useful
@@ -168,11 +170,17 @@ func AroundFunc(
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
 
-	// Publish this call and its complete recipe closure over the log channel.
-	// This is the primary transport for every frame (including those that never
-	// get a span of their own); the span attribute above is only for legacy
-	// consumers.
-	recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
+	// Fill any gaps in this call's recipe closure over the log channel. A
+	// recording span already carries its own frame for legacy consumers, so
+	// claim that payload before the closure walk and emit logs only for frames
+	// that have not crossed this delivery domain by either transport.
+	if callPayloadOnSpan && span.IsRecording() {
+		if dagql.ShouldEmitCallPayload(payloadKeys, callDigest.String()) {
+			recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, true)
+		}
+	} else {
+		recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, false)
+	}
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",
