@@ -8,19 +8,19 @@ import { daggerVersion } from '../partials/version.js';
 
 # Dang SDK
 
-Dang is Dagger's native DSL. It maps directly to the Dagger API, so what you write is what runs. There is no codegen, no generated client files to commit, no build step, and no language runtime to carry around. In the common case a Dang module is one `main.dang` file plus a `dagger-module.toml`.
+[Dang](https://danglang.org) is the native DSL for Dagger. Dang maps directly to the Dagger API. You do not generate client files or build the module. You also do not need a separate language runtime. Usually, a Dang module contains one `main.dang` file and one `dagger-module.toml` file.
 
-Use Dang when your module mostly orchestrates the Dagger API: containers, files, directories, services, secrets, and other modules. If you need external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](./go.mdx), [Python](./python.mdx), or [TypeScript](./typescript.mdx) SDK instead. Those give you a full host language alongside the Dagger client.
+Use Dang when your module primarily controls containers, files, directories, services, secrets, and other modules. If your module needs external libraries, use the [Go](./go.mdx), [Python](./python.mdx), or [TypeScript](./typescript.mdx) SDK. These SDKs give you a full host language and the Dagger client.
 
-Every SDK shares a few platform concepts. Read these first if they are new to you:
+If you do not know the basic SDK concepts, read these pages first:
 
 - [SDKs overview](./index.mdx) explains what a module is and how it fits into a workspace.
 - [Types](../api/reference/index.mdx) covers the types your functions accept and return.
 - [Generating code](../cli/generating.mdx) shows how Dagger represents file diffs. `init` and generators both use them.
 
-## A note on tooling: Dang is delivered as a Dagger module
+## Tooling
 
-The tooling for developing Dang modules lives in a Dagger module of its own, `github.com/dagger/dang-sdk`, not in the `dagger` CLI. Install it into your workspace once. From then on you scaffold and maintain Dang modules by calling functions on that module by name:
+The tools for Dang modules are in the `github.com/dagger/dang-sdk` module. They are not in the `dagger` CLI. Install the module in your workspace one time. Then, call its functions to create and maintain Dang modules:
 
 ```shell
 # Install the Dang SDK into your workspace (once)
