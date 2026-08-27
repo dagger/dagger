@@ -434,6 +434,11 @@ type pendingModule struct {
 	// Name override (empty = derive from module).
 	Name string
 
+	// WorkspaceDir is the module's workspace-root-relative directory for
+	// local sources ("" otherwise). Best-effort loads report it with a load
+	// failure so generate can tell whether the run regenerated the module.
+	WorkspaceDir string
+
 	// If true, this module is the workspace entrypoint: its main-object
 	// methods are proxied onto the Query root in addition to its namespaced
 	// constructor.
@@ -562,6 +567,7 @@ func workspaceConfigPendingModules(
 				mod.Ref = resolved
 			} else {
 				mod.Ref = resolveLocalRef(ws, resolved)
+				mod.WorkspaceDir = resolved
 			}
 		}
 		if mod.LegacyDefaultPath {
@@ -602,6 +608,9 @@ func pendingLegacyModule(
 	mod.DefaultPathContextSourceRef = defaultPathContextRefForWorkspace(ws, resolveLocalRef)
 	if kind == core.ModuleSourceKindLocal {
 		mod.RefPin = ""
+		if !filepath.IsAbs(source) {
+			mod.WorkspaceDir = filepath.Clean(source)
+		}
 	}
 	return mod
 }
@@ -843,6 +852,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			mod := pendingModule{
 				Kind:              moduleLoadKindAmbient,
 				Ref:               resolveLocalRef(ws, rel),
+				WorkspaceDir:      rel,
 				Name:              compatWorkspace.MainModule.Name,
 				Entrypoint:        compatWorkspace.MainModule.Entry.Entrypoint,
 				legacyFieldPolicy: legacyWorkspaceFieldPolicyStripCompatMain,
@@ -1112,14 +1122,14 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 // generator runs. The skipped modules' failure messages are returned so the
 // caller can surface them (e.g. GeneratorGroup.loadFailures). Genuine engine
 // errors (batch resolution, arbitration, serving) stay fatal regardless.
-func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []string, _ error) {
+func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []core.ModuleLoadFailure, _ error) {
 	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, bestEffort, nil)
 }
 
 // ensureModulesLoadedModeWithSuccess runs onSuccessLocked after a successful
 // load while modulesMu is still held. Callers use it for state transitions
 // that must be atomic with the load becoming visible to another request.
-func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []string, rerr error) {
+func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []core.ModuleLoadFailure, rerr error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 	defer func() {
@@ -1152,7 +1162,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, loadFailureMessage(err))
+				loadFailures = append(loadFailures, moduleLoadFailure(mod, err))
 				continue
 			}
 			kept = append(kept, mod)
@@ -1189,8 +1199,8 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			loadErr := moduleLoadErr(load, resolveErrs[i])
 			client.recordFailedModule(load.mod, loadErr)
 			if bestEffort {
-				reportSkippedModule(ctx, moduleProgressName(load.mod), loadErr)
-				loadFailures = append(loadFailures, loadFailureMessage(loadErr))
+				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr))
+				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr))
 				continue
 			}
 			if firstErr == nil {
@@ -1383,7 +1393,7 @@ func (client *daggerClient) removePendingModules(served []pendingModule) {
 // With bestEffort, modules that fail to load are skipped with a warning instead
 // of failing the operation, and their failure messages are returned for the
 // caller to surface (see ensureModulesLoadedMode).
-func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]string, error) {
+func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -1866,6 +1876,11 @@ func moduleLoadJobName(load moduleLoadRequest) string {
 // the row stays terse. GenerateSkippedAttr collects it into the persisted
 // "SKIPPED MODULES" final report so it survives the live tree collapsing when
 // generate exits 0.
+//
+// cause should come from core.LoadFailureCause so the row carries the failure
+// detail (compiler output, corrected hint) itself: its error origins still
+// link to the failing exec, but that span is hidden under the internal load
+// spans and the plain frontend never follows origins.
 func reportSkippedModule(ctx context.Context, name string, cause error) {
 	_, span := core.Tracer(ctx).Start(ctx, name,
 		telemetry.Reveal(),
@@ -1878,11 +1893,15 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 	telemetry.EndWithCause(span, &cause)
 }
 
-// loadFailureMessage renders a load error as a display string, stripping the
-// [traceparent:...] error-origin markers — they are span-attribution plumbing,
-// not part of the message.
-func loadFailureMessage(err error) string {
-	return core.StripErrorOrigins(err.Error())
+// moduleLoadFailure is the API-facing record of a skipped module: its name
+// (matching the skipped-module span), its workspace directory (so generate
+// can tell whether the run regenerated it) and the described message.
+func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
+	return core.ModuleLoadFailure{
+		Name:    moduleProgressName(mod),
+		Dir:     mod.WorkspaceDir,
+		Message: core.DescribeLoadFailure(err),
+	}
 }
 
 func moduleLoadErr(load moduleLoadRequest, err error) error {

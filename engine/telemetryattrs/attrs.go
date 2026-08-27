@@ -10,6 +10,14 @@ const (
 	// on a successful run. (bool)
 	GenerateSkippedAttr = "dagger.io/generate.skipped"
 
+	// GenerateRegeneratedAttr marks a span (named like the skipped-module span)
+	// under which `dagger generate` loaded a module it had skipped again, with
+	// the run's changes applied, because those changes touched the module. The
+	// span's status is the outcome -- it loads, or it still fails with the
+	// post-generation error -- and the TUI's SKIPPED MODULES report shows that
+	// in place of the pre-generation load error. (bool)
+	GenerateRegeneratedAttr = "dagger.io/generate.regenerated"
+
 	// DagBlockedAttr marks a lazy-evaluation resume span that aborted because a
 	// prerequisite result's evaluation failed, rather than because the result's
 	// own deferred work failed. The UI treats a blocked resumption as if the

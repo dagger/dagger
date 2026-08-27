@@ -2802,7 +2802,19 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, srcInst)
+	// The client's schema comes from loading the module, which for a
+	// dagger-module.toml module means building it from its committed generated
+	// files. Those are exactly what the codegen step just wrote into genDirInst
+	// — and, on a first `dagger generate`, exactly what the original source
+	// still lacks. Load the module from the generated context, not the
+	// original one, so client generation follows codegen instead of failing
+	// with "generated file is missing; run `dagger generate`" from inside
+	// `dagger generate` itself.
+	schemaSrc, err := s.generatedModuleSource(ctx, dag, srcInst, genDirInst)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to load generated module source for client generation: %w", err)
+	}
+	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, schemaSrc)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
@@ -2841,6 +2853,33 @@ func (s *moduleSourceSchema) runClientGenerator(
 	}
 
 	return genDirInst, nil
+}
+
+// generatedModuleSource re-loads srcInst from genDirInst — its context
+// directory with the run's generated files applied — at the same source root,
+// so consumers that need the module built (client schema introspection) see
+// the freshly generated code. A source without an SDK has no codegen output to
+// pick up and is returned as-is.
+func (s *moduleSourceSchema) generatedModuleSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	genDirInst dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.ModuleSource], error) {
+	src := srcInst.Self()
+	if src.SDK == nil || src.SDK.Source == "" {
+		return srcInst, nil
+	}
+	var generatedSrc dagql.ObjectResult[*core.ModuleSource]
+	if err := dag.Select(ctx, genDirInst, &generatedSrc, dagql.Selector{
+		Field: "asModuleSource",
+		Args: []dagql.NamedInput{
+			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(src.SourceRootSubpath))},
+		},
+	}); err != nil {
+		return srcInst, err
+	}
+	return generatedSrc, nil
 }
 
 // runGeneratedContext runs codegen, client generation, and module config writing for the given
@@ -3519,10 +3558,14 @@ func (s *moduleSourceSchema) generateOneLocalDependency(
 
 func validateDependencyGeneratorGroup(owner, depPath string, generators *core.GeneratorGroup) error {
 	if len(generators.LoadFailures) > 0 {
+		messages := make([]string, 0, len(generators.LoadFailures))
+		for _, failure := range generators.LoadFailures {
+			messages = append(messages, failure.Message)
+		}
 		return fmt.Errorf(
 			"load owning SDK %q generators: %s",
 			owner,
-			strings.Join(generators.LoadFailures, "; "),
+			strings.Join(messages, "; "),
 		)
 	}
 	if len(generators.Generators) == 0 {

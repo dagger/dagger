@@ -244,7 +244,7 @@ func TestValidateDependencyGeneratorGroup(t *testing.T) {
 
 	t.Run("rejects SDK load failures", func(t *testing.T) {
 		err := validateDependencyGeneratorGroup("go-sdk", "modules/dep", &core.GeneratorGroup{
-			LoadFailures: []string{"failed to load go-sdk", "missing dependency"},
+			LoadFailures: []core.ModuleLoadFailure{{Message: "failed to load go-sdk"}, {Message: "missing dependency"}},
 		})
 		require.EqualError(t, err, `load owning SDK "go-sdk" generators: failed to load go-sdk; missing dependency`)
 	})

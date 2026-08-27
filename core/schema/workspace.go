@@ -3742,7 +3742,7 @@ func matchWorkspaceIncludePath(
 // core schema, so loading can wait until resolution. With bestEffort, per-module
 // load failures are collected and returned instead of aborting (used by unscoped
 // 'dagger generate'); the check/up resolvers pass false to stay strict.
-func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, bestEffort bool) ([]string, error) {
+func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
