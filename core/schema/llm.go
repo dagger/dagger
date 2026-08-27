@@ -223,22 +223,16 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session"),
 	}.Install(srv)
-	// The conversation data types are pure in-memory values whose accessors
-	// only unwrap struct fields; observers (e.g. the CLI's context
-	// visualizer) re-read the whole ever-growing conversation repeatedly, so
-	// accessor spans here would be pure noise in quadratically-growing
-	// volume. Suppress their telemetry entirely.
-	noAccessorTelemetry := dagql.InstallOpts{NoTelemetryAccessors: true}
-	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv, noAccessorTelemetry)
+	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 	// The content-block message model is only visible to v1+ module views;
 	// installing the classes with a view gate also gates their generated
 	// ID/load fields and Env/Binding extensions.
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMSkill](srv).View(AfterVersion("v1.0.0-0")))
-	dagql.Fields[*core.LLMMessage]{}.Install(srv, noAccessorTelemetry)
-	dagql.Fields[*core.LLMContentBlock]{}.Install(srv, noAccessorTelemetry)
-	dagql.Fields[*core.LLMSkill]{}.Install(srv, noAccessorTelemetry)
+	dagql.Fields[*core.LLMMessage]{}.Install(srv)
+	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
+	dagql.Fields[*core.LLMSkill]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))

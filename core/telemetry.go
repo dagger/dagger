@@ -156,7 +156,9 @@ func AroundFunc(
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
 
-	if dagql.IsInternal(ctx) {
+	// Getter accessors are real calls, so retain their trace metadata, but mark
+	// them as internal machinery rather than presenting them as work.
+	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 	if req.PassthroughTelemetry {

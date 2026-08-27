@@ -925,9 +925,9 @@ type FieldSpec struct {
 	NoTelemetry bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
-	// than performing meaningful work. Used to suppress install-span capture
-	// for synthetic accessors (e.g. auto-generated module object field
-	// accessors) so they don't claim ownership of values they merely return.
+	// than performing meaningful work. Their telemetry spans are internal, and
+	// they skip install-span capture so they don't claim ownership of values
+	// they merely return.
 	Trivial bool
 
 	// PassthroughTelemetry keeps this field's telemetry span available for call
@@ -1359,27 +1359,9 @@ type Definitive interface {
 // Fields defines a set of fields for an Object type.
 type Fields[T Typed] []Field[T]
 
-// InstallOpts configures Fields[T].Install.
-type InstallOpts struct {
-	// NoTelemetryAccessors marks the struct-field accessors that Install
-	// auto-generates from struct tags as NoTelemetry. Use it for pure
-	// in-memory data types whose accessors only unwrap a field from their
-	// receiver: their telemetry spans are noise, and for large values that
-	// observers re-read repeatedly (e.g. an LLM conversation's messages)
-	// the span volume is substantial.
-	NoTelemetryAccessors bool
-}
-
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
-func (fields Fields[T]) Install(server *Server, opts_ ...InstallOpts) {
-	var opts InstallOpts
-	for _, o := range opts_ {
-		if o.NoTelemetryAccessors {
-			opts.NoTelemetryAccessors = true
-		}
-	}
-
+func (fields Fields[T]) Install(server *Server) {
 	class := server.InstallObject(NewClass[T](server)).(Class[T])
 
 	var t T
@@ -1395,7 +1377,9 @@ func (fields Fields[T]) Install(server *Server, opts_ ...InstallOpts) {
 			Description:        field.Field.Tag.Get("doc"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
-			NoTelemetry:        opts.NoTelemetryAccessors,
+			// Reflected struct fields are pure getter accessors. Keep their spans
+			// available as internal trace detail without presenting them as work.
+			Trivial: true,
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()

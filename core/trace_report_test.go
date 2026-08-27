@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 )
 
 // TestTraceReportGuardPassesThroughSmallReports verifies the common case: the
@@ -227,5 +228,47 @@ func TestToolCallReportOptsHideTreeButReadTraceKeepsIt(t *testing.T) {
 		if readTraceReportOpts(target).HideSpanTree {
 			t.Errorf("ReadTrace(%+v) must keep the span tree", target)
 		}
+	}
+}
+
+func TestTraceReportHidesInternalSpans(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		internalID
+		visibleID
+	)
+	start := time.Unix(100, 0)
+	snap := func(id byte, name string, parent byte) dagui.SpanSnapshot {
+		s := dagui.SpanSnapshot{
+			ID:        traceTargetSpanID(id),
+			TraceID:   dagui.TraceID{TraceID: trace.TraceID{1}},
+			Name:      name,
+			StartTime: start,
+			EndTime:   start.Add(time.Second),
+			Final:     true,
+		}
+		if parent != 0 {
+			s.ParentID = traceTargetSpanID(parent)
+		}
+		return s
+	}
+
+	root := snap(rootID, "trace root", 0)
+	internal := snap(internalID, "internal getter", rootID)
+	internal.Internal = true
+	visible := snap(visibleID, "visible work", rootID)
+
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{root, internal, visible})
+	session := idtui.NewReportSession(db)
+	report, err := renderTraceReportSession(session, root.ID.String(), traceReportOpts{Scoped: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(report, internal.Name) {
+		t.Fatalf("internal span should be hidden from trace report:\n%s", report)
+	}
+	if !strings.Contains(report, visible.Name) {
+		t.Fatalf("visible span should remain in trace report:\n%s", report)
 	}
 }
