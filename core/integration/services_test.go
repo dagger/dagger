@@ -251,6 +251,35 @@ func (ServiceSuite) TestWithHostnameModuleScoping(ctx context.Context, t *testct
 	})
 }
 
+// A custom hostname is namespaced into the DNS domain of whichever module
+// starts the service, and the running instance is then shared session-wide by
+// content digest without that domain being part of its identity. A consumer in
+// another module therefore ends up holding a valid handle to a running service
+// whose only registered name it cannot resolve. Binding it explicitly still has
+// to work: unlike bare-hostname DNS (see TestWithHostnameModuleScoping), the
+// consumer was handed the service on purpose.
+func (ServiceSuite) TestWithHostnameServiceBindingAcrossModules(ctx context.Context, t *testctx.T) {
+	t.Run("service already started by the producing module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := moduleFixture(t, c, "go/service-bind-hostname-cross").
+			With(withModuleFixture(t, c, "producer", "go/service-bind-hostname-producer")).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("service first started by the binding itself", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := moduleFixture(t, c, "go/service-bind-hostname-cross").
+			With(withModuleFixture(t, c, "producer", "go/service-bind-hostname-producer")).
+			With(daggerCall("run-lazy")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
 func (ServiceSuite) TestWithHostnameCircular(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
