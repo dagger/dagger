@@ -10,6 +10,8 @@
 ["","git-sha",["https://github.com/libfuse/sshfs.git","refs/tags/sshfs-3.7.6"],"7a2d988775446ebe7af9b01c99b3b8e86bddb05a"]
 ["","git-sha",["https://github.com/opencontainers/runc","refs/tags/v1.4.2"],"c241c0bb5e60a8e8c1b2e53d4eca8d0068d8d57e"]
 ["","git-sha",["https://github.com/vito/editor","refs/heads/main"],"1e1ded886d1252071f8b50ada6a4580af8c53866"]
+["","git.ref",["https://github.com/dagger/dang-sdk","HEAD"],{"ref":"refs/heads/main","sha":"5da26366fca40ccbb66ac2f97f57ed95a8f3c17a"}]
+["","git.ref",["https://github.com/dagger/go-sdk","HEAD"],{"ref":"refs/heads/main","sha":"902440e3e097a42cf16354e5eba6b2f0b86194e3"}]
 ["","oci-latest",["docker.io/library/busybox"],"1.38.0"]
 ["","oci-latest",["docker.io/tmknom/markdownlint"],"latest"]
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]
