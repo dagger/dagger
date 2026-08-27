@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,6 +223,48 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, detail)
+	})
+	// The two ID-discovery endpoints below read fe.db directly under
+	// consoleMu, the same discipline as /spans: dispatching onto the event
+	// loop (EncodedIDForCallDigest) would block until some OTHER request
+	// Steps the TUI, because nothing drains the dispatch queue between
+	// console requests.
+	mux.HandleFunc("/id", func(w http.ResponseWriter, r *http.Request) {
+		dig := r.URL.Query().Get("dig")
+		if dig == "" {
+			http.Error(w, "want ?dig=<call digest, e.g. xxh3:...>", http.StatusBadRequest)
+			return
+		}
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		encoded, err := encodedIDForCallDigest(fe.db, dig)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		io.WriteString(w, encoded)
+	})
+	mux.HandleFunc("/calls", func(w http.ResponseWriter, r *http.Request) {
+		pattern := r.URL.Query().Get("grep")
+		if pattern == "" {
+			http.Error(w, "want ?grep=<regexp over rendered calls>", http.StatusBadRequest)
+			return
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("bad pattern %q: %v", pattern, err), http.StatusBadRequest)
+			return
+		}
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		lines := fe.db.GrepCalls(re, 200)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if len(lines) == 0 {
+			io.WriteString(w, "no calls match\n")
+			return
+		}
+		io.WriteString(w, strings.Join(lines, "\n")+"\n")
 	})
 	mux.HandleFunc("/help", fe.consoleHelp)
 	mux.HandleFunc("/", fe.consoleHelp)
@@ -452,6 +495,8 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  POST /resize <CxR>   resize the terminal (e.g. 120x12), return frame\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
 		"  GET  /span?id=<hex>  span detail: status, timing, flags, parent chain\n"+
+		"  GET  /id?dig=<dig>   encoded dagql ID rebuilt for a call digest\n"+
+		"  GET  /calls?grep=<re> content-search ingested call payloads (args untruncated)\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n")

@@ -1,0 +1,119 @@
+# librarian: mount other git repositories into the workspace, read-only.
+#
+# The workspace tools (read/grep/find) only see THIS project, so studying an
+# upstream dependency or a codebase you were asked about used to mean lossy
+# webFetch calls against rendered source pages. `gitClone` closes that gap by
+# mounting the repo's checkout INTO the workspace, where the regular file
+# tools see it like any other directory.
+#
+# The heavy lifting is Workspace.withMountedDirectory, which was designed for
+# exactly this: mounted content is readable through the normal workspace file
+# tools but lives outside the pending changeset — it never appears in
+# status/diff, cannot be edited, and is never committed or exported. So a
+# mount is pure, side-effect-free reading; a first version of this module
+# instead duplicated a whole parallel tool suite (repoGrep/repoFind/repoRead)
+# before realizing the engine already provided the clean primitive.
+
+"""
+Mount other git repositories into the workspace as read-only checkouts, so
+the regular file tools can explore them.
+"""
+type Librarian {
+  """
+  Compose the librarian tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Mount a git repository's checkout into the workspace, read-only.
+
+  The tree appears at `path` (default "mnt/<repo name>") and is readable
+  with the normal file tools — read, grep, find — but stays out of the
+  pending changeset: it never shows in status or diff, cannot be edited,
+  and is never committed or exported. The engine fetches each (url, ref)
+  once and caches it, so mounting is cheap.
+  """
+  gitClone(
+    ws: Workspace!,
+    """
+    Git URL of the repository, e.g. "https://github.com/badlogic/pi-mono".
+    GitHub "owner/name" shorthand works too.
+    """
+    url: String!,
+    """
+    Branch, tag, or commit to check out. Empty means the default branch.
+    """
+    ref: String! = "",
+    """
+    Workspace-relative path to mount at. Empty mounts at "mnt/<repo name>".
+    Mounted content shadows whatever the workspace has at that path, so
+    prefer the default over pointing this at existing directories.
+    """
+    path: String! = "",
+  ): Workspace! {
+    let normalized = normalize(url)
+    let repository = git(normalized)
+    let target = if (ref == "") {
+      repository.head
+    } else {
+      # ref() accepts a commit id, tag, branch, or fully-qualified ref.
+      repository.ref(ref)
+    }
+    let dest = if (path == "") {
+      "mnt/" + Path(normalized.trimSuffix("/").trimSuffix(".git")).name
+    } else {
+      path
+    }
+
+    let at = if (ref == "") { "" } else { ` at ${ref}` }
+    print(`Mounted ${normalized}${at} read-only at ${dest} — the regular file tools (read, grep, find) work on it; unmount with gitUnmount when done.`)
+
+    ws.withMountedDirectory(dest, target.tree(discardGitDir: true))
+  }
+
+  """
+  Remove a mount created with gitClone, restoring whatever the workspace
+  had at that path.
+  """
+  gitUnmount(
+    ws: Workspace!,
+    """
+    Workspace-relative path of the mount to remove, e.g. "mnt/pi-mono".
+    """
+    path: String!,
+  ): Workspace! {
+    ws.withoutMount(path)
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  # Expand GitHub "owner/name" shorthand into a full URL; pass anything that
+  # already looks like a URL through untouched.
+  let normalize(repo: String!): String! {
+    if (repo.containsMatch(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)) {
+      "https://github.com/" + repo
+    } else {
+      repo
+    }
+  }
+
+  # Instructions for the agent holding these tools.
+  let systemPrompt: String! = """
+    You can mount OTHER git repositories into your workspace, read-only,
+    with `gitClone` — reach for it whenever code you need to study lives
+    outside this workspace (an upstream dependency, a project you were
+    asked about), instead of fetching rendered source pages with webFetch.
+
+    The checkout appears under mnt/<name> (or the path you pass) and your
+    regular file tools — read, grep, find — work on it like on any other
+    files. The mount stays out of status and diff, cannot be edited, and is
+    never committed or exported, so exploring is side-effect-free. Pass
+    `ref` to pin a branch, tag, or commit; fetches are cached by the
+    engine, so mounting is cheap. `gitUnmount` cleans up a mount you are
+    done with.
+  """
+}
