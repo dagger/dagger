@@ -1,3 +1,10 @@
+// Syntax highlighting for the Dagger docs.
+//
+// Every colour is a CSS variable rather than a literal, so a single theme
+// object serves both light and dark. The two palettes live together in
+// custom.scss under "Syntax palette" and flip with html[data-theme], which
+// keeps them next to the design tokens they are derived from.
+
 type PrismThemeColors = {
   background: string;
   text: string;
@@ -16,22 +23,25 @@ type PrismThemeColors = {
   deleted: string;
 };
 
-const darkColors: PrismThemeColors = {
-  background: "var(--color-backgroundSecondaryDark)",
-  text: "var(--color-gray-100)",
-  muted: "var(--color-gray-400)",
-  punctuation: "var(--color-gray-400)",
-  keyword: "var(--color-purple-200)",
-  operator: "var(--color-purple-200)",
-  string: "var(--color-teal-200)",
-  function: "var(--color-blue-200)",
-  builtin: "var(--color-cyan-200)",
-  type: "var(--color-orange-200)",
-  property: "var(--color-blue-200)",
-  constant: "var(--color-yellow-200)",
-  directive: "var(--color-pink-200)",
-  inserted: "var(--color-green-200)",
-  deleted: "var(--color-red-200)",
+const themedColors: PrismThemeColors = {
+  // The code block's own surface and radius come from custom.scss; leaving
+  // this transparent stops Prism painting a second background inside the
+  // rounded border, which showed as a square fringe at the corners.
+  background: "transparent",
+  text: "var(--syntax-text)",
+  muted: "var(--syntax-muted)",
+  punctuation: "var(--syntax-punctuation)",
+  keyword: "var(--syntax-keyword)",
+  operator: "var(--syntax-operator)",
+  string: "var(--syntax-string)",
+  function: "var(--syntax-function)",
+  builtin: "var(--syntax-builtin)",
+  type: "var(--syntax-type)",
+  property: "var(--syntax-property)",
+  constant: "var(--syntax-constant)",
+  directive: "var(--syntax-directive)",
+  inserted: "var(--syntax-inserted)",
+  deleted: "var(--syntax-deleted)",
 };
 
 function createPrismTheme(colors: PrismThemeColors) {
@@ -148,4 +158,7 @@ function createPrismTheme(colors: PrismThemeColors) {
   };
 }
 
-export const daggerDarkPrismTheme = createPrismTheme(darkColors);
+export const daggerPrismTheme = createPrismTheme(themedColors);
+
+/** @deprecated The theme is no longer dark-only; use daggerPrismTheme. */
+export const daggerDarkPrismTheme = daggerPrismTheme;
