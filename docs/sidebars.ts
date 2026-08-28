@@ -48,10 +48,9 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/introduction",
+        "getting-started/try-dagger",
         "getting-started/quickstart",
-        "getting-started/workspace-setup",
-        "getting-started/pre-push",
-        "getting-started/post-push",
+        "getting-started/cloud-checks",
       ],
     },
 

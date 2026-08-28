@@ -1466,7 +1466,7 @@
   to = "/cli/reference"
   status = 301
 
-# The trigger guides were cut. Post-push workflow is the surviving page on
+# The trigger guides were cut. Set up Cloud Checks is the surviving page on
 # running checks after a push.
 [[redirects]]
   from = "/adopting/triggers/*"
@@ -1501,6 +1501,25 @@
   status = 301
 
 ## end: migration 0.21 -> 1.0 ##
+
+## start: Getting Started page renames ##
+
+[[redirects]]
+  from = "/getting-started/workspace-setup"
+  to = "/getting-started/quickstart"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/post-push"
+  to = "/cloud-checks"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/pre-push"
+  to = "/cli/checking"
+  status = 301
+
+## end: Getting Started page renames ##
 
 ## start: disabled 1.0 redirects ##
 ##
