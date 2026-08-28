@@ -260,10 +260,6 @@ func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChan
 	return merged, nil
 }
 
-// RegeneratedModuleMessage is what the report says about a skipped module that
-// loads once the run's changes are applied.
-const RegeneratedModuleMessage = "could not load before this run's changes; loads with them applied"
-
 // verifySkippedModules settles the modules this group skipped at load time.
 // A module that failed to load because its generated files were missing or
 // stale is often repaired by the very run that skipped it — which can only be
@@ -353,8 +349,9 @@ func (gg *GeneratorGroup) generatedWorkspaceRoot(ctx context.Context, changes []
 }
 
 // verifySkippedModule loads one skipped module from the generated workspace
-// root and records the outcome on its "regenerated" span: OK with
-// RegeneratedModuleMessage, or the described post-generation load error.
+// root and records the outcome on its "regenerated" span: OK, or the described
+// post-generation load error. The span's status is the whole answer; the
+// report words a success itself (idtui regeneratedModuleMessage).
 func verifySkippedModule(ctx context.Context, generated dagql.ObjectResult[*Directory], failure ModuleLoadFailure) {
 	var rerr error
 	ctx, span := Tracer(ctx).Start(ctx, failure.Name,
@@ -385,7 +382,6 @@ func verifySkippedModule(ctx context.Context, generated dagql.ObjectResult[*Dire
 		rerr = LoadFailureCause("still fails to load with this run's changes: ", err)
 		return
 	}
-	span.SetAttributes(attribute.String(telemetry.UIMessageAttr, RegeneratedModuleMessage))
 }
 
 func (gg *GeneratorGroup) Clone() *GeneratorGroup {

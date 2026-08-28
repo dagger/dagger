@@ -184,7 +184,6 @@ func TestGenerateReportShowsRegeneratedModules(t *testing.T) {
 			EndTime:             start.Add(3 * time.Second),
 			ParentID:            rootID,
 			GenerateRegenerated: true,
-			Message:             "could not load before this run's changes; loads with them applied",
 			Final:               true,
 		},
 		{

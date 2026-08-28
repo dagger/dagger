@@ -10,6 +10,11 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
+// regeneratedModuleMessage is what the report says about a skipped module that
+// loads once the run's changes are applied. A successful regenerated span
+// carries no message of its own: its OK status is the whole outcome.
+const regeneratedModuleMessage = "could not load before this run's changes; loads with them applied"
+
 // generateReport renders the SKIPPED MODULES section for the final report: the
 // workspace modules best-effort `dagger generate` could not load and skipped,
 // each as a failed status line with its load error nested. It mirrors the
@@ -47,9 +52,7 @@ func (fe *frontendPretty) generateReport(_ tuist.Context, r *renderer, zoomed bo
 					out.String(dur).Faint().String(),
 					out.String("REGENERATED").Foreground(termenv.ANSIGreen).String(),
 				)
-				if regen.Message != "" {
-					fmt.Fprintf(out, "  %s\n", out.String(regen.Message).Faint().String())
-				}
+				fmt.Fprintf(out, "  %s\n", out.String(regeneratedModuleMessage).Faint().String())
 			}
 			continue
 		}
