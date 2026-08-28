@@ -48,10 +48,14 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/introduction",
+        {
+          type: "doc",
+          id: "getting-started/install",
+          label: "Install",
+        },
+        "getting-started/try-dagger",
         "getting-started/quickstart",
-        "getting-started/workspace-setup",
-        "getting-started/pre-push",
-        "getting-started/post-push",
+        "getting-started/cloud-checks",
       ],
     },
 
@@ -64,7 +68,6 @@ module.exports = {
       collapsible: true,
       collapsed: false,
       items: [
-        "cli/install",
         "cli/checking",
         "cli/generating",
         "cli/services",

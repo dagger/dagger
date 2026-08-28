@@ -1,0 +1,112 @@
+---
+title: "Set up Cloud Checks"
+slug: /cloud-checks
+description: "Run workspace Checks automatically after Git events"
+---
+
+# Set up Cloud Checks
+
+Complete the [Quickstart](./quickstart.mdx) before you start. Verify that `dagger check` passes in the workspace.
+
+In this guide, you will connect your GitHub repository to Dagger Cloud. You will push a commit to start Cloud Checks.
+
+A Git event, such as a push or pull request, starts Cloud Checks. Cloud Checks run your Checks on Cloud Engines.
+
+You do not need a CI workflow file.
+
+The workspace must be in a GitHub repository. Its Git `origin` remote must point to that repository.
+
+## Sign in to Dagger Cloud
+
+Sign in or create an account:
+
+```shell
+dagger cloud login
+```
+
+Complete authentication in the browser.
+
+Create or select a Dagger Cloud organization when requested.
+
+## Connect the repository
+
+Connect the GitHub account or organization that owns the repository:
+
+```shell
+dagger cloud integration create github --open
+```
+
+Complete the setup in the browser.
+
+Select the GitHub account or organization that owns the repository.
+
+Grant Dagger access to the repository.
+
+## Enable Cloud Checks
+
+Run this command from the workspace:
+
+```shell
+dagger cloud check on
+```
+
+Dagger gets the repository from the Git `origin` remote. The command prints `on` when Cloud Checks are enabled.
+
+## Trigger Cloud Checks
+
+Review the files that the Quickstart changed:
+
+```shell
+git status --short
+```
+
+Stage `dagger.toml`:
+
+```shell
+git add dagger.toml
+```
+
+For each additional file that you changed during Quickstart, run this command. Replace the example path with the applicable path:
+
+```shell
+git add path/to/changed-file
+```
+
+Commit all staged files:
+
+```shell
+git commit -m "Set up Dagger"
+```
+
+Push the commit to GitHub:
+
+```shell
+git push -u origin HEAD
+```
+
+The push is a Git event. Cloud Checks run the same Checks that `dagger check` runs locally.
+
+## View the result
+
+Cloud Checks start after the push. Show the latest activity:
+
+```shell
+dagger activity
+```
+
+Find the row with `Set up Dagger` in the `DESCRIPTION` column.
+
+If the row is absent, wait and run `dagger activity` again.
+
+If `CHECKS` contains `🟡`, wait and run the command again.
+
+You are done when `CHECKS` shows only `🟢N`. `N` is the number of Checks that passed.
+
+If `CHECKS` contains `🔴`, run `dagger check` locally. Fix the failure. Then commit and push the fix.
+
+Cloud Checks are now enabled for the repository. Future pushes and pull requests start the Checks automatically.
+
+## Next steps
+
+- [Run selected Checks](../cli/checking.mdx)
+- [Manage Cloud Checks from the CLI](../cli/reference/index.mdx#dagger-cloud-check)
