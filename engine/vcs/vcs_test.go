@@ -6,6 +6,8 @@ package vcs
 
 import (
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,9 +17,15 @@ import (
 	"testing"
 )
 
-// Test that RepoRootForImportPath creates the correct RepoRoot for a given importPath.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+// Test that RepoRootForModulePath creates the correct RepoRoot for a given modulePath.
 // TODO(cmang): Add tests for SVN and BZR.
-func TestRepoRootForImportPath(t *testing.T) {
+func TestRepoRootForModulePath(t *testing.T) {
 	if runtime.GOOS == "android" {
 		t.Skipf("incomplete source tree on %s", runtime.GOOS)
 	}
@@ -174,7 +182,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			"gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 			&RepoRoot{
 				VCS:  vcsGit,
-				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork",
+				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git",
 				Root: "gitlab.com/testguigui1/dagger-public-sub/mywork",
 			},
 		},
@@ -190,7 +198,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			"gitlab.com/dagger-modules/test/more/dagger-test-modules-public/../../..",
 			&RepoRoot{
 				VCS:  vcsGit,
-				Repo: "https://gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+				Repo: "https://gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
 				Root: "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 			},
 		},
@@ -346,28 +354,94 @@ func TestRepoRootForImportPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := RepoRootForImportPath(test.path, true)
+		got, err := RepoRootForModulePath(test.path, true)
 		if err != nil {
-			t.Errorf("RepoRootForImportPath(%q): %v", test.path, err)
+			t.Errorf("RepoRootForModulePath(%q): %v", test.path, err)
 			continue
 		}
 		want := test.want
 		if want == nil {
 			if got != nil {
-				t.Errorf("RepoRootForImportPath(%q) = %v, want nil", test.path, got)
+				t.Errorf("RepoRootForModulePath(%q) = %v, want nil", test.path, got)
 			}
 			continue
 		}
 		if got.VCS == nil || want.VCS == nil {
-			t.Errorf("RepoRootForImportPath(%q): got.VCS or want.VCS is nil", test.path)
+			t.Errorf("RepoRootForModulePath(%q): got.VCS or want.VCS is nil", test.path)
 			continue
 		}
 		if got.VCS.Name != want.VCS.Name || got.Repo != want.Repo {
-			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
+			t.Errorf("RepoRootForModulePath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
 		}
 		if got.Root != want.Root {
-			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", test.path, got.VCS, got.Root, want.VCS, want.Root)
+			t.Errorf("RepoRootForModulePath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", test.path, got.VCS, got.Root, want.VCS, want.Root)
 		}
+	}
+}
+
+func TestDaggerModuleDiscovery(t *testing.T) {
+	originalHTTPClient := httpClient
+	t.Cleanup(func() { httpClient = originalHTTPClient })
+
+	var queries []string
+	httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		queries = append(queries, req.URL.RawQuery)
+		body := `<meta name="dagger-module" content="vanity.example/module git https://github.com/acme/module.git">
+			<meta name="go-import" content="vanity.example/module git https://github.com/legacy/module">`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+
+	root, err := RepoRootForModulePathDynamic("vanity.example/module/subdir", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Root != "vanity.example/module" {
+		t.Fatalf("unexpected module root: %q", root.Root)
+	}
+	if root.Repo != "https://github.com/acme/module.git" {
+		t.Fatalf("unexpected clone URL: %q", root.Repo)
+	}
+	if !root.IsVanity {
+		t.Fatal("expected a vanity module root")
+	}
+	if !reflect.DeepEqual(queries, []string{"dagger-get=1", "dagger-get=1"}) {
+		t.Fatalf("unexpected discovery queries: %v", queries)
+	}
+}
+
+func TestLegacyGoDiscoveryFallback(t *testing.T) {
+	originalHTTPClient := httpClient
+	t.Cleanup(func() { httpClient = originalHTTPClient })
+
+	var queries []string
+	httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		queries = append(queries, req.URL.RawQuery)
+		body := "<html></html>"
+		if req.URL.Query().Get(legacyGoGetParam) == "1" {
+			body = `<meta name="go-import" content="legacy.example/module git https://github.com/acme/legacy">`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+
+	root, err := RepoRootForModulePathDynamic("legacy.example/module", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Repo != "https://github.com/acme/legacy" {
+		t.Fatalf("unexpected clone URL: %q", root.Repo)
+	}
+	if !reflect.DeepEqual(queries, []string{"dagger-get=1", "go-get=1"}) {
+		t.Fatalf("unexpected discovery queries: %v", queries)
 	}
 }
 
@@ -414,67 +488,67 @@ func TestFromDir(t *testing.T) {
 	}
 }
 
-var parseMetaGoImportsTests = []struct {
+var parseModuleMetaTests = []struct {
 	in  string
-	out []metaImport
+	out []moduleMeta
 }{
 	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
+		`<meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">`,
+		[]moduleMeta{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
 	},
 	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
-		<meta name="go-import" content="baz/quux git http://github.com/rsc/baz/quux">`,
-		[]metaImport{
+		`<meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">
+		<meta name="dagger-module" content="baz/quux git http://github.com/rsc/baz/quux">`,
+		[]moduleMeta{
 			{"foo/bar", "git", "https://github.com/rsc/foo/bar"},
 			{"baz/quux", "git", "http://github.com/rsc/baz/quux"},
 		},
 	},
 	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
-		<meta name="go-import" content="foo/bar mod http://github.com/rsc/baz/quux">`,
-		[]metaImport{
+		`<meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">
+		<meta name="dagger-module" content="foo/bar mod http://github.com/rsc/baz/quux">`,
+		[]moduleMeta{
 			{"foo/bar", "git", "https://github.com/rsc/foo/bar"},
 		},
 	},
 	{
-		`<meta name="go-import" content="foo/bar mod http://github.com/rsc/baz/quux">
-		<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">`,
-		[]metaImport{
+		`<meta name="dagger-module" content="foo/bar mod http://github.com/rsc/baz/quux">
+		<meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">`,
+		[]moduleMeta{
 			{"foo/bar", "git", "https://github.com/rsc/foo/bar"},
 		},
 	},
 	{
 		`<head>
-		<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
+		<meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">
 		</head>`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
+		[]moduleMeta{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
 	},
 	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
+		`<meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">
 		<body>`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
+		[]moduleMeta{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
 	},
 	{
-		`<!doctype html><meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
+		`<!doctype html><meta name="dagger-module" content="foo/bar git https://github.com/rsc/foo/bar">`,
+		[]moduleMeta{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
 	},
 	{
 		// XML doesn't like <div style=position:relative>.
-		`<!doctype html><title>Page Not Found</title><meta name=go-import content="chitin.io/chitin git https://github.com/chitin-io/chitin"><div style=position:relative>DRAFT</div>`,
-		[]metaImport{{"chitin.io/chitin", "git", "https://github.com/chitin-io/chitin"}},
+		`<!doctype html><title>Page Not Found</title><meta name=dagger-module content="chitin.io/chitin git https://github.com/chitin-io/chitin"><div style=position:relative>DRAFT</div>`,
+		[]moduleMeta{{"chitin.io/chitin", "git", "https://github.com/chitin-io/chitin"}},
 	},
 	{
-		`<meta name="go-import" content="myitcv.io git https://github.com/myitcv/x">
-	        <meta name="go-import" content="myitcv.io/blah2 mod https://raw.githubusercontent.com/myitcv/pubx/master">
+		`<meta name="dagger-module" content="myitcv.io git https://github.com/myitcv/x">
+	        <meta name="dagger-module" content="myitcv.io/blah2 mod https://raw.githubusercontent.com/myitcv/pubx/master">
 	        `,
-		[]metaImport{{"myitcv.io", "git", "https://github.com/myitcv/x"}},
+		[]moduleMeta{{"myitcv.io", "git", "https://github.com/myitcv/x"}},
 	},
 }
 
-func TestParseMetaGoImports(t *testing.T) {
-	for i, tt := range parseMetaGoImportsTests {
-		out, err := parseMetaGoImports(strings.NewReader(tt.in))
+func TestParseModuleMeta(t *testing.T) {
+	for i, tt := range parseModuleMetaTests {
+		out, err := parseModuleMeta(strings.NewReader(tt.in), daggerModuleMetaName)
 		if err != nil {
 			t.Errorf("test#%d: %v", i, err)
 			continue
@@ -529,45 +603,45 @@ func TestValidateRepoRoot(t *testing.T) {
 	}
 }
 
-func TestMatchGoImport(t *testing.T) {
+func TestMatchModuleMeta(t *testing.T) {
 	tests := []struct {
-		imports []metaImport
+		modules []moduleMeta
 		path    string
-		mi      metaImport
+		meta    moduleMeta
 		err     error
 	}{
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
 			path: "example.com/user/foo",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			meta: moduleMeta{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
 			path: "example.com/user/foo/",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			meta: moduleMeta{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
 			path: "example.com/user/foo",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			meta: moduleMeta{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
 			path: "example.com/user/fooa",
-			mi:   metaImport{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			meta: moduleMeta{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
@@ -575,7 +649,7 @@ func TestMatchGoImport(t *testing.T) {
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
@@ -583,7 +657,7 @@ func TestMatchGoImport(t *testing.T) {
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
@@ -591,7 +665,7 @@ func TestMatchGoImport(t *testing.T) {
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
@@ -599,7 +673,7 @@ func TestMatchGoImport(t *testing.T) {
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
-			imports: []metaImport{
+			modules: []moduleMeta{
 				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
 			},
@@ -609,9 +683,9 @@ func TestMatchGoImport(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		mi, err := matchGoImport(test.imports, test.path)
-		if mi != test.mi {
-			t.Errorf("unexpected metaImport; got %v, want %v", mi, test.mi)
+		meta, err := matchModuleMeta(test.modules, test.path)
+		if meta != test.meta {
+			t.Errorf("unexpected module metadata; got %v, want %v", meta, test.meta)
 		}
 
 		got := err

@@ -115,8 +115,8 @@ type Parsed struct {
 
 	SourceUser     string
 	CloneUser      string
-	SourceCloneRef string // original user-provided username
-	CloneRef       string // resolved username
+	SourceCloneRef string // repository root as written by the user
+	CloneRef       string // repository URL used for Git operations
 }
 
 // EndpointError indicates the ref could not be parsed/resolved as a git
@@ -165,14 +165,14 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	}
 
 	// Try to isolate the root of the git repo
-	// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
+	// RepoRootForModulePath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
 	// would be compatible with this function to benefit from the repo URL and root splitting
-	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.ModPath, false)
+	repoRoot, err := vcs.RepoRootForModulePath(gitParsed.ModPath, false)
 	if err != nil {
-		return Parsed{}, EndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
+		return Parsed{}, EndpointError{fmt.Errorf("failed to get repo root for module path: %w", err)}
 	}
 	if repoRoot == nil || repoRoot.VCS == nil {
-		return Parsed{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.ModPath)
+		return Parsed{}, fmt.Errorf("invalid repo root for module path: %s", gitParsed.ModPath)
 	}
 	if repoRoot.VCS.Name != "Git" {
 		return Parsed{}, fmt.Errorf("repo root is not a Git repo: %s", gitParsed.ModPath)
@@ -218,8 +218,19 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 
 	gitParsed.SourceCloneRef = gitParsed.Scheme.Prefix() + sourceUser + repoRootWithPort
 	gitParsed.CloneRef = gitParsed.Scheme.Prefix() + cloneUser + repoRootWithPort
+	gitParsed.CloneRef = resolveCloneRef(gitParsed.CloneRef, gitParsed.RepoRoot, gitParsed.Scheme)
 
 	return gitParsed, nil
+}
+
+func resolveCloneRef(sourceRef string, repoRoot *vcs.RepoRoot, scheme SchemeType) string {
+	// A vanity module path names the module, but its metadata names the Git
+	// repository to fetch. Explicit SSH references keep their original target
+	// because their user and port are part of the requested Git transport.
+	if repoRoot.IsVanity && scheme != SchemeSSH && scheme != SchemeSCPLike {
+		return repoRoot.Repo
+	}
+	return sourceRef
 }
 
 func isSCPLike(ref string) bool {

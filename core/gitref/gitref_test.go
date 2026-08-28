@@ -131,10 +131,12 @@ func TestParse(t *testing.T) {
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 			want: Parsed{
 				ModPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
-				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
+				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
 				RepoRootSubdir: "depth1/depth2",
 				Scheme:         NoScheme,
 				SourceUser:     "",
+				SourceCloneRef: "gitlab.com/testguigui1/dagger-public-sub/mywork",
+				CloneRef:       "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git",
 			},
 		},
 		{
@@ -148,14 +150,14 @@ func TestParse(t *testing.T) {
 			},
 		},
 
-		// Edge case of RepoRootForImportPath
+		// Edge case of RepoRootForModulePath
 		// private GitLab: go-get unauthenticated returns obfuscated repo root
 		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L210-221
 		{
 			urlStr: "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private/depth1/depth2",
 			want: Parsed{
 				ModPath:        "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private/depth1/depth2",
-				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private", Repo: "https://gitlab.com/dagger-modules/private"},
+				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private", Repo: "https://gitlab.com/dagger-modules/private.git"},
 				RepoRootSubdir: "test/more/dagger-test-modules-private/depth1/depth2",
 				Scheme:         SchemeSSH,
 				SourceUser:     "",
@@ -287,4 +289,27 @@ func TestParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveCloneRef(t *testing.T) {
+	vanityRoot := &vcs.RepoRoot{
+		Root:     "vanity.example/module",
+		Repo:     "https://github.com/acme/module.git",
+		IsVanity: true,
+	}
+	require.Equal(t,
+		"https://github.com/acme/module.git",
+		resolveCloneRef("vanity.example/module", vanityRoot, NoScheme),
+	)
+	require.Equal(t,
+		"ssh://user@vanity.example/module",
+		resolveCloneRef("ssh://user@vanity.example/module", vanityRoot, SchemeSSH),
+	)
+	require.Equal(t,
+		"github.com/acme/module",
+		resolveCloneRef("github.com/acme/module", &vcs.RepoRoot{
+			Root: "github.com/acme/module",
+			Repo: "https://github.com/acme/module",
+		}, NoScheme),
+	)
 }

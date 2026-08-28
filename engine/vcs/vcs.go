@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package vcs exposes functions for resolving import paths
-// and using version control systems, which can be used to
-// implement behavior similar to the standard "go get" command.
+// Package vcs resolves Dagger module paths to version control repositories.
 package vcs
 
 import (
@@ -258,11 +256,11 @@ func (v *Cmd) LogAtRev(dir, rev, logTemplate string) ([]byte, error) {
 	return v.runOutput(dir, logAtRevCmd, "limit", strconv.Itoa(1), "template", logTemplate)
 }
 
-// A vcsPath describes how to convert an import path into a
+// A vcsPath describes how to convert a module path into a
 // version control system and repository name.
 type vcsPath struct {
 	prefix string                              // prefix this description applies to
-	re     string                              // pattern for import path
+	re     string                              // pattern for module path
 	repo   string                              // repository to use (expand with match of re)
 	vcs    string                              // version control system to use (expand with match of re)
 	check  func(match map[string]string) error // additional checks
@@ -273,7 +271,7 @@ type vcsPath struct {
 
 // FromDir inspects dir and its parents to determine the
 // version control system and code repository to use.
-// On return, root is the import path
+// On return, root is the module path
 // corresponding to the root of the repository.
 func FromDir(dir, srcRoot string) (vcs *Cmd, root string, err error) {
 	// Clean and double-check that dir is in (a subdirectory of) srcRoot.
@@ -332,57 +330,60 @@ type RepoRoot struct {
 	// Repo is the repository URL, including scheme.
 	Repo string
 
-	// Root is the import path corresponding to the root of the
+	// Root is the module path corresponding to the root of the
 	// repository.
 	Root string
+
+	// IsVanity reports whether Root was resolved through HTML metadata.
+	IsVanity bool
 }
 
-// RepoRootForImportPath analyzes importPath to determine the
+// RepoRootForModulePath analyzes modulePath to determine the
 // version control system, and code repository to use.
-func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
-	rr, err := RepoRootForImportPathStatic(importPath, "")
+func RepoRootForModulePath(modulePath string, verbose bool) (*RepoRoot, error) {
+	rr, err := RepoRootForModulePathStatic(modulePath, "")
 	if err == errUnknownSite {
-		rr, err = RepoRootForImportDynamic(importPath, verbose)
-		// RepoRootForImportDynamic returns error detail
+		rr, err = RepoRootForModulePathDynamic(modulePath, verbose)
+		// RepoRootForModulePathDynamic returns error detail
 		// that is irrelevant if the user didn't intend to use a
-		// dynamic import in the first place.
+		// vanity module path in the first place.
 		// Squelch it.
 		if err != nil {
-			if Verbose {
-				log.Printf("import %q: %v", importPath, err)
+			if verbose {
+				log.Printf("module %q: %v", modulePath, err)
 			}
-			err = fmt.Errorf("unrecognized import path %q", importPath)
+			err = fmt.Errorf("unrecognized module path %q", modulePath)
 		}
 	}
 
-	if err == nil && strings.Contains(importPath, "...") && strings.Contains(rr.Root, "...") {
+	if err == nil && strings.Contains(modulePath, "...") && strings.Contains(rr.Root, "...") {
 		// Do not allow wildcards in the repo root.
 		rr = nil
-		err = fmt.Errorf("cannot expand ... in %q", importPath)
+		err = fmt.Errorf("cannot expand ... in %q", modulePath)
 	}
 	return rr, err
 }
 
 var errUnknownSite = errors.New("dynamic lookup required to find mapping")
 
-// RepoRootForImportPathStatic attempts to map importPath to a
+// RepoRootForModulePathStatic attempts to map modulePath to a
 // RepoRoot using the commonly-used VCS hosting sites in vcsPaths
-// (github.com/user/dir), or from a fully-qualified importPath already
+// (github.com/user/dir), or from a fully-qualified modulePath already
 // containing its VCS type (foo.com/repo.git/dir)
 //
 // If scheme is non-empty, that scheme is forced.
-func RepoRootForImportPathStatic(importPath, scheme string) (*RepoRoot, error) {
-	if strings.Contains(importPath, "://") {
-		return nil, fmt.Errorf("invalid import path %q", importPath)
+func RepoRootForModulePathStatic(modulePath, scheme string) (*RepoRoot, error) {
+	if strings.Contains(modulePath, "://") {
+		return nil, fmt.Errorf("invalid module path %q", modulePath)
 	}
 	for _, srv := range vcsPaths {
-		if !strings.HasPrefix(importPath, srv.prefix) {
+		if !strings.HasPrefix(modulePath, srv.prefix) {
 			continue
 		}
-		m := srv.regexp.FindStringSubmatch(importPath)
+		m := srv.regexp.FindStringSubmatch(modulePath)
 		if m == nil {
 			if srv.prefix != "" {
-				return nil, fmt.Errorf("invalid %s import path %q", srv.prefix, importPath)
+				return nil, fmt.Errorf("invalid %s module path %q", srv.prefix, modulePath)
 			}
 			continue
 		}
@@ -390,7 +391,6 @@ func RepoRootForImportPathStatic(importPath, scheme string) (*RepoRoot, error) {
 		// Build map of named subexpression matches for expand.
 		match := map[string]string{
 			"prefix": srv.prefix,
-			"import": importPath,
 		}
 		for i, name := range srv.regexp.SubexpNames() {
 			if name != "" && match[name] == "" {
@@ -434,89 +434,119 @@ func RepoRootForImportPathStatic(importPath, scheme string) (*RepoRoot, error) {
 	return nil, errUnknownSite
 }
 
-// RepoRootForImportDynamic finds a *RepoRoot for a custom domain that's not
-// statically known by RepoRootForImportPathStatic.
+const (
+	daggerDiscoveryParam = "dagger-get"
+	daggerModuleMetaName = "dagger-module"
+	legacyGoGetParam     = "go-get"
+	legacyGoImportMeta   = "go-import"
+)
+
+type moduleDiscovery struct {
+	queryParam string
+	metaName   string
+}
+
+type discoveryUnavailableError struct{ error }
+
+func (err discoveryUnavailableError) Unwrap() error { return err.error }
+
+var (
+	daggerModuleDiscovery = moduleDiscovery{daggerDiscoveryParam, daggerModuleMetaName}
+	legacyGoDiscovery     = moduleDiscovery{legacyGoGetParam, legacyGoImportMeta}
+)
+
+// RepoRootForModulePathDynamic finds a *RepoRoot for a custom domain that's not
+// statically known by RepoRootForModulePathStatic. Dagger-native discovery is
+// preferred, with Go vanity metadata retained as a compatibility fallback.
 //
-// This handles custom import paths like "name.tld/pkg/foo" or just "name.tld".
-func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error) {
-	// Preserve the original importPath for matching and error messages
-	originalImportPath := importPath
+// This handles custom module paths like "name.tld/pkg/foo" or just "name.tld".
+func RepoRootForModulePathDynamic(modulePath string, verbose bool) (*RepoRoot, error) {
+	rr, err := repoRootForModulePathDynamic(modulePath, verbose, daggerModuleDiscovery)
+	var unavailable discoveryUnavailableError
+	if errors.As(err, &unavailable) {
+		return repoRootForModulePathDynamic(modulePath, verbose, legacyGoDiscovery)
+	}
+	return rr, err
+}
 
-	// Pre-process importPath to remove trailing '/..' components for refs
-	importPath = strings.TrimSuffix(importPath, "/")
+func repoRootForModulePathDynamic(modulePath string, verbose bool, discovery moduleDiscovery) (*RepoRoot, error) {
+	// Preserve the original modulePath for matching and error messages.
+	originalModulePath := modulePath
+
+	// Pre-process modulePath to remove trailing '/..' components for refs.
+	modulePath = strings.TrimSuffix(modulePath, "/")
 	trailingDotsRe := regexp.MustCompile(`(/(?:\.\.)+)+$`)
-	importPath = trailingDotsRe.ReplaceAllString(importPath, "")
+	modulePath = trailingDotsRe.ReplaceAllString(modulePath, "")
 
-	slash := strings.Index(importPath, "/")
+	slash := strings.Index(modulePath, "/")
 	if slash < 0 {
-		slash = len(importPath)
+		slash = len(modulePath)
 	}
-	host := importPath[:slash]
+	host := modulePath[:slash]
 	if !strings.Contains(host, ".") {
-		return nil, errors.New("import path doesn't contain a hostname")
+		return nil, errors.New("module path doesn't contain a hostname")
 	}
 
-	urlStr, body, err := httpsOrHTTP(importPath)
+	urlStr, body, err := httpsOrHTTP(modulePath, discovery.queryParam)
 	if err != nil {
-		return nil, fmt.Errorf("http/https fetch: %w", err)
+		return nil, discoveryUnavailableError{fmt.Errorf("http/https fetch: %w", err)}
 	}
 	defer body.Close()
-	imports, err := parseMetaGoImports(body)
+	modules, err := parseModuleMeta(body, discovery.metaName)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", originalImportPath, err)
+		return nil, discoveryUnavailableError{fmt.Errorf("parsing %s: %w", originalModulePath, err)}
 	}
-	metaImport, err := matchGoImport(imports, originalImportPath)
+	meta, err := matchModuleMeta(modules, originalModulePath)
 	if err != nil {
 		if err != errNoMatch {
 			return nil, fmt.Errorf("parse %s: %w", urlStr, err)
 		}
-		return nil, fmt.Errorf("parse %s: no go-import meta tags", urlStr)
+		return nil, discoveryUnavailableError{fmt.Errorf("parse %s: no %s meta tags: %w", urlStr, discovery.metaName, errNoMatch)}
 	}
 	if verbose {
-		log.Printf("get %q: found meta tag %#v at %s", originalImportPath, metaImport, urlStr)
+		log.Printf("get %q: found %s meta tag %#v at %s", originalModulePath, discovery.metaName, meta, urlStr)
 	}
-	// If the import was "uni.edu/bob/project", which said the
+	// If the module was "uni.edu/bob/project", which said the
 	// prefix was "uni.edu" and the RepoRoot was "evilroot.com",
 	// make sure we don't trust Bob and check out evilroot.com to
 	// "uni.edu" yet (possibly overwriting/preempting another
 	// non-evil student).  Instead, first verify the root and see
 	// if it matches Bob's claim.
-	if metaImport.Prefix != originalImportPath {
+	if meta.Prefix != originalModulePath {
 		if verbose {
-			log.Printf("get %q: verifying non-authoritative meta tag", originalImportPath)
+			log.Printf("get %q: verifying non-authoritative meta tag", originalModulePath)
 		}
 		urlStr0 := urlStr
-		urlStr, body, err = httpsOrHTTP(metaImport.Prefix)
+		urlStr, body, err = httpsOrHTTP(meta.Prefix, discovery.queryParam)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", urlStr, err)
 		}
-		imports, err := parseMetaGoImports(body)
+		defer body.Close()
+		modules, err := parseModuleMeta(body, discovery.metaName)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", originalImportPath, err)
+			return nil, fmt.Errorf("parsing %s: %w", originalModulePath, err)
 		}
-		if len(imports) == 0 {
-			return nil, fmt.Errorf("fetch %s: no go-import meta tag", urlStr)
+		if len(modules) == 0 {
+			return nil, fmt.Errorf("fetch %s: no %s meta tag", urlStr, discovery.metaName)
 		}
-		metaImport2, err := matchGoImport(imports, originalImportPath)
-		if err != nil || metaImport != metaImport2 {
-			return nil, fmt.Errorf("%s and %s disagree about go-import for %s", urlStr0, urlStr, metaImport.Prefix)
+		meta2, err := matchModuleMeta(modules, originalModulePath)
+		if err != nil || meta != meta2 {
+			return nil, fmt.Errorf("%s and %s disagree about %s for %s", urlStr0, urlStr, discovery.metaName, meta.Prefix)
 		}
 	}
 
-	if err := validateRepoRoot(metaImport.RepoRoot); err != nil {
-		return nil, fmt.Errorf("%s: invalid repo root %q: %w", urlStr, metaImport.RepoRoot, err)
+	if err := validateRepoRoot(meta.RepoRoot); err != nil {
+		return nil, fmt.Errorf("%s: invalid repo root %q: %w", urlStr, meta.RepoRoot, err)
 	}
 
 	rr := &RepoRoot{
-		VCS: ByCmd(metaImport.VCS),
-		// ensure that dynamic discovery does not contain .git
-		// 99% of providers do not work with .git in URL
-		// e.g. Bitbucket, GitLab
-		Repo: strings.TrimSuffix(metaImport.RepoRoot, ".git"),
-		Root: metaImport.Prefix,
+		VCS:      ByCmd(meta.VCS),
+		Repo:     meta.RepoRoot,
+		Root:     meta.Prefix,
+		IsVanity: true,
 	}
 	if rr.VCS == nil {
-		return nil, fmt.Errorf("%s: unknown vcs %q", urlStr, metaImport.VCS)
+		return nil, fmt.Errorf("%s: unknown vcs %q", urlStr, meta.VCS)
 	}
 	return rr, nil
 }
@@ -534,14 +564,14 @@ func validateRepoRoot(repoRoot string) error {
 	return nil
 }
 
-// metaImport represents the parsed <meta name="go-import"
-// content="prefix vcs reporoot" /> tags from HTML files.
-type metaImport struct {
+// moduleMeta represents parsed module discovery metadata with
+// content="prefix vcs reporoot".
+type moduleMeta struct {
 	Prefix, VCS, RepoRoot string
 }
 
-// errNoMatch is returned from matchGoImport when there's no applicable match.
-var errNoMatch = errors.New("no import match")
+// errNoMatch is returned from matchModuleMeta when there's no applicable match.
+var errNoMatch = errors.New("no module match")
 
 // pathPrefix reports whether sub is a prefix of s,
 // only considering entire path components.
@@ -555,18 +585,18 @@ func pathPrefix(s, sub string) bool {
 	return rem == "" || rem[0] == '/'
 }
 
-// matchGoImport returns the metaImport from imports matching importPath.
+// matchModuleMeta returns the moduleMeta matching modulePath.
 // An error is returned if there are multiple matches.
 // errNoMatch is returned if none match.
-func matchGoImport(imports []metaImport, importPath string) (_ metaImport, err error) {
+func matchModuleMeta(modules []moduleMeta, modulePath string) (_ moduleMeta, err error) {
 	match := -1
-	for i, im := range imports {
-		if !pathPrefix(importPath, im.Prefix) {
+	for i, module := range modules {
+		if !pathPrefix(modulePath, module.Prefix) {
 			continue
 		}
 
 		if match != -1 {
-			err = fmt.Errorf("multiple meta tags match import path %q", importPath)
+			err = fmt.Errorf("multiple meta tags match module path %q", modulePath)
 			return
 		}
 		match = i
@@ -575,7 +605,7 @@ func matchGoImport(imports []metaImport, importPath string) (_ metaImport, err e
 		err = errNoMatch
 		return
 	}
-	return imports[match], nil
+	return modules[match], nil
 }
 
 // expand rewrites s to replace {k} with match[k] for each key k in match.

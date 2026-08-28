@@ -33,15 +33,17 @@ func httpGET(url string) ([]byte, error) {
 	return b, nil
 }
 
-// httpsOrHTTP returns the body of either the importPath's
+// httpsOrHTTP returns the body of either the modulePath's
 // https resource or, if unavailable, the http resource.
-func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err error) {
+func httpsOrHTTP(modulePath, discoveryParam string) (urlStr string, body io.ReadCloser, err error) {
 	fetch := func(scheme string) (urlStr string, res *http.Response, err error) {
-		u, err := url.Parse(scheme + "://" + importPath)
+		u, err := url.Parse(scheme + "://" + modulePath)
 		if err != nil {
 			return "", nil, err
 		}
-		u.RawQuery = "go-get=1"
+		query := u.Query()
+		query.Set(discoveryParam, "1")
+		u.RawQuery = query.Encode()
 		urlStr = u.String()
 		if Verbose {
 			log.Printf("Fetching %s", urlStr)
