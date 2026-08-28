@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	toml "github.com/pelletier/go-toml"
+
+	"github.com/dagger/dagger/core/tomlpath"
 )
 
 // Config represents a parsed dagger.toml workspace configuration.
@@ -1019,11 +1021,7 @@ func validateConfigKeyParts(parts []string, key, op string) error {
 
 // JoinConfigPath formats logical path segments as a TOML dotted key path.
 func JoinConfigPath(parts ...string) string {
-	formatted := make([]string, len(parts))
-	for i, part := range parts {
-		formatted[i] = FormatConfigPathSegment(part)
-	}
-	return strings.Join(formatted, ".")
+	return tomlpath.Dotted(parts...)
 }
 
 func splitConfigPath(key string) ([]string, error) {
