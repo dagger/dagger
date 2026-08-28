@@ -61,39 +61,3 @@ Run this command to verify the installation:
 </CodeBlock>
 
 To change the Dagger version, run the applicable install command again. Specify the required version.
-
-## Package managers
-
-Homebrew and winget install the latest stable release. This release can differ from v{daggerVersion}.
-
-<Tabs groupId="platform">
-<TabItem value="macOS">
-
-```shell
-brew install dagger/tap/dagger
-```
-
-</TabItem>
-<TabItem value="Windows">
-
-```powershell
-winget install Dagger.Cli
-```
-
-</TabItem>
-</Tabs>
-
-Set `DAGGER_X_RELEASE` to use v{daggerVersion} with a package-managed CLI. You can also use `--x-release` for one command.
-
-The CLI builds and caches the specified release when you first use it:
-
-<CodeBlock language="shell">
-{`# Every command in this shell session
-export DAGGER_X_RELEASE=v${daggerVersion}
-dagger version
-
-# Or per command
-dagger --x-release=v${daggerVersion} version`}
-</CodeBlock>
-
-Unset the variable or remove the option to use the installed version. The examples in this documentation use v{daggerVersion}.
