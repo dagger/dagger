@@ -6,11 +6,13 @@ description: "Run workspace Checks automatically after Git events"
 
 # Set up Cloud Checks
 
-Cloud Checks run workspace Checks after Git events. A Git event is a push or pull request event from a connected repository.
+Complete the [Quickstart](./quickstart.mdx) before you start. `dagger check` must pass in your workspace.
 
-Cloud Checks use Cloud Engines to execute the Checks. No CI workflow file is necessary.
+In this guide, you will connect your GitHub repository to Dagger Cloud and push a commit. Cloud Checks will run your Checks on Cloud Engines.
 
-Cloud Checks currently support GitHub repositories.
+A Git event, such as a push or pull request, starts Cloud Checks. No CI workflow file is necessary.
+
+The workspace must be in a GitHub repository. Its Git `origin` remote must point to that repository.
 
 ## Sign in to Dagger Cloud
 
@@ -32,6 +34,8 @@ dagger cloud integration create github --open
 
 Complete the GitHub integration setup in the browser.
 
+Select the GitHub account or organization that owns the repository. Grant Dagger access to the repository.
+
 ## Enable Cloud Checks
 
 Run this command from the workspace:
@@ -44,10 +48,27 @@ Dagger gets the repository from the Git `origin` remote. The command prints `on`
 
 ## Trigger Cloud Checks
 
-Commit the workspace configuration. Push the commit to GitHub:
+Review the files that the Quickstart changed:
+
+```shell
+git status --short
+```
+
+Stage `dagger.toml`:
 
 ```shell
 git add dagger.toml
+```
+
+Stage each other file that the Quickstart changed. Replace the example path with the path from `git status`:
+
+```shell
+git add path/to/changed-file
+```
+
+Commit all staged files. Then push the commit to GitHub:
+
+```shell
 git commit -m "Set up Dagger"
 git push -u origin HEAD
 ```
@@ -56,13 +77,17 @@ The push is a Git event. Cloud Checks run the same Checks that `dagger check` ru
 
 ## View the result
 
-Show the latest Cloud Checks activity:
+Cloud Checks start after the push. Show the latest activity:
 
 ```shell
 dagger activity
 ```
 
-The `CHECKS` column shows `🟢` when all Checks pass.
+Find the row with `Set up Dagger` in the `DESCRIPTION` column. If the row is absent or the `CHECKS` column contains `🟡`, wait and run `dagger activity` again.
+
+You are done when `CHECKS` shows only `🟢N`. `N` is the number of Checks that passed.
+
+If `CHECKS` contains `🔴`, run `dagger check` locally. Fix the failure, then commit and push the fix.
 
 ## Next steps
 

@@ -51,3 +51,29 @@ dagger settings eslint packageManager yarn
 ```
 
 Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
+
+## Verify the workspace
+
+List the workspace Generators:
+
+```shell
+dagger generate -l
+```
+
+If the command lists Generators, run them:
+
+```shell
+dagger generate
+```
+
+Review and apply the changes when requested.
+
+Run all Checks:
+
+```shell
+dagger check
+```
+
+Do not continue until all Checks pass. Keep all files that Dagger created or changed.
+
+Next, [set up Cloud Checks](./cloud-checks.mdx) for the project.
