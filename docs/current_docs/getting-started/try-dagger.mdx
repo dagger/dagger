@@ -1,23 +1,26 @@
 ---
 title: "Try Dagger"
 slug: /getting-started/try-dagger
-description: "Get CI running in your project in 5 minutes"
+description: "Run Dagger Checks in an example project"
 ---
 
 # Try Dagger
 
-In this guide, you'll fork an example project, add automated checks, and open a pull request that runs those checks in Dagger Cloud. No CI YAML required.
+In this guide, you will fork an example project. You will add Checks and run them in Dagger Cloud.
+
+You do not need a CI workflow file.
 
 ## Requirements
 
-- [Dagger CLI installed](./install.mdx)
-- [Git](https://git-scm.com/downloads) and a container runtime ([Docker](https://docs.docker.com/engine/install/), Podman, or similar)
+- [Dagger CLI](./install.mdx)
+- [Git](https://git-scm.com/downloads)
+- A container runtime, such as [Docker](https://docs.docker.com/engine/install/) or Podman
 - A [GitHub](https://github.com) account
-- Optional: [GitHub CLI](https://cli.github.com/) for the copy-paste fork and pull request commands
+- Optional: [GitHub CLI](https://cli.github.com/) for the example commands
 
 ## Fork the example project
 
-Fork the example project into your GitHub account or organization, then clone your fork.
+Fork the example project into your GitHub account or organization. Clone the fork.
 
 With GitHub CLI:
 
@@ -28,7 +31,13 @@ cd hello-dagger
 
 For an organization fork, add `--org YOUR_GITHUB_ORG` to the `gh repo fork` command.
 
-If you use the GitHub web UI instead, clone your fork locally before continuing. Dagger uses the repository's `origin` remote to infer which GitHub repository should run checks, so make sure `origin` points to your fork.
+If you use the GitHub web UI, fork `dagger/hello-dagger`. Then clone your fork and open its directory in a terminal.
+
+Dagger uses the Git `origin` remote to identify the repository. Verify that `origin` points to your fork:
+
+```shell
+git remote get-url origin
+```
 
 ## Create a branch
 
@@ -38,38 +47,41 @@ git checkout -b add-dagger-checks
 
 ## Set up your workspace
 
-`dagger setup` walks through a few prompts. It logs you in to Dagger Cloud, then installs recommended modules based on a scan of your project. This project has no legacy Dagger configuration, so there is no migration step.
+`dagger setup` scans the project and recommends suitable modules.
 
 ```shell
 dagger setup
 ```
 
-Log in to Dagger Cloud when prompted; you'll use it later to enable automatic checks. Then select `Install` to install the recommended modules.
-This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
+Complete the Dagger Cloud sign-in when requested. Keep the three recommended modules selected. Then select **Install selected**.
 
-## Run checks
+The command creates `dagger.toml`. It installs a linter, a test runner, and a code formatter.
+
+## Run Checks
 
 ```shell
 dagger check
 ```
 
-All three modules run their checks concurrently. Some checks pass, but `prettier:check` fails because the example project has unformatted files, so `dagger check` exits non-zero.
+The three modules run their Checks concurrently. `prettier:check` fails because the project contains unformatted files. The command exits with an error.
 
 ## Fix the formatting
 
-Let Prettier rewrite the files for you:
+Run Prettier to format the files:
 
 ```shell
 dagger api call prettier write
 ```
 
-This returns a [changeset](../cli/generating.mdx) with the reformatted files and offers to apply it to your working tree. Confirm to apply it. Run the checks again:
+The command returns a [changeset](../cli/generating.mdx). Review the changeset and apply it.
+
+Run the Checks again:
 
 ```shell
 dagger check
 ```
 
-This time every check passes.
+Verify that all three Checks pass.
 
 ## Commit and push
 
@@ -79,25 +91,27 @@ git commit -m "Add Dagger checks"
 git push -u origin add-dagger-checks
 ```
 
-## Enable automatic checks
+## Enable Cloud Checks
 
-Dagger can infer the GitHub repository from your local checkout:
+Connect the GitHub account or organization that owns the fork:
 
 ```shell
-dagger workspace remote
+dagger cloud integration create github --open
 ```
 
-Enable automatic checks for that repository:
+Complete the setup in the browser. Grant Dagger access to the fork.
+
+Enable Cloud Checks for the fork:
 
 ```shell
 dagger cloud check on
 ```
 
-If you are not signed in to Dagger Cloud yet, the command guides you through signup or login. If the GitHub integration is not installed yet, the command guides you through authorizing GitHub and selecting the forked repository.
+The command prints `on` when Cloud Checks are enabled.
 
 ## Open a pull request
 
-With GitHub CLI:
+With GitHub CLI, set `YOUR_GITHUB_USER_OR_ORG` to the owner of your fork:
 
 ```shell
 GITHUB_OWNER=YOUR_GITHUB_USER_OR_ORG
@@ -109,16 +123,28 @@ gh pr create \
   --body "Run Dagger checks on every pull request."
 ```
 
-If you use the GitHub web UI instead, open a pull request from `add-dagger-checks` into `main` in your fork. Do not open the pull request against the upstream `dagger/hello-dagger` repository.
+If you use the GitHub web UI, open a pull request in your fork. Use `add-dagger-checks` as the source branch. Use `main` as the target branch.
 
-## Verify CI
+Do not open the pull request in the upstream `dagger/hello-dagger` repository.
 
-Your pull request should show Dagger check statuses. You can also inspect recent Dagger Cloud activity from the CLI:
+## View the result
+
+The pull request is a Git event. Cloud Checks run the Checks on Cloud Engines.
+
+Show the latest Cloud Checks activity:
 
 ```shell
 dagger activity
 ```
 
+Find the row with `Add Dagger checks` in the `DESCRIPTION` column.
+
+If the row is absent, wait and run the command again.
+
+If `CHECKS` contains `🟡`, wait and run the command again.
+
+You are done when `CHECKS` shows only `🟢N`. `N` is the number of Checks that passed.
+
 ## Next steps
 
-Now do it on your own project. See the [Quickstart](./quickstart.mdx).
+Use the [Quickstart](./quickstart.mdx) to configure Dagger in your project.

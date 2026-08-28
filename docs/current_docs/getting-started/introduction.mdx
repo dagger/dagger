@@ -1,24 +1,31 @@
 ---
 title: "Introduction"
-description: "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale."
+description: "Run the same project workflows locally and in Dagger Cloud"
 slug: /getting-started/introduction
 ---
 
 # Introduction
 
-Dagger is the missing software stack for CI. It makes your pipelines faster and more repeatable, not by throwing bigger machines at them, but by replacing artisanal scripts with a clean API, real code, and a portable DAG execution engine.
+Dagger is a CI orchestration engine. It runs project workflows in containers.
 
-Once daggerized, your pipeline logic is decoupled from its environment. Trigger it before or after push; run it locally or let our cloud scale it out; spin up multi-container environments just in time; all cached automatically, traced end to end, and extensible in your favorite language.
+Use modules to add workflows to a project. Run the same workflows on your computer or in Dagger Cloud.
 
-## Orientation
+Dagger caches workflow operations. Dagger also records a trace for each run.
 
-- **Want to adopt Dagger in your project?** Start with [Try Dagger](./try-dagger.mdx). Then follow the [Quickstart](./quickstart.mdx) and [set up Cloud Checks](./cloud-checks.mdx).
-- **Your project already uses Dagger?** See [CLI](../cli/checking.mdx) to run checks, generate code, and start services.
-- **Want to learn more about what Dagger can do?** Keep reading.
+## Get started
+
+Complete these guides in order:
+
+1. [Install Dagger](./install.mdx). Install the Dagger CLI and a container runtime.
+2. [Try Dagger](./try-dagger.mdx). Run Checks in an example project.
+3. [Quickstart](./quickstart.mdx). Configure Dagger in your project.
+4. [Set up Cloud Checks](./cloud-checks.mdx). Run your Checks after Git events.
+
+If your project already uses Dagger, see the [CLI guides](../cli/checking.mdx).
 
 ## What you can do
 
-No code required. Install modules, run commands, get results.
+Use official modules without writing module code.
 
 ### Lint and format across your stack
 
@@ -30,7 +37,7 @@ dagger check
 
 {/* TODO: TUI gif */}
 
-### Run e2e tests with real services
+### Run end-to-end tests with services
 
 ```shell
 dagger install github.com/dagger/playwright
@@ -39,7 +46,7 @@ dagger check
 
 {/* TODO: TUI gif */}
 
-### Run code generators
+### Run Generators
 
 ```shell
 dagger install github.com/dagger/go
@@ -59,18 +66,22 @@ dagger api call eslint lint terminal
 
 ## Key features
 
-**Programmable.** Real code — Go, Python, TypeScript — not YAML.
+**Programmable.** Define custom workflows in Go, Python, TypeScript, or PHP.
 
-**Local-first.** Run your full pipeline before you push. Same result everywhere.
+**Local-first.** Run the same workflows before and after you push.
 
-**Zero-setup tracing.** Every step traced automatically. No instrumentation code.
+**Automatic tracing.** Dagger records each workflow operation. You do not need instrumentation code.
 
-**Interactive debugging.** Drop into a terminal at any step of your pipeline.
+**Interactive debugging.** Open a terminal in a workflow operation.
 
-**Incremental execution.** Only what changed gets re-executed.
+**Incremental execution.** Dagger reruns an operation only when its inputs change.
 
-**Agent-friendly.** Agents run Dagger checks in their dev loop. Sandboxed, cached, remote.
+**Agent support.** Agents can run Dagger Checks in their development loop.
 
-**Native secrets.** Plugs into your existing secret infrastructure.
+**Secrets.** Connect Dagger to your secrets provider.
 
-**Just-in-time services.** Service dependencies build on demand, no pre-provisioning.
+**Services.** Start service dependencies when a workflow needs them.
+
+## Next step
+
+[Install Dagger](./install.mdx).

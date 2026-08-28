@@ -6,11 +6,13 @@ description: "Run workspace Checks automatically after Git events"
 
 # Set up Cloud Checks
 
-Complete the [Quickstart](./quickstart.mdx) before you start. `dagger check` must pass in your workspace.
+Complete the [Quickstart](./quickstart.mdx) before you start. Verify that `dagger check` passes in the workspace.
 
-In this guide, you will connect your GitHub repository to Dagger Cloud and push a commit. Cloud Checks will run your Checks on Cloud Engines.
+In this guide, you will connect your GitHub repository to Dagger Cloud. You will push a commit to start Cloud Checks.
 
-A Git event, such as a push or pull request, starts Cloud Checks. No CI workflow file is necessary.
+A Git event, such as a push or pull request, starts Cloud Checks. Cloud Checks run your Checks on Cloud Engines.
+
+You do not need a CI workflow file.
 
 The workspace must be in a GitHub repository. Its Git `origin` remote must point to that repository.
 
@@ -22,7 +24,9 @@ Sign in or create an account:
 dagger cloud login
 ```
 
-Complete authentication in the browser. Create or select a Dagger Cloud organization when requested.
+Complete authentication in the browser.
+
+Create or select a Dagger Cloud organization when requested.
 
 ## Connect the repository
 
@@ -32,9 +36,11 @@ Connect the GitHub account or organization that owns the repository:
 dagger cloud integration create github --open
 ```
 
-Complete the GitHub integration setup in the browser.
+Complete the setup in the browser.
 
-Select the GitHub account or organization that owns the repository. Grant Dagger access to the repository.
+Select the GitHub account or organization that owns the repository.
+
+Grant Dagger access to the repository.
 
 ## Enable Cloud Checks
 
@@ -60,16 +66,21 @@ Stage `dagger.toml`:
 git add dagger.toml
 ```
 
-Stage each other file that the Quickstart changed. Replace the example path with the path from `git status`:
+For each additional file that you changed during Quickstart, run this command. Replace the example path with the applicable path:
 
 ```shell
 git add path/to/changed-file
 ```
 
-Commit all staged files. Then push the commit to GitHub:
+Commit all staged files:
 
 ```shell
 git commit -m "Set up Dagger"
+```
+
+Push the commit to GitHub:
+
+```shell
 git push -u origin HEAD
 ```
 
@@ -83,11 +94,15 @@ Cloud Checks start after the push. Show the latest activity:
 dagger activity
 ```
 
-Find the row with `Set up Dagger` in the `DESCRIPTION` column. If the row is absent or the `CHECKS` column contains `🟡`, wait and run `dagger activity` again.
+Find the row with `Set up Dagger` in the `DESCRIPTION` column.
+
+If the row is absent, wait and run `dagger activity` again.
+
+If `CHECKS` contains `🟡`, wait and run the command again.
 
 You are done when `CHECKS` shows only `🟢N`. `N` is the number of Checks that passed.
 
-If `CHECKS` contains `🔴`, run `dagger check` locally. Fix the failure, then commit and push the fix.
+If `CHECKS` contains `🔴`, run `dagger check` locally. Fix the failure. Then commit and push the fix.
 
 ## Next steps
 

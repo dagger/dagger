@@ -1,56 +1,75 @@
 ---
 title: "Quickstart"
 slug: /getting-started/quickstart
-description: "Add a Dagger workspace to your project"
+description: "Configure Dagger in your project"
 ---
 
 # Quickstart
 
-You've seen Dagger work on [hello-dagger](./try-dagger.mdx) in Try Dagger. Now set it up on your own project.
+In this guide, you will configure Dagger in your project. You will install suitable modules and run at least one Check.
+
+Complete [Try Dagger](./try-dagger.mdx) before you start.
+
+## Open your project
+
+Open a terminal at the root of your project:
+
+```shell
+cd path/to/your/project
+```
+
+Replace `path/to/your/project` with the path to your local checkout.
+
+Verify that the Git `origin` remote points to the GitHub repository that you want to configure:
+
+```shell
+git remote get-url origin
+```
 
 ## Install modules
 
-The quickest path is the same one the Try Dagger guide uses. `dagger setup` scans your project and recommends suitable modules:
+Scan the project for suitable modules:
 
 ```shell
 dagger setup
 ```
 
-Prefer to pick them yourself? Search for modules matching the tools, frameworks, and languages you use, and install them directly:
+Select the modules that match your project. Then select **Install selected**.
+
+If Dagger migrates an old configuration, run `dagger setup` again.
+
+### If setup finds no modules
+
+If Dagger reports `No recommendations`, search for a module that supports a tool in your project.
+
+For example, use these commands if the project uses ESLint:
 
 ```shell
 dagger search eslint
 dagger install github.com/dagger/eslint
 ```
 
-The first install creates `dagger.toml` at the workspace root. To create it in the current directory instead, for a workspace nested inside a larger repository, pass `--here`:
+The first install creates `dagger.toml` at the repository root.
 
-```shell
-dagger install --here github.com/dagger/eslint
-```
+Install only modules that match tools in the project.
 
-Install a module, run `dagger check`, repeat. You don't have to install everything at once:
+## Configure modules if necessary
 
-```shell
-dagger install github.com/dagger/vitest
-dagger check
-```
-
-## Configure modules
-
-Many modules expose settings, such as a base image or a package manager. List the settings for your installed modules:
+Most modules use suitable default settings. List the available settings:
 
 ```shell
 dagger settings
 ```
 
-Set one with `module`, `key`, and `value`:
+Change a setting only when it applies to the project.
+
+For example, use this command if you installed ESLint and the project uses Yarn:
 
 ```shell
 dagger settings eslint packageManager yarn
 ```
 
-Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
+The settings are stored in `dagger.toml`. They apply to all users of the workspace.
 
 ## Verify the workspace
 
@@ -66,14 +85,28 @@ If the command lists Generators, run them:
 dagger generate
 ```
 
-Review and apply the changes when requested.
+Review the changes. Apply them when requested.
 
-Run all Checks:
+List the Checks:
+
+```shell
+dagger check -l
+```
+
+Verify that the list contains at least one Check that validates your project.
+
+If the list has no applicable Checks, install another suitable module.
+
+Run the Checks:
 
 ```shell
 dagger check
 ```
 
-Do not continue until all Checks pass. Keep all files that Dagger created or changed.
+You are done when at least one Check runs and all Checks pass.
 
-Next, [set up Cloud Checks](./cloud-checks.mdx) for the project.
+Keep all files that Dagger created or changed.
+
+## Next step
+
+[Set up Cloud Checks](./cloud-checks.mdx) for the project.
