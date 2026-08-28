@@ -702,6 +702,12 @@ class Address(Type):
         _ctx = self._select("volume", _args)
         return Volume(_ctx)
 
+    def workspace(self) -> "Workspace":
+        """Load a workspace from a module reference."""
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return Workspace(_ctx)
+
 
 @typecheck
 class Agent(Type):

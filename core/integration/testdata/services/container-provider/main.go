@@ -23,3 +23,20 @@ func (m *ContainerProvider) Image() *dagger.Container {
 	}
 	return base.WithEnvVariable("PROVIDED_BY", "container-provider")
 }
+
+// Returns a directory for consumers.
+func (m *ContainerProvider) Directory() *dagger.Directory {
+	return dag.Directory().WithNewFile("provided-by", "container-provider")
+}
+
+// Returns a file for consumers.
+func (m *ContainerProvider) File() *dagger.File {
+	return m.Directory().File("provided-by")
+}
+
+// Returns a workspace for consumers.
+func (m *ContainerProvider) Workspace() *dagger.Workspace {
+	return dag.Directory().
+		WithNewFile("marker.txt", "container-provider").
+		AsWorkspace()
+}
