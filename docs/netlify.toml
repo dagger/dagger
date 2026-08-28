@@ -1416,15 +1416,25 @@
   to = "/config/module-wiring"
   status = 301
 
-# The installation page moved under the CLI section.
+# The installation page moved into the Getting Started section.
 [[redirects]]
   from = "/getting-started/installation"
-  to = "/cli/install"
+  to = "/getting-started/install"
   status = 301
 
 [[redirects]]
   from = "/install"
-  to = "/cli/install"
+  to = "/getting-started/install"
+  status = 301
+
+[[redirects]]
+  from = "/cli/install"
+  to = "/getting-started/install"
+  status = 301
+
+[[redirects]]
+  from = "/cli/installation"
+  to = "/getting-started/install"
   status = 301
 
 # /using-dagger was renamed to /cli.
