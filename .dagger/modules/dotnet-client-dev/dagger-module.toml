@@ -1,5 +1,5 @@
 name = "dotnet-client-dev"
-engineVersion = "v0.21.7"
+engineVersion = "v0.21.9"
 
 [runtime]
   source = "dang"
