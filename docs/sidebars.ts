@@ -48,7 +48,11 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/introduction",
-        "getting-started/install",
+        {
+          type: "doc",
+          id: "getting-started/install",
+          label: "Install",
+        },
         "getting-started/try-dagger",
         "getting-started/quickstart",
         "getting-started/cloud-checks",
