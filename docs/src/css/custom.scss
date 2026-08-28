@@ -642,8 +642,19 @@ div[class*="announcementBar_"] {
   }
 }
 
+// Two search bars would otherwise show at once: this one and the sidebar's,
+// which sits at the top of the nav rail and is the better placement. The
+// sidebar version is desktop-only though (DocSidebar/Desktop), so this stays
+// as the only way to search on narrow screens. 997px is where Docusaurus
+// brings the sidebar in, so the two swap over with no gap and no overlap.
 .header-searchbar {
   padding-block: 0 !important;
+}
+
+@media (min-width: 997px) {
+  .header-searchbar {
+    display: none !important;
+  }
 }
 
 .header-github-link {
