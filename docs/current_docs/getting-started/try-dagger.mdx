@@ -1,146 +1,60 @@
 ---
 title: "Try Dagger"
 slug: /getting-started/try-dagger
-description: "Run Dagger Checks in an example project"
+description: "Run a Dagger Check in an example project"
 ---
 
 # Try Dagger
 
-In this guide, you will fork an example project. You will add Checks and run them in Dagger Cloud.
-
-You do not need a CI workflow file.
+In this guide, you will add a Check to an example project. You will fix a failure and run the Check successfully.
 
 ## Requirements
 
 - [Dagger CLI](./install.mdx)
 - [Git](https://git-scm.com/downloads)
-- A container runtime, such as [Docker](https://docs.docker.com/engine/install/) or Podman
-- A [GitHub](https://github.com) account
-- Optional: [GitHub CLI](https://cli.github.com/) for the example commands
+- A running container runtime, such as [Docker](https://docs.docker.com/engine/install/) or Podman
 
-## Fork the example project
+## Clone the example project
 
-Fork the example project into your GitHub account or organization. Clone the fork.
-
-With GitHub CLI:
+Clone the repository and open its directory:
 
 ```shell
-gh repo fork dagger/hello-dagger --clone --default-branch-only
+git clone --depth 1 https://github.com/dagger/hello-dagger.git
 cd hello-dagger
 ```
 
-For an organization fork, add `--org YOUR_GITHUB_ORG` to the `gh repo fork` command.
+## Add a Check
 
-If you use the GitHub web UI, fork `dagger/hello-dagger`. Then clone your fork and open its directory in a terminal.
-
-Dagger uses the Git `origin` remote to identify the repository. Verify that `origin` points to your fork:
+Install the official Prettier module:
 
 ```shell
-git remote get-url origin
+dagger install github.com/dagger/prettier
 ```
 
-## Create a branch
+The command creates `dagger.toml`. It also adds `prettier:check` to the workspace.
 
-```shell
-git checkout -b add-dagger-checks
-```
-
-## Set up your workspace
-
-`dagger setup` scans the project and recommends suitable modules.
-
-```shell
-dagger setup
-```
-
-Complete the Dagger Cloud sign-in when requested. Keep the three recommended modules selected. Then select **Install selected**.
-
-The command creates `dagger.toml`. It installs a linter, a test runner, and a code formatter.
-
-## Run Checks
+## Run the Check
 
 ```shell
 dagger check
 ```
 
-The three modules run their Checks concurrently. `prettier:check` fails because the project contains unformatted files. The command exits with an error.
+`prettier:check` reports unformatted files. The command exits with an error.
 
 ## Fix the formatting
 
-Run Prettier to format the files:
+Run Prettier and apply its changeset:
 
 ```shell
-dagger api call prettier write
+dagger api call prettier write -y
 ```
 
-The command returns a [changeset](../cli/generating.mdx). Review the changeset and apply it.
+## Verify the result
 
-Run the Checks again:
+Run the Check again:
 
 ```shell
 dagger check
 ```
 
-Verify that all three Checks pass.
-
-## Commit and push
-
-```shell
-git add .
-git commit -m "Add Dagger checks"
-git push -u origin add-dagger-checks
-```
-
-## Enable Cloud Checks
-
-Connect the GitHub account or organization that owns the fork:
-
-```shell
-dagger cloud integration create github --open
-```
-
-Complete the setup in the browser. Grant Dagger access to the fork.
-
-Enable Cloud Checks for the fork:
-
-```shell
-dagger cloud check on
-```
-
-The command prints `on` when Cloud Checks are enabled.
-
-## Open a pull request
-
-With GitHub CLI, set `YOUR_GITHUB_USER_OR_ORG` to the owner of your fork:
-
-```shell
-GITHUB_OWNER=YOUR_GITHUB_USER_OR_ORG
-gh pr create \
-  --repo "$GITHUB_OWNER/hello-dagger" \
-  --base main \
-  --head add-dagger-checks \
-  --title "Add Dagger checks" \
-  --body "Run Dagger checks on every pull request."
-```
-
-If you use the GitHub web UI, open a pull request in your fork. Use `add-dagger-checks` as the source branch. Use `main` as the target branch.
-
-Do not open the pull request in the upstream `dagger/hello-dagger` repository.
-
-## View the result
-
-The pull request is a Git event. Cloud Checks run the Checks on Cloud Engines.
-
-Show the latest Cloud Checks activity:
-
-```shell
-dagger activity
-```
-
-Find the row with `Add Dagger checks` in the `DESCRIPTION` column.
-
-If the row is absent, wait and run the command again.
-
-If `CHECKS` contains `🟡`, wait and run the command again.
-
-You are done when `CHECKS` shows only `🟢N`. `N` is the number of Checks that passed.
+You are done when the output shows that `prettier:check` passed.
