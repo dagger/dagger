@@ -25,7 +25,7 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Check the docs website build
-func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:140:1)
+func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:211:1)
 	if r.check != nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../..
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:214:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:285:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -53,33 +53,42 @@ func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secr
 // DocsDevGenerateVersionOpts contains options for DocsDev.GenerateVersion
 type DocsDevGenerateVersionOpts struct {
 	//
+	// Exact destination docs version. Allows a branch or commit source and
+	// replaces an existing version; collapse options are ignored when set.
+	//
+	As string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:61:2)
+	//
 	// Collapse a trailing numeric prerelease identifier, e.g.
 	// 1.0.0-beta.10 to 1.0.0-beta.
 	//
 	//
 	// Default: true
-	CollapsePreReleases bool // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:62:2)
+	CollapsePreReleases bool // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:66:2)
 	//
-	// Omit a zero patch component, e.g. 1.0.0-beta to 1.0-beta.
+	// Collapse the patch component, e.g. 0.21.8 to 0.21.
 	//
 	//
 	// Default: true
-	OmitZeroPatch bool // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:66:2)
+	CollapsePatch bool // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:70:2)
 }
 
-// Generate a docs version from a Git ref. Numbered prereleases are collapsed
-// into rolling channels and zero patch components are omitted by default.
+// Generate a docs version from a Git ref. Numbered prereleases and patch
+// components are collapsed into rolling channels by default.
 func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersionOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:53:1)
 	assertNotNil("source", source)
 	q := r.query.Select("generateVersion")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `as` optional argument
+		if !querybuilder.IsZeroValue(opts[i].As) {
+			q = q.Arg("as", opts[i].As)
+		}
 		// `collapsePreReleases` optional argument
 		if !querybuilder.IsZeroValue(opts[i].CollapsePreReleases) {
 			q = q.Arg("collapsePreReleases", opts[i].CollapsePreReleases)
 		}
-		// `omitZeroPatch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OmitZeroPatch) {
-			q = q.Arg("omitZeroPatch", opts[i].OmitZeroPatch)
+		// `collapsePatch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CollapsePatch) {
+			q = q.Arg("collapsePatch", opts[i].CollapsePatch)
 		}
 	}
 	q = q.Arg("source", source)
@@ -140,13 +149,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:247:2)
+	Deployment string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:318:2)
 
-	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:249:2)
+	APIURL string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:320:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:243:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:314:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -172,17 +181,17 @@ type DocsDevReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:162:2)
+	Version string // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:233:2)
 	//
 	// Workspace forwarded to engine-dev for VCS stamping (References is the
 	// only docs-dev method that builds). Auto-injected on a direct call;
 	// dependencies don't inherit it.
 	//
-	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:168:2)
+	Ws *Workspace // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:239:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:159:1)
+func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:230:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -200,8 +209,19 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 	}
 }
 
+// Rename an existing docs version without changing its contents.
+func (r *DocsDev) RenameVersion(from string, to string) *Changeset { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:151:1)
+	q := r.query.Select("renameVersion")
+	q = q.Arg("from", from)
+	q = q.Arg("to", to)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Build the docs server
-func (r *DocsDev) Server() *Container { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:146:1)
+func (r *DocsDev) Server() *Container { // docs-dev (../../../../../.dagger/modules/docs-dev/main.go:217:1)
 	q := r.query.Select("server")
 
 	return &Container{

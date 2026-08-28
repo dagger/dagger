@@ -30,6 +30,25 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Creates a file from arbitrary binary contents.
+  """
+  @spec blob(t(), String.t(), Dagger.Bytes.t(), [{:permissions, integer() | nil}]) ::
+          Dagger.File.t()
+  def blob(%__MODULE__{} = client, name, contents, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("blob")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("contents", contents)
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Constructs a cache volume for a given cache key.
   """
   @spec cache_volume(t(), String.t(), [

@@ -369,7 +369,7 @@ func workspaceLockExcludePattern(ws *core.Workspace, clientID, snapshotRoot, sna
 		return "", false
 	}
 
-	lockPath, err := lockHostPath(ws)
+	lockPath, err := workspaceHostPath(ws, ws.LockFile)
 	if err != nil {
 		return "", false
 	}

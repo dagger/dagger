@@ -96,8 +96,8 @@ type Server interface {
 	// true, returns ok=false for read-only workspace lock sources.
 	CurrentWorkspaceLock(ctx context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error)
 
-	// Stage a lockfile lookup result for the current workspace's live lock state.
-	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
+	// Stage a lockfile value for the current workspace's live lock state.
+	SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error
 
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
@@ -108,6 +108,12 @@ type Server interface {
 
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
+
+	// The claim store for call-payload telemetry, scoped to the current
+	// client's delivery domain — the client and its ancestors, the DBs its
+	// telemetry actually fans out to — rather than the whole session. See
+	// core/dag_call_telemetry.go for why the scopes must differ.
+	CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)

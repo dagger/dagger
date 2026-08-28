@@ -351,9 +351,9 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   dagger api call docs generate-version --source="https://github.com/dagger/dagger#$ENGINE_VERSION" -y
   ```
 
-  By default, numbered prereleases are collapsed into rolling docs channels and
-  zero patch components are omitted (for example, `1.0.0-beta.10` becomes
-  `1.0-beta`). Released versions are kept in newest-to-oldest semantic order.
+  By default, numbered prereleases and patch components are collapsed into
+  rolling docs channels (for example, `1.0.8-beta.10` becomes `1.0-beta`).
+  Released versions are kept in newest-to-oldest semantic order.
   Review `/`, `/next/`, and older `/<version>/` routes before publishing.
 
   After release, make normal docs changes in `/current_docs`. Patch

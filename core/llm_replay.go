@@ -78,7 +78,7 @@ func (*LLMReplayer) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, _ *LLMCallOpts) (_ *LLMResponse, rerr error) {
+func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	if len(history) > 0 && history[0].Role == LLMMessageRoleSystem {
 		// HACK: drop the default system prompt, since recordings only contain
 		// the message history exported via messages, not the synthesized
@@ -100,8 +100,58 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	}
 	msg := c.messages[len(history)]
 
+	// Build the same per-block display spans a streaming provider builds, so a
+	// replayed turn produces telemetry identical to a live one: thinking, text
+	// response, and one span per tool call (carrying the Boundary/roll-up
+	// attributes the evaluation loop needs to nest the tool's execution beneath
+	// its own call). Without these, every replayed tool call would run under the
+	// shared loop context and every replay-driven test would exercise a shape
+	// production never has.
+	//
+	// Note this is the *live loop* path (model `replay/…`), which is distinct
+	// from LLM.Replay: that one re-emits spans for an already-recorded
+	// conversation for display only, and never runs tools. The two never both
+	// emit spans for the same tool call.
+	var callDigest string
+	if opts != nil {
+		callDigest = opts.CallDigest
+	}
+	dp := newDisplayPhases(ctx, callDigest)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
+	for i, block := range msg.Content {
+		idx := int64(i)
+		switch block.Kind {
+		case LLMContentThinking:
+			if block.Text == "" {
+				continue
+			}
+			p := dp.StartThinking(idx)
+			fmt.Fprint(p.Stdio.Stdout, block.Text)
+			dp.Close(idx)
+		case LLMContentText:
+			if block.Text == "" {
+				continue
+			}
+			p := dp.StartText(idx)
+			fmt.Fprint(p.MarkdownW, block.Text)
+			dp.Close(idx)
+		case LLMContentToolCall:
+			// The tool-call span stays open; the loop ends it (with the
+			// result-size badge) via endToolCallDisplay once the tool returns.
+			dp.EmitToolCall(idx, block.CallID, block.ToolName, string(block.Arguments))
+		}
+	}
+
+	displaySpans, toolCallDisplays := dp.Response()
 	res := &LLMResponse{
-		Content: msg.Content,
+		Content:          msg.Content,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCallDisplays,
 	}
 	if msg.TokenUsage != nil {
 		res.TokenUsage = *msg.TokenUsage

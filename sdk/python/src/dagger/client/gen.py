@@ -12,6 +12,10 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
+class Bytes(Scalar):
+    """Arbitrary binary data, represented as a base64-encoded string."""
+
+
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
@@ -1998,7 +2002,10 @@ class Container(Type):
         ----------
         address:
             Address of the container image to download, in standard OCI ref
-            format. Example:"registry.dagger.io/engine:latest"
+            format. Example: "registry.dagger.io/engine:latest".
+            An address without a tag or digest selects the greatest stable
+            release tag, falling back to the literal "latest" tag when no
+            eligible release exists.
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
@@ -8786,10 +8793,15 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest_version(self) -> GitRef:
-        """Returns details for the latest semver tag."""
+    def latest(self) -> GitRef:
+        """Return the latest stable release tag, falling back to HEAD when no
+        release exists.
+
+        Release selection accepts an optional "v" prefix, incomplete versions,
+        and zero-padded numeric components. This operation is pinned.
+        """
         _args: list[Arg] = []
-        _ctx = self._select("latestVersion", _args)
+        _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
     def ref(self, name: str) -> GitRef:
@@ -12584,6 +12596,33 @@ class Query(Root):
         ]
         _ctx = self._select("address", _args)
         return Address(_ctx)
+
+    def blob(
+        self,
+        name: str,
+        contents: Bytes,
+        *,
+        permissions: int | None = 420,
+    ) -> File:
+        """Creates a file from arbitrary binary contents.
+
+        Parameters
+        ----------
+        name:
+            Name of the new file. Example: "archive.tar"
+        contents:
+            Binary contents of the new file, encoded as base64 at the GraphQL
+            boundary.
+        permissions:
+            Permissions of the new file. Example: 0600
+        """
+        _args = [
+            Arg("name", name),
+            Arg("contents", contents),
+            Arg("permissions", permissions, 420),
+        ]
+        _ctx = self._select("blob", _args)
+        return File(_ctx)
 
     def cache_volume(
         self,
@@ -16612,6 +16651,7 @@ __all__ = [
     "Agent",
     "AgentGroup",
     "BuildArg",
+    "Bytes",
     "CacheSharingMode",
     "CacheVolume",
     "Changeset",

@@ -26,6 +26,31 @@ type streamingLogExporter struct {
 	testLogs    map[dagui.SpanID]*Vterm
 }
 
+// renderableLogRecords returns the subset of records that may render as log
+// text: only string-bodied records outside the reserved call-payload channel.
+// The DB consumes payload records during ingestion, but frontends still hold
+// the original exporter batch and must not render it — and no non-string body
+// (bytes, structured values, unset) is ever log text, whatever produced it.
+func renderableLogRecords(records []sdklog.Record) []sdklog.Record {
+	var filtered []sdklog.Record
+	for i, record := range records {
+		if record.Body().Kind() != log.KindString || dagui.IsCallPayloadRecord(record) {
+			if filtered == nil {
+				filtered = make([]sdklog.Record, 0, len(records)-1)
+				filtered = append(filtered, records[:i]...)
+			}
+			continue
+		}
+		if filtered != nil {
+			filtered = append(filtered, record)
+		}
+	}
+	if filtered == nil {
+		return records
+	}
+	return filtered
+}
+
 // Export processes log records: exports to the DB, groups by span, and either
 // flushes immediately (if the span exists) or buffers for later.
 // The caller must hold the mutex.
@@ -34,6 +59,7 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 		return err
 	}
 
+	records = renderableLogRecords(records)
 	if len(records) == 0 {
 		return nil
 	}

@@ -24,9 +24,10 @@ import (
 )
 
 type GitRepository struct {
-	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
-	Backend GitRepositoryBackend
-	Remote  *gitutil.Remote
+	URL      dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
+	Backend  GitRepositoryBackend
+	Remote   *gitutil.Remote
+	remoteMu sync.Mutex
 
 	DiscardGitDir bool
 }
@@ -81,6 +82,115 @@ type GitRefBackend interface {
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
 
+// SelectLatestGitRef selects the greatest stable release tag in remote after
+// normalizing optional v prefixes, incomplete versions, and zero-padded numeric
+// components. It falls back to HEAD when no eligible release tag exists.
+func SelectLatestGitRef(remote *gitutil.Remote) (*gitutil.Ref, error) {
+	return SelectLatestGitRefWithTagPrefix(remote, "")
+}
+
+// SelectLatestGitRefWithTagPrefix selects the greatest normalized stable
+// release tag below tagPrefix. If no matching prefixed release exists,
+// repository-wide release tags are considered before falling back to HEAD.
+func SelectLatestGitRefWithTagPrefix(
+	remote *gitutil.Remote,
+	tagPrefix string,
+) (*gitutil.Ref, error) {
+	if remote == nil {
+		return nil, fmt.Errorf("select latest git ref: nil remote")
+	}
+
+	tagPrefix = strings.Trim(tagPrefix, "/")
+	if tagPrefix != "" {
+		tagPrefix += "/"
+	}
+
+	bestRef, err := selectLatestGitRelease(remote, tagPrefix)
+	if err != nil {
+		return nil, err
+	}
+	if bestRef == "" && tagPrefix != "" {
+		bestRef, err = selectLatestGitRelease(remote, "")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if bestRef == "" {
+		ref, err := remote.Lookup("HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve git remote HEAD: %w", err)
+		}
+		return ref, nil
+	}
+
+	ref, err := remote.Lookup(bestRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve latest git release %q: %w", bestRef, err)
+	}
+	return ref, nil
+}
+
+func selectLatestGitRelease(
+	remote *gitutil.Remote,
+	tagPrefix string,
+) (string, error) {
+	candidates := make([]releaseTagCandidate, 0, len(remote.Tags().Refs))
+	refs := map[string]string{}
+	for _, ref := range remote.Tags().Refs {
+		version := ref.ShortName()
+		if tagPrefix != "" {
+			var ok bool
+			version, ok = strings.CutPrefix(version, tagPrefix)
+			if !ok {
+				continue
+			}
+		}
+		original := ref.ShortName()
+		candidates = append(candidates, releaseTagCandidate{
+			Name:    original,
+			Version: version,
+			Target:  ref.SHA,
+		})
+		refs[original] = ref.Name
+	}
+	selected, found, err := selectLatestReleaseTag(candidates)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", nil
+	}
+	return refs[selected.Name], nil
+}
+
+// ValidateGitLatestRef validates a ref selected by git-latest.
+func ValidateGitLatestRef(refName string, tagPrefix string) error {
+	if tag, ok := strings.CutPrefix(refName, "refs/tags/"); ok {
+		version := tag
+		tagPrefix = strings.Trim(tagPrefix, "/")
+		if tagPrefix != "" {
+			version, _ = strings.CutPrefix(version, tagPrefix+"/")
+		}
+		parsed, ok := parseReleaseTag(releaseTagCandidate{
+			Name:    tag,
+			Version: version,
+		})
+		if !ok {
+			return fmt.Errorf("invalid git-latest tag %q: not a semantic version", tag)
+		}
+		if parsed.Semver.Prerelease != "" {
+			return fmt.Errorf("invalid git-latest tag %q: prerelease tags are not supported", tag)
+		}
+		return nil
+	}
+
+	if branch, ok := strings.CutPrefix(refName, "refs/heads/"); ok && branch != "" {
+		return nil
+	}
+	return fmt.Errorf("invalid git-latest ref %q", refName)
+}
+
 var _ dagql.PersistedObject = (*GitRepository)(nil)
 var _ dagql.PersistedObjectDecoder = (*GitRepository)(nil)
 var _ dagql.OnReleaser = (*GitRepository)(nil)
@@ -97,17 +207,62 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 		Backend: backend,
 	}
 
-	remote, err := backend.Remote(ctx)
+	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
+		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
+		repo.Remote = &gitutil.Remote{}
+		return repo, nil
+	}
+
+	_, err := repo.LoadRemote(ctx)
 	if err != nil {
 		return nil, err
 	}
-	repo.Remote = remote
+	return repo, nil
+}
 
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
-		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
+// LoadRemote returns remote metadata, loading it once when a resolver needs it.
+// Lazy loading allows frozen lock lookups to use pins without network access.
+func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, error) {
+	repo.remoteMu.Lock()
+	defer repo.remoteMu.Unlock()
+
+	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) {
+		return repo.Remote, nil
 	}
 
-	return repo, nil
+	var head *gitutil.Ref
+	if repo.Remote != nil {
+		head = repo.Remote.Head
+	}
+	remote, err := repo.Backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if head != nil {
+		remote.Head = head
+	}
+	repo.Remote = remote
+	return remote, nil
+}
+
+// CloneWithBackend returns a repository with fresh remote metadata state. This
+// is used when changing authentication so metadata loaded with one credential
+// set cannot be reused with another.
+func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRepository {
+	repo.remoteMu.Lock()
+	defer repo.remoteMu.Unlock()
+
+	clone := &GitRepository{
+		URL:           repo.URL,
+		Backend:       backend,
+		Remote:        &gitutil.Remote{},
+		DiscardGitDir: repo.DiscardGitDir,
+	}
+	if repo.Remote != nil && repo.Remote.Head != nil {
+		head := *repo.Remote.Head
+		clone.Remote.Head = &head
+	}
+	return clone
 }
 
 func (*GitRepository) Type() *ast.Type {

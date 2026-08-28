@@ -1,25 +1,139 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/proto"
 )
+
+func frontendTestLogRecord(spanID trace.SpanID, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	record := new(sdklog.Record)
+
+	// A zero-value Record carries zero attribute limits, truncating every
+	// string attribute value to ""; lift them like the SDK logger would.
+	rf := reflect.ValueOf(record).Elem()
+	for _, field := range []string{"attributeCountLimit", "attributeValueLengthLimit"} {
+		limit := rf.FieldByName(field)
+		limit = reflect.NewAt(limit.Type(), unsafe.Pointer(limit.UnsafeAddr())).Elem()
+		limit.SetInt(-1)
+	}
+
+	record.SetSpanID(spanID)
+	record.SetBody(body)
+	record.SetAttributes(attrs...)
+	return *record
+}
+
+func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record {
+	t.Helper()
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&callpbv1.Call{
+		Field:  "loadTypeDefs",
+		Type:   &callpbv1.Type{NamedType: "TypeDef"},
+		Digest: "xxh3:fixture-loadtypedefs",
+	})
+	require.NoError(t, err)
+
+	before := frontendTestLogRecord(spanID, otellog.StringValue("before\n"))
+	payloadBytes := frontendTestLogRecord(spanID, otellog.BytesValue(payload),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	// Malformed: a text body under the payload content type is still reserved.
+	typedText := frontendTestLogRecord(spanID, otellog.StringValue("reserved malformed payload\n"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	// A bytes body with no content type: not a call payload at all, but still
+	// binary data that must never render as log text.
+	untypedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNTYPED-BYTES")))
+	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
+	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, after}
+}
+
+func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
+	t.Helper()
+	require.Len(t, records, 2)
+	require.Equal(t, "before\n", records[0].Body().AsString())
+	require.Equal(t, "after\n", records[1].Body().AsString())
+}
+
+func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
+	knownSpanID := trace.SpanID{1}
+	unknownSpanID := trace.SpanID{2}
+	knownRecords := frontendMixedLogRecords(t, knownSpanID)
+	unknownRecords := frontendMixedLogRecords(t, unknownSpanID)
+
+	t.Run("filter preserves ordinary order", func(t *testing.T) {
+		requireOnlyOrdinaryFrontendLogs(t, renderableLogRecords(knownRecords))
+	})
+
+	t.Run("streaming", func(t *testing.T) {
+		var output strings.Builder
+		fe := NewLogs(&output).(*frontendLogs)
+		fe.db.ImportSnapshots([]dagui.SpanSnapshot{{ID: dagui.SpanID{SpanID: knownSpanID}, Name: "known"}})
+		records := append(append([]sdklog.Record{}, knownRecords...), unknownRecords...)
+
+		require.NoError(t, fe.LogExporter().Export(context.Background(), records))
+		require.NotContains(t, output.String(), "reserved malformed payload")
+		knownLogs := fe.logs.testLogs[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, knownLogs)
+		require.Equal(t, "before\nafter\n", knownLogs.rawBuf.String())
+		requireOnlyOrdinaryFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
+		require.Len(t, fe.logs.pendingLogs, 1, "reserved records remained buffered for missing spans")
+	})
+
+	t.Run("plain", func(t *testing.T) {
+		fe := NewPlain(io.Discard).(*frontendPlain)
+		t.Cleanup(fe.ticker.Stop)
+
+		require.NoError(t, fe.LogExporter().Export(context.Background(), knownRecords))
+		spanData := fe.data[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, spanData)
+		require.Len(t, spanData.logs, 2)
+		require.Equal(t, "before", spanData.logs[0].line.String())
+		require.Equal(t, "after", spanData.logs[1].line.String())
+	})
+
+	t.Run("pretty", func(t *testing.T) {
+		fe := NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+
+		require.NoError(t, fe.LogExporter().Export(context.Background(), knownRecords))
+		spanLogs := fe.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, spanLogs)
+		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+	})
+
+	t.Run("report", func(t *testing.T) {
+		session := NewReportSession(dagui.NewDB())
+
+		require.NoError(t, session.LogExporter().Export(context.Background(), knownRecords))
+		spanLogs := session.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
+		require.NotNil(t, spanLogs)
+		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+	})
+}
 
 func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
@@ -772,6 +886,37 @@ func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
 	}
 	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
 		t.Fatalf("missing local reproduce section:\n%s", joined)
+	}
+}
+
+// TestRerunSuggestionHookReplacesRunLocally covers the injectable rerun
+// suggestion: a headless consumer of the report (e.g. an LLM tool call result)
+// has tools rather than a `dagger` CLI, so it swaps in its own vocabulary. The
+// renderer still owns the layout.
+func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var gotNames []string
+	fe := NewASCIIReporterWithDB(io.Discard, rerunReportDB(t))
+	fe.Verbosity = dagui.ShowCompletedVerbosity
+	fe.RerunSuggestion = func(names []string) (string, []string) {
+		gotNames = names
+		return "RE-RUN THIS CHECK", []string{`call the check tool with name="` + names[0] + `"`}
+	}
+
+	var buf bytes.Buffer
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	got := buf.String()
+	if !slices.Equal(gotNames, []string{"ci:bootstrap"}) {
+		t.Fatalf("hook got names %v, want [ci:bootstrap]", gotNames)
+	}
+	if !strings.Contains(got, "RE-RUN THIS CHECK") ||
+		!strings.Contains(got, `call the check tool with name="ci:bootstrap"`) {
+		t.Fatalf("final render missing injected rerun suggestion:\n%s", got)
+	}
+	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
+		t.Fatalf("final render still suggests the CLI command:\n%s", got)
 	}
 }
 
@@ -1549,6 +1694,71 @@ func TestConversationTranscriptStyling(t *testing.T) {
 
 func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
+}
+
+func TestReproMarkdownWrapIndent(t *testing.T) {
+	const width = 50
+	run := func(t *testing.T, nested bool) {
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		userID := prettyTestSpanID(2)
+		toolID := prettyTestSpanID(3)
+		asstID := prettyTestSpanID(4)
+		start := time.Unix(100, 0)
+		snaps := []dagui.SpanSnapshot{
+			{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second)},
+			{
+				ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+				Message: "received", LLMRole: "user", ParentID: rootID,
+				StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second),
+			},
+		}
+		asstParent := rootID
+		if nested {
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: toolID, TraceID: prettyTestTraceID(), Name: "spawn",
+				LLMRole: "assistant", LLMTool: "spawn", ParentID: rootID,
+				StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second),
+			})
+			asstParent = toolID
+		}
+		snaps = append(snaps, dagui.SpanSnapshot{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: asstParent,
+			StartTime: start.Add(4 * time.Second), EndTime: start.Add(5 * time.Second),
+		})
+		db.ImportSnapshots(snaps)
+		db.SetPrimarySpan(rootID)
+
+		term := tuist.NewHeadlessTerminal(width, 60)
+		fe := newWithTerminal(io.Discard, db, term)
+		fe.shell = stubShellHandler{}
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+		fe.FrontendOpts.ExpandCompleted = true
+
+		setLog := func(id dagui.SpanID, text string) {
+			logs := NewVterm(termenv.Ascii)
+			logs.SetWidth(width)
+			_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+			fe.logs.Logs[id] = logs
+		}
+		setLog(userID, "hi")
+		setLog(asstID, "Added a case to the shell-mode gutter switch that matches assistant messages (`LLMRole == assistant && LLMTool == \"\"`, i.e. replies/thinking but not tool calls) and leaves line 0 bare, since the assistant branch below re-emits the indent + cue on the content line. Tool calls (which have `LLMTool != \"\"` and render inline without a paragraph break) still fall through to `case focused:` and are unaffected.")
+
+		fe.setWindowSizeLocked(windowSize{Width: width, Height: 60})
+		fe.recalculateViewLocked()
+
+		lines := strings.Split(strings.Join(fe.tui.Frame(), "\n"), "\n")
+		for _, l := range lines {
+			p := stripANSICodes(l)
+			if w := len([]rune(strings.TrimRight(p, " "))); w > width {
+				t.Errorf("line exceeds width %d (got %d): %q", width, w, p)
+			}
+		}
+		t.Logf("nested=%v rendered:\n%s", nested, strings.Join(lines, "\n"))
+	}
+	t.Run("toplevel", func(t *testing.T) { run(t, false) })
+	t.Run("nested", func(t *testing.T) { run(t, true) })
 }
 
 // TestUserPromptLeadingGutterShaded is a regression test for the user's prompt

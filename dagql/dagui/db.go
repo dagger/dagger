@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"slices"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -140,8 +142,7 @@ type DB struct {
 
 	Resources map[attribute.Distinct]*resource.Resource
 
-	CallPayloads map[string]string
-	Calls        map[string]*callpbv1.Call
+	Calls map[string]*callpbv1.Call
 
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
@@ -179,20 +180,28 @@ type DB struct {
 	// new span data.
 	mutations uint64
 
+	// The surfacing memos below are single-entry and key on BOTH db.mutations
+	// and the root the walk was relative to (see surfaceRoot): a zoom change
+	// doesn't bump mutations, so without the root in the key a render zoomed
+	// to one span would be served the tree built for another.
 	surfacedChecks     []*CheckNode
 	surfacedChecksAt   uint64
+	surfacedChecksRoot SpanID
 	surfacedChecksInit bool
 
 	surfacedConversation     []*MessageNode
 	surfacedConversationAt   uint64
+	surfacedConversationRoot SpanID
 	surfacedConversationInit bool
 
 	surfacedGenerators     []*GeneratorNode
 	surfacedGeneratorsAt   uint64
+	surfacedGeneratorsRoot SpanID
 	surfacedGeneratorsInit bool
 
 	surfacedServices     []*ServiceNode
 	surfacedServicesAt   uint64
+	surfacedServicesRoot SpanID
 	surfacedServicesInit bool
 
 	testIndex *TestIndex
@@ -216,8 +225,7 @@ func NewDB() *DB {
 		Spans:     NewSpanSet(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
-		CallPayloads: make(map[string]string),
-		Calls:        make(map[string]*callpbv1.Call),
+		Calls: make(map[string]*callpbv1.Call),
 
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
@@ -409,6 +417,15 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// streaming progress data, not log text
 			continue
 		}
+		if db.ingestCallPayload(log) {
+			// dagql call payload, not log text
+			continue
+		}
+		if log.Body().Kind() != otellog.KindString {
+			// Never log text, whatever produced it; checking the kind first
+			// also keeps AsString from reporting to the global error handler.
+			continue
+		}
 		if log.Body().AsString() == "" {
 			// eof; ignore
 			continue
@@ -520,6 +537,62 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 // to the span it created.
 func (db *DB) SetPrimarySpan(span SpanID) {
 	db.PrimarySpan = span
+}
+
+// surfaceRoot resolves the root a surfacing walk (SurfacedChecks and family)
+// is relative to: the span the caller gave, or the trace root when nil.
+//
+// Surfacing is a question about a subtree, not about the process: "what checks
+// / messages / services ran beneath THIS span". Every frontend asks it about
+// whatever it is zoomed to, and the whole-trace answer is just the zoom-to-the-
+// root case. Flags (Boundary/Encapsulate) on or above the root are outside the
+// question and never contain; flags strictly below it contain exactly as they
+// always have, so a fixture check wrapped in its own boundary stays hidden.
+func (db *DB) surfaceRoot(root *Span) *Span {
+	if root != nil {
+		return root
+	}
+	return db.RootSpan
+}
+
+// surfaceRootID keys a surfacing memo on the root it was built for.
+func surfaceRootID(root *Span) SpanID {
+	if root == nil {
+		return SpanID{}
+	}
+	return root.ID
+}
+
+// spanMayRollUp walks span's real parent chain and reports whether span may
+// roll up to root. Boundary and Encapsulate are unilateral containment flags:
+// either one on an ancestor strictly below root stops the roll-up, while flags
+// on root itself are outside the question. An explicit root must be reached;
+// nil asks about all traces and accepts parentless or severed chains as long as
+// no loaded ancestor contains them.
+//
+// visit is called for each ancestor encountered, including a containing
+// boundary and root itself. Surfaced views use it to retain their nearest
+// semantic parent without reimplementing containment. The starting span is not
+// visited: a span's flags contain its descendants, not the span itself.
+func spanMayRollUp(span, root *Span, visit func(*Span)) bool {
+	if span == nil {
+		return false
+	}
+	if span == root {
+		return true
+	}
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		if visit != nil {
+			visit(parent)
+		}
+		if parent == root {
+			return true
+		}
+		if parent.Boundary || parent.Encapsulate {
+			return false
+		}
+	}
+	return root == nil
 }
 
 func (db *DB) initSpan(spanID SpanID) *Span {
@@ -861,7 +934,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
-		db.CallPayloads[span.CallDigest] = span.CallPayload
+		// Legacy channel: older engines carry a base64 payload on the span
+		// itself. Decode eagerly into the same store the log channel fills so
+		// nothing downstream has to know which channel carried a call.
+		var legacy callpbv1.Call
+		if err := legacy.Decode(span.CallPayload); err == nil {
+			db.addCall(span.CallDigest, &legacy)
+		} else {
+			slog.Warn("failed to decode legacy call payload", "digest", span.CallDigest, "err", err)
+		}
 	}
 
 	if !span.ParentID.IsValid() && span.Received {
@@ -1127,31 +1208,27 @@ func (*DB) Close() error {
 }
 
 func (db *DB) Call(dig string) *callpbv1.Call {
-	// First, check if we already have the call cached
-	if cached, ok := db.Calls[dig]; ok {
-		return cached
+	return db.call(dig, nil)
+}
+
+func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
+	// First, check if we have the exact call.
+	if decoded, ok := db.Calls[dig]; ok {
+		return decoded
 	}
 
-	// Next, try to decode from the call payload
-	if callPayload, ok := db.CallPayloads[dig]; ok {
-		var call callpbv1.Call
-		if err := call.Decode(callPayload); err != nil {
-			slog.Warn("failed to decode call", "err", err)
-			// Cache nil so we don't keep retrying and spamming warnings
-			// on every render cycle.
-			db.Calls[dig] = nil
-			return nil
-		}
-		// Cache the decoded call for future use
-		db.Calls[dig] = &call
-		return &call
-	}
-
-	// Finally, try to find the call through creator spans
+	// Otherwise, try to find the call through creator spans.
 	if creators, ok := db.CreatorSpans[dig]; ok {
+		if seen == nil {
+			seen = map[string]bool{}
+		}
+		seen[dig] = true
 		// Try each creator in order
 		for _, creator := range creators.Order {
-			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+			if seen[creator.CallDigest] {
+				continue
+			}
+			if creatorCall := db.call(creator.CallDigest, seen); creatorCall != nil {
 				return creatorCall
 			}
 		}
@@ -1159,6 +1236,35 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 
 	// No call found
 	return nil
+}
+
+// CallIDForDigest rebuilds the ID of the dagql call with the given digest
+// from the call payloads this client has ingested.
+func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
+	if digest == "" {
+		return nil, fmt.Errorf("no call digest")
+	}
+	rootCall := db.Call(digest)
+	if rootCall == nil {
+		return nil, fmt.Errorf("cannot rebuild ID: %s", missingCall{digest: digest})
+	}
+
+	recipe := &callpbv1.RecipeDAG{
+		RootDigest:    rootCall.Digest,
+		CallsByDigest: map[string]*callpbv1.Call{},
+	}
+	if missing := extractIntoDAG(recipe, db, rootCall.Digest); len(missing) > 0 {
+		return nil, fmt.Errorf("cannot rebuild ID for %s: %s", frameLabel(rootCall), missing[0])
+	}
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{Recipe: recipe},
+	}
+
+	var id call.ID
+	if err := id.FromProto(dag); err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {

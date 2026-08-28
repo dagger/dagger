@@ -158,6 +158,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Bytes",
+			"p": "Dagger/Bytes.html",
+			"d": "<p>Arbitrary binary data, represented as a base64-encoded string.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\CacheVolume",
 			"p": "Dagger/CacheVolume.html",
 			"d": "<p>A directory whose contents persist across runs.</p>",
@@ -2597,6 +2607,12 @@
 			"n": "Dagger\\Client::address",
 			"p": "Dagger/Client.html#method_address",
 			"d": "<p>initialize an address to load directories, containers, secrets or other object types.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::blob",
+			"p": "Dagger/Client.html#method_blob",
+			"d": "<p>Creates a file from arbitrary binary contents.</p>"
 		},
 		{
 			"t": "M",
@@ -5504,9 +5520,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\GitRepository::latestVersion",
-			"p": "Dagger/GitRepository.html#method_latestVersion",
-			"d": "<p>Returns details for the latest semver tag.</p>"
+			"n": "Dagger\\GitRepository::latest",
+			"p": "Dagger/GitRepository.html#method_latest",
+			"d": "<p>Return the latest stable release tag, falling back to HEAD when no release exists.</p>"
 		},
 		{
 			"t": "M",

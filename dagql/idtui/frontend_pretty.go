@@ -149,6 +149,52 @@ type frontendPretty struct {
 	// live TUI (which re-renders on arrival) and report mode.
 	fetchWaiter func()
 
+	// reportNestedLogLimit bounds how many log lines a *nested* row (depth > 0)
+	// renders in report mode; 0 means unbounded, the default. Report renders
+	// have no screen height to divide by, so an embedded report (a rendered
+	// trace handed back as an LLM tool result) would otherwise inline every
+	// line of every exec beneath it. The row at depth 0 is the thing the report
+	// is *about* -- its own output stays whole -- while everything below it is
+	// abridged to a tail, mirroring core's captured-log abridging.
+	reportNestedLogLimit int
+
+	// reportHideLogSpans suppresses the inline logs of specific rows in report
+	// mode. It exists for one caller: core renders a scoped report ALONGSIDE
+	// the target's own printed output (kept verbatim, unabridged), and the
+	// report must not repeat what that section already shows. The caller knows
+	// exactly which spans it printed, so it names them here rather than the
+	// renderer guessing at "the root and its children".
+	//
+	// Only the span-tree's inline logs are suppressed; the roll-up sections
+	// (TESTS' failing-case output, surfaced failures) render through their own
+	// views and are unaffected.
+	reportHideLogSpans map[dagui.SpanID]bool
+
+	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
+	// single LLM tool call) rather than describing the whole run. The
+	// surfacing sections no longer need it -- they roll up relative to the
+	// zoom (see surfaceRoot) -- so it now gates exactly two things: the TRACE
+	// verdict header (the enclosing run's verdict, not the subtree's) and the
+	// live-tree promotions, which would reshape the shared, cached DB around
+	// the whole run instead of the subtree being reported on.
+	reportScopedSubtree bool
+
+	// reportHideSpanTree suppresses the span-tree body of a report: the
+	// surfaced sections (CHECKS, TESTS, SERVICES, CONVERSATION, generators)
+	// and the target's own output still render, the raw progress rows don't.
+	//
+	// It exists for the LLM tool-call result, whose reader wants the OUTPUT
+	// its tool produced plus what was SURFACED beneath it -- not a rendering
+	// of every dagql call the call happened to make.
+	reportHideSpanTree bool
+
+	// reportPrimary overrides the primary span for this render WITHOUT
+	// touching the shared DB. A report is scoped by pointing it at a root
+	// span; doing that by mutating db.PrimarySpan (as this used to) leaves
+	// one render's scope behind on a DB that other renders share. See
+	// frontendPretty.primarySpan.
+	reportPrimary dagui.SpanID
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -810,12 +856,28 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	return newWithTerminal(w, db, tuist.NewStdTerminal())
 }
 
+// NewASCIIReporterWithDB returns a report-only pretty frontend backed by db
+// that always renders plain ASCII -- no ANSI escape sequences -- regardless of
+// the ambient color profile. Used to embed a rendered final report in an API
+// result (e.g. an LLM tool result), where the consumer is reading text.
+func NewASCIIReporterWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
+	fe := newWithTerminalProfile(w, db, tuist.NewStdTerminal(), termenv.Ascii)
+	fe.reportOnly = true
+	return fe
+}
+
 // newWithTerminal builds a pretty frontend whose TUI is backed by the given
 // terminal. Production uses NewWithDB (a real std terminal); the headless test
 // harness injects a tuist.HeadlessTerminal so it can drive the frontend
 // synchronously, without the event-loop goroutine.
 func newWithTerminal(w io.Writer, db *dagui.DB, term tuist.Terminal) *frontendPretty {
-	profile := ColorProfile()
+	return newWithTerminalProfile(w, db, term, ColorProfile())
+}
+
+// newWithTerminalProfile is newWithTerminal with an explicit color profile, so
+// callers that need deterministic plain-text output can pin termenv.Ascii
+// instead of inheriting the process environment's profile.
+func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, profile termenv.Profile) *frontendPretty {
 	tui := tuist.New(term)
 	fe := &frontendPretty{
 		db:        db,
@@ -1124,7 +1186,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	// report mode, and e.g. `dagger call ... stdout > f` must keep its stdout
 	// clean.
 	reportOut := io.Writer(os.Stderr)
-	if fe.reportOnly && fe.traceID != "" && RunningInAgent() {
+	if fe.reportOnly && fe.traceID != "" && fe.agentStyle() {
 		reportOut = os.Stdout
 	}
 	if renderErr := fe.FinalRender(reportOut); renderErr != nil {
@@ -1402,6 +1464,118 @@ func (fe *frontendPretty) SetVerbosity(n int) {
 	})
 }
 
+// ReportRenderOpts are the knobs a caller embedding a rendered report (e.g.
+// core's scoped trace report) sets per render. They are deliberately separate
+// from FrontendOpts' interactive state: a report is rendered once, for a
+// reader who cannot expand a row or press '+'.
+type ReportRenderOpts struct {
+	// Verbosity is the render verbosity (dagui.ShowCompletedVerbosity and up).
+	Verbosity int
+
+	// ExpandCompleted leaves completed steps expanded.
+	ExpandCompleted bool
+
+	// ExpandSpans force-expands specific rows, exactly as if the reader had
+	// expanded them by hand -- IsExpanded consults this before anything else,
+	// so it punches through the roll-up/tool-call boundaries that would
+	// otherwise collapse a row to a bare status line and hide its output.
+	//
+	// This is deliberately *not* "crank Verbosity to ExpandCompletedVerbosity":
+	// that threshold also clears ShowInternalVerbosity and
+	// ShowEncapsulatedVerbosity, which would surface internal and encapsulated
+	// spans the report is meant to hide.
+	ExpandSpans map[dagui.SpanID]bool
+
+	// Filter prunes spans from the tree (dagui.WalkSkip skips the subtree).
+	Filter func(*dagui.Span) dagui.WalkDecision
+
+	// NestedLogLimit bounds the log lines rendered for rows below the top
+	// level; 0 leaves them unbounded. See frontendPretty.reportNestedLogLimit.
+	NestedLogLimit int
+
+	// HideLogSpans suppresses the inline logs of these spans in the span tree,
+	// for a caller that renders their output itself (see
+	// frontendPretty.reportHideLogSpans).
+	HideLogSpans map[dagui.SpanID]bool
+
+	// ScopedSubtree marks the report as being about one subtree rather than the
+	// whole run: it drops the TRACE verdict header, skips the live-tree
+	// promotions, and confines every part of the report -- the span tree AND
+	// the surfaced sections -- to Root's real subtree. See
+	// frontendPretty.reportScopedSubtree and dagui.FrontendOpts.StrictSubtree.
+	ScopedSubtree bool
+
+	// Root is the span the report is about: its primary and zoom span. It is
+	// applied to this render only; the shared DB is never mutated. An invalid
+	// Root means the whole trace (the DB's own primary span).
+	Root dagui.SpanID
+
+	// HideSpanTree drops the span-tree body from the report, leaving the
+	// surfaced sections (CHECKS, TESTS, SERVICES, CONVERSATION, generators)
+	// and the target's own output. See frontendPretty.reportHideSpanTree.
+	HideSpanTree bool
+
+	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
+	// for a reader that has no `dagger` CLI to run. See
+	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
+	RerunSuggestion func(checkNames []string) (heading string, body []string)
+
+	// AgentStyle renders the report for an AI agent rather than a human at a
+	// terminal: greppable "== TITLE ==" headings, unindented section bodies, no
+	// decorative roll-up dots, span IDs surfaced as handles. See
+	// dagui.FrontendOpts.AgentStyle.
+	//
+	// A caller rendering inside the engine sets this unconditionally: there is
+	// no agent env var to sniff there, but the reader of every report it
+	// assembles is an LLM.
+	AgentStyle bool
+}
+
+// SetReportRenderOpts applies opts to this frontend ahead of a FinalRender.
+//
+// A report frontend is constructed fresh per render (see ReportSession), so
+// this is the whole of its render configuration: nothing carries over from a
+// previous report.
+func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
+	fe.dispatch(func() {
+		feOpts := fe.Opts()
+		feOpts.Verbosity = opts.Verbosity
+		feOpts.ExpandCompleted = opts.ExpandCompleted
+		if opts.ExpandSpans != nil {
+			feOpts.SpanExpanded = opts.ExpandSpans
+		} else {
+			// Never leave it nil: the interactive expand path writes to it.
+			feOpts.SpanExpanded = map[dagui.SpanID]bool{}
+		}
+		feOpts.Filter = opts.Filter
+		feOpts.RerunSuggestion = opts.RerunSuggestion
+		feOpts.AgentStyle = opts.AgentStyle
+		// A scoped report renders exactly the root span's real subtree: no
+		// cause-linked or otherwise foreign span may appear in it.
+		feOpts.StrictSubtree = opts.ScopedSubtree
+		fe.reportNestedLogLimit = opts.NestedLogLimit
+		fe.reportHideLogSpans = opts.HideLogSpans
+		fe.reportScopedSubtree = opts.ScopedSubtree
+		fe.reportHideSpanTree = opts.HideSpanTree
+		fe.reportPrimary = opts.Root
+		fe.renderVersion++
+		fe.Update()
+	})
+}
+
+// primarySpan is the span this render is *about*: the report's own root when
+// one was given (see ReportRenderOpts.Root), otherwise the DB's primary span.
+//
+// Reports go through the override so a render never has to mutate the shared
+// DB to scope itself -- which is what used to let one report's scope leak into
+// the next render over the same (cached) DB.
+func (fe *frontendPretty) primarySpan() dagui.SpanID {
+	if fe.reportPrimary.IsValid() {
+		return fe.reportPrimary
+	}
+	return fe.db.PrimarySpan
+}
+
 func (fe *frontendPretty) SetTelemetryError(err error) {
 	fe.telemetryError.Store(&err)
 }
@@ -1534,14 +1708,15 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.). syncSpanTreeState copies this into each
 	// SpanTreeView and marks any changed tree dirty.
-	if !fe.finalRender {
-		fe.finalRender = true
-		if fe.commandView != nil {
-			fe.commandView.SetFinal(true)
-			fe.commandView.Update()
-		}
-		fe.Update()
+	fe.finalRender = true
+	// Always mark the tree dirty, even on a repeat FinalRender: nothing
+	// downstream should serve lines memoized under a previous render's
+	// configuration.
+	if fe.commandView != nil {
+		fe.commandView.SetFinal(true)
+		fe.commandView.Update()
 	}
+	fe.Update()
 
 	// Unfocus for the final render.
 	fe.focus(nil)
@@ -1552,7 +1727,7 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	if fe.pinnedZoom.IsValid() {
 		fe.ZoomedSpan = fe.pinnedZoom
 	} else {
-		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.ZoomedSpan = fe.primarySpan()
 	}
 	fe.viewDirty = false
 	fe.recalculateViewLocked()
@@ -1965,7 +2140,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasGenerateReport() {
+	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasConversation() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -1992,7 +2167,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 				// Only the error re-print is redundant, though: the stdout
 				// stream is the command's own result (e.g. a shell script's
 				// output from before it failed), so still replay it.
-				if err := replayPrimaryOutput(w, fe.db, false); err != nil {
+				if err := replayPrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
 					return err
 				}
 			}
@@ -2027,11 +2202,11 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// errors, whose "Run '... --help' for usage." hint lives on the
 		// primary span's stderr), so nothing above covered that stream and
 		// dropping it here would lose it entirely.
-		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return replayPrimaryOutput(w, fe.db, !fe.hasShownRootError())
+		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailedOrCausedFailure() {
+			return replayPrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
 		}
 	}
-	return renderPrimaryOutput(w, fe.db)
+	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -2360,7 +2535,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			KeyEnabled(fe.cloudURL != "")),
 		key.NewBinding(key.WithKeys("T"),
 			key.WithHelp("T", "tests"),
-			KeyEnabled(fe.db != nil && fe.db.HasTests())),
+			KeyEnabled(fe.hasTestsForFocus())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -2618,12 +2793,14 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
 	pol := fe.renderPolicy()
 	zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
-		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
+		fe.rowsView.Zoomed.ID != fe.primarySpan()
 
 	// Lead the whole-trace report with the overall verdict -- did it pass or
 	// fail, what command ran, and the top-level error -- the one-glance summary
 	// the server-computed summary used to provide. A zoom titles itself below.
-	if !zoomed {
+	// A subtree-scoped report skips it: the verdict is the enclosing run's, not
+	// the subtree's.
+	if !zoomed && !fe.reportScopedSubtree {
 		if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
 			ctx.Lines(hdr...)
 			ctx.Line("")
@@ -2703,7 +2880,8 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		ctx.Lines(convLines...)
 		renderedRows = true
 	}
-	if !renderedRows && (!rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity) {
+	if !renderedRows && !fe.reportHideSpanTree &&
+		(!rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity) {
 		// Only fall back to the raw progress tree when there's nothing better.
 		// A plain `dagger call` failure renders its root cause above; dumping
 		// the bootstrap spans (connect / load workspace / parsing args) under
@@ -2723,7 +2901,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// debugging session needs. Agent runs only: an agent may see nothing but
 	// this report, while a human already watched the service run in the tree
 	// above, where the install span carries its logs and health checks.
-	if RunningInAgent() {
+	if fe.agentStyle() {
 		if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
 			if renderedRows {
 				ctx.Line("")
@@ -2811,7 +2989,7 @@ func (fe *frontendPretty) renderTraceHeader(r *renderer) []string {
 		icon, word, color = Diamond, "RUNNING", termenv.ANSIYellow
 	}
 	status := out.String(fmt.Sprintf("%s %s", icon, word)).Foreground(color).String()
-	lines := []string{reportHeadingLine(out, "TRACE") + "  " + status}
+	lines := []string{reportHeadingLine(out, fe.agentStyle(), "TRACE") + "  " + status}
 
 	name := root.Name
 	if name == "" {
@@ -2879,6 +3057,7 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 	}
 	tv := &TestView{
 		Profile:         fe.profile,
+		AgentStyle:      fe.agentStyle(),
 		Logs:            fe.logs.Logs,
 		RequestLogs:     fe.requestLogsOnRender,
 		SummaryIndent:   2,
@@ -2898,12 +3077,28 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 	return lines
 }
 
+// agentStyle reports whether opts should render for an AI agent rather than a
+// human at a terminal: either the caller said so explicitly
+// (FrontendOpts.AgentStyle -- the engine-side report path, which has no
+// environment to sniff) or the CLI's environment detection says so.
+//
+// This is the single place the two halves are combined; render code asks for
+// it via frontendPretty.agentStyle (or a component's own AgentStyle field).
+func agentStyle(opts *dagui.FrontendOpts) bool {
+	return opts.AgentStyle || RunningInAgent()
+}
+
+// agentStyle reports whether this frontend is rendering for an AI agent.
+func (fe *frontendPretty) agentStyle() bool {
+	return agentStyle(fe.Opts())
+}
+
 // reportHeadingLine renders a section title in the failure summary's style
 // (daggercmd.section, which idtui can't import without a cycle): a flat,
 // greppable "== TITLE ==" marker under an AI agent, or a bold heading for
 // humans.
-func reportHeadingLine(out TermOutput, title string) string {
-	if RunningInAgent() {
+func reportHeadingLine(out TermOutput, agent bool, title string) string {
+	if agent {
 		return fmt.Sprintf("== %s ==", title)
 	}
 	return out.String(title).Bold().String()
@@ -2912,15 +3107,15 @@ func reportHeadingLine(out TermOutput, title string) string {
 // reportSectionLines renders a titled block: the heading from reportHeadingLine
 // with the body left at the margin under an agent or indented two spaces for
 // humans. body lines are pre-rendered and may already carry styling.
-func reportSectionLines(out TermOutput, title string, body []string) []string {
+func reportSectionLines(out TermOutput, agent bool, title string, body []string) []string {
 	if len(body) == 0 {
 		return nil
 	}
 	lines := make([]string, 0, len(body)+1)
-	lines = append(lines, reportHeadingLine(out, title))
+	lines = append(lines, reportHeadingLine(out, agent, title))
 	for _, b := range body {
 		switch {
-		case RunningInAgent(), b == "":
+		case agent, b == "":
 			lines = append(lines, b)
 		default:
 			lines = append(lines, "  "+b)
@@ -2972,7 +3167,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 				walkChecks(n.Children)
 			}
 		}
-		walkChecks(fe.db.SurfacedChecks())
+		walkChecks(fe.reportChecks())
 		for _, node := range failingLeafTestCases(fe.db.TestView()) {
 			add(node.Span)
 		}
@@ -2984,7 +3179,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		// boundary-contained fixture failures doesn't surface those as drill-ins.
 		root := fe.db.RootSpan
 		if len(targets) == 0 && root != nil && root.IsFailed() &&
-			len(fe.db.SurfacedChecks()) == 0 {
+			len(fe.reportChecks()) == 0 {
 			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
 				for _, origin := range fe.checkRootCauses(root) {
 					add(origin)
@@ -3002,21 +3197,23 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	for _, sel := range targets {
 		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
 	}
-	return reportSectionLines(out, "MORE DETAILS", body)
+	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }
 
 // renderRerunSection prints copy-paste commands to re-run the failed checks,
 // split by intent so the two very different actions read distinctly. For a Cloud
 // trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
 // cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
-// check'); otherwise it emits just "RUN LOCALLY". Only outermost
+// check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
+// be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
+// a CLI to run. Only outermost
 // checks are re-runnable, so sub-checks roll up to their root. Returns nil when
 // no failed check applies. Gated by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
 	}
-	roots := fe.db.SurfacedChecks()
+	roots := fe.reportChecks()
 
 	var names []string
 	seen := map[string]bool{}
@@ -3059,19 +3256,31 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		for _, name := range names {
 			body = append(body, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
-		lines = append(lines, reportSectionLines(out, "RE-RUN IN CI", body)...)
+		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
 	}
 
 	// Run the check locally to reproduce (and then fix) the failure against your
-	// working tree.
+	// working tree. A caller may inject its own vocabulary here (e.g. a tool
+	// call instead of a CLI command) via FrontendOpts.RerunSuggestion.
+	heading := "RUN LOCALLY"
 	body := make([]string, 0, len(names))
 	for _, name := range names {
 		body = append(body, fmt.Sprintf("dagger check %q", name))
 	}
+	if hook := fe.RerunSuggestion; hook != nil {
+		hookHeading, hookBody := hook(names)
+		if hookHeading != "" {
+			heading = hookHeading
+		}
+		body = hookBody
+	}
+	if len(body) == 0 {
+		return lines
+	}
 	if len(lines) > 0 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, reportSectionLines(out, "RUN LOCALLY", body)...)
+	lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 
 	return lines
 }
@@ -3108,15 +3317,15 @@ func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.C
 // roots only; the per-level tallies live on the nested headers.
 func (fe *frontendPretty) renderChecksHeader() []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	return []string{checksHeaderLine(out, fe.db.SurfacedChecks())}
+	return []string{checksHeaderLine(out, fe.agentStyle(), fe.reportChecks())}
 }
 
 // checksHeaderLine renders a "CHECKS" heading with the failed/passed tally for
 // the given checks joined onto the same line (mirroring the TESTS header). The
 // nodes are the checks listed directly beneath this header -- a level -- so the
 // tally agrees with what's rendered right under it.
-func checksHeaderLine(out TermOutput, nodes []*dagui.CheckNode) string {
-	line := reportHeadingLine(out, "CHECKS")
+func checksHeaderLine(out TermOutput, agent bool, nodes []*dagui.CheckNode) string {
+	line := reportHeadingLine(out, agent, "CHECKS")
 	for _, part := range checkBreakdownPartsFor(out, nodes) {
 		line += "  " + part
 	}
@@ -3248,9 +3457,18 @@ func (fe *frontendPretty) formHeight() int {
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
-	fe.promoteChecksLocked()
-	fe.promoteConversationLocked()
-	fe.promoteGeneratorsLocked()
+	if !fe.reportScopedSubtree {
+		// Promotion reshapes the trace around what the whole run was about: it
+		// hangs the surfaced checks/conversation/generators off the zoomed span
+		// as revealed spans and marks it passthrough, so RowsView iterates
+		// those instead of its real children. A subtree-scoped report wants
+		// exactly the opposite -- the subtree it was scoped to -- and, since
+		// promotion mutates the (cached, reused) DB's spans, it would also
+		// leave that reshaping behind for every later render.
+		fe.promoteChecksLocked()
+		fe.promoteConversationLocked()
+		fe.promoteGeneratorsLocked()
+	}
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
@@ -3260,7 +3478,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
 	// Report mode already fetches the pinned subtree up front (trace.go --span),
 	// so this is interactive-only; requestSubtree dedups against that.
-	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
 
@@ -3270,9 +3488,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// on render -- request it eagerly in both modes. It's a single span
 		// (descendants=false), not the rolled-up build log, so it isn't the
 		// over-fetch interactive cares about.
-		if fe.zoomKind() == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
-			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
-				if prim := fe.db.PrimarySpan; prim.IsValid() {
+		if fe.zoomKind() == zoomRoot && len(fe.reportChecks()) == 0 {
+			if tv := fe.reportTestView(); tv == nil || !tv.HasTests() {
+				if prim := fe.primarySpan(); prim.IsValid() {
 					fe.requestLogsWith(prim, false)
 				}
 			}
@@ -3315,7 +3533,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				reqConversationLogs(n.Children)
 			}
 		}
-		reqConversationLogs(fe.db.SurfacedConversation())
+		reqConversationLogs(fe.reportConversation())
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
@@ -3349,12 +3567,12 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					}
 				}
 			}
-			eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+			eachFailedLeafCheck(fe.reportChecks(), func(n *dagui.CheckNode) {
 				for _, origin := range fe.checkRootCauses(n.Span) {
 					fe.requestLogs(origin.ID)
 				}
 			})
-			eachFailedLeafGenerator(fe.db.SurfacedGenerators(), func(n *dagui.GeneratorNode) {
+			eachFailedLeafGenerator(fe.reportGenerators(), func(n *dagui.GeneratorNode) {
 				// The generator span's own rolled-up logs carry the exec failure
 				// (renderGeneratorFailureDetail); explicit origins render like a
 				// check's causes.
@@ -3404,6 +3622,91 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.applyTuistFocus()
 }
 
+// surfaceRoot returns the span the reveal-independent surfacing (checks,
+// conversation, services, generators) should roll up beneath for this render:
+// the currently ZOOMED span, or nil -- meaning the DB root, i.e. the whole
+// trace -- when the zoom IS the DB root or isn't loaded.
+//
+// Surfacing is zoom-relative (see DB.surfaceRoot): "what ran beneath what I'm
+// looking at". The unzoomed interactive case resolves to nil and is therefore
+// byte-for-byte what it always was, while a subtree-scoped report -- an LLM
+// tool result, whose primary/zoom is the tool-call display span -- gets the
+// checks that tool ran, even though the display span is itself a Boundary.
+func (fe *frontendPretty) surfaceRoot() *dagui.Span {
+	if fe.db == nil {
+		return nil
+	}
+	if !fe.ZoomedSpan.IsValid() {
+		return nil
+	}
+	span := fe.db.Spans.Map[fe.ZoomedSpan]
+	if span == nil || span == fe.db.RootSpan {
+		return nil
+	}
+	return span
+}
+
+// reportChecks returns the surfaced checks this render is *about*: the checks
+// that ran beneath the zoomed span (the whole trace when unzoomed). See
+// frontendPretty.surfaceRoot.
+func (fe *frontendPretty) reportChecks() []*dagui.CheckNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedChecksForSpan(fe.surfaceRoot())
+}
+
+// reportGenerators is reportChecks for `dagger generate` generator runs.
+func (fe *frontendPretty) reportGenerators() []*dagui.GeneratorNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedGeneratorsForSpan(fe.surfaceRoot())
+}
+
+// reportConversation is reportChecks for the LLM transcript.
+func (fe *frontendPretty) reportConversation() []*dagui.MessageNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedConversationForSpan(fe.surfaceRoot())
+}
+
+// reportServices is reportChecks for surfaced service instances.
+func (fe *frontendPretty) reportServices() []*dagui.ServiceNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedServicesForSpan(fe.surfaceRoot())
+}
+
+// reportTestRoot is surfaceRoot for the TESTS section.
+//
+// The test index is trace-global, so asking it for "the tests" hands back
+// every test span in the session -- which is how a report scoped to a tool
+// call that ran no tests at all could still close with a TESTS section
+// belonging to a DIFFERENT call minutes earlier. A scoped report asks about
+// its own subtree instead; unscoped renders (the CLI's end-of-run report,
+// the live TUI) keep the whole-trace view they always had.
+func (fe *frontendPretty) reportTestRoot() *dagui.Span {
+	if !fe.reportScopedSubtree {
+		return nil
+	}
+	return fe.surfaceRoot()
+}
+
+// reportTestView is the test view this render is *about*: the whole trace,
+// or -- for a scoped report -- only the tests beneath its root span.
+func (fe *frontendPretty) reportTestView() *dagui.TestView {
+	if fe.db == nil {
+		return nil
+	}
+	if root := fe.reportTestRoot(); root != nil {
+		return fe.db.TestViewForSpan(root)
+	}
+	return fe.db.TestView()
+}
+
 // promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a
 // trace has checks, mark the root span passthrough so RowsView surfaces the
 // revealed check spans -- all of them -- at the top level instead of the
@@ -3440,17 +3743,19 @@ func (fe *frontendPretty) promoteChecksLocked() {
 // tool-call span that spawned them, exactly as reveal bubbling used to. Marking
 // the host Passthrough then makes RowsView iterate those revealed spans.
 func (fe *frontendPretty) promoteConversationLocked() {
-	if fe.db == nil || !fe.db.HasConversation() {
+	if fe.db == nil {
 		return
 	}
 	// SetPrimary explicitly zooms interactive commands to the CLI root, while
 	// RootSpan is merely the first parentless span received and may be a remote
-	// query root. Promote the span RowsView is actually zoomed to.
+	// query root. Promote the span RowsView is actually zoomed to, and ask the
+	// surfacing question about that same span: relative to the trace root it
+	// may be unanswerable when the primary is a sibling parentless span.
 	host := fe.db.RootSpan
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil {
+	if host == nil || !fe.db.HasConversationForSpan(host) {
 		return
 	}
 	if host.LLMRole != "" {
@@ -3472,17 +3777,19 @@ func (fe *frontendPretty) promoteConversationLocked() {
 // (via DB.PromoteGeneratorsTo) and marks the host Passthrough so RowsView
 // iterates those revealed spans.
 func (fe *frontendPretty) promoteGeneratorsLocked() {
-	if fe.db == nil || !fe.db.HasGenerators() {
+	if fe.db == nil {
 		return
 	}
 	// SetPrimary explicitly zooms interactive commands to the CLI root, while
 	// RootSpan is merely the first parentless span received and may be a remote
-	// query root. Promote the span RowsView is actually zoomed to.
+	// query root. Promote the span RowsView is actually zoomed to, and ask the
+	// surfacing question about that same span: relative to the trace root it
+	// may be unanswerable when the primary is a sibling parentless span.
 	host := fe.db.RootSpan
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil {
+	if host == nil || !fe.db.HasGeneratorsForSpan(host) {
 		return
 	}
 	if host.GeneratorName != "" {
@@ -5341,6 +5648,10 @@ func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *r
 	if fe.claims.hasLog(row.Span.ID) {
 		return false
 	}
+	if fe.reportHideLogSpans[row.Span.ID] {
+		// The report's caller prints this span's output itself, verbatim.
+		return false
+	}
 	// Structural lazy fetch: this row renders its own logs (message/rollup
 	// spans), so request them when it renders -- the interactive path no longer
 	// pre-fetches. (Inline expanded-step logs go through LogsView instead.)
@@ -5353,6 +5664,10 @@ func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *r
 		if sh := ctx.ScreenHeight(); sh > 0 {
 			limit = sh / 3
 		}
+	}
+	// See renderInlineLogs: nested rows are abridged in an embedded report.
+	if fe.reportNestedLogLimit > 0 && row.Depth > 0 {
+		limit = fe.reportNestedLogLimit
 	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
@@ -6136,7 +6451,7 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 
 	// The braille rollup is a visual density cue; an agent reading the output as
 	// text gets nothing from it but noise, so skip it entirely.
-	if RunningInAgent() {
+	if fe.agentStyle() {
 		return ""
 	}
 
@@ -6649,7 +6964,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	for _, log := range logs {
+	for _, log := range renderableLogRecords(logs) {
 		// Check for Markdown content type
 		contentType := ""
 		eof := false

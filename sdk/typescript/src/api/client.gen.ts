@@ -50,6 +50,11 @@ export type BuildArg = {
 }
 
 /**
+ * Arbitrary binary data, represented as a base64-encoded string.
+ */
+export type Bytes = string & { __Bytes: never }
+
+/**
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
@@ -2483,6 +2488,13 @@ export type PortForward = {
   protocol?: NetworkProtocol
 }
 
+export type ClientBlobOpts = {
+  /**
+   * Permissions of the new file. Example: 0600
+   */
+  permissions?: number
+}
+
 export type ClientCacheVolumeOpts = {
   /**
    * Identifier of the directory to use as the cache volume's root.
@@ -4668,7 +4680,9 @@ export class Container extends BaseClient {
 
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
-   * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param address Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+   *
+   * An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -9789,10 +9803,12 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Returns details for the latest semver tag.
+   * Return the latest stable release tag, falling back to HEAD when no release exists.
+   *
+   * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
    */
-  latestVersion = (): GitRef => {
-    const ctx = this._ctx.select("latestVersion")
+  latest = (): GitRef => {
+    const ctx = this._ctx.select("latest")
     return new GitRef(ctx)
   }
 
@@ -13035,6 +13051,17 @@ export class Client extends BaseClient {
   address = (value: string): Address => {
     const ctx = this._ctx.select("address", { value })
     return new Address(ctx)
+  }
+
+  /**
+   * Creates a file from arbitrary binary contents.
+   * @param name Name of the new file. Example: "archive.tar"
+   * @param contents Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+   * @param opts.permissions Permissions of the new file. Example: 0600
+   */
+  blob = (name: string, contents: Bytes, opts?: ClientBlobOpts): File => {
+    const ctx = this._ctx.select("blob", { name, contents, ...opts })
+    return new File(ctx)
   }
 
   /**

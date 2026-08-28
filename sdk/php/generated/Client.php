@@ -24,6 +24,20 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Creates a file from arbitrary binary contents.
+     */
+    public function blob(string $name, Bytes $contents, ?int $permissions = 420): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(

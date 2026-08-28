@@ -138,6 +138,9 @@ input BuildArg {
   value: String!
 }
 
+"""Arbitrary binary data, represented as a base64-encoded string."""
+scalar Bytes
+
 """Sharing mode of the cache volume."""
 enum CacheSharingMode {
   """Shares the cache volume amongst many build pipelines"""
@@ -620,7 +623,10 @@ type Container implements Exportable & Node & Syncer {
   """
   from(
     """
-    Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+
+    An address without a tag or digest selects the greatest stable release tag,
+    falling back to the literal "latest" tag when no eligible release exists.
     """
     address: String!
 
@@ -3329,8 +3335,13 @@ type GitRepository implements Node {
   """A unique identifier for this GitRepository."""
   id: ID!
 
-  """Returns details for the latest semver tag."""
-  latestVersion: GitRef!
+  """
+  Return the latest stable release tag, falling back to HEAD when no release exists.
+
+  Release selection accepts an optional "v" prefix, incomplete versions, and
+  zero-padded numeric components. This operation is pinned.
+  """
+  latest: GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -4638,6 +4649,22 @@ type Query implements Node {
   initialize an address to load directories, containers, secrets or other object types.
   """
   address(value: String!): Address!
+
+  """Creates a file from arbitrary binary contents."""
+  blob(
+    """
+    Name of the new file. Example: "archive.tar"
+    """
+    name: String!
+
+    """
+    Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+    """
+    contents: Bytes!
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int = 420
+  ): File!
 
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
