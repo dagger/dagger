@@ -1,9 +1,70 @@
 ---
 title: "Set up Cloud Checks"
 slug: /cloud-checks
-description: "Run your checks after the push, in CI and in the cloud"
+description: "Run workspace Checks automatically after Git events"
 ---
 
 # Set up Cloud Checks
 
-How to use Dagger once a commit is pushed: trigger the same checks in CI or Dagger Cloud, read the traces they produce, and reproduce any failure locally with the identical command.
+Cloud Checks run workspace Checks after Git events. A Git event is a push or pull request event from a connected repository.
+
+Cloud Checks use Cloud Engines to execute the Checks. No CI workflow file is necessary.
+
+Cloud Checks currently support GitHub repositories.
+
+## Sign in to Dagger Cloud
+
+Sign in or create an account:
+
+```shell
+dagger cloud login
+```
+
+Complete authentication in the browser. Create or select a Dagger Cloud organization when requested.
+
+## Connect the repository
+
+Connect the GitHub account or organization that owns the repository:
+
+```shell
+dagger cloud integration create github --open
+```
+
+Complete the GitHub integration setup in the browser.
+
+## Enable Cloud Checks
+
+Run this command from the workspace:
+
+```shell
+dagger cloud check on
+```
+
+Dagger gets the repository from the Git `origin` remote. The command prints `on` when Cloud Checks are enabled.
+
+## Trigger Cloud Checks
+
+Commit the workspace configuration. Push the commit to GitHub:
+
+```shell
+git add dagger.toml
+git commit -m "Set up Dagger"
+git push -u origin HEAD
+```
+
+The push is a Git event. Cloud Checks run the same Checks that `dagger check` runs locally.
+
+## View the result
+
+Show the latest Cloud Checks activity:
+
+```shell
+dagger activity
+```
+
+The `CHECKS` column shows `🟢` when all Checks pass.
+
+## Next steps
+
+- [Run selected Checks](../cli/checking.mdx)
+- [Manage Cloud Checks from the CLI](../cli/reference/index.mdx#dagger-cloud-check)
