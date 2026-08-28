@@ -35,6 +35,15 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
+     * Parse the file contents as TOML.
+     */
+    public function asTOML(): TOMLValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTOML');
+        return new \Dagger\TOMLValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the owner of the file recursively.
      */
     public function chown(string $owner): File

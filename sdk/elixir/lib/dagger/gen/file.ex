@@ -46,6 +46,20 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Parse the file contents as TOML.
+  """
+  @spec as_toml(t()) :: Dagger.TOMLValue.t()
+  def as_toml(%__MODULE__{} = file) do
+    query_builder =
+      file.query_builder |> QB.select("asTOML")
+
+    %Dagger.TOMLValue{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Change the owner of the file recursively.
   """
   @spec chown(t(), String.t()) :: Dagger.File.t()
