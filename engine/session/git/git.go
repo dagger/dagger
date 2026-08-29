@@ -65,11 +65,11 @@ func (p GitAttachableProxy) PackCheckout(req *PackCheckoutRequest, srv Git_PackC
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
 }
 
-func (p GitAttachableProxy) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktreeServer) error {
+func (p GitAttachableProxy) PackUncommitted(req *PackUncommittedRequest, srv Git_PackUncommittedServer) error {
 	ctx, cancel := context.WithCancelCause(srv.Context())
 	defer cancel(errors.New("proxy stream closed"))
 
-	clientStream, err := p.client.PackWorktree(grpcutil.IncomingToOutgoingContext(ctx), req)
+	clientStream, err := p.client.PackUncommitted(grpcutil.IncomingToOutgoingContext(ctx), req)
 	if err != nil {
 		return fmt.Errorf("create client stream: %w", err)
 	}

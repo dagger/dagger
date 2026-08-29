@@ -42,7 +42,7 @@ const (
 	HEAD_MISMATCH               ErrorInfo_ErrorType = 6
 	NOT_A_REPO                  ErrorInfo_ErrorType = 7
 	PACK_FAILED                 ErrorInfo_ErrorType = 8
-	WORKTREE_UNSUPPORTED        ErrorInfo_ErrorType = 9
+	UNCOMMITTED_UNSUPPORTED     ErrorInfo_ErrorType = 9
 )
 
 var ErrorInfo_ErrorType_name = map[int32]string{
@@ -55,7 +55,7 @@ var ErrorInfo_ErrorType_name = map[int32]string{
 	6: "HEAD_MISMATCH",
 	7: "NOT_A_REPO",
 	8: "PACK_FAILED",
-	9: "WORKTREE_UNSUPPORTED",
+	9: "UNCOMMITTED_UNSUPPORTED",
 }
 
 var ErrorInfo_ErrorType_value = map[string]int32{
@@ -68,7 +68,7 @@ var ErrorInfo_ErrorType_value = map[string]int32{
 	"HEAD_MISMATCH":               6,
 	"NOT_A_REPO":                  7,
 	"PACK_FAILED":                 8,
-	"WORKTREE_UNSUPPORTED":        9,
+	"UNCOMMITTED_UNSUPPORTED":     9,
 }
 
 func (ErrorInfo_ErrorType) EnumDescriptor() ([]byte, []int) {
@@ -847,12 +847,12 @@ func (m *PackCheckoutMetadata) GetError() *ErrorInfo {
 	return nil
 }
 
-// PackWorktreeRequest asks the client for the git-visible working-tree delta
+// PackUncommittedRequest asks the client for the git-visible working-tree delta
 // relative to HEAD. The payload is a binary git patch containing tracked,
 // staged, and ordinary untracked nonignored files. Ignored files and contents
 // inside untracked nested repositories are deliberately omitted, matching
 // `git clean -fd` and GitRepository.uncommitted semantics.
-type PackWorktreeRequest struct {
+type PackUncommittedRequest struct {
 	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
 	// expected_head_sha pins the patch to the canonical checkout already packed
 	// by the engine. A moved checkout reports HEAD_MISMATCH instead of producing
@@ -860,17 +860,17 @@ type PackWorktreeRequest struct {
 	ExpectedHeadSha string `protobuf:"bytes,2,opt,name=expected_head_sha,json=expectedHeadSha,proto3" json:"expected_head_sha,omitempty"`
 }
 
-func (m *PackWorktreeRequest) Reset()      { *m = PackWorktreeRequest{} }
-func (*PackWorktreeRequest) ProtoMessage() {}
-func (*PackWorktreeRequest) Descriptor() ([]byte, []int) {
+func (m *PackUncommittedRequest) Reset()      { *m = PackUncommittedRequest{} }
+func (*PackUncommittedRequest) ProtoMessage() {}
+func (*PackUncommittedRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0d2ecb6e8d788208, []int{12}
 }
-func (m *PackWorktreeRequest) XXX_Unmarshal(b []byte) error {
+func (m *PackUncommittedRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *PackWorktreeRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *PackUncommittedRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_PackWorktreeRequest.Marshal(b, m, deterministic)
+		return xxx_messageInfo_PackUncommittedRequest.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -880,53 +880,53 @@ func (m *PackWorktreeRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte,
 		return b[:n], nil
 	}
 }
-func (m *PackWorktreeRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_PackWorktreeRequest.Merge(m, src)
+func (m *PackUncommittedRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PackUncommittedRequest.Merge(m, src)
 }
-func (m *PackWorktreeRequest) XXX_Size() int {
+func (m *PackUncommittedRequest) XXX_Size() int {
 	return m.Size()
 }
-func (m *PackWorktreeRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_PackWorktreeRequest.DiscardUnknown(m)
+func (m *PackUncommittedRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_PackUncommittedRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_PackWorktreeRequest proto.InternalMessageInfo
+var xxx_messageInfo_PackUncommittedRequest proto.InternalMessageInfo
 
-func (m *PackWorktreeRequest) GetCheckoutPath() string {
+func (m *PackUncommittedRequest) GetCheckoutPath() string {
 	if m != nil {
 		return m.CheckoutPath
 	}
 	return ""
 }
 
-func (m *PackWorktreeRequest) GetExpectedHeadSha() string {
+func (m *PackUncommittedRequest) GetExpectedHeadSha() string {
 	if m != nil {
 		return m.ExpectedHeadSha
 	}
 	return ""
 }
 
-// PackWorktreeResponse streams one metadata message first, then binary patch
+// PackUncommittedResponse streams one metadata message first, then binary patch
 // bytes in chunks.
-type PackWorktreeResponse struct {
+type PackUncommittedResponse struct {
 	// Types that are valid to be assigned to Msg:
 	//
-	//	*PackWorktreeResponse_Metadata
-	//	*PackWorktreeResponse_Chunk
-	Msg isPackWorktreeResponse_Msg `protobuf_oneof:"msg"`
+	//	*PackUncommittedResponse_Metadata
+	//	*PackUncommittedResponse_Chunk
+	Msg isPackUncommittedResponse_Msg `protobuf_oneof:"msg"`
 }
 
-func (m *PackWorktreeResponse) Reset()      { *m = PackWorktreeResponse{} }
-func (*PackWorktreeResponse) ProtoMessage() {}
-func (*PackWorktreeResponse) Descriptor() ([]byte, []int) {
+func (m *PackUncommittedResponse) Reset()      { *m = PackUncommittedResponse{} }
+func (*PackUncommittedResponse) ProtoMessage() {}
+func (*PackUncommittedResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0d2ecb6e8d788208, []int{13}
 }
-func (m *PackWorktreeResponse) XXX_Unmarshal(b []byte) error {
+func (m *PackUncommittedResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *PackWorktreeResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *PackUncommittedResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_PackWorktreeResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_PackUncommittedResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -936,65 +936,65 @@ func (m *PackWorktreeResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte
 		return b[:n], nil
 	}
 }
-func (m *PackWorktreeResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_PackWorktreeResponse.Merge(m, src)
+func (m *PackUncommittedResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PackUncommittedResponse.Merge(m, src)
 }
-func (m *PackWorktreeResponse) XXX_Size() int {
+func (m *PackUncommittedResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *PackWorktreeResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_PackWorktreeResponse.DiscardUnknown(m)
+func (m *PackUncommittedResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_PackUncommittedResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_PackWorktreeResponse proto.InternalMessageInfo
+var xxx_messageInfo_PackUncommittedResponse proto.InternalMessageInfo
 
-type isPackWorktreeResponse_Msg interface {
-	isPackWorktreeResponse_Msg()
+type isPackUncommittedResponse_Msg interface {
+	isPackUncommittedResponse_Msg()
 	Equal(interface{}) bool
 	MarshalTo([]byte) (int, error)
 	Size() int
 }
 
-type PackWorktreeResponse_Metadata struct {
-	Metadata *PackWorktreeMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+type PackUncommittedResponse_Metadata struct {
+	Metadata *PackUncommittedMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
 }
-type PackWorktreeResponse_Chunk struct {
+type PackUncommittedResponse_Chunk struct {
 	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
 }
 
-func (*PackWorktreeResponse_Metadata) isPackWorktreeResponse_Msg() {}
-func (*PackWorktreeResponse_Chunk) isPackWorktreeResponse_Msg()    {}
+func (*PackUncommittedResponse_Metadata) isPackUncommittedResponse_Msg() {}
+func (*PackUncommittedResponse_Chunk) isPackUncommittedResponse_Msg()    {}
 
-func (m *PackWorktreeResponse) GetMsg() isPackWorktreeResponse_Msg {
+func (m *PackUncommittedResponse) GetMsg() isPackUncommittedResponse_Msg {
 	if m != nil {
 		return m.Msg
 	}
 	return nil
 }
 
-func (m *PackWorktreeResponse) GetMetadata() *PackWorktreeMetadata {
-	if x, ok := m.GetMsg().(*PackWorktreeResponse_Metadata); ok {
+func (m *PackUncommittedResponse) GetMetadata() *PackUncommittedMetadata {
+	if x, ok := m.GetMsg().(*PackUncommittedResponse_Metadata); ok {
 		return x.Metadata
 	}
 	return nil
 }
 
-func (m *PackWorktreeResponse) GetChunk() []byte {
-	if x, ok := m.GetMsg().(*PackWorktreeResponse_Chunk); ok {
+func (m *PackUncommittedResponse) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*PackUncommittedResponse_Chunk); ok {
 		return x.Chunk
 	}
 	return nil
 }
 
 // XXX_OneofWrappers is for the internal use of the proto package.
-func (*PackWorktreeResponse) XXX_OneofWrappers() []interface{} {
+func (*PackUncommittedResponse) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
-		(*PackWorktreeResponse_Metadata)(nil),
-		(*PackWorktreeResponse_Chunk)(nil),
+		(*PackUncommittedResponse_Metadata)(nil),
+		(*PackUncommittedResponse_Chunk)(nil),
 	}
 }
 
-type PackWorktreeMetadata struct {
+type PackUncommittedMetadata struct {
 	// head_sha anchors the patch and must match the canonical checkout to which
 	// the engine applies it.
 	HeadSha string `protobuf:"bytes,1,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
@@ -1005,17 +1005,17 @@ type PackWorktreeMetadata struct {
 	Error              *ErrorInfo `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 }
 
-func (m *PackWorktreeMetadata) Reset()      { *m = PackWorktreeMetadata{} }
-func (*PackWorktreeMetadata) ProtoMessage() {}
-func (*PackWorktreeMetadata) Descriptor() ([]byte, []int) {
+func (m *PackUncommittedMetadata) Reset()      { *m = PackUncommittedMetadata{} }
+func (*PackUncommittedMetadata) ProtoMessage() {}
+func (*PackUncommittedMetadata) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0d2ecb6e8d788208, []int{14}
 }
-func (m *PackWorktreeMetadata) XXX_Unmarshal(b []byte) error {
+func (m *PackUncommittedMetadata) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *PackWorktreeMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *PackUncommittedMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_PackWorktreeMetadata.Marshal(b, m, deterministic)
+		return xxx_messageInfo_PackUncommittedMetadata.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -1025,33 +1025,33 @@ func (m *PackWorktreeMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte
 		return b[:n], nil
 	}
 }
-func (m *PackWorktreeMetadata) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_PackWorktreeMetadata.Merge(m, src)
+func (m *PackUncommittedMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PackUncommittedMetadata.Merge(m, src)
 }
-func (m *PackWorktreeMetadata) XXX_Size() int {
+func (m *PackUncommittedMetadata) XXX_Size() int {
 	return m.Size()
 }
-func (m *PackWorktreeMetadata) XXX_DiscardUnknown() {
-	xxx_messageInfo_PackWorktreeMetadata.DiscardUnknown(m)
+func (m *PackUncommittedMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_PackUncommittedMetadata.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_PackWorktreeMetadata proto.InternalMessageInfo
+var xxx_messageInfo_PackUncommittedMetadata proto.InternalMessageInfo
 
-func (m *PackWorktreeMetadata) GetHeadSha() string {
+func (m *PackUncommittedMetadata) GetHeadSha() string {
 	if m != nil {
 		return m.HeadSha
 	}
 	return ""
 }
 
-func (m *PackWorktreeMetadata) GetNestedRepositories() []string {
+func (m *PackUncommittedMetadata) GetNestedRepositories() []string {
 	if m != nil {
 		return m.NestedRepositories
 	}
 	return nil
 }
 
-func (m *PackWorktreeMetadata) GetError() *ErrorInfo {
+func (m *PackUncommittedMetadata) GetError() *ErrorInfo {
 	if m != nil {
 		return m.Error
 	}
@@ -1123,76 +1123,78 @@ func init() {
 	proto.RegisterType((*PackCheckoutRequest)(nil), "dagger.git.PackCheckoutRequest")
 	proto.RegisterType((*PackCheckoutResponse)(nil), "dagger.git.PackCheckoutResponse")
 	proto.RegisterType((*PackCheckoutMetadata)(nil), "dagger.git.PackCheckoutMetadata")
-	proto.RegisterType((*PackWorktreeRequest)(nil), "dagger.git.PackWorktreeRequest")
-	proto.RegisterType((*PackWorktreeResponse)(nil), "dagger.git.PackWorktreeResponse")
-	proto.RegisterType((*PackWorktreeMetadata)(nil), "dagger.git.PackWorktreeMetadata")
+	proto.RegisterType((*PackUncommittedRequest)(nil), "dagger.git.PackUncommittedRequest")
+	proto.RegisterType((*PackUncommittedResponse)(nil), "dagger.git.PackUncommittedResponse")
+	proto.RegisterType((*PackUncommittedMetadata)(nil), "dagger.git.PackUncommittedMetadata")
 	proto.RegisterType((*ErrorInfo)(nil), "dagger.git.ErrorInfo")
 }
 
 func init() { proto.RegisterFile("git.proto", fileDescriptor_0d2ecb6e8d788208) }
 
 var fileDescriptor_0d2ecb6e8d788208 = []byte{
-	// 960 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x55, 0x4f, 0x6f, 0xe2, 0x46,
-	0x14, 0xb7, 0x63, 0x08, 0xf0, 0x80, 0xac, 0x33, 0x21, 0x2d, 0x65, 0x5b, 0x87, 0x7a, 0x2f, 0xab,
-	0x56, 0xcd, 0x56, 0xd9, 0x1e, 0xfa, 0x4f, 0x95, 0x08, 0x38, 0x01, 0x25, 0x01, 0x3a, 0x98, 0x8d,
-	0xb4, 0x17, 0xcb, 0x0b, 0x03, 0xb8, 0x04, 0x9b, 0xda, 0x43, 0xbb, 0x39, 0x54, 0xea, 0x27, 0x68,
-	0xfb, 0x09, 0x7a, 0xab, 0xd4, 0x73, 0x3f, 0x45, 0x8f, 0xb9, 0x54, 0xda, 0x63, 0x43, 0x2e, 0x3d,
-	0xee, 0x47, 0xa8, 0x3c, 0x1e, 0x1b, 0xcc, 0x26, 0xab, 0x24, 0xb7, 0x99, 0xdf, 0xfb, 0xbd, 0xdf,
-	0xbc, 0xf7, 0xf3, 0xcc, 0x33, 0x64, 0x86, 0x16, 0xdd, 0x9d, 0xba, 0x0e, 0x75, 0x10, 0xf4, 0xcd,
-	0xe1, 0x90, 0xb8, 0xbb, 0x43, 0x8b, 0xaa, 0xcf, 0xa1, 0x70, 0x68, 0xd1, 0xaa, 0x4b, 0xfa, 0xc4,
-	0xa6, 0x96, 0x79, 0x86, 0xc9, 0xf7, 0x33, 0xe2, 0x51, 0x54, 0x82, 0x34, 0x23, 0xf7, 0x9c, 0xb3,
-	0xa2, 0x58, 0x16, 0x1f, 0x67, 0x70, 0xb4, 0x47, 0x08, 0x12, 0x23, 0xc7, 0xa3, 0xc5, 0x35, 0x86,
-	0xb3, 0xb5, 0x8f, 0x4d, 0x4d, 0x3a, 0x2a, 0x4a, 0x01, 0xe6, 0xaf, 0xd5, 0x5f, 0x44, 0xd8, 0x5e,
-	0x11, 0xf7, 0xa6, 0x8e, 0xed, 0x11, 0xf4, 0x35, 0x40, 0x2f, 0x42, 0x99, 0x7e, 0x76, 0xaf, 0xb4,
-	0xbb, 0x28, 0x6b, 0x77, 0x91, 0xd3, 0xb0, 0x07, 0x4e, 0x5d, 0xc0, 0x4b, 0x7c, 0xf4, 0x09, 0x24,
-	0x89, 0xeb, 0x3a, 0x2e, 0x2b, 0x20, 0xbb, 0xb7, 0xbd, 0x9c, 0xa8, 0xf9, 0x01, 0x9e, 0x13, 0xb0,
-	0xf6, 0xd3, 0xb0, 0xee, 0x12, 0x6f, 0x76, 0x46, 0xd5, 0x97, 0xb0, 0x11, 0x17, 0xbe, 0x73, 0x9b,
-	0x25, 0x48, 0xcf, 0x3c, 0xe2, 0xda, 0xe6, 0x84, 0xf0, 0x56, 0xa3, 0x3d, 0xd3, 0x32, 0x3d, 0xef,
-	0x47, 0xc7, 0xed, 0x17, 0x13, 0x5c, 0x8b, 0xef, 0x55, 0x04, 0xb2, 0xef, 0x84, 0x63, 0x0f, 0xac,
-	0x21, 0xb7, 0x58, 0xfd, 0x09, 0x36, 0x97, 0x30, 0xee, 0xcc, 0x13, 0x58, 0xef, 0x31, 0x84, 0xbb,
-	0x12, 0x6b, 0x2e, 0xa2, 0xd7, 0x05, 0xcc, 0x69, 0xf7, 0x37, 0xa3, 0x02, 0x99, 0x48, 0x0f, 0x7d,
-	0x06, 0x29, 0x62, 0x53, 0xd7, 0x22, 0x5e, 0x51, 0x2c, 0x4b, 0xab, 0x5f, 0x23, 0xe2, 0x69, 0x36,
-	0x75, 0xcf, 0x71, 0x48, 0x55, 0x3f, 0x87, 0x8d, 0x78, 0x08, 0xc9, 0x20, 0x8d, 0xc9, 0x39, 0xb7,
-	0xd2, 0x5f, 0xa2, 0x02, 0x24, 0x7f, 0x30, 0xcf, 0x66, 0x84, 0xdb, 0x18, 0x6c, 0xd4, 0xaf, 0xa0,
-	0x50, 0x1d, 0x91, 0xde, 0xd8, 0x99, 0xd1, 0x0e, 0x35, 0x29, 0x09, 0xaf, 0xdd, 0x23, 0xc8, 0xf7,
-	0x38, 0x6e, 0xb0, 0xfb, 0x14, 0x28, 0xe5, 0x42, 0xb0, 0xed, 0xdf, 0xab, 0x19, 0x6c, 0xaf, 0x24,
-	0x73, 0xf3, 0x1e, 0x41, 0xce, 0xf3, 0x01, 0xa3, 0x6f, 0x0d, 0x89, 0x47, 0x83, 0xe4, 0xba, 0x80,
-	0xb3, 0x0c, 0xad, 0x31, 0xf0, 0xfe, 0x86, 0x7d, 0x09, 0x5b, 0x6d, 0xb3, 0x37, 0x0e, 0x8f, 0xbe,
-	0x63, 0xc9, 0x85, 0x78, 0x2e, 0xaf, 0xf8, 0x1b, 0x48, 0x4f, 0x08, 0x35, 0xfb, 0x26, 0x35, 0xf9,
-	0x07, 0x2f, 0x2f, 0xd7, 0xb3, 0x9c, 0x73, 0xc2, 0x79, 0x75, 0x01, 0x47, 0x39, 0xe8, 0x1d, 0x48,
-	0xf6, 0x46, 0x33, 0x7b, 0xcc, 0x9a, 0xc9, 0xf9, 0x55, 0xb3, 0xed, 0x7e, 0x12, 0xa4, 0x89, 0x37,
-	0x54, 0x7f, 0x17, 0xe3, 0xe7, 0x86, 0x1a, 0xe8, 0x3d, 0x48, 0x8f, 0x88, 0xd9, 0x37, 0xbc, 0x91,
-	0xc9, 0xeb, 0x4d, 0xf9, 0xfb, 0xce, 0x68, 0x11, 0x72, 0xc9, 0x80, 0x7f, 0x33, 0x16, 0xc2, 0x64,
-	0xe0, 0xb7, 0xea, 0xbc, 0xf8, 0x8e, 0xf4, 0xa8, 0x31, 0x70, 0xdc, 0x89, 0x49, 0xf9, 0x13, 0xc8,
-	0x05, 0xe0, 0x01, 0xc3, 0xd0, 0xc7, 0xa1, 0xbf, 0x89, 0xb7, 0xf8, 0xcb, 0xdd, 0x55, 0x07, 0x81,
-	0xa7, 0xa7, 0x8e, 0x3b, 0xa6, 0x2e, 0xb9, 0xd3, 0x35, 0x40, 0x1f, 0xc1, 0x26, 0x79, 0x39, 0x25,
-	0x3d, 0x4a, 0xfa, 0x46, 0xd4, 0x4c, 0x50, 0xf1, 0x83, 0x30, 0x50, 0x0f, 0x9a, 0x0a, 0xfd, 0x5f,
-	0x9c, 0x73, 0x7b, 0xff, 0xc3, 0x9c, 0xfb, 0xf8, 0xff, 0xab, 0x18, 0x3f, 0xf7, 0x36, 0xfe, 0x3f,
-	0x81, 0x2d, 0x9b, 0x78, 0x7e, 0x53, 0x2e, 0x99, 0x3a, 0x9e, 0x45, 0x1d, 0xf6, 0x2c, 0xd7, 0xca,
-	0xd2, 0xe3, 0x0c, 0x46, 0x41, 0x08, 0x2f, 0x45, 0x16, 0x86, 0x4b, 0xb7, 0x30, 0xfc, 0xaf, 0x35,
-	0xc8, 0x44, 0x20, 0x7a, 0x0a, 0x09, 0x7a, 0x3e, 0x25, 0xac, 0x84, 0x8d, 0xbd, 0x9d, 0x6b, 0x33,
-	0x83, 0x95, 0x7e, 0x3e, 0x25, 0x98, 0x91, 0x51, 0x11, 0x52, 0x13, 0xe2, 0x79, 0xe6, 0x30, 0x7c,
-	0xd3, 0xe1, 0x56, 0xfd, 0x47, 0xe4, 0xe2, 0x3e, 0x1b, 0x65, 0x21, 0xd5, 0x6d, 0x1e, 0x35, 0x5b,
-	0xa7, 0x4d, 0x59, 0x40, 0x5b, 0xf0, 0xa0, 0xd1, 0x7c, 0x56, 0x39, 0x6e, 0xd4, 0x0c, 0xac, 0x7d,
-	0xdb, 0xd5, 0x3a, 0xba, 0x2c, 0xa2, 0x3c, 0x64, 0x9a, 0x2d, 0xdd, 0x38, 0x68, 0x75, 0x9b, 0x35,
-	0x79, 0xcd, 0x4f, 0xd0, 0x1b, 0x27, 0x5a, 0xab, 0xab, 0xcb, 0x12, 0xda, 0x81, 0x87, 0x55, 0xac,
-	0xd5, 0xb4, 0xa6, 0xde, 0xa8, 0x1c, 0x1b, 0x58, 0xd3, 0x71, 0x43, 0x7b, 0x56, 0x39, 0x36, 0x0e,
-	0x2a, 0x8d, 0x63, 0xad, 0x26, 0x27, 0xd0, 0x43, 0x78, 0xb7, 0xda, 0x6a, 0x1e, 0x34, 0x0e, 0xdf,
-	0x0c, 0x26, 0xd1, 0x26, 0xe4, 0xeb, 0x5a, 0xa5, 0x66, 0x9c, 0x34, 0x3a, 0x27, 0x15, 0xbd, 0x5a,
-	0x97, 0xd7, 0xd1, 0x06, 0x80, 0x7f, 0x58, 0xc5, 0xc0, 0x5a, 0xbb, 0x25, 0xa7, 0xd0, 0x03, 0xc8,
-	0xb6, 0x2b, 0xd5, 0xa3, 0x30, 0x27, 0x8d, 0x8a, 0x50, 0x38, 0x6d, 0xe1, 0x23, 0x1d, 0x6b, 0x9a,
-	0xd1, 0x6d, 0x76, 0xba, 0xed, 0x76, 0x0b, 0xeb, 0x5a, 0x4d, 0xce, 0xec, 0xfd, 0x21, 0x81, 0x74,
-	0x68, 0x51, 0xa4, 0x43, 0xfe, 0x90, 0x2c, 0xfd, 0xcf, 0x50, 0x79, 0x75, 0x4a, 0xae, 0xfe, 0x47,
-	0x4b, 0x1f, 0xbe, 0x85, 0xc1, 0xef, 0x60, 0x1d, 0x32, 0xbe, 0x6a, 0x30, 0x88, 0xdf, 0xbf, 0x76,
-	0xee, 0x86, 0x6a, 0x1f, 0xdc, 0x10, 0xe5, 0x4a, 0x3a, 0xe4, 0x63, 0x83, 0x31, 0x5e, 0xdf, 0x75,
-	0x03, 0x37, 0x5e, 0xdf, 0xf5, 0x53, 0xb5, 0x03, 0xb9, 0xe5, 0x19, 0x82, 0x76, 0x6e, 0x9a, 0x50,
-	0xa1, 0x66, 0xf9, 0x66, 0x42, 0x20, 0xf9, 0xa9, 0x18, 0x8a, 0x86, 0x0f, 0xe3, 0x4d, 0xd1, 0x95,
-	0x91, 0x50, 0x2a, 0xdf, 0x4c, 0x08, 0x45, 0xf7, 0xbf, 0xb8, 0xb8, 0x54, 0x84, 0x57, 0x97, 0x8a,
-	0xf0, 0xfa, 0x52, 0x11, 0x7f, 0x9e, 0x2b, 0xe2, 0x9f, 0x73, 0x45, 0xfc, 0x7b, 0xae, 0x88, 0x17,
-	0x73, 0x45, 0xfc, 0x77, 0xae, 0x88, 0xff, 0xcd, 0x15, 0xe1, 0xf5, 0x5c, 0x11, 0x7f, 0xbb, 0x52,
-	0x84, 0x8b, 0x2b, 0x45, 0x78, 0x75, 0xa5, 0x08, 0xcf, 0xa5, 0xa1, 0x45, 0x5f, 0xac, 0xb3, 0xdf,
-	0xfe, 0xd3, 0xff, 0x03, 0x00, 0x00, 0xff, 0xff, 0x09, 0xad, 0xc8, 0x83, 0x27, 0x09, 0x00, 0x00,
+	// 978 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x6f, 0xe3, 0x54,
+	0x10, 0xb7, 0xeb, 0xa4, 0x49, 0x26, 0x49, 0xeb, 0x7d, 0x6d, 0x77, 0x43, 0x17, 0xdc, 0xe0, 0x5e,
+	0x56, 0x20, 0xba, 0xa8, 0xcb, 0x81, 0x7f, 0x42, 0x72, 0x13, 0xb7, 0xb1, 0xb6, 0x71, 0x82, 0xe3,
+	0x2c, 0xd2, 0x0a, 0xc9, 0xf2, 0x3a, 0x2f, 0x89, 0x69, 0x63, 0x07, 0xfb, 0x05, 0xb6, 0x42, 0x48,
+	0x7c, 0x02, 0x84, 0xf8, 0x00, 0x9c, 0x39, 0x71, 0xe3, 0x3b, 0x70, 0xec, 0xb1, 0x47, 0x9a, 0x5e,
+	0x38, 0xee, 0x47, 0x40, 0x7e, 0x7e, 0x4e, 0x9d, 0xf4, 0x8f, 0xb6, 0xbd, 0x79, 0x7e, 0x33, 0xf3,
+	0x7b, 0x33, 0xbf, 0x79, 0x6f, 0x12, 0x28, 0x0c, 0x5c, 0xb2, 0x33, 0x0e, 0x7c, 0xe2, 0x23, 0xe8,
+	0xd9, 0x83, 0x01, 0x0e, 0x76, 0x06, 0x2e, 0x91, 0x5f, 0xc2, 0xfa, 0x81, 0x4b, 0x6a, 0x01, 0xee,
+	0x61, 0x8f, 0xb8, 0xf6, 0xb1, 0x81, 0xbf, 0x9f, 0xe0, 0x90, 0xa0, 0x4d, 0xc8, 0xd3, 0x60, 0xc7,
+	0x3f, 0xae, 0xf0, 0x55, 0xfe, 0x49, 0xc1, 0x98, 0xd9, 0x08, 0x41, 0x66, 0xe8, 0x87, 0xa4, 0xb2,
+	0x44, 0x71, 0xfa, 0x1d, 0x61, 0x63, 0x9b, 0x0c, 0x2b, 0x42, 0x8c, 0x45, 0xdf, 0xf2, 0xaf, 0x3c,
+	0x6c, 0x2c, 0x90, 0x87, 0x63, 0xdf, 0x0b, 0x31, 0xfa, 0x12, 0xc0, 0x99, 0xa1, 0x94, 0xbf, 0xb8,
+	0xbb, 0xb9, 0x73, 0x59, 0xd6, 0xce, 0x65, 0x8e, 0xe6, 0xf5, 0xfd, 0x06, 0x67, 0xa4, 0xe2, 0xd1,
+	0x47, 0x90, 0xc5, 0x41, 0xe0, 0x07, 0xb4, 0x80, 0xe2, 0xee, 0x46, 0x3a, 0x51, 0x8d, 0x1c, 0x2c,
+	0x27, 0x8e, 0xda, 0xcb, 0xc3, 0x72, 0x80, 0xc3, 0xc9, 0x31, 0x91, 0x5f, 0xc3, 0xca, 0x3c, 0xf1,
+	0x9d, 0xdb, 0xdc, 0x84, 0xfc, 0x24, 0xc4, 0x81, 0x67, 0x8f, 0x30, 0x6b, 0x75, 0x66, 0x53, 0x2e,
+	0x3b, 0x0c, 0x7f, 0xf4, 0x83, 0x5e, 0x25, 0xc3, 0xb8, 0x98, 0x2d, 0x23, 0x10, 0x23, 0x25, 0x7c,
+	0xaf, 0xef, 0x0e, 0x98, 0xc4, 0xf2, 0xcf, 0xf0, 0x20, 0x85, 0x31, 0x65, 0x9e, 0xc2, 0xb2, 0x43,
+	0x11, 0xa6, 0xca, 0x5c, 0x73, 0xb3, 0xf0, 0x06, 0x67, 0xb0, 0xb0, 0xfb, 0x8b, 0xa1, 0x40, 0x61,
+	0xc6, 0x87, 0x3e, 0x81, 0x1c, 0xf6, 0x48, 0xe0, 0xe2, 0xb0, 0xc2, 0x57, 0x85, 0xc5, 0x69, 0xcc,
+	0xe2, 0x54, 0x8f, 0x04, 0x27, 0x46, 0x12, 0x2a, 0x7f, 0x0a, 0x2b, 0xf3, 0x2e, 0x24, 0x82, 0x70,
+	0x84, 0x4f, 0x98, 0x94, 0xd1, 0x27, 0x5a, 0x87, 0xec, 0x0f, 0xf6, 0xf1, 0x04, 0x33, 0x19, 0x63,
+	0x43, 0xfe, 0x02, 0xd6, 0x6b, 0x43, 0xec, 0x1c, 0xf9, 0x13, 0xd2, 0x21, 0x36, 0xc1, 0xc9, 0xb5,
+	0xdb, 0x86, 0xb2, 0xc3, 0x70, 0x8b, 0xde, 0xa7, 0x98, 0xa9, 0x94, 0x80, 0xed, 0xe8, 0x5e, 0x4d,
+	0x60, 0x63, 0x21, 0x99, 0x89, 0xb7, 0x0d, 0xa5, 0x30, 0x02, 0xac, 0x9e, 0x3b, 0xc0, 0x21, 0x89,
+	0x93, 0x1b, 0x9c, 0x51, 0xa4, 0x68, 0x9d, 0x82, 0xf7, 0x17, 0xec, 0x73, 0x58, 0x6b, 0xdb, 0xce,
+	0x51, 0x72, 0xf4, 0x1d, 0x4b, 0x5e, 0x9f, 0xcf, 0x65, 0x15, 0x7f, 0x05, 0xf9, 0x11, 0x26, 0x76,
+	0xcf, 0x26, 0x36, 0x1b, 0x78, 0x35, 0x5d, 0x4f, 0x3a, 0xa7, 0xc9, 0xe2, 0x1a, 0x9c, 0x31, 0xcb,
+	0x41, 0x0f, 0x21, 0xeb, 0x0c, 0x27, 0xde, 0x11, 0x6d, 0xa6, 0x14, 0x55, 0x4d, 0xcd, 0xbd, 0x2c,
+	0x08, 0xa3, 0x70, 0x20, 0xff, 0xc1, 0xcf, 0x9f, 0x9b, 0x70, 0xa0, 0x77, 0x20, 0x3f, 0xc4, 0x76,
+	0xcf, 0x0a, 0x87, 0x36, 0xab, 0x37, 0x17, 0xd9, 0x9d, 0xe1, 0xa5, 0x2b, 0xc0, 0x7d, 0x36, 0x33,
+	0xea, 0x32, 0x70, 0x3f, 0x6a, 0xd5, 0x7f, 0xf5, 0x1d, 0x76, 0x88, 0xd5, 0xf7, 0x83, 0x91, 0x4d,
+	0xd8, 0x13, 0x28, 0xc5, 0xe0, 0x3e, 0xc5, 0xd0, 0x87, 0x89, 0xbe, 0x99, 0x5b, 0xf4, 0x65, 0xea,
+	0xca, 0x2e, 0x3c, 0x8c, 0xea, 0xeb, 0x7a, 0x8e, 0x3f, 0x1a, 0xb9, 0x84, 0xe0, 0xde, 0x5d, 0x64,
+	0x45, 0x1f, 0xc0, 0x03, 0xfc, 0x7a, 0x8c, 0x1d, 0x82, 0x7b, 0xd6, 0xac, 0x9f, 0xb8, 0xe8, 0xd5,
+	0xc4, 0xd1, 0x88, 0xfb, 0x92, 0x7f, 0x82, 0x47, 0x57, 0x8e, 0x62, 0x53, 0x50, 0xae, 0x4c, 0x61,
+	0x7b, 0x71, 0x0a, 0xa9, 0xb4, 0xfb, 0x0c, 0xe2, 0x77, 0xfe, 0xca, 0xe9, 0x6f, 0x33, 0x8b, 0xa7,
+	0xb0, 0xe6, 0xe1, 0x30, 0xea, 0x2e, 0xc0, 0x63, 0x3f, 0x74, 0x89, 0x4f, 0x9f, 0xe8, 0x52, 0x55,
+	0x78, 0x52, 0x30, 0x50, 0xec, 0x32, 0x52, 0x9e, 0x4b, 0xf1, 0x85, 0xb7, 0x10, 0xff, 0xef, 0x25,
+	0x28, 0xcc, 0x40, 0xf4, 0x0c, 0x32, 0xe4, 0x64, 0x8c, 0x69, 0x09, 0x2b, 0xbb, 0x5b, 0xd7, 0x66,
+	0xc6, 0x5f, 0xe6, 0xc9, 0x18, 0x1b, 0x34, 0x18, 0x55, 0x20, 0x37, 0xc2, 0x61, 0x68, 0x0f, 0x92,
+	0xf7, 0x9d, 0x98, 0xf2, 0x19, 0xcf, 0xc8, 0xa3, 0x68, 0x54, 0x84, 0x5c, 0x57, 0x7f, 0xae, 0xb7,
+	0xbe, 0xd1, 0x45, 0x0e, 0xad, 0xc1, 0xaa, 0xa6, 0xbf, 0x50, 0x0e, 0xb5, 0xba, 0x65, 0xa8, 0x5f,
+	0x77, 0xd5, 0x8e, 0x29, 0xf2, 0xa8, 0x0c, 0x05, 0xbd, 0x65, 0x5a, 0xfb, 0xad, 0xae, 0x5e, 0x17,
+	0x97, 0xa2, 0x04, 0x53, 0x6b, 0xaa, 0xad, 0xae, 0x29, 0x0a, 0x68, 0x0b, 0x1e, 0xd7, 0x0c, 0xb5,
+	0xae, 0xea, 0xa6, 0xa6, 0x1c, 0x5a, 0x86, 0x6a, 0x1a, 0x9a, 0xfa, 0x42, 0x39, 0xb4, 0xf6, 0x15,
+	0xed, 0x50, 0xad, 0x8b, 0x19, 0xf4, 0x18, 0x1e, 0xd5, 0x5a, 0xfa, 0xbe, 0x76, 0x70, 0xd5, 0x99,
+	0x45, 0x0f, 0xa0, 0xdc, 0x50, 0x95, 0xba, 0xd5, 0xd4, 0x3a, 0x4d, 0xc5, 0xac, 0x35, 0xc4, 0x65,
+	0xb4, 0x02, 0x10, 0x1d, 0xa6, 0x58, 0x86, 0xda, 0x6e, 0x89, 0x39, 0xb4, 0x0a, 0xc5, 0xb6, 0x52,
+	0x7b, 0x9e, 0xe4, 0xe4, 0x23, 0xc2, 0xae, 0x5e, 0x6b, 0x35, 0x9b, 0x9a, 0x69, 0xaa, 0x75, 0xab,
+	0xab, 0x77, 0xba, 0xed, 0x76, 0xcb, 0x30, 0xd5, 0xba, 0x58, 0xd8, 0xfd, 0x4b, 0x00, 0xe1, 0xc0,
+	0x25, 0xc8, 0x84, 0xf2, 0x01, 0x4e, 0xfd, 0xbc, 0xa1, 0xea, 0xe2, 0xd2, 0x5c, 0xfc, 0x59, 0xdd,
+	0x7c, 0xff, 0x96, 0x08, 0x76, 0x19, 0x1b, 0x50, 0x88, 0x58, 0xe3, 0xbd, 0xfc, 0xee, 0xb5, 0x6b,
+	0x38, 0x61, 0x7b, 0xef, 0x06, 0x2f, 0x63, 0x32, 0xa1, 0x3c, 0xb7, 0x27, 0xe7, 0xeb, 0xbb, 0x6e,
+	0xff, 0xce, 0xd7, 0x77, 0xfd, 0x92, 0xed, 0x40, 0x29, 0xbd, 0x52, 0xd0, 0xd6, 0x4d, 0x0b, 0x2b,
+	0xe1, 0xac, 0xde, 0x1c, 0x10, 0x53, 0x7e, 0xcc, 0xa3, 0x6f, 0x61, 0x75, 0xe1, 0x79, 0x20, 0xf9,
+	0x96, 0x27, 0x98, 0x50, 0x6f, 0xdf, 0x1a, 0x93, 0xb0, 0xef, 0x7d, 0x76, 0x7a, 0x2e, 0x71, 0x67,
+	0xe7, 0x12, 0xf7, 0xe6, 0x5c, 0xe2, 0x7f, 0x99, 0x4a, 0xfc, 0x9f, 0x53, 0x89, 0xff, 0x67, 0x2a,
+	0xf1, 0xa7, 0x53, 0x89, 0xff, 0x77, 0x2a, 0xf1, 0xff, 0x4d, 0x25, 0xee, 0xcd, 0x54, 0xe2, 0x7f,
+	0xbb, 0x90, 0xb8, 0xd3, 0x0b, 0x89, 0x3b, 0xbb, 0x90, 0xb8, 0x97, 0xc2, 0xc0, 0x25, 0xaf, 0x96,
+	0xe9, 0xdf, 0x81, 0x67, 0xff, 0x07, 0x00, 0x00, 0xff, 0xff, 0x04, 0xc1, 0x86, 0x42, 0x3f, 0x09,
+	0x00, 0x00,
 }
 
 func (x ErrorInfo_ErrorType) String() string {
@@ -1735,14 +1737,14 @@ func (this *PackCheckoutMetadata) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *PackWorktreeRequest) Equal(that interface{}) bool {
+func (this *PackUncommittedRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*PackWorktreeRequest)
+	that1, ok := that.(*PackUncommittedRequest)
 	if !ok {
-		that2, ok := that.(PackWorktreeRequest)
+		that2, ok := that.(PackUncommittedRequest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -1762,14 +1764,14 @@ func (this *PackWorktreeRequest) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *PackWorktreeResponse) Equal(that interface{}) bool {
+func (this *PackUncommittedResponse) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*PackWorktreeResponse)
+	that1, ok := that.(*PackUncommittedResponse)
 	if !ok {
-		that2, ok := that.(PackWorktreeResponse)
+		that2, ok := that.(PackUncommittedResponse)
 		if ok {
 			that1 = &that2
 		} else {
@@ -1792,14 +1794,14 @@ func (this *PackWorktreeResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *PackWorktreeResponse_Metadata) Equal(that interface{}) bool {
+func (this *PackUncommittedResponse_Metadata) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*PackWorktreeResponse_Metadata)
+	that1, ok := that.(*PackUncommittedResponse_Metadata)
 	if !ok {
-		that2, ok := that.(PackWorktreeResponse_Metadata)
+		that2, ok := that.(PackUncommittedResponse_Metadata)
 		if ok {
 			that1 = &that2
 		} else {
@@ -1816,14 +1818,14 @@ func (this *PackWorktreeResponse_Metadata) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *PackWorktreeResponse_Chunk) Equal(that interface{}) bool {
+func (this *PackUncommittedResponse_Chunk) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*PackWorktreeResponse_Chunk)
+	that1, ok := that.(*PackUncommittedResponse_Chunk)
 	if !ok {
-		that2, ok := that.(PackWorktreeResponse_Chunk)
+		that2, ok := that.(PackUncommittedResponse_Chunk)
 		if ok {
 			that1 = &that2
 		} else {
@@ -1840,14 +1842,14 @@ func (this *PackWorktreeResponse_Chunk) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *PackWorktreeMetadata) Equal(that interface{}) bool {
+func (this *PackUncommittedMetadata) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*PackWorktreeMetadata)
+	that1, ok := that.(*PackUncommittedMetadata)
 	if !ok {
-		that2, ok := that.(PackWorktreeMetadata)
+		that2, ok := that.(PackUncommittedMetadata)
 		if ok {
 			that1 = &that2
 		} else {
@@ -2106,51 +2108,51 @@ func (this *PackCheckoutMetadata) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *PackWorktreeRequest) GoString() string {
+func (this *PackUncommittedRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 6)
-	s = append(s, "&git.PackWorktreeRequest{")
+	s = append(s, "&git.PackUncommittedRequest{")
 	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
 	s = append(s, "ExpectedHeadSha: "+fmt.Sprintf("%#v", this.ExpectedHeadSha)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *PackWorktreeResponse) GoString() string {
+func (this *PackUncommittedResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 6)
-	s = append(s, "&git.PackWorktreeResponse{")
+	s = append(s, "&git.PackUncommittedResponse{")
 	if this.Msg != nil {
 		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *PackWorktreeResponse_Metadata) GoString() string {
+func (this *PackUncommittedResponse_Metadata) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&git.PackWorktreeResponse_Metadata{` +
+	s := strings.Join([]string{`&git.PackUncommittedResponse_Metadata{` +
 		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
 	return s
 }
-func (this *PackWorktreeResponse_Chunk) GoString() string {
+func (this *PackUncommittedResponse_Chunk) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&git.PackWorktreeResponse_Chunk{` +
+	s := strings.Join([]string{`&git.PackUncommittedResponse_Chunk{` +
 		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
 	return s
 }
-func (this *PackWorktreeMetadata) GoString() string {
+func (this *PackUncommittedMetadata) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 7)
-	s = append(s, "&git.PackWorktreeMetadata{")
+	s = append(s, "&git.PackUncommittedMetadata{")
 	s = append(s, "HeadSha: "+fmt.Sprintf("%#v", this.HeadSha)+",\n")
 	s = append(s, "NestedRepositories: "+fmt.Sprintf("%#v", this.NestedRepositories)+",\n")
 	if this.Error != nil {
@@ -2195,7 +2197,7 @@ type GitClient interface {
 	GetConfig(ctx context.Context, in *GitConfigRequest, opts ...grpc.CallOption) (*GitConfigResponse, error)
 	CheckoutState(ctx context.Context, in *CheckoutStateRequest, opts ...grpc.CallOption) (*CheckoutStateResponse, error)
 	PackCheckout(ctx context.Context, in *PackCheckoutRequest, opts ...grpc.CallOption) (Git_PackCheckoutClient, error)
-	PackWorktree(ctx context.Context, in *PackWorktreeRequest, opts ...grpc.CallOption) (Git_PackWorktreeClient, error)
+	PackUncommitted(ctx context.Context, in *PackUncommittedRequest, opts ...grpc.CallOption) (Git_PackUncommittedClient, error)
 }
 
 type gitClient struct {
@@ -2265,12 +2267,12 @@ func (x *gitPackCheckoutClient) Recv() (*PackCheckoutResponse, error) {
 	return m, nil
 }
 
-func (c *gitClient) PackWorktree(ctx context.Context, in *PackWorktreeRequest, opts ...grpc.CallOption) (Git_PackWorktreeClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[1], "/dagger.git.Git/PackWorktree", opts...)
+func (c *gitClient) PackUncommitted(ctx context.Context, in *PackUncommittedRequest, opts ...grpc.CallOption) (Git_PackUncommittedClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[1], "/dagger.git.Git/PackUncommitted", opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &gitPackWorktreeClient{stream}
+	x := &gitPackUncommittedClient{stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -2280,17 +2282,17 @@ func (c *gitClient) PackWorktree(ctx context.Context, in *PackWorktreeRequest, o
 	return x, nil
 }
 
-type Git_PackWorktreeClient interface {
-	Recv() (*PackWorktreeResponse, error)
+type Git_PackUncommittedClient interface {
+	Recv() (*PackUncommittedResponse, error)
 	grpc.ClientStream
 }
 
-type gitPackWorktreeClient struct {
+type gitPackUncommittedClient struct {
 	grpc.ClientStream
 }
 
-func (x *gitPackWorktreeClient) Recv() (*PackWorktreeResponse, error) {
-	m := new(PackWorktreeResponse)
+func (x *gitPackUncommittedClient) Recv() (*PackUncommittedResponse, error) {
+	m := new(PackUncommittedResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -2303,7 +2305,7 @@ type GitServer interface {
 	GetConfig(context.Context, *GitConfigRequest) (*GitConfigResponse, error)
 	CheckoutState(context.Context, *CheckoutStateRequest) (*CheckoutStateResponse, error)
 	PackCheckout(*PackCheckoutRequest, Git_PackCheckoutServer) error
-	PackWorktree(*PackWorktreeRequest, Git_PackWorktreeServer) error
+	PackUncommitted(*PackUncommittedRequest, Git_PackUncommittedServer) error
 }
 
 // UnimplementedGitServer can be embedded to have forward compatible implementations.
@@ -2322,8 +2324,8 @@ func (*UnimplementedGitServer) CheckoutState(ctx context.Context, req *CheckoutS
 func (*UnimplementedGitServer) PackCheckout(req *PackCheckoutRequest, srv Git_PackCheckoutServer) error {
 	return status.Errorf(codes.Unimplemented, "method PackCheckout not implemented")
 }
-func (*UnimplementedGitServer) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktreeServer) error {
-	return status.Errorf(codes.Unimplemented, "method PackWorktree not implemented")
+func (*UnimplementedGitServer) PackUncommitted(req *PackUncommittedRequest, srv Git_PackUncommittedServer) error {
+	return status.Errorf(codes.Unimplemented, "method PackUncommitted not implemented")
 }
 
 func RegisterGitServer(s *grpc.Server, srv GitServer) {
@@ -2405,24 +2407,24 @@ func (x *gitPackCheckoutServer) Send(m *PackCheckoutResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _Git_PackWorktree_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(PackWorktreeRequest)
+func _Git_PackUncommitted_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(PackUncommittedRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(GitServer).PackWorktree(m, &gitPackWorktreeServer{stream})
+	return srv.(GitServer).PackUncommitted(m, &gitPackUncommittedServer{stream})
 }
 
-type Git_PackWorktreeServer interface {
-	Send(*PackWorktreeResponse) error
+type Git_PackUncommittedServer interface {
+	Send(*PackUncommittedResponse) error
 	grpc.ServerStream
 }
 
-type gitPackWorktreeServer struct {
+type gitPackUncommittedServer struct {
 	grpc.ServerStream
 }
 
-func (x *gitPackWorktreeServer) Send(m *PackWorktreeResponse) error {
+func (x *gitPackUncommittedServer) Send(m *PackUncommittedResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -2450,8 +2452,8 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 		{
-			StreamName:    "PackWorktree",
-			Handler:       _Git_PackWorktree_Handler,
+			StreamName:    "PackUncommitted",
+			Handler:       _Git_PackUncommitted_Handler,
 			ServerStreams: true,
 		},
 	},
@@ -3050,7 +3052,7 @@ func (m *PackCheckoutMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *PackWorktreeRequest) Marshal() (dAtA []byte, err error) {
+func (m *PackUncommittedRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -3060,12 +3062,12 @@ func (m *PackWorktreeRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *PackWorktreeRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *PackUncommittedRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *PackWorktreeRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *PackUncommittedRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -3087,7 +3089,7 @@ func (m *PackWorktreeRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *PackWorktreeResponse) Marshal() (dAtA []byte, err error) {
+func (m *PackUncommittedResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -3097,12 +3099,12 @@ func (m *PackWorktreeResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *PackWorktreeResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *PackUncommittedResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *PackWorktreeResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *PackUncommittedResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -3119,12 +3121,12 @@ func (m *PackWorktreeResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *PackWorktreeResponse_Metadata) MarshalTo(dAtA []byte) (int, error) {
+func (m *PackUncommittedResponse_Metadata) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *PackWorktreeResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *PackUncommittedResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Metadata != nil {
 		{
@@ -3140,12 +3142,12 @@ func (m *PackWorktreeResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, 
 	}
 	return len(dAtA) - i, nil
 }
-func (m *PackWorktreeResponse_Chunk) MarshalTo(dAtA []byte) (int, error) {
+func (m *PackUncommittedResponse_Chunk) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *PackWorktreeResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *PackUncommittedResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Chunk != nil {
 		i -= len(m.Chunk)
@@ -3156,7 +3158,7 @@ func (m *PackWorktreeResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, err
 	}
 	return len(dAtA) - i, nil
 }
-func (m *PackWorktreeMetadata) Marshal() (dAtA []byte, err error) {
+func (m *PackUncommittedMetadata) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -3166,12 +3168,12 @@ func (m *PackWorktreeMetadata) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *PackWorktreeMetadata) MarshalTo(dAtA []byte) (int, error) {
+func (m *PackUncommittedMetadata) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *PackWorktreeMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *PackUncommittedMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -3533,7 +3535,7 @@ func (m *PackCheckoutMetadata) Size() (n int) {
 	return n
 }
 
-func (m *PackWorktreeRequest) Size() (n int) {
+func (m *PackUncommittedRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -3550,7 +3552,7 @@ func (m *PackWorktreeRequest) Size() (n int) {
 	return n
 }
 
-func (m *PackWorktreeResponse) Size() (n int) {
+func (m *PackUncommittedResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -3562,7 +3564,7 @@ func (m *PackWorktreeResponse) Size() (n int) {
 	return n
 }
 
-func (m *PackWorktreeResponse_Metadata) Size() (n int) {
+func (m *PackUncommittedResponse_Metadata) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -3574,7 +3576,7 @@ func (m *PackWorktreeResponse_Metadata) Size() (n int) {
 	}
 	return n
 }
-func (m *PackWorktreeResponse_Chunk) Size() (n int) {
+func (m *PackUncommittedResponse_Chunk) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -3586,7 +3588,7 @@ func (m *PackWorktreeResponse_Chunk) Size() (n int) {
 	}
 	return n
 }
-func (m *PackWorktreeMetadata) Size() (n int) {
+func (m *PackUncommittedMetadata) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -3844,52 +3846,52 @@ func (this *PackCheckoutMetadata) String() string {
 	}, "")
 	return s
 }
-func (this *PackWorktreeRequest) String() string {
+func (this *PackUncommittedRequest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&PackWorktreeRequest{`,
+	s := strings.Join([]string{`&PackUncommittedRequest{`,
 		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
 		`ExpectedHeadSha:` + fmt.Sprintf("%v", this.ExpectedHeadSha) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *PackWorktreeResponse) String() string {
+func (this *PackUncommittedResponse) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&PackWorktreeResponse{`,
+	s := strings.Join([]string{`&PackUncommittedResponse{`,
 		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *PackWorktreeResponse_Metadata) String() string {
+func (this *PackUncommittedResponse_Metadata) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&PackWorktreeResponse_Metadata{`,
-		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "PackWorktreeMetadata", "PackWorktreeMetadata", 1) + `,`,
+	s := strings.Join([]string{`&PackUncommittedResponse_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "PackUncommittedMetadata", "PackUncommittedMetadata", 1) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *PackWorktreeResponse_Chunk) String() string {
+func (this *PackUncommittedResponse_Chunk) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&PackWorktreeResponse_Chunk{`,
+	s := strings.Join([]string{`&PackUncommittedResponse_Chunk{`,
 		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *PackWorktreeMetadata) String() string {
+func (this *PackUncommittedMetadata) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&PackWorktreeMetadata{`,
+	s := strings.Join([]string{`&PackUncommittedMetadata{`,
 		`HeadSha:` + fmt.Sprintf("%v", this.HeadSha) + `,`,
 		`NestedRepositories:` + fmt.Sprintf("%v", this.NestedRepositories) + `,`,
 		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
@@ -5309,7 +5311,7 @@ func (m *PackCheckoutMetadata) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *PackWorktreeRequest) Unmarshal(dAtA []byte) error {
+func (m *PackUncommittedRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -5332,10 +5334,10 @@ func (m *PackWorktreeRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: PackWorktreeRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: PackUncommittedRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: PackWorktreeRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: PackUncommittedRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -5423,7 +5425,7 @@ func (m *PackWorktreeRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *PackWorktreeResponse) Unmarshal(dAtA []byte) error {
+func (m *PackUncommittedResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -5446,10 +5448,10 @@ func (m *PackWorktreeResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: PackWorktreeResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: PackUncommittedResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: PackWorktreeResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: PackUncommittedResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -5481,11 +5483,11 @@ func (m *PackWorktreeResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			v := &PackWorktreeMetadata{}
+			v := &PackUncommittedMetadata{}
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Msg = &PackWorktreeResponse_Metadata{v}
+			m.Msg = &PackUncommittedResponse_Metadata{v}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -5518,7 +5520,7 @@ func (m *PackWorktreeResponse) Unmarshal(dAtA []byte) error {
 			}
 			v := make([]byte, postIndex-iNdEx)
 			copy(v, dAtA[iNdEx:postIndex])
-			m.Msg = &PackWorktreeResponse_Chunk{v}
+			m.Msg = &PackUncommittedResponse_Chunk{v}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -5541,7 +5543,7 @@ func (m *PackWorktreeResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *PackWorktreeMetadata) Unmarshal(dAtA []byte) error {
+func (m *PackUncommittedMetadata) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -5564,10 +5566,10 @@ func (m *PackWorktreeMetadata) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: PackWorktreeMetadata: wiretype end group for non-group")
+			return fmt.Errorf("proto: PackUncommittedMetadata: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: PackWorktreeMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: PackUncommittedMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:

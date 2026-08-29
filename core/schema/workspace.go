@@ -2644,9 +2644,9 @@ func (s *workspaceSchema) workspaceGitRepository(
 		fast bool
 	)
 	if ws.HostPath() != "" && ws.ClientLocalBase() {
-		dir, fast, err = s.materializeWorkspaceGitWorktree(ctx, ws)
+		dir, fast, err = s.materializeWorkspaceGitUncommitted(ctx, ws)
 		if err != nil {
-			return inst, fmt.Errorf("workspace git worktree: %w", err)
+			return inst, fmt.Errorf("workspace git uncommitted: %w", err)
 		}
 	}
 	if !fast {
@@ -2696,13 +2696,14 @@ func (s *workspaceSchema) workspaceGitRepository(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
-// materializeWorkspaceGitWorktree builds a host-backed workspace repository
+// materializeWorkspaceGitUncommitted builds a host-backed workspace repository
 // without resolving its whole root directory. It checks out the canonical pack
-// for HEAD, asks the client for only the git-visible worktree delta, and applies
-// that delta directly to an engine snapshot. The bool is false when the client
-// predates the delta RPC (or the checkout has no canonical HEAD), in which case
-// callers retain the full-directory compatibility path.
-func (s *workspaceSchema) materializeWorkspaceGitWorktree(
+// for HEAD, asks the client for only the uncommitted changes (the git-visible
+// working-tree delta, including untracked files), and applies that delta
+// directly to an engine snapshot. The bool is false when the client predates
+// the delta RPC (or the checkout has no canonical HEAD), in which case callers
+// retain the full-directory compatibility path.
+func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
 	ctx context.Context,
 	ws *core.Workspace,
 ) (dagql.ObjectResult[*core.Directory], bool, error) {
@@ -2769,12 +2770,12 @@ func (s *workspaceSchema) materializeWorkspaceGitWorktree(
 	}
 
 	if err := srv.Select(clientCtx, clean, &inst, dagql.Selector{
-		Field: "__withGitWorktree",
+		Field: "__withGitUncommitted",
 		Args: []dagql.NamedInput{
 			{Name: "checkoutPath", Value: dagql.NewString(ws.HostPath())},
 			{Name: "expectedHeadSHA", Value: dagql.NewString(head.Self().Ref.SHA)},
 		},
-	}); errors.Is(err, engineutil.ErrGitWorktreeUnsupported) {
+	}); errors.Is(err, engineutil.ErrGitUncommittedUnsupported) {
 		return dagql.ObjectResult[*core.Directory]{}, false, nil
 	} else if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, false, err

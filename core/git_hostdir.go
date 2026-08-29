@@ -191,11 +191,12 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 	return dir, nil
 }
 
-// MaterializeGitWorktreePack applies a client-produced binary worktree patch
-// to a canonical HEAD checkout and recreates lightweight markers for omitted
+// MaterializeGitUncommittedPack applies a client-produced binary patch of
+// uncommitted changes (tracked modifications plus untracked files) to a
+// canonical HEAD checkout and recreates lightweight markers for omitted
 // untracked nested repositories. The result keeps HEAD's canonical .git and a
-// dirty worktree suitable for LocalGitRepository.uncommitted.
-func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Directory], pack *engineutil.GitWorktreePack) (inst dagql.ObjectResult[*Directory], rerr error) {
+// dirty working tree suitable for LocalGitRepository.uncommitted.
+func MaterializeGitUncommittedPack(ctx context.Context, tree dagql.ObjectResult[*Directory], pack *engineutil.GitUncommittedPack) (inst dagql.ObjectResult[*Directory], rerr error) {
 	srv := dagql.CurrentDagqlServer(ctx)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -212,7 +213,7 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 
 	bkref, err := query.SnapshotManager().New(ctx, parent,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("git packed worktree"))
+		bkcache.WithDescription("git uncommitted changes"))
 	if err != nil {
 		return inst, err
 	}
@@ -223,34 +224,34 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 	}()
 
 	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-		worktree, err := fs.RootPath(root, treePath)
+		checkoutDir, err := fs.RootPath(root, treePath)
 		if err != nil {
 			return err
 		}
-		head, err := runGitEnv(ctx, worktree, "rev-parse", "HEAD")
+		head, err := runGitEnv(ctx, checkoutDir, "rev-parse", "HEAD")
 		if err != nil {
 			return fmt.Errorf("read canonical checkout HEAD: %w", err)
 		}
 		if strings.TrimSpace(head) != pack.HeadSHA {
-			return fmt.Errorf("canonical checkout HEAD %s does not match worktree patch %s", strings.TrimSpace(head), pack.HeadSHA)
+			return fmt.Errorf("canonical checkout HEAD %s does not match uncommitted patch %s", strings.TrimSpace(head), pack.HeadSHA)
 		}
 
 		if len(pack.Patch) > 0 {
-			patch, err := os.CreateTemp("", "dagger-worktree-patch")
+			patch, err := os.CreateTemp("", "dagger-uncommitted-patch")
 			if err != nil {
-				return fmt.Errorf("create worktree patch file: %w", err)
+				return fmt.Errorf("create uncommitted patch file: %w", err)
 			}
 			patchPath := patch.Name()
 			defer os.Remove(patchPath)
 			if _, err := patch.Write(pack.Patch); err != nil {
 				patch.Close()
-				return fmt.Errorf("write worktree patch: %w", err)
+				return fmt.Errorf("write uncommitted patch: %w", err)
 			}
 			if err := patch.Close(); err != nil {
 				return err
 			}
-			if _, err := runGitEnv(ctx, worktree, "apply", "--binary", "--whitespace=nowarn", patchPath); err != nil {
-				return fmt.Errorf("apply worktree patch: %w", err)
+			if _, err := runGitEnv(ctx, checkoutDir, "apply", "--binary", "--whitespace=nowarn", patchPath); err != nil {
+				return fmt.Errorf("apply uncommitted patch: %w", err)
 			}
 		}
 
@@ -259,7 +260,7 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 			if clean == "." || clean == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 				return fmt.Errorf("invalid nested repository path %q", nested)
 			}
-			nestedRoot, err := fs.RootPath(worktree, clean)
+			nestedRoot, err := fs.RootPath(checkoutDir, clean)
 			if err != nil {
 				return fmt.Errorf("resolve nested repository path %q: %w", nested, err)
 			}

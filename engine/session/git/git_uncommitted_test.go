@@ -12,31 +12,31 @@ import (
 	"google.golang.org/grpc"
 )
 
-type fakePackWorktreeServer struct {
+type fakePackUncommittedServer struct {
 	grpc.ServerStream
 	ctx       context.Context
-	responses []*PackWorktreeResponse
+	responses []*PackUncommittedResponse
 }
 
-var _ Git_PackWorktreeServer = (*fakePackWorktreeServer)(nil)
+var _ Git_PackUncommittedServer = (*fakePackUncommittedServer)(nil)
 
-func (s *fakePackWorktreeServer) Context() context.Context {
+func (s *fakePackUncommittedServer) Context() context.Context {
 	if s.ctx != nil {
 		return s.ctx
 	}
 	return context.Background()
 }
 
-func (s *fakePackWorktreeServer) Send(resp *PackWorktreeResponse) error {
-	if chunk, ok := resp.Msg.(*PackWorktreeResponse_Chunk); ok {
+func (s *fakePackUncommittedServer) Send(resp *PackUncommittedResponse) error {
+	if chunk, ok := resp.Msg.(*PackUncommittedResponse_Chunk); ok {
 		cp := append([]byte(nil), chunk.Chunk...)
-		resp = &PackWorktreeResponse{Msg: &PackWorktreeResponse_Chunk{Chunk: cp}}
+		resp = &PackUncommittedResponse{Msg: &PackUncommittedResponse_Chunk{Chunk: cp}}
 	}
 	s.responses = append(s.responses, resp)
 	return nil
 }
 
-func (s *fakePackWorktreeServer) metadata(t *testing.T) *PackWorktreeMetadata {
+func (s *fakePackUncommittedServer) metadata(t *testing.T) *PackUncommittedMetadata {
 	t.Helper()
 	require.NotEmpty(t, s.responses)
 	meta := s.responses[0].GetMetadata()
@@ -44,7 +44,7 @@ func (s *fakePackWorktreeServer) metadata(t *testing.T) *PackWorktreeMetadata {
 	return meta
 }
 
-func (s *fakePackWorktreeServer) patch() []byte {
+func (s *fakePackUncommittedServer) patch() []byte {
 	var patch []byte
 	for _, resp := range s.responses {
 		patch = append(patch, resp.GetChunk()...)
@@ -52,17 +52,17 @@ func (s *fakePackWorktreeServer) patch() []byte {
 	return patch
 }
 
-func packWorktree(t *testing.T, path, head string) *fakePackWorktreeServer {
+func packUncommitted(t *testing.T, path, head string) *fakePackUncommittedServer {
 	t.Helper()
-	srv := &fakePackWorktreeServer{ctx: context.Background()}
-	require.NoError(t, GitAttachable{}.PackWorktree(&PackWorktreeRequest{
+	srv := &fakePackUncommittedServer{ctx: context.Background()}
+	require.NoError(t, GitAttachable{}.PackUncommitted(&PackUncommittedRequest{
 		CheckoutPath:    path,
 		ExpectedHeadSha: head,
 	}, srv))
 	return srv
 }
 
-func TestPackWorktreeGitVisibleDelta(t *testing.T) {
+func TestPackUncommittedGitVisibleDelta(t *testing.T) {
 	skipIfNoGit(t)
 
 	repo, home := initRepo(t, "main")
@@ -102,7 +102,7 @@ func TestPackWorktreeGitVisibleDelta(t *testing.T) {
 	gitCmd(t, home, nested, "init")
 	require.NoError(t, os.WriteFile(filepath.Join(nested, "inner.txt"), []byte("nested\n"), 0o600))
 
-	srv := packWorktree(t, repo, head)
+	srv := packUncommitted(t, repo, head)
 	meta := srv.metadata(t)
 	require.Nil(t, meta.GetError())
 	require.Equal(t, head, meta.GetHeadSha())
@@ -114,7 +114,7 @@ func TestPackWorktreeGitVisibleDelta(t *testing.T) {
 
 	clone := filepath.Join(t.TempDir(), "clone")
 	gitCmd(t, home, "", "clone", "--no-local", repo, clone)
-	patchPath := filepath.Join(t.TempDir(), "worktree.patch")
+	patchPath := filepath.Join(t.TempDir(), "uncommitted.patch")
 	require.NoError(t, os.WriteFile(patchPath, patch, 0o600))
 	gitCmd(t, home, clone, "apply", "--binary", patchPath)
 
@@ -151,7 +151,7 @@ func TestPackWorktreeGitVisibleDelta(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(clone, "nested"))
 }
 
-func TestPackWorktreeFallsBackForChangedSubmodule(t *testing.T) {
+func TestPackUncommittedFallsBackForChangedSubmodule(t *testing.T) {
 	skipIfNoGit(t)
 
 	repo, home := initRepo(t, "main")
@@ -166,12 +166,12 @@ func TestPackWorktreeFallsBackForChangedSubmodule(t *testing.T) {
 	head := gitCmd(t, home, repo, "rev-parse", "HEAD")
 
 	require.NoError(t, os.WriteFile(filepath.Join(nested, "inner.txt"), []byte("dirty\n"), 0o600))
-	srv := packWorktree(t, repo, head)
-	require.Equal(t, WORKTREE_UNSUPPORTED, srv.metadata(t).GetError().GetType())
+	srv := packUncommitted(t, repo, head)
+	require.Equal(t, UNCOMMITTED_UNSUPPORTED, srv.metadata(t).GetError().GetType())
 	require.Len(t, srv.responses, 1)
 }
 
-func TestPackWorktreeStreamsLargeBinaryAndRejectsMovedHead(t *testing.T) {
+func TestPackUncommittedStreamsLargeBinaryAndRejectsMovedHead(t *testing.T) {
 	skipIfNoGit(t)
 
 	repo, home := initRepo(t, "main")
@@ -182,11 +182,11 @@ func TestPackWorktreeStreamsLargeBinaryAndRejectsMovedHead(t *testing.T) {
 	_, err := rand.Read(binary)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "large.bin"), binary, 0o600))
-	srv := packWorktree(t, repo, head)
+	srv := packUncommitted(t, repo, head)
 	require.Greater(t, len(srv.responses), 2, "large patch must be streamed across chunks")
 	require.True(t, bytes.Contains(srv.patch(), []byte("large.bin")))
 
-	mismatch := packWorktree(t, repo, "0000000000000000000000000000000000000000")
+	mismatch := packUncommitted(t, repo, "0000000000000000000000000000000000000000")
 	require.Equal(t, HEAD_MISMATCH, mismatch.metadata(t).GetError().GetType())
 	require.Len(t, mismatch.responses, 1)
 }

@@ -290,7 +290,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
-		dagql.NodeFunc("__withGitWorktree", s.withGitWorktree),
+		dagql.NodeFunc("__withGitUncommitted", s.withGitUncommitted).
+			Doc(`(Internal-only) Apply the calling client checkout's uncommitted changes (including untracked files) to this directory, which must be a checkout of the same HEAD.`),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this directory.").
@@ -1804,18 +1805,19 @@ func (s *directorySchema) terminal(
 	return dir, nil
 }
 
-type withGitWorktreeArgs struct {
+type withGitUncommittedArgs struct {
 	CheckoutPath    string
 	ExpectedHeadSHA string `name:"expectedHeadSHA"`
 }
 
-// withGitWorktree applies the calling client's streamed git-visible worktree
-// delta directly to parent. Keeping this behind a DAG field gives the resulting
-// Directory its own call identity without putting patch bytes in that identity.
-func (s *directorySchema) withGitWorktree(
+// withGitUncommitted applies the calling client's streamed uncommitted changes
+// (the git-visible working-tree delta, including untracked files) directly to
+// parent. Keeping this behind a DAG field gives the resulting Directory its own
+// call identity without putting patch bytes in that identity.
+func (s *directorySchema) withGitUncommitted(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Directory],
-	args withGitWorktreeArgs,
+	args withGitUncommittedArgs,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -1825,11 +1827,11 @@ func (s *directorySchema) withGitWorktree(
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("buildkit: %w", err)
 	}
-	pack, err := bk.PackGitWorktree(ctx, args.CheckoutPath, args.ExpectedHeadSHA)
+	pack, err := bk.PackGitUncommitted(ctx, args.CheckoutPath, args.ExpectedHeadSHA)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
-	return core.MaterializeGitWorktreePack(ctx, parent, pack)
+	return core.MaterializeGitUncommittedPack(ctx, parent, pack)
 }
 
 func (s *directorySchema) asGit(

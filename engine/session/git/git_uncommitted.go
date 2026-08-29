@@ -14,20 +14,21 @@ import (
 	"syscall"
 )
 
-// PackWorktree streams the checkout's git-visible worktree delta relative to
-// HEAD as a binary patch. A temporary index starts at HEAD and is populated
+// PackUncommitted streams the checkout's uncommitted changes -- the
+// git-visible working-tree delta relative to HEAD, including untracked
+// files -- as a binary patch. A temporary index starts at HEAD and is populated
 // only with paths that git itself reports as changed or ordinary untracked;
 // ignored paths and untracked nested repositories consequently stay out.
 //
 //nolint:gocyclo // streams metadata, patch, and error classification in one handler
-func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktreeServer) error {
+func (s GitAttachable) PackUncommitted(req *PackUncommittedRequest, srv Git_PackUncommittedServer) error {
 	ctx, cancel := context.WithTimeout(srv.Context(), gitPackTimeout)
 	defer cancel()
 
 	sendErr := func(errorType ErrorInfo_ErrorType, message string) error {
-		return srv.Send(&PackWorktreeResponse{
-			Msg: &PackWorktreeResponse_Metadata{
-				Metadata: &PackWorktreeMetadata{
+		return srv.Send(&PackUncommittedResponse{
+			Msg: &PackUncommittedResponse_Metadata{
+				Metadata: &PackUncommittedMetadata{
 					Error: &ErrorInfo{Type: errorType, Message: message},
 				},
 			},
@@ -55,7 +56,7 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 	if state.headSHA == "" {
 		// There is no canonical HEAD tree on which the engine can apply a
 		// patch. The engine falls back to the existing directory transport.
-		return sendErr(WORKTREE_UNSUPPORTED, "cannot pack an unborn worktree")
+		return sendErr(UNCOMMITTED_UNSUPPORTED, "cannot pack uncommitted changes of an unborn checkout")
 	}
 	expectedHead := req.GetExpectedHeadSha()
 	if expectedHead == "" {
@@ -96,9 +97,9 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 	}
 	sort.Strings(nested)
 
-	tmpDir, err := os.MkdirTemp("", "dagger-pack-worktree")
+	tmpDir, err := os.MkdirTemp("", "dagger-pack-uncommitted")
 	if err != nil {
-		return fmt.Errorf("create worktree pack temp dir: %w", err)
+		return fmt.Errorf("create uncommitted pack temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 	indexPath := filepath.Join(tmpDir, "index")
@@ -114,7 +115,7 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 			input.WriteByte(0)
 		}
 		// Remove every changed tracked path first, then add back only what
-		// exists in the final worktree. Two phases are required for file ↔
+		// exists in the final working tree. Two phases are required for file ↔
 		// directory type changes, where both forms cannot coexist in an index.
 		if _, err := runHostGitBytes(ctx, checkout, env, &input,
 			"update-index", "--force-remove", "-z", "--stdin"); err != nil {
@@ -135,7 +136,7 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 				if _, isTracked := tracked[p]; isTracked && checkoutHasGitEntry(filepath.Join(checkout, filepath.FromSlash(p))) {
 					// A changed checked-out submodule needs its gitlink/index
 					// semantics preserved; a filesystem patch cannot encode it.
-					return sendErr(WORKTREE_UNSUPPORTED, fmt.Sprintf("changed submodule at %q", p))
+					return sendErr(UNCOMMITTED_UNSUPPORTED, fmt.Sprintf("changed submodule at %q", p))
 				}
 				continue
 			}
@@ -159,17 +160,17 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 		"diff", "--cached", "--binary", "--full-index", "--no-renames", "--no-ext-diff", expectedHead, "--")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("open worktree patch stream: %w", err)
+		return fmt.Errorf("open uncommitted patch stream: %w", err)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		return sendErr(PACK_FAILED, fmt.Sprintf("start worktree patch: %v", err))
+		return sendErr(PACK_FAILED, fmt.Sprintf("start uncommitted patch: %v", err))
 	}
 
-	if err := srv.Send(&PackWorktreeResponse{
-		Msg: &PackWorktreeResponse_Metadata{
-			Metadata: &PackWorktreeMetadata{
+	if err := srv.Send(&PackUncommittedResponse{
+		Msg: &PackUncommittedResponse_Metadata{
+			Metadata: &PackUncommittedMetadata{
 				HeadSha:            state.headSHA,
 				NestedRepositories: nested,
 			},
@@ -177,26 +178,26 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 	}); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return fmt.Errorf("send worktree metadata: %w", err)
+		return fmt.Errorf("send uncommitted metadata: %w", err)
 	}
 
 	buf := make([]byte, packCheckoutChunkSize)
 	for {
 		n, readErr := stdout.Read(buf)
 		if n > 0 {
-			if err := srv.Send(&PackWorktreeResponse{
-				Msg: &PackWorktreeResponse_Chunk{Chunk: buf[:n]},
+			if err := srv.Send(&PackUncommittedResponse{
+				Msg: &PackUncommittedResponse_Chunk{Chunk: buf[:n]},
 			}); err != nil {
 				_ = cmd.Process.Kill()
 				_ = cmd.Wait()
-				return fmt.Errorf("send worktree patch chunk: %w", err)
+				return fmt.Errorf("send uncommitted patch chunk: %w", err)
 			}
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
 				_ = cmd.Process.Kill()
 				_ = cmd.Wait()
-				return fmt.Errorf("read worktree patch: %w", readErr)
+				return fmt.Errorf("read uncommitted patch: %w", readErr)
 			}
 			break
 		}
@@ -204,9 +205,9 @@ func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktr
 	if err := cmd.Wait(); err != nil {
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
-			return fmt.Errorf("git diff worktree: %w", err)
+			return fmt.Errorf("git diff uncommitted: %w", err)
 		}
-		return fmt.Errorf("git diff worktree: %w: %s", err, detail)
+		return fmt.Errorf("git diff uncommitted: %w: %s", err, detail)
 	}
 	return nil
 }
