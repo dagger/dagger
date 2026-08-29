@@ -17,6 +17,8 @@ pub fn format_name(s: &str) -> String {
 pub fn format_struct_name(s: &str) -> String {
     let s = s.to_case(Case::Snake);
     match s.as_ref() {
+        "async" => "r#async".to_string(),
+        "await" => "r#await".to_string(),
         "ref" => "r#ref".to_string(),
         "enum" => "r#enum".to_string(),
         "loop" => "r#loop".to_string(),
