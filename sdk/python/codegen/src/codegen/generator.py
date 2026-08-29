@@ -651,7 +651,13 @@ class _InputField:
             self.has_default = True
 
         if default_value and is_enum_type(self.named_type):
-            self.default_value = f"{self.named_type.name}.{default_value}"
+            if isinstance(default_value, list):
+                members = ", ".join(
+                    f"{self.named_type.name}.{v}" for v in default_value
+                )
+                self.default_value = f"[{members}]"
+            else:
+                self.default_value = f"{self.named_type.name}.{default_value}"
         else:
             self.default_value = repr(default_value)
 
