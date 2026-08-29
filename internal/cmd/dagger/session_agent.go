@@ -317,14 +317,10 @@ func (a *sessionAgent) ToggleAutocompact() {
 	}
 }
 
-func (a *sessionAgent) lastSynced(fallback *dagger.Workspace) *dagger.Workspace {
+func (a *sessionAgent) lastSynced() *dagger.Workspace {
 	a.lastSyncedWorkspaceL.RLock()
-	workspace := a.lastSyncedWorkspace
-	a.lastSyncedWorkspaceL.RUnlock()
-	if workspace != nil {
-		return workspace
-	}
-	return fallback
+	defer a.lastSyncedWorkspaceL.RUnlock()
+	return a.lastSyncedWorkspace
 }
 
 func (a *sessionAgent) setLastSynced(workspace *dagger.Workspace) {
@@ -371,7 +367,7 @@ func (a *sessionAgent) reset() {
 	// the currently selected model, but bind the original composition to the
 	// latest synchronized checkpoint rather than its original workspace.
 	dag := a.session.dag
-	baseline := a.lastSynced(nil)
+	baseline := a.lastSynced()
 	if baseline == nil && a.llm != nil {
 		// Attached and trace-restored conversations may not carry their original
 		// synchronization checkpoint. Their current portable workspace is the
@@ -1038,7 +1034,7 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 	// A genuinely unbound trace restore has no workspace state to preview. The
 	// synchronization checkpoint is also our established bound/unbound marker;
 	// skip the query rather than issuing one guaranteed to fail.
-	baseline := a.lastSynced(nil)
+	baseline := a.lastSynced()
 	if baseline == nil {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil

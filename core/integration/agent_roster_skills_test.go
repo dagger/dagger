@@ -113,10 +113,8 @@ func (AgentRuntimeSuite) TestRosterAddressingWithSkills(ctx context.Context, t *
 		skills func(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID
 	}{
 		{
-			name: "client directory",
-			skills: func(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID {
-				return newSkillsDir(ctx, t, c)
-			},
+			name:   "client directory",
+			skills: newSkillsDir,
 		},
 		{
 			name: "module directory",

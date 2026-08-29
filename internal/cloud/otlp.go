@@ -291,7 +291,7 @@ func (c *OTLPClient) consumeSSE(ctx context.Context, kind, traceID string, cb fu
 	req.Header.Set("Authorization", c.authHeader)
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := c.h.Do(req)
+	resp, err := c.h.Do(req) //nolint:bodyclose // closed by the defer below; the stall watchdog may close it early
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", endpoint, err)
 	}
