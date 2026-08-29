@@ -8,19 +8,22 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.35rem 0.6rem;
-  background: var(--ifm-color-emphasis-100);
-  color: var(--ifm-color-content-secondary);
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 8px;
-  font: inherit;
-  font-size: 0.85rem;
+  background: transparent;
+  color: var(--color-dim);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  /* Mono, like the rest of the site chrome. */
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   line-height: 1;
   cursor: pointer;
 }
 
 .trigger:hover {
-  color: var(--ifm-color-content);
-  border-color: var(--ifm-color-primary);
+  color: var(--color-fg);
+  border-color: var(--color-orange);
 }
 
 .triggerLabel {
@@ -28,12 +31,12 @@
 }
 
 .kbd {
-  font-family: var(--ifm-font-family-monospace);
+  font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--ifm-color-content-secondary);
-  background: var(--ifm-background-surface-color);
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 5px;
+  color: var(--color-faint);
+  background: var(--color-wash);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
   padding: 0.1rem 0.35rem;
 }
 
