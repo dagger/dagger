@@ -194,7 +194,7 @@ func TestNestedTransportRegistrationRequiresExactHeldParentScope(t *testing.T) {
 
 	// Equal string IDs from a replaced session record are still stale: the
 	// session authority token must match by identity.
-	_, _, _, staleCtx, staleScope := newNestedTransportTestFixture(t)
+	_, _, _, staleCtx, staleScope := newNestedTransportTestFixture(t) //nolint:dogsled // fixture returns every handle; only the stale scope matters here
 	defer staleScope.Lease().Release()
 	freshSrv, _, freshParent, _, freshScope := newNestedTransportTestFixture(t)
 	defer freshScope.Lease().Release()
@@ -2141,7 +2141,8 @@ func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- srv.releaseClientConnection(context.Background(), sess, client)
+		srv.releaseClientConnection(context.Background(), sess, client)
+		done <- nil
 	}()
 	select {
 	case err := <-done:
@@ -2179,7 +2180,7 @@ func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
 	srv := newTeardownTestServer(t)
 	sess, client := newTeardownTestSession(srv, "s", "m", 1)
 
-	require.NoError(t, srv.releaseClientConnection(context.Background(), sess, client))
+	srv.releaseClientConnection(context.Background(), sess, client)
 	require.Eventually(t, func() bool {
 		return sess.state.Load() == sessionStateRemoved
 	}, 10*time.Second, 10*time.Millisecond)
