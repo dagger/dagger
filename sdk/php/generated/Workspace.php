@@ -25,13 +25,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return all agent middlewares from modules loaded in the workspace.
      */
-    public function agents(?array $include = null): AgentGroup
+    public function agents(?array $include = null, ?array $exclude = null): AgentMiddlewareGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        return new \Dagger\AgentGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\AgentMiddlewareGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

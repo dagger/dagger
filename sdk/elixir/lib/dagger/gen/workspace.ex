@@ -29,14 +29,16 @@ defmodule Dagger.Workspace do
   @doc """
   Return all agent middlewares from modules loaded in the workspace.
   """
-  @spec agents(t(), [{:include, [String.t()]}]) :: Dagger.AgentGroup.t()
+  @spec agents(t(), [{:include, [String.t()]}, {:exclude, [String.t()]}]) ::
+          Dagger.AgentMiddlewareGroup.t()
   def agents(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("agents")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
-    %Dagger.AgentGroup{
+    %Dagger.AgentMiddlewareGroup{
       query_builder: query_builder,
       client: workspace.client
     }
