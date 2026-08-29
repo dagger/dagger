@@ -332,11 +332,11 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		// The bundle carries every branch and tag; fetching validates object
 		// connectivity along the way, so a torn or truncated pack fails here
 		// rather than surfacing later as a subtly broken repository.
-		// --update-head-ok lets the fetch advance the branch HEAD symbolically
-		// points at (set just above): this is a scratch reconstruction with no
-		// meaningful work tree, so git's "refusing to fetch into checked-out
-		// branch" guard does not apply.
-		if _, err := runGitEnv(ctx, root, "fetch", "--quiet", "--no-tags", "--update-head-ok", bundle.Name(), "+refs/*:refs/*"); err != nil {
+		// --update-head-ok (from the shared helper) lets the fetch advance the
+		// branch HEAD symbolically points at (set just above): this is a
+		// scratch reconstruction with no meaningful work tree, so git's
+		// "refusing to fetch into checked-out branch" guard does not apply.
+		if err := fetchGitBundleRefspecs(ctx, root, bundle.Name(), []string{"+refs/*:refs/*"}); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
 
@@ -369,14 +369,9 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 
 	// Strip state that is mutable, host-specific, or scratch: none of it is
 	// part of "the repository at this ref state", and keeping it would make
-	// otherwise identical reconstructions diverge.
-	gitDir := filepath.Join(root, ".git")
-	for _, p := range []string{"logs", "hooks", "branches", "description", "FETCH_HEAD", "COMMIT_EDITMSG"} {
-		if err := os.RemoveAll(filepath.Join(gitDir, p)); err != nil {
-			return fmt.Errorf("normalize .git/%s: %w", p, err)
-		}
-	}
-	return nil
+	// otherwise identical reconstructions diverge. Bundle imports normalize
+	// their canonical repositories with the same helper.
+	return normalizeCanonicalGitDir(filepath.Join(root, ".git"))
 }
 
 // DropRootGitPointerFile returns dir without a `.git` regular file at its
