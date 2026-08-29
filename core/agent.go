@@ -1148,6 +1148,8 @@ var errAgentInterrupted = errors.New("agent interrupted")
 // A pause parks the loop in that same receive without draining or stepping,
 // even mid-turn: the suspended turn (and any queued mail) waits for a
 // resume, which wakes the loop to continue exactly where it left off.
+//
+//nolint:gocyclo
 func (rt *AgentRuntime) loop(ctx context.Context) {
 	// Bind the agent's own handle into the loop context: every Step below —
 	// and thus every tool dispatched within one — descends from it, so a
