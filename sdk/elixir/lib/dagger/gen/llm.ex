@@ -16,6 +16,22 @@ defmodule Dagger.LLM do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Rehydrate a spawned agent's handle from its instance ID.
+
+  This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+  """
+  @spec agent(t(), String.t(), String.t()) :: Dagger.Agent.t()
+  def agent(%__MODULE__{} = llm, id, name) do
+    query_builder =
+      llm.query_builder |> QB.select("agent") |> QB.put_arg("id", id) |> QB.put_arg("name", name)
+
+    %Dagger.Agent{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
   """
   @spec context_tokens(t()) :: {:ok, integer()} | {:error, term()}
@@ -214,6 +230,19 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+
+  Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+  """
+  @spec spawn(t(), [{:name, String.t() | nil}]) :: {:ok, String.t()} | {:error, term()}
+  def spawn(%__MODULE__{} = llm, optional_args \\ []) do
+    query_builder =
+      llm.query_builder |> QB.select("spawn") |> QB.maybe_put_arg("name", optional_args[:name])
+
+    Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
   Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
   """
   @spec step(t(), [{:max_tokens, integer() | nil}]) :: Dagger.LLM.t()
@@ -398,6 +427,20 @@ defmodule Dagger.LLM do
       llm.query_builder
       |> QB.select("withSkills")
       |> QB.put_arg("directory", Dagger.ID.id!(directory))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+  """
+  @spec with_small_model(t()) :: Dagger.LLM.t()
+  def with_small_model(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withSmallModel")
 
     %Dagger.LLM{
       query_builder: query_builder,
