@@ -260,6 +260,12 @@ func SshfsVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.Sshf
 	return client.SshfsVolume(endpoint, privateKey, opts...)
 }
 
+// Initialize a TOML value
+func TOML() *dagger.TOMLValue {
+	client := initClient()
+	return client.TOML()
+}
+
 // Create a new TypeDef.
 func TypeDef() *dagger.TypeDef {
 	client := initClient()

@@ -12,6 +12,7 @@
 //go:test:include ../../core/modelcatalog
 //go:test:include ../../core/prompts
 //go:test:include ../../core/sdk/sdkmeta
+//go:test:include ../../core/tomlpath
 //go:test:include ../../core/workspace
 //go:test:include ../../dagql
 //go:test:include ../../engine

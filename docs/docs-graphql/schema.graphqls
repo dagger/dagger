@@ -2702,6 +2702,9 @@ type File implements Exportable & Node & Syncer {
   """Parse the file contents as JSON."""
   asJSON: JSONValue!
 
+  """Parse the file contents as TOML."""
+  asTOML: TOMLValue!
+
   """Change the owner of the file recursively."""
   chown(
     """
@@ -5008,6 +5011,9 @@ type Query implements Node {
     experimentalServiceHost: ID @expectedType(name: "Service")
   ): Volume!
 
+  """Initialize a TOML value"""
+  toml: TOMLValue!
+
   """Create a new TypeDef."""
   typeDef: TypeDef!
 
@@ -5275,6 +5281,71 @@ Calling sync ensures that the object's entire dependency DAG has been evaluated,
 interface Syncer implements Node {
   id: ID!
   sync: ID! @expectedType(name: "Syncer")
+}
+
+"""An arbitrary TOML-encoded value."""
+scalar TOML
+
+type TOMLValue implements Node {
+  """Decode an array from TOML"""
+  asArray: [TOMLValue!]!
+
+  """Decode a boolean from TOML"""
+  asBoolean: Boolean!
+
+  """Decode an integer from TOML"""
+  asInteger: Int!
+
+  """Decode a string from TOML"""
+  asString: String!
+
+  """Return the value encoded as TOML"""
+  contents: TOML!
+
+  """Lookup the field at the given path, and return its value."""
+  field(
+    """Path of the field to lookup, encoded as an array of field names"""
+    path: [String!]!
+  ): TOMLValue!
+
+  """List fields of the encoded table"""
+  fields: [String!]!
+
+  """A unique identifier for this TOMLValue."""
+  id: ID!
+
+  """Encode a boolean to TOML"""
+  newBoolean(
+    """New boolean value"""
+    value: Boolean!
+  ): TOMLValue!
+
+  """Encode an integer to TOML"""
+  newInteger(
+    """New integer value"""
+    value: Int!
+  ): TOMLValue!
+
+  """Encode a string to TOML"""
+  newString(
+    """New string value"""
+    value: String!
+  ): TOMLValue!
+
+  """Return a new TOML value, decoded from the given content"""
+  withContents(
+    """New TOML-encoded contents"""
+    contents: TOML!
+  ): TOMLValue!
+
+  """Set a new field at the given path, preserving the existing formatting"""
+  withField(
+    """Path of the field to set, encoded as an array of field names"""
+    path: [String!]!
+
+    """The new value of the field"""
+    value: ID! @expectedType(name: "TOMLValue")
+  ): TOMLValue!
 }
 
 """An interactive terminal that clients can connect to."""
