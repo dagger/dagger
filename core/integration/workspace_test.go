@@ -440,7 +440,7 @@ type uncommittedChanges struct {
 }
 
 // find returns the diff stat for path, if any.
-func (u uncommittedChanges) find(path string) (workspaceDiffStat, bool) {
+func (u uncommittedChanges) find(path string) (workspaceDiffStat, bool) { //nolint:unparam // shared helper; the stat is used by other suites
 	for _, stat := range u.DiffStats {
 		if stat.Path == path {
 			return stat, true

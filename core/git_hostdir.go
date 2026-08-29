@@ -227,7 +227,7 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 		if err != nil {
 			return err
 		}
-		head, err := runGitEnv(ctx, worktree, nil, "rev-parse", "HEAD")
+		head, err := runGitEnv(ctx, worktree, "rev-parse", "HEAD")
 		if err != nil {
 			return fmt.Errorf("read canonical checkout HEAD: %w", err)
 		}
@@ -249,7 +249,7 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 			if err := patch.Close(); err != nil {
 				return err
 			}
-			if _, err := runGitEnv(ctx, worktree, nil, "apply", "--binary", "--whitespace=nowarn", patchPath); err != nil {
+			if _, err := runGitEnv(ctx, worktree, "apply", "--binary", "--whitespace=nowarn", patchPath); err != nil {
 				return fmt.Errorf("apply worktree patch: %w", err)
 			}
 		}
@@ -266,7 +266,7 @@ func MaterializeGitWorktreePack(ctx context.Context, tree dagql.ObjectResult[*Di
 			if err := os.MkdirAll(nestedRoot, 0o755); err != nil {
 				return fmt.Errorf("create nested repository boundary %q: %w", nested, err)
 			}
-			if _, err := runGitEnv(ctx, nestedRoot, nil, "init", "-q"); err != nil {
+			if _, err := runGitEnv(ctx, nestedRoot, "init", "-q"); err != nil {
 				return fmt.Errorf("create nested repository boundary %q: %w", nested, err)
 			}
 		}
@@ -302,14 +302,14 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 	if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
 		initArgs = append(initArgs, "--object-format="+pack.ObjectFormat)
 	}
-	if _, err := runGitEnv(ctx, root, nil, initArgs...); err != nil {
+	if _, err := runGitEnv(ctx, root, initArgs...); err != nil {
 		return err
 	}
 
 	// Point HEAD where the checkout's HEAD points. For an unborn branch this
 	// is all there is to reconstruct.
 	if pack.HeadRef != "" {
-		if _, err := runGitEnv(ctx, root, nil, "symbolic-ref", "HEAD", pack.HeadRef); err != nil {
+		if _, err := runGitEnv(ctx, root, "symbolic-ref", "HEAD", pack.HeadRef); err != nil {
 			return err
 		}
 	}
@@ -335,7 +335,7 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		// points at (set just above): this is a scratch reconstruction with no
 		// meaningful work tree, so git's "refusing to fetch into checked-out
 		// branch" guard does not apply.
-		if _, err := runGitEnv(ctx, root, nil, "fetch", "--quiet", "--no-tags", "--update-head-ok", bundle.Name(), "+refs/*:refs/*"); err != nil {
+		if _, err := runGitEnv(ctx, root, "fetch", "--quiet", "--no-tags", "--update-head-ok", bundle.Name(), "+refs/*:refs/*"); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
 
@@ -344,24 +344,24 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 			// The symbolic HEAD normally lands with the fetched branches; a
 			// HEAD outside refs/heads (which --branches does not pack) is
 			// created at the packed HEAD commit.
-			if _, err := runGitEnv(ctx, root, nil, "rev-parse", "-q", "--verify", pack.HeadRef); err != nil {
-				if _, err := runGitEnv(ctx, root, nil, "update-ref", pack.HeadRef, pack.HeadSHA); err != nil {
+			if _, err := runGitEnv(ctx, root, "rev-parse", "-q", "--verify", pack.HeadRef); err != nil {
+				if _, err := runGitEnv(ctx, root, "update-ref", pack.HeadRef, pack.HeadSHA); err != nil {
 					return err
 				}
 			}
 		default:
 			// Detached HEAD.
-			if _, err := runGitEnv(ctx, root, nil, "update-ref", "--no-deref", "HEAD", pack.HeadSHA); err != nil {
+			if _, err := runGitEnv(ctx, root, "update-ref", "--no-deref", "HEAD", pack.HeadSHA); err != nil {
 				return err
 			}
 		}
 
 		// The index is derived state; rebuild it from HEAD with stat data
 		// zeroed, exactly as staged-commit repositories are normalized.
-		if _, err := runGitEnv(ctx, root, nil, "read-tree", "HEAD"); err != nil {
+		if _, err := runGitEnv(ctx, root, "read-tree", "HEAD"); err != nil {
 			return err
 		}
-		if _, err := runGitEnv(ctx, root, nil, "pack-refs", "--all"); err != nil {
+		if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
 			return err
 		}
 	}

@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"os/exec"
@@ -356,7 +355,7 @@ func ValidateGitBundle(ctx context.Context, bundle *GitBundle) error {
 			return fmt.Errorf("create git bundle validation repository: %w", err)
 		}
 		defer os.RemoveAll(tmp)
-		if _, err := runGitEnv(ctx, tmp, nil, "init", "--bare", "--quiet", "--object-format="+header.ObjectFormat); err != nil {
+		if _, err := runGitEnv(ctx, tmp, "init", "--bare", "--quiet", "--object-format="+header.ObjectFormat); err != nil {
 			return fmt.Errorf("initialize git bundle validation repository: %w", err)
 		}
 		if err := verifyGitBundleInRepo(ctx, tmp, path); err != nil {
@@ -403,7 +402,7 @@ func inspectGitBundleFile(path string) (*GitBundle, error) {
 		return nil, err
 	}
 	hashSize := sha1.Size
-	var packHash hash.Hash = sha1.New() //nolint:gosec // Git pack checksum
+	packHash := sha1.New() //nolint:gosec // Git pack checksum
 	if header.ObjectFormat == "sha256" {
 		hashSize = sha256.Size
 		packHash = sha256.New()
@@ -449,6 +448,8 @@ func inspectGitBundleFile(path string) (*GitBundle, error) {
 // CreateGitBundleFile creates a version-3 bundle from named refs in the
 // repository's canonical object database. The temporary refs and repository
 // live only in a scratch snapshot; the source repository is never mutated.
+//
+//nolint:gocyclo // bundle creation validates every ref and prerequisite in one pass
 func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string, base *GitRef) (_ *File, rerr error) {
 	if repo == nil || repo.Backend == nil {
 		return nil, fmt.Errorf("git repository is required")
@@ -533,11 +534,11 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 			if err := os.MkdirAll(scratch, 0o700); err != nil {
 				return err
 			}
-			if _, err := runGitEnv(ctx, scratch, nil, "init", "--bare", "--quiet", "--object-format="+objectFormat); err != nil {
+			if _, err := runGitEnv(ctx, scratch, "init", "--bare", "--quiet", "--object-format="+objectFormat); err != nil {
 				return fmt.Errorf("initialize git bundle repository: %w", err)
 			}
 			for _, target := range targets {
-				if _, err := runGitEnv(ctx, scratch, nil, "fetch", "--quiet", "--no-tags", sourceURL, target.SHA+":"+target.Name); err != nil {
+				if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, target.SHA+":"+target.Name); err != nil {
 					return fmt.Errorf("fetch git bundle ref %s: %w", target.Name, err)
 				}
 			}
@@ -548,12 +549,12 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 			}
 			if base != nil {
 				baseRef := "refs/dagger/bundle/base"
-				if _, err := runGitEnv(ctx, scratch, nil, "fetch", "--quiet", "--no-tags", sourceURL, base.Ref.SHA+":"+baseRef); err != nil {
+				if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, base.Ref.SHA+":"+baseRef); err != nil {
 					return fmt.Errorf("fetch git bundle base %s: %w", base.Ref.SHA, err)
 				}
 				bundleArgs = append(bundleArgs, "^"+baseRef)
 			}
-			if _, err := runGitEnv(ctx, scratch, nil, bundleArgs...); err != nil {
+			if _, err := runGitEnv(ctx, scratch, bundleArgs...); err != nil {
 				return fmt.Errorf("create git bundle: %w", err)
 			}
 			if err := os.RemoveAll(scratch); err != nil {
@@ -593,6 +594,8 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 // bundle's refs and every exact prerequisite fetched from repo. The source
 // canonical repository is read-only; all imported refs live in the returned
 // immutable snapshot.
+//
+//nolint:gocyclo // bundle import verifies prerequisites, refs, and connectivity in one pass
 func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle, prerequisiteRef string) (_ *Directory, rerr error) {
 	if repo == nil || repo.Backend == nil {
 		return nil, fmt.Errorf("git repository is required")
@@ -681,12 +684,12 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 			}
 
 			return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-				if _, err := runGitEnv(ctx, root, nil, "init", "--bare", "--quiet", "--object-format="+header.ObjectFormat); err != nil {
+				if _, err := runGitEnv(ctx, root, "init", "--bare", "--quiet", "--object-format="+header.ObjectFormat); err != nil {
 					return fmt.Errorf("initialize git bundle repository: %w", err)
 				}
 				for i, prerequisite := range prerequisites {
 					dst := gitBundlePrerequisiteRef(i)
-					if _, err := runGitEnv(ctx, root, nil, "fetch", "--quiet", "--no-tags", sourceURL, prerequisite.SHA+":"+dst); err != nil {
+					if _, err := runGitEnv(ctx, root, "fetch", "--quiet", "--no-tags", sourceURL, prerequisite.SHA+":"+dst); err != nil {
 						return fmt.Errorf("fetch git bundle prerequisite %s: %w", prerequisite.SHA, err)
 					}
 				}
@@ -697,11 +700,11 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 					return fmt.Errorf("import git bundle: %w", err)
 				}
 				for i := range prerequisites {
-					if _, err := runGitEnv(ctx, root, nil, "update-ref", "-d", gitBundlePrerequisiteRef(i)); err != nil {
+					if _, err := runGitEnv(ctx, root, "update-ref", "-d", gitBundlePrerequisiteRef(i)); err != nil {
 						return fmt.Errorf("remove temporary git bundle prerequisite ref %d: %w", i, err)
 					}
 				}
-				if _, err := runGitEnv(ctx, root, nil, "pack-refs", "--all"); err != nil {
+				if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
 					return fmt.Errorf("normalize git bundle refs: %w", err)
 				}
 				return normalizeCanonicalGitDir(root)
@@ -736,14 +739,14 @@ func gitBundlePrerequisiteRef(index int) string {
 }
 
 func verifyGitBundleInRepo(ctx context.Context, repoDir, bundlePath string) error {
-	_, err := runGitEnv(ctx, repoDir, nil, "bundle", "verify", bundlePath)
+	_, err := runGitEnv(ctx, repoDir, "bundle", "verify", bundlePath)
 	return err
 }
 
 func fetchGitBundleRefspecs(ctx context.Context, repoDir, bundlePath string, refspecs []string) error {
 	args := []string{"fetch", "--quiet", "--no-tags", "--update-head-ok", bundlePath}
 	args = append(args, refspecs...)
-	_, err := runGitEnv(ctx, repoDir, nil, args...)
+	_, err := runGitEnv(ctx, repoDir, args...)
 	return err
 }
 
@@ -767,7 +770,7 @@ func fetchGitBundleRefs(ctx context.Context, repoDir, bundlePath string, refs []
 		if !strings.HasPrefix(dst, "refs/") {
 			dst = "refs/dagger/bundle/imported/" + strconv.Itoa(i)
 		}
-		out, err := runGitEnv(ctx, repoDir, nil, "rev-parse", "--verify", dst+"^{object}")
+		out, err := runGitEnv(ctx, repoDir, "rev-parse", "--verify", dst+"^{object}")
 		if err != nil || strings.TrimSpace(out) != ref.SHA {
 			return fmt.Errorf("imported git bundle ref %q does not resolve to %s", ref.Name, ref.SHA)
 		}
@@ -784,24 +787,24 @@ func normalizeCanonicalGitDir(gitDir string) error {
 	return nil
 }
 
-// runGitEnv runs git in dir with extra environment entries layered over the
-// hermetic base environment, returning its standard output. Errors carry the
+// runGitEnv runs git in dir under a hermetic environment, returning its
+// standard output. Errors carry the
 // standard error stream, which is where git reports what went wrong.
-func runGitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+func runGitEnv(ctx context.Context, dir string, args ...string) (string, error) {
 	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
 	gitArgs = append(gitArgs, gitEphemeralConfig...)
 	gitArgs = append(gitArgs, args...)
 
 	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
-	cmd.Env = append([]string{
+	cmd.Env = []string{
 		"GIT_CONFIG_NOSYSTEM=1",
 		"HOME=/dev/null",
 		"GIT_AUTHOR_NAME=Dagger",
 		"GIT_AUTHOR_EMAIL=dagger@localhost",
 		"GIT_COMMITTER_NAME=Dagger",
 		"GIT_COMMITTER_EMAIL=dagger@localhost",
-	}, extraEnv...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -18,6 +18,8 @@ import (
 // HEAD as a binary patch. A temporary index starts at HEAD and is populated
 // only with paths that git itself reports as changed or ordinary untracked;
 // ignored paths and untracked nested repositories consequently stay out.
+//
+//nolint:gocyclo // streams metadata, patch, and error classification in one handler
 func (s GitAttachable) PackWorktree(req *PackWorktreeRequest, srv Git_PackWorktreeServer) error {
 	ctx, cancel := context.WithTimeout(srv.Context(), gitPackTimeout)
 	defer cancel()

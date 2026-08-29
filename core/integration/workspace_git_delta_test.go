@@ -21,7 +21,7 @@ import (
 // transport never opens ignored paths.
 func (WorkspaceSuite) TestWorkspaceGitUncommittedUsesPackedHostDelta(ctx context.Context, t *testctx.T) {
 	repo := t.TempDir()
-	git := func(args ...string) string {
+	git := func(args ...string) string { //nolint:unparam // helper mirrors the git CLI
 		t.Helper()
 		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
 		cmd.Env = append(os.Environ(),

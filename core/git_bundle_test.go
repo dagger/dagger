@@ -1,7 +1,7 @@
 package core
 
 import (
-	"crypto/sha1" //nolint:gosec // Git pack checksum
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -133,7 +133,7 @@ func testGitBundleBytes(header []byte, objectCount uint32, objectData []byte, ob
 		sum := sha256.Sum256(pack)
 		pack = append(pack, sum[:]...)
 	} else {
-		sum := sha1.Sum(pack) //nolint:gosec // Git pack checksum
+		sum := sha1.Sum(pack)
 		pack = append(pack, sum[:]...)
 	}
 	return append(append([]byte(nil), header...), pack...)

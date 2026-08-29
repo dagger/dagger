@@ -2731,7 +2731,7 @@ func (s *workspaceSchema) materializeWorkspaceGitWorktree(
 	if _, err := canonical.Self().Stat(clientCtx, canonical, srv, ".git", true); err != nil {
 		// MaterializeHostGitCheckout leaves scratch unchanged for clients that
 		// do not implement checkout packing.
-		return inst, false, nil
+		return inst, false, nil //nolint:nilerr // fall back to the full-directory path
 	}
 
 	var repoResult dagql.ObjectResult[*core.GitRepository]
@@ -2742,7 +2742,7 @@ func (s *workspaceSchema) materializeWorkspaceGitWorktree(
 	if err := srv.Select(clientCtx, repoResult, &head, dagql.Selector{Field: "head"}); err != nil {
 		// An unborn checkout has no HEAD tree. The old directory route retains
 		// its existing behavior for this uncommon state.
-		return inst, false, nil
+		return inst, false, nil //nolint:nilerr // fall back to the full-directory path
 	}
 	if head.Self() == nil || head.Self().Ref == nil || head.Self().Ref.SHA == "" {
 		return inst, false, nil
