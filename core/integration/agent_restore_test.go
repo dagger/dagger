@@ -490,15 +490,6 @@ func hasCallPayloadContentType(attrs []*commonpb.KeyValue) bool {
 	return false
 }
 
-func hasAttr(attrs []*commonpb.KeyValue, key string) bool {
-	for _, attr := range attrs {
-		if attr.GetKey() == key {
-			return true
-		}
-	}
-	return false
-}
-
 func withoutAttrs(attrs []*commonpb.KeyValue, key string) []*commonpb.KeyValue {
 	kept := attrs[:0]
 	for _, attr := range attrs {

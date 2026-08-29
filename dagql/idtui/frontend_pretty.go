@@ -1437,10 +1437,9 @@ func (fe *frontendPretty) newPromptFormRequest(ctx context.Context, form *huh.Fo
 
 // handlePromptForm queues an internal form. External callers should use
 // HandleForm so cancellation participates in the same lifecycle.
-func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *promptFormRequest {
+func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
 	req := fe.newPromptFormRequest(context.Background(), form, result)
 	fe.enqueuePromptForm(req)
-	return req
 }
 
 // enqueuePromptForm serializes prompt forms in FIFO order. Must run on the UI
@@ -2735,7 +2734,7 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 	return <-errs
 }
 
-func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
+func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:gocyclo
 	if fe.formFocused() {
 		return fe.activeForm.model.KeyBinds()
 	}
@@ -4778,43 +4777,6 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
-}
-
-// applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
-// test view in tests mode, the SpanTreeView for the selected span in trace mode,
-// or fe itself when no span is selected. Skipped when editline or search has
-// focus.
-func (fe *frontendPretty) applyTuistFocus() {
-	if fe.inputFocused() || fe.searchFocused() || fe.logSearchFocused() {
-		return
-	}
-	if fe.logPager != nil {
-		fe.tui.SetFocus(fe.logPager)
-		return
-	}
-	if fe.testsMode && fe.fullscreenTests != nil {
-		fe.tui.SetFocus(fe.fullscreenTests)
-		return
-	}
-	if fe.commandView != nil {
-		if fe.FocusedSpan.IsValid() {
-			for view := range fe.spanLists {
-				if tree := view.scope.spanTrees[fe.FocusedSpan]; tree != nil {
-					fe.tui.SetFocus(tree)
-					return
-				}
-			}
-		}
-		fe.tui.SetFocus(fe.commandView)
-		return
-	}
-	if fe.FocusedSpan.IsValid() {
-		if sr, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			fe.tui.SetFocus(sr)
-			return
-		}
-	}
-	fe.tui.SetFocus(fe)
 }
 
 // syncSpanTreeState synchronizes the main trace SpanTreeView component tree

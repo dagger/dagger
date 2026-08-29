@@ -63,7 +63,7 @@ const (
 // otel.FilterLiveSpansExporter and dagui.Span.IsRunning). It is what the live
 // span processor exports at span start, and what a crashed session's spans
 // are frozen at forever.
-var runningEndNano = uint64(time.Time{}.UnixNano()) //nolint:gosec
+var runningEndNano = uint64(time.Time{}.UnixNano())
 
 type cannedSpan struct {
 	id     byte
@@ -79,7 +79,7 @@ func (s cannedSpan) pb(traceID byte) *tracepb.Span {
 		TraceId:           cannedTraceID(traceID),
 		SpanId:            cannedSpanID(s.id),
 		Name:              s.name,
-		StartTimeUnixNano: uint64(time.Unix(s.start, 0).UnixNano()), //nolint:gosec
+		StartTimeUnixNano: uint64(time.Unix(s.start, 0).UnixNano()),
 		EndTimeUnixNano:   runningEndNano,
 		Attributes:        s.attrs,
 		Status:            &tracepb.Status{},
@@ -88,7 +88,7 @@ func (s cannedSpan) pb(traceID byte) *tracepb.Span {
 		span.ParentSpanId = cannedSpanID(s.parent)
 	}
 	if s.end != 0 {
-		span.EndTimeUnixNano = uint64(time.Unix(s.end, 0).UnixNano()) //nolint:gosec
+		span.EndTimeUnixNano = uint64(time.Unix(s.end, 0).UnixNano())
 	}
 	return span
 }
@@ -163,7 +163,7 @@ func cannedAgentStateLogs(traceID byte, records ...cannedStateRecord) *collogspb
 	pbRecords := make([]*logspb.LogRecord, 0, len(records))
 	for _, record := range records {
 		pbRecord := &logspb.LogRecord{
-			TimeUnixNano: uint64(time.Unix(foreignTurnEnd, 0).UnixNano()), //nolint:gosec
+			TimeUnixNano: uint64(time.Unix(foreignTurnEnd, 0).UnixNano()),
 			TraceId:      cannedTraceID(traceID),
 			SpanId:       cannedSpanID(record.span),
 			Attributes: []*commonpb.KeyValue{

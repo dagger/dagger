@@ -291,7 +291,7 @@ func (imp *TraceImporter) Seal(ctx context.Context) error {
 // Span.IsRunning both read "still running"; a missing (0) end time reads the
 // same way.
 func pbSpanRunning(span *tracepb.Span) bool {
-	return int64(span.GetEndTimeUnixNano()) < int64(span.GetStartTimeUnixNano()) //nolint:gosec
+	return int64(span.GetEndTimeUnixNano()) < int64(span.GetStartTimeUnixNano())
 }
 
 func setBoolAttr(span *tracepb.Span, key string, val bool) {

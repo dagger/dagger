@@ -674,7 +674,7 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existin
 	// conversation remains saveable, and LoadSession safely falls back to its
 	// restored workspace when this field is absent.
 	var workspaceBaselineID string
-	if baseline := a.lastSynced(nil); baseline != nil {
+	if baseline := a.lastSynced(); baseline != nil {
 		portable, err := a.session.dag.LLM().WithWorkspace(baseline).PortableID(ctx)
 		if err != nil {
 			slog.Debug("could not persist workspace synchronization baseline", "error", err)
