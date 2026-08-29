@@ -1069,7 +1069,7 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
-			caller, _, err := srv.clientAttachableCaller(ctx, sess.sessionID, id, false)
+			caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, id, false)
 			return caller, err
 		})
 		return caller, err
@@ -1681,7 +1681,7 @@ func (srv *Server) getOrInitClient(
 	)
 	return client, func() error {
 		cleanupOnce.Do(func() {
-			cleanupErr = srv.releaseClientConnection(ctx, sess, client)
+			srv.releaseClientConnection(ctx, sess, client)
 			requestLease.Release()
 		})
 		return cleanupErr
@@ -1695,14 +1695,14 @@ func (srv *Server) getOrInitClient(
 // main client's /shutdown POST — and the client enforces a hard budget
 // (default 10s) on that response, while teardown is unbounded (the dagql cache
 // release alone is proportional to the session's cache footprint).
-func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSession, client *clientRuntime) error {
+func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSession, client *clientRuntime) {
 	client.stateMu.Lock()
 	client.activeCount--
 	activeCount := client.activeCount
 	client.stateMu.Unlock()
 
 	if activeCount > 0 {
-		return nil
+		return
 	}
 
 	slog.With(
@@ -1711,7 +1711,7 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 	).Info("all client connections closed")
 
 	if client.clientID != sess.mainClientCallerID {
-		return nil
+		return
 	}
 
 	// The teardown decision itself is (re-)made inside reapDaggerSession under
@@ -1719,7 +1719,6 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 	// under lifecycleMu) either lands before the reap and aborts it, or
 	// observes the removed tombstone and returns a retryable teardown error.
 	go srv.reapDaggerSession(context.WithoutCancel(ctx), sess, client)
-	return nil
 }
 
 // reapDaggerSession tears down a session in the background after the main
@@ -3045,23 +3044,23 @@ func (srv *Server) clientAttachableCaller(
 	ctx context.Context,
 	sessID, clientID string,
 	ifAvailable bool,
-) (engineutil.SessionCaller, bool, error) {
+) (engineutil.SessionCaller, error) {
 	record, err := srv.clientRecordFromIDs(sessID, clientID)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if ifAvailable {
-		caller, ok := record.daggerSession.attachables.Lookup(record.clientID)
-		return caller, ok, nil
+		caller, _ := record.daggerSession.attachables.Lookup(record.clientID)
+		return caller, nil
 	}
 	caller, err := record.daggerSession.attachables.Wait(ctx, record.clientID)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if caller == nil {
-		return nil, false, fmt.Errorf("session attachable caller for client %q was nil", clientID)
+		return nil, fmt.Errorf("session attachable caller for client %q was nil", clientID)
 	}
-	return caller, true, nil
+	return caller, nil
 }
 
 func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID string, opts core.SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
@@ -3074,7 +3073,7 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 		return nil, false, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
 	}
 	wait := func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
-		caller, _, err := srv.clientAttachableCaller(ctx, record.daggerSession.sessionID, id, false)
+		caller, err := srv.clientAttachableCaller(ctx, record.daggerSession.sessionID, id, false)
 		return caller, err
 	}
 	caller, ok, err := record.daggerSession.resolveClientAttachableCaller(ctx, requested, opts.IfAvailable, wait)
@@ -3111,7 +3110,7 @@ func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSessio
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client %q: %w", sess.mainClientCallerID, err)
 	}
-	caller, _, err := srv.clientAttachableCaller(ctx, sess.sessionID, record.clientID, false)
+	caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, record.clientID, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller %q: %w", sess.mainClientCallerID, err)
 	}

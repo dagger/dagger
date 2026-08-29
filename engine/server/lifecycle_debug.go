@@ -75,6 +75,8 @@ type LifecycleRetentionReason struct {
 // ClientLifecycleDebugSnapshot reports why current clients remain retained.
 // It is lock-safe for use from the engine debug server while sessions initialize
 // or tear down and does not acquire a session lifecycleMu.
+//
+//nolint:gocyclo // debug snapshot enumerates every lifecycle dimension in one lock-safe pass
 func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 	now := time.Now()
 	out := LifecycleDebugSnapshot{GeneratedAt: now}

@@ -7068,7 +7068,7 @@ func TestCacheArbitraryCallbackCancelsAfterLastWaiter(t *testing.T) {
 	const key = "arbitrary-last-waiter-cancel"
 	started := make(chan struct{})
 	callbackDone := make(chan struct{})
-	initializer := func(ctx context.Context) (any, error) {
+	initializer := func(ctx context.Context) (any, error) { //nolint:unparam // signature fixed by GetOrInitArbitrary
 		close(started)
 		<-ctx.Done()
 		close(callbackDone)

@@ -26,7 +26,7 @@ const (
 
 // ClientScopeAuthority is an opaque session identity used for strict
 // capability delegation.
-type ClientScopeAuthority struct{ identity byte }
+type ClientScopeAuthority struct{ _ byte }
 
 // NewClientScopeAuthority creates an unforgeable-by-identity session token used
 // to reject scopes retained from an older session record with reused string IDs.
