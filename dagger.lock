@@ -1,5 +1,4 @@
 [["version","2"]]
-["","container.from",["docker.io/library/node:lts-alpine","linux/amd64"],"sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf"]
 ["","git-latest",["https://github.com/dagger/dang-sdk"],"refs/heads/main"]
 ["","git-latest",["https://github.com/dagger/go-sdk"],"refs/heads/main"]
 ["","git-latest",["https://github.com/vito/editor"],"refs/heads/main"]
