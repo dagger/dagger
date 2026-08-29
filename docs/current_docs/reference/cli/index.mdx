@@ -134,16 +134,11 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-      --agent string                               With --trace, focus this restored agent (instance ID or name) instead of the top-level one
-      --checkpoint-exclude stringArray             Exclude a workspace path pattern from the portable checkpoint (repeatable)
-      --checkpoint-include stringArray             Approve a workspace path pattern for the portable checkpoint (repeatable)
-      --checkpoint-max-untracked-file-bytes int    Maximum bytes for one untracked checkpoint file (default 16 MiB)
-      --checkpoint-max-untracked-files int         Maximum untracked checkpoint files (default 4096)
-      --checkpoint-max-untracked-total-bytes int   Maximum aggregate untracked checkpoint bytes (default 64 MiB)
-  -l, --list                                       List available agents
-      --partial                                    With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
-  -r, --resume session[=picker]                    Resume a saved session (interactive picker if no id given)
-      --trace string                               Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
+      --agent string              With --trace, focus this restored agent (instance ID or name) instead of the top-level one
+  -l, --list                      List available agents
+      --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
+  -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
+      --trace string              Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
 ```
 
 ### Options inherited from parent commands
