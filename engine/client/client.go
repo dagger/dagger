@@ -839,8 +839,18 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 
 func (c *Client) Close() (rerr error) {
 	// shutdown happens outside of c.closeMu, since it requires a connection
-	if err := c.shutdownServer(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	shutdownErr := c.shutdownServer()
+	if shutdownErr != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
+	} else if c.telemetry != nil {
+		// A successful /shutdown has flushed the session's telemetry and
+		// marked this client's streams as terminating; the server ends them
+		// once it has sent everything. Drain them now, before internalCancel
+		// closes the connections from our side, or the final spans (including
+		// the error that ended the run) never reach the frontend.
+		if err := c.telemetry.Wait(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
+		}
 	}
 
 	c.closeMu.Lock()
