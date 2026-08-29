@@ -935,6 +935,11 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 	keepsGitDir := !repo.DiscardGitDir && !args.DiscardGitDir
 
 	dgstInputs := []string{
+		// The remaining inputs (url + SHA + bool) also feed the GitRef and
+		// GitCommit content digests; without a discriminator the three can
+		// collide and the cache would serve one type where another is expected.
+		"gitTree",
+
 		// A commit SHA only identifies an object inside a Git object database.
 		// The remote URL is part of the checkout source.
 		remoteRepo.URL.Remote(),
@@ -1144,6 +1149,9 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 	// if the upstream remote changes in a ref we don't care about, it
 	// shouldn't be mixed into the cache
 	dgstInputs := []string{
+		// Discriminate from the GitCommit and tree Directory digests, which
+		// hash the same url + SHA + bool inputs for a different result type.
+		"gitRef",
 		repo.URL.Value.String(),
 		string(ref.Digest()),
 		strconv.FormatBool(repo.DiscardGitDir),
@@ -1485,6 +1493,9 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	dgstInputs := []string{
+		// Discriminate from the GitRef and tree Directory digests, which hash
+		// the same url + SHA + bool inputs for a different result type.
+		"gitCommit",
 		repo.URL.Value.String(),
 		ref.SHA,
 		strconv.FormatBool(repo.DiscardGitDir),
