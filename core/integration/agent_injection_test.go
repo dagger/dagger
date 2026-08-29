@@ -1,12 +1,11 @@
 package core
 
-// These tests cover Agent! tool-argument injection (hack/designs/async-agents.md
-// §3.1): a module function may declare an argument of the core Agent type;
-// that argument is hidden from the tool schema the model sees, and when the
-// function is dispatched as a tool from a RUNNING AGENT LOOP the engine
-// auto-injects the calling agent's handle — the child->parent channel, letting
-// a tool message (steer) the agent that called it. Invoked outside a loop, the
-// function fails with a clear error instead of silently receiving nothing.
+// These tests cover Agent! object-tool arguments (hack/designs/async-agents.md
+// §3.1): a module function may declare an argument of the core Agent type. The
+// MCP tool schema hides that argument, and object-tool dispatch explicitly
+// passes the calling agent's handle when running inside an agent loop. The
+// module's GraphQL schema remains unchanged. This is the child->parent channel,
+// letting a tool message (steer) the agent that called it.
 //
 // Style follows agent_runtime_test.go: keyless replay/ models constructed
 // through the LLM API itself, real tools dispatched during replay, and no
@@ -31,7 +30,7 @@ const (
 
 // servePokerModule serves the agent-poker fixture module — one function,
 // poke(caller: Agent!, note: String!): String!, which fire-and-forgets note
-// to the injected caller and returns the send's delivery evidence — into the
+// to the MCP-supplied caller and confirms the send — into the
 // client's session and returns the Poker object's ID for llm.withTools.
 func servePokerModule(ctx context.Context, t *testctx.T, c *dagger.Client) dagger.ID {
 	t.Helper()
@@ -50,11 +49,10 @@ func servePokerModule(ctx context.Context, t *testctx.T, c *dagger.Client) dagge
 
 // TestAgentArgInjection covers the happy path end to end: a recorded tool
 // call to poke makes the module message the CALLING agent through the
-// injected handle, fire-and-forget. The self-send lands while the turn is in
-// flight — STEERED delivery evidence, visible in the tool's live result —
-// and its text drains onto the record at the next step boundary (which is
-// exactly where the recording places it), so the turn closes with the
-// recording's final reply and the note in its history.
+// MCP-supplied handle, fire-and-forget. The self-send lands while the turn is
+// in flight and its text drains onto the record at the next step boundary
+// (which is exactly where the recording places it), so the turn closes with
+// the recording's final reply and the note in its history.
 func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	pokerID := servePokerModule(ctx, t, c)
@@ -68,7 +66,7 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 		}).
 		// Placeholder result: the real module tool runs during replay (tool
 		// results are excluded from the replayer's history matching), so its
-		// live result — the delivery evidence — flows through.
+		// live confirmation flows through.
 		WithToolResult("call_1", "", false).
 		// The self-send joins the in-flight turn and drains at the step
 		// boundary right after the tool result lands — the loop records it
@@ -85,19 +83,18 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 	require.Equal(t, "STARTED", delivery)
 	require.Equal(t, pokeReply, reply)
 
-	// The tool observed its self-send absorbed into the in-flight turn (the
-	// STEERED evidence in its live result), and the note itself is on the
-	// record: influence ⇔ append.
+	// The tool confirms it sent through the MCP-supplied handle, and the note
+	// itself is on the record: influence ⇔ append.
 	transcript, lastReply := h.snapshot(ctx, t)
-	require.Contains(t, transcript, "delivery: STEERED")
+	require.Contains(t, transcript, "sent")
 	require.Contains(t, transcript, pokeNote)
 	require.Equal(t, pokeReply, lastReply)
 }
 
 // TestAgentArgHiddenFromToolSchema locks in that an Agent! argument never
 // reaches the model: the rendered toolset documents poke with its note
-// parameter, but no caller parameter — the engine fills it, exactly like the
-// auto-injected Workspace!/LLM! arguments.
+// parameter, but no caller parameter — MCP supplies it during object-tool
+// dispatch alongside the Workspace and LLM arguments it owns.
 func (AgentRuntimeSuite) TestAgentArgHiddenFromToolSchema(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	pokerID := servePokerModule(ctx, t, c)
@@ -122,10 +119,10 @@ func (AgentRuntimeSuite) TestAgentArgHiddenFromToolSchema(ctx context.Context, t
 	require.NotContains(t, doc, `"caller"`)
 }
 
-// TestAgentArgRequiresAgentLoop covers the no-agent failure mode: a function
-// with an Agent! argument invoked outside a running agent loop — directly,
-// or as a tool of a synchronous LLM.loop — fails with a clear error rather
-// than silently passing null.
+// TestAgentArgRequiresAgentLoop covers the no-agent behavior without weakening
+// the module schema. A direct GraphQL call still has to supply the declared
+// Agent! argument; only the MCP object-tool adapter fills it. A synchronous
+// LLM tool call has no agent to pass and returns a clear tool error.
 func (AgentRuntimeSuite) TestAgentArgRequiresAgentLoop(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	pokerID := servePokerModule(ctx, t, c)
@@ -136,8 +133,7 @@ func (AgentRuntimeSuite) TestAgentArgRequiresAgentLoop(ctx context.Context, t *t
 				Poke string
 			}
 		}](c, t, `{ poker { poke(note: "hello") } }`, nil)
-		require.ErrorContains(t, err,
-			"function requires the calling agent; invoke it from an agent loop (LLM.spawn)")
+		require.ErrorContains(t, err, `is required, but it was not provided`)
 	})
 
 	t.Run("synchronous loop", func(ctx context.Context, t *testctx.T) {
