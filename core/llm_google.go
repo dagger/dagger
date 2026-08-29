@@ -565,22 +565,11 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 			}
 			schema.Description += desc
 		case "properties":
-			schema.Properties = map[string]*genai.Schema{}
-			props, ok := param.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("properties must be a map, got %T", param)
+			props, err := bbiPropertiesToGenaiSchemas(param)
+			if err != nil {
+				return nil, err
 			}
-			for propKey, propParam := range props {
-				propParamMap, ok := propParam.(map[string]any)
-				if !ok {
-					return nil, fmt.Errorf("property %s must be a map, got %T", propKey, propParam)
-				}
-				propSchema, err := bbiSchemaToGenaiSchema(propParamMap)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert property %s: %w", propKey, err)
-				}
-				schema.Properties[propKey] = propSchema
-			}
+			schema.Properties = props
 		case "default": // just setting Nullable=true. Genai Schema does not have Default
 			yes := true
 			schema.Nullable = &yes
@@ -640,6 +629,26 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 	}
 
 	return schema, nil
+}
+
+func bbiPropertiesToGenaiSchemas(param any) (map[string]*genai.Schema, error) {
+	props, ok := param.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("properties must be a map, got %T", param)
+	}
+	schemas := map[string]*genai.Schema{}
+	for propKey, propParam := range props {
+		propParamMap, ok := propParam.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("property %s must be a map, got %T", propKey, propParam)
+		}
+		propSchema, err := bbiSchemaToGenaiSchema(propParamMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert property %s: %w", propKey, err)
+		}
+		schemas[propKey] = propSchema
+	}
+	return schemas, nil
 }
 
 func toSchemaMaps(val any) ([]map[string]any, error) {

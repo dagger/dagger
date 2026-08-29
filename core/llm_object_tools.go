@@ -767,7 +767,7 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 		}
 		val, ok := args[arg.Name]
 		if !ok {
-			implicit, found, err := m.implicitToolInput(ctx, astField, arg)
+			implicit, found, err := m.implicitToolInput(astField, arg)
 			if err != nil {
 				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
@@ -809,7 +809,7 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 // object-tool adapter. These values are ordinary explicit selector arguments:
 // module function schemas and general DAGQL input resolution know nothing about
 // this convention.
-func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
+func (m *MCP) implicitToolInput(astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
 	astArg := astField.Arguments.ForName(spec.Name)
 	if astArg == nil {
 		return nil, false, nil
@@ -883,7 +883,7 @@ func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDe
 			Field: liftableTypes[typeName].addressField,
 		},
 	); err != nil {
-		return nil, false, fmt.Errorf("%q is neither a %s ID (%s) nor a resolvable %s address: %w",
+		return nil, false, fmt.Errorf("%q is neither a %s ID (%w) nor a resolvable %s address: %w",
 			addr, typeName, idErr, typeName, err)
 	}
 	objID, err := obj.ID()
