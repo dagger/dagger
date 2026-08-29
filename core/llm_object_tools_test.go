@@ -565,6 +565,12 @@ func TestStandaloneToolsTreatLLMArgsAsUnsatisfiable(t *testing.T) {
 	require.ErrorContains(t, err, "requires the current conversation")
 }
 
+// TestBoundToolsUseTheirDefiningSchemaAuthoritatively covers both lazy bindings
+// restored from IDs and eager bindings created by workspace module discovery.
+// Even when the current workspace schema has a valid replacement definition for
+// the same type, the binding must keep the methods from the schema it was
+// composed with. The eager method call also proves dispatch remains callable
+// through the captured receiver after the workspace schema changes.
 func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	defining := newAddressLiftTestServer(t)
 	objType, ok := defining.ObjectType("LiftTestRunner")
@@ -662,12 +668,12 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	})
 }
 
-// TestBuildObjectMethodSelectorAddressLift covers argument dispatch against a
+// TestBuildObjectMethodSelector covers argument dispatch against a
 // real dagql field: nullable scalars accept explicit null, while model-supplied
 // strings for liftable object args first try ID decoding and then address
 // resolution. Args of addressable types outside the liftableTypes allowlist
 // only ever take the ID path.
-func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
+func TestBuildObjectMethodSelector(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
