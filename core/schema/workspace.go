@@ -334,8 +334,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the local Git workspace").
-			Doc("Write this workspace's pending changes to its local Git workspace."),
+			DoNotCache("Writes pending workspace changes to the calling client's host").
+			Doc("Write this workspace's pending changes to its local Git workspace on the current client's host.",
+				"Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host."),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -2130,14 +2131,16 @@ func (s *workspaceSchema) export(
 		return core.Void{}, nil
 	}
 
-	exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
+	// Export through the calling client's own session, like Directory.export:
+	// the write is a side effect on the current client, never on the client
+	// that created the workspace. A module that received this workspace from
+	// its caller therefore cannot reach the caller's host through export — the
+	// write resolves against the module's own sandboxed environment instead
+	// (dagger/dagger#14007).
+	if err := changes.Self().Export(ctx, hostPath); err != nil {
 		return core.Void{}, err
 	}
-	if err := changes.Self().Export(exportCtx, hostPath); err != nil {
-		return core.Void{}, err
-	}
-	if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
+	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
 		slog.Warn("could not invalidate workspace after export", "error", err)
 	}
 	// The export just changed the workspace's on-disk content, so host reads
@@ -2147,7 +2150,7 @@ func (s *workspaceSchema) export(
 	// land in a fresh per-client cache namespace and re-read the live host.
 	// Best-effort, like the invalidation above: a bookkeeping failure must not
 	// fail an export that already succeeded.
-	if err := core.BumpWorkspaceReadEpoch(exportCtx); err != nil {
+	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
 		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
 	return core.Void{}, nil
@@ -2174,8 +2177,8 @@ func (s *workspaceSchema) reloaded(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	// Bump under the workspace's owning client, the same context export bumps
-	// in and the one withWorkspaceHostReadContext reads the epoch from — a
+	// Bump under the workspace's owning client, the context
+	// withWorkspaceHostReadContext reads the epoch from — a
 	// bump under the caller's own client would be a silent no-op whenever the
 	// caller is not the owner (e.g. a module handed the workspace). A value
 	// workspace has no owning client and no host reads to invalidate, so the
