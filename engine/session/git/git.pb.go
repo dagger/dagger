@@ -640,7 +640,7 @@ func (*CheckoutStateResponse) XXX_OneofWrappers() []interface{} {
 // natively understands every checkout layout - worktrees, submodules,
 // separate git dirs, alternates, partial clones - so the engine never has to
 // interpret raw .git state; it reconstructs a canonical repository from the
-// returned pack. Mirror image of ApplyBundle, which flows engine to client.
+// returned pack.
 type PackCheckoutRequest struct {
 	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
 }

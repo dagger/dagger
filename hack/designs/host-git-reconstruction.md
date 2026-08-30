@@ -4,8 +4,8 @@ As-built design for how the engine obtains the git state of *host* checkouts
 — workspaces and local module contexts. The engine never interprets a host
 checkout's raw `.git` layout: the client's own git packs the repository and
 the engine reconstructs a canonical one from the pack. This supersedes the
-pointer-file "flattening" machinery and consolidates the investigation in
-`notes/worktree-report.md` (the recurring worktree `.git`-pointer bug class).
+pointer-file "flattening" machinery that grew around the recurring worktree
+`.git`-pointer bug class.
 
 ## 1. The problem: raw host layout inside the engine
 
@@ -40,17 +40,17 @@ Syncing such a tree into the engine produced two distinct failure classes:
 > The engine never interprets a host checkout's raw git layout, and a
 > dangling `.git` pointer file never enters a synced context.
 
-Host git was already the oracle for checkout *writes* (`GetHead`,
-`ApplyBundle`: staged commits land via bundle + client-side fast-forward)
-and *config* (`GetConfig`). This design completes the triangle for
-repository *reads*: the client packs, the engine clones. The engine consumes
-exactly two forms of git state: refs+objects (a pack), and plain `.git`
-directories it built itself.
+Host git was already the oracle for checkout *config* (`GetConfig`). This
+design makes it the oracle for repository *reads* as well: the client
+packs, the engine clones. The client hands over exactly two forms of
+checkout state — refs+objects (a bundle) and a binary patch of the
+uncommitted working tree (§6) — and every `.git` the engine reads is one
+it built itself.
 
-## 3. Session RPCs: `CheckoutState` and `PackCheckout`
+## 3. Session RPCs: `CheckoutState`, `PackCheckout`, `PackUncommitted`
 
-Two additions to the Git session attachable (`engine/session/git/git.proto`,
-handlers in `git_pack.go`), the mirror image of `ApplyBundle`:
+Three additions to the Git session attachable (`engine/session/git/git.proto`;
+handlers in `git_pack.go` and `git_uncommitted.go`):
 
 - **`CheckoutState(checkout_path) → state_digest`** — sha256 over (HEAD SHA,
   symbolic HEAD, object format, all branch+tag refs). A cheap probe whose
@@ -61,6 +61,11 @@ handlers in `git_pack.go`), the mirror image of `ApplyBundle`:
   of `git bundle create <tmp> --branches --tags HEAD` in 1MiB chunks. A
   repository with no commits yet (unborn HEAD) returns metadata carrying
   only the branch name, with no bundle.
+- **`PackUncommitted(checkout_path, expected_head_sha) →
+  stream(metadata, chunks)`** — the checkout's uncommitted changes
+  (tracked modifications plus ordinary untracked files; ignored files and
+  untracked nested repositories stay out) as one binary git patch against
+  the pinned HEAD. §6 covers the fast path built on it.
 
 Because the *client's* git resolves everything, every layout works natively:
 worktrees, submodules, `--separate-git-dir`, sha256 repos, alternates and
@@ -94,9 +99,10 @@ directory in a scratch snapshot (`core/git_hostdir.go`):
    this scratch repo has no work tree the checked-out-branch guard protects.
 4. detached HEAD: `git update-ref --no-deref HEAD <head_sha>`
 5. `git read-tree HEAD` — the index is derived state, rebuilt stat-zeroed
-   (same normalization staged-commit repos use)
+   so identical ref states reconstruct identical bytes
 6. `git pack-refs --all`; strip `logs/`, `hooks/`, `branches/`,
-   `description`, `FETCH_HEAD`, `COMMIT_EDITMSG`
+   `description`, `FETCH_HEAD`, `COMMIT_EDITMSG` (the same normalization
+   the public bundle import applies)
 
 The result is byte-identical for a given ref state **regardless of host
 layout** — a worktree and a plain clone at the same commit converge — and
@@ -108,7 +114,7 @@ Consumers compose rather than interpret
 (`core.MaterializeHostGitCheckout`): `tree.without(".git") +
 withDirectory(".git", host.__gitDir(...))`, then hand the composed tree to
 `LocalGitRepository` exactly as before. Downstream (`head`, `uncommitted`,
-`Cleaned`, staged commits, export bundles) is unchanged.
+`Cleaned`) is unchanged.
 
 ## 5. Cache keying: live vs. epoch-pinned
 
@@ -119,15 +125,36 @@ Two callers, two keying policies:
   load; its git view should track the checkout.
 - **Workspaces** (`materializeWorkspaceGit`, `core/schema/workspace.go`)
   pin the key to the workspace **read epoch** (`"epoch:"+N`). A checkout
-  that advances mid-session must *not* be silently re-read: the staged
-  commit stack records `BaseHeadSHA` from the session's view, and export's
-  "local branch moved" guard depends on that view staying coherent. The
-  epoch bumps on export/reload — the same scoping `Workspace.file` /
-  `.directory` host reads already use. `CheckoutState` still runs per
+  that advances mid-session must *not* be silently re-read: everything a
+  session derives from the workspace assumes one coherent view of the
+  checkout. The epoch bumps on export/reload — the same scoping
+  `Workspace.file` / `.directory` host reads already use. `CheckoutState` still runs per
   materialization (it is also the repo-ness probe); only the *cache slot*
   is pinned.
 
-## 6. Neutralization: pointer files never enter contexts
+## 6. Fast path: HEAD checkout + uncommitted patch
+
+`Workspace.git` on a host-backed workspace does not sync the checkout's
+directory at all. `materializeWorkspaceGitUncommitted`
+(`core/schema/workspace.go`) builds the repository view from packs alone:
+reconstruct the canonical `.git` (§4, epoch-keyed per §5), check out
+HEAD's tree from it engine-side, then apply the checkout's uncommitted
+changes via `Directory.__withGitUncommitted(checkoutPath,
+expectedHeadSHA)` (internal-only), which runs `PackUncommitted` and
+applies the streamed patch to the clean checkout
+(`core.MaterializeGitUncommittedPack`). Untracked nested repositories
+arrive as boundary markers, not contents.
+
+`expected_head_sha` couples the two RPCs: a checkout whose HEAD moves
+between them reports `HEAD_MISMATCH` instead of producing a patch against
+the wrong base. Unborn checkouts, changed submodules, and clients that
+predate the RPC degrade (`ErrGitUncommittedUnsupported`) to the
+full-directory path: sync the rootfs and swap in the canonical `.git`
+(§4). Keeping the patch application behind a DAG field gives the result a
+call identity without the patch bytes in it; its cache slot rides the
+epoch-pinned chain from §5.
+
+## 7. Neutralization: pointer files never enter contexts
 
 `core.DropRootGitPointerFile` removes a `.git` **regular file** at a synced
 snapshot's root (directories untouched). Applied at:
@@ -155,7 +182,7 @@ the mounted context no longer contains the landmine. (The earlier plan to
 rewrite it to synthesize a config file was rejected as a workaround for the
 very thing being fixed.)
 
-## 7. Why not the alternatives
+## 8. Why not the alternatives
 
 - **Keep flatten, ask host git for the paths** (`rev-parse
   --absolute-git-dir --git-common-dir` + `Host.directory` the results):
@@ -176,11 +203,11 @@ very thing being fixed.)
   *caching* (re-materialize only when refs move — the old flatten path was
   `noCache` per evaluation — and never ships loose garbage/reflogs) and
   loses on *worst case* (a ref move re-packs and re-ships full history where
-  the mirror sync would upload one loose object). §8 is the planned answer;
+  the mirror sync would upload one loose object). §9 is the planned answer;
   correctness and deleting the layout model are the justification, not
   speed.
 
-## 8. Follow-up: thin packs
+## 9. Follow-up: thin packs
 
 Not yet implemented. The v1 shapes leave room for incremental transfer:
 
@@ -200,7 +227,7 @@ Not yet implemented. The v1 shapes leave room for incremental transfer:
   content-level to ref-level, which is the level the dagql cache keys on
   anyway.
 
-## 9. Deleted vs. retained
+## 10. Deleted vs. retained
 
 Deleted, as proof the workarounds are no longer needed:
 
@@ -221,24 +248,25 @@ Retained, because they defend something else:
 - tolerant `GetGitConfig` error handling (`engine/engineutil/client.go`) —
   graceful degradation for git-less hosts.
 
-## 10. Pointers
+## 11. Pointers
 
-- RPCs: `engine/session/git/git.proto`, `git_pack.go`, `git_pack_test.go`;
-  proxy methods in `git.go`; wrappers `GitCheckoutState` /
-  `PackGitCheckout` + `ErrGitPackUnsupported` in
+- RPCs: `engine/session/git/git.proto`, `git_pack.go`, `git_uncommitted.go`
+  (and their `_test.go`s); proxy methods in `git.go`; wrappers
+  `GitCheckoutState` / `PackGitCheckout` / `PackGitUncommitted` +
+  `ErrGitPackUnsupported` / `ErrGitUncommittedUnsupported` in
   `engine/engineutil/client.go`
 - Reconstruction: `core/git_hostdir.go` (`MaterializeHostGitCheckout`,
-  `MaterializeGitCheckoutPack`, `DropRootGitPointerFile`,
-  `ErrNoGitContext`); `core/schema/host.go` (`__gitDir`)
+  `MaterializeGitCheckoutPack`, `MaterializeGitUncommittedPack`,
+  `DropRootGitPointerFile`, `ErrNoGitContext`); `core/schema/host.go`
+  (`__gitDir`); `core/schema/directory.go` (`__withGitUncommitted`)
 - Consumers: `core/schema/workspace.go` (`materializeWorkspaceGit`,
-  `resolveRootfs`), `core/schema/workspace_commit.go`
-  (`workspaceCommitBaseRepo`), `core/modulesource.go` (`LoadContextGit`,
-  `loadContextFromSource`), `core/schema/modulesource.go`
-  (`loadModuleSourceContext`)
+  `materializeWorkspaceGitUncommitted`, `resolveRootfs`),
+  `core/modulesource.go` (`LoadContextGit`, `loadContextFromSource`),
+  `core/schema/modulesource.go` (`loadModuleSourceContext`)
 - Tests: `TestModuleWorktreeGoSDK` (the headline regression: Go module at a
   worktree root loads), `TestWorkspaceWorktreeTreeNeutralized`,
   `TestWorkspaceWorktreePlainParity`
   (`core/integration/module_path_inputs_test.go`, `workspace_test.go`);
-  pre-existing `TestWorkspaceCommitExportWorktree` / `…Submodule` /
-  `…HeadMoved` and `TestContextGit*` now run through the new path
-- History: `notes/worktree-report.md` (the investigation this implements)
+  `TestContextGit*` now runs through the new path;
+  `TestWorkspaceGitUncommittedUsesPackedHostDelta`
+  (`workspace_git_delta_test.go`) covers the fast path

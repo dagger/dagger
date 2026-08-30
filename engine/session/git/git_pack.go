@@ -20,8 +20,7 @@ import (
 // from it. Host git natively understands every checkout layout - worktrees
 // and submodules (whose .git is a pointer file), separate git dirs,
 // alternates, partial clones - so the engine never interprets raw .git
-// state. Mirror image of ApplyBundle, which streams engine-staged commits
-// the other way.
+// state.
 
 const (
 	// gitStateTimeout bounds reading a checkout's ref state.

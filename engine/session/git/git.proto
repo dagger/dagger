@@ -70,7 +70,7 @@ message CheckoutStateResponse {
 // natively understands every checkout layout - worktrees, submodules,
 // separate git dirs, alternates, partial clones - so the engine never has to
 // interpret raw .git state; it reconstructs a canonical repository from the
-// returned pack. Mirror image of ApplyBundle, which flows engine to client.
+// returned pack.
 message PackCheckoutRequest {
   string checkout_path = 1;
 }

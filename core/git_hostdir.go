@@ -358,7 +358,7 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		}
 
 		// The index is derived state; rebuild it from HEAD with stat data
-		// zeroed, exactly as staged-commit repositories are normalized.
+		// zeroed so identical ref states reconstruct identical bytes.
 		if _, err := runGitEnv(ctx, root, "read-tree", "HEAD"); err != nil {
 			return err
 		}
