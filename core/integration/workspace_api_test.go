@@ -914,10 +914,8 @@ func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Cont
 }
 
 // TestWorkspaceExportStaysOnCurrentClient locks in the Workspace.export
-// contract from dagger/dagger#14007: like Directory.export, export is a side
-// effect on the client that makes the call, never on the client that created
-// the workspace. A module handed the caller's workspace must not be able to
-// write onto the caller's host through it.
+// contract from dagger/dagger#14007: a module handed the caller's workspace
+// exports into its own sandbox, never onto the caller's host.
 func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
@@ -926,7 +924,8 @@ func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Con
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export")
 	require.NoError(t, err, string(out))
-	t.Logf("module export outcome: %s", strings.TrimSpace(string(out)))
+	require.Equal(t, "exported", strings.TrimSpace(string(out)),
+		"a module's export succeeds against its own sandboxed environment")
 
 	_, err = os.Stat(filepath.Join(workdir, "sneaky.txt"))
 	require.ErrorIs(t, err, os.ErrNotExist,
