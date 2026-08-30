@@ -15220,7 +15220,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write this workspace's pending changes to its local Git workspace.
+   * Write this workspace's pending changes to its local Git workspace on the current client's host.
+   *
+   * Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
    */
   export = async (): Promise<void> => {
     if (this._export) {
