@@ -7071,7 +7071,7 @@ func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
 	assert.Equal(t, candidates[2].Value, "alpha")
 }
 
-func TestCacheAddExplicitDependencyRefusesSessionResourceDeps(t *testing.T) {
+func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncestors(t *testing.T) {
 	t.Parallel()
 
 	baseCtx := cacheTestContext(t.Context())
@@ -7136,12 +7136,19 @@ func TestCacheAddExplicitDependencyRefusesSessionResourceDeps(t *testing.T) {
 	assert.Assert(t, middleShared != nil && middleShared.id != 0)
 	assertCacheRequiredSessionResourcesExact(t, c)
 
-	// A retention edge lands after the parent settled, where requirement
-	// growth would be invisible to sessions already holding the parent or
-	// its ancestors (top holds middle here), so a dep carrying a
-	// session-resource requirement must be refused and nothing may change.
-	err = c.AddExplicitDependency(ctx, middle, gated, "test_late_dep")
-	assert.ErrorContains(t, err, "explicit dependency edges must be session-resource-free")
+	c.egraphMu.RLock()
+	middleGenBefore := middleShared.requiredSessionResourcesGen.Load()
+	topGenBefore := topShared.requiredSessionResourcesGen.Load()
+	topRequiresBefore := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !topRequiresBefore)
+
+	// The late dep on the already-published middle result must land, grow
+	// middle's stored required set, and cascade to its ancestor: top depends
+	// on middle, middle now depends on the requirement-carrying parent, so
+	// both stored sets must grow to {handle} and both requirement
+	// generations must move.
+	assert.NilError(t, c.AddExplicitDependency(ctx, middle, gated, "test_late_dep"))
 
 	gatedShared := gated.cacheSharedResult()
 	assert.Assert(t, gatedShared != nil && gatedShared.id != 0)
@@ -7149,21 +7156,46 @@ func TestCacheAddExplicitDependencyRefusesSessionResourceDeps(t *testing.T) {
 	_, edgeAdded := middleShared.deps[gatedShared.id]
 	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
 	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	middleGenAfter := middleShared.requiredSessionResourcesGen.Load()
+	topGenAfter := topShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.RUnlock()
-	assert.Assert(t, !edgeAdded, "refused dep must not leave an edge behind")
-	assert.Assert(t, !middleRequired)
-	assert.Assert(t, !topRequired)
+	assert.Assert(t, edgeAdded, "accepted dep must record the retention edge")
+	assert.Assert(t, middleRequired)
+	assert.Assert(t, topRequired, "ancestor stored set went stale after a late explicit dependency")
+	assert.Assert(t, middleGenAfter > middleGenBefore, "growth must bump the parent's requirement generation")
+	assert.Assert(t, topGenAfter > topGenBefore, "growth must bump the ancestor's requirement generation")
 	assertCacheRequiredSessionResourcesExact(t, c)
 
-	// A requirement-free dep is the supported retention case and must land.
+	// A requirement-free dep must not bump the parent's generation: the
+	// stored set does not change, so serve fast paths stay valid.
 	assert.NilError(t, c.AddExplicitDependency(ctx, middle, plainDep, "test_retention_dep"))
 	plainDepShared := plainDep.cacheSharedResult()
 	assert.Assert(t, plainDepShared != nil && plainDepShared.id != 0)
 	c.egraphMu.RLock()
 	_, retained := middleShared.deps[plainDepShared.id]
+	middleGenFinal := middleShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.RUnlock()
 	assert.Assert(t, retained, "requirement-free retention edge must be recorded")
+	assert.Equal(t, middleGenAfter, middleGenFinal, "an unchanged stored set must not bump the generation")
 	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// A session that never bound the handle is refused a fresh ID load of
+	// the grown ancestor: new selections read the grown stored set.
+	otherCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "latedep-other-client",
+		SessionID: "latedep-other",
+	})
+	otherCtx = ContextWithCache(otherCtx, c)
+	_, err = c.LoadResultByResultID(otherCtx, "latedep-other", srv, uint64(topShared.id))
+	assert.ErrorContains(t, err, "has not bound the session resources this result requires")
+
+	// The binding session still loads it.
+	loaded, err := c.LoadResultByResultID(ctx, "test-session", srv, uint64(topShared.id))
+	assert.NilError(t, err)
+	loadedShared := loaded.cacheSharedResult()
+	assert.Assert(t, loadedShared != nil && loadedShared.id == topShared.id)
+
+	assert.NilError(t, c.ReleaseSession(otherCtx, "latedep-other"))
 	cacheTestReleaseSession(t, c, ctx)
 }
 
@@ -7613,6 +7645,218 @@ func TestCacheDigestLookupRechecksSessionResourcesAfterAttachBarrier(t *testing.
 	assertCacheRequiredSessionResourcesExact(t, c)
 	assert.NilError(t, c.ReleaseSession(aCtx, "diggrow-a"))
 	assert.NilError(t, c.ReleaseSession(bCtx, "diggrow-b"))
+}
+
+// cacheTestLateGrowthFixture publishes a settled parent result and an
+// attached requirement-carrying dep for session A (which binds the handle),
+// and installs the serve re-validation hook so a test can park one serve of
+// the parent between its selection critical section and its serve-time
+// re-check. Callers land the late retention edge while the serve is parked.
+type cacheTestLateGrowthFixture struct {
+	cache       *Cache
+	srv         *Server
+	handle      SessionResourceHandle
+	frame       *ResultCall
+	parent      AnyResult
+	parentID    sharedResultID
+	dep         AnyResult
+	aCtx        context.Context
+	bCtx        context.Context
+	hookReached chan struct{}
+	hookRelease chan struct{}
+}
+
+func newCacheTestLateGrowthFixture(t *testing.T, slot string) *cacheTestLateGrowthFixture {
+	t.Helper()
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle(slot)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-a-client",
+		SessionID: slot + "-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-b-client",
+		SessionID: slot + "-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+	assert.NilError(t, c.BindSessionResource(aCtx, slot+"-a", slot+"-a-client", handle, "bound"))
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: slot + "-parent",
+	}
+	parent, err := c.GetOrInitCall(aCtx, slot+"-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, frame)
+	})
+	assert.NilError(t, err)
+	parentShared := parent.cacheSharedResult()
+	assert.Assert(t, parentShared != nil && parentShared.id != 0)
+
+	leaf, err := cacheTestSessionResourceLeaf(aCtx, handle)
+	assert.NilError(t, err)
+	dep, err := c.AttachResult(aCtx, slot+"-a", srv, leaf)
+	assert.NilError(t, err)
+	depShared := dep.cacheSharedResult()
+	assert.Assert(t, depShared != nil && depShared.id != 0)
+
+	f := &cacheTestLateGrowthFixture{
+		cache:       c,
+		srv:         srv,
+		handle:      handle,
+		frame:       frame,
+		parent:      parent,
+		parentID:    parentShared.id,
+		dep:         dep,
+		aCtx:        aCtx,
+		bCtx:        bCtx,
+		hookReached: make(chan struct{}),
+		hookRelease: make(chan struct{}),
+	}
+	var hookOnce sync.Once
+	c.testBeforeServeRequirementRecheck = func(res *sharedResult) {
+		if res.id != f.parentID {
+			return
+		}
+		hookOnce.Do(func() {
+			close(f.hookReached)
+			<-f.hookRelease
+		})
+	}
+	return f
+}
+
+// landLateDep waits for a serve of the parent to park at the re-validation
+// hook, lands the requirement-carrying retention edge, and unparks the
+// serve. The parked serve captured its requirement generation before the
+// growth, so the re-validation must run the full locked re-check.
+func (f *cacheTestLateGrowthFixture) landLateDep(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.hookReached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the parked serve to reach the re-validation hook")
+	}
+	assert.NilError(t, f.cache.AddExplicitDependency(f.aCtx, f.parent, f.dep, "test_late_dep"))
+	close(f.hookRelease)
+}
+
+func (f *cacheTestLateGrowthFixture) assertParentRequiresHandle(t *testing.T) {
+	t.Helper()
+	parentShared := f.parent.cacheSharedResult()
+	f.cache.egraphMu.RLock()
+	parentRequires := cacheTestSessionResourceSetContains(parentShared.requiredSessionResources, f.handle)
+	f.cache.egraphMu.RUnlock()
+	assert.Assert(t, parentRequires)
+	assertCacheRequiredSessionResourcesExact(t, f.cache)
+}
+
+func (f *cacheTestLateGrowthFixture) releaseSessions(t *testing.T, slot string) {
+	t.Helper()
+	assert.NilError(t, f.cache.ReleaseSession(f.aCtx, slot+"-a"))
+	assert.NilError(t, f.cache.ReleaseSession(f.bCtx, slot+"-b"))
+}
+
+func TestCacheHitRechecksSessionResourcesAfterLateExplicitDependency(t *testing.T) {
+	t.Parallel()
+
+	const slot = "lategrowhit"
+	f := newCacheTestLateGrowthFixture(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := f.cache.GetOrInitCall(f.bCtx, slot+"-b", f.srv, &CallRequest{ResultCall: f.frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			return NewResultForCall(&cacheTestObject{Value: 99}, f.frame.clone())
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	// B's lookup selects the settled parent while its required set is still
+	// empty and parks at the re-validation hook; the retention edge then
+	// grows the set before the serve resumes.
+	f.landLateDep(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Equal(t, int32(1), bInitCalls.Load(),
+		"session B must fall through to the singleflight instead of being served the grown result")
+	bShared := bOut.res.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	assert.Assert(t, bShared.id != f.parentID,
+		"session B was served a result requiring a handle it never bound")
+
+	f.assertParentRequiresHandle(t)
+	f.releaseSessions(t, slot)
+}
+
+func TestCacheLoadResultByResultIDRechecksAfterLateExplicitDependency(t *testing.T) {
+	t.Parallel()
+
+	const slot = "lategrowload"
+	f := newCacheTestLateGrowthFixture(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := f.cache.LoadResultByResultID(f.bCtx, slot+"-b", f.srv, uint64(f.parentID))
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	// The requirement pre-check in sharedResultByResultID passes while the
+	// required set is still empty; the load parks at the re-validation hook
+	// and the retention edge grows the set before the serve resumes.
+	f.landLateDep(t)
+
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil,
+		"session B's load must be refused once the required set grew past its bound set")
+	assert.ErrorContains(t, bOut.err, "has not bound the session resources this result requires")
+
+	f.assertParentRequiresHandle(t)
+	f.releaseSessions(t, slot)
+}
+
+func TestCacheDigestLookupRechecksSessionResourcesAfterLateExplicitDependency(t *testing.T) {
+	t.Parallel()
+
+	const slot = "lategrowdig"
+	f := newCacheTestLateGrowthFixture(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		hit bool
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, hit, err := f.cache.lookupCacheForDigests(f.bCtx, slot+"-b", f.srv, cacheTestCallDigest(f.frame), nil)
+		bDone <- callOutcome{res: res, hit: hit, err: err}
+	}()
+
+	f.landLateDep(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Assert(t, !bOut.hit,
+		"the digest lookup must convert the stale hit into a miss after the required set grew")
+	assert.Assert(t, bOut.res == nil)
+
+	f.assertParentRequiresHandle(t)
+	f.releaseSessions(t, slot)
 }
 
 func TestCacheWithSessionResourceHandleRefusesAttachedMutation(t *testing.T) {
