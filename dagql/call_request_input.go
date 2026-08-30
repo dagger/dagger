@@ -440,7 +440,7 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 		}
 		ref = &ResultCallRef{ResultID: uint64(resultID)}
 	}
-	res, _, _, err := cache.sharedResultByResultID(ctx, "", sharedResultID(ref.ResultID), sharedResultLookupExact)
+	res, _, _, _, err := cache.sharedResultByResultID(ctx, "", sharedResultID(ref.ResultID), sharedResultLookupExact)
 	if err != nil {
 		return nil, err
 	}
