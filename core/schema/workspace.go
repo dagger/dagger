@@ -2131,12 +2131,9 @@ func (s *workspaceSchema) export(
 		return core.Void{}, nil
 	}
 
-	// Export through the calling client's own session, like Directory.export:
-	// the write is a side effect on the current client, never on the client
-	// that created the workspace. A module that received this workspace from
-	// its caller therefore cannot reach the caller's host through export — the
-	// write resolves against the module's own sandboxed environment instead
-	// (dagger/dagger#14007).
+	// Deliberately no withWorkspaceClientContext here: export is a side
+	// effect on the calling client, like Directory.export — never on the
+	// client that created the workspace (dagger/dagger#14007).
 	if err := changes.Self().Export(ctx, hostPath); err != nil {
 		return core.Void{}, err
 	}
@@ -2148,8 +2145,11 @@ func (s *workspaceSchema) export(
 	// they are cached per client for the client's whole lifetime
 	// (dagql.PerClientInput). Bump the client's read epoch so subsequent reads
 	// land in a fresh per-client cache namespace and re-read the live host.
-	// Best-effort, like the invalidation above: a bookkeeping failure must not
-	// fail an export that already succeeded.
+	// Like the invalidation above, this only matters when the caller owns the
+	// workspace: a non-owner's export never touched the owner's host, and this
+	// workspace's reads resolve under the owner's epoch, so the bump is a
+	// harmless no-op. Best-effort: a bookkeeping failure must not fail an
+	// export that already succeeded.
 	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
 		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
