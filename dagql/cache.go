@@ -553,9 +553,15 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	return nil
 }
 
-func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error {
+// recomputeRequiredSessionResourcesLocked rebuilds res's stored
+// requiredSessionResources one level deep off each dep's own stored set. It
+// reports whether the stored set changed and bumps the result's requirement
+// generation when it did, so serve paths comparing the generation against a
+// selection-time capture can detect every growth of the set. Callers hold
+// the egraphMu write lock.
+func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) (bool, error) {
 	if res == nil {
-		return nil
+		return false, nil
 	}
 
 	var reqs *set.TreeSet[SessionResourceHandle]
@@ -566,7 +572,7 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 	for depID := range res.deps {
 		dep := c.resultsByID[depID]
 		if dep == nil {
-			return fmt.Errorf("recompute required session resources: missing dep result %d", depID)
+			return false, fmt.Errorf("recompute required session resources: missing dep result %d", depID)
 		}
 		if dep.requiredSessionResources == nil {
 			continue
@@ -577,12 +583,25 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 			reqs = reqs.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
 		}
 	}
-	if reqs == nil || reqs.Empty() {
-		res.requiredSessionResources = nil
-		return nil
+	if reqs != nil && reqs.Empty() {
+		reqs = nil
+	}
+	if sessionResourceSetsEqual(res.requiredSessionResources, reqs) {
+		return false, nil
 	}
 	res.requiredSessionResources = reqs
-	return nil
+	res.requiredSessionResourcesGen.Add(1)
+	return true, nil
+}
+
+func sessionResourceSetsEqual(a, b *set.TreeSet[SessionResourceHandle]) bool {
+	if a == nil || a.Empty() {
+		return b == nil || b.Empty()
+	}
+	if b == nil || b.Empty() {
+		return false
+	}
+	return a.Equal(b)
 }
 
 func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientID string, handle SessionResourceHandle, value any) error {
@@ -1831,6 +1850,11 @@ type Cache struct {
 	testPersistDecodePreLock       func(uint64)
 	testPersistDecodeJoined        func(uint64)
 	testPersistDecodeLeadPublished func(uint64)
+	// serve-time requirement re-validation hook: after a serve path left the
+	// selection critical section and before it compares the captured
+	// requirement generation (lookupCacheForRequest, lookupCacheForDigests,
+	// loadResultByResultID).
+	testBeforeServeRequirementRecheck func(*sharedResult)
 
 	closeOnce sync.Once
 	closeErr  error
@@ -1983,6 +2007,15 @@ type sharedResult struct {
 	// transitive set of handle requirements for cache-hit validation.
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
+	// requiredSessionResourcesGen counts changes to requiredSessionResources
+	// for a registered result. It is bumped by the same egraphMu write
+	// critical section that changes the stored set
+	// (recomputeRequiredSessionResourcesLocked) and read with a plain atomic
+	// load by serve paths: a hit whose generation still matches the value
+	// captured inside the selection critical section is serving the exact
+	// set the selection-time subset check validated, so the locked re-check
+	// can be skipped.
+	requiredSessionResourcesGen atomic.Uint64
 	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
 	// attached for this result. They are the source of truth for owner lease
 	// cleanup and debug output. Persistence export for newly encoded objects
@@ -2483,7 +2516,7 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 		return err
 	}
 	ref.ResultID = uint64(resultID)
-	if shared, _, _, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
+	if shared, _, _, _, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
 		ref.shared = shared
 	}
 	ref.Call = nil
@@ -2633,15 +2666,18 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 
 // AddExplicitDependency records a retention edge from parent to dep after
 // parent has already been published, so dep stays alive as long as parent's
-// cache entry does. It refuses deps that carry session-resource requirements:
-// a requirement added after the parent settled would be invisible to sessions
-// already holding the parent. The publication attach path uses the internal
-// variant, which is the one window where requirement-carrying deps may land.
+// cache entry does. The dep may carry session-resource requirements even
+// though the parent has settled: the recompute cascades the grown required
+// set to the parent and every ancestor deriving its set from it, each growth
+// bumps the affected result's requirement generation, and serve paths
+// compare that generation against their selection-time capture, so a hit
+// selected before the edge landed cannot be served under the old, smaller
+// required set.
 func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
-	return c.addExplicitDependency(ctx, parent, dep, reason, false)
+	return c.addExplicitDependency(ctx, parent, dep, reason)
 }
 
-func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string, allowSessionResources bool) error {
+func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -2667,19 +2703,6 @@ func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep
 	}
 	if _, found := c.resultsByID[depShared.id]; !found {
 		return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
-	}
-	// A live result's stored requiredSessionResources may only grow while its
-	// own attachment is in flight; serve paths re-check the lookup filter
-	// after crossing an open attach barrier and rely on the set being frozen
-	// once attachment settles. The publication attach path is that window and
-	// may add requirement-carrying deps (allowSessionResources). The public
-	// retention edge lands after the parent settled, where growth would be
-	// invisible to sessions already holding the parent or its ancestors, so
-	// it refuses deps that carry session-resource requirements. Its one
-	// caller retains an SDK-generated typedefs module, whose dependency
-	// closure is pure type metadata and can never reach a secret or socket.
-	if !allowSessionResources && depShared.requiredSessionResources != nil && !depShared.requiredSessionResources.Empty() {
-		return fmt.Errorf("add explicit dependency: dep result %d requires session resources; explicit dependency edges must be session-resource-free", depShared.id)
 	}
 	return c.addExplicitDependencyLocked(ctx, parentShared, depShared, reason)
 }
@@ -2708,11 +2731,35 @@ func (c *Cache) addExplicitDependencyLocked(
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
 
-	// The parent recompute matters only on the publication attach path, where
-	// deps may carry requirements and the parent is a fresh result with no
-	// depParents yet. The public retention edge refuses requirement-carrying
-	// deps, so no ancestor of an already-settled parent can go stale here.
-	return c.recomputeRequiredSessionResourcesLocked(parentRes)
+	// The new dep can extend the parent's stored required set, and every
+	// result already depending on the parent derives its own stored set from
+	// it, so a change must cascade upward through depParents until the sets
+	// stop changing. At publication time the parent is fresh and has no
+	// depParents; the cascade matters for a retention edge added to an
+	// already-published result. The cascade runs inside the same egraphMu
+	// critical section as the edge insertion and terminates because a
+	// re-enqueue requires a strict change and the sets are bounded. Each
+	// change bumps that result's requirement generation, which is what
+	// serve-time re-validation compares against its selection-time capture.
+	queue := []*sharedResult{parentRes}
+	for len(queue) > 0 {
+		res := queue[0]
+		queue = queue[1:]
+		changed, err := c.recomputeRequiredSessionResourcesLocked(res)
+		if err != nil {
+			return err
+		}
+		if !changed || res.depParents == nil {
+			continue
+		}
+		for ancestorID := range res.depParents.Items() {
+			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
+				queue = append(queue, ancestor)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sharedResult) {
@@ -3166,11 +3213,11 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 			return r, fmt.Errorf("set session resource handle on %T: result %d was already collected", r.Self(), r.shared.id)
 		}
 		// A registered result may already have been served through the
-		// session filter, and serve paths rely on its stored required set
-		// being frozen once attachment settles. Changing the handle here
-		// would grow requirements invisibly to sessions already holding
-		// the result or an ancestor deriving its set from it, so only the
-		// identical no-op is permitted.
+		// session filter. Changing the handle here would rewrite the
+		// result's own requirement outside the egraphMu-guarded recompute
+		// that maintains the stored sets and their generations, invisibly
+		// to ancestors deriving their sets from it, so only the identical
+		// no-op is permitted.
 		if r.shared.sessionResourceHandle == handle {
 			return r, nil
 		}
@@ -4701,6 +4748,9 @@ func (c *Cache) lookupCacheForDigests(
 	}
 
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
+	// Capture the requirement generation inside the same critical section as
+	// the selection-time subset check (see lookupCacheForRequest).
+	requiredGenAtSelection := hitShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, false, err
@@ -4710,10 +4760,13 @@ func (c *Cache) lookupCacheForDigests(
 	if err != nil {
 		return nil, false, err
 	}
-	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared) {
-		// Attachment grew the required set after this hit was selected;
-		// fall through to the singleflight, keeping the recorded session
-		// edge (see lookupCacheForRequest).
+	if c.testBeforeServeRequirementRecheck != nil {
+		c.testBeforeServeRequirementRecheck(hitShared)
+	}
+	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared, requiredGenAtSelection) {
+		// The required set grew after this hit was selected; fall through
+		// to the singleflight, keeping the recorded session edge (see
+		// lookupCacheForRequest).
 		return nil, false, nil
 	}
 	if c.traceEnabled() {
@@ -5231,7 +5284,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}
-	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
+	if _, err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		c.egraphMu.Unlock()
 		return err
 	}
@@ -5367,7 +5420,7 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 			continue
 		}
 		seen[attachedDepRes.id] = dep.Owned
-		if err := c.addExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result", true); err != nil {
+		if err := c.addExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
 			return err
 		}
 		// Owned deps inherit the parent's install span — failures in their

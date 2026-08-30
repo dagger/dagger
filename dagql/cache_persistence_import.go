@@ -382,7 +382,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 					return err
 				}
 			}
-			if err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
+			if _, err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
 				return fmt.Errorf("recompute imported required session resources for result %d: %w", res.id, err)
 			}
 			recomputeState[res.id] = requiredRecomputeDone
