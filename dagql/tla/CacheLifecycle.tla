@@ -45,11 +45,15 @@
 (*     each result carries handle (mirrors sessionResourceHandle)          *)
 (*     and required (the STORED requiredSessionResources set,              *)
 (*     maintained where the code maintains it: publication and             *)
-(*     attachment recomputes, and the import's dependency-first            *)
-(*     recompute); each session carries a bound handle                     *)
-(*     set; the lookup filter is required subset-of bound.                 *)
-(*     TrueRequired, RequiredExact and ReturnedGated encode intent -       *)
-(*     see the PROPERTIES header for their contract provenance.            *)
+(*     attachment recomputes, the import's dependency-first recompute,     *)
+(*     and the late retention edge's ancestor cascade); each session       *)
+(*     carries a bound handle set; the lookup filter is required           *)
+(*     subset-of bound. Serve paths re-validate a selected hit by the      *)
+(*     result's requirement generation, modeled as the selection-time      *)
+(*     stored-set capture selRequired (see ReadBarrierOk).                 *)
+(*     TrueRequired, DataRequired, RequiredExact, ReturnedGated and        *)
+(*     ReturnedHitSatisfied encode intent - see the PROPERTIES header      *)
+(*     for their contract provenance.                                      *)
 (*   - Not yet modeled, each for a stated reason and none forbidden:       *)
 (*     TTL/expiry and DoNotCache (candidate-selection refinements folded   *)
 (*     into the lookup-miss over-approximation above; model them when an   *)
@@ -86,11 +90,13 @@
 (*   - evals foreignCancel (NoStaleCancelError)                            *)
 (*   - the invocation ownCancel flag, set only by the actions that model   *)
 (*     that invocation's own ctx.Done arm (CancelOnlyOwn)                  *)
-(*   - TrueRequired, the transitive session-resource recount, and the      *)
-(*     invocation retGated flag (RequiredExact, ReturnedGated); their      *)
+(*   - TrueRequired and DataRequired, the transitive session-resource      *)
+(*     recounts, and the invocation retGated and retHitSatisfied flags     *)
+(*     (RequiredExact, ReturnedGated, ReturnedHitSatisfied); their         *)
 (*     contract is in the DerivedOwn-adjacent block and session_resources  *)
-(*     .md. res.handle, res.required and each session's bound handle set   *)
-(*     are real state the lookup filter reads, not property-only.          *)
+(*     .md. res.handle, res.required, res.lateDeps, each session's bound   *)
+(*     handle set, and the invocation selRequired capture are real state   *)
+(*     the lookup filter and serve re-validation read, not property-only.  *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -307,35 +313,70 @@ DerivedOwn(r) ==
 (* Recomputing session-resource requirements from scratch.                 *)
 (*                                                                         *)
 (* res[r].required is the STORED requiredSessionResources set, maintained  *)
-(* incrementally by recomputeRequiredSessionResourcesLocked (cache.go:556) *)
-(* one level deep off each dep's own stored set. TrueRequired instead      *)
-(* RECOUNTS the true transitive requirement: the own handle of every       *)
-(* handle leaf reachable from r through dependency edges, r included.       *)
-(* RequiredExact demands stored = TrueRequired in every reachable state,   *)
-(* the same relationship OwnershipExact has to DerivedOwn.                  *)
+(* incrementally by recomputeRequiredSessionResourcesLocked one level deep *)
+(* off each dep's own stored set, with the late retention edge's ancestor  *)
+(* cascade re-running it up depParents until the sets stop changing.       *)
+(* TrueRequired instead RECOUNTS the true transitive requirement: the own  *)
+(* handle of every handle leaf reachable from r through dependency edges   *)
+(* of any kind, r included. RequiredExact demands stored = TrueRequired    *)
+(* in every reachable state, the same relationship OwnershipExact has to   *)
+(* DerivedOwn.                                                             *)
 (*                                                                         *)
-(* TrueRequired is intent-encoding, used only in properties and in the     *)
-(* retGated ghost. Its contract: the field comment calls                   *)
-(* requiredSessionResources "the flattened transitive set" (cache.go, the  *)
-(* sharedResult field block near "sessionResourceHandle is set when this   *)
-(* result is itself"), and internal-docs/session_resources.md says the     *)
-(* cache "recomputes transitive requiredSessionResources by unioning       *)
-(* dependency requirements" so that a container depending on a secret       *)
-(* propagates the handle transitively.                                     *)
+(* TrueRequired is intent-encoding, used only in properties. Its           *)
+(* contract: the field comment calls requiredSessionResources "the         *)
+(* flattened transitive set" (cache.go, the sharedResult field block near  *)
+(* "sessionResourceHandle is set when this result is itself"), and         *)
+(* internal-docs/session_resources.md says the cache "recomputes           *)
+(* transitive requiredSessionResources by unioning dependency              *)
+(* requirements" so that a container depending on a secret propagates the  *)
+(* handle transitively.                                                    *)
+(*                                                                         *)
+(* DataRequired is the harm-facing recount used by the retGated ghost: it  *)
+(* follows only data edges (deps minus lateDeps), because a retention      *)
+(* edge keeps its dep alive without the parent's payload depending on it.  *)
+(* See the ReturnedGated comment for the split between the harm property   *)
+(* and the conservative stored-set properties.                             *)
 (***************************************************************************)
 
-\* All results reachable from r by following dependency edges, r included.
-DepClosureFrom(r) ==
+\* All results reachable from r in the result function rf by following
+\* dependency edges, r included. Parameterized over rf so the late-dep
+\* cascade can evaluate it against an updated function inside one action.
+DepClosureIn(rf, r) ==
     LET RECURSIVE Cl(_, _)
         Cl(frontier, seen) ==
-            LET next == UNION {res[p].deps : p \in frontier} \ seen
+            LET next == UNION {rf[p].deps : p \in frontier} \ seen
             IN IF next = {} THEN seen ELSE Cl(next, seen \cup next)
     IN Cl({r}, {r})
 
-\* The true transitive requirement of r: every handle leaf's own handle in
-\* r's dependency closure.
-TrueRequired(r) ==
-    {res[x].handle : x \in {y \in DepClosureFrom(r) : res[y].handle # "none"}}
+DepClosureFrom(r) == DepClosureIn(res, r)
+
+\* The true transitive requirement of r in rf: every handle leaf's own
+\* handle in r's dependency closure, over every edge kind. This is what the
+\* STORED set must equal (RequiredExact), because the code's recompute
+\* unions over all of sharedResult.deps.
+TrueRequiredIn(rf, r) ==
+    {rf[x].handle : x \in {y \in DepClosureIn(rf, r) : rf[y].handle # "none"}}
+
+TrueRequired(r) == TrueRequiredIn(res, r)
+
+\* The closure over DATA edges only: structural deps recorded at
+\* publication and embedded children recorded by the attachment hook, but
+\* not explicit retention edges (res[r].lateDeps, the AddDepLate edges).
+\* A retention edge keeps its dep alive; the parent's payload was computed
+\* without it, so the dep's handles are not needed to produce or refresh
+\* the parent. ReturnedGated judges harm over this closure; the stored set
+\* and the lookup filter stay conservative over every edge kind.
+DataDepClosureIn(rf, r) ==
+    LET RECURSIVE Cl(_, _)
+        Cl(frontier, seen) ==
+            LET next == UNION {rf[p].deps \ rf[p].lateDeps : p \in frontier}
+                          \ seen
+            IN IF next = {} THEN seen ELSE Cl(next, seen \cup next)
+    IN Cl({r}, {r})
+
+DataRequired(r) ==
+    {res[x].handle :
+        x \in {y \in DataDepClosureIn(res, r) : res[y].handle # "none"}}
 
 \* All registered results whose semantic call is in equivalence class k.
 LiveInClass(k) ==
@@ -385,7 +426,8 @@ Cascade(rf) ==
             IF r \in dead
             THEN [rf[r] EXCEPT !.registered = FALSE,
                                !.released = TRUE,
-                               !.deps = {}]
+                               !.deps = {},
+                               !.lateDeps = {}]
             ELSE [rf[r] EXCEPT !.own = @ -
                     Cardinality({p \in dead : r \in rf[p].deps})]])
 
@@ -411,6 +453,11 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
                handleVal, requiredVal) ==
     [call |-> c, registered |-> TRUE, released |-> FALSE,
      own |-> ownVal, deps |-> depsSet,
+     \* The persistence schema records deps with no kind distinction, so a
+     \* pre-restart retention edge comes back as an ordinary dep: imported
+     \* rows start with no lateDeps marking, which makes DataRequired
+     \* conservative (larger) for them.
+     lateDeps |-> {},
      persisted |-> persistedFlag, barrier |-> "none",
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
@@ -430,7 +477,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
 \* result). This keeps IDs stable across the restart, as the Go import does.
 DeadHusk ==
     [call |-> CHOOSE c \in Calls : TRUE, registered |-> FALSE,
-     released |-> TRUE, own |-> 0, deps |-> {},
+     released |-> TRUE, own |-> 0, deps |-> {}, lateDeps |-> {},
      persisted |-> FALSE, barrier |-> "none",
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
@@ -538,11 +585,23 @@ NewInvocation(s, c, p, o, admitted) ==
      \* field ties a refusal to the epoch whose lifecycle state produced it.
      refusedEpoch |-> IF admitted THEN 0 ELSE epoch,
      lookupBarrierAtSelection |-> "none",
+     \* The stored required set of the selected hit, captured inside the
+     \* selection critical section (LookupHit). This is the model of the
+     \* requirement-generation capture: the generation bumps exactly when
+     \* the stored set changes, so "generation unchanged since capture" and
+     \* "stored set equals the capture" name the same observable, and the
+     \* serve-time comparison in ReadBarrierOk reads this field.
+     selRequired |-> {},
      \* Property-only ghost: TRUE once an action modeling THIS invocation's
      \* own ctx.Done arm has fired. See CancelOnlyOwn.
      ownCancel |-> FALSE,
      retLive |-> TRUE, retOwned |-> TRUE,
-     retBarrierOK |-> TRUE, retClean |-> TRUE, retGated |-> TRUE]
+     retBarrierOK |-> TRUE, retClean |-> TRUE, retGated |-> TRUE,
+     \* Property-only ghost, captured at the hit serve (ReadBarrierOk):
+     \* whether the served result's CURRENT stored required set was a
+     \* subset of the session's bound handles at that instant. See
+     \* ReturnedHitSatisfied.
+     retHitSatisfied |-> TRUE]
 
 Spawn ==
     /\ Len(invocations) < MaxInvocations
@@ -609,9 +668,14 @@ LookupHit(i) ==
                            ELSE [res EXCEPT ![r].own = @ + 1]
                 /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
                 /\ countedEdges' = countedEdges \cup {<<s, r>>}
+                \* selRequired is the requirement-generation capture: taken
+                \* here, inside the same critical section as the filter
+                \* check and the claim, exactly where the code loads the
+                \* counter before releasing egraphMu.
                 /\ invocations' = [invocations EXCEPT ![i].phase = "readBarrier",
                                         ![i].resId = r,
                                         ![i].path = "hit",
+                                        ![i].selRequired = res[r].required,
                                         ![i].lookupBarrierAtSelection = res[r].barrier]
            ELSE /\ UNCHANGED res
                 /\ invocations' = [invocations EXCEPT ![i].phase = "refusing",
@@ -1104,6 +1168,7 @@ PubIndexFresh(o) ==
                        released |-> FALSE,
                        own |-> 1,
                        deps |-> deps,
+                       lateDeps |-> {},
                        persisted |-> FALSE,
                        barrier |-> "open",
                        \* fresh results have their typed payload in memory;
@@ -1271,11 +1336,12 @@ PubAttachAddDep(o) ==
         /\ d \in ongoingCalls[o].acq
         /\ LET p == ongoingCalls[o].resId
                newDeps == res[p].deps \cup {d}
-           \* addExplicitDependencyLocked recomputes only the parent after
-           \* adding the edge. That is sufficient: the parent is a fresh
-           \* result still behind its open barrier with no depParents, so
-           \* no ancestor exists to go stale, and the retention-edge path
-           \* refuses requirement-carrying deps outright.
+           \* addExplicitDependencyLocked runs the ancestor cascade, but
+           \* here it reduces to the parent-only recompute: the parent is a
+           \* fresh result still behind its open barrier, and nothing can
+           \* hold it as a dep yet (both edge-adding paths require a
+           \* settled barrier on the dep), so no ancestor exists to go
+           \* stale.
            IN res' = [res EXCEPT
                 ![p].deps = newDeps,
                 ![p].required = OwnHandleReq(res[p].handle)
@@ -1318,7 +1384,8 @@ PubAttachTarget(o) ==
         /\ res[r].barrier \in {"none", "closedOk"}
         /\ r \notin ongoingCalls[o].acq
         \* the value embeds only children the fn possessed, so a selected
-        \* target satisfies the session (frozen set: it stays satisfied)
+        \* target satisfied the session when it was acquired; the claim
+        \* below re-checks the stored set under the graph lock
         /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].attachTarget = r]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
@@ -1530,14 +1597,22 @@ WaiterReleaseHold(i) ==
 (* error. In either case the claimed session edge remains until session    *)
 (* release.                                                                *)
 (*                                                                         *)
-(* A hit serve re-runs the session-resource filter after the barrier       *)
-(* (sessionStillSatisfiesResourceRequirements): attachment may have grown  *)
-(* the stored required set after the hit was selected, and a stale         *)
-(* selection must not be served. A hit that no longer satisfies falls      *)
-(* through to the singleflight (ReadBarrierGatedMiss below); gated         *)
-(* result-ID loads refuse instead, which is equally a non-serve. Waiter    *)
-(* returns are the producing session's own results and are not re-checked  *)
-(* in the code either.                                                     *)
+(* A hit serve re-validates the session-resource filter after the barrier  *)
+(* (sessionStillSatisfiesResourceRequirements): the stored required set    *)
+(* can grow after the hit was selected - an attached dep while the         *)
+(* result's attachment is in flight, or a requirement-carrying retention   *)
+(* edge (AddDepLate) after it settled - and a stale selection must not be  *)
+(* served under the smaller set. The code compares a per-result            *)
+(* requirement generation, captured inside the selection critical section, *)
+(* with one atomic load: unchanged means the stored set is exactly what    *)
+(* the selection check validated and the serve skips the locked re-check;  *)
+(* changed means the full locked filter decides. The generation bumps      *)
+(* exactly when the stored set changes, so the model expresses the         *)
+(* comparison as set equality with the selection capture (selRequired). A  *)
+(* hit that fails the re-validation falls through to the singleflight      *)
+(* (ReadBarrierGatedMiss below); result-ID value loads refuse instead,     *)
+(* which is equally a non-serve. Waiter returns are the producing          *)
+(* session's own results and are not re-checked in the code either.        *)
 (*                                                                         *)
 (* Completion is also where each invocation records its return-time        *)
 (* evidence (the ret* flags) for the properties to inspect.                *)
@@ -1545,6 +1620,8 @@ WaiterReleaseHold(i) ==
 ReadBarrierOk(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ LET r == invocations[i].resId
+           satisfiedNow ==
+               res[r].required \subseteq sessionRelease[invocations[i].sess].handles
        IN /\ res[r].barrier \in {"none", "closedOk"}
           \* An encoded payload must be decoded before the result can be
           \* returned; the decode actions below handle that arm and loop
@@ -1554,26 +1631,31 @@ ReadBarrierOk(i) ==
           \* joins or leads a sync-only attempt first.
           /\ res[r].payload = "decoded"
           /\ ~res[r].persistSyncPending
-          \* the post-barrier re-check: a hit is served only if the session
-          \* still satisfies the result's stored required set
+          \* the serve-time re-validation: an unchanged stored set (the
+          \* generation fast path) serves without re-running the filter;
+          \* a changed one serves only if the full filter passes now
           /\ invocations[i].path = "hit" =>
-               res[r].required \subseteq sessionRelease[invocations[i].sess].handles
+               \/ res[r].required = invocations[i].selRequired
+               \/ satisfiedNow
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF invocations[i].path = "hit"
                                   /\ invocations[i].persistable
-                             THEN "persistHit" ELSE "returning"]
+                             THEN "persistHit" ELSE "returning",
+               ![i].retHitSatisfied = IF invocations[i].path = "hit"
+                                      THEN satisfiedNow ELSE @]
           /\ UNCHANGED res
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
-\* The post-barrier re-check failed: attachment grew the hit's required set
-\* past the session's bound handles after selection. The serve becomes a
-\* miss and the invocation falls through to the singleflight, exactly as a
-\* selection-time miss does. The session edge and its ownership unit stay
-\* until session release (the code keeps the recorded claim rather than
-\* growing a decrement-and-collect path); the session owns the result but
-\* was never handed its value; held-result choices never consult the
-\* recorded edges, so the kept edge cannot masquerade as possession.
+\* The serve-time re-validation failed: the stored required set changed
+\* after selection (the generation moved) and the full filter no longer
+\* passes. The serve becomes a miss and the invocation falls through to
+\* the singleflight, exactly as a selection-time miss does. The session
+\* edge and its ownership unit stay until session release (the code keeps
+\* the recorded claim rather than growing a decrement-and-collect path);
+\* the session owns the result but was never handed its value; held-result
+\* choices never consult the recorded edges, so the kept edge cannot
+\* masquerade as possession.
 ReadBarrierGatedMiss(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
@@ -1581,9 +1663,11 @@ ReadBarrierGatedMiss(i) ==
        IN /\ res[r].barrier \in {"none", "closedOk"}
           /\ res[r].payload = "decoded"
           /\ ~res[r].persistSyncPending
+          /\ res[r].required # invocations[i].selRequired
           /\ ~(res[r].required \subseteq sessionRelease[invocations[i].sess].handles)
           /\ invocations' = [invocations EXCEPT
-               ![i].phase = "join", ![i].resId = 0, ![i].path = "none"]
+               ![i].phase = "join", ![i].resId = 0, ![i].path = "none",
+               ![i].selRequired = {}]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1949,11 +2033,18 @@ InvocationOperationExit(i) ==
                ![i].retBarrierOK = IF success
                     THEN res[r].barrier \in {"none", "closedOk"} ELSE @,
                ![i].retClean = IF success THEN ~res[r].laundered ELSE @,
-               \* the true transitive requirement of the returned result is a
+               \* the DATA-closure requirement of the returned result is a
                \* subset of the session's bound handles: the session was never
-               \* handed a result depending on a handle leaf it never bound.
+               \* handed a result whose payload-producing closure depends on
+               \* a handle leaf it never bound. Retention edges (lateDeps)
+               \* are excluded: they keep a dep alive without the parent's
+               \* payload needing it, and they can land after the serve, so
+               \* judging them here would flag sessions that legitimately
+               \* held or produced the parent before the edge existed. The
+               \* data closure of a settled result is frozen, so this exit-
+               \* time recount equals the serve-time one.
                ![i].retGated = IF success
-                    THEN TrueRequired(r) \subseteq sessionRelease[s].handles ELSE @]
+                    THEN DataRequired(r) \subseteq sessionRelease[s].handles ELSE @]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, evals, epoch, flushed>>
 
@@ -2050,12 +2141,21 @@ BindResource ==
 (* caller today retains an SDK-generated typedefs module under a           *)
 (* published container (core/sdk/module_typedefs.go). The caller holds     *)
 (* both results, so both barriers are settled, and the edge must not form  *)
-(* a cycle (the stated no-cycle assumption). The entry point REFUSES a     *)
-(* dep whose stored required set is non-empty: a requirement landing       *)
-(* after the parent settled would be invisible to sessions already         *)
-(* holding the parent or an ancestor. A refused call returns an error and  *)
-(* changes nothing, so only the empty-required edge is modeled; with the   *)
-(* dep requirement-free, no stored required set changes either.            *)
+(* a cycle (the stated no-cycle assumption).                               *)
+(*                                                                         *)
+(* The dep may carry session-resource requirements (a module loaded over   *)
+(* private git via SSH reaches the ssh-agent socket handle). The same      *)
+(* critical section then recomputes the parent's stored required set and   *)
+(* cascades upward through depParents until the sets stop changing; with   *)
+(* stored sets exact before the edge (RequiredExact holds in every         *)
+(* reachable state), that fixpoint is the transitive requirement, so the   *)
+(* action assigns it directly to the parent and every registered ancestor. *)
+(* Each changed set bumps that result's requirement generation in the      *)
+(* code; the model's serve re-validation compares stored sets against the  *)
+(* selection capture instead of counting (see ReadBarrierOk). The edge is  *)
+(* recorded in lateDeps as well as deps: retention edges participate in    *)
+(* ownership and in the conservative stored set, but not in the data       *)
+(* closure DataRequired judges (see its comment).                          *)
 (***************************************************************************)
 AddDepLate ==
     /\ ModelLateDeps
@@ -2067,19 +2167,29 @@ AddDepLate ==
         /\ res[d].barrier \in {"none", "closedOk"}
         /\ d \notin res[p].deps
         /\ ~DepReachable(res, d, p)
-        \* the entry-point guard: requirement-carrying deps are refused
-        /\ res[d].required = {}
         \* The caller runs inside an executing fn (module_typedefs runs
         \* during module loading) and holds both results through its
-        \* resolver's gated loads - FnInnerLoadClaim/Deliver; this action
-        \* consumes the possession and adds the explicit-dep unit, with
-        \* no liveness guard. For d, satisfaction is the empty-set guard
-        \* above.
+        \* resolver's checked loads - FnInnerLoadClaim/Deliver; this
+        \* action consumes the possession and adds the explicit-dep unit,
+        \* with no liveness guard. Possession of d implies the caller's
+        \* session satisfied d's requirement at its claim.
         /\ \E o \in OngoingCallIds :
             /\ ongoingCalls[o].fnState = "running"
             /\ {p, d} \subseteq ongoingCalls[o].acq
-        /\ res' = [res EXCEPT ![p].deps = @ \cup {d},
-                              ![d].own = @ + 1]
+        /\ LET withEdge == [res EXCEPT ![p].deps = @ \cup {d},
+                                       ![p].lateDeps = @ \cup {d},
+                                       ![d].own = @ + 1]
+               \* the ancestor cascade: p and every registered result that
+               \* reaches p through dependency edges recomputes its stored
+               \* set; unaffected results keep theirs
+               affected == {x \in ResultIds :
+                              /\ withEdge[x].registered
+                              /\ p \in DepClosureIn(withEdge, x)}
+           IN res' = [x \in DOMAIN withEdge |->
+                IF x \in affected
+                THEN [withEdge[x] EXCEPT
+                        !.required = TrueRequiredIn(withEdge, x)]
+                ELSE withEdge[x]]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -2786,12 +2896,16 @@ LiveSpec ==
 (* clean canonical candidate nor the exact result satisfies it             *)
 (* (sharedResultLookupCanonicalEquivalentGated,                            *)
 (* cache_persistence_resolver.go; before that check existed, the exact     *)
-(* fallback bypassed the filter). The filter runs at selection AND again   *)
-(* after an open attach barrier (the ReadBarrierOk conjunct /              *)
+(* fallback bypassed the filter). The filter runs at selection AND is      *)
+(* re-validated at the serve (the ReadBarrierOk disjunct /                 *)
 (* ReadBarrierGatedMiss; Go sessionStillSatisfiesResourceRequirements):    *)
-(* attachment is the one window where a live result's stored required set  *)
-(* can grow, because the retention-edge path (AddDepLate) refuses          *)
-(* requirement-carrying deps, so a settled result's set is FROZEN. Two     *)
+(* a live result's stored required set can grow after selection, through   *)
+(* an attached dep while its attachment is in flight or through a          *)
+(* requirement-carrying retention edge (AddDepLate) after it settled.      *)
+(* Every growth bumps the result's requirement generation inside the       *)
+(* mutating critical section; the serve compares its selection-time        *)
+(* capture (selRequired here) and either serves the unchanged set it       *)
+(* validated or re-runs the full filter. Two                               *)
 (* kinds of guard follow. SELECTION-TIME checks test current               *)
 (* satisfaction, exactly as the code does at candidate selection:          *)
 (* LookupHit and CanonicalPick's candidate set                             *)
@@ -2813,12 +2927,21 @@ LiveSpec ==
 (* late refusal are both representable.                                    *)
 (* CanonicalPick's returned-result fallback stays ownership-only: the      *)
 (* publisher possesses what it just produced.                              *)
-(* A gated ID load needs no action of its own: refusal returns nothing     *)
-(* and serving is behaviorally a LookupHit; its canonical pick requires    *)
-(* clean attachment exactly like adoption, so the ID-load redirect onto    *)
-(* an unsettled sibling's barrier or attachment error is gone. Not yet     *)
-(* modeled on this path: call-frame loads (ResultCallByResultID) serve     *)
-(* the recipe ungated; modelable if an effort takes it up.                 *)
+(* Because possession is not revoked and retention edges can grow a held   *)
+(* result's stored set after its holder acquired it, held-result serves    *)
+(* (waiter returns, adoption fallback) can hand back a result whose        *)
+(* CURRENT stored set the session does not cover - by design: the stored   *)
+(* set is hit-eligibility bookkeeping, and the value's data closure is     *)
+(* what the holder needed and had. ReturnedGated therefore judges the      *)
+(* data closure (DataRequired), and ReturnedHitSatisfied holds hit serves  *)
+(* - the paths the re-validation covers - to the conservative stored set. *)
+(* A requirement-checked ID load needs no action of its own: refusal      *)
+(* returns nothing and serving is behaviorally a LookupHit; its canonical  *)
+(* pick requires clean attachment exactly like adoption, so the ID-load    *)
+(* redirect onto an unsettled sibling's barrier or attachment error is     *)
+(* gone. Not yet modeled on this path: call-frame loads                    *)
+(* (ResultCallByResultID) serve the recipe unchecked; modelable if an      *)
+(* effort takes it up.                                                     *)
 (***************************************************************************)
 
 DerivedSessionActive(s) ==
@@ -2878,6 +3001,7 @@ TypeOK ==
          /\ res[r].persistSyncPending => res[r].payload = "decoded"
          /\ res[r].handle \in Handles \cup {"none"}
          /\ res[r].required \subseteq Handles
+         /\ res[r].lateDeps \subseteq res[r].deps
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
@@ -2895,6 +3019,8 @@ TypeOK ==
          /\ invocations[i].ownCancel \in BOOLEAN
          /\ invocations[i].joinedGen \in 0..MaxInvocations
          /\ invocations[i].retGated \in BOOLEAN
+         /\ invocations[i].selRequired \subseteq Handles
+         /\ invocations[i].retHitSatisfied \in BOOLEAN
     /\ \A s \in Sessions : sessionRelease[s].handles \subseteq Handles
 \* Ownership accounting is exact: for every registered result, the
 \* incrementally-maintained counter equals the recount of its edges
@@ -2931,15 +3057,35 @@ ReturnedLive ==
 ReturnedOwned ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retOwned
 
-\* No session is ever handed a result that depends, directly or transitively,
-\* on a handle leaf it never bound: every returned invocation satisfies the
-\* transitive requirement of its result. This is the session-resource gate's
-\* purpose. It fails where a result reaches a session whose bound set does
-\* not cover the result's TrueRequired; with exact stored accounting
-\* (RequiredExact) the lookup filter enforces exactly that, so the two
-\* properties gate the accounting and the harm separately.
+\* No session is ever handed a result whose payload-producing closure
+\* depends, directly or transitively, on a handle leaf it never bound:
+\* every returned invocation satisfies the DATA-closure requirement of its
+\* result (DataRequired; see the retGated capture in
+\* InvocationOperationExit for why retention edges are excluded). This is
+\* the session-resource rule's purpose: the concrete harm is a session
+\* holding a value it could not produce or refresh, and only data edges
+\* carry that. The conservative stored set - which also counts retention
+\* edges - is judged separately: RequiredExact for the accounting, and
+\* ReturnedHitSatisfied for the serve paths that enforce the stored set.
 ReturnedGated ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retGated
+
+\* Every completed hit-path invocation was serving, at the instant of its
+\* hit serve (ReadBarrierOk), a stored required set its session's bound
+\* handles covered. This is the serve-time re-validation's contract over
+\* the CONSERVATIVE stored set - the one the lookup filter reads - and it
+\* is what the generation fast path preserves: an unchanged generation
+\* means the served set equals the selection capture, which the selection
+\* filter validated against handles the live session has only grown since.
+\* Weakening the re-validation makes a stale serve reachable and trips
+\* this even where the stale result's data closure is requirement-free
+\* (a late retention edge on a plain parent). Judged only for invocations
+\* that end done: a serve raced by the session's own release is converted
+\* to a refusal at operation exit and hands nothing to the caller.
+ReturnedHitSatisfied ==
+    \A i \in InvocationIds :
+        (invocations[i].phase = "done" /\ invocations[i].path = "hit")
+            => invocations[i].retHitSatisfied
 
 \* No reader is handed a result whose dependency attachment has not
 \* finished cleanly.
