@@ -2134,7 +2134,7 @@ func (s *workspaceSchema) export(
 	if err != nil {
 		return core.Void{}, err
 	}
-	if err := changes.Self().Export(exportCtx, hostPath); err != nil {
+	if err := changes.Self().Export(exportCtx, changes, hostPath); err != nil {
 		return core.Void{}, err
 	}
 	if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {

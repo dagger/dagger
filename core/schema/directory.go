@@ -1326,28 +1326,8 @@ func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectRe
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	changes := parent.Self()
-
-	var scopedDiff dagql.ObjectResult[*core.Directory]
-	afterID, err := changes.After.ID()
-	if err != nil {
-		return inst, err
-	}
-	err = srv.Select(ctx, changes.Before, &scopedDiff,
-		dagql.Selector{Field: "diff", Args: []dagql.NamedInput{
-			{Name: "other", Value: dagql.NewID[*core.Directory](afterID)},
-		}},
-	)
-	if err != nil {
-		return inst, err
-	}
-	return scopedDiff, nil
+func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (dagql.ObjectResult[*core.Directory], error) {
+	return core.ChangesetLayer(ctx, parent)
 }
 
 type changesetAsPatchArgs struct{}
@@ -1370,7 +1350,7 @@ type changesetExportArgs struct {
 }
 
 func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, args.Path)
+	err := parent.Self().Export(ctx, parent, args.Path)
 	if err != nil {
 		return "", err
 	}
