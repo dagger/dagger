@@ -73,18 +73,23 @@ var expectedOutcome = map[string]string{
 	"resources":         "",
 	"resources_restart": "",
 	// green: explicit retention edges on already-published results
-	// (AddExplicitDependency) refuse requirement-carrying deps, so a
-	// settled result's stored required set is frozen; RequiredExact and
-	// ReturnedGated gate the refusal.
+	// (AddExplicitDependency) accept requirement-carrying deps; the
+	// grown stored set cascades to the parent's ancestors and
+	// RequiredExact holds the accounting exact. See the config header.
 	"resources_latedep": "",
 
-	// green: requirement growth after the lookup filter. A hit selected
-	// while attachment is in flight is re-checked after the attach
-	// barrier and falls through to the singleflight when the grown set is
-	// no longer satisfied, and explicit retention edges refuse
-	// requirement-carrying deps, so a settled result's stored set is
-	// frozen; see the config header.
-	"resources_gated_growth": "",
+	// green: requirement growth after the lookup filter. The stored set
+	// can grow after a hit was selected (an attached dep while
+	// attachment is in flight, or a requirement-carrying retention edge
+	// after settling); the serve re-validates by the requirement
+	// generation captured at selection and converts a stale hit to a
+	// miss. resources_gated_growth covers the attachment window,
+	// resources_latedep_recheck the retention-edge window and
+	// resources_latedep_cascade the ancestor cascade, each from an
+	// imported starting graph; see the config headers.
+	"resources_gated_growth":    "",
+	"resources_latedep_recheck": "",
+	"resources_latedep_cascade": "",
 
 	// accepted finding: a publisher's own release between fn completion
 	// and the attachment hook's claim refuses that claim, fails the

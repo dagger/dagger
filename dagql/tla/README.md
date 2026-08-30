@@ -18,9 +18,13 @@ family as the fixed `decode_cancel` joiner finding, and the analogous
 fix is a retry/miss classification for parked readers). Every other
 configuration is a green regression gate, and the `expectedOutcome`
 map is the authoritative list. (The most recently closed findings: `resources_gated_growth` — a
-result's transitive requirement growing after the lookup filter ran —
-fixed by re-checking the filter after the attach barrier and by
-refusing requirement-carrying deps on explicit retention edges;
+result's stored requirement set growing after the lookup filter ran —
+fixed by a serve-time re-validation keyed on a per-result requirement
+generation captured at selection (explicit retention edges accept
+requirement-carrying deps again and cascade the growth to ancestors;
+`resources_latedep_recheck` covers that serve window and
+`resources_latedep_cascade` the ancestor cascade, each from an
+imported starting graph);
 `resources_restart` — the stored requirement set drifting from the true
 transitive requirement — fixed by recomputing dependency-first at
 import and leaving the stored set alone at decode install; and
@@ -45,7 +49,7 @@ dagger --env dev call tla-check one --config=resources
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
 # (resources_gated_growth ~114M, resources_restart ~110M, lazy_import
-# ~62M, persist ~47M)
+# ~62M, resources_latedep_cascade ~57M, persist ~47M)
 dagger --env dev check tla-check:cache-lifecycle
 ```
 
