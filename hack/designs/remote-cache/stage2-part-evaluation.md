@@ -370,7 +370,12 @@ type LazyContainerParts interface {
 - `container.Lazy == nil` → no groups (nothing deferred).
 - `container.Lazy` implements `LazyContainerParts` → settle own metadata
   part first (one `EvaluateParts(self, ContainerPartMetadata)` — cheap,
-  latched), then delegate the mapping to the op.
+  latched), then delegate the mapping to the op. This resolution-phase
+  call is the **only** self-demand in the design: it runs before any
+  requested group's body starts, so by the time a snapshot group's body
+  runs, its op's metadata is already settled and the body reads the plain
+  fields directly. Group bodies never demand sibling groups of their own
+  op (4.4).
 - Otherwise → `[LazyGroupWhole]`, and `LazyEvalFuncForGroup(LazyGroupWhole)`
   is today's `LazyEvalFunc()`. **This is the default: an undeclared
   operation behaves byte-for-byte as today.**
@@ -389,20 +394,70 @@ Group keys for refined container ops:
 
 ### 4.4 Object-side state: per-group latching, and when `Lazy` clears
 
-`LazyState` (`core/lazy_state.go`) grows per-group latching in place:
+`LazyState` (`core/lazy_state.go`) grows per-group latching in place.
+Today's `LazyState.Evaluate` holds `LazyMu` across the whole body; carrying
+that shape to groups would self-deadlock the moment anything demanded a
+sibling group of the same op, and would serialize sibling groups of one op
+against each other. Two rules remove both hazards:
+
+- **Lock granularity:** each group gets its own mutex, held across only
+  that group's body. `LazyMu` guards the whole-op latch and the group map;
+  it is never held across a body.
+- **Ordering:** a group body never demands a sibling group of its own op.
+  The only intra-result demand is the resolution-phase metadata settling
+  (4.3), which completes before any requested group's body starts. Group
+  dependencies within one op therefore need no runtime cycle handling at
+  the object layer at all.
 
 ```go
 type LazyState struct {
+    // LazyMu guards LazyInitComplete and groups. It is held only for
+    // latch checks and map access, never across a body.
     LazyMu           *sync.Mutex
-    LazyInitComplete bool                          // the whole-op latch, as today
-    doneGroups       map[dagql.LazyGroupKey]bool   // per-group latches, nil until first use
+    LazyInitComplete bool                                   // the whole-op latch, as today
+    groups           map[dagql.LazyGroupKey]*lazyGroupOnce  // nil until first named-group use
 }
 
-// EvaluateGroup is the per-group analogue of Evaluate: return immediately
-// if the group latched; otherwise run once under LazyMu and latch on
-// success.
+// lazyGroupOnce is one group's object-side run-once state. mu is held
+// across the group's body: it serializes every runner of this group
+// (cache attempt or direct call) and makes the second a no-op via done,
+// exactly today's whole-op coordination, per group.
+type lazyGroupOnce struct {
+    mu   sync.Mutex
+    done bool // guarded by mu
+}
+
+// EvaluateGroup: under LazyMu, get-or-create g's record; release LazyMu;
+// lock g.mu; if done, return; run the body; set done on success; unlock.
 func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, g dagql.LazyGroupKey, run func(context.Context) error) error
 ```
+
+Coordination properties this gives, spelled out:
+
+- Cache-driven runners of one group are already mutually excluded by the
+  cache's per-(result, group) attempt; the object-side `g.mu` is a second
+  layer there, uncontended in practice.
+- A direct caller racing a cache attempt on the same group serializes on
+  `g.mu`; the loser observes `done` and returns. This is byte-for-byte
+  today's direct-versus-cache story (a blocking mutex, not
+  context-aware), narrowed from the whole op to one group. No regression,
+  no improvement.
+- Sibling groups of one op run concurrently: different `g.mu`.
+- Unrefined ops keep using `LazyState.Evaluate` (whole-op `LazyMu` across
+  the body) unchanged. Per op exactly one of the two entry points is
+  used, mirroring the cache-side regime split (5.1).
+
+Direct object-side paths, enumerated, with how each coordinates:
+
+- `Container.Evaluate` and `container.Sync` (`core/container.go:1099,1109`):
+  run the op's remaining groups sequentially, metadata group first, each
+  under its own `g.mu`. Never holds two group mutexes at once, so there is
+  no lock-order concern; racing cache attempts serialize per group as
+  above.
+- `metaFileContents`'s internal force (`core/container_exec.go:2333`):
+  until commit 8 it is `Container.Evaluate` and behaves as above; commit 8
+  moves the forcing to the resolvers via `EvaluateParts` and scopes the
+  remaining internal force to the exec-meta group (section 9).
 
 Rules:
 
@@ -415,15 +470,10 @@ Rules:
   "something is still deferred" (feeds `HasPendingLazyEvaluation` and the
   schema eager/lazy fork), and persistence's form selection (`Lazy == nil`
   → ready form) keeps meaning "fully materialized" (section 8).
-- The direct object-side evaluation paths (`Container.Evaluate`,
-  `container.Sync`, `metaFileContents`'s internal force at
-  `core/container_exec.go:2333`) continue to work: they run all remaining
-  groups through the same per-group latches. They remain exactly as
-  coordinated as today — serialized by `LazyMu`, made idempotent by the
-  latches, uncoordinated with cache attempts in the same way today's
-  direct calls are. Sites whose refinement is a stage-2 win (the exec-meta
-  readers) move their forcing to the resolver via `EvaluateParts`
-  (section 9).
+- The direct object-side evaluation paths continue to work, coordinated
+  per group as enumerated above. Sites whose refinement is a stage-2 win
+  (the exec-meta readers) move their forcing to the resolver via
+  `EvaluateParts` (section 9).
 
 ### 4.5 Delegation and the two templates
 
@@ -485,10 +535,12 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
   Ports, or the mount list.
 - Each read-only mount part → delegation.
 - `fs`, `execMeta`, every writable mount part → `"execOutputs"`. The group
-  body: settle own metadata (needed for args/env expansion), evaluate the
+  body reads its own already-settled metadata directly (args/env
+  expansion; settled by the resolution phase before any body starts, 4.3
+  and 4.4 — the body itself demands no sibling group), evaluates the
   parent parts the run mounts (parent `fs` and **all** parent mount
   parts — the run needs them mounted; this is unavoidable and correct),
-  run the process, fill the output accessors via the existing output
+  runs the process, and fills the output accessors via the existing output
   bindings. It does **not** copy parent state wholesale:
   `materializeContainerStateFromParent` is not used by refined bodies.
 - Two body impurities exist today and must be resolved
@@ -568,9 +620,15 @@ every read/write of the lazy block going through `groupState(g)`:
    (`waitForLazyEvaluation`, unchanged), retry the loop on foreign
    cancellation, return its outcome otherwise.
 3. No attempt for `g`: if `g.syncPending`, lead a bookkeeping-only
-   attempt. Else re-read `LazyEvalFuncForGroup(g)` from the value; nil →
-   latch `g.complete`, return. (Object-side per-group state is trustworthy
-   exactly when no attempt for that group is published — the same ordering
+   attempt **without consulting the value's callback**. The value's
+   `LazyEvalFuncForGroup(g)` is re-read only when `g` has no published
+   attempt **and** `!g.syncPending`; nil then latches `g.complete`. This
+   is the precedence rule of commit `20642c1193` ("never re-read a
+   value's callback while bookkeeping is pending",
+   `dagql/cache.go:3762`), applied per group: once `g`'s body has
+   succeeded, no later attempt for `g` can re-run it, regardless of what
+   the value reports. (Object-side per-group state is trustworthy exactly
+   when no attempt for that group is published — the same ordering
    argument as today, per group, because attempt retirement for `g`
    happens under `lazyMu` after `g`'s body returned.)
 4. Publish a fresh `lazyEvalAttempt` on `g`, mint telemetry targets under
@@ -598,15 +656,21 @@ Unchanged, per group, by construction (the code is the same code):
 
 New:
 
-- **Two callers wanting different parts of one result do not serialize.**
-  Their groups' attempts are independent; only `lazyMu`'s short critical
-  sections are shared. (Model reachability probe, section 10.)
-- **Recursion stack keyed by (result, group).** A group body may evaluate
-  a *different* group of the same result (the joint exec body settles own
-  metadata). Re-entering the *same* (result, group) is refused with
-  today's "recursive lazy evaluation detected" error. Group dependencies
-  within a result are acyclic by construction: only snapshot groups demand
-  the metadata group, never the reverse.
+- **Two callers wanting different parts of one result do not serialize,
+  at either layer.** Cache side: their groups' attempts are independent;
+  only `lazyMu`'s short critical sections are shared. Object side:
+  sibling groups hold different per-group mutexes (4.4). (Model
+  reachability probe, section 10.)
+- **Recursion stack keyed by (result, group).** The stack node is pushed
+  when a caller leads or joins a group, not per result: the
+  resolution-phase self-demand (`EvaluateParts(self, metadata)` from
+  `ResolveLazyEvalGroups`, 4.3) legitimately re-enters the same result
+  for a different group before the requested group is entered, so a
+  result-keyed stack would falsely refuse it. Group bodies themselves
+  never demand sibling groups of their own op (4.4); the legal intra-
+  result paths are resolution → metadata only, and they are acyclic by
+  construction. Re-entering the *same* (result, group) is refused with
+  today's "recursive lazy evaluation detected" error.
 - `HasPendingLazyEvaluation`: complete-latch → false; any group with an
   attempt, pending bookkeeping, or an armed stored callback → true;
   otherwise fall back to the value's `LazyEvalFunc() != nil`, unchanged.
@@ -630,10 +694,19 @@ New:
 
 ### 5.4 What "fully evaluated" means
 
-`lazyEvalComplete` (result level) latches when an evaluate-everything pass
-observes every resolved group complete, or immediately for non-parts
-values as today. It exists only as the fast path; correctness derives from
-per-group latches.
+`lazyEvalComplete` (result level) exists only as the fast path;
+correctness derives from per-group latches. Its precondition is explicit
+so it cannot be set from a stale view of the group set:
+
+- For a parts value, only a pass that (i) called
+  `ResolveLazyEvalGroups(ctx, res, nil)` — the all-groups form — **after**
+  the metadata part was settled, and (ii) then observed every returned
+  group complete, may set the latch. `EvaluateParts` never sets it. The
+  ordering matters because the group set is only final once metadata is
+  settled (3.4); a resolution that predates metadata settling could miss
+  groups.
+- For a non-parts value, the latch is set exactly as today (single group
+  completes, or the value reports no callback).
 
 ### 5.5 Bookkeeping concurrency
 
@@ -841,8 +914,11 @@ New constants:
   which is sufficient because every invariant below is per-group/per-part
   and shape-independent.
 - `GroupNeeds` — a per-configuration acyclic relation over `LazyGroups`:
-  group g's body demands group h of the same result before it can
-  succeed (models the joint body settling own metadata).
+  an evaluator may lead or join group g only once group h of the same
+  result is complete, for every `<<g,h>>` in the relation (models the
+  resolution phase settling metadata before the requested group is
+  entered, 4.3/4.4 — the ordering lives before the attempt, not inside
+  the body).
 - `ModelPartDelegation` — enables the cross-result body-demand action
   (models a delegation body evaluating the parent's part).
 
@@ -859,9 +935,13 @@ their bodies are otherwise unchanged (that is the point: the design reuses
 the machinery). `ImportedLazyArm` arms all groups together (a decoded lazy
 form re-arms whole). Two new actions:
 
-- `EvalBodyDemand(r, g)` — a running body for (r, g) spawns an internal
-  evaluator for (r, h) where `<<g,h>> ∈ GroupNeeds`; `EvalBodyFinish(r,g)`
-  with outcome bodyOk requires every needed group complete.
+- `EvalResolveDemand(e)` — an evaluator in the demand phase for group g
+  with an incomplete needed group h acts as an evaluator for h (leads or
+  joins h's attempt) and re-enters demand for g when h completes. The
+  lead/join guards for g require every needed group complete
+  (`GroupNeeds` above), so the ordering is enforced where the code
+  enforces it: before g's attempt exists. Bodies do not demand sibling
+  groups.
 - `EvalDelegateDemand(r, g)` — with `ModelPartDelegation`, a running body
   for (r, g) spawns an internal evaluator for (parent, g) where parent is
   a dependency of r. This models what real bodies do today and the model
@@ -905,7 +985,7 @@ minutes on the dev box:
   well under the current `lazy` config (one producing invocation instead
   of two).
 - `lazy_parts_prereq` — `lazy_parts` plus `GroupNeeds = {<<gOut,gMeta>>}`
-  and `EvalBodyDemand`. Safety.
+  and `EvalResolveDemand`. Safety.
 - `lazy_parts_liveness` — the prereq shape under `LiveSpec`,
   `EvalEventuallyTerminal`. Small bounds (liveness forbids symmetry).
 - `lazy_parts_delegate` — two results (parent a dependency of child),
@@ -968,7 +1048,10 @@ Directed plan, part of stage 2's model commit:
    second candidate; at this box's measured ~4M distinct states/minute it
    sits near 28 minutes).
 
-The full-suite-before-push rule from `dagql/tla/README.md` stands.
+Run discipline, per Erik's overnight ruling (superseding the
+full-suite-before-push rule in `dagql/tla/README.md` for this stage):
+before handoff, run the touched configurations plus the quick set; run
+the full suite only if time permits.
 
 ---
 
@@ -1028,9 +1111,19 @@ Each entry: the decision, then the rationale. All are working positions
   export narrowing.** Wave 1 maximizes real wins (metadata reads,
   selector narrowing) for minimal surface; wave 2 is mechanical extension
   behind the same templates.
-- **S2-13. Recursion stack keyed by (result, group).** A body may demand
-  a sibling group of its own result (needed for metadata-first); genuine
-  cycles are still refused.
+- **S2-13. Recursion stack keyed by (result, group), pushed at group
+  entry.** The resolution phase legitimately re-enters the same result
+  for the metadata group before the requested group is entered; a
+  result-keyed stack would falsely refuse that. Genuine cycles are still
+  refused.
+- **S2-17. Object-side coordination: per-group mutexes held across only
+  their own group's body; `LazyMu` never held across a body; group
+  bodies never demand sibling groups of their own op — self-metadata
+  settles in the resolution phase (4.3, 4.4).** Carrying today's
+  hold-`LazyMu`-across-the-body shape to groups would self-deadlock on
+  the metadata self-demand and serialize sibling groups; per-group
+  mutexes preserve today's direct-call-versus-cache coordination story
+  per group with no new machinery beyond a latch record per group.
 - **S2-14. Model: per-group generalization with singleton-group
   isomorphism as the regression anchor (6,398,997 distinct states for
   `lazy`), new parts configurations, delegation-demand coverage, and the
@@ -1057,7 +1150,9 @@ independently testable. Model before cache code (G30). Commit trailer:
    configurations `lazy_parts`, `lazy_parts_prereq`,
    `lazy_parts_liveness`, `lazy_parts_delegate`, `lazy_parts_release`
    with re-breaks and probes; `expectedOutcome`/`quickConfigs` updates.
-   *Test: full TLA suite green; recorded state counts.*
+   *Test: touched configurations plus the quick set green (full suite
+   only if time permits, per the 10.3 run discipline); recorded state
+   counts.*
 2. **Model: budget work.** Scenario-scoping constants; re-scope
    `attach_release_reader` per 10.3 with re-break verification; measure
    the suite; apply the procedure to anything else over 20 minutes.
@@ -1076,8 +1171,9 @@ independently testable. Model before cache code (G30). Commit trailer:
    serializing; per-group failure leaves siblings complete and the failed
    group retryable; foreign-cancellation retry per group; body-success
    sync-failure retries only bookkeeping per group; whole-result
-   `Evaluate` over groups; recursion refusal for same (result, group) and
-   allowance for sibling groups. *Model and code reconciled here.*
+   `Evaluate` over groups; recursion refusal for same (result, group)
+   and allowance for the resolution-phase re-entry into the same result's
+   metadata group. *Model and code reconciled here.*
 5. **core scaffolding, no behavior change.** Container part keys;
    `LazyState.EvaluateGroup`; `LazyContainerParts`; `Container`
    implements `HasLazyEvaluationParts` routing every existing op to
