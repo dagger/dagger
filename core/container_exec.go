@@ -124,7 +124,85 @@ func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) err
 	if lazy == nil || lazy.State == nil {
 		return nil
 	}
-	return lazy.State.Evaluate(ctx, ctr)
+	return ctr.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerExecLazy) ContainerLazyState() *LazyState {
+	return &lazy.State.LazyState
+}
+
+// ContainerLazyGroups implements the exec's part mapping: metadata and
+// each read-only mount delegate from the parent (the run does not change
+// or produce them); fs, execMeta, and every writable mount are filled
+// jointly by the one process run (execOutputs).
+func (lazy *ContainerExecLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	groupOf := func(part dagql.PartKey) (dagql.LazyGroupKey, error) {
+		switch part {
+		case ContainerPartMetadata:
+			return ContainerLazyGroupMetadata, nil
+		case ContainerPartFS, ContainerPartExecMeta:
+			return ContainerLazyGroupExecOutputs, nil
+		}
+		if target, ok := strings.CutPrefix(string(part), containerPartMountPrefix); ok {
+			mnt := ctr.mountAt(target)
+			if mnt == nil {
+				return "", fmt.Errorf("container withExec: no mount at target %q", target)
+			}
+			if mnt.Readonly {
+				return containerDelegationGroup(part), nil
+			}
+			return ContainerLazyGroupExecOutputs, nil
+		}
+		return "", fmt.Errorf("container withExec: unknown part %q", part)
+	}
+	if parts == nil {
+		groups := []dagql.LazyGroupKey{ContainerLazyGroupMetadata, ContainerLazyGroupExecOutputs}
+		for i := range ctr.Mounts {
+			mnt := &ctr.Mounts[i]
+			if mnt.Readonly && (mnt.DirectorySource != nil || mnt.FileSource != nil) {
+				groups = append(groups, containerDelegationGroup(ContainerPartMount(mnt.Target)))
+			}
+		}
+		return groups, nil
+	}
+	var groups []dagql.LazyGroupKey
+	seen := make(map[dagql.LazyGroupKey]struct{}, len(parts))
+	for _, part := range parts {
+		group, err := groupOf(part)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := seen[group]; dup {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+func (lazy *ContainerExecLazy) EvaluateContainerGroup(ctx context.Context, ctr *Container, group dagql.LazyGroupKey) error {
+	if lazy == nil || lazy.State == nil {
+		return nil
+	}
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return lazy.State.LazyState.EvaluateGroup(ctx, "Container.withExec", group, func(ctx context.Context) error {
+			// The exec changes no metadata: the child's plain fields are
+			// the parent's, settled without running anything. (This
+			// preserves the previously evaluated-state behavior for
+			// ImageRef too: WithExec clears it on the shell but the
+			// parent copy restores it, exactly as the old whole-body
+			// parent-state copy did.)
+			return materializeContainerMetadataFromParent(ctx, ctr, lazy.State.Parent)
+		})
+	case ContainerLazyGroupExecOutputs:
+		return lazy.State.evaluateOutputs(ctx, ctr)
+	default:
+		return lazy.State.LazyState.EvaluateGroup(ctx, "Container.withExec", group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, ctr, lazy.State.Parent, dagql.PartKey(group))
+		})
+	}
 }
 
 func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -317,7 +395,7 @@ func (container *Container) execMeta(
 	return &execMD, nil
 }
 
-func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts, includeVolatileEnv bool) (*executor.Meta, error) {
+func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts, volatileEnv []string) (*executor.Meta, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
@@ -352,9 +430,7 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
-	if includeVolatileEnv {
-		metaSpec.Env = mergeEnv(metaSpec.Env, container.VolatileEnv)
-	}
+	metaSpec.Env = mergeEnv(metaSpec.Env, volatileEnv)
 
 	if opts.Expect != ReturnSuccess {
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
@@ -1219,21 +1295,37 @@ func (container *Container) WithExec(
 	return nil
 }
 
+// evaluateOutputs runs the exec's joint output group: the one process
+// run fills fs, execMeta, and every writable mount at once.
+//
 //nolint:dupl,gocyclo // symmetric with prepareMounts; sharing hurts readability of each phase
-func (state *ContainerExecState) Evaluate(ctx context.Context, container *Container) (rerr error) {
+func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container *Container) (rerr error) {
 	if state == nil {
 		return nil
 	}
 
-	return state.LazyState.Evaluate(ctx, "Container.withExec", func(ctx context.Context) (rerr error) {
+	return state.LazyState.EvaluateGroup(ctx, "Container.withExec", ContainerLazyGroupExecOutputs, func(ctx context.Context) (rerr error) {
 		dagCache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		if err := dagCache.Evaluate(ctx, state.Parent); err != nil {
-			return err
+		if container == nil {
+			return fmt.Errorf("exec output container is nil")
 		}
-		if err := materializeContainerStateFromParent(ctx, container, state.Parent); err != nil {
+		// The run needs the parent's rootfs and every directory/file
+		// mount materialized so they can be mounted; the parent's own
+		// exec metadata is not among them and stays pending. This
+		// container's metadata (args/env expansion, working directory,
+		// secrets, sockets, services) is already settled by the
+		// resolution phase before this body starts.
+		runParts := []dagql.PartKey{ContainerPartFS}
+		for i := range container.Mounts {
+			mnt := &container.Mounts[i]
+			if mnt.DirectorySource != nil || mnt.FileSource != nil {
+				runParts = append(runParts, ContainerPartMount(mnt.Target))
+			}
+		}
+		if err := dagCache.EvaluateParts(ctx, state.Parent, runParts...); err != nil {
 			return err
 		}
 
@@ -1241,11 +1333,16 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if parent == nil {
 			return fmt.Errorf("exec parent is nil")
 		}
-		if container == nil {
-			return fmt.Errorf("exec output container is nil")
+		// Run inputs are the parent's settled parts; outputs land in this
+		// container's own accessors through the bindings below. The mount
+		// list shape is this container's settled metadata (the exec does
+		// not change it), with each snapshot source read from the
+		// parent's mount at the same target.
+		inputRootFS := parent.FS
+		inputMounts, err := execInputMounts(container.Mounts, parent)
+		if err != nil {
+			return err
 		}
-		inputRootFS := container.FS
-		inputMounts := slices.Clone(container.Mounts)
 
 		query, err := CurrentQuery(ctx)
 		if err != nil {
@@ -1261,6 +1358,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer releaseLockedCaches()
 
+		// The resolved values stay local to this run (they feed
+		// metaSpec.Env below). VolatileEnv itself is metadata delegated
+		// from the parent: every downstream consumer reads names and
+		// re-resolves against its own session, so the body writes only
+		// its own group's parts.
 		volatileEnvsFromSession := dagCache.ResolveVolatileVars(ctx, clientMetadata.SessionID)
 		var volatileEnvs []string
 		for _, k := range container.VolatileEnv {
@@ -1269,7 +1371,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				volatileEnvs = append(volatileEnvs, fmt.Sprintf("%s=%s", k, v))
 			}
 		}
-		container.VolatileEnv = volatileEnvs
 
 		secretEnv, err := container.secretEnvValues(ctx)
 		if err != nil {
@@ -1317,7 +1418,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 
 		cache := query.SnapshotManager()
 
-		metaSpec, err := container.metaSpec(ctx, opts, true)
+		metaSpec, err := container.metaSpec(ctx, opts, volatileEnvs)
 		if err != nil {
 			return err
 		}
@@ -2239,10 +2340,28 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if applyErr != nil {
 			return applyErr
 		}
-
-		container.Lazy = nil
 		return nil
 	})
+}
+
+// execInputMounts pairs this container's settled mount list shape with
+// the parent's snapshot source accessors: the run mounts the parent's
+// parts, while output bindings write this container's own accessors.
+func execInputMounts(mounts ContainerMounts, parent *Container) (ContainerMounts, error) {
+	inputs := make(ContainerMounts, len(mounts))
+	for i, mnt := range mounts {
+		in := mnt
+		if mnt.DirectorySource != nil || mnt.FileSource != nil {
+			parentMnt := parent.mountAt(mnt.Target)
+			if parentMnt == nil {
+				return nil, fmt.Errorf("exec input mount %q has no parent mount", mnt.Target)
+			}
+			in.DirectorySource = parentMnt.DirectorySource
+			in.FileSource = parentMnt.FileSource
+		}
+		inputs[i] = in
+	}
+	return inputs, nil
 }
 
 func decodePersistedContainerExecLazy(

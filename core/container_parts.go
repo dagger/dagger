@@ -110,6 +110,11 @@ var (
 	_ LazyContainerParts = (*ContainerWithoutExposedPortLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithDefaultTerminalCmdLazy)(nil)
 	_ LazyContainerParts = (*ContainerVolatileExecCacheHitLazy)(nil)
+
+	// Template B (snapshot writers): the exec's joint output group and
+	// the static rootfs writer.
+	_ LazyContainerParts = (*ContainerExecLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithRootFSLazy)(nil)
 )
 
 // ResolveLazyEvalGroups implements dagql.HasLazyEvaluationParts. An
