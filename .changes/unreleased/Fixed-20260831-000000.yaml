@@ -1,0 +1,16 @@
+kind: Fixed
+body: |
+  Changeset merges no longer corrupt under stat-only snapshot differences.
+
+  A changeset's materialized diff could carry files whose content was
+  identical but whose timestamps diverged between content-deduplicated
+  snapshots — entries its declared paths never reported. When such a phantom
+  entry fell under `.git`, applying it clobbered the merge's temporary
+  repository mid-flight and one side of the merge was silently dropped; this
+  was the cause of flaky `dagger module init` results under concurrent
+  identical initializations. Changeset content is now kept out of the merge's
+  `.git`, and the merge verifies that every declared change survives instead
+  of reporting success on a wrong result.
+custom:
+    Author: vito
+    PR: "14012"
