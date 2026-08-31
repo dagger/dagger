@@ -1391,6 +1391,42 @@ func (ch *Changeset) content(ctx context.Context) (*changesetContent, error) {
 	return content, nil
 }
 
+// gitMetaPath reports whether p is the workspace-root .git directory or a
+// path inside it. The merge workspace's temporary repository lives at that
+// path, so changeset content must never be applied there;
+// mergeBeforeDirectories excludes the same path from the merge base. Stat-only
+// snapshot differences can plant such entries in a changeset's materialized
+// diff without ComputePaths ever reporting them, and applying a stale
+// .git/HEAD mid-merge silently redirects branch commits.
+func gitMetaPath(p string) bool {
+	p = strings.TrimPrefix(path.Clean(p), "/")
+	return p == ".git" || strings.HasPrefix(p, ".git/")
+}
+
+// withoutGitMeta returns a copy of p with all entries under the workspace-root
+// .git directory removed.
+func (p *ChangesetPaths) withoutGitMeta() *ChangesetPaths {
+	dropGitMeta := func(paths []string) []string {
+		return slices.DeleteFunc(slices.Clone(paths), gitMetaPath)
+	}
+	filtered := &ChangesetPaths{
+		Added:      dropGitMeta(p.Added),
+		Modified:   dropGitMeta(p.Modified),
+		Removed:    dropGitMeta(p.Removed),
+		AllRemoved: dropGitMeta(p.AllRemoved),
+	}
+	if p.Renamed != nil {
+		filtered.Renamed = make(map[string]string, len(p.Renamed))
+		for newPath, oldPath := range p.Renamed {
+			if gitMetaPath(newPath) || gitMetaPath(oldPath) {
+				continue
+			}
+			filtered.Renamed[newPath] = oldPath
+		}
+	}
+	return filtered
+}
+
 // gitMergeWorkspace is a mounted scratch copy of the merge base that git
 // branches are built in.
 type gitMergeWorkspace struct {
@@ -1404,7 +1440,10 @@ type gitMergeWorkspace struct {
 // directories are recreated (the diff snapshot does not carry them). This
 // mirrors Directory.WithChanges' application of the same content.
 func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changesetContent) error {
-	if err := removeChangesetPaths(ws.root, ws.dir, content.paths.Removed); err != nil {
+	// Never let changeset content reach the temporary repository's .git.
+	paths := content.paths.withoutGitMeta()
+
+	if err := removeChangesetPaths(ws.root, ws.dir, paths.Removed); err != nil {
 		return fmt.Errorf("remove paths: %w", err)
 	}
 
@@ -1445,6 +1484,15 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 						// work tree crosses devices, so every attempt would
 						// just fail into the copy fallback.
 						DisableSourceHardlinks: true,
+						// The diff snapshot can carry .git entries that
+						// ComputePaths never reported: the stat-sensitive
+						// differ flags files whose content is identical but
+						// whose timestamps diverge across content-deduped
+						// snapshots. Overlaying those onto the temporary
+						// repository corrupts the merge.
+						Filter: layercopy.Filter{
+							Exclude: []string{".git"},
+						},
 					},
 				)
 			}, mountRefAsReadOnly)
@@ -1454,10 +1502,10 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 		}
 	}
 
-	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, content.paths); err != nil {
+	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, paths); err != nil {
 		return err
 	}
-	return ws.touchAppliedPaths(content.paths)
+	return ws.touchAppliedPaths(paths)
 }
 
 // touchAppliedPaths bumps the mtime of every path the changeset wrote so git
