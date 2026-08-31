@@ -105,6 +105,12 @@ type Span struct {
 	// render it.
 	ProgressSpans SpanSet `json:"-"`
 
+	// A span name can change while the span is live. The OTel SDK's start
+	// snapshot cannot carry that later mutation, so a semantic log record keeps
+	// the latest name authoritative over repeated frozen live snapshots.
+	nameFromLog    string
+	hasNameFromLog bool
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
@@ -152,6 +158,9 @@ func (span *Span) Call() *callpbv1.Call {
 	return span.callCache
 }
 
+// CallID rebuilds the ID of the call this span reports on. It is the DB-level
+// walk (DB.CallIDForDigest) narrowed to a span's own digest: the span is where
+// most callers start, but nothing about the rebuild needs one.
 func (span *Span) CallID() (*call.ID, error) {
 	if span.CallDigest == "" {
 		return nil, fmt.Errorf("no call for span")
@@ -293,6 +302,42 @@ type SpanSnapshot struct {
 	// Service name
 	ServiceName string `json:",omitempty"`
 
+	// Agent marks the long-lived loop span of a started agent runtime
+	// (running exactly while the loop does; its subtree carries the agent's
+	// turns). AgentID is the spawn-minted instance ID that identifies the
+	// agent ACROSS loop spans — a resume-retry relaunches the loop, so one
+	// agent can own several. AgentCallDigest is the digest of the call that
+	// produced the agent value, from which a client can reconstruct a
+	// sendable handle.
+	Agent           bool   `json:",omitempty"`
+	AgentID         string `json:",omitempty"`
+	AgentName       string `json:",omitempty"`
+	AgentCallDigest string `json:",omitempty"`
+
+	// AgentState is the agent's lifecycle state as of the most recent state
+	// record folded into this span, and AgentWaitingOn what it is parked on
+	// when that state is WAITING_INPUT. AgentStopReason says who ended a
+	// STOPPED one — a caller (EXPLICIT) or session teardown (SESSION) — which
+	// is the only thing distinguishing a dismissal from a clean exit.
+	// AgentSnapshotDigest is the portable recipe digest of the agent's last
+	// conversation, the anchor a client re-hydrates the instance from.
+	//
+	// AgentPreTeardownState is the one piece of record HISTORY kept here: the
+	// last state that was not a session-teardown stop. Session close stops
+	// every surviving runtime, so latest-wins alone loses the state the user
+	// actually left the agent in — which is what a restore has to put back
+	// (DB.RestorePlan).
+	//
+	// Unlike the fields above these arrive on log records rather than span
+	// attributes, because they change over the span's life and a live span's
+	// attributes are frozen at start (see the dagger.io/agent.* block in
+	// engine/telemetryattrs).
+	AgentState            string `json:",omitempty"`
+	AgentWaitingOn        string `json:",omitempty"`
+	AgentStopReason       string `json:",omitempty"`
+	AgentSnapshotDigest   string `json:",omitempty"`
+	AgentPreTeardownState string `json:",omitempty"`
+
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
@@ -304,6 +349,18 @@ type SpanSnapshot struct {
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
 	LLMCallDigest    string   `json:",omitempty"`
+
+	// LLM message origin: recorded provenance for a user-role message that
+	// arrived through an agent mailbox (engine/telemetryattrs' llm.origin.*
+	// vocabulary). Kind is USER, AGENT, or EVENT; the agent fields identify
+	// the sending (AGENT) or observed (EVENT) agent; Ref is the message's
+	// short ref (e.g. "#3") and ReplyTo the ref of the message it answers.
+	// All empty for the user's own prompts, the unmarked common case.
+	LLMOriginKind      string `json:",omitempty"`
+	LLMOriginAgentID   string `json:",omitempty"`
+	LLMOriginAgentName string `json:",omitempty"`
+	LLMOriginRef       string `json:",omitempty"`
+	LLMOriginReplyTo   string `json:",omitempty"`
 
 	// LLMToolResultTokens is an estimate of the token size of a tool call's
 	// result (the output it fed back into the model's context). The TUI shows
@@ -375,6 +432,22 @@ func (link *SpanLink) IsWait() bool {
 	return link.Purpose == telemetryattrs.LinkPurposeWait && link.WaitEnd.After(link.WaitStart)
 }
 
+// LLMAgentOriginMessage reports whether this span is a conversation message
+// recorded with AGENT provenance: another agent's words, delivered through a
+// mailbox, rather than a prompt the user typed. Frontends render these
+// sender-attributed instead of user-styled.
+func (snapshot *SpanSnapshot) LLMAgentOriginMessage() bool {
+	return snapshot.LLMOriginKind == telemetryattrs.LLMMessageOriginKindAgent
+}
+
+// LLMEventOriginMessage reports whether this span is a conversation message
+// recorded with EVENT provenance: the engine reporting a subscribed agent's
+// lifecycle transition. Frontends render these as compact one-liners rather
+// than prompt bubbles.
+func (snapshot *SpanSnapshot) LLMEventOriginMessage() bool {
+	return snapshot.LLMOriginKind == telemetryattrs.LLMMessageOriginKindEvent
+}
+
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint: gocyclo
 	defer func() {
 		// a bit of a shortcut, but there shouldn't be much going on
@@ -406,6 +479,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.DagBlockedAttr:
 		snapshot.Blocked = val.(bool)
+
+	case telemetryattrs.DagLeftRunningAttr:
+		snapshot.LeftRunning = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
@@ -456,6 +532,18 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetryattrs.ServiceNameAttr:
 		snapshot.ServiceName = val.(string)
 
+	case telemetryattrs.AgentAttr:
+		snapshot.Agent = val.(bool)
+
+	case telemetryattrs.AgentIDAttr:
+		snapshot.AgentID = val.(string)
+
+	case telemetryattrs.AgentNameAttr:
+		snapshot.AgentName = val.(string)
+
+	case telemetryattrs.AgentCallDigestAttr:
+		snapshot.AgentCallDigest = val.(string)
+
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)
 
@@ -476,6 +564,21 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)
+
+	case telemetryattrs.LLMMessageOriginKindAttr:
+		snapshot.LLMOriginKind = val.(string)
+
+	case telemetryattrs.LLMMessageOriginAgentIDAttr:
+		snapshot.LLMOriginAgentID = val.(string)
+
+	case telemetryattrs.LLMMessageOriginAgentNameAttr:
+		snapshot.LLMOriginAgentName = val.(string)
+
+	case telemetryattrs.LLMMessageOriginRefAttr:
+		snapshot.LLMOriginRef = val.(string)
+
+	case telemetryattrs.LLMMessageOriginReplyToAttr:
+		snapshot.LLMOriginReplyTo = val.(string)
 
 	case telemetryattrs.LLMToolResultTokensAttr:
 		snapshot.LLMToolResultTokens = asInt64(val)

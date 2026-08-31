@@ -1,7 +1,35 @@
 package telemetryattrs
 
+import (
+	"context"
+
+	"github.com/dagger/dagger/engine"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+)
+
 const (
+	// TelemetryOriginClientIDAttr records the immutable client identity captured
+	// from the emission context. Session-owned exporters use it to route each
+	// span, log, and aggregated metric data point to the origin client's DB and
+	// every validated ancestor DB. (string)
+	TelemetryOriginClientIDAttr = "dagger.io/telemetry.origin_client_id"
+
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
+
+	// AgentResumeSourceTraceIDAttr and AgentResumeArchiveSourceAttr identify the
+	// retained session continued by a live "resume agents" bridge span. The
+	// source is the archive implementation that supplied it ("engine" or
+	// "cloud"). (string)
+	AgentResumeSourceTraceIDAttr = "dagger.io/agent.resume.source_trace_id"
+	AgentResumeArchiveSourceAttr = "dagger.io/agent.resume.archive_source"
+
+	// LogRoleAttr describes a semantic role for an OTLP log record whose body
+	// carries data rather than ordinary log output. LogRoleSpanName means the
+	// body is the latest display name for the span the record is attributed to;
+	// frontends fold it into the live span instead of rendering it as text.
+	LogRoleAttr     = "dagger.io/log.role"
+	LogRoleSpanName = "span.name"
 
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
@@ -17,6 +45,21 @@ const (
 	// of being marked caused-failed.
 	DagBlockedAttr = "dagger.io/dag.blocked"
 
+	// DagLeftRunningAttr marks a span that was still running when the run that
+	// produced it ended, and was sealed on that account rather than because
+	// anything canceled it. It qualifies dagger.io/dag.canceled, which is why
+	// it is a second attribute: the UI reports "left running after the root
+	// span completed" instead of "says it is canceled".
+	//
+	// dagui derives this fact for its OWN root (DB.integrateSpan cancels
+	// everything still running when the root ends) and needs no attribute to
+	// do it. It exists for a trace IMPORTED from another session
+	// (hack/designs/resume-from-trace.md §5.1.2), whose root is not this DB's
+	// root and therefore never triggers that sweep: the importer seals the
+	// capture's unfinished spans itself, on the protobuf, and this is how it
+	// says so. (bool)
+	DagLeftRunningAttr = "dagger.io/dag.left_running"
+
 	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
 	// value is the DAG digest of the corresponding withPrompt or withResponse
 	// call, enabling the TUI to branch from that point in the conversation.
@@ -30,6 +73,45 @@ const (
 	// spot in a conversation. The count is an estimate (chars/4), not a
 	// provider-reported figure. (int64)
 	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens" //nolint:gosec // attribute name, not a credential
+
+	// LLM message origin (dagger.io/llm.origin.*).
+	//
+	// Stamped on a user-role LLM message span whose message arrived through
+	// an agent mailbox with recorded provenance
+	// (hack/designs/agent-messaging.md §4.1): who put it on the record, the
+	// sending (or observed) agent's identity, the message's short ref, and
+	// the ref of the message it answers. Absent on the user's own prompts —
+	// the unmarked common case. Frontends use these to attribute another
+	// agent's words to their sender and to render engine lifecycle events
+	// compactly, instead of drawing every consumed message as if the user
+	// typed it.
+
+	// LLMMessageOriginKindAttr is the origin kind token: one of
+	// LLMMessageOriginKindUser, LLMMessageOriginKindAgent, or
+	// LLMMessageOriginKindEvent. (string)
+	LLMMessageOriginKindAttr  = "dagger.io/llm.origin.kind"
+	LLMMessageOriginKindUser  = "USER"
+	LLMMessageOriginKindAgent = "AGENT"
+	LLMMessageOriginKindEvent = "EVENT"
+
+	// LLMMessageOriginAgentIDAttr is the sending (AGENT) or observed (EVENT)
+	// agent's spawn-minted instance ID — the same identity AgentIDAttr keys
+	// the roster on, so a frontend can correlate a message with its sender's
+	// roster entry. (string)
+	LLMMessageOriginAgentIDAttr = "dagger.io/llm.origin.agent.id"
+
+	// LLMMessageOriginAgentNameAttr is the display name of the agent behind
+	// LLMMessageOriginAgentIDAttr. (string)
+	LLMMessageOriginAgentNameAttr = "dagger.io/llm.origin.agent.name"
+
+	// LLMMessageOriginRefAttr is the message's short ref within the receiving
+	// agent's runtime, e.g. "#3" — the deterministic token replies name.
+	// (string)
+	LLMMessageOriginRefAttr = "dagger.io/llm.origin.ref"
+
+	// LLMMessageOriginReplyToAttr is the ref of the message this one answers,
+	// in the sender's own runtime, when it is a reply. (string)
+	LLMMessageOriginReplyToAttr = "dagger.io/llm.origin.reply_to"
 
 	// ServiceAttr marks the long-lived exec span of a started service. It is
 	// the authoritative "a service instance ran here" marker: the span exists
@@ -89,6 +171,118 @@ const (
 // the body instead. Like every content type, it describes the body — records
 // carry it under the ordinary core instrumentation scope.
 const CallPayloadContentType = "application/vnd.dagger.call+proto"
+
+// Resume-critical agent checkpoints over OTel logs.
+//
+// These records are distinct from bounded agent presentation telemetry. Their
+// byte body is the versioned JSON checkpoint, while the attributes provide a
+// small stable envelope for lossless routing and sequence indexing.
+const (
+	AgentCheckpointInstrumentationScope = "dagger.io/agent.checkpoint"
+	AgentCheckpointAttr                 = "dagger.io/agent.checkpoint"
+	AgentCheckpointContractAttr         = "dagger.io/agent.checkpoint.contract"
+	AgentCheckpointSequenceAttr         = "dagger.io/agent.checkpoint.sequence"
+	AgentCheckpointFinalAttr            = "dagger.io/agent.checkpoint.final"
+	AgentCheckpointContractV1           = "1"
+)
+
+// Agent directory (dagger.io/agent.*).
+//
+// Async agents (hack/designs/async-agents.md) are long-lived, addressable
+// evaluation loops. The design deliberately renounces a session-wide agent
+// namespace — you can only message an agent whose ID you hold — and makes
+// TELEMETRY the discovery plane instead: the loop span is the authoritative
+// "an agent runtime lives here" marker, and a client builds its roster by
+// folding these attributes out of the trace it already ingests.
+//
+// The vocabulary is split across the two telemetry record types on purpose,
+// because they have different mutability:
+//
+//   - IMMUTABLE identity facts (AgentAttr, AgentIDAttr, AgentNameAttr,
+//     AgentCallDigestAttr) ride SPAN attributes on the loop span. They are
+//     known when the span starts and never change, which is the only thing
+//     span attributes can express: a live span is exported as a snapshot
+//     taken at start (LiveSpanProcessor.OnStart), and heartbeats re-export
+//     that same frozen snapshot, so an attribute written later would never
+//     reach a client.
+//
+//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr, AgentStopReasonAttr,
+//     AgentSnapshotDigestAttr) rides LOG RECORDS attributed to the loop span,
+//     exactly like streaming progress above and for exactly the same reason.
+//     Each transition emits a fresh record; latest record wins. State records
+//     are emitted only when the PROJECTED state changes, not on every internal
+//     fact change; snapshot records are emitted on every commit, which is why
+//     they are a record of their own rather than a field on the state record.
+//
+// A record carrying AgentStateAttr or AgentSnapshotDigestAttr is agent data,
+// not log text: consumers fold it into the agent's roster entry and must not
+// render it as output.
+const (
+	// AgentAttr marks the long-lived loop span of a started agent runtime.
+	// The span exists iff the loop actually started, runs exactly as long as
+	// the loop does, and its subtree carries the agent's turns. (bool)
+	AgentAttr = "dagger.io/agent"
+
+	// AgentIDAttr is the agent's spawn-minted instance ID — the identity that
+	// makes two spawns of an identical composition two different agents. It
+	// is the roster's grouping key, NOT the span ID: a resume-retry relaunches
+	// the loop, so one agent can own several loop spans over its life. (string)
+	AgentIDAttr = "dagger.io/agent.id"
+
+	// AgentNameAttr is the agent's display label, for showing in a roster
+	// alongside AgentIDAttr. It carries no identity: two agents may share a
+	// name. (string)
+	AgentNameAttr = "dagger.io/agent.name"
+
+	// AgentCallDigestAttr is the DAG digest of the call that produced the
+	// agent value, letting a client reconstruct a real, sendable handle from
+	// the trace — the same trick LLMCallDigestAttr plays for branching from a
+	// message. This is what turns the directory from a readout into an
+	// address book; a client that cannot resolve the digest (e.g. one that
+	// attached late and lacks the call payload) must degrade to a read-only
+	// roster entry rather than fail. (string)
+	AgentCallDigestAttr = "dagger.io/agent.call.digest"
+
+	// AgentStateAttr carries the agent's projected lifecycle state at the
+	// moment the record was emitted: one of the AgentState enum tokens
+	// ("IDLE", "RUNNING", "WAITING_INPUT", "PAUSED", "STOPPED", "FAILED").
+	// Emitted on a log record attributed to the loop span. (string)
+	AgentStateAttr = "dagger.io/agent.state"
+
+	// AgentWaitingOnAttr carries what the agent is blocked on when its state
+	// is WAITING_INPUT — the parked question's text. Absent otherwise, and an
+	// empty value clears a previously reported one. (string)
+	AgentWaitingOnAttr = "dagger.io/agent.waiting_on"
+
+	// AgentStopReasonAttr distinguishes a stop somebody asked for from a stop
+	// the session's teardown performed: "EXPLICIT" | "SESSION". It rides the
+	// terminal state record, and is empty on every other one.
+	//
+	// Without it every agent in a cleanly closed session looks dismissed:
+	// session close kills every runtime (AgentRuntimes.KillAll), so a
+	// deliberately stopped worker and a merely torn-down one publish
+	// identical STOPPED records — and a client restoring that trace must
+	// either resurrect the dismissals or restore nothing at all. A STOPPED
+	// record with no reason is a trace from an engine that predates this, and
+	// consumers are expected to refuse it rather than guess. (string)
+	AgentStopReasonAttr = "dagger.io/agent.stop.reason"
+
+	// AgentSnapshotDigestAttr carries the portable recipe digest of the agent's
+	// last committed conversation, emitted on every commit (each step, each
+	// drained message, and once at loop start for the seed). Latest record wins.
+	//
+	// This is the resume anchor: a client rebuilds the conversation's ID from
+	// the call-payload log records above (or legacy dagger.io/dag.call span
+	// attributes) and re-hydrates the instance from it. It is deliberately a
+	// PORTABLE recipe: a post-evaluation result handle dies with its session,
+	// while the raw recipe retains superseded bindings whose stale operations
+	// must not be replayed in a later one.
+	//
+	// It cannot ride the state record: state records are edge-triggered on
+	// the projected state, and most commits do not change the state while
+	// every commit changes the snapshot. (string)
+	AgentSnapshotDigestAttr = "dagger.io/agent.snapshot.digest"
+)
 
 // wcprof × OTel vocabulary.
 //
@@ -157,6 +351,11 @@ const (
 	// map[string]any attribute decode bit-exact, like the decimal-string wait
 	// timings above.
 	WcprofExecArgvAttr = "wcprof.exec.argv"
+
+	// LinkPurposeContinuation marks lineage between a new live trace and the
+	// source identity spans it resumes. Unlike an empty-purpose or cause link,
+	// consumers must not use it to reparent spans or propagate status.
+	LinkPurposeContinuation = "continuation"
 
 	// LinkPurposeWait is a new value for telemetry.LinkPurposeAttr
 	// ("dagger.io/link.purpose"), alongside the existing "cause"/"error_origin"
@@ -329,3 +528,32 @@ const (
 	// simply not claimed here.
 	CacheOutputContentDigestAttr = "dagger.io/cache.output.content_digest"
 )
+
+// MetricAttributeSet attaches the immutable origin client identity to an
+// engine measurement before the OTel SDK aggregates it. The session metric
+// exporter can therefore split one shared aggregation back into the origin's
+// validated telemetry route. A scope identity takes precedence because it is a
+// sealed snapshot; metadata is retained as a fallback for bootstrap and tests.
+func MetricAttributeSet(ctx context.Context, attrs attribute.Set) metric.MeasurementOption {
+	origin := ""
+	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+		origin = scope.ClientID()
+	} else if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		origin = md.ClientID
+	}
+	if origin == "" {
+		return metric.WithAttributeSet(attrs)
+	}
+
+	filtered, _ := attrs.Filter(func(attr attribute.KeyValue) bool {
+		return string(attr.Key) != TelemetryOriginClientIDAttr
+	})
+	originAttrs := append(filtered.ToSlice(), attribute.String(TelemetryOriginClientIDAttr, origin))
+	return metric.WithAttributeSet(attribute.NewSet(originAttrs...))
+}
+
+// MetricAttributes is the variadic form of MetricAttributeSet.
+func MetricAttributes(ctx context.Context, attrs ...attribute.KeyValue) metric.MeasurementOption {
+	copied := append([]attribute.KeyValue(nil), attrs...)
+	return MetricAttributeSet(ctx, attribute.NewSet(copied...))
+}

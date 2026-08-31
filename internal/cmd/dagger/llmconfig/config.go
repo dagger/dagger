@@ -1,10 +1,13 @@
 package llmconfig
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/gofrs/flock"
@@ -16,6 +19,19 @@ import (
 // token (providers rotate them), or clobber another provider's freshly
 // rotated token via Save's whole-section rewrite.
 var oauthRefreshMu sync.Mutex
+
+// oauthRefreshFloor bounds how often a single provider is refreshed in this
+// process, whatever its persisted expiry says. A token whose whole lifetime is
+// shorter than the safety margin sits inside that margin from the moment it is
+// issued, so the expiry check alone would refresh — and rotate the single-use
+// refresh token — on every secret resolution, twice per credential.
+const oauthRefreshFloor = 30 * time.Second
+
+// lastOAuthRefresh records when each provider was last refreshed. Keyed by
+// config file as well as provider name, so pointing DAGGER_CONFIG at a
+// different credential store starts from a clean slate. Guarded by
+// oauthRefreshMu.
+var lastOAuthRefresh = map[string]time.Time{}
 
 const (
 	ConfigFileName = "config.toml"
@@ -51,15 +67,26 @@ type Provider struct {
 	APIKey           string `toml:"api_key"`
 	BaseURL          string `toml:"base_url,omitempty"`
 	Model            string `toml:"model,omitempty"`
+	SmallModel       string `toml:"small_model,omitempty"`
 	AzureVersion     string `toml:"azure_version,omitempty"`
 	DisableStreaming bool   `toml:"disable_streaming,omitempty"`
 	Enabled          bool   `toml:"enabled"`
 
 	// OAuth fields for Claude Code subscription auth
-	AuthType         string `toml:"auth_type,omitempty"`         // "oauth" for Claude Code OAuth
-	AuthToken        string `toml:"auth_token,omitempty"`        // OAuth access token
-	RefreshToken     string `toml:"refresh_token,omitempty"`     // OAuth refresh token
-	TokenExpiry      int64  `toml:"token_expiry,omitempty"`      // Unix timestamp (ms) when access token expires
+	AuthType     string `toml:"auth_type,omitempty"`     // "oauth" for Claude Code OAuth
+	AuthToken    string `toml:"auth_token,omitempty"`    // OAuth access token
+	RefreshToken string `toml:"refresh_token,omitempty"` // OAuth refresh token
+	// TokenExpiresAt is when the access token truly expires, in unix
+	// milliseconds, with no safety margin baked in. The margin is applied when
+	// the value is checked (IsTokenExpired), so an absent or short expires_in
+	// can't persist an already-expired value.
+	TokenExpiresAt int64 `toml:"token_expires_at,omitempty"`
+	// TokenExpiry is the legacy expiry: the same instant with the safety margin
+	// already subtracted. Still written so that an older CLI sharing this config
+	// file keeps working — it reads only this field and treats 0 as expired,
+	// which would put it in a refresh loop rotating the token out from under
+	// this one. TokenExpiresAt wins when both are present.
+	TokenExpiry      int64  `toml:"token_expiry,omitempty"`
 	SubscriptionType string `toml:"subscription_type,omitempty"` // "pro", "max", "team", "enterprise"
 
 	// ReasoningEffort is the reasoning level for the provider's model, taken
@@ -105,8 +132,9 @@ func Load() (*Config, error) {
 // config file is shared with other subsystems, so the section is merged into
 // the existing document rather than replacing the whole file.
 func (c *Config) Save() error {
-	// Create directory if needed
-	if err := os.MkdirAll(ConfigRoot, 0755); err != nil {
+	// Create the directory the config file actually lives in, which is not
+	// ConfigRoot when DAGGER_CONFIG points somewhere else.
+	if err := os.MkdirAll(filepath.Dir(ConfigFile), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -118,6 +146,14 @@ func (c *Config) Save() error {
 	}
 	defer lock.Unlock()
 
+	return c.write()
+}
+
+// write merges the [llm] section into the config document on disk and rewrites
+// it atomically. The caller must already hold the cross-process lock: flock is
+// per open file description, so re-taking it here would deadlock a caller that
+// holds it (withConfigLock).
+func (c *Config) write() error {
 	// Initialize providers map if nil
 	if c.LLM.Providers == nil {
 		c.LLM.Providers = make(map[string]Provider)
@@ -152,6 +188,46 @@ func (c *Config) Save() error {
 	}
 
 	return nil
+}
+
+// withConfigLock runs fn against the config as it exists on disk *right now* —
+// re-read after the cross-process lock is taken — and persists the result
+// before releasing the lock, so load→modify→persist is a single critical
+// section.
+//
+// Re-reading is the point. OAuth refresh tokens are single-use and rotating:
+// a process that loaded the config before another process refreshed would
+// otherwise spend a dead refresh token (invalid_grant, i.e. a permanent
+// logout) and then write its stale snapshot back over the winner's rotated
+// token. fn reports whether it changed anything; nothing is written when it
+// did not.
+func withConfigLock(fn func(cfg *Config) (changed bool, err error)) error {
+	if err := os.MkdirAll(filepath.Dir(ConfigFile), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	lock := flock.New(ConfigFile + ".lock")
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer lock.Unlock()
+
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		cfg = &Config{LLM: LLMConfig{Providers: make(map[string]Provider)}}
+	}
+
+	changed, fnErr := fn(cfg)
+	if !changed {
+		return fnErr
+	}
+	if err := cfg.write(); err != nil {
+		return errors.Join(fnErr, err)
+	}
+	return fnErr
 }
 
 // UpdateFile applies fn to the current config file contents under the
@@ -288,24 +364,43 @@ func Remove() error {
 	return nil
 }
 
-// refreshProviderToken refreshes an expired OAuth provider in place, dispatching
-// to the provider-specific refresh flow. It returns the (possibly updated)
-// provider and whether it changed.
-func refreshProviderToken(name string, provider Provider) (Provider, bool, error) {
-	if !provider.IsOAuth() || !IsTokenExpired(&provider) {
+// refreshProviderToken refreshes a due OAuth provider (or forces it after
+// definitive credential rejection), dispatching to the provider-specific flow.
+// It returns the possibly updated provider and whether it changed.
+func refreshProviderToken(ctx context.Context, name string, provider Provider, force bool) (Provider, bool, error) {
+	// A disabled provider's credentials are never exported (applyLLMConfigEnv
+	// skips it), so refreshing it would spend its single-use grant for nothing
+	// — and rotate a refresh token the user still expects to work when they
+	// re-enable the provider.
+	if !provider.Enabled || !provider.IsOAuth() || (!force && !IsTokenExpired(&provider)) {
 		return provider, false, nil
 	}
+	// Rate-limit ordinary expiry-driven refreshes per provider, so a
+	// pathologically short-lived token can't turn every resolution into another
+	// rotation. A forced refresh means the provider rejected the current token;
+	// it must bypass this floor even when the preceding resolution was recent.
+	// The caller holds oauthRefreshMu.
+	floorKey := ConfigFile + "\x00" + name
+	if !force && time.Since(lastOAuthRefresh[floorKey]) < oauthRefreshFloor {
+		return provider, false, nil
+	}
+	lastOAuthRefresh[floorKey] = time.Now()
+
 	var refreshed *Provider
 	var err error
 	switch name {
 	case "openai-codex":
-		refreshed, err = RefreshOpenAIOAuthToken(&provider)
+		refreshed, err = RefreshOpenAIOAuthToken(ctx, &provider)
 	default:
 		// Anthropic and other providers use the standard refresh
-		refreshed, err = RefreshOAuthToken(&provider)
+		refreshed, err = RefreshOAuthToken(ctx, &provider)
 	}
 	if err != nil {
-		return provider, false, fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+		refreshErr := fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+		if isTerminalOAuthTokenError(err) {
+			return provider, false, fmt.Errorf("%w: %w; run 'dagger llm setup' to reauthenticate", ErrOAuthReauthenticationRequired, refreshErr)
+		}
+		return provider, false, refreshErr
 	}
 	return *refreshed, true, nil
 }
@@ -313,63 +408,82 @@ func refreshProviderToken(name string, provider Provider) (Provider, bool, error
 // RefreshOAuthTokensIfNeeded checks all OAuth providers in the config and
 // refreshes any expired tokens. This should be called client-side before
 // connecting to the engine.
-func RefreshOAuthTokensIfNeeded() error {
+func RefreshOAuthTokensIfNeeded(ctx context.Context) error {
 	oauthRefreshMu.Lock()
 	defer oauthRefreshMu.Unlock()
 
-	cfg, err := Load()
-	if err != nil || cfg == nil {
-		// a missing or unreadable config is non-fatal here
+	// Nothing to refresh, and no reason to create the config directory (or its
+	// lock file) for a user who has no config at all.
+	if !ConfigExists() {
 		return nil
 	}
 
-	var changed bool
-	for name, provider := range cfg.LLM.Providers {
-		refreshed, didChange, err := refreshProviderToken(name, provider)
-		if err != nil {
-			return err
+	return withConfigLock(func(cfg *Config) (bool, error) {
+		var changed bool
+		var errs []error
+		for name, provider := range cfg.LLM.Providers {
+			refreshed, didChange, err := refreshProviderToken(ctx, name, provider, false)
+			if err != nil {
+				// Keep going: a refresh grant is single-use, so a provider
+				// that already spent its own must not lose the result because
+				// a later provider failed — and which provider that is was
+				// decided by Go's randomized map order.
+				errs = append(errs, err)
+				continue
+			}
+			if didChange {
+				cfg.LLM.Providers[name] = refreshed
+				changed = true
+			}
 		}
-		if didChange {
-			cfg.LLM.Providers[name] = refreshed
-			changed = true
-		}
-	}
-
-	if changed {
-		if err := cfg.Save(); err != nil {
-			return fmt.Errorf("failed to save refreshed tokens: %w", err)
-		}
-	}
-
-	return nil
+		return changed, errors.Join(errs...)
+	})
 }
 
 // RefreshOAuthProviderIfNeeded refreshes a single OAuth provider by name if its
-// token has expired, persisting the result. It returns the current access token
-// for the provider (refreshed or not), or "" if the provider is absent or not
-// an OAuth provider. Used to keep a long-running session's bearer token fresh:
-// the client re-resolves the token on demand rather than only at startup.
-func RefreshOAuthProviderIfNeeded(name string) (string, error) {
+// token has expired, persisting the result. It returns the provider as it now
+// stands (refreshed or not), or nil if it is absent, disabled, or not an OAuth
+// provider. Used to keep a long-running session's bearer token fresh: the
+// client re-resolves the token on demand rather than only at startup.
+func RefreshOAuthProviderIfNeeded(ctx context.Context, name string) (*Provider, error) {
+	return refreshOAuthProvider(ctx, name, false)
+}
+
+// ForceRefreshOAuthProvider refreshes a single OAuth provider even when its
+// recorded expiry is still in the future. It is reserved for a consumer that
+// received definitive rejection evidence (such as Codex app-server's
+// account/chatgptAuthTokens/refresh request); ordinary callers should use the
+// expiry-aware path above to avoid rotating single-use refresh tokens early.
+func ForceRefreshOAuthProvider(ctx context.Context, name string) (*Provider, error) {
+	return refreshOAuthProvider(ctx, name, true)
+}
+
+func refreshOAuthProvider(ctx context.Context, name string, force bool) (*Provider, error) {
 	oauthRefreshMu.Lock()
 	defer oauthRefreshMu.Unlock()
 
-	cfg, err := Load()
-	if err != nil || cfg == nil {
-		return "", err
+	if !ConfigExists() {
+		return nil, nil
 	}
-	provider, ok := cfg.LLM.Providers[name]
-	if !ok || !provider.IsOAuth() {
-		return "", nil
-	}
-	refreshed, changed, err := refreshProviderToken(name, provider)
-	if err != nil {
-		return "", err
-	}
-	if changed {
-		cfg.LLM.Providers[name] = refreshed
-		if err := cfg.Save(); err != nil {
-			return "", fmt.Errorf("failed to save refreshed tokens: %w", err)
+
+	var current *Provider
+	err := withConfigLock(func(cfg *Config) (bool, error) {
+		provider, ok := cfg.LLM.Providers[name]
+		if !ok || !provider.IsOAuth() || !provider.Enabled {
+			return false, nil
 		}
+		refreshed, changed, err := refreshProviderToken(ctx, name, provider, force)
+		if err != nil {
+			return false, err
+		}
+		current = &refreshed
+		if changed {
+			cfg.LLM.Providers[name] = refreshed
+		}
+		return changed, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return refreshed.AuthToken, nil
+	return current, nil
 }

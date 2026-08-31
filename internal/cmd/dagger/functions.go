@@ -1075,15 +1075,24 @@ func handleChangesetResponseWithApply(
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
 func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
-	return startInteractivePromptModeWithResume(ctx, dag, response, "", false)
+	return startInteractivePromptModeWithResume(ctx, dag, response, interactivePromptModeOpts{
+		restoreSource: traceRestoreSourceFromContext(ctx),
+	})
+}
+
+// interactivePromptModeOpts holds the startup behavior that only `dagger agent`
+// requests. Keeping title generation explicit prevents generic LLM-returning
+// functions from silently renaming their primary command span.
+type interactivePromptModeOpts struct {
+	restore              *traceRestore
+	restoreSource        traceRestoreSource
+	generateSessionTitle bool
+	archiveMetadata      func(context.Context, string) error
 }
 
 // startInteractivePromptModeWithResume is like startInteractivePromptMode but
-// optionally resumes a previously saved session before entering the interactive
-// loop. When resume is true and sessionID is empty, an interactive picker is
-// shown; when sessionID is non-empty, that session is resumed directly. The
-// resumed conversation replaces the composed LLM as the starting point.
-func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Client, response any, sessionID string, resume bool) error {
+// may restore every agent from a retained trace before entering the loop.
+func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Client, response any, opts interactivePromptModeOpts) error {
 	// Extract the LLM ID from the response
 	var llmID string
 	switch v := response.(type) {
@@ -1102,6 +1111,9 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// Set up the shell handler with prompt mode
 	handler := newShellCallHandler(dag, Frontend)
 	handler.mode = modePrompt
+	handler.restoreSource = opts.restoreSource
+	handler.generateSessionTitle = opts.generateSessionTitle
+	handler.archiveMetadata = opts.archiveMetadata
 
 	// Initialize the handler
 	if err := handler.Initialize(ctx); err != nil {
@@ -1116,21 +1128,19 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// Remember the composed agent group as the base to reset to on .clear, so
 	// clearing history returns to the initially selected agents rather than a
 	// blank LLM.
-	handler.llmSession.initialLLM = llm
-	if err := handler.llmSession.updateLLM(llm); err != nil {
+	target := handler.llmSession.Target()
+	if err := target.setInitialLLM(llm); err != nil {
 		return err
 	}
 
-	// Optionally resume a previously saved session, replacing the composed LLM
-	// as the starting point. With no session id, present the interactive picker.
-	if resume {
-		if sessionID != "" {
-			if err := handler.llmSession.LoadSession(ctx, ctx, sessionID); err != nil {
-				return err
-			}
-			handler.initialPrompt = ""
-			handler.sessionUUID = ""
-		} else if err := handler.resumeSessionInteractive(ctx); err != nil {
+	// Restore through the same trace path used by pristine .resume. Best-effort
+	// rehydration attempts every runtime before attaching the successful
+	// conversations.
+	if opts.restore != nil {
+		if opts.restore.source == nil {
+			opts.restore.source = opts.restoreSource
+		}
+		if err := restoreFromTrace(ctx, handler, *opts.restore); err != nil {
 			return err
 		}
 	}

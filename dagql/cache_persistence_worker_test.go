@@ -314,9 +314,11 @@ func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testi
 		}
 	}
 
+	// The two retained results contribute two ordinary classes plus one typed
+	// structural-input projection for the dependency edge.
 	for table, want := range map[string]int{
-		"eq_classes":               2,
-		"eq_class_digests":         2,
+		"eq_classes":               3,
+		"eq_class_digests":         3,
 		"terms":                    2,
 		"term_inputs":              1,
 		"results":                  2,

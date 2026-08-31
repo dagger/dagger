@@ -27,6 +27,9 @@ type Config struct {
 	// GC configures the engine's garbage collector.
 	GC GCConfig `json:"gc,omitempty"`
 
+	// TelemetryArchives configures bounded engine-side agent telemetry retention.
+	TelemetryArchives TelemetryArchiveConfig `json:"telemetryArchives,omitempty"`
+
 	// Security allows configuring various security settings for the engine.
 	Security *Security `json:"security,omitempty"`
 
@@ -107,6 +110,14 @@ type GCConfig struct {
 	// an automatic default will be generated from the top-level disk space
 	// parameters.
 	Policies []GCPolicy `json:"policies,omitempty"`
+}
+
+type TelemetryArchiveConfig struct {
+	// TTL is measured from graceful close. Zero uses the seven-day default.
+	TTL Duration `json:"ttl,omitempty"`
+	// QuotaBytes is a soft target for closed archive telemetry and sidecars.
+	// Zero uses the 10 GiB default; the newest archive is never quota-evicted.
+	QuotaBytes int64 `json:"quotaBytes,omitempty"`
 }
 
 type DagqlCacheGCConfig struct {

@@ -14,6 +14,19 @@ namespace Dagger;
 class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
+     * Rehydrate a spawned agent's handle from its instance ID.
+     *
+     * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+     */
+    public function agent(string $id, string $name): Agent
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agent');
+        $innerQueryBuilder->setArgument('id', $id);
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Agent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
      */
     public function contextTokens(): int
@@ -145,6 +158,20 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
         return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
+    }
+
+    /**
+     * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+     *
+     * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+     */
+    public function spawn(?string $name = null): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
+        if (null !== $name) {
+        $leafQueryBuilder->setArgument('name', $name);
+        }
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'spawn'));
     }
 
     /**

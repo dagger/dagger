@@ -68,6 +68,15 @@ class WorkspaceStagedCommit extends Client\AbstractObject implements Client\IdAb
     }
 
     /**
+     * The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.
+     */
+    public function origin(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('origin');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'origin');
+    }
+
+    /**
      * The full hash of the staged commit.
      */
     public function sha(): string

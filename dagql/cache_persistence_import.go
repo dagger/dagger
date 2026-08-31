@@ -109,6 +109,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import eq_class_digest: empty digest for eq_class %d", eqID)
 			}
 			c.egraphDigestToClass[row.Digest] = eqID
+			if typeKey, typed := structuralInputTypeKeyFromDigest(row.Digest); typed {
+				c.registerStructuralInputTypeKeyLocked(typeKey)
+			}
 			digests := c.eqClassToDigests[eqID]
 			if digests == nil {
 				digests = make(map[string]struct{})

@@ -11,7 +11,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -26,7 +25,10 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	case endpoint.IsOAuth:
 		// Claude Code subscription OAuth: bearer token + Claude Code identity
 		// headers. The endpoint rejects requests that don't look like Claude
-		// Code (see also the system-prompt injection in SendQuery).
+		// Code (see also the system-prompt injection in SendQuery). The token
+		// baked in here is only the value observed at construction; when the
+		// endpoint carries a credential source, credentialTransport overwrites
+		// the header with the current token on every request.
 		opts = append(opts,
 			option.WithAuthToken(endpoint.AuthToken),
 			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
@@ -58,6 +60,10 @@ var anthropicRetryable = []string{
 	"Internal server error",
 }
 
+// IsRetryable reports whether a failed turn is worth resending. A rejected
+// credential is deliberately absent from the list: it is only retryable once
+// the credential has been re-resolved, so that case is handled centrally (see
+// sendQueryWithRetry).
 func (c *AnthropicClient) IsRetryable(err error) bool {
 	msg := err.Error()
 	for _, retryable := range anthropicRetryable {
@@ -318,16 +324,16 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 		// Keep track of the token usage
 		if acc.Usage.OutputTokens > 0 {
-			outputTokens.Record(ctx, acc.Usage.OutputTokens, metric.WithAttributes(attrs...))
+			outputTokens.Record(ctx, acc.Usage.OutputTokens, llmMetricAttributes(ctx, attrs...))
 		}
 		if acc.Usage.InputTokens > 0 {
-			inputTokens.Record(ctx, acc.Usage.InputTokens, metric.WithAttributes(attrs...))
+			inputTokens.Record(ctx, acc.Usage.InputTokens, llmMetricAttributes(ctx, attrs...))
 		}
 		if acc.Usage.CacheReadInputTokens > 0 {
-			inputTokensCacheReads.Record(ctx, acc.Usage.CacheReadInputTokens, metric.WithAttributes(attrs...))
+			inputTokensCacheReads.Record(ctx, acc.Usage.CacheReadInputTokens, llmMetricAttributes(ctx, attrs...))
 		}
 		if acc.Usage.CacheCreationInputTokens > 0 {
-			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
+			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, llmMetricAttributes(ctx, attrs...))
 		}
 
 		// Route each content block's stream into its own display span: thinking
@@ -360,7 +366,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 			case "input_json_delta":
 				if p := dp.Phase(ev.Index); p != nil {
-					fmt.Fprint(p.Stdio.Stdout, ev.Delta.PartialJSON)
+					p.writeToolArgs(ev.Delta.PartialJSON)
 				}
 			}
 		case anthropic.ContentBlockStopEvent:

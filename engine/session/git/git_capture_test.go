@@ -170,6 +170,24 @@ func TestCaptureGitVerifiesThinPackWithoutCountingPrerequisiteDeltaBases(t *test
 		"fixture must force Git to append at least one prerequisite delta base")
 }
 
+func TestCaptureGitVerifiesCopiedTreeAlreadyReachableFromPrerequisite(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, _ := initCaptureRepo(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, "f1", "f1"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, "f3", "f3"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "f1", "f1", "data.txt"), []byte("shared content\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "f3", "f3", "data.txt"), []byte("other content\n"), 0o600))
+	gitCmd(t, home, repo, "add", ".")
+	gitCmd(t, home, repo, "commit", "-m", "initialize trees")
+	gitCmd(t, home, repo, "push", "origin", "main")
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, "f3", "f4"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "f3", "f4", "data.txt"), []byte("shared content\n"), 0o600))
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{Include: []string{"f3/f4/**"}})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+}
+
 func TestCaptureGitStagesApprovedBytesWithoutCleanFilters(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, remote := initCaptureRepo(t)

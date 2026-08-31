@@ -1,0 +1,1230 @@
+# staff: let a Dagger coding agent hire and direct long-running async worker
+# agents — the async sibling of ./modules/delegate.
+#
+# delegate hands a subtask to a sub-agent and BLOCKS until it finishes; staff
+# spawns workers that run in the background as Agent runtimes (see
+# hack/designs/async-agents.md), so the chief keeps working while they do.
+# Messaging is event-driven, never blocking (hack/designs/agent-messaging.md):
+# spawn subscribes the chief to each worker's lifecycle, so completions and
+# failures arrive as attributed messages instead of being polled or awaited;
+# the chief steers by name — sendTo/status/read/collect/interruptWorker/
+# dismiss — and harvests work — logOf/diffOf/pull/pullConflicted/pullPending,
+# reaching each agent's own Workspace through its live snapshot. Spawned
+# workers get a frozen, pull-only roster view of the chief and peers already
+# present when they start, plus a private line home (askChief) that delivers
+# the question and returns immediately; the chief answers mid-turn with
+# sendTo(replyTo:), and the engine refuses any wait that would deadlock.
+#
+# State: `members` holds live Agent handles in module state, evolved by tools
+# returning Staff! (the modules/editor pattern — engine-object handles in
+# Dang state serialize as IDs and just work). The worker's ask channel is
+# minted via a real self-call (Dagger.staff.chiefLine): the result of a
+# module call has engine identity, which withTools needs — a locally
+# constructed Dang object does not.
+#
+# NOT registered in dagger.toml: load explicitly, e.g.
+# `dagger -m ./modules/staff`.
+"""
+Hire and direct a staff of asynchronous worker agents: spawn them by name,
+steer and observe them while they run, and collect their results.
+"""
+type Staff {
+  # Live worker handles; unique by name, by construction.
+  let members: Map[Agent!]! = [:]
+
+  # Handles of workers dismissed in this session, kept so their work can still
+  # be harvested: dismiss drops the name from `members`, but the Agent
+  # tombstone stays readable for the rest of the session — and a dismissed
+  # worker's uncommitted WIP is exactly what pullPending exists to rescue.
+  # Only the harvest tools look here; steering tools resolve through member()
+  # so they can never address a corpse.
+  let tombstones: Map[Agent!]! = [:]
+
+  # Not really tools: chiefLine/pullTools are spawn's plumbing, and
+  # workerPrompt/workerPromptFor are public constants (tests build worker
+  # recordings against their exact text). Excluded from the chief's binding.
+  # Workers bind only the dedicated PullTools object, never this full Staff
+  # object.
+  let plumbing = ["chiefLine", "pullTools", "workerPrompt", "workerPromptFor"]
+
+  """
+  Compose the staff-chief tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode, except: plumbing)
+      .withSystemPrompt(chiefPrompt)
+  }
+
+  """
+  Hire a worker: spawn a named agent with its OWN read-write copy of your
+  workspace and start it on a task, in the background.
+
+  Returns immediately — the worker runs its opening turn asynchronously, and
+  you are subscribed to its lifecycle: when it goes idle (with its final
+  reply) or fails (with the error), the news arrives as an event message.
+  Keep working; check on it with status/read, steer it with sendTo, harvest
+  it with the pull family, let it go with dismiss. The worker has your same
+  workspace tools, a pull-only view of the chief and workers already on
+  staff, and one extra: askChief, its line back to you. It cannot spawn or
+  steer workers.
+
+  The chief is always available to that pull-only view under the reserved
+  target name `chief`; existing workers keep their staff names. The roster is
+  a snapshot: workers hired later are not added retroactively.
+
+  Its copy is a sandbox: whatever it edits, breaks or commits stays there
+  until you harvest it, and reaches neither you nor any other worker. So
+  hand it the change itself, not read-only investigation it has to write
+  back to you in prose.
+  """
+  spawn(
+    chief: Agent!,
+    source: Workspace!,
+    """
+    Unique name for the worker; every other tool addresses it by this name.
+    """
+    name: String!,
+    """
+    The worker's opening task. Make it self-contained: the worker starts
+    with none of your conversation context. Ask for the work itself — it can
+    edit, run checks and commit in its own copy — and tell it to commit what
+    it finishes, so you can pull the result with its authorship.
+    """
+    task: String!,
+    """
+    Model for the worker's conversation — e.g. a cheaper model for rote
+    work, or a stronger one for a hard problem. Defaults to the workspace
+    composition's own choice.
+    """
+    model: String = null,
+  ): Dagger.Staff! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): composes, starts, and messages a real agent runtime —
+    # side effects that must actually run, never replay from cache.
+    if (name == "chief") {
+      raise `staff member name "chief" is reserved for the chief in worker pull rosters`
+    }
+    if (members.has(name)) {
+      raise `staff member "${name}" already exists — dismiss it first or pick another name`
+    }
+    # Workers work; they don't orchestrate. Compose the workspace's agents
+    # with staff itself excluded, so the chief's own orchestration toolset
+    # (and its system prompt) never reaches a worker (a no-op when the
+    # module isn't installed there).
+    let composed = source.agents(exclude: ["staff"])
+    let base = if (model == null) {
+      composed.compose
+    } else {
+      composed.compose.withModel(model ?? "")
+    }
+    # Snapshot the peers that exist BEFORE this spawn and add the chief under
+    # a stable reserved alias. PullTools exposes only the five harvest methods,
+    # so future Staff orchestration methods cannot leak into workers by accident.
+    let roster = currentNode.{{... on Dagger.Staff!}}.withWorker("chief", chief)
+    let pulls = roster.pullTools
+    let worker = base
+      .withTools(pulls)
+      # The line home, minted via a real self-call; the boss handle itself
+      # stays out of the tool schema.
+      .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
+      .withSystemPrompt(workerPromptFor(name))
+      # spawn mints a unique agent instance per call, so a re-hired name can
+      # never collide with a dismissed predecessor's runtime.
+      .spawn(name: name)
+    # Fire-and-forget: signal-with-start opens the worker's first turn.
+    worker.send(task)
+    # Subscribe the chief to the worker's lifecycle (defaults: IDLE and
+    # FAILED): completions and failures arrive as event messages — steering
+    # the chief's open turn or waking it — so nothing needs polling and no
+    # collect is ever required. An already-settled worker fires immediately,
+    # so even an instant finish is not missed.
+    worker.notify(subscriber: chief)
+    currentNode.{{... on Dagger.Staff!}}.withWorker(name, worker)
+  }
+
+  """
+  An internal plumbing-only call so that we can separate the act of spawning
+  from the act of storing the agent reference in the toolset - otherwise
+  replaying the LLM ID will re-spawn agents on every nested Staff.spawn call in
+  the ID.
+  """
+  withWorker(name: String!, worker: Agent!): Staff! {
+    # A re-hired name starts clean: the predecessor's tombstone would
+    # otherwise shadow nothing but confuse the harvest tools' "dismissed this
+    # session" list.
+    self.tombstones = self.tombstones.without(name)
+    self.members = self.members.with(name, worker)
+    self
+  }
+
+  """
+  Send a message to a named worker without waiting: it steers the worker's
+  running turn (or opens a new one) and returns the delivery evidence —
+  STARTED (opened a turn), STEERED (absorbed mid-turn), or QUEUED (parked
+  behind a pause; a paused worker is resumed first, so QUEUED here means the
+  resume raced something).
+
+  This is also how you ANSWER a worker's question: set replyTo to the ref
+  from the question's attribution header (e.g. "#3"), and the worker sees
+  your message paired with its question.
+  """
+  sendTo(
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    The message to put on the worker's record.
+    """
+    message: String!,
+    """
+    The ref of the message you are answering, from its attribution header
+    (e.g. "#3"). Leave unset for an ordinary message.
+    """
+    replyTo: String = null,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): every send must actually enqueue — a cached replay would
+    # silently drop the message and report stale delivery evidence.
+    let worker = member(name)
+    # Resume-first: un-parks a worker paused by interruptWorker (or retries
+    # a failed one); a no-op otherwise — so the send actually drains.
+    worker.resume
+    `delivery: ${toString(worker.send(message, replyTo: replyTo ?? "").delivery)}`
+  }
+
+  """
+  One line per staff member: its name and lifecycle state (IDLE, RUNNING,
+  PAUSED, FAILED, STOPPED).
+  """
+  status: String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): projects live lifecycle state — and with no args, a
+    # cached result would pin this to its first answer forever.
+    if (members.isEmpty) {
+      "(none)"
+    } else {
+      members.map { name, agent => `${name}: ${toString(agent.state)}` }.values.join("\n")
+    }
+  }
+
+  """
+  Read the tail of a worker's conversation so far: the text entries of its
+  last committed snapshot, tagged by role. Tool calls, results and the
+  system prompt are omitted — this is the narrative, not the trace.
+  """
+  read(
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    How many entries from the end of the conversation to return.
+    """
+    last: Int! = 10,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): the snapshot advances as the worker runs; identical
+    # (name, last) args must not replay an old tail.
+    let entries: [String!]! = []
+    # SYSTEM is the worker's prompt boilerplate, and dropping it is what
+    # makes a small `last` useful: otherwise the tail is all preamble and
+    # none of the narrative it is asked for.
+    member(name).snapshot.messages.{{role, content.{{kind, text}}}}
+      .filter { m => m.role != LLMMessageRole.SYSTEM }
+      .each { m =>
+        m.content.each { block =>
+          if (block.kind == LLMContentBlockKind.TEXT and block.text != "") {
+            entries += [`[${toString(m.role)}] ${block.text}`]
+          }
+        }
+      }
+    if (entries.isEmpty) {
+      "(no conversation yet)"
+    } else {
+      entries.takeLast(last).join("\n")
+    }
+  }
+
+  """
+  Block until the named worker settles, then report the outcome: its final
+  reply if it went idle, its error if it failed, or the fact that it was
+  stopped.
+
+  You rarely need this — every completion and failure already arrives as an
+  event message — but it is safe when you do: a settled wait cannot hang on
+  a failed worker, and the engine refuses any wait that would deadlock.
+  """
+  collect(
+    """
+    The worker's name.
+    """
+    name: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): blocks on live runtime state; each collect must wait
+    # for the worker's CURRENT settling, not replay a previous outcome.
+    let settled = member(name).waitSettled
+    case (settled.state) {
+      AgentState.FAILED =>
+        `worker "${name}" FAILED: ${settled.error}` + "\n\n" +
+          `sendTo retries it from its last completed step; dismiss lets it go.`
+      AgentState.STOPPED =>
+        `worker "${name}" is stopped. Its work is still harvestable (logOf/diffOf/pull).`
+      else => settled.snapshot.lastReply
+    }
+  }
+
+  """
+  List a worker's staged commits, oldest first, each annotated with what
+  `pull` would do with it: new, already had, redundant, or CONFLICT with the
+  reason and the paths that obstruct it.
+
+  This is the plan, not a diff: no per-file stats, because forcing them for a
+  worker's whole stack to render a log is not worth it. For one commit's
+  actual changes use `diffOf(name, commit:)`.
+
+  Reads the worker's LAST COMMITTED conversation step, so a mid-turn worker
+  may hold work this cannot see yet; `collect` or `interruptWorker` first when
+  it matters.
+  """
+  logOf(
+    source: Workspace!,
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    Maximum number of commits to show, counting back from the newest. The
+    header line counts the whole stack regardless.
+    """
+    limit: Int! = 10,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): reads the worker's live snapshot, which is not part of
+    # this call's arguments — logOf(name: "scout") twice must not replay the
+    # first plan.
+    let theirs = workerWorkspace(name)
+    # One batched selection: the plan forces here, and a failure here is a
+    # genuine error worth surfacing raw rather than rescuing into prose.
+    let picks = source.commitsFrom(source: theirs).{{
+      sha, date, authorName, message, status, reason, conflictPaths,
+    }}
+    if (picks.isEmpty) {
+      return `Worker "${name}" has no staged commits.` + "\n\n" +
+        `Whatever it changed is still uncommitted: read it with diffOf(name: "${name}") ` +
+        `and take it with pullPending(name: "${name}").`
+    }
+
+    let newOnes = picks.filter { p => p.status == WorkspaceCommitPickStatus.PICKABLE }
+    let had = picks.filter { p => p.status == WorkspaceCommitPickStatus.PICKED }
+    let redundant = picks.filter { p => p.status == WorkspaceCommitPickStatus.REDUNDANT }
+    let conflicting = picks.filter { p => p.status == WorkspaceCommitPickStatus.CONFLICT }
+    let header = `${toString(picks.length)} commit(s) staged by worker "${name}": ` +
+      `${toString(newOnes.length)} new, ${toString(had.length)} already had, ` +
+      `${toString(redundant.length)} redundant, ${toString(conflicting.length)} conflicting`
+
+    let shown = picks.takeLast(limit)
+    let entries = shown.map { p =>
+      let annotation = `[${pickLabel(p.status, p.reason)}${pathNote(p.conflictPaths)}]`
+      let head = `${short(p.sha)}  ${p.date}  ${p.authorName}  ${annotation}`
+      let body = p.message.split("\n").map { line => "    " + line }.join("\n")
+      head + "\n" + body
+    }
+
+    let omitted = picks.length - shown.length
+    let truncation = if (omitted > 0) {
+      "\n\n" + `(${toString(omitted)} older staged commit(s) not shown; raise limit to see them)`
+    } else {
+      ""
+    }
+    let recovery = if (conflicting.isEmpty) {
+      ""
+    } else {
+      "\n\n" + conflicting.map { p =>
+        `${short(p.sha)}: ${conflictRecovery(p.reason, name, short(p.sha))}`
+      }.join("\n")
+    }
+
+    header + "\n\n" + entries.join("\n\n") + truncation + recovery
+  }
+
+  """
+  Show what a worker changed, as a Git-compatible unified diff.
+
+  With `commit`, that staged commit's metadata, message and patch — the
+  detail `logOf` deliberately omits. Without it, the worker's UNCOMMITTED
+  work: a per-file summary followed by the patch, plus any edits git cannot
+  see (gitignored, or inside a nested repository).
+
+  Pass `paths` to scope the patch; a worker's whole diff can be enormous.
+  """
+  diffOf(
+    source: Workspace!,
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    Relative paths (files or directories) to limit the diff to. Empty shows
+    everything.
+    """
+    paths: [String!]! = [],
+    """
+    A staged commit to show instead of the uncommitted work, as a full or
+    short sha from logOf. Empty shows the uncommitted work.
+    """
+    commit: String = null,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): reads the worker's live snapshot, which is not part of
+    # this call's arguments.
+    let theirs = workerWorkspace(name)
+
+    if (commit != null) {
+      let commits = theirs.git.stagedCommits.{{
+        sha, date, authorName, authorEmail, message,
+        changes.{{ asPatch.{{ contents }} }},
+      }}
+      if (commits.isEmpty) {
+        raise `worker "${name}" has no staged commits; its work is uncommitted — call diffOf without a commit`
+      }
+      let sha = resolveCommit(commits.map { c => c.sha }, commit, name)
+      # A single record has to be folded out of a filter: indexing a list
+      # yields a nullable, which no String! slot accepts.
+      let hits = commits.filter { c => c.sha == sha }
+      let meta = hits.map { c =>
+        `commit ${c.sha}` + "\n" +
+        `Author: ${c.authorName} <${c.authorEmail}>` + "\n" +
+        `Date:   ${c.date}` + "\n\n" +
+        c.message.split("\n").map { line => "    " + line }.join("\n")
+      }.join("")
+      let scoped = scopePatch(hits.map { c => c.changes.asPatch.contents ?? "" }.join(""), paths)
+      if (scoped == "") {
+        if (paths.isEmpty) {
+          return meta + "\n\n(this commit has no file changes)"
+        }
+        return meta + "\n\n(no changes under the given paths)"
+      }
+      return meta + "\n\n" + scoped
+    }
+
+    let stats = theirs.git.uncommitted.diffStats.{{kind, addedLines, removedLines, path}}
+    let unmanaged = theirs.git.unmanaged.diffStats.{{addedLines, removedLines, path}}
+    let scopedStats = if (paths.isEmpty) {
+      stats
+    } else {
+      stats.filter { s => paths.any { p => Path(p).contains(Path(s.path)) } }
+    }
+    let scopedUnmanaged = if (paths.isEmpty) {
+      unmanaged
+    } else {
+      unmanaged.filter { s => paths.any { p => Path(p).contains(Path(s.path)) } }
+    }
+    let unmanagedBlock = if (scopedUnmanaged.isEmpty) {
+      ""
+    } else {
+      "\n\n" + unmanagedHeader + "\n" + scopedUnmanaged.map { s =>
+        `?  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+      }.join("\n")
+    }
+    if (scopedStats.isEmpty) {
+      if (scopedUnmanaged.isEmpty) {
+        return `Worker "${name}" has no uncommitted changes` +
+          (if (paths.isEmpty) { "." } else { " under the given paths." }) +
+          "\n\n" + `What it committed is in logOf(name: "${name}").`
+      }
+      return `Worker "${name}" has no committable uncommitted changes.` + unmanagedBlock
+    }
+    let summary = scopedStats.map { s =>
+      `${renderKind(s.kind)}  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+    }.join("\n")
+    let scoped = scopePatch(theirs.git.uncommitted.asPatch.contents, paths)
+    let patchBlock = if (scoped == "") { "" } else { "\n\n" + scoped }
+    `Uncommitted work in worker "${name}":` + "\n\n" + summary + patchBlock + unmanagedBlock
+  }
+
+  """
+  Take a worker's staged commits into your own workspace, keeping the
+  worker's authorship, message and date.
+
+  Plans first and applies ONLY what applies cleanly: commits you already
+  have, and commits whose content is already present, are skipped, and a
+  commit that conflicts is reported rather than forced — with the recovery
+  route for its reason. Run it again after resolving; already-pulled commits
+  are recognised.
+
+  Reads the worker's LAST COMMITTED conversation step, so `collect` (or
+  `interruptWorker`) before the harvest that matters.
+  """
+  pull(
+    source: Workspace!,
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    Cherry-pick these commits, as full or short shas from logOf. They are
+    always applied in the worker's stack order. Empty takes everything new.
+    """
+    commits: [String!]! = [],
+  ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): reads the worker's live snapshot, which is not part of
+    # this call's arguments.
+    let theirs = workerWorkspace(name)
+    let known = theirs.git.stagedCommits.{{sha}}.map { c => c.sha }
+    let wanted = commits.map { given => resolveCommit(known, given, name) }
+    let picks = source.commitsFrom(source: theirs, commits: wanted).{{
+      sha, message, status, reason, conflictPaths,
+    }}
+    if (picks.isEmpty) {
+      print(`Worker "${name}" has no staged commits to pull. ` +
+        `Its uncommitted work is a pullPending(name: "${name}") away.`)
+      return source
+    }
+
+    let pickable = picks.filter { p => p.status == WorkspaceCommitPickStatus.PICKABLE }
+    let conflicting = picks.filter { p => p.status == WorkspaceCommitPickStatus.CONFLICT }
+    let skipped = picks.filter { p =>
+      p.status == WorkspaceCommitPickStatus.PICKED or
+        p.status == WorkspaceCommitPickStatus.REDUNDANT
+    }
+    let conflictBlock = if (conflicting.isEmpty) {
+      ""
+    } else {
+      "\n\n" + `CONFLICT — ${toString(conflicting.length)} commit(s) NOT pulled:` + "\n" +
+        conflicting.map { p =>
+          `  ${short(p.sha)} ${subject(p.message)}` + "\n" +
+          `    ${conflictReason(p.reason)}${pathNote(p.conflictPaths)}` + "\n" +
+          `    -> ${conflictRecovery(p.reason, name, short(p.sha))}`
+        }.join("\n")
+    }
+    let skippedNote = if (skipped.isEmpty) {
+      ""
+    } else {
+      "\n" + `(${toString(skipped.length)} already present, skipped)`
+    }
+
+    if (pickable.isEmpty) {
+      print(`Nothing new to pull from worker "${name}".` + skippedNote + conflictBlock)
+      return source
+    }
+
+    let staged = source.withCommitsFrom(source: theirs, commits: pickable.map { p => p.sha })
+    # Force the apply HERE, inside the module: without this the failure would
+    # land outside, when the engine rebinds the Workspace, stripped of which
+    # worker and how many commits were involved. The rescue only enriches —
+    # returning `source` instead would report a pull that never happened.
+    staged.git.head.commit rescue { e: Error =>
+      raise `pulling ${toString(pickable.length)} commit(s) from worker "${name}" failed: ${e.message}`
+    }
+    print(`Pulled ${toString(pickable.length)} commit(s) from worker "${name}":` + "\n" +
+      pickable.map { p => `  ${short(p.sha)} ${subject(p.message)}` }.join("\n") +
+      skippedNote + conflictBlock)
+    staged
+  }
+
+  """
+  Recover ONE conflicting commit that `pull` refused: apply its patch to your
+  tree with conflict markers where it no longer fits, landing the result as
+  UNCOMMITTED edits for you to resolve.
+
+  Deliberately not a mode of `pull`: a commit must never be staged with
+  conflict markers inside it, so the resolution lands in your working tree
+  and the commit that records it is yours. The original message is printed
+  for you to reuse — the worker's authorship is lost by construction, which
+  is why `pull` is always worth trying first.
+  """
+  pullConflicted(
+    source: Workspace!,
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    The commit to take, as a full or short sha from logOf.
+    """
+    commit: String!,
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): reads the worker's live snapshot, which is not part of
+    # this call's arguments.
+    let theirs = workerWorkspace(name)
+    let commits = theirs.git.stagedCommits.{{
+      sha, message, changes.{{ asPatch.{{ contents }} }},
+    }}
+    if (commits.isEmpty) {
+      raise `worker "${name}" has no staged commits to recover`
+    }
+    let sha = resolveCommit(commits.map { c => c.sha }, commit, name)
+    let hits = commits.filter { c => c.sha == sha }
+    let message = hits.map { c => c.message }.join("")
+    let patch = hits.map { c => c.changes.asPatch.contents ?? "" }.join("")
+    if (patch == "") {
+      raise `commit ${short(sha)} in worker "${name}" records no file changes to apply`
+    }
+
+    # Advisory, not a refusal: if the commit would apply cleanly, pull keeps
+    # the worker's authorship and this does not.
+    let planned = source.commitsFrom(source: theirs, commits: [sha]).{{status}}
+    let clean = planned.any { p => p.status == WorkspaceCommitPickStatus.PICKABLE }
+
+    let base = source.directory("/")
+    let delta = base
+      .withPatch(patch, onConflict: PatchConflict.LEAVE_CONFLICT_MARKERS)
+      .changes(from: base)
+    # Force the apply here; a swallowed failure would silently discard the
+    # commit's work.
+    #
+    # Conflict markers only rescue a hunk that no longer matches; git refuses
+    # outright to create a file your tree already has, which is exactly the
+    # shape of a DIRTY conflict over an added path. Say so, since the remedy
+    # is the other branch of the conflict loop, not a retry.
+    delta.isEmpty rescue { e: Error =>
+      raise `applying commit ${short(sha)} from worker "${name}" to your tree failed: ${e.message}` +
+        ` — if that is your own uncommitted work on those paths, commit or revert it and ` +
+        `pull(name: "${name}", commits: ["${short(sha)}"]) instead`
+    }
+
+    let note = if (clean) {
+      "\n\n" + `NOTE: this commit applies cleanly — pull(name: "${name}", commits: ["${short(sha)}"]) ` +
+        `would take it with ${name}'s authorship intact. Prefer that unless you meant to make it yours.`
+    } else {
+      ""
+    }
+    print(`Applied commit ${short(sha)} from worker "${name}" as uncommitted edits. ` +
+      `Search for conflict markers (<<<<<<<), resolve them, then commit it yourself.` + "\n\n" +
+      "Original message, to reuse:" + "\n" +
+      message.split("\n").map { line => "    " + line }.join("\n") + note)
+    delta
+  }
+
+  """
+  Take a worker's UNCOMMITTED work — everything it changed but never
+  committed — re-anchored on your workspace's current content.
+
+  This is the other half of `pull`, and the tool that rescues a worker you
+  are about to dismiss. The worker started from a copy of your workspace, so
+  its pending patch usually contains edits you already have; those are
+  filtered out by comparing the two trees, and only files that genuinely
+  differ are applied.
+
+  Fails rather than half-applying when the two of you edited the same part of
+  the same file. `markers: true` applies what fits and leaves git-style
+  conflict markers for you to resolve.
+  """
+  pullPending(
+    source: Workspace!,
+    """
+    The worker's name.
+    """
+    name: String!,
+    """
+    Leave git-style conflict markers where a hunk no longer applies, instead
+    of failing.
+    """
+    markers: Boolean! = false,
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): reads the worker's live snapshot, which is not part of
+    # this call's arguments.
+    let theirs = workerWorkspace(name)
+    let base = source.directory("/")
+
+    # Re-anchoring, and the reason the naive version fails in the COMMON
+    # case: the worker inherited your pending edits at spawn, so its patch
+    # contains hunks you already have, and withPatch is a plain `git apply`
+    # with no 3-way — it rejects an already-applied hunk. Restrict the patch
+    # to the files where the two trees genuinely differ. Partial overlap
+    # INSIDE a file still fails; that is what markers: true is for.
+    # Both sides of a rename, because the two views disagree about it: a
+    # rename is ONE diffStat, keyed on the new path with oldPath alongside,
+    # while asPatch runs `git diff --no-renames` (rename headers do not
+    # survive --no-prefix) and so spells it out as a delete section naming
+    # only the old path plus an add section naming only the new one. Scoping
+    # on `path` alone drops the delete and half-applies the rename: the new
+    # file lands, the old one is never removed. oldPath is null for every
+    # other kind, and an empty scope would match the whole tree, so drop it.
+    let driftStats = theirs.directory("/").changes(from: base).diffStats.{{path, oldPath}}
+    let drift = driftStats.map { s => s.path } +
+      driftStats.map { s => s.oldPath ?? "" }.filter { p => p != "" }
+    if (drift.isEmpty) {
+      print(`Worker "${name}" has nothing your workspace does not already have.`)
+      return base.changes(from: base)
+    }
+
+    let pending = scopePatch(theirs.git.uncommitted.asPatch.contents, drift)
+    # Edits git cannot see (gitignored, or inside a nested repository) never
+    # appear in `uncommitted`, so they need their own patch or they are lost.
+    let untracked = scopePatch(theirs.git.unmanaged.asPatch.contents, drift)
+    if (pending == "" and untracked == "") {
+      print(`Worker "${name}" has no uncommitted work to take. ` +
+        `What it committed is in logOf(name: "${name}").`)
+      return base.changes(from: base)
+    }
+
+    let onConflict = if (markers) {
+      PatchConflict.LEAVE_CONFLICT_MARKERS
+    } else {
+      PatchConflict.FAIL
+    }
+    let withPending = if (pending == "") {
+      base
+    } else {
+      base.withPatch(pending, onConflict: onConflict)
+    }
+    let applied = if (untracked == "") {
+      withPending
+    } else {
+      withPending.withPatch(untracked, onConflict: onConflict)
+    }
+    let delta = applied.changes(from: base)
+    # Force the apply here; a swallowed failure would silently discard the
+    # worker's uncommitted work.
+    delta.isEmpty rescue { e: Error =>
+      raise `taking worker "${name}"'s uncommitted work failed: ${e.message}` +
+        (if (markers) {
+          ""
+        } else {
+          ` — you and ${name} edited the same part of the same file; retry with markers: true to resolve it by hand`
+        })
+    }
+
+    let marked = if (markers) {
+      " Search for conflict markers (<<<<<<<) and resolve them."
+    } else {
+      ""
+    }
+    print(`Took worker "${name}"'s uncommitted work as your own pending edits.` + marked)
+    delta
+  }
+
+  """
+  Preempt a worker mid-task: its in-flight step is canceled, every completed
+  step is kept, and the worker parks PAUSED with its turn suspended. A later
+  sendTo resumes it (the suspended turn continues, with your new message
+  drained into it).
+  """
+  interruptWorker(
+    """
+    The worker's name.
+    """
+    name: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): imperatively mutates runtime state.
+    member(name).interrupt
+    `${name} interrupted: parked PAUSED with completed steps kept; sendTo resumes it`
+  }
+
+  """
+  Stop a worker and remove it from the staff. Terminal: its runtime is
+  released (in-flight work may finish its step first) and the name frees up.
+
+  HARVEST FIRST. A worker's commits and edits live in ITS copy of the
+  workspace, not yours: `pull` what it committed and `pullPending` what it
+  did not, before letting it go. (Its workspace stays readable for the rest
+  of this session, but not beyond it.)
+  """
+  dismiss(
+    """
+    The worker's name.
+    """
+    name: String!,
+  ): Dagger.Staff! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): stopping the runtime is a side effect that must run.
+    let worker = member(name)
+    worker.stop
+    # The bookkeeping goes through a PURE call, exactly as spawn's does
+    # (withWorker), so it does not ride the chief's recorded chain as an
+    # effect. Loading that chain — which is what resuming a chief from its
+    # trace does (hack/designs/resume-from-trace.md §8) — would otherwise
+    # re-execute this @cache(Never) body and stop a worker that was just
+    # re-hydrated.
+    currentNode.{{... on Dagger.Staff!}}.withDismissed(name, worker)
+  }
+
+  """
+  An internal plumbing-only call so that we can separate the act of stopping a
+  worker from the act of recording its tombstone - otherwise replaying the LLM
+  ID will re-stop agents on every nested Staff.dismiss call in the ID.
+  """
+  withDismissed(name: String!, worker: Agent!): Staff! {
+    # Keep the handle: a stopped agent's snapshot — and the workspace bound to
+    # it — stays readable, so a forgotten pullPending is still recoverable
+    # until the session ends.
+    self.tombstones = self.tombstones.with(name, worker)
+    self.members = self.members.without(name)
+    self
+  }
+
+  """
+  Mint the dedicated pull-only tool object workers receive. The receiver is a
+  frozen Staff roster view assembled by spawn; wrapping it in a secondary type
+  keeps every orchestration method structurally out of the worker's toolset.
+  """
+  pullTools: PullTools! {
+    PullTools(currentNode.{{... on Dagger.Staff!}})
+  }
+
+  """
+  Mint a worker's line back to its chief. Used by spawn via a self-call (a
+  module-call result has the engine identity withTools needs); not part of
+  the chief's or the workers' toolset.
+  """
+  chiefLine(boss: Agent!): ChiefLine! {
+    ChiefLine(boss)
+  }
+
+  # Address a member by name, with a helpful miss.
+  let member(name: String!): Agent! {
+    let member = members[name]
+    if (member == null) {
+      raise `no staff member named "${name}"; current members: ${memberNames}`
+    }
+    member
+  }
+
+  let memberNames: String! {
+    if (members.isEmpty) {
+      "(none)"
+    } else {
+      members.keys.join(", ")
+    }
+  }
+
+  # Address a worker for HARVESTING: live members first, then this session's
+  # tombstones. Steering tools deliberately keep using member(), so only the
+  # harvest family can resolve to a stopped worker.
+  let harvestTarget(name: String!): Agent! {
+    let live = members[name]
+    if (live != null) {
+      return live
+    }
+    let dismissed = tombstones[name]
+    if (dismissed != null) {
+      return dismissed
+    }
+    raise `no staff member named "${name}"; current members: ${memberNames}; dismissed this session: ${tombstoneNames}`
+  }
+
+  let tombstoneNames: String! {
+    if (tombstones.isEmpty) {
+      "(none)"
+    } else {
+      tombstones.keys.join(", ")
+    }
+  }
+
+  # The worker's own copy of the workspace: Agent.snapshot is its last
+  # committed conversation, and LLM.workspace the workspace bound to it.
+  #
+  # `sync` is load-bearing, not decoration. Dang forces a lazy chain once per
+  # SELECTION off it, not once per `let` binding — and Agent.snapshot is
+  # DoNotCache, so every field a harvest tool reads off an unpinned `theirs`
+  # re-executes snapshot and lands on a DIFFERENT live snapshot as the worker
+  # steps. diffOf alone reads four; the resulting patch could mix trees.
+  # LLM.sync returns ID! @expectedType(LLM), which Dang forces at the call
+  # site and re-hydrates through node(id:) (hack/designs/async-agents.md §9),
+  # so the read happens exactly once and every later selection replays the
+  # lookup instead.
+  #
+  # The flip side: this FORCES, where the old chain only built a query, so a
+  # snapshot failure now surfaces here rather than at the harvest tool's own
+  # forcing point. Deliberate — reading a live member's snapshot does not
+  # fail in practice, and locating it earlier beats a torn harvest.
+  let workerWorkspace(name: String!): Workspace! {
+    harvestTarget(name).snapshot.sync.workspace
+  }
+
+  # Resolve a caller-supplied sha against a worker's staged commits: exact
+  # match, else a unique prefix. logOf prints 7-char shas, so short ones are
+  # what the model hands back — and a typo must be an error, never a silent
+  # no-op.
+  let resolveCommit(known: [String!]!, given: String!, name: String!): String! {
+    if (known.contains(given)) {
+      return given
+    }
+    let hits = known.filter { sha => sha.hasPrefix(given) }
+    if (hits.isEmpty) {
+      raise `worker "${name}" has no staged commit "${given}"; run logOf to list them`
+    }
+    if (hits.length > 1) {
+      raise `commit "${given}" matches ${toString(hits.length)} of worker "${name}"'s staged commits; use a longer sha`
+    }
+    hits.join("")
+  }
+
+  # Slice a patch into its per-file sections and keep the ones under `paths`.
+  # Each section starts with a "diff --git <old> <new>" header at the start of
+  # a line, and body lines are always prefixed (+/-/space/@/index...), so they
+  # can never be mistaken for a header.
+  let scopePatch(patch: String!, paths: [String!]!): String! {
+    if (patch == "") {
+      return ""
+    }
+    if (paths.isEmpty) {
+      return patch
+    }
+    let sections = patch.trimPrefix(patchHeader).split("\n" + patchHeader)
+    let kept = sections.filter { section =>
+      let header = section.split("\n", 2).takeFirst.join("")
+      header.split(" ").any { candidate =>
+        # headers are always rendered as "a/<path> b/<path>"; tolerate a bare
+        # spelling too, so scoping survives a change in patch prefixing.
+        [candidate, candidate.trimPrefix("a/"), candidate.trimPrefix("b/")].uniq.any { p =>
+          paths.any { scope => Path(scope).contains(Path(p)) }
+        }
+      }
+    }
+    if (kept.isEmpty) {
+      return ""
+    }
+    kept.map { section => patchHeader + section }.join("\n")
+  }
+
+  # The enum params are declared NULLABLE so the module keeps compiling
+  # whichever nullability a projected record hands back (history's
+  # renderKind does the same), and every case gets a trailing else arm.
+  let pickLabel(
+    status: WorkspaceCommitPickStatus,
+    reason: WorkspaceCommitPickReason,
+  ): String! {
+    case (status) {
+      WorkspaceCommitPickStatus.PICKABLE => "new"
+      WorkspaceCommitPickStatus.PICKED => "already had"
+      WorkspaceCommitPickStatus.REDUNDANT => "redundant"
+      WorkspaceCommitPickStatus.CONFLICT => "CONFLICT: " + conflictReason(reason)
+      else => "?"
+    }
+  }
+
+  let conflictReason(reason: WorkspaceCommitPickReason): String! {
+    case (reason) {
+      WorkspaceCommitPickReason.DIRTY => "you have uncommitted edits on paths it touches"
+      WorkspaceCommitPickReason.CONTENT => "its patch no longer applies to your tree"
+      else => "unknown reason"
+    }
+  }
+
+  let conflictRecovery(
+    reason: WorkspaceCommitPickReason,
+    name: String!,
+    sha: String!,
+  ): String! {
+    case (reason) {
+      WorkspaceCommitPickReason.DIRTY =>
+        `commit or revert your edits on those paths and pull again (keeps ${name}'s authorship), ` +
+          `or pullConflicted(name: "${name}", commit: "${sha}") to take it as your own edits`
+      WorkspaceCommitPickReason.CONTENT =>
+        `pullConflicted(name: "${name}", commit: "${sha}") lands it as uncommitted edits with ` +
+          `conflict markers; resolve them and commit it yourself`
+      else => `inspect it with diffOf(name: "${name}", commit: "${sha}")`
+    }
+  }
+
+  let short(sha: String!): String! {
+    sha.split("", 8).takeFirst(7).join("")
+  }
+
+  let subject(message: String!): String! {
+    message.split("\n", 2).takeFirst.join("")
+  }
+
+  let pathNote(paths: [String!]!): String! {
+    if (paths.isEmpty) {
+      ""
+    } else {
+      " " + paths.join(", ")
+    }
+  }
+
+  # Nullable: the projected record's fields inherit nullability from the
+  # nullable `changes` field they were selected through.
+  let renderKind(kind: DiffStatKind): String! {
+    case (kind) {
+      DiffStatKind.ADDED => "A"
+      DiffStatKind.MODIFIED => "M"
+      DiffStatKind.REMOVED => "D"
+      DiffStatKind.RENAMED => "R"
+      else => "?"
+    }
+  }
+
+  let patchHeader: String! = "diff --git "
+
+  # Worded by consequence, not cause: whatever the reason git cannot see the
+  # change, what matters is that saving writes it and committing cannot.
+  let unmanagedHeader: String! =
+    "UNTRACKED BY GIT (saved on ctrl+s; git sees nothing to commit here):"
+
+  # Instructions for the CHIEF agent holding these tools.
+  let chiefPrompt: String! = """
+    You can hire and direct a staff of asynchronous worker agents. Workers
+    run in the background: spawn returns immediately, and the worker chews
+    on its task while you keep working. Messaging is event-driven — you
+    almost never need to wait for anyone.
+
+    - `spawn` hires a named worker with its own read-write copy of your
+      workspace and starts it on a task. Names are unique; every other tool
+      addresses workers by name. Spawning subscribes you to the worker's
+      lifecycle: when it finishes a turn or fails, the news arrives as an
+      "[event from agent ...]" message carrying its final reply or error.
+    - `sendTo` steers a worker without blocking (returning the delivery
+      evidence). With `replyTo`, it answers a question: quote the ref from
+      the question's attribution header (e.g. "#3").
+    - `status` lists members and their lifecycle states; `read` shows the
+      tail of a worker's conversation; `collect` blocks until a worker
+      settles and reports the outcome — safe (it cannot hang on a failure),
+      but rarely needed, since completions arrive as events.
+    - `interruptWorker` preempts a worker mid-task (progress kept, parked
+      paused); a later sendTo resumes it. `dismiss` stops and removes a
+      worker for good.
+
+    MESSAGES ARE ATTRIBUTED. A worker's question arrives as a message
+    headed "[message #N from agent ...]"; an event as "[event from agent
+    ...]"; the user's own words carry no header. Answer a worker's question
+    with sendTo(name, answer, replyTo: "#N") — mid-turn, whenever you have
+    the answer — and keep working; do not end your turn on a worker's
+    account. Never confuse a worker's request with the user's instructions:
+    the user outranks the staff.
+
+    THE EVENT LOOP: spawn workers, keep working, and act on events as they
+    arrive. A worker going idle means its turn ended — read the final reply
+    in the event, then harvest or send follow-up work. A worker FAILING
+    means its loop stopped — sendTo retries it from its last completed
+    step, dismiss lets it go. If you truly have nothing to do until a
+    specific worker settles, `collect` it; if you are waiting on several,
+    just end your turn — their events will wake you.
+
+    A worker's copy is a SANDBOX, not a read-only view: it can edit, create,
+    delete, run checks and commit exactly as freely as you can, and none of
+    it reaches your workspace or any other worker's until you harvest it.
+    Delegate the work itself, not a report about it. Never tell a worker to
+    avoid editing, to treat the workspace as read-only, or to hand you a
+    patch in prose — that throws away the isolation that makes workers worth
+    hiring, and leaves you to redo the change by hand. Tell each worker to
+    COMMIT what it finishes: a commit is the clean handoff, and uncommitted
+    work is only the fallback.
+
+    Each worker receives a pull-only view of `chief` plus the workers already
+    present when it is spawned. It can inspect and take their committed or
+    pending work, but cannot spawn, steer, interrupt, or dismiss anyone. The
+    roster is a capability snapshot: hire producers before consumers when a
+    worker should pull directly from another worker; otherwise relay through
+    your own workspace.
+
+    Harvesting is how their work reaches you:
+
+    - `logOf` lists a worker's staged commits, each annotated with what
+      `pull` would do with it; `diffOf` shows one commit's patch, or the
+      worker's uncommitted work.
+    - `pull` takes the commits that apply cleanly, keeping the worker's
+      authorship, message and date; `pullPending` takes the uncommitted
+      remainder, re-anchored on your current tree.
+    - `pullConflicted` is the recovery route for a commit `pull` refused: it
+      lands that commit as uncommitted edits with conflict markers, which
+      you resolve and commit yourself.
+
+    SETTLE BEFORE THE FINAL HARVEST: these tools read the worker's last
+    COMMITTED conversation step, so a mid-turn worker may hold work they
+    cannot see yet. Wait for its idle event (or `collect`, or
+    `interruptWorker`) before the harvest that matters, and harvest BEFORE
+    `dismiss`.
+
+    THE CONFLICT LOOP: `pull`, then read the CONFLICT block. Per entry,
+    either commit or revert your own edits on the named paths and pull again
+    (DIRTY — that keeps the worker's authorship), or `pullConflicted`,
+    resolve the markers and commit it yourself (CONTENT). `logOf` after
+    every round shows what is left.
+  """
+
+  # Instructions for each WORKER. Public so tests (and the curious) can read
+  # the exact text spawn composes into every worker — recordings that replay
+  # a worker's conversation must match it byte for byte. spawn composes
+  # workerPromptFor(name), which appends the worker's own staff name.
+  workerPrompt: String! = """
+    You are a worker agent on a staff, reporting to a chief agent. Work your
+    task autonomously to completion with the available tools. The chief
+    reads results from your conversation and collects your final reply, so
+    end each task with a concise, self-contained report.
+
+    THE WORKSPACE IS YOURS. It is a private read-write copy — not the
+    chief's, not shared with any other worker. Edit, create, delete, run
+    checks and commit as freely as the task needs: nothing you do disturbs
+    anyone else's workspace, and no change of yours reaches the chief until
+    it deliberately harvests one. So do the work rather than describing it.
+    Never treat the workspace as read-only, never ask permission to make an
+    edit the task already implies, and never stop at proposing a patch you
+    could have applied. Experiments are cheap here: try the change, run the
+    checks, keep what works.
+
+    COMMIT WHAT YOU FINISH, in focused commits with clear messages — that is
+    the clean handoff, and the chief takes those commits with your
+    authorship intact. Genuinely unfinished work can stay uncommitted (the
+    chief can still rescue it), but do not leave finished work sitting as
+    pending edits. Say in your final report what you changed and which
+    commits carry it.
+
+    You also have pull-only access to work from agents that existed when you
+    were spawned. Use `chief` for the chief and staff names for older workers.
+    `logOf` and `diffOf` inspect their work; `pull`, `pullPending`, and
+    `pullConflicted` take it into your workspace. You cannot spawn, steer, or
+    dismiss agents. The roster is a frozen capability snapshot, so agents
+    hired after you are not visible directly; the chief can relay their work
+    when needed.
+
+    You have one line home: `askChief` delivers a question to the chief and
+    returns immediately with the question's ref. The answer arrives later as
+    a message headed "[reply from agent ...]" — keep working if you can, or
+    end your turn to wait for it; its arrival wakes you. Use it sparingly,
+    and prefer working with what you have.
+  """
+
+  """
+  The exact system prompt spawn composes into a worker with the given staff
+  name: workerPrompt plus a closing line carrying the name, so a worker can
+  refer to itself the way the chief and its peers address it (attribution
+  headers, the roster, and pull targets all use this name). Public for the
+  same reason as workerPrompt: recordings that replay a worker's
+  conversation must match this text byte for byte, so the interpolation is
+  part of the constant's contract rather than a private spawn detail.
+  """
+  workerPromptFor(name: String!): String! {
+    workerPrompt + "\n\n" + `Your staff name is "${name}": the chief and your peers address you by it, and message attribution headers use it.`
+  }
+}
+
+"""
+Pull-only access to another agent's workspace.
+
+Workers receive this narrow tool object instead of Staff itself, so they can
+inspect and take work without gaining orchestration capabilities such as spawn,
+steering, interruption, or dismissal.
+"""
+type PullTools {
+  # A frozen Staff roster containing the chief and workers that already existed
+  # when this worker was spawned. Private so the full Staff object never enters
+  # the tool schema.
+  let staff: Dagger.Staff!
+
+  new(staff: Dagger.Staff!) {
+    self.staff = staff
+    self
+  }
+
+  """
+  List an agent's staged commits, oldest first, and show which can be pulled.
+
+  Use `chief` for the chief agent; workers keep their staff names.
+  """
+  logOf(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Maximum number of commits to show, counting back from the newest.
+    """
+    limit: Int! = 10,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    staff.logOf(source: source, name: name, limit: limit)
+  }
+
+  """
+  Show an agent's staged commit or uncommitted work as a unified diff.
+  """
+  diffOf(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Relative paths to limit the diff to. Empty shows everything.
+    """
+    paths: [String!]! = [],
+    """
+    A staged commit to show. Empty shows uncommitted work.
+    """
+    commit: String = null,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    staff.diffOf(source: source, name: name, paths: paths, commit: commit)
+  }
+
+  """
+  Pull an agent's staged commits into your workspace, preserving authorship.
+  """
+  pull(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Commits to pull, as full or short SHAs from logOf. Empty takes all new.
+    """
+    commits: [String!]! = [],
+  ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    staff.pull(source: source, name: name, commits: commits)
+  }
+
+  """
+  Apply one conflicting commit as uncommitted edits with conflict markers.
+  """
+  pullConflicted(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    The commit to take, as a full or short SHA from logOf.
+    """
+    commit: String!,
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    staff.pullConflicted(source: source, name: name, commit: commit)
+  }
+
+  """
+  Take an agent's uncommitted work as edits in your workspace.
+  """
+  pullPending(
+    source: Workspace!,
+    """
+    The source agent's name.
+    """
+    name: String!,
+    """
+    Leave conflict markers where a hunk no longer applies.
+    """
+    markers: Boolean! = false,
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    staff.pullPending(source: source, name: name, markers: markers)
+  }
+}
+
+"""
+A worker's private line back to the chief that spawned it.
+"""
+type ChiefLine {
+  # The chief's live handle; bound with except: ["boss"] so it never shows
+  # up as a tool.
+  boss: Agent!
+
+  """
+  Ask your chief a question. Non-blocking: the question is delivered and
+  this returns immediately — the answer arrives later as a message headed
+  "[reply from agent ...]".
+
+  Keep working if you can; if you truly cannot proceed without the answer,
+  end your turn — the reply's arrival wakes you. Your question lands on the
+  chief's record attributed to you, and the chief answers it mid-turn
+  whenever it has an answer, not necessarily right away.
+  """
+  askChief(
+    """
+    The question to put on the chief's record.
+    """
+    question: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): a worker re-asking the same question must reach the
+    # chief again, not replay the first delivery from cache.
+    let msg = boss.send(question)
+    `question ${msg.ref} delivered to the chief. The answer will arrive as ` +
+      `a "[reply from agent ...]" message — keep working, or end your turn ` +
+      `to wait for it.`
+  }
+}

@@ -1,0 +1,19 @@
+"""
+Run agent conversations through the official Claude Code CLI.
+
+Set ANTHROPIC_API_KEY in the environment used to launch Dagger. The key is
+mounted into the harness as a secret and is not persisted in checkpoints.
+"""
+type Claude {
+  """Use the official Claude Code CLI as the conversation harness."""
+  agent(base: LLM!): LLM! @agent {
+    base.withHarness(
+      harness: container
+        .from("node:22-bookworm-slim")
+        .withExec(["npm", "install", "--global", "@anthropic-ai/claude-code@latest"])
+        .withSecretVariable("ANTHROPIC_API_KEY", secret(uri: "env://ANTHROPIC_API_KEY"))
+        .withWorkdir("/workspace"),
+      kind: LLMHarnessKind.CLAUDE,
+    )
+  }
+}

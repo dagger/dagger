@@ -30,12 +30,14 @@ import (
 // WithNestedClientServer serves the Dagger API for a nested client on a local
 // listener and calls fn with a GraphQL client pointed at it. The server is
 // shut down when fn returns; any error it hit while serving is returned.
+// In-engine SDK clients pass inertAttachables to reject implicit access to the
+// caller's host while still allowing graph values explicitly passed to them.
 func WithNestedClientServer(
 	ctx context.Context,
 	query *core.Query,
 	nestedClientMetadata *engine.ClientMetadata,
 	callerClientID string,
-	hostServiceProxyToCaller bool,
+	inertAttachables bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	fn func(ctx context.Context, gqlClient graphql.Client) ([]byte, error),
@@ -46,11 +48,17 @@ func WithNestedClientServer(
 	}
 	defer l.Close()
 
+	transport, err := query.RegisterNestedClientTransport(ctx, nestedClientMetadata, callerClientID)
+	if err != nil {
+		return nil, fmt.Errorf("register nested client transport: %w", err)
+	}
+	defer transport.Close()
+
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall)
+			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, callerClientID, inertAttachables, moduleContext, fnCall)
 		}),
 	}
 	defer func() {

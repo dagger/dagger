@@ -2,11 +2,13 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -15,6 +17,63 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestArchiveOptInUsesLiveCommandTraceID(t *testing.T) {
+	traceID := trace.TraceID{1, 2, 3, 4}
+	spanID := trace.SpanID{5}
+	ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID, SpanID: spanID,
+	}))
+
+	params, err := withArchiveTraceID(ctx, client.Params{ArchiveTelemetry: true})
+	require.NoError(t, err)
+	require.Equal(t, traceID.String(), params.ArchiveTraceID)
+
+	unchanged, err := withArchiveTraceID(context.Background(), client.Params{})
+	require.NoError(t, err)
+	require.Empty(t, unchanged.ArchiveTraceID)
+}
+
+func TestCloseEngineSessionRunsAfterCloseOnlyOnSuccess(t *testing.T) {
+	commandErr := errors.New("command failed")
+	closeErr := errors.New("archive finalization failed")
+
+	for _, test := range []struct {
+		name      string
+		ctx       context.Context
+		runErr    error
+		closeErr  error
+		wantAfter bool
+	}{
+		{name: "success", ctx: t.Context(), wantAfter: true},
+		{name: "command error", ctx: t.Context(), runErr: commandErr},
+		{name: "close error", ctx: t.Context(), closeErr: closeErr},
+		{name: "canceled", ctx: canceledContext(t)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var order []string
+			err := closeEngineSession(test.ctx, test.runErr, func() error {
+				order = append(order, "close")
+				return test.closeErr
+			}, func() {
+				order = append(order, "after")
+			})
+			require.ErrorIs(t, err, test.closeErr)
+			if test.wantAfter {
+				require.Equal(t, []string{"close", "after"}, order)
+			} else {
+				require.Equal(t, []string{"close"}, order)
+			}
+		})
+	}
+}
+
+func canceledContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return ctx
+}
 
 type countingLogExporter struct {
 	exports atomic.Int64

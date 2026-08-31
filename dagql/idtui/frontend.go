@@ -13,6 +13,7 @@ import (
 	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dustin/go-humanize"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
@@ -155,6 +156,26 @@ type ViewHandle interface {
 	Update(func())
 }
 
+// EventLoopBarrier is the optional frontend acknowledgment seam used by
+// archive imports. It returns only after every event dispatched before the
+// barrier has been applied to the frontend's state.
+type EventLoopBarrier interface {
+	WaitForEventLoop(context.Context) error
+}
+
+// The pretty frontend owns the event loop and can provide archive import
+// acknowledgments. Streaming frontends apply exports synchronously and do not
+// need this optional interface.
+var _ EventLoopBarrier = (*frontendPretty)(nil)
+
+// SuggestedCommandFrontend is the optional seam for commands that can offer a
+// copy-paste next step after a successful run. The pretty frontend renders it
+// with the same titled-section presentation used by `dagger trace` suggestions;
+// streaming frontends deliberately do not implement it.
+type SuggestedCommandFrontend interface {
+	SetSuggestedCommand(title, command string)
+}
+
 // TraceFrontend is the optional interface 'dagger trace' drives for
 // incremental loading and report zooming: snapshot import, lazy span/log
 // providers, surfaced-failure prefetch, and name-based zoom targets. Only the
@@ -195,6 +216,36 @@ type TraceFrontend interface {
 // The pretty frontend must keep satisfying the trace capabilities --
 // a signature drift here would otherwise silently disable them.
 var _ TraceFrontend = (*frontendPretty)(nil)
+
+// AgentRestorer is the optional interface `dagger agent --trace` drives to
+// read a restore plan out of the frontend's DB
+// (hack/designs/resume-from-trace.md §5.1, "Reading the DB back").
+//
+// Both calls are reads OF the frontend's DB, which the frontend owns
+// single-threaded while the import that filled it is still landing, so
+// neither can be a direct db access from the run goroutine. That is the whole
+// reason this is a frontend seam rather than a *dagui.DB passed around: the
+// lock is the frontend's, and only the frontend can take it.
+//
+// Only the pretty frontend implements it; a plain/dots/logs frontend holds no
+// span DB to restore from, so `--trace` fails there rather than silently
+// restoring nothing.
+type AgentRestorer interface {
+	// AgentRestorePlan projects the imported trace's agents into what the
+	// restore needs to re-hydrate them, live-session agents excluded
+	// (dagui.DB.RestorePlan).
+	AgentRestorePlan() []dagui.AgentRestore
+	// EncodedIDForCallDigest rebuilds the ID of the call with the given
+	// digest from the call payloads the frontend has ingested, and encodes
+	// it. This is how a restore anchor becomes a conversation to re-hydrate
+	// from; it fails loudly, naming the frame whose payload never arrived,
+	// which §5.3.3 turns into a failed restore.
+	EncodedIDForCallDigest(digest string) (string, error)
+}
+
+// The pretty frontend is the one that can restore -- as with the trace
+// capabilities, a signature drift here would silently disable it.
+var _ AgentRestorer = (*frontendPretty)(nil)
 
 type extendedError interface {
 	error
@@ -336,6 +387,11 @@ type ShellHandler interface {
 	// It returns an async function that performs the branch (may be nil), to
 	// be run by the caller in a goroutine.
 	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
+
+	// EditFromID interrupts the focused conversation and rewinds it to the
+	// encoded pre-prompt LLM state. The returned operation runs asynchronously;
+	// a nil error means the frontend may load the original prompt for editing.
+	EditFromID(ctx context.Context, encodedID string) func() error
 }
 
 type Dump struct {
@@ -376,6 +432,10 @@ type renderer struct {
 	maxLiteralLen int
 	rendering     map[string]bool
 	final         bool
+	omitNulls     bool
+	compactIDs    bool
+	maxWidth      int
+	widthOffset   int
 
 	// indentFunc, when set, may override fancyIndent. Returns true if it
 	// handled the indent, false to fall through to the default parent-chain
@@ -395,6 +455,14 @@ func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final b
 		newline:       "\n",
 		final:         final,
 	}
+}
+
+// enableCallSimplification configures the compact TUI call presentation. Tree
+// indentation remains independent so wrapped arguments keep their row guides.
+func (r *renderer) enableCallSimplification(maxWidth int) {
+	r.omitNulls = true
+	r.compactIDs = true
+	r.maxWidth = maxWidth
 }
 
 const (
@@ -478,6 +546,50 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 	}
 }
 
+func isNullLiteral(lit *callpbv1.Literal) bool {
+	if lit == nil {
+		return false
+	}
+	_, ok := lit.GetValue().(*callpbv1.Literal_Null)
+	return ok
+}
+
+func (r *renderer) visibleArgs(args []*callpbv1.Argument, elide map[string]struct{}) []*callpbv1.Argument {
+	visible := make([]*callpbv1.Argument, 0, len(args))
+	for _, arg := range args {
+		if _, elided := elide[arg.GetName()]; elided {
+			continue
+		}
+		if r.omitNulls && isNullLiteral(arg.GetValue()) {
+			continue
+		}
+		visible = append(visible, arg)
+	}
+	return visible
+}
+
+func (r *renderer) compactRenderedLen(
+	span *dagui.Span,
+	call *callpbv1.Call,
+	prefix string,
+	chained bool,
+	depth int,
+	internal bool,
+	row *dagui.TraceRow,
+	abridged bool,
+) int {
+	var buf strings.Builder
+	probe := newRenderer(r.db, -1, r.FrontendOpts, r.final)
+	probe.omitNulls = r.omitNulls
+	probe.compactIDs = r.compactIDs
+	probe.newline = r.newline
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	if err := probe.renderCall(out, span, call, prefix, chained, depth, internal, row, abridged); err != nil {
+		return r.maxWidth + 1
+	}
+	return ansi.StringWidth(buf.String())
+}
+
 func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
@@ -538,33 +650,35 @@ func (r *renderer) renderCall( //nolint: gocyclo
 		fmt.Fprint(out, out.String(call.Field).Bold())
 	}
 
-	if len(call.Args) > len(elideArgs) {
+	visibleArgs := r.visibleArgs(call.Args, elideArgs)
+	hasArgs := len(visibleArgs) > 0
+	if hasArgs {
 		if specialTitle {
 			fmt.Fprint(out, " ")
 		}
 		fmt.Fprint(out, out.String("("))
 		var needIndent bool
-		for _, arg := range call.Args {
-			if _, elided := elideArgs[arg.Name]; elided {
-				continue
-			}
-			if arg.GetValue().GetCallDigest() != "" {
-				needIndent = true
-				break
-			}
-			if r.maxLiteralLen > 0 && r.renderedLen(arg.GetValue()) > r.maxLiteralLen {
-				needIndent = true
-				break
+		if r.compactIDs {
+			needIndent = r.maxWidth > 0 && r.widthOffset+r.compactRenderedLen(
+				span, call, prefix, chained, depth, internal, row, abridged,
+			) > r.maxWidth
+		} else {
+			for _, arg := range visibleArgs {
+				if arg.GetValue().GetCallDigest() != "" {
+					needIndent = true
+					break
+				}
+				if r.maxLiteralLen > 0 && r.renderedLen(arg.GetValue()) > r.maxLiteralLen {
+					needIndent = true
+					break
+				}
 			}
 		}
 		if needIndent {
 			fmt.Fprint(out, r.newline)
 			depth++
 			depth++
-			for _, arg := range call.Args {
-				if _, elided := elideArgs[arg.Name]; elided {
-					continue
-				}
+			for _, arg := range visibleArgs {
 				fmt.Fprint(out, prefix)
 				indentLevel := depth
 				if row != nil {
@@ -591,7 +705,13 @@ func (r *renderer) renderCall( //nolint: gocyclo
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged); err != nil {
+					widthOffset := r.widthOffset
+					if r.compactIDs {
+						r.widthOffset = ansi.StringWidth(prefix) + indentLevel*2 + ansi.StringWidth(arg.GetName()) + 2
+					}
+					err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged)
+					r.widthOffset = widthOffset
+					if err != nil {
 						return err
 					}
 				} else {
@@ -615,16 +735,24 @@ func (r *renderer) renderCall( //nolint: gocyclo
 			depth-- //nolint:ineffassign
 		} else {
 			printed := 0
-			for _, arg := range call.Args {
-				if _, elided := elideArgs[arg.Name]; elided {
-					continue
-				}
+			for _, arg := range visibleArgs {
 				if printed > 0 {
 					fmt.Fprint(out, out.String(", "))
 				}
 				printed++
 				fmt.Fprintf(out, out.String("%s: ").Foreground(kwColor).String(), arg.GetName())
-				r.renderLiteral(out, arg.GetValue())
+				if argDig := arg.GetValue().GetCallDigest(); r.compactIDs && argDig != "" {
+					argCall := r.db.Simplify(r.db.MustCall(argDig), false)
+					maxWidth := r.maxWidth
+					r.maxWidth = 0
+					err := r.renderCall(out, nil, argCall, prefix, false, depth, internal, row, abridged)
+					r.maxWidth = maxWidth
+					if err != nil {
+						return err
+					}
+				} else {
+					r.renderLiteral(out, arg.GetValue())
+				}
 			}
 		}
 		fmt.Fprint(out, out.String(")"))
@@ -744,10 +872,15 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 		fmt.Fprint(out, out.String("]"))
 	case *callpbv1.Literal_Object:
 		fmt.Fprint(out, out.String("{"))
-		for i, item := range val.Object.GetValues() {
-			if i > 0 {
+		printed := 0
+		for _, item := range val.Object.GetValues() {
+			if r.omitNulls && isNullLiteral(item.GetValue()) {
+				continue
+			}
+			if printed > 0 {
 				fmt.Fprint(out, out.String(", "))
 			}
+			printed++
 			fmt.Fprintf(out, out.String("%s: ").String(), item.GetName())
 			r.renderLiteral(out, item.GetValue())
 		}
@@ -1096,8 +1229,13 @@ func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includ
 
 	fmt.Fprintln(w)
 
+	var lastBody string
 	for _, l := range logs {
-		data := l.Body().AsString()
+		data, ok := dagui.LogBodyString(l)
+		if !ok {
+			continue
+		}
+		lastBody = data
 		switch primaryLogStream(l) {
 		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
@@ -1112,10 +1250,7 @@ func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includ
 		}
 	}
 
-	trailingLn := false
-	if len(logs) > 0 {
-		trailingLn = strings.HasSuffix(logs[len(logs)-1].Body().AsString(), "\n")
-	}
+	trailingLn := strings.HasSuffix(lastBody, "\n")
 	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
 		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
 		// encourage module authors to add one of their own
@@ -1130,7 +1265,9 @@ func primaryLogStream(l sdklog.Record) int {
 	var stream int
 	l.WalkAttributes(func(attr log.KeyValue) bool {
 		if attr.Key == telemetry.StdioStreamAttr {
-			stream = int(attr.Value.AsInt64())
+			if value, ok := dagui.LogValueInt64(attr.Value); ok {
+				stream = int(value)
+			}
 			return false
 		}
 		return true

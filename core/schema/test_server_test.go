@@ -86,7 +86,7 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	return nil, nil
 }
 
@@ -94,11 +94,19 @@ func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, erro
 	return s.dag, nil
 }
 
+func (s *currentTypeDefsTestServer) ExecHTTPHandlers(context.Context) (core.ExecHTTPHandlerRegistry, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Handler) error {
 	return nil
 }
 
-func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+func (s *currentTypeDefsTestServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
+	return engine.NewNestedClientTransport(nil), nil
+}
+
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {
@@ -118,6 +126,10 @@ func (s *currentTypeDefsTestServer) Services(context.Context) (*core.Services, e
 }
 
 func (s *currentTypeDefsTestServer) Platform() core.Platform { return s.platform }
+
+func (s *currentTypeDefsTestServer) Agents(context.Context) (*core.AgentRuntimes, error) {
+	return nil, nil
+}
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 

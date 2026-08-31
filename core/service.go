@@ -58,8 +58,11 @@ type Service struct {
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
-	ModuleContext                 dagql.ObjectResult[*Module]
-	ExecMeta                      *executor.Meta
+	// ExecHTTPHandlerToken is a runtime-only capability layered onto the
+	// container-derived execution metadata when the service starts.
+	ExecHTTPHandlerToken string `json:"-"`
+	ModuleContext        dagql.ObjectResult[*Module]
+	ExecMeta             *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
@@ -458,6 +461,29 @@ type ServiceIO struct {
 	Interactive bool
 }
 
+// serviceProcessStdin presents service stdin to os/exec as an *os.File*. When
+// an arbitrary reader is assigned directly to exec.Cmd.Stdin, os/exec starts a
+// copy goroutine and Cmd.Wait waits for that goroutine even after the process
+// has exited. Persistent protocol inputs intentionally remain open between
+// messages, so that behavior prevents runc from publishing natural process
+// exit. The OS pipe lets runc exit independently; service cleanup then closes
+// the source and unblocks this forwarding goroutine.
+func serviceProcessStdin(source io.ReadCloser) (_ *os.File, cleanup func(), _ error) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	go func() {
+		_, _ = io.Copy(writer, source)
+		_ = writer.Close()
+	}()
+	return reader, func() {
+		_ = source.Close()
+		_ = writer.Close()
+		_ = reader.Close()
+	}, nil
+}
+
 func (io *ServiceIO) Close() error {
 	if io == nil {
 		return nil
@@ -593,6 +619,7 @@ func (svc *Service) startContainer(
 		cloned := *execMD
 		execMD = &cloned
 	}
+	execMD.ExecHTTPHandlerToken = svc.ExecHTTPHandlerToken
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -683,10 +710,18 @@ func (svc *Service) startContainer(
 		return fmt.Errorf("prepare mounts: %w", err)
 	}
 
+	running.workspaceMu.Lock()
+	running.mountStates = p.States
+	running.workspaceMu.Unlock()
 	cleanup.Add("release active refs", func() error {
+		running.workspaceMu.Lock()
+		defer running.workspaceMu.Unlock()
+		running.mountStates = nil
 		return p.releaseActives(context.WithoutCancel(ctx))
 	})
 	cleanup.Add("release output refs", func() error {
+		running.workspaceMu.Lock()
+		defer running.workspaceMu.Unlock()
 		return p.releaseOutputRefs(context.WithoutCancel(ctx))
 	})
 	protectedSnapshots := make(map[string]struct{})
@@ -795,7 +830,12 @@ func (svc *Service) startContainer(
 
 	var stdinReader io.ReadCloser
 	if opts.IO != nil && opts.IO.Stdin != nil {
-		stdinReader = opts.IO.Stdin
+		var closeStdin func()
+		stdinReader, closeStdin, err = serviceProcessStdin(opts.IO.Stdin)
+		if err != nil {
+			return fmt.Errorf("prepare service stdin: %w", err)
+		}
+		cleanup.Add("close service stdin", cleanups.Infallible(closeStdin))
 	}
 	stdoutWriters := multiWriteCloser{outBufWC}
 	if opts.IO != nil && opts.IO.Stdout != nil {
@@ -942,8 +982,6 @@ func (svc *Service) startContainer(
 		case <-exited:
 			slog.Info("service exited in signal")
 		case signal <- sig:
-			// close stdio, else we hang waiting on i/o piping goroutines
-			opts.IO.Close()
 		}
 		return nil
 	}
@@ -970,6 +1008,9 @@ func (svc *Service) startContainer(
 		if err != nil {
 			return err
 		}
+		// A stopped process cannot consume stdin. Close all attached pipes so
+		// executor I/O forwarding cannot hold process teardown open.
+		_ = opts.IO.Close()
 		select {
 		case <-ctx.Done():
 			slog.Info("service stop interrupted", "err", ctx.Err())
@@ -1056,6 +1097,7 @@ func (svc *Service) startContainer(
 
 			running.Host = fullHost
 			running.Ports = ctr.Ports
+			running.Signal = signalSvc
 			running.Stop = stopSvc
 			running.Wait = waitSvc
 			running.Exec = execSvc

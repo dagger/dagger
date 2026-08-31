@@ -681,18 +681,6 @@ func (ws *Workspace) ExportHostPath() (string, error) {
 	}
 }
 
-// IsModuleBearingValue reports whether a value-backed workspace owns the
-// module tree its schema and agent composition must load from. GitRef
-// workspaces are complete checkout values; Directory workspaces remain
-// intentionally module-less.
-func (ws *Workspace) IsModuleBearingValue() bool {
-	if ws == nil {
-		return false
-	}
-	_, ok := ws.BaseSource().(*WorkspaceSourceGitRef)
-	return ok
-}
-
 // WorkspaceEnv returns the config environment captured with this workspace.
 func (ws *Workspace) WorkspaceEnv() string {
 	if ws == nil {

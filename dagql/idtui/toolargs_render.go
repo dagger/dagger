@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -28,6 +29,9 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 	if len(fields) == 0 {
 		return false
 	}
+	sort.SliceStable(fields, func(i, j int) bool {
+		return toolArgPriority(toolName, fields[i].Key) < toolArgPriority(toolName, fields[j].Key)
+	})
 
 	rendered := false
 	for _, f := range fields {
@@ -38,6 +42,9 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 		val := sanitizeSummary(firstLine(f.Value))
 		if strings.TrimSpace(val) == "" {
 			continue
+		}
+		if toolNameIs(toolName, "read") && (strings.EqualFold(f.Key, "offset") || strings.EqualFold(f.Key, "limit")) {
+			val = strings.ToLower(f.Key) + "=" + val
 		}
 		fmt.Fprint(out, " ")
 		switch style {
@@ -51,6 +58,32 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 		rendered = true
 	}
 	return rendered
+}
+
+func toolArgPriority(toolName, name string) int {
+	lower := strings.ToLower(name)
+	if toolNameIs(toolName, "read") {
+		switch lower {
+		case "path", "filepath", "file_path":
+			return 0
+		case "offset":
+			return 1
+		case "limit":
+			return 2
+		}
+	}
+	if lower == "args" {
+		return 4
+	}
+	return 3
+}
+
+func toolNameIs(toolName, want string) bool {
+	lower := strings.ToLower(toolName)
+	if idx := strings.LastIndex(lower, "_"); idx >= 0 {
+		lower = lower[idx+1:]
+	}
+	return lower == strings.ToLower(want)
 }
 
 // firstLine returns the first line of s, appending an ellipsis if the value
@@ -72,8 +105,7 @@ func firstLine(s string) string {
 // "Changes" box) out of alignment. Edit tool excerpts are literal source code
 // and routinely start with tab indentation, so this bites the Edit tool in
 // particular. Replace tabs with a single space and drop any other control
-// characters so the rendered width always matches the computed width. (The
-// unified diff below the header already expands tabs; see diffTabWidth.)
+// characters so the rendered width always matches the computed width.
 func sanitizeSummary(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -85,22 +117,6 @@ func sanitizeSummary(s string) string {
 			return r
 		}
 	}, s)
-}
-
-// renderToolArgs renders any additional content for an LLM tool-call row that
-// is best shown below the title line. Currently this is only a unified diff for
-// "edit" tools; for every other tool (and every non-edit / incomplete case) it
-// is a no-op, leaving existing rendering untouched.
-func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	fields := toolArgFields(row.Span)
-	if len(fields) == 0 {
-		return
-	}
-
-	toolName := row.Span.LLMTool
-
-	// For edit tools with complete old+new text, render a unified diff.
-	fe.tryRenderEditDiff(out, r, row, prefix, toolName, fields)
 }
 
 // toolArgFields zips the span's parsed tool-argument name/value arrays into
@@ -123,95 +139,4 @@ func toolArgFields(span *dagui.Span) []parsedField {
 		})
 	}
 	return fields
-}
-
-// tryRenderEditDiff checks whether this is an edit tool call with complete
-// old+new text and, if so, renders a unified diff with intraline highlighting.
-// Returns true if the diff was rendered (caller should skip normal arg rendering).
-func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields []parsedField) bool {
-	if !isEditTool(toolName) {
-		return false
-	}
-
-	// Look up the fields we need. Accept various naming conventions.
-	filePath := firstField(fields, "path", "filepath", "file_path")
-	oldField := firstFieldEntry(fields, "oldtext", "old_text")
-	newField := firstFieldEntry(fields, "newtext", "new_text")
-
-	// Need at least one of old or new to show a diff.
-	if oldField == nil && newField == nil {
-		return false
-	}
-
-	// If the fields are still streaming, fall back to the default rendering
-	// so the user sees the streaming glitch animation.
-	if (oldField != nil && !oldField.Complete) || (newField != nil && !newField.Complete) {
-		return false
-	}
-
-	oldText := ""
-	newText := ""
-	if oldField != nil {
-		oldText = oldField.Value
-	}
-	if newField != nil {
-		newText = newField.Value
-	}
-
-	// Compute available width for the diff.
-	// fancyIndent with selfBar=true uses (row.Depth+1)*2 chars,
-	// matching the existing maxWidth formula for content-style args.
-	diffWidth := fe.window.Width - row.Depth*2 - 4
-	if diffWidth < 40 {
-		diffWidth = 40
-	}
-
-	diffView := renderEditDiff(fe.profile, filePath, oldText, newText, diffWidth)
-	if diffView == "" {
-		return false
-	}
-
-	for _, line := range strings.Split(strings.TrimRight(diffView, "\n"), "\n") {
-		fmt.Fprint(out, prefix)
-		r.fancyIndent(out, row, true, false)
-		fmt.Fprintln(out, line)
-	}
-	return true
-}
-
-// isEditTool returns true if the tool name matches "edit" (case-insensitive,
-// handles "Type_edit" Dagger method tools).
-func isEditTool(toolName string) bool {
-	lower := strings.ToLower(toolName)
-	if lower == "edit" {
-		return true
-	}
-	if idx := strings.LastIndex(lower, "_"); idx >= 0 {
-		return lower[idx+1:] == "edit"
-	}
-	return false
-}
-
-// firstField returns the value of the first matching field name (case-insensitive).
-func firstField(fields []parsedField, names ...string) string {
-	for _, name := range names {
-		for _, f := range fields {
-			if strings.EqualFold(f.Key, name) && f.Value != "" {
-				return f.Value
-			}
-		}
-	}
-	return ""
-}
-
-// firstFieldEntry returns the parsedField pointer for the first matching name.
-func firstFieldEntry(fields []parsedField, names ...string) *parsedField {
-	for _, name := range names {
-		for i := range fields {
-			if strings.EqualFold(fields[i].Key, name) {
-				return &fields[i]
-			}
-		}
-	}
-	return nil
 }

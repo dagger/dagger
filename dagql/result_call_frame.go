@@ -38,6 +38,17 @@ func NewResultCallType(gqlType *ast.Type) *ResultCallType {
 	}
 }
 
+func resultCallTypesEqual(a, b *ResultCallType) bool {
+	for a != nil && b != nil {
+		if a.NamedType != b.NamedType || a.NonNull != b.NonNull {
+			return false
+		}
+		a = a.Elem
+		b = b.Elem
+	}
+	return a == nil && b == nil
+}
+
 func (typ *ResultCallType) clone() *ResultCallType {
 	if typ == nil {
 		return nil
@@ -237,6 +248,7 @@ type ResultCall struct {
 type ResultCallStructuralInputRef struct {
 	Result *ResultCallRef
 	Digest digest.Digest
+	Type   *ResultCallType
 }
 
 func (frame *ResultCall) clone() *ResultCall {
@@ -919,8 +931,14 @@ func (frame *ResultCall) structuralSelfDigestAndInputRefs(c *Cache, includeImpli
 	h := hashutil.NewHasher()
 
 	if frame.Receiver != nil {
+		inputType, err := resultCallRefType(c, frame.Receiver)
+		if err != nil {
+			h.Close()
+			return "", nil, fmt.Errorf("result call frame %q receiver type: %w", field, err)
+		}
 		inputRefs = append(inputRefs, ResultCallStructuralInputRef{
 			Result: frame.Receiver,
+			Type:   inputType,
 		})
 	}
 	h = h.WithDelim()
@@ -975,8 +993,14 @@ func (frame *ResultCall) structuralSelfDigestAndInputRefs(c *Cache, includeImpli
 			}
 			return "", nil, fmt.Errorf("result call frame %q module: missing result ref", field)
 		}
+		inputType, err := resultCallRefType(c, frame.Module.ResultRef)
+		if err != nil {
+			h.Close()
+			return "", nil, fmt.Errorf("result call frame %q module type: %w", field, err)
+		}
 		inputRefs = append(inputRefs, ResultCallStructuralInputRef{
 			Result: frame.Module.ResultRef,
+			Type:   inputType,
 		})
 	}
 	h = h.WithDelim()
@@ -1011,7 +1035,13 @@ func (ref ResultCallStructuralInputRef) Validate() error {
 	case ref.Result != nil && ref.Digest != "":
 		return fmt.Errorf("structural input ref cannot have both result and digest")
 	case ref.Result != nil:
-		return ref.Result.Validate()
+		if err := ref.Result.Validate(); err != nil {
+			return err
+		}
+		if ref.Type == nil {
+			return fmt.Errorf("structural result input ref must have a type")
+		}
+		return nil
 	case ref.Result == nil && ref.Digest == "":
 		return fmt.Errorf("structural input ref must have either result or digest")
 	default:
@@ -1049,6 +1079,30 @@ func (ref *ResultCallRef) cloneWith(memo resultCallCloneMemo) *ResultCallRef {
 		Call:     ref.Call.cloneWith(memo),
 		shared:   ref.shared,
 	}
+}
+
+func resultCallRefType(c *Cache, ref *ResultCallRef) (*ResultCallType, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	var frame *ResultCall
+	switch {
+	case ref.Call != nil:
+		frame = ref.Call
+	case ref.loadSharedCall() != nil:
+		frame = ref.loadSharedCall()
+	case c == nil:
+		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
+	default:
+		frame = c.resultCallByResultID(sharedResultID(ref.ResultID))
+	}
+	if frame == nil {
+		return nil, fmt.Errorf("missing result call frame for result ref %d", ref.ResultID)
+	}
+	if frame.Type == nil {
+		return nil, fmt.Errorf("result ref %d call frame has no type", ref.ResultID)
+	}
+	return frame.Type, nil
 }
 
 func (ref *ResultCallRef) loadSharedCall() *ResultCall {
@@ -1400,8 +1454,13 @@ func appendResultCallLiteralSelfRefs(
 	case lit.Kind == ResultCallLiteralKindResultRef:
 		const prefix = '0'
 		h = h.WithByte(prefix)
+		inputType, typeErr := resultCallRefType(c, lit.ResultRef)
+		if typeErr != nil {
+			return nil, nil, fmt.Errorf("result ref type: %w", typeErr)
+		}
 		inputs = append(inputs, ResultCallStructuralInputRef{
 			Result: lit.ResultRef,
+			Type:   inputType,
 		})
 	case lit.Kind == ResultCallLiteralKindBool:
 		const prefix = '2'

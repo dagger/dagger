@@ -494,11 +494,12 @@ func TestConversationReportRendersToolCallArgsAndOutput(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 
 	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = toolArgsVerbosity
 
 	argLogs := NewVterm(termenv.Ascii)
 	argLogs.SetWidth(120)
 	_, _ = argLogs.Write([]byte(`{"script":"currentWorkspace.id"}` + "\n"))
-	fe.logs.Logs[toolCallID] = argLogs
+	fe.logs.ToolArgs[toolCallID] = argLogs
 
 	// A tall result, so the cap kicks in and hides all but the last
 	// llmLogsLastLines lines.
@@ -531,6 +532,77 @@ func TestConversationReportRendersToolCallArgsAndOutput(t *testing.T) {
 	if want := fmt.Sprintf("...%d lines hidden...", outputLines-llmLogsLastLines); !strings.Contains(joined, want) {
 		t.Fatalf("missing trim header %q:\n%s", want, joined)
 	}
+}
+
+func TestConversationReportConciseReadAndGrep(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	start := time.Unix(100, 0)
+
+	render := func(t *testing.T, tool string, names, values []string, args, result string, verbosity int) (*frontendPretty, *dagui.Span, string) {
+		t.Helper()
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		toolID := prettyTestSpanID(2)
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			{
+				ID: rootID, TraceID: prettyTestTraceID(), Name: "shell",
+				StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			},
+			{
+				ID: toolID, TraceID: prettyTestTraceID(), Name: tool,
+				LLMRole: "assistant", LLMTool: tool,
+				LLMToolArgNames: names, LLMToolArgValues: values,
+				ParentID: rootID, StartTime: start, EndTime: start.Add(600 * time.Millisecond), Final: true,
+			},
+		})
+		db.SetPrimarySpan(rootID)
+		fe := NewWithDB(io.Discard, db)
+		fe.FrontendOpts.Verbosity = verbosity
+		if args != "" {
+			fe.logs.ToolArgs[toolID] = testVterm(t, args)
+		}
+		if result != "" {
+			fe.logs.Logs[toolID] = testVterm(t, result)
+		}
+		fe.recalculateViewLocked()
+		r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+		return fe, db.Spans.Map[toolID], strings.Join(fe.conversationReport(tuist.Context{Width: 120}, r, false), "\n")
+	}
+
+	t.Run("read", func(t *testing.T) {
+		for _, verbosity := range []int{1, 2} {
+			fe, span, got := render(t, "Read",
+				[]string{"path", "offset", "limit"}, []string{"main.go", "20", "10"},
+				`{"path":"main.go","offset":20,"limit":10}`, "FILE CONTENT\n", verbosity)
+			if !strings.Contains(got, "Read main.go offset=20 limit=10") {
+				t.Fatalf("Read header missing pagination at verbosity %d:\n%s", verbosity, got)
+			}
+			if strings.Contains(got, "FILE CONTENT") {
+				t.Fatalf("collapsed Read leaked output at verbosity %d:\n%s", verbosity, got)
+			}
+			if strings.Contains(got, `{"path":"main.go"`) != (verbosity >= toolArgsVerbosity) {
+				t.Fatalf("Read JSON args visibility wrong at verbosity %d:\n%s", verbosity, got)
+			}
+			if verbosity >= toolArgsVerbosity {
+				var buf strings.Builder
+				fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), span)
+				if rendered := buf.String(); rendered != "" && !strings.HasSuffix(rendered, "\n") {
+					t.Fatalf("rendered JSON args lack trailing newline: %q", rendered)
+				}
+			}
+		}
+	})
+
+	t.Run("grep", func(t *testing.T) {
+		_, _, got := render(t, "Grep", []string{"pattern"}, []string{"Foo"},
+			`{"pattern":"Foo"}`, "main.go:10:Foo\n1 matches in 1 files\n", 1)
+		if !strings.Contains(got, "Grep Foo 0.6s - 1 matches in 1 files") {
+			t.Fatalf("Grep header missing final output line:\n%s", got)
+		}
+		if strings.Contains(got, "main.go:10:Foo") || strings.Contains(got, `{"pattern":"Foo"}`) {
+			t.Fatalf("collapsed Grep leaked body or JSON args:\n%s", got)
+		}
+	})
 }
 
 // TestConversationLogsPreFetchedBeforeFailureFetch is a regression test for the
@@ -724,6 +796,113 @@ func TestPromoteConversationUsesPrimarySpan(t *testing.T) {
 	}
 	if len(fe.rowsView.Body) != 1 || fe.rowsView.Body[0].Span.ID != promptID {
 		t.Fatalf("top-level rows = %v, want surfaced prompt %v", fe.rowsView.Body, promptID)
+	}
+}
+
+// TestConversationReportStylesMessageOrigins covers the presentation half of
+// message provenance (hack/designs/agent-messaging.md §4.1): a message
+// another agent sent renders under a sender-attribution header (name plus
+// ref, or the ref it replies to) instead of reading as the user's own words,
+// and an engine lifecycle event collapses to a compact one-liner — its first
+// line plus a "(+N lines)" tail — instead of a full prompt bubble. A plain
+// user prompt renders unchanged.
+func TestConversationReportStylesMessageOrigins(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userPromptID := prettyTestSpanID(2)
+	agentMsgID := prettyTestSpanID(3)
+	replyMsgID := prettyTestSpanID(4)
+	eventMsgID := prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	msg := func(id dagui.SpanID, n byte) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id, TraceID: prettyTestTraceID(), ParentID: rootID,
+			Name: "LLM prompt", LLMRole: "user", Message: "sent",
+			StartTime: start.Add(time.Duration(n) * time.Second),
+			EndTime:   start.Add(time.Duration(n+1) * time.Second), Final: true,
+		}
+	}
+	userPrompt := msg(userPromptID, 1)
+	agentMsg := msg(agentMsgID, 2)
+	agentMsg.LLMOriginKind = "AGENT"
+	agentMsg.LLMOriginAgentID = "agent-b"
+	agentMsg.LLMOriginAgentName = "scout"
+	agentMsg.LLMOriginRef = "#3"
+	replyMsg := msg(replyMsgID, 3)
+	replyMsg.LLMOriginKind = "AGENT"
+	replyMsg.LLMOriginAgentID = "agent-a"
+	replyMsg.LLMOriginAgentName = "chief"
+	replyMsg.LLMOriginRef = "#5"
+	replyMsg.LLMOriginReplyTo = "#2"
+	eventMsg := msg(eventMsgID, 4)
+	eventMsg.LLMOriginKind = "EVENT"
+	eventMsg.LLMOriginAgentID = "agent-b"
+	eventMsg.LLMOriginAgentName = "scout"
+
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+		userPrompt, agentMsg, replyMsg, eventMsg,
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	for id, content := range map[dagui.SpanID]string{
+		userPromptID: "the user's own words\n",
+		agentMsgID:   "what branch should I target?\n",
+		replyMsgID:   "target main\n",
+		eventMsgID:   "Agent \"scout\" is now idle.\n\nIts final reply:\n\nall done\n",
+	} {
+		v := NewVterm(termenv.Ascii)
+		v.SetWidth(120)
+		_, _ = v.Write([]byte(content))
+		// A fresh Vterm renders nothing until it has a height; the render
+		// paths under test size it themselves once it is non-empty.
+		v.SetHeight(v.UsedHeight())
+		fe.logs.Logs[id] = v
+	}
+
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	joined := strings.Join(lines, "\n")
+
+	// The agent's message renders under its sender-attribution header...
+	headerIdx, bodyIdx := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "scout #3") {
+			headerIdx = i
+		}
+		if strings.Contains(l, "what branch should I target?") {
+			bodyIdx = i
+		}
+	}
+	if headerIdx == -1 {
+		t.Fatalf("agent message missing sender-attribution header:\n%s", joined)
+	}
+	if bodyIdx == -1 || bodyIdx <= headerIdx {
+		t.Fatalf("agent message body missing or not beneath its header (header=%d body=%d):\n%s", headerIdx, bodyIdx, joined)
+	}
+	// ...a reply pairs itself with the message it answers...
+	if !strings.Contains(joined, "chief ↩ #2") {
+		t.Fatalf("reply message missing reply-attribution header:\n%s", joined)
+	}
+	// ...and the user's own prompt gets no header.
+	if strings.Contains(joined, "user #") {
+		t.Fatalf("plain user prompt grew an attribution header:\n%s", joined)
+	}
+	if !strings.Contains(joined, "the user's own words") {
+		t.Fatalf("plain user prompt content missing:\n%s", joined)
+	}
+
+	// The event collapses to its first line plus an elision tail; the
+	// payload beneath stays in the logs, not the transcript.
+	if !strings.Contains(joined, `Agent "scout" is now idle. (+4 lines)`) {
+		t.Fatalf("event message not collapsed to a one-liner:\n%s", joined)
+	}
+	if strings.Contains(joined, "all done") {
+		t.Fatalf("event payload leaked into the transcript:\n%s", joined)
 	}
 }
 

@@ -56,11 +56,10 @@ func (s *workspaceSchema) overlayModuleLoader(
 // ID, so a further edit yields a further reload and an unchanged overlay is a
 // cache hit.
 //
-// A module-bearing value workspace has no served-module snapshot at all. Its
-// complete configured set is therefore resolved from its value-backed tree,
-// even when it has no pending overlay. GitRef.asWorkspace and portable
-// checkpoints use this path; Directory.asWorkspace remains intentionally
-// module-less.
+// A value workspace has no served-module snapshot at all. Its complete
+// configured set is therefore resolved from its own tree, even when it has no
+// pending overlay. Directory.asWorkspace, GitRef.asWorkspace, and workspaces
+// derived from them all use this path.
 //
 // For client-local workspaces, only entries the overlay actually touches are
 // re-resolved; everything else keeps using the served module, so a clean
@@ -78,39 +77,57 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	parent dagql.ObjectResult[*core.Workspace],
 	include []string,
 ) ([]overlayModule, error) {
+	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, false)
+	return loaded, err
+}
+
+func (s *workspaceSchema) workspaceOverlayModulesBestEffort(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	include []string,
+) ([]overlayModule, []string, error) {
+	return s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, true)
+}
+
+func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	include []string,
+	bestEffort bool,
+) ([]overlayModule, []string, error) {
 	ws := parent.Self()
 	if ws == nil || ws.ConfigFile == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
-	if _, ok := ws.OverlayChanges(); !ok && !ws.IsModuleBearingValue() {
-		return nil, nil
+	if _, ok := ws.OverlayChanges(); !ok && !ws.IsValueWorkspace() {
+		return nil, nil, nil
 	}
 
 	configFile, err := workspaceConfigFile(ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	// A module-bearing value owns the complete config tree, so every entry must
+	// A value workspace owns the complete config tree, so every entry must
 	// resolve from it. For a client-local overlay, a config edit can add, remove
 	// or repoint any entry; otherwise only edited source trees are suspect.
-	configTouched := ws.IsModuleBearingValue() || ws.OverlayPathTouched(configFile)
+	configTouched := ws.IsValueWorkspace() || ws.OverlayPathTouched(configFile)
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if envName, ok := selectedWorkspaceEnvFor(ctx, ws); ok {
 		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if len(cfg.Modules) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	names := make([]string, 0, len(cfg.Modules))
@@ -122,10 +139,13 @@ func (s *workspaceSchema) workspaceOverlayModules(
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var loaded []overlayModule
+	var (
+		loaded       []overlayModule
+		loadFailures []string
+	)
 	for _, name := range names {
 		if wanted != nil {
 			if _, ok := wanted[canonicalOverlayModuleName(name)]; !ok {
@@ -144,7 +164,12 @@ func (s *workspaceSchema) workspaceOverlayModules(
 
 		src, relevant, err := s.workspaceOverlayModuleSource(ctx, srv, parent, entry, configDir, configTouched)
 		if err != nil {
-			return nil, fmt.Errorf("module %q: %w", name, err)
+			moduleErr := fmt.Errorf("module %q: %w", name, err)
+			if bestEffort {
+				loadFailures = append(loadFailures, moduleErr.Error())
+				continue
+			}
+			return nil, nil, moduleErr
 		}
 		if !relevant {
 			continue
@@ -159,18 +184,28 @@ func (s *workspaceSchema) workspaceOverlayModules(
 			nil,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("module %q: %w", name, err)
+			moduleErr := fmt.Errorf("module %q: %w", name, err)
+			if bestEffort {
+				loadFailures = append(loadFailures, moduleErr.Error())
+				continue
+			}
+			return nil, nil, moduleErr
 		}
 
 		var mod dagql.ObjectResult[*core.Module]
 		if err := srv.Select(ctx, src, &mod,
 			dagql.Selector{Field: "asModule", Args: asModuleArgs},
 		); err != nil {
-			return nil, fmt.Errorf("module %q: load from workspace overlay: %w", name, err)
+			moduleErr := fmt.Errorf("module %q: load from workspace overlay: %w", name, err)
+			if bestEffort {
+				loadFailures = append(loadFailures, moduleErr.Error())
+				continue
+			}
+			return nil, nil, moduleErr
 		}
 		loaded = append(loaded, overlayModule{name: name, mod: mod})
 	}
-	return loaded, nil
+	return loaded, loadFailures, nil
 }
 
 // workspaceOverlayModuleSource resolves one config entry's module source, and

@@ -688,7 +688,7 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 
 // RunAgent evaluates an @agent leaf, threading the accumulator LLM explicitly
 // as the required `base` argument, and returns the resulting composed LLM. This
-// is the per-leaf step of AgentGroup.Compose (hack/designs/workspace-agents.md §3): the owning
+// is the per-leaf step of AgentMiddlewareGroup.Compose (hack/designs/workspace-agents.md §3): the owning
 // object is auto-constructed with defaults and the leaf is selected with
 // base = acc.
 func (node *ModTreeNode) RunAgent(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {

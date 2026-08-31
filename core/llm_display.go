@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -28,7 +29,9 @@ type displayPhase struct {
 	MarkdownW io.Writer
 
 	// callID is set for tool call phases.
-	callID string
+	callID              string
+	toolArgsWritten     bool
+	toolArgsEndsNewline bool
 }
 
 // displayPhases manages the lifecycle of display spans during LLM streaming.
@@ -71,9 +74,10 @@ func newDisplayPhases(parentCtx context.Context, callDigest string) *displayPhas
 	}
 }
 
-// digestAttrs appends the LLM call digest attribute when one is set, so the TUI
-// can branch a conversation from this span (matching emitMessageSpan).
-func (dp *displayPhases) digestAttrs(attrs []attribute.KeyValue) []attribute.KeyValue {
+// displayAttrs appends the enclosing agent's standard identity and the LLM
+// call digest, when present, so live display spans match emitMessageSpan.
+func (dp *displayPhases) displayAttrs(attrs []attribute.KeyValue) []attribute.KeyValue {
+	attrs = append(attrs, genAIAgentAttrsFromContext(dp.parentCtx)...)
 	if dp.callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, dp.callDigest))
 	}
@@ -89,7 +93,7 @@ func (dp *displayPhases) StartText(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "LLM response",
-		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
@@ -115,7 +119,7 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "thinking",
-		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "💭"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
@@ -149,7 +153,7 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 		parentCtx = dp.toolAnchorCtx
 	}
 	phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
-		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			attribute.String(telemetry.LLMToolAttr, toolName),
@@ -170,15 +174,22 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 	return p
 }
 
+func (p *displayPhase) writeToolArgs(args string) {
+	if args == "" {
+		return
+	}
+	fmt.Fprint(p.Stdio.Stdout, args)
+	p.toolArgsWritten = true
+	p.toolArgsEndsNewline = args[len(args)-1] == '\n'
+}
+
 // EmitToolCall records a fully-accumulated tool call as a display phase: it
 // opens the tool-call span, writes its arguments, and closes the phase so the
 // span is handed back for execution nesting. Use this for providers that
 // deliver tool calls whole rather than streaming their arguments.
 func (dp *displayPhases) EmitToolCall(idx int64, callID, toolName, args string) {
 	p := dp.StartToolCall(idx, callID, toolName)
-	if args != "" {
-		fmt.Fprint(p.Stdio.Stdout, args)
-	}
+	p.writeToolArgs(args)
 	dp.Close(idx)
 }
 
@@ -199,6 +210,12 @@ func (dp *displayPhases) Close(idx int64) {
 	p, ok := dp.phases[idx]
 	if !ok {
 		return
+	}
+	if p.callID != "" && p.toolArgsWritten && !p.toolArgsEndsNewline {
+		// Tool results may be routed into the same display stream. Terminate the
+		// JSON arguments so the first result line cannot be glued to the closing
+		// brace.
+		fmt.Fprintln(p.Stdio.Stdout)
 	}
 	p.Stdio.Close()
 	dp.displaySpans = append(dp.displaySpans, p.span)
@@ -222,6 +239,43 @@ func (dp *displayPhases) CloseAll() {
 	for _, idx := range idxs {
 		dp.Close(idx)
 	}
+}
+
+// ToolCall returns the display context for a closed tool-call phase. The span
+// deliberately remains open until its authoritative execution result arrives.
+func (dp *displayPhases) ToolCall(callID string) (toolCallDisplay, bool) {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	tc, ok := dp.toolCalls[callID]
+	return tc, ok
+}
+
+// FinishToolCall attaches the model-visible result to a live tool-call span,
+// records its context cost and error state, and ends it exactly once.
+func (dp *displayPhases) FinishToolCall(callID, result string, errored bool) {
+	dp.mu.Lock()
+	tc, ok := dp.toolCalls[callID]
+	if ok {
+		delete(dp.toolCalls, callID)
+	}
+	dp.mu.Unlock()
+	if !ok {
+		return
+	}
+	if tokens := estimateTextTokens(len(result)); tokens > 0 {
+		tc.Span.SetAttributes(attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens))
+	}
+	if errored {
+		tc.Span.SetStatus(codes.Error, result)
+	}
+	attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+	if resultType := toolResultContentType(result); resultType != "" {
+		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, resultType))
+	}
+	resultStdio := telemetry.SpanStdio(tc.Ctx, InstrumentationLibrary, attrs...)
+	fmt.Fprintln(resultStdio.Stdout, result)
+	_ = resultStdio.Close()
+	tc.Span.End()
 }
 
 // Abort records an error on all display spans and ends them. Called when

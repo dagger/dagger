@@ -49,10 +49,23 @@ type SpecificClientAttachableConnOpts struct {
 	IfAvailable bool
 }
 
+// ExecHTTPHandlerRegistry routes container-local HTTP requests to handlers
+// owned by the current engine session.
+type ExecHTTPHandlerRegistry interface {
+	Register(http.Handler) (token string, unregister func())
+	ServeHTTP(token string, response http.ResponseWriter, request *http.Request)
+}
+
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
-	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	// Register a unique nested transport using the creating context's held
+	// client scope before the proxy begins serving.
+	RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error)
+
+	// Handle an HTTP request from a registered nested Dagger client. When
+	// inertAttachables is true, host session attachable access is denied rather
+	// than inherited from the parent or awaited on the synthetic client.
+	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -109,14 +122,17 @@ type Server interface {
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
-	// The claim store for call-payload telemetry, scoped to the current
-	// client's delivery domain — the client and its ancestors, the DBs its
-	// telemetry actually fans out to — rather than the whole session. See
-	// core/dag_call_telemetry.go for why the scopes must differ.
-	CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
+	// The delivery-aware store for call-payload telemetry. It reports whether
+	// any target in the current client's route still needs a digest; the session
+	// log exporter atomically claims the exact missing targets at delivery time.
+	CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error)
 
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)
+
+	// The runtime-scoped HTTP handlers exposed to container executions in this
+	// session.
+	ExecHTTPHandlers(context.Context) (ExecHTTPHandlerRegistry, error)
 
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
@@ -129,7 +145,8 @@ type Server interface {
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
-	// The engine utility client for the current client
+	// The session-owned engine utility gateway for the current executable scope.
+	// Caller-facing operations route from immutable ClientMetadata in context.
 	Engine(context.Context) (*engineutil.Client, error)
 
 	// The session-owned registry resolver for the current client.
@@ -137,6 +154,9 @@ type Server interface {
 
 	// The services for the current client's session
 	Services(context.Context) (*Services, error)
+
+	// The agent runtimes for the current client's session
+	Agents(context.Context) (*AgentRuntimes, error)
 
 	// The default platform for the engine as a whole
 	Platform() Platform

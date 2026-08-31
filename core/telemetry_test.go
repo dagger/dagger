@@ -48,7 +48,11 @@ type mockServer struct {
 	attachables    map[string]*grpc.ClientConn
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
+	return engine.NewNestedClientTransport(nil), nil
+}
+
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -148,10 +152,13 @@ func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)         { ret
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }
-func (ms *mockServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+func (ms *mockServer) CallPayloadSeenKeyStore(context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	return nil, nil
 }
-func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
+func (ms *mockServer) Server(context.Context) (*dagql.Server, error) { return nil, nil }
+func (ms *mockServer) ExecHTTPHandlers(context.Context) (ExecHTTPHandlerRegistry, error) {
+	return nil, nil
+}
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
 
 func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) { return nil, nil }
@@ -163,6 +170,8 @@ func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolve
 }
 
 func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
+
+func (ms *mockServer) Agents(context.Context) (*AgentRuntimes, error) { return nil, nil }
 
 func (ms *mockServer) Platform() Platform                  { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store             { return nil }

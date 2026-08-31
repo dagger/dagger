@@ -59,22 +59,27 @@ func TestLlmConfig(t *testing.T) {
 		"env://ANTHROPIC_API_KEY":             "anthropic-api-key",
 		"env://ANTHROPIC_BASE_URL":            "anthropic-base-url",
 		"env://ANTHROPIC_MODEL":               "anthropic-model",
+		"env://ANTHROPIC_SMALL_MODEL":         "anthropic-small-model",
 		"env://ANTHROPIC_AUTH_TOKEN":          "anthropic-auth-token",
 		"env://ANTHROPIC_REASONING_EFFORT":    "anthropic-reasoning-effort",
 		"env://OPENAI_API_KEY":                "openai-api-key",
 		"env://OPENAI_AZURE_VERSION":          "openai-azure-version",
 		"env://OPENAI_BASE_URL":               "openai-base-url",
 		"env://OPENAI_MODEL":                  "openai-model",
+		"env://OPENAI_SMALL_MODEL":            "openai-small-model",
 		"env://OPENAI_DISABLE_STREAMING":      "t",
 		"env://OPENAI_CODEX_AUTH_TOKEN":       "openai-codex-auth-token",
 		"env://OPENAI_CODEX_MODEL":            "openai-codex-model",
+		"env://OPENAI_CODEX_SMALL_MODEL":      "openai-codex-small-model",
 		"env://OPENAI_CODEX_REASONING_EFFORT": "openai-codex-reasoning-effort",
 		"env://GEMINI_API_KEY":                "gemini-api-key",
 		"env://GEMINI_BASE_URL":               "gemini-base-url",
 		"env://GEMINI_MODEL":                  "gemini-model",
+		"env://GEMINI_SMALL_MODEL":            "gemini-small-model",
 		"env://GEMINI_REASONING_EFFORT":       "gemini-reasoning-effort",
 		"env://LOCAL_BASE_URL":                "local-base-url",
 		"env://LOCAL_MODEL":                   "local-model",
+		"env://LOCAL_SMALL_MODEL":             "local-small-model",
 		"env://LOCAL_API_COMPAT":              "openai",
 		"env://LOCAL_API_KEY":                 "local-api-key",
 	}
@@ -102,22 +107,27 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
 	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
 	assert.Equal(t, "anthropic-model", r.AnthropicModel)
+	assert.Equal(t, "anthropic-small-model", r.AnthropicSmallModel)
 	assert.Equal(t, "openai-api-key", r.OpenAIAPIKey)
 	assert.Equal(t, "openai-azure-version", r.OpenAIAzureVersion)
 	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
 	assert.Equal(t, "openai-model", r.OpenAIModel)
+	assert.Equal(t, "openai-small-model", r.OpenAISmallModel)
 	assert.True(t, r.OpenAIDisableStreaming)
 	assert.Equal(t, "openai-codex-auth-token", r.OpenAICodexAuthToken)
 	assert.Equal(t, "openai-codex-model", r.OpenAICodexModel)
+	assert.Equal(t, "openai-codex-small-model", r.OpenAICodexSmallModel)
 	assert.Equal(t, "openai-codex-reasoning-effort", r.OpenAICodexReasoningEffort)
 	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
 	assert.Equal(t, "anthropic-reasoning-effort", r.AnthropicReasoningEffort)
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+	assert.Equal(t, "gemini-small-model", r.GeminiSmallModel)
 	assert.Equal(t, "gemini-reasoning-effort", r.GeminiReasoningEffort)
 	assert.Equal(t, "local-base-url", r.LocalBaseURL)
 	assert.Equal(t, "local-model", r.LocalModel)
+	assert.Equal(t, "local-small-model", r.LocalSmallModel)
 	assert.Equal(t, "openai", r.LocalAPICompat)
 	assert.Equal(t, "local-api-key", r.LocalAPIKey)
 }
@@ -305,6 +315,43 @@ func TestCodexModelRouting(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, OpenAICodex, epNamed.Provider)
 	assert.Equal(t, "gpt-5.3-codex", epNamed.Model)
+}
+
+func TestSmallModelRouting(t *testing.T) {
+	t.Run("configured model wins and provider remains concrete", func(t *testing.T) {
+		r := &LLMRouter{OpenAISmallModel: "my-fast-model"}
+		model, ok := r.SmallModel(OpenAI)
+		require.True(t, ok)
+		assert.Equal(t, "my-fast-model", model)
+
+		ep, err := r.Route(model, string(OpenAI))
+		require.NoError(t, err)
+		assert.Equal(t, OpenAI, ep.Provider)
+		assert.Equal(t, "my-fast-model", ep.Model)
+	})
+
+	t.Run("catalog fallback follows provider", func(t *testing.T) {
+		r := new(LLMRouter)
+		model, ok := r.SmallModel(Anthropic)
+		require.True(t, ok)
+		assert.Equal(t, "claude-haiku-4-5-20251001", model)
+	})
+
+	t.Run("local and unknown providers safely retain their route", func(t *testing.T) {
+		r := new(LLMRouter)
+		for _, provider := range []LLMProvider{Local, Other, "unknown"} {
+			model, ok := r.SmallModel(provider)
+			assert.False(t, ok)
+			assert.Empty(t, model)
+		}
+	})
+
+	t.Run("configured local model is supported", func(t *testing.T) {
+		r := &LLMRouter{LocalSmallModel: "qwen3:small"}
+		model, ok := r.SmallModel(Local)
+		require.True(t, ok)
+		assert.Equal(t, "qwen3:small", model)
+	})
 }
 
 func TestExplicitProviderRouting(t *testing.T) {
@@ -671,4 +718,72 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+}
+
+func TestLLMWithHarnessConfiguration(t *testing.T) {
+	srv := newCoreDagqlServerForTest(t, LLMTestQuery{})
+	srv.InstallObject(dagql.NewClass[*Container](srv))
+
+	harnessResult := func(workdir string) dagql.ObjectResult[*Container] {
+		t.Helper()
+		container := new(Container)
+		container.Config.WorkingDir = workdir
+		res, err := dagql.NewObjectResultForCall(container, srv, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "test llm harness",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "test-provider")
+	require.NoError(t, err)
+	base.harnessCheckpoint = &LLMHarnessCheckpoint{
+		MessageCount: 1,
+		Correlations: []LLMHarnessMessageCorrelation{{
+			DaggerMessageID: "dagger-message",
+			VendorMessageID: "vendor-message",
+		}},
+	}
+
+	configured, err := base.WithHarness(harnessResult("/work"), LLMHarnessCodex)
+	require.NoError(t, err)
+	require.NotSame(t, base, configured)
+	require.NotNil(t, base.harnessCheckpoint, "the receiver must remain unchanged")
+	require.Nil(t, configured.harnessCheckpoint, "a new cold seed must clear the prior cursor")
+	require.Equal(t, "/work", configured.harness.Self().Config.WorkingDir)
+	require.Equal(t, LLMHarnessCodex, configured.harnessKind)
+
+	for _, workdir := range []string{"", "/", "//"} {
+		_, err := base.WithHarness(harnessResult(workdir), LLMHarnessClaude)
+		require.ErrorContains(t, err, "working directory must be non-empty and not root (/)")
+	}
+	_, err = base.WithHarness(harnessResult("/work"), LLMHarnessKind("OTHER"))
+	require.ErrorContains(t, err, "unsupported LLM harness kind")
+}
+
+func TestLLMCloneCopiesHarnessCheckpoint(t *testing.T) {
+	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "test-provider")
+	require.NoError(t, err)
+	base.harnessKind = LLMHarnessClaude
+	base.harnessCheckpoint = &LLMHarnessCheckpoint{
+		Kind:          LLMHarnessClaude,
+		MessageCount:  2,
+		HistoryDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		NativeSession: "session",
+		Protocol:      "v1",
+		Correlations: []LLMHarnessMessageCorrelation{{
+			DaggerMessageID: "dagger-message",
+			VendorMessageID: "vendor-message",
+		}},
+	}
+
+	clone := base.Clone()
+	require.NotSame(t, base.harnessCheckpoint, clone.harnessCheckpoint)
+	require.Equal(t, base.harnessCheckpoint, clone.harnessCheckpoint)
+
+	clone.harnessCheckpoint.MessageCount = 3
+	clone.harnessCheckpoint.Correlations[0].VendorMessageID = "changed"
+	require.Equal(t, 2, base.harnessCheckpoint.MessageCount)
+	require.Equal(t, "vendor-message", base.harnessCheckpoint.Correlations[0].VendorMessageID)
 }

@@ -12,16 +12,9 @@ import (
 // these hops use a larger queue at all.
 //
 // The queue must stay MODEST as well as bounded, because its worst case is paid
-// per PROCESSOR, and processors multiply: every client gets one such processor for
-// its own DB plus one per ancestor client, each with an eagerly allocated ring
-// (16 bytes/slot) that can fill with full span snapshots whenever the store
-// exporter falls behind. A heavily grouped CI session can hold dozens of clients, so
-// per-processor worst case × processor count is the engine's telemetry memory
-// ceiling. At 16Ki slots the per-processor ceiling is ~16 MiB of retained
-// snapshots (at ~1 KiB each) plus a 256 KiB ring — 16x below the previous 256Ki
-// sizing, which put a loaded session's aggregate worst case far past the physical
-// memory of a typical CI runner — while still giving 8x the SDK default's burst
-// headroom.
+// per-processor worst case used to multiply by client and ancestor counts. The
+// engine server now owns one processor per session and routes snapshots by their
+// stamped origin ID; the bounded queue still protects against burst retention.
 //
 // Kept BOUNDED — never BlockOnQueueFull — so telemetry can NEVER stall the build.
 // If a burst still overflows, spans are dropped rather than retained: the wcprof

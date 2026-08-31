@@ -2,6 +2,10 @@ package daggercmd
 
 import (
 	"context"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +62,281 @@ func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
 	handler := newShellCallHandler(nil, &idtui.FrontendMock{})
 	require.True(t, handler.noModule)
 	require.Equal(t, moduleURLDefault, handler.moduleURL)
+}
+
+func TestAssignAgentUsesPortableID(t *testing.T) {
+	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
+	handler.state = NewStateStore(nil)
+
+	portableID := dagger.ID("portable-agent-id")
+	handler.assignAgent(portableID)
+
+	agentToken := handler.shellEnv.Get(agentVar).String()
+	agentState, err := handler.state.Load(GetStateKey(agentToken))
+	require.NoError(t, err)
+	require.Len(t, agentState.Calls, 1)
+	require.Equal(t, "node", agentState.Calls[0].Name)
+	require.Equal(t, "LLM", agentState.Calls[0].ReturnObject)
+	require.Equal(t, string(portableID), agentState.Calls[0].Arguments["id"])
+}
+
+func TestAgentDebugServerHotkey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var debugSection idtui.SidebarSection
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Debug" {
+				debugSection = section
+			}
+		},
+	})
+	// The hidden binding is only active once prompt mode has an LLM session,
+	// matching the neighboring ctrl+t behavior.
+	handler.llmSession = &LLMSession{target: &sessionAgent{}}
+	for _, binding := range handler.KeyBindings(idtui.NewOutput(io.Discard)) {
+		require.NotContains(t, binding.Keys(), debugServerHotkey)
+		require.NotEqual(t, debugServerHotkey, binding.Help().Key)
+	}
+
+	ev := uv.KeyPressEvent{Code: 'p', Mod: uv.ModCtrl | uv.ModAlt}
+	work := handler.ReactToInput(ctx, ev, "", true)
+	require.NotNil(t, work)
+	work()
+
+	require.Equal(t, "Debug", debugSection.Title)
+	pprofURL, err := url.Parse(debugSection.Content)
+	require.NoError(t, err)
+	require.Equal(t, "http", pprofURL.Scheme)
+	require.Equal(t, "127.0.0.1", pprofURL.Hostname())
+	require.NotEmpty(t, pprofURL.Port())
+	require.NotEqual(t, "0", pprofURL.Port())
+	require.Equal(t, "/debug/pprof/", pprofURL.Path)
+	handler.debugServerL.Lock()
+	require.NotNil(t, handler.debugServerStop)
+	handler.debugServerL.Unlock()
+
+	client := &http.Client{Timeout: time.Second}
+	res, err := client.Get(pprofURL.String())
+	require.NoError(t, err)
+	res.Body.Close()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	work = handler.ReactToInput(ctx, ev, "", true)
+	require.NotNil(t, work)
+	work()
+	require.Empty(t, debugSection.Body(80))
+	handler.debugServerL.Lock()
+	require.Nil(t, handler.debugServerStop, "manual disable must retire context cleanup")
+	handler.debugServerL.Unlock()
+
+	conn, err := net.DialTimeout("tcp", pprofURL.Host, 100*time.Millisecond)
+	if err == nil {
+		conn.Close()
+	}
+	require.Error(t, err, "disabling the debug server must close its listener")
+}
+
+func TestAgentDebugServerContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sections := make(chan idtui.SidebarSection, 2)
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Debug" {
+				sections <- section
+			}
+		},
+	})
+	handler.llmSession = &LLMSession{target: &sessionAgent{}}
+
+	ev := uv.KeyPressEvent{Code: 'p', Mod: uv.ModCtrl | uv.ModAlt}
+	work := handler.ReactToInput(ctx, ev, "", true)
+	require.NotNil(t, work)
+	work()
+
+	var enabled idtui.SidebarSection
+	select {
+	case enabled = <-sections:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for enabled Debug sidebar")
+	}
+	pprofURL, err := url.Parse(enabled.Content)
+	require.NoError(t, err)
+
+	cancel()
+	select {
+	case cleared := <-sections:
+		require.Empty(t, cleared.Body(80), "context cleanup must clear the Debug sidebar")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Debug sidebar cleanup")
+	}
+
+	handler.debugServerL.Lock()
+	require.Nil(t, handler.debugServer)
+	require.Nil(t, handler.debugServerStop)
+	handler.debugServerL.Unlock()
+	conn, err := net.DialTimeout("tcp", pprofURL.Host, 100*time.Millisecond)
+	if err == nil {
+		conn.Close()
+	}
+	require.Error(t, err, "context cleanup must close the debug listener")
+}
+
+// TestAgentWorkspaceBaseline exercises a checkpoint-backed conversation end to
+// end: its Git state can be previewed and explicit synchronization advances
+// the checkpoint used by reset and clear.
+func (DaggerCMDSuite) TestAgentWorkspaceBaseline(ctx context.Context, t *testctx.T) {
+	workdir := filepath.Join(t.TempDir(), "work")
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1",
+		"https://github.com/dagger/dagger-test-modules.git", workdir)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	dag, err := dagger.Connect(ctx, dagger.WithWorkdir(workdir))
+	require.NoError(t, err)
+	t.Cleanup(func() { dag.Close() })
+
+	// Trace restore starts from an intentionally unbound LLM. It keeps that
+	// composition but has no baseline until an attached snapshot supplies one,
+	// and previewing it must not issue an unbound workspace query.
+	unboundSession := &LLMSession{dag: dag, plumbingCtx: ctx}
+	unbound := unboundSession.newAgent("unbound")
+	unboundSession.agents = []*sessionAgent{unbound}
+	unboundSession.target = unbound
+	require.NoError(t, unbound.setInitialLLM(dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"})))
+	require.Nil(t, unbound.lastSynced(nil))
+	unboundSession.frontend = &idtui.FrontendMock{
+		SetSidebarContentFunc: func(idtui.SidebarSection) {},
+	}
+	require.NoError(t, unbound.updateChangesPreview(unbound.llm))
+
+	baseline, err := checkpointWorkspace(ctx, dag)
+	require.NoError(t, err)
+	starting := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).
+		WithWorkspace(baseline).
+		WithSystemPrompt("keep the original agent composition").
+		WithTools(baseline)
+
+	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
+	handler.state = NewStateStore(nil)
+	session := &LLMSession{dag: dag, shell: handler, plumbingCtx: ctx}
+	agent := session.newAgent("baseline-test")
+	session.agents = []*sessionAgent{agent}
+	session.target = agent
+	require.NoError(t, agent.setInitialLLM(starting))
+	baselineID, err := baseline.ID(ctx)
+	require.NoError(t, err)
+	storedBaselineID, err := agent.lastSynced(nil).ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baselineID, storedBaselineID,
+		"the composed checkpoint, not NewLLMSession's temporary workspace, is the initial baseline")
+
+	edited := starting.WithWorkspace(baseline.WithNewFile("agent.txt", "from agent\n"))
+	require.NoError(t, agent.updateLLM(edited))
+
+	var changesSection idtui.SidebarSection
+	session.frontend = &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Changes" {
+				changesSection = section
+			}
+		},
+	}
+	require.NoError(t, agent.updateChangesPreview(edited))
+	require.Contains(t, changesSection.Body(80), "agent.txt")
+
+	t.Run("separates Git state from staged commits", func(ctx context.Context, t *testctx.T) {
+		workspace := baseline.
+			WithNewFile("committed.txt", "committed\n").
+			WithCommit("add committed file", "2026-08-18T00:00:00Z").
+			WithNewFile("pending.txt", "pending\n")
+
+		changes, err := idtui.PreviewWorkspaceChanges(ctx, dag, workspace)
+		require.NoError(t, err)
+		require.Len(t, changes.Uncommitted, 1)
+		require.Equal(t, "pending.txt", changes.Uncommitted[0].Path)
+		require.Len(t, changes.StagedCommits, 1)
+		require.Len(t, changes.StagedCommits[0].Entries, 1)
+		require.Equal(t, "committed.txt", changes.StagedCommits[0].Entries[0].Path)
+	})
+
+	t.Run("keeps a later edit to a staged path uncommitted", func(ctx context.Context, t *testctx.T) {
+		workspace := baseline.
+			WithNewFile("overlap.txt", "staged\n").
+			WithCommit("add overlap file", "2026-08-18T00:00:00Z").
+			WithNewFile("overlap.txt", "pending\n")
+
+		changes, err := idtui.PreviewWorkspaceChanges(ctx, dag, workspace)
+		require.NoError(t, err)
+		require.Len(t, changes.Uncommitted, 1)
+		require.Equal(t, "overlap.txt", changes.Uncommitted[0].Path)
+		require.Len(t, changes.StagedCommits, 1)
+		require.Len(t, changes.StagedCommits[0].Entries, 1)
+		require.Equal(t, "overlap.txt", changes.StagedCommits[0].Entries[0].Path)
+	})
+
+	t.Run("includes unmanaged pending edits", func(ctx context.Context, t *testctx.T) {
+		ignoredWorkdir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(ignoredWorkdir, ".gitignore"), []byte("*.previewignored\n"), 0o644))
+		git := func(args ...string) {
+			t.Helper()
+			cmd := exec.CommandContext(ctx, "git", append([]string{"-C", ignoredWorkdir}, args...)...)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+		}
+		git("init", "-q", "-b", "main")
+		git("add", ".gitignore")
+		git("-c", "user.name=Preview Test", "-c", "user.email=preview@localhost", "commit", "-qm", "initial")
+
+		ignoredDag, err := dagger.Connect(ctx, dagger.WithWorkdir(ignoredWorkdir))
+		require.NoError(t, err)
+		t.Cleanup(func() { ignoredDag.Close() })
+		workspace := ignoredDag.CurrentWorkspace().
+			WithNewFile("artifact.previewignored", "pending but ignored\n")
+
+		gitVisible, err := workspace.Git().Uncommitted().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, gitVisible, "ignored edit must not appear in git.uncommitted")
+		unmanaged, err := workspace.Git().Unmanaged().AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"artifact.previewignored"}, unmanaged)
+
+		changes, err := idtui.PreviewWorkspaceChanges(ctx, ignoredDag, workspace)
+		require.NoError(t, err)
+		require.Len(t, changes.Uncommitted, 1)
+		require.Equal(t, "artifact.previewignored", changes.Uncommitted[0].Path)
+	})
+	session.frontend = nil
+
+	// Export and reset each install their fresh checkpoint as the new baseline.
+	// .clear reuses that latest checkpoint while retaining the starting toolset.
+	beforeExport := agent.lastSynced(nil)
+	require.NoError(t, agent.ExportChanges(ctx))
+	afterExport := agent.lastSynced(nil)
+	require.NotSame(t, beforeExport, afterExport)
+	contents, err := os.ReadFile(filepath.Join(workdir, "agent.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "from agent\n", string(contents))
+
+	wantTools, err := starting.Tools(ctx)
+	require.NoError(t, err)
+	agent.Clear()
+	gotTools, err := agent.llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Equal(t, wantTools, gotTools, ".clear must preserve the original tool composition")
+	workspaceContents, err := agent.llm.Workspace().File("agent.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from agent\n", workspaceContents, ".clear must use the latest synchronized checkpoint")
+
+	dirty := agent.llm.Workspace().WithNewFile("discard.txt", "discard me\n")
+	require.NoError(t, agent.updateLLM(agent.llm.WithWorkspace(dirty)))
+	beforeReset := agent.lastSynced(nil)
+	require.NoError(t, agent.ResetWorkspace(ctx))
+	require.NotSame(t, beforeReset, agent.lastSynced(nil))
+	entries, err := agent.llm.Workspace().Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, "discard.txt")
 }
 
 func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
@@ -130,7 +409,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	handler.Handle(ctx, "What do you see in fruit.txt?")
 	sess, err := handler.llm(ctx)
 	require.NoError(t, err)
-	reply, err := sess.llm.LastReply(ctx)
+	reply, err := sess.Target().llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 
@@ -146,7 +425,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt now?")
-	reply, err = sess.llm.LastReply(ctx)
+	reply, err = sess.Target().llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 }

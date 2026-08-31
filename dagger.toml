@@ -16,6 +16,7 @@ legacy-default-path = true
 source = ".dagger/modules/dev"
 
 [modules.dev.settings]
+
 # Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
 # active Docker context points somewhere else.
 docker = "unix:///var/run/docker.sock"
@@ -51,6 +52,7 @@ source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
 legacy-default-path = true
 
 [modules.helm.settings]
+
 # The module installs the wolfi `helm` package as `helm~<version>`, and that
 # package moved to the 4.x line, so 3.x versions no longer resolve. Charts are
 # still packaged with helm 3 (see .dagger/modules/release/helm.go); revisit once
@@ -90,16 +92,9 @@ source = ".dagger/modules/security"
 legacy-default-path = true
 
 [modules.security.settings]
+
 # Paths to exclude from the source tree before scanning.
-ignore = [
-  "bin",
-  ".git",
-  "docs",
-  "sdk/rust/examples",
-  "sdk/rust/crates/dagger-sdk/examples",
-  "core/integration/testdata",
-  "dagql/idtui/viztest",
-]
+ignore = ["bin", ".git", "docs", "sdk/rust/examples", "sdk/rust/crates/dagger-sdk/examples", "core/integration/testdata", "dagql/idtui/viztest"]
 
 [modules.shellcheck]
 source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
@@ -119,17 +114,114 @@ source = "github.com/dagger/dang-sdk"
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"
 
+[env.codex.modules.codex]
+source = "modules/codex"
+
+[env.codex.modules.engine-lab]
+source = ".dagger/modules/engine-lab"
+
+[env.codex.modules.engine-lab.settings]
+
+# Dagger Cloud auth for the from-source CLI, so commands that talk to Cloud
+# run logged in as you. Resolved from the host on use; commands still work
+# (logged out) when the file isn't there.
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
+
+[env.codex.modules.tui-qa]
+source = ".dagger/modules/tui-qa"
+
+[env.codex.modules.tui-qa.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
+
+[env.codex.modules.mcp-lab]
+source = ".dagger/modules/mcp-lab"
+
+[env.codex.modules.staff]
+source = "modules/staff"
+
+[env.codex.modules.review]
+source = "modules/review"
+
+[env.codex.modules.contributor]
+source = "modules/contributor"
+
+[env.codex.modules.contributor.settings]
+githubToken = "cmd://gh auth token"
+remote = "dagger/dagger"
+
+[env.codex.modules.librarian]
+source = "modules/librarian"
+
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"
 
+[env.dev.modules.engine-lab.settings]
+
+# Dagger Cloud auth for the from-source CLI, so commands that talk to Cloud
+# run logged in as you. Resolved from the host on use; commands still work
+# (logged out) when the file isn't there.
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
+
+[env.dev.modules.sandbox]
+source = "modules/sandbox"
+
 [env.dev.modules.tui-qa]
 source = ".dagger/modules/tui-qa"
+
+[env.dev.modules.tui-qa.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
 
 [env.dev.modules.mcp-lab]
 source = ".dagger/modules/mcp-lab"
 
 [env.dev.modules.editor]
-source = "github.com/vito/editor"
+source = "modules/editor"
+
+# [env.dev.modules.golang]
+# source = "github.com/vito/dagger-go@go-doc"
+
+# [env.dev.modules.golang.settings]
+# base = "engine-dev:go-container"
+
+[env.dev.modules.go-cli]
+source = ".dagger/modules/go-cli"
+
+[env.dev.modules.staff]
+source = "modules/staff"
+
+# [env.dev.modules.delegate]
+# source = "modules/delegate"
+
+[env.dev.modules.review]
+source = "modules/review"
+
+[env.dev.modules.contributor]
+source = "modules/contributor"
+
+[env.dev.modules.contributor.settings]
+githubToken = "cmd://gh auth token"
+remote = "dagger/dagger"
+
+[env.dev.modules.librarian]
+source = "modules/librarian"
+
+[modules.history]
+source = "modules/history"
+
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
@@ -166,6 +258,9 @@ path = ".dagger/modules/test-split"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
 path = ".dagger/modules/typescript-client-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/go-cli"
 
 [modules.dagger-go-sdk.as-sdk]
 name = "go"
@@ -217,9 +312,6 @@ path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/rust-client-dev"
-
-[modules.tla-check]
-source = ".dagger/modules/tla-check"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/tla-check"

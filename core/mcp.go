@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql"
@@ -98,9 +99,8 @@ type MCP struct {
 	skillDirs []dagql.ObjectResult[*Directory]
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
-	// step() sets it before CallBatch; MCP.Call threads it into tool dispatch
-	// (LLMToContext) so a tool's `LLM!` argument auto-fills with it. Transient:
-	// cleared by Clone, never persisted.
+	// The object-tool adapter passes it explicitly to hidden LLM arguments.
+	// Transient: cleared by Clone, never persisted.
 	selfLLM dagql.ObjectResult[*LLM]
 	// continuation is an LLM returned by a tool during this step (see
 	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
@@ -168,8 +168,8 @@ func (m *MCP) Clone() *MCP {
 }
 
 // SetSelfLLM records the conversation dispatching this step's tool calls, so
-// MCP.Call can hand it to a tool that declares an `LLM!` argument. Called by
-// step() on its transient MCP clone, immediately before CallBatch.
+// the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
+// by step() on its transient MCP clone, immediately before CallBatch.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -189,6 +189,18 @@ func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.selfLLM
+}
+
+// toolCallContext binds the LLM's Workspace into a tool invocation. Every
+// transport must call this before dispatch: in-process tool calls and MCP over
+// stdio inherit their caller's context, while Streamable HTTP starts from a
+// transport request context and would otherwise fall back to the session's
+// ambient currentWorkspace.
+func (m *MCP) toolCallContext(ctx context.Context) context.Context {
+	if m.workspace.Self() == nil {
+		return ctx
+	}
+	return WorkspaceToContext(ctx, m.workspace)
 }
 
 func (m *MCP) Returned() bool {
@@ -379,6 +391,20 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		}
 	}
 	return patchpreview.SummarizeString(entries, summaryWidth)
+}
+
+const gitDiffContentType = "text/x-diff"
+
+// toolResultContentType classifies authoritative Git patches returned by tools.
+// Changeset.asPatch always starts with a diff --git header; summaries and other
+// tool output do not. Keeping this classification at the point that emits the
+// model-visible result lets every frontend render the same engine-side value
+// without reconstructing edits from tool arguments.
+func toolResultContentType(result string) string {
+	if strings.HasPrefix(result, "diff --git ") {
+		return gitDiffContentType
+	}
+	return ""
 }
 
 func toAny(v any) (res map[string]any, rerr error) {
@@ -584,9 +610,9 @@ func summarizeMountChanges(prev, next *Workspace) string {
 }
 
 // adoptLLM makes a tool-returned LLM the conversation the agent loop resumes
-// from — the continuation ring of the state-return convention. The tool is
-// handed the current conversation through an auto-injected `LLM!` argument
-// (see loadLLMArg), transforms it, and returns the result; step() then appends
+// from — the continuation ring of the state-return convention. The object-tool
+// adapter passes the current conversation directly to the tool's hidden `LLM!`
+// argument; the tool transforms it and returns the result. step() then appends
 // this turn's tool results to the RETURNED LLM instead of the one that made the
 // call, so the swap takes effect mid-turn without restarting the session.
 //
@@ -620,8 +646,8 @@ func (m *MCP) adoptLLM(ctx context.Context, next dagql.ObjectResult[*LLM]) (stri
 	if next.Self() == nil {
 		return "", fmt.Errorf("cannot continue from a null LLM")
 	}
-	current, ok := LLMFromContext(ctx)
-	if !ok {
+	current := m.currentLLM()
+	if current.Self() == nil {
 		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
 	}
 
@@ -1056,6 +1082,31 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
+func toolArgHeaderValue(name string, value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if str, ok := value.(string); ok {
+		return str, true
+	}
+	switch name {
+	case "offset", "limit":
+		return fmt.Sprint(value), true
+	case "args":
+		values, ok := value.([]any)
+		if !ok {
+			return "", false
+		}
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			parts = append(parts, fmt.Sprint(value))
+		}
+		return strings.Join(parts, " "), true
+	default:
+		return "", false
+	}
+}
+
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
 	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
@@ -1071,17 +1122,28 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 
 	var toolArgNames []string
 	var toolArgValues []string
+	seenToolArgs := map[string]bool{}
+	appendToolArg := func(name string) {
+		if seenToolArgs[name] {
+			return
+		}
+		val, ok := toolArgHeaderValue(name, args[name])
+		if !ok {
+			return
+		}
+		toolArgNames = append(toolArgNames, name)
+		toolArgValues = append(toolArgValues, val)
+		seenToolArgs[name] = true
+	}
 	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
 		for _, arg := range requiredArgs {
-			val, ok := args[arg]
-			if !ok {
-				continue
-			}
-			if str, ok := val.(string); ok {
-				toolArgNames = append(toolArgNames, arg)
-				toolArgValues = append(toolArgValues, str)
-			}
+			appendToolArg(arg)
 		}
+	}
+	// Header-specific optional values: Read's pagination controls and generic
+	// argv arrays are useful context even though they are not required args.
+	for _, arg := range []string{"offset", "limit", "args"} {
+		appendToolArg(arg)
 	}
 	toolName := tool.Name
 	if tool.Server != "" {
@@ -1116,10 +1178,6 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		}
 	}()
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.Bool(telemetry.LogsVerboseAttr, true))
-	defer stdio.Close()
-
 	defer func() {
 		// Bound the result before anything observes it: everything downstream
 		// must see exactly what the LLM sees, and this is the one place every
@@ -1127,23 +1185,19 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		// and the LLMToolResultTokensAttr estimate endToolCallDisplay stamps
 		// from the string we return.
 		res = guardToolResult(res)
-		// write final result to telemetry so we see exactly what the LLM sees
+
+		attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+		if contentType := toolResultContentType(res); contentType != "" {
+			attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
+		}
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
+		// Write the final result to telemetry so the TUI sees exactly what the
+		// LLM sees, with semantic content type when the result is a patch.
 		fmt.Fprintln(stdio.Stdout, res)
+		_ = stdio.Close()
 	}()
 
-	toolCtx := ctx
-	if m.workspace.Self() != nil {
-		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
-		// Workspace-typed args resolve against it, not the ambient workspace.
-		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
-	}
-	if self := m.currentLLM(); self.Self() != nil {
-		// Bind the conversation making this call so the tool's LLM-typed args
-		// auto-fill with it — the continuation hook (see adoptLLM). Note this
-		// must happen here rather than on the loop's ctx: a tool call runs under
-		// its display span's context, captured while the response streamed.
-		toolCtx = LLMToContext(toolCtx, self)
-	}
+	toolCtx := m.toolCallContext(ctx)
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
 		return toolErrorMessage(err), true
@@ -2197,6 +2251,63 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		},
 		Call: m.listServicesTool(srv),
 	})
+	allTools.Add(LLMTool{
+		Name:        "timeout",
+		Description: "Run one currently exposed tool with a timeout.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"duration": map[string]any{
+					"type":        "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
+				},
+				"tool": map[string]any{
+					"type":        "string",
+					"description": "Name of the currently exposed tool to invoke.",
+				},
+				"arguments": map[string]any{
+					"type":                 "object",
+					"description":          "Arguments to pass to the nested tool.",
+					"additionalProperties": true,
+				},
+			},
+			"required":             []string{"duration", "tool", "arguments"},
+			"additionalProperties": false,
+		},
+		Call: m.timeoutTool(allTools),
+	})
+}
+
+func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
+	return func(ctx context.Context, rawArgs any) (any, error) {
+		args, ok := rawArgs.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid arguments: %T", rawArgs)
+		}
+		durationArg, ok := args["duration"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid duration: expected string")
+		}
+		duration, err := time.ParseDuration(durationArg)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timeout duration %q: %w", durationArg, err)
+		}
+		toolName, ok := args["tool"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid tool: expected string")
+		}
+		toolArgs, ok := args["arguments"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid nested tool arguments: expected object")
+		}
+		tool, err := m.LookupTool(toolName, allTools.Order)
+		if err != nil {
+			return nil, err
+		}
+		ctx, cancel := context.WithTimeout(ctx, duration)
+		defer cancel()
+		return tool.Call(ctx, toolArgs)
+	}
 }
 
 func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {

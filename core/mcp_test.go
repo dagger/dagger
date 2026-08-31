@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
@@ -21,6 +22,170 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+func TestCallPreservesHeaderArgs(t *testing.T) {
+	sr, ctx := replayTestRecorder(t)
+	result, failed := newMCP().Call(ctx, []LLMTool{{
+		Name: "read",
+		Schema: map[string]any{
+			"required": []string{"path"},
+		},
+		Call: func(context.Context, any) (any, error) { return "ok", nil },
+	}}, &LLMToolCall{
+		Name:      "read",
+		Arguments: JSON(`{"path":"main.go","offset":20,"limit":10,"args":["foo","bar"]}`),
+	})
+	require.False(t, failed)
+	require.Equal(t, "ok", result)
+	trace.SpanFromContext(ctx).End()
+
+	ended := sr.Ended()
+	require.NotEmpty(t, ended)
+	span := ended[len(ended)-1]
+	names, ok := spanAttr(span, telemetry.LLMToolArgNamesAttr)
+	require.True(t, ok)
+	values, ok := spanAttr(span, telemetry.LLMToolArgValuesAttr)
+	require.True(t, ok)
+	require.Equal(t, []string{"path", "offset", "limit", "args"}, names.AsStringSlice())
+	require.Equal(t, []string{"main.go", "20", "10", "foo bar"}, values.AsStringSlice())
+}
+
+func TestToolResultContentType(t *testing.T) {
+	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
+	require.Equal(t, gitDiffContentType, toolResultContentType(patch))
+	require.Empty(t, toolResultContentType("main.go | 1 +\n"))
+	require.Empty(t, toolResultContentType("prefix\n"+patch))
+}
+
+func TestCallMarksPatchResult(t *testing.T) {
+	recorder, ctx := stateRecorderCtx(t)
+	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
+	result, failed := newMCP().Call(ctx, []LLMTool{{
+		Name: "edit",
+		Call: func(context.Context, any) (any, error) {
+			return patch, nil
+		},
+	}}, &LLMToolCall{Name: "edit"})
+	require.False(t, failed)
+	require.Equal(t, patch, result)
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	for _, record := range recorder.records {
+		if record.body == patch+"\n" {
+			require.Equal(t, gitDiffContentType, record.contentType)
+			return
+		}
+	}
+	t.Fatal("tool-result log was not emitted")
+}
+
+func TestTimeoutTool(t *testing.T) {
+	timeoutArgs := func(duration, tool string, arguments map[string]any) map[string]any {
+		return map[string]any{
+			"duration":  duration,
+			"tool":      tool,
+			"arguments": arguments,
+		}
+	}
+
+	t.Run("schema", func(t *testing.T) {
+		tool := timeoutToolForTest(t)
+		require.False(t, tool.ReadOnly)
+		require.Equal(t, []string{"duration", "tool", "arguments"}, tool.Schema["required"])
+		properties := tool.Schema["properties"].(map[string]any)
+		require.Equal(t, "string", properties["duration"].(map[string]any)["type"])
+		require.Equal(t, "string", properties["tool"].(map[string]any)["type"])
+		require.Equal(t, "object", properties["arguments"].(map[string]any)["type"])
+	})
+
+	t.Run("success", func(t *testing.T) {
+		wantArgs := map[string]any{"message": "hello"}
+		wantResult := map[string]any{"status": "ok"}
+		var gotArgs any
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "echo",
+			Call: func(_ context.Context, args any) (any, error) {
+				gotArgs = args
+				return wantResult, nil
+			},
+		})
+
+		result, err := tool.Call(t.Context(), timeoutArgs("1s", "echo", wantArgs))
+		require.NoError(t, err)
+		require.Equal(t, wantResult, result)
+		require.Equal(t, wantArgs, gotArgs)
+	})
+
+	t.Run("deadline cancellation reaches nested tool", func(t *testing.T) {
+		observed := make(chan error, 1)
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "wait",
+			Call: func(ctx context.Context, _ any) (any, error) {
+				select {
+				case <-ctx.Done():
+					observed <- ctx.Err()
+					return nil, ctx.Err()
+				case <-time.After(time.Second):
+					return nil, fmt.Errorf("nested context was not cancelled")
+				}
+			},
+		})
+
+		_, err := tool.Call(t.Context(), timeoutArgs("10ms", "wait", map[string]any{}))
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorIs(t, <-observed, context.DeadlineExceeded)
+	})
+
+	t.Run("invalid duration", func(t *testing.T) {
+		called := false
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "echo",
+			Call: func(context.Context, any) (any, error) {
+				called = true
+				return nil, nil
+			},
+		})
+
+		_, err := tool.Call(t.Context(), timeoutArgs("eventually", "echo", map[string]any{}))
+		require.ErrorContains(t, err, `invalid timeout duration "eventually"`)
+		require.False(t, called)
+	})
+
+	t.Run("unavailable target", func(t *testing.T) {
+		tool := timeoutToolForTest(t)
+		_, err := tool.Call(t.Context(), timeoutArgs("1s", "hidden", map[string]any{}))
+		require.EqualError(t, err, `tool "hidden" is not available`)
+	})
+
+	t.Run("self wrapping", func(t *testing.T) {
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "echo",
+			Call: func(_ context.Context, args any) (any, error) {
+				return args, nil
+			},
+		})
+		innerArgs := map[string]any{"message": "hello"}
+
+		result, err := tool.Call(t.Context(), timeoutArgs("1s", "timeout",
+			timeoutArgs("1s", "echo", innerArgs)))
+		require.NoError(t, err)
+		require.Equal(t, innerArgs, result)
+	})
+}
+
+func timeoutToolForTest(t *testing.T, targets ...LLMTool) *LLMTool {
+	t.Helper()
+	m := newMCP()
+	allTools := NewLLMToolSet()
+	for _, target := range targets {
+		require.True(t, allTools.Add(target))
+	}
+	m.loadBuiltins(nil, allTools)
+	tool, err := m.LookupTool("timeout", allTools.Order)
+	require.NoError(t, err)
+	return tool
+}
 
 func TestGenMCPToolPreservesSchema(t *testing.T) {
 	tool, err := genMcpTool(LLMTool{

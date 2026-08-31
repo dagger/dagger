@@ -28,6 +28,7 @@ type Query { doug: Doug! }
 type Workspace { id: ID! }
 type Changeset { id: ID! }
 type LLM { id: ID! }
+type Agent { id: ID! }
 type Container { id: ID! }
 type Directory { id: ID! }
 type Secret { id: ID! }
@@ -62,8 +63,14 @@ type Doug {
   "Update the TODO list."
   todoWrite(pending: [String!]! = []): Doug!
 
-  "Build an agent — its LLM! arg is auto-injected, so it IS eligible."
-  agent(base: ID! @expectedType(name: "LLM")): LLM!
+  "Compact the current conversation — MCP supplies the LLM argument."
+  compact(llm: ID! @expectedType(name: "LLM")): LLM!
+
+  "Poke the calling agent — MCP supplies the Agent argument."
+  poke(
+    caller: ID! @expectedType(name: "Agent"),
+    note: String!,
+  ): String!
 
   "Apply a changeset — requires a non-liftable object arg, so ineligible."
   apply(changes: ID! @expectedType(name: "Changeset")): Doug!
@@ -136,9 +143,10 @@ func TestObjectToolEligible(t *testing.T) {
 	// handle to pass.
 	require.False(t, objectToolEligible(fieldByName(doug, "apply"), nil))
 
-	// ...except when the engine fills it in: an `LLM!` arg is auto-injected with
-	// the conversation making the call, so it does not disqualify.
-	require.True(t, objectToolEligible(fieldByName(doug, "agent"), nil))
+	// LLM and Agent handles are supplied by MCP at object-tool dispatch, so
+	// these required arguments do not disqualify the methods.
+	require.True(t, objectToolEligible(fieldByName(doug, "compact"), nil))
+	require.True(t, objectToolEligible(fieldByName(doug, "poke"), nil))
 
 	// ...or when the type is LIFTABLE: a required Container arg renders as an
 	// address string and is lifted via the core Address API at dispatch time.
@@ -184,8 +192,16 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.NoError(t, err)
 	props := readSchema["properties"].(map[string]any)
 
-	// The auto-injected Workspace argument is hidden from the model.
+	// Workspace remains contextual, while LLM and Agent arguments are filled
+	// directly by MCP. None are exposed to the model's tool schema.
 	require.NotContains(t, props, "source")
+	compactSchema, err := objectMethodSchema(schema, fieldByName(doug, "compact"))
+	require.NoError(t, err)
+	require.NotContains(t, compactSchema["properties"], "llm")
+	pokeSchema, err := objectMethodSchema(schema, fieldByName(doug, "poke"))
+	require.NoError(t, err)
+	require.NotContains(t, pokeSchema["properties"], "caller")
+	require.Contains(t, pokeSchema["properties"], "note")
 
 	// Scalar args are surfaced with their JSON types; required tracks non-null
 	// args without a default.
@@ -458,11 +474,20 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	return srv
 }
 
+// TestBoundToolsUseTheirDefiningSchemaAuthoritatively covers both lazy bindings
+// restored from IDs and eager bindings created by workspace module discovery.
+// Even when the current workspace schema has a valid replacement definition for
+// the same type, the binding must keep the methods from the schema it was
+// composed with. The eager method call also proves dispatch remains callable
+// through the captured receiver after the workspace schema changes.
 func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	defining := newAddressLiftTestServer(t)
 	objType, ok := defining.ObjectType("LiftTestRunner")
 	require.True(t, ok)
 
+	// Install a different, valid definition of the same type in the current
+	// schema. Treating definingSchema as a missing-type fallback would silently
+	// replace the active tools with this method.
 	current := newCoreDagqlServerForTest(t, &Query{})
 	current.InstallObject(dagql.NewClass(current, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
 	dagql.Fields[*liftTestRunner]{
@@ -477,6 +502,7 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, toolsets, 1)
 		require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+
 		names := make([]string, 0, len(toolsets[0].tools))
 		for _, tool := range toolsets[0].tools {
 			names = append(names, tool.Name)
@@ -489,32 +515,36 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	t.Run("lazy", func(t *testing.T) {
 		assertDefiningTools(t, newMCP().WithLazyTools(nil, objType, defining.Schema(), nil))
 	})
+
 	t.Run("eager", func(t *testing.T) {
-		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "defining-schema-test", SessionID: "defining-schema-test"})
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+			ClientID:  "defining-schema-test",
+			SessionID: "defining-schema-test",
+		})
 		cache, err := dagql.NewCache(ctx, "", nil, nil)
 		require.NoError(t, err)
 		ctx = dagql.ContextWithCache(ctx, cache)
+
 		var runner dagql.AnyObjectResult
 		require.NoError(t, defining.Select(ctx, defining.Root(), &runner, dagql.Selector{Field: "runner"}))
 		tools := assertDefiningTools(t, newMCP().WithTools(runner, defining.Schema(), nil))
 		for _, tool := range tools {
-			if tool.Name == "nullable" {
-				out, err := tool.Call(ctx, map[string]any{"date": "still active"})
-				require.NoError(t, err)
-				require.Equal(t, "still active", out)
-				return
+			if tool.Name != "nullable" {
+				continue
 			}
+			out, err := tool.Call(ctx, map[string]any{"date": "still active"})
+			require.NoError(t, err)
+			require.Equal(t, "still active", out)
+			return
 		}
 		t.Fatal("nullable tool not found")
 	})
 }
 
-// TestBuildObjectMethodSelectorAddressLift covers dispatch: a model-supplied
-// string for a liftable object arg first tries the ID decode (IDs from
-// previous tool results keep working), then falls back to lifting the string
-// through Query.address(value).<addressField>. Args of addressable types
-// outside the liftableTypes allowlist only ever take the ID path.
-func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
+// TestBuildObjectMethodSelector covers argument dispatch against a real dagql
+// field: nullable scalars accept explicit null, while model-supplied strings
+// for liftable object args first try ID decoding and then address resolution.
+func TestBuildObjectMethodSelector(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
@@ -540,7 +570,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	t.Run("explicit null decodes for a nullable argument", func(t *testing.T) {
 		nullableField := fieldByName(srv.Schema().Types["LiftTestRunner"], "nullable")
 		require.NotNil(t, nullableField)
-		sel, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), nullableField, map[string]any{
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), nullableField, map[string]any{
 			"date": nil,
 		})
 		require.NoError(t, err)
@@ -550,7 +580,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	})
 
 	t.Run("address string lifts into the object", func(t *testing.T) {
-		sel, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": "alpine:latest",
 		})
@@ -574,7 +604,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 		encoded, err := ctrID.Encode()
 		require.NoError(t, err)
 
-		sel, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": encoded,
 		})
@@ -599,7 +629,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	})
 
 	t.Run("unresolvable address reports both attempts", func(t *testing.T) {
-		_, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": "bogus:ref",
 		})
@@ -610,7 +640,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	})
 
 	t.Run("non-string values surface the plain decode error", func(t *testing.T) {
-		_, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": 42,
 		})
@@ -620,7 +650,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 
 	t.Run("non-addressable args do not lift", func(t *testing.T) {
 		// cmd is a plain String: a bad value errors without any address lookup.
-		_, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     42,
 			"sandbox": "alpine:latest",
 		})
@@ -640,7 +670,7 @@ func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 		_, ok := liftableObjectArg(withDirField.Arguments.ForName("dir"))
 		require.False(t, ok)
 
-		_, err := buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withDirField, map[string]any{
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withDirField, map[string]any{
 			"dir": "some/host/path",
 		})
 		require.Error(t, err)

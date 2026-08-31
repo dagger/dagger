@@ -300,7 +300,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 			name:      "digest lookup",
 			sessionID: "rollback-digest",
 			load: func(sessionID string) error {
-				_, _, err := cB.lookupCacheForDigests(ctx, sessionID, noopTypeResolver{}, cacheTestCallDigest(reqCall), nil)
+				_, _, err := cB.lookupCacheForDigests(ctx, sessionID, noopTypeResolver{}, cacheTestCallDigest(reqCall), nil, reqCall.Type)
 				return err
 			},
 		},

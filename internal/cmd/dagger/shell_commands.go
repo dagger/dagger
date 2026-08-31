@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -228,7 +227,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				h.llmSession = h.llmSession.Clear()
+				h.llmSession.Target().Clear()
 				return nil
 			},
 		},
@@ -242,11 +241,12 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				compacted, err := h.llmSession.Compact(ctx)
+				target := h.llmSession.Target()
+				compacted, err := target.Compact(ctx)
 				if err != nil {
 					return err
 				}
-				return h.llmSession.updateLLM(compacted)
+				return target.updateLLM(compacted)
 			},
 		},
 		{
@@ -259,8 +259,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				_, err := h.llmSession.History(ctx)
-				return err
+				return h.llmSession.Target().History(ctx)
 			},
 		},
 		{
@@ -277,12 +276,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				newLLM, err := llm.Model(args[0])
-				if err != nil {
+				target := llm.Target()
+				if err := target.Model(args[0]); err != nil {
 					return err
 				}
-				h.llmSession = newLLM
-				h.llmModel = newLLM.model
+				h.noteModel(target.model)
 				return nil
 			},
 		},
@@ -300,111 +298,50 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				newLLM, err := llm.Effort(args[0])
-				if err != nil {
-					return err
-				}
-				h.llmSession = newLLM
-				return nil
+				return llm.Target().Effort(args[0])
 			},
 		},
 		{
-			Use:         ".resume [session]",
-			Description: "Resume a saved session (interactive picker if no id given)",
+			Use:         ".context",
+			Description: "Open the context visualizer: a web UI showing what occupies the context window",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				url, err := llm.ContextVizURL()
+				if err != nil {
+					return err
+				}
+				llm.ShowContextViz()
+				return h.Print(ctx, url)
+			},
+		},
+		{
+			Use:         ".resume [trace-id]",
+			Description: "Resume agents from a retained trace (engine archive picker if no trace ID is given)",
 			GroupID:     "llm",
 			Args:        MaximumArgs(1),
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				traceID := ""
 				if len(args) == 1 {
-					llm, err := h.llm(ctx)
-					if err != nil {
-						return err
-					}
-					// Replay the resumed conversation at the level above the
-					// ".resume" command span so it surfaces as the top-level
-					// transcript rather than nested under ".resume".
-					replayCtx := h.cmdParentCtx
-					if replayCtx == nil {
-						replayCtx = ctx
-					}
-					if err := llm.LoadSession(ctx, replayCtx, args[0]); err != nil {
-						return err
-					}
-					// Start a fresh save file for subsequent prompts, leaving
-					// the resumed session intact.
-					h.initialPrompt = ""
-					h.sessionUUID = ""
-					return nil
+					traceID = args[0]
 				}
-				return h.resumeSessionInteractive(ctx)
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				if !llm.Pristine() {
+					return fmt.Errorf("the interactive session has already started agent work; start a new session with dagger agent -r")
+				}
+				return restoreFromTrace(ctx, h, traceRestore{traceID: traceID, source: h.restoreSource})
 			},
 		},
 	}
-}
-
-// resumeSessionInteractive presents a picker of saved sessions and resumes the
-// selected one.
-func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
-	sessions, err := ListSessions()
-	if err != nil {
-		return err
-	}
-	if len(sessions) == 0 {
-		return fmt.Errorf("no saved sessions")
-	}
-
-	var options []huh.Option[string]
-	for _, s := range sessions {
-		displayName := s.Name
-		if len(displayName) > 60 {
-			displayName = displayName[:57] + "..."
-		}
-		ts := s.CreatedAt
-		if t, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
-			ts = t.Local().Format("Jan 2 15:04")
-		}
-		branchInfo := ""
-		if s.Branch != "" {
-			branchInfo = ", " + s.Branch
-		}
-		label := fmt.Sprintf("%s  (%s, %s%s)", displayName, s.Model, ts, branchInfo)
-		options = append(options, huh.NewOption(label, s.LLMID))
-	}
-
-	var selected string
-	form := idtui.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Resume session").
-				Options(options...).
-				Value(&selected),
-		),
-	)
-
-	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return err
-	}
-
-	if selected == "" {
-		return nil // user aborted
-	}
-
-	llm, err := h.llm(ctx)
-	if err != nil {
-		return err
-	}
-	// Replay the resumed conversation above the ".resume" command span so it
-	// surfaces as the top-level transcript rather than nested under ".resume".
-	replayCtx := h.cmdParentCtx
-	if replayCtx == nil {
-		replayCtx = ctx
-	}
-	if err := llm.LoadSession(ctx, replayCtx, selected); err != nil {
-		return err
-	}
-	h.initialPrompt = ""
-	h.sessionUUID = ""
-	return nil
 }
 
 // selectModelInteractive presents a picker of the models offered by the
@@ -442,12 +379,11 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	newLLM, err := llm.Model(selected)
-	if err != nil {
+	target := llm.Target()
+	if err := target.Model(selected); err != nil {
 		return err
 	}
-	h.llmSession = newLLM
-	h.llmModel = newLLM.model
+	h.noteModel(target.model)
 	return nil
 }
 
@@ -482,12 +418,7 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	newLLM, err := llm.Effort(selected)
-	if err != nil {
-		return err
-	}
-	h.llmSession = newLLM
-	return nil
+	return llm.Target().Effort(selected)
 }
 
 // reasoningEffortOptions builds the option list for the interactive ".effort"

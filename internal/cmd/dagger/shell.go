@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
@@ -25,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -49,6 +52,7 @@ var shellCmd = &cobra.Command{
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := newShellCallHandler(dag, Frontend)
+			handler.restoreSource = newEngineTraceRestoreSource(engineClient.ArchiveClient())
 
 			err := handler.RunAll(ctx, args)
 
@@ -71,9 +75,61 @@ var shellCmd = &cobra.Command{
 	},
 }
 
+// shellEnvironment keeps the runner's initial process environment while letting
+// asynchronous agent saves refresh $agent without running the interpreter.
+type shellEnvironment struct {
+	base expand.Environ
+
+	mu            sync.RWMutex
+	agent         expand.Variable
+	agentAssigned bool
+}
+
+func newShellEnvironment() *shellEnvironment {
+	return &shellEnvironment{base: expand.ListEnviron(os.Environ()...)}
+}
+
+func (e *shellEnvironment) Get(name string) expand.Variable {
+	if name != agentVar {
+		return e.base.Get(name)
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.agentAssigned {
+		return e.agent
+	}
+	return e.base.Get(name)
+}
+
+func (e *shellEnvironment) Each(yield func(string, expand.Variable) bool) {
+	e.mu.RLock()
+	agent, assigned := e.agent, e.agentAssigned
+	e.mu.RUnlock()
+
+	keepGoing := true
+	e.base.Each(func(name string, value expand.Variable) bool {
+		if assigned && name == agentVar {
+			return true
+		}
+		keepGoing = yield(name, value)
+		return keepGoing
+	})
+	if keepGoing && assigned {
+		yield(agentVar, agent)
+	}
+}
+
+func (e *shellEnvironment) setAgent(value string) {
+	e.mu.Lock()
+	e.agent = expand.Variable{Set: true, Kind: expand.String, Str: value}
+	e.agentAssigned = true
+	e.mu.Unlock()
+}
+
 type shellCallHandler struct {
-	dag    *dagger.Client
-	runner *interp.Runner
+	dag      *dagger.Client
+	runner   *interp.Runner
+	shellEnv *shellEnvironment
 
 	// don't detect + load a module, just stick to dagger core
 	noModule bool
@@ -126,6 +182,11 @@ type shellCallHandler struct {
 	// debug mode toggle
 	debug bool
 
+	// debugServer is the hidden, hotkey-controlled local pprof server.
+	debugServer     *http.Server
+	debugServerStop func() bool
+	debugServerL    sync.Mutex
+
 	// mu is used to synchronize access between the global handler and interpreter runs
 	mu sync.RWMutex
 
@@ -133,38 +194,152 @@ type shellCallHandler struct {
 	mode      interpreterMode
 	savedMode interpreterMode // for coming back from history
 
-	// initialPrompt is the first prompt of the current session, used to name
-	// the auto-saved session file. sessionUUID is the file UUID being updated
-	// in-place; empty until the first save (or reset on branch/resume).
+	// initialPrompt is the first prompt of the interactive session and feeds
+	// title generation. promptL also guards llmModel because prompt turns are
+	// not serialized: two focused-in-turn conversations can step at once.
 	initialPrompt string
-	sessionUUID   string
+	promptL       sync.Mutex
 
-	// queuedMsg carries a message the user submitted while the LLM was running,
-	// to be interjected as the next prompt.
+	// restoreSource is the connected engine archive source shared by startup
+	// resume and pristine .resume.
+	restoreSource traceRestoreSource
+
+	// archiveMetadata publishes generated titles to the active archive best-effort.
+	archiveMetadata func(context.Context, string) error
+
+	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
+	// mode and function-returned LLMs retain their command span names.
+	generateSessionTitle bool
+
+	// queuedMsg carries a message the user submitted while a non-prompt turn
+	// (e.g. a shell command or a prompt-mode /command) was running, to be run
+	// as a new turn once the current one finishes. Messages submitted while a
+	// PROMPT turn runs bypass this entirely: they are sent straight to the
+	// agent runtime (see Interject).
 	queuedMsg   string
 	queuedMsgMu sync.Mutex
 
 	// cancel interrupts the entire shell session
 	cancel func()
-
-	// cmdParentCtx is the context active just above the per-command span
-	// created in Handle. Builtins whose telemetry should surface as siblings of
-	// the command itself -- rather than nested under the command's own span --
-	// replay against this instead of the command ctx (e.g. .resume, whose
-	// replayed conversation belongs at the top level, not buried under the
-	// ".resume" span).
-	cmdParentCtx context.Context
 }
 
-// QueueMessage stores a message submitted while the LLM is running, to be
-// interjected as the next prompt once the current turn finishes.
+// SubmitToTarget hands a submitted message to the FOCUSED conversation's
+// in-flight turn, reporting whether there was one to absorb it. The send is
+// fire-and-forget: the engine records it immediately (joining the in-flight
+// turn at the next step boundary or queuing behind a pause) and its reply
+// arrives within the same turn's await.
+//
+// Routing asks the target, never "whichever turn is running": with a roster
+// the busy agent and the focused agent are routinely different agents, and
+// delivering to the busy one would put the user's words in a conversation
+// they were not looking at (hack/designs/async-agents.md §5.1).
+func (h *shellCallHandler) SubmitToTarget(msg string) bool {
+	s, err := h.llmMaybe()
+	if err != nil || s == nil {
+		return false
+	}
+	return s.SubmitToTarget(msg)
+}
+
+// InterruptTarget preempts the focused conversation -- Ctrl-C. It reports
+// whether there was anything to preempt, so the frontend can fall back to
+// cancelling a serial (shell) turn.
+func (h *shellCallHandler) InterruptTarget() bool {
+	s, err := h.llmMaybe()
+	if err != nil || s == nil {
+		return false
+	}
+	return s.InterruptTarget()
+}
+
+// Serial reports whether handling input would occupy the handler's single
+// interpreter: a shell line, or a prompt-mode "/command" rewritten to a
+// builtin. Prompt turns are not serial -- they run server-side in an agent
+// runtime -- so two agents can hold turns at once, which is the whole point of
+// a roster.
+func (h *shellCallHandler) Serial(input string) bool {
+	if h.mode != modePrompt {
+		return true
+	}
+	_, isCommand := h.slashCommand(strings.TrimSpace(input))
+	return isCommand
+}
+
+// TargetAgentID is the instance ID of the runtime the prompt addresses, which
+// the roster marks as focused. Empty until the target has spawned or attached
+// to one.
+func (h *shellCallHandler) TargetAgentID() string {
+	s, err := h.llmMaybe()
+	if err != nil || s == nil {
+		return ""
+	}
+	return s.TargetAgentID()
+}
+
+// FocusAgent points subsequent prompts at the agent with the given instance
+// ID, attaching to it -- via a handle the client rebuilt from the trace --
+// when the session is not already driving it. Focus moves only by keypress,
+// and a failed attach leaves it where it was.
+func (h *shellCallHandler) FocusAgent(ctx context.Context, agentID, name, encodedID string) error {
+	s, err := h.llm(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.Focus(ctx, agentID, name, encodedID); err != nil {
+		return err
+	}
+	// Talking to an agent means being in prompt mode; a focus switch that
+	// dropped the user's next line into the shell would be a nasty surprise.
+	h.mode = modePrompt
+	return nil
+}
+
+// AgentStepped relays a step boundary the frontend observed in the trace (an
+// agent committed its conversation) to the LLM session, which refreshes the
+// focused conversation's UI surfaces from the new snapshot. Called from
+// telemetry ingestion, so it must stay cheap; the engine round-trips happen
+// on a refresh goroutine.
+func (h *shellCallHandler) AgentStepped(instanceID string) {
+	s, err := h.llmMaybe()
+	if err != nil || s == nil {
+		return
+	}
+	s.AgentStepped(instanceID)
+}
+
+// notePrompt records the session's first prompt for title generation.
+func (h *shellCallHandler) notePrompt(line string) {
+	h.promptL.Lock()
+	defer h.promptL.Unlock()
+	if h.initialPrompt == "" {
+		h.initialPrompt = line
+	}
+}
+
+// noteModel records the model a turn resolved to, so later commands (.effort's
+// picker, a fresh conversation) default to it.
+func (h *shellCallHandler) noteModel(model string) {
+	h.promptL.Lock()
+	defer h.promptL.Unlock()
+	h.llmModel = model
+}
+
+func (h *shellCallHandler) sessionInitialPrompt() string {
+	h.promptL.Lock()
+	defer h.promptL.Unlock()
+	return h.initialPrompt
+}
+
+// QueueMessage stores a message submitted while a non-prompt turn was running,
+// to be run as a new turn once the current one finishes (see
+// frontendPretty.handleShellDone).
 func (h *shellCallHandler) QueueMessage(msg string) {
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()
 	h.queuedMsg = msg
 }
 
-// DequeueMessage returns and clears any queued interject message.
+// DequeueMessage returns and clears any queued message.
 func (h *shellCallHandler) DequeueMessage() string {
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()
@@ -194,7 +369,7 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		// branch target, providing context when continuing from the earlier
 		// point.
 		if summary.Summarize {
-			summaryText, err := s.BranchSummary(ctx, summary.CustomPrompt)
+			summaryText, err := s.Target().BranchSummary(ctx, summary.CustomPrompt)
 			if err != nil {
 				slog.Error("failed to summarize old branch", "error", err)
 				// Fall through to branch without summary.
@@ -207,16 +382,41 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		}
 
 		// updateLLM also refreshes the status line for the branched-to state.
-		if err := s.updateLLM(loadedLLM); err != nil {
+		if err := s.Target().updateLLM(loadedLLM); err != nil {
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
 		}
-		// Branching creates a new session; clear the save identity so the next
-		// prompt generates a fresh save file rather than overwriting the
-		// original, and switch to prompt mode for a new prompt.
-		h.sessionUUID = ""
-		h.initialPrompt = ""
+		// Continue the selected branch in prompt mode.
 		h.mode = modePrompt
+	}
+}
+
+// EditFromID captures the currently focused conversation, then returns the
+// asynchronous rewind operation used by the TUI's inline editor. Capturing the
+// target before the goroutine starts preserves focus routing even if the user
+// switches agents while the interrupt is landing.
+func (h *shellCallHandler) EditFromID(ctx context.Context, encodedID string) func() error {
+	h.llmL.Lock()
+	s := h.llmSession
+	err := h.llmErr
+	var target *sessionAgent
+	if s != nil {
+		target = s.Target()
+	}
+	h.llmL.Unlock()
+	if err != nil {
+		return func() error { return err }
+	}
+	if target == nil {
+		return func() error { return fmt.Errorf("no LLM session active") }
+	}
+	return func() error {
+		base := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
+		if err := target.Rewind(ctx, base); err != nil {
+			return err
+		}
+		h.mode = modePrompt
+		return nil
 	}
 }
 
@@ -289,8 +489,10 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 }
 
 func (h *shellCallHandler) Initialize(ctx context.Context) error {
+	h.shellEnv = newShellEnvironment()
 	r, err := interp.New(
 		interp.Params("-e", "-u", "-o", "pipefail"),
+		interp.Env(h.shellEnv),
 		interp.CallHandler(h.Call),
 		interp.ExecHandlers(h.Exec),
 
@@ -481,15 +683,17 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			if err != nil {
 				return err
 			}
-			if h.initialPrompt == "" {
-				h.initialPrompt = line
-			}
-			newLLM, err := llm.WithPrompt(ctx, line)
-			if err != nil {
+			h.notePrompt(line)
+			// The turn runs on whichever conversation the roster has
+			// focused; Target is the one place that resolves.
+			target := llm.Target()
+			if err := target.WithPrompt(ctx, line); err != nil {
+				if errors.Is(err, errAgentRewound) {
+					return nil
+				}
 				return err
 			}
-			h.llmSession = newLLM
-			h.llmModel = newLLM.model
+			h.noteModel(target.model)
 			return nil
 		}
 	}
@@ -499,11 +703,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
-
-	// Remember the context above the per-command span so builtins that replay
-	// conversation telemetry (.resume) can surface it at this level rather than
-	// nested under their own command span.
-	h.cmdParentCtx = ctx
 
 	// Create a new span for this command
 	var span trace.Span
@@ -719,25 +918,37 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 		return nil, err
 	}
 	h.llmSession = s
-	h.llmModel = s.model
-	// Auto-save the session after each step (and after ctrl+s exports/resets the
-	// workspace), updating the same file in-place so a conversation maps to a
-	// single session file. Set here at init so it is available even before the
-	// first prompt (e.g. ctrl+s on a freshly loaded session).
-	s.onStep = func(s *LLMSession) {
-		savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
-		if err != nil {
-			slog.Warn("failed to auto-save session", "error", err)
+	h.llmModel = s.Target().model
+	// Keep title generation as an independent post-turn callback. It is set only
+	// for dagger agent, never for generic function-returned LLMs.
+	h.configureSessionTitle(s)
+	return h.llmSession, h.llmErr
+}
+
+func (h *shellCallHandler) configureSessionTitle(s *LLMSession) {
+	if !h.generateSessionTitle {
+		return
+	}
+	s.onTitle = func(a *sessionAgent) {
+		title := s.ensureTitle(a, h.sessionInitialPrompt())
+		if title == "" || h.archiveMetadata == nil {
 			return
 		}
-		h.sessionUUID = savedUUID
+		ctx := s.plumbingCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		metadataCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := h.archiveMetadata(metadataCtx, title); err != nil {
+			slog.Debug("failed to update agent archive title", "error", err)
+		}
 	}
-	return h.llmSession, h.llmErr
 }
 
 func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 	autoCompactHelp := "auto-compact"
-	if h.llmSession != nil && h.llmSession.ShouldAutocompact() {
+	if h.llmSession != nil && h.llmSession.Target().ShouldAutocompact() {
 		autoCompactHelp = out.String(autoCompactHelp).Foreground(termenv.ANSIGreen).String()
 	}
 	return []key.Binding{
@@ -750,6 +961,11 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 			key.WithKeys(">"),
 			key.WithHelp(">", "run prompt"),
 			idtui.KeyEnabled(h.mode == modeShell),
+		),
+		key.NewBinding(
+			key.WithKeys("ctrl+t"),
+			key.WithHelp("ctrl+t", "context"),
+			idtui.KeyEnabled(h.llmSession != nil),
 		),
 		key.NewBinding(
 			key.WithKeys("ctrl+x"),
@@ -774,18 +990,34 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 			h.mode = modeShell
 			return noop // handled, no async work
 		}
+	case key.MatchString("ctrl+t"):
+		if h.llmSession != nil {
+			// Run async: starting the server and querying the engine for the
+			// sidebar/browser handoff must not block the input goroutine.
+			return func() {
+				h.llmSession.ShowContextViz()
+			}
+		}
+	case key.MatchString(debugServerHotkey):
+		if h.llmSession != nil {
+			// Run async, like ctrl+t: binding and shutting down the HTTP server
+			// must not block the input goroutine.
+			return func() {
+				h.toggleDebugServer(ctx)
+			}
+		}
 	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
 			// Run async: ToggleAutocompact refreshes the status line, which
 			// makes engine round-trips we don't want on the input goroutine.
 			return func() {
-				h.llmSession.ToggleAutocompact()
+				h.llmSession.Target().ToggleAutocompact()
 			}
 		}
 	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {
 			return func() {
-				if err := h.llmSession.ExportChanges(ctx); err != nil {
+				if err := h.llmSession.Target().ExportChanges(ctx); err != nil {
 					slog.Error("failed to export changes to local filesystem", "error", err.Error())
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
@@ -797,7 +1029,7 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 	case key.MatchString("ctrl+u"):
 		if h.llmSession != nil {
 			return func() {
-				if err := h.llmSession.ResetWorkspace(ctx); err != nil {
+				if err := h.llmSession.Target().ResetWorkspace(ctx); err != nil {
 					slog.Error("failed to reset agent workspace", "error", err.Error())
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
@@ -808,6 +1040,61 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 		}
 	}
 	return nil
+}
+
+// Ctrl+Alt+P is intentionally absent from KeyBindings: it is an obscure debug
+// chord, representable both as the legacy Meta-prefixed control byte and by the
+// enhanced keyboard protocol understood by the current input stack.
+const debugServerHotkey = "ctrl+alt+p"
+
+func (h *shellCallHandler) toggleDebugServer(ctx context.Context) {
+	h.debugServerL.Lock()
+	defer h.debugServerL.Unlock()
+
+	if h.debugServer != nil {
+		if h.debugServerStop != nil {
+			h.debugServerStop()
+			h.debugServerStop = nil
+		}
+		if err := h.debugServer.Close(); err != nil {
+			slog.Debug("failed to stop debug server", "error", err)
+		}
+		h.debugServer = nil
+		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
+		return
+	}
+
+	srv, lis, err := startDebugServer("127.0.0.1:0")
+	if err != nil {
+		slog.Error("failed to start debug server", "error", err)
+		h.frontend.SetSidebarContent(idtui.SidebarSection{
+			Title:   "Debug",
+			Content: "ERROR: " + err.Error(),
+		})
+		return
+	}
+	h.debugServer = srv
+	h.frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "Debug",
+		Content: fmt.Sprintf("http://%s/debug/pprof/", lis.Addr()),
+	})
+
+	// Register cancellation without parking a goroutine for the server's whole
+	// lifetime. Manual disable removes the callback before another toggle can
+	// register one, so repeated enable/disable cycles do not accumulate waiters.
+	h.debugServerStop = context.AfterFunc(ctx, func() {
+		h.debugServerL.Lock()
+		defer h.debugServerL.Unlock()
+		if h.debugServer != srv {
+			return
+		}
+		h.debugServerStop = nil
+		if err := srv.Close(); err != nil {
+			slog.Debug("failed to stop debug server", "error", err)
+		}
+		h.debugServer = nil
+		h.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Debug"})
+	})
 }
 
 func noop() {}

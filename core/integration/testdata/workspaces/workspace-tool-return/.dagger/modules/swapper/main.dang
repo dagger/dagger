@@ -30,8 +30,8 @@ type Swapper {
   """
   Continue the conversation with a workspace that has a marker file.
 
-  The auto-injected LLM! is the conversation up to and including this tool
-  call; returning a derived LLM makes the tool a continuation — the agent loop
+  MCP passes the current LLM directly, including the tool call itself; returning
+  a derived LLM makes the tool a continuation — the agent loop
   resumes from the returned conversation instead of the one that called it.
   """
   continueWithMarker(llm: LLM!): LLM! {

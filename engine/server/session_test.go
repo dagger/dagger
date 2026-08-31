@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,17 +19,1607 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	otelgo "github.com/dagger/otel-go"
+	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/go-sse/sse"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+func installTestClientRecords(sess *daggerSession) {
+	if sess.clientRecords == nil {
+		sess.clientRecords = make(map[string]*clientRecord, len(sess.clientRuntimes))
+	}
+	for id, runtime := range sess.clientRuntimes {
+		if runtime == nil || runtime.clientRecord == nil {
+			continue
+		}
+		runtime.daggerSession = sess
+		sess.clientRecords[id] = runtime.clientRecord
+	}
+}
+
+func newNestedTransportTestFixture(t *testing.T) (*Server, *daggerSession, *clientRuntime, context.Context, engine.ClientScope) {
+	t.Helper()
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "parent",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "parent", ClientSecretToken: "parent-token"},
+		metadataSealed: true,
+		accepting:      true},
+		state:           clientStateInitialized,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: parent.clientID,
+		clientRuntimes:     map[string]*clientRuntime{parent.clientID: parent},
+	}
+	parent.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+	transport, err := sess.acquireRootClientScope(parent, engine.ClientLeaseTransport, "parent")
+	require.NoError(t, err)
+	parent.transportLease = transport.Lease()
+	requestScope, err := sess.acquireRootClientScope(parent, engine.ClientLeaseRequest, "POST /query")
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(context.Background(), requestScope)
+	require.NoError(t, err)
+	return &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}, sess, parent, ctx, requestScope
+}
+
+func nestedTransportTestMetadata(clientID string) *engine.ClientMetadata {
+	return &engine.ClientMetadata{
+		SessionID:         "session",
+		ClientID:          clientID,
+		ClientSecretToken: clientID + "-token",
+		ClientVersion:     engine.Version,
+	}
+}
+
+func mergeClientMetadataForTest(sess *daggerSession, client *clientRuntime, metadata *engine.ClientMetadata) error {
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
+	return sess.mergeClientMetadataLocked(client.clientRecord, metadata)
+}
+
+func sealClientMetadataForTest(sess *daggerSession, client *clientRuntime) error {
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
+	return sess.sealClientMetadataLocked(client.clientRecord)
+}
+
+func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("child")
+
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	sess.clientMu.RLock()
+	child := sess.clientRuntimes[metadata.ClientID]
+	sess.clientMu.RUnlock()
+	require.NotNil(t, child)
+	require.Equal(t, clientStateUninitialized, child.state)
+	require.Equal(t, []string{parent.clientID}, child.parentClientIDs)
+	require.Same(t, transport, child.nestedTransport)
+
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "already registered")
+
+	transport.Close()
+	transport.Close()
+	require.True(t, transport.Closed())
+	accepting, _, childLeases := sess.clientLifecycleSnapshot(child)
+	require.False(t, accepting)
+	require.Empty(t, childLeases, "double close must release transport ownership exactly once")
+	require.Equal(t, clientStateReclaimed, child.state)
+	sess.clientMu.RLock()
+	_, runtimeRetained := sess.clientRuntimes[metadata.ClientID]
+	_, recordRetained := sess.clientRecords[metadata.ClientID]
+	sess.clientMu.RUnlock()
+	require.False(t, runtimeRetained, "idle close must reclaim the child runtime")
+	require.True(t, recordRetained, "quiescence must keep the session-long identity record")
+	debug := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, 2, debug.Records)
+	require.Equal(t, 1, debug.Runtimes)
+	require.Equal(t, "quiescent", debug.Sessions[0].Clients[0].RuntimeState)
+	require.NotNil(t, debug.Sessions[0].Clients[0].ClosedAt)
+	require.NotNil(t, debug.Sessions[0].Clients[0].QuiescentAt)
+
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "permanently closed")
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{version}"}`))
+	srv.ServeHTTPToNestedClient(recorder, req, transport, metadata, parent.clientID, false, nil, nil)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, clientStateReclaimed, child.state, "close before first request must leave a permanent record tombstone")
+
+	// The child's serialized quiescent transition releases the exact child edge
+	// it cloned from the parent.
+	_, _, parentLeases := sess.clientLifecycleSnapshot(parent)
+	for _, lease := range parentLeases {
+		require.NotEqual(t, engine.ClientLeaseChild, lease.kind)
+	}
+}
+
+func TestNestedTransportRegistrationRequiresExactHeldParentScope(t *testing.T) {
+	t.Parallel()
+
+	srv, _, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	metadata := nestedTransportTestMetadata("child")
+
+	_, err := srv.RegisterNestedClientTransport(context.Background(), metadata, parent.clientID)
+	require.ErrorContains(t, err, "requires a held parent client scope")
+
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, "other")
+	require.ErrorContains(t, err, "does not match")
+
+	otherSessionMetadata := *metadata
+	otherSessionMetadata.SessionID = "other-session"
+	_, err = srv.RegisterNestedClientTransport(ctx, &otherSessionMetadata, parent.clientID)
+	require.ErrorContains(t, err, "does not match")
+
+	fakeLease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "fake", func() {}, func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+		return engine.NewClientLifecycleLease(kind, ownerID, func() {}, nil), nil
+	})
+	fakeScope, err := engine.NewClientScope(parent.clientMetadata, fakeLease)
+	require.NoError(t, err)
+	fakeCtx, err := engine.ContextWithClientScope(context.Background(), fakeScope)
+	require.NoError(t, err)
+	_, err = srv.RegisterNestedClientTransport(fakeCtx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "does not belong to the current session")
+
+	requestScope.Lease().Release()
+	_, err = srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.ErrorContains(t, err, "does not belong to the current session")
+
+	// Equal string IDs from a replaced session record are still stale: the
+	// session authority token must match by identity.
+	_, _, _, staleCtx, staleScope := newNestedTransportTestFixture(t)
+	defer staleScope.Lease().Release()
+	freshSrv, _, freshParent, _, freshScope := newNestedTransportTestFixture(t)
+	defer freshScope.Lease().Release()
+	_, err = freshSrv.RegisterNestedClientTransport(staleCtx, metadata, freshParent.clientID)
+	require.ErrorContains(t, err, "does not belong to the current session")
+}
+
+func TestHeldParentScopeDelegatesWhileParentClosing(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	sess.closeClientScope(parent)
+
+	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err, "already accepted work must remain a delegation capability during parent close")
+	transport.Close()
+}
+
+func TestClosedClientWaitsForAcceptedBootstrapRequest(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("child")
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes[metadata.ClientID]
+
+	_, cleanup, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  metadata,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err)
+
+	transport.Close()
+	sess.clientMu.RLock()
+	require.Same(t, child, sess.clientRuntimes[child.clientID],
+		"an accepted bootstrap request must retain the closed runtime")
+	sess.clientMu.RUnlock()
+	_, _, leases := sess.clientLifecycleSnapshot(child)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseRequest, ownerID: "client connection"}}, leases)
+
+	require.NoError(t, cleanup())
+	require.NoError(t, cleanup(), "connection cleanup must be idempotent")
+	sess.clientMu.RLock()
+	_, runtimeRetained := sess.clientRuntimes[child.clientID]
+	record := sess.clientRecords[child.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, runtimeRetained)
+	require.NotNil(t, record)
+	sess.scopeMu.Lock()
+	require.False(t, record.quiescentAt.IsZero())
+	sess.scopeMu.Unlock()
+	child.stateMu.RLock()
+	require.Zero(t, child.activeCount, "idempotent cleanup must decrement the request count once")
+	child.stateMu.RUnlock()
+}
+
+func TestClientInitializationDoesNotHoldScopeLock(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("child")
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes[metadata.ClientID]
+
+	// Stop first initialization at the core-schema boundary. initializeClientRuntime
+	// holds stateMu there, giving the test a deterministic signal that it has
+	// crossed request admission and reached slow DagQL/schema work.
+	sess.engineUtilClient = new(engineutil.Client)
+	srv.coreSchemaBaseMu.Lock()
+	coreSchemaLocked := true
+	defer func() {
+		if coreSchemaLocked {
+			srv.coreSchemaBaseMu.Unlock()
+		}
+	}()
+
+	initCtx, cancelInit := context.WithCancel(context.Background())
+	defer cancelInit()
+	initDone := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(initCtx, &ClientInitOpts{
+			ClientMetadata:  metadata,
+			NestedTransport: transport,
+			ParentClientID:  parent.clientID,
+		})
+		initDone <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		if child.stateMu.TryLock() {
+			child.stateMu.Unlock()
+			return false
+		}
+		return true
+	}, time.Second, time.Millisecond, "client initialization did not reach the blocked schema boundary")
+
+	// The lifecycle regression held scopeMu across the blocked initializer. That
+	// inverted against schema construction, whose detached DagQL work clones a
+	// ClientScope and must acquire scopeMu. Admission must leave the lock available.
+	require.True(t, sess.scopeMu.TryLock(), "slow client initialization retained scopeMu")
+	sess.scopeMu.Unlock()
+
+	// Closing reachability during initialization must not reclaim the runtime:
+	// the provisional request lease owns it until initialization returns.
+	transport.Close()
+	sess.clientMu.RLock()
+	require.Same(t, child, sess.clientRuntimes[child.clientID])
+	sess.clientMu.RUnlock()
+	_, _, leases := sess.clientLifecycleSnapshot(child)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseRequest, ownerID: "client connection"}}, leases)
+
+	cancelInit()
+	srv.coreSchemaBaseMu.Unlock()
+	coreSchemaLocked = false
+	require.Error(t, <-initDone)
+	require.Eventually(t, func() bool {
+		sess.clientMu.RLock()
+		defer sess.clientMu.RUnlock()
+		_, retained := sess.clientRuntimes[child.clientID]
+		return !retained
+	}, time.Second, time.Millisecond, "failed initialization did not release its provisional request lease")
+}
+
+func TestChildQuiescenceReleasesClosingParent(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	sess.closeClientScope(parent)
+	childTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err, "the already accepted request may delegate while its parent closes")
+
+	requestScope.Lease().Release()
+	sess.clientMu.RLock()
+	_, parentRetained := sess.clientRuntimes[parent.clientID]
+	sess.clientMu.RUnlock()
+	require.True(t, parentRetained, "the live child lease must retain its closing parent")
+	_, _, parentLeases := sess.clientLifecycleSnapshot(parent)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseChild, ownerID: "child"}}, parentLeases)
+
+	childTransport.Close()
+	sess.clientMu.RLock()
+	_, childRetained := sess.clientRuntimes["child"]
+	_, parentRetained = sess.clientRuntimes[parent.clientID]
+	_, childRecordRetained := sess.clientRecords["child"]
+	_, parentRecordRetained := sess.clientRecords[parent.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, childRetained)
+	require.False(t, parentRetained, "the child's quiescent transition must wake parent reclamation")
+	require.True(t, childRecordRetained)
+	require.True(t, parentRecordRetained)
+}
+
+func TestNestedShutdownClosesRegisteredTransportIdempotently(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes["child"]
+	sess.scopeMu.Lock()
+	shutdownLease := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseRequest, "POST /shutdown")
+	sess.scopeMu.Unlock()
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil)
+	require.NoError(t, srv.serveShutdown(recorder, req, child))
+	require.True(t, transport.Closed())
+	transport.Close()
+	accepting, _, leases := sess.clientLifecycleSnapshot(child)
+	require.False(t, accepting)
+	require.Equal(t, []clientLifecycleLeaseRecord{{kind: engine.ClientLeaseRequest, ownerID: "POST /shutdown"}}, leases)
+	shutdownLease.Release()
+	sess.clientMu.RLock()
+	_, retained := sess.clientRuntimes[child.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, retained, "the accepted shutdown request must be the final owner")
+
+	retry := httptest.NewRecorder()
+	srv.ServeHTTPToNestedClient(
+		retry,
+		httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil),
+		transport,
+		nestedTransportTestMetadata("child"),
+		parent.clientID,
+		false,
+		nil,
+		nil,
+	)
+	require.Equal(t, http.StatusNoContent, retry.Code)
+}
+
+func TestNestedTransportCloseRacesAdmissionSerialization(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	transport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes["child"]
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	admitted := make(chan struct{})
+	go func() {
+		sess.scopeMu.Lock()
+		close(started)
+		<-release
+		if child.accepting {
+			child.metadataSealed = true
+		}
+		sess.scopeMu.Unlock()
+		close(admitted)
+	}()
+	<-started
+	closed := make(chan struct{})
+	go func() {
+		transport.Close()
+		close(closed)
+	}()
+	deadline := time.NewTimer(10 * time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	for !transport.Closed() {
+		select {
+		case <-deadline.C:
+			ticker.Stop()
+			close(release)
+			<-admitted
+			<-closed
+			t.Fatal("transport close did not publish its proxy-side marker")
+		case <-ticker.C:
+		}
+	}
+	deadline.Stop()
+	ticker.Stop()
+	select {
+	case <-closed:
+		close(release)
+		<-admitted
+		t.Fatal("transport close crossed in-progress request-admission serialization")
+	default:
+	}
+	close(release)
+	<-admitted
+	<-closed
+	accepting, _, _ := sess.clientLifecycleSnapshot(child)
+	require.False(t, accepting)
+
+	// Run the opposite deterministic ordering: close wins before initialization.
+	second, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("second"), parent.clientID)
+	require.NoError(t, err)
+	secondChild := sess.clientRuntimes["second"]
+	second.Close()
+	sess.scopeMu.Lock()
+	if secondChild.accepting {
+		secondChild.metadataSealed = true
+	}
+	sess.scopeMu.Unlock()
+	require.Equal(t, clientStateReclaimed, secondChild.state)
+}
+
+func TestNestedBootstrapRequestsMergeBeforeSeal(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	registration := nestedTransportTestMetadata("child")
+	transport, err := srv.RegisterNestedClientTransport(ctx, registration, parent.clientID)
+	require.NoError(t, err)
+	child := sess.clientRuntimes[registration.ClientID]
+
+	attachables := *registration
+	attachables.AllowedLLMModules = []string{"github.com/acme/mod"}
+	_, cleanup, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  &attachables,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cleanup())
+	require.Equal(t, clientStateUninitialized, child.state)
+	require.False(t, sess.clientMetadataSealed(child.clientRecord))
+
+	init := attachables
+	init.Workspace = stringPtr("github.com/acme/workspace@main")
+	_, cleanup, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  &init,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cleanup())
+
+	conflict := init
+	conflict.Workspace = stringPtr("github.com/acme/other@main")
+	_, _, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  &conflict,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.ErrorContains(t, err, "Workspace")
+
+	require.NoError(t, sealClientMetadataForTest(sess, child))
+	sealed, err := sess.clientMetadataSnapshot(child.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
+	require.Equal(t, *init.Workspace, *sealed.Workspace)
+
+	_, cleanup, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  sealed,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.NoError(t, err, "identical bootstrap replay after seal must be accepted")
+	require.NoError(t, cleanup())
+
+	transport.Close()
+	_, _, err = srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata:  sealed,
+		NestedTransport: transport,
+		ParentClientID:  parent.clientID,
+		BootstrapOnly:   true,
+	})
+	require.ErrorContains(t, err, "closed")
+}
+
+func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
+	t.Parallel()
+
+	type contribution struct {
+		name string
+		md   *engine.ClientMetadata
+	}
+	identity := func() *engine.ClientMetadata {
+		return &engine.ClientMetadata{
+			SessionID:         "session",
+			ClientID:          "client",
+			ClientSecretToken: "token",
+		}
+	}
+	registration := identity()
+	attachables := identity()
+	attachables.AllowedLLMModules = []string{"github.com/acme/mod"}
+	init := identity()
+	init.Workspace = stringPtr("github.com/acme/workspace@main")
+	query := identity()
+	query.ExtraModules = []engine.ExtraModule{{Ref: "github.com/acme/extra@v1", Name: "extra", Entrypoint: true}}
+	contributions := []contribution{{"attachables", attachables}, {"init", init}, {"first-request", query}}
+	orders := [][]int{
+		{0, 1, 2},
+		{0, 2, 1},
+		{1, 0, 2},
+		{1, 2, 0},
+		{2, 0, 1},
+		{2, 1, 0},
+	}
+
+	for _, order := range orders {
+		names := []string{contributions[order[0]].name, contributions[order[1]].name, contributions[order[2]].name}
+		t.Run(strings.Join(names, "-"), func(t *testing.T) {
+			client := &clientRuntime{clientRecord: &clientRecord{clientID: "client", accepting: true}}
+			sess := &daggerSession{}
+			require.NoError(t, mergeClientMetadataForTest(sess, client, registration))
+			for _, index := range order {
+				require.NoError(t, mergeClientMetadataForTest(sess, client, contributions[index].md))
+			}
+			require.NoError(t, sealClientMetadataForTest(sess, client))
+
+			sealed, err := sess.clientMetadataSnapshot(client.clientRecord)
+			require.NoError(t, err)
+			require.Equal(t, attachables.AllowedLLMModules, sealed.AllowedLLMModules)
+			require.Equal(t, *init.Workspace, *sealed.Workspace)
+			require.Equal(t, query.ExtraModules, sealed.ExtraModules)
+
+			// A complete identical replay is accepted after seal.
+			require.NoError(t, mergeClientMetadataForTest(sess, client, sealed))
+
+			completion := identity()
+			completion.WorkspaceEnv = stringPtr("ci")
+			require.ErrorContains(t, mergeClientMetadataForTest(sess, client, completion), "sealed")
+
+			conflict := identity()
+			conflict.Workspace = stringPtr("github.com/acme/other@main")
+			require.ErrorContains(t, mergeClientMetadataForTest(sess, client, conflict), "Workspace")
+		})
+	}
+
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "client", accepting: true}}
+	sess := &daggerSession{}
+	first := identity()
+	first.ClientVersion = "v1.0.0"
+	require.NoError(t, mergeClientMetadataForTest(sess, client, first))
+	require.NoError(t, mergeClientMetadataForTest(sess, client, first), "identical replay before seal must be accepted")
+	conflict := identity()
+	conflict.ClientVersion = "v2.0.0"
+	require.ErrorContains(t, mergeClientMetadataForTest(sess, client, conflict), "ClientVersion")
+}
+
+func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
+	t.Parallel()
+
+	workspace := "github.com/acme/workspace@main"
+	workspaceEnv := "ci"
+	input := &engine.ClientMetadata{
+		SessionID:          "session",
+		ClientID:           "client",
+		ClientSecretToken:  "token",
+		Labels:             map[string]string{"branch": "main"},
+		InteractiveCommand: []string{"sh", "-l"},
+		AllowedLLMModules:  []string{"github.com/acme/mod"},
+		UpstreamCacheImportConfig: []*controlapi.CacheOptionsEntry{{
+			Type:  "registry",
+			Attrs: map[string]string{"ref": "registry.example/acme/cache"},
+		}},
+		ExtraModules:          []engine.ExtraModule{{Ref: "github.com/acme/extra@v1", Name: "extra"}},
+		Workspace:             &workspace,
+		WorkspaceEnv:          &workspaceEnv,
+		UseRecipeIDsByDefault: true,
+	}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: input.ClientID, accepting: true}}
+	sess := &daggerSession{}
+	require.NoError(t, mergeClientMetadataForTest(sess, client, input))
+
+	input.Labels["branch"] = "mutated"
+	input.InteractiveCommand[0] = "mutated"
+	input.AllowedLLMModules[0] = "mutated"
+	input.UpstreamCacheImportConfig[0].Attrs["ref"] = "mutated"
+	input.ExtraModules[0].Ref = "mutated"
+	*input.Workspace = "mutated"
+	*input.WorkspaceEnv = "mutated"
+
+	require.NoError(t, sealClientMetadataForTest(sess, client))
+	lookup, err := sess.clientMetadataSnapshot(client.clientRecord)
+	require.NoError(t, err)
+	lookup.Labels["branch"] = "lookup-mutated"
+	lookup.ExtraModules[0].Ref = "lookup-mutated"
+	lookupAgain, err := sess.clientMetadataSnapshot(client.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, "main", lookupAgain.Labels["branch"])
+	require.Equal(t, "github.com/acme/extra@v1", lookupAgain.ExtraModules[0].Ref)
+
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", func() {}, nil)
+	scope, err := engine.NewClientScope(client.clientMetadata, lease)
+	require.NoError(t, err)
+	first, err := scope.Metadata()
+	require.NoError(t, err)
+	require.Equal(t, "main", first.Labels["branch"])
+	require.Equal(t, "sh", first.InteractiveCommand[0])
+	require.Equal(t, "github.com/acme/mod", first.AllowedLLMModules[0])
+	require.Equal(t, "registry.example/acme/cache", first.UpstreamCacheImportConfig[0].Attrs["ref"])
+	require.Equal(t, "github.com/acme/extra@v1", first.ExtraModules[0].Ref)
+	require.Equal(t, "github.com/acme/workspace@main", *first.Workspace)
+	require.Equal(t, "ci", *first.WorkspaceEnv)
+	require.True(t, first.UseRecipeIDsByDefault)
+
+	first.Labels["branch"] = "lookup-mutated"
+	first.ExtraModules[0].Ref = "lookup-mutated"
+	second, err := scope.Metadata()
+	require.NoError(t, err)
+	require.Equal(t, "main", second.Labels["branch"])
+	require.Equal(t, "github.com/acme/extra@v1", second.ExtraModules[0].Ref)
+	lease.Release()
+}
+
+func TestClientMetadataSealRacesTransportClose(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+		metadata := nestedTransportTestMetadata("child")
+		transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+		require.NoError(t, err)
+		child := sess.clientRuntimes[metadata.ClientID]
+
+		start := make(chan struct{})
+		sealErr := make(chan error, 1)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			sess.scopeMu.Lock()
+			defer sess.scopeMu.Unlock()
+			if !child.accepting || transport.Closed() {
+				return
+			}
+			if err := sess.mergeClientMetadataLocked(child.clientRecord, metadata); err != nil {
+				sealErr <- err
+				return
+			}
+			if err := sess.sealClientMetadataLocked(child.clientRecord); err != nil {
+				sealErr <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			transport.Close()
+		}()
+		close(start)
+		wg.Wait()
+		select {
+		case err := <-sealErr:
+			require.ErrorContains(t, err, "closed")
+		default:
+		}
+
+		accepting, _, leases := sess.clientLifecycleSnapshot(child)
+		require.False(t, accepting)
+		require.Empty(t, leases)
+		if sess.clientMetadataSealed(child.clientRecord) {
+			_, err := sess.clientMetadataSnapshot(child.clientRecord)
+			require.NoError(t, err)
+		}
+		requestScope.Lease().Release()
+	}
+}
+
+func TestSessionAttachablesLabelsAllowQueryAndShutdownAdmission(t *testing.T) {
+	t.Parallel()
+
+	metadata := &engine.ClientMetadata{
+		SessionID:         "session",
+		ClientID:          "client",
+		ClientSecretToken: "token",
+		Labels:            map[string]string{"dagger.io/sdk.name": "go"},
+	}
+	recordMetadata, err := cloneClientMetadata(metadata)
+	require.NoError(t, err)
+
+	analyticsLabels := sessionAnalyticsLabels(metadata, "test-engine").AsMap()
+	require.Equal(t, "test-engine", analyticsLabels["dagger.io/engine"])
+	require.Contains(t, analyticsLabels, "dagger.io/server.version")
+	require.Equal(t, map[string]string{"dagger.io/sdk.name": "go"}, metadata.Labels,
+		"session analytics labels must not mutate request metadata")
+
+	record := &clientRecord{
+		clientID:       metadata.ClientID,
+		clientMetadata: recordMetadata,
+		metadataSealed: true,
+		accepting:      true,
+	}
+	runtime := &clientRuntime{
+		clientRecord:    record,
+		state:           clientStateInitialized,
+		lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+	}
+	sess := &daggerSession{
+		sessionID:          metadata.SessionID,
+		mainClientCallerID: "main",
+		clientRecords:      map[string]*clientRecord{metadata.ClientID: record},
+		clientRuntimes:     map[string]*clientRuntime{metadata.ClientID: runtime},
+	}
+	record.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{metadata.SessionID: sess}}
+
+	for _, request := range []struct {
+		name          string
+		bootstrapOnly bool
+	}{
+		{name: "query", bootstrapOnly: false},
+		{name: "shutdown", bootstrapOnly: true},
+	} {
+		t.Run(request.name, func(t *testing.T) {
+			client, cleanup, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+				ClientMetadata: metadata,
+				RootClient:     true,
+				BootstrapOnly:  request.bootstrapOnly,
+			})
+			require.NoError(t, err)
+			require.Same(t, runtime, client)
+			require.NoError(t, cleanup())
+		})
+	}
+}
+
+func TestClientRecordLookupsAreIndependentFromExecutableRuntime(t *testing.T) {
+	t.Parallel()
+
+	root := &clientRecord{
+		clientID:        "root",
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "root", Labels: map[string]string{"kind": "record"}},
+		metadataSealed:  true,
+		accepting:       true,
+		parentClientIDs: nil,
+	}
+	child := &clientRecord{
+		clientID:        "child",
+		clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: "child"},
+		metadataSealed:  true,
+		accepting:       true,
+		parentClientIDs: []string{"root"},
+	}
+	sess := &daggerSession{
+		sessionID: "session",
+		clientRecords: map[string]*clientRecord{
+			root.clientID:  root,
+			child.clientID: child,
+		},
+		clientRuntimes: map[string]*clientRuntime{},
+	}
+	root.daggerSession = sess
+	child.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), child.clientMetadata)
+	metadata, err := srv.SpecificClientMetadata(ctx, root.clientID)
+	require.NoError(t, err)
+	require.Equal(t, "record", metadata.Labels["kind"])
+	route, err := sess.telemetryRouteOriginClientID(child.clientID)
+	require.NoError(t, err)
+	require.Equal(t, []string{"child", "root"}, route)
+
+	_, err = sess.clientRuntimeForRecord(child)
+	require.ErrorContains(t, err, "not retained")
+	_, err = srv.executableClientFromContext(ctx)
+	require.ErrorContains(t, err, "requires a client scope")
+
+	runtime := &clientRuntime{
+		clientRecord:    child,
+		state:           clientStateInitialized,
+		lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+	}
+	sess.clientMu.Lock()
+	sess.clientRuntimes[child.clientID] = runtime
+	sess.clientMu.Unlock()
+
+	_, err = srv.executableClientFromContext(ctx)
+	require.ErrorContains(t, err, "requires a client scope",
+		"metadata identity alone must not authorize executable runtime access")
+	scope, err := sess.acquireRootClientScope(runtime, engine.ClientLeaseRequest, "test")
+	require.NoError(t, err)
+	scopeCtx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+	got, err := srv.executableClientFromContext(scopeCtx)
+	require.NoError(t, err)
+	require.Same(t, runtime, got)
+	scope.Lease().Release()
+
+	_, _, leases := sess.clientLifecycleSnapshot(runtime)
+	require.Empty(t, leases)
+	sess.clientMu.RLock()
+	retained := sess.clientRuntimes[child.clientID]
+	sess.clientMu.RUnlock()
+	require.Same(t, runtime, retained, "an open transport keeps its runtime reachable even with no request leases")
+	sess.closeClientScope(runtime)
+	sess.clientMu.RLock()
+	_, retainedAfterClose := sess.clientRuntimes[child.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, retainedAfterClose, "closing a zero-lease runtime must reclaim it")
+	require.Contains(t, sess.clientRecords, child.clientID)
+}
+
+func TestWorkspaceHostAccessDoesNotRequireOwnerRuntime(t *testing.T) {
+	t.Parallel()
+
+	owner := &clientRecord{
+		clientID: "owner",
+		clientMetadata: &engine.ClientMetadata{
+			SessionID: "session",
+			ClientID:  "owner",
+			Labels:    map[string]string{"source": "record"},
+		},
+		metadataSealed: true,
+		accepting:      true,
+	}
+	callerRecord := &clientRecord{
+		clientID: "caller",
+		clientMetadata: &engine.ClientMetadata{
+			SessionID: "session",
+			ClientID:  "caller",
+		},
+		metadataSealed: true,
+		accepting:      true,
+	}
+	callerRuntime := &clientRuntime{
+		clientRecord:    callerRecord,
+		state:           clientStateInitialized,
+		lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+	}
+	ownerAttachable := &sessionAttachableCaller{
+		ctx:       context.Background(),
+		supported: map[string]struct{}{},
+	}
+	attachables := newSessionAttachableManager()
+	attachables.callers[owner.clientID] = ownerAttachable
+	sess := &daggerSession{
+		sessionID:   "session",
+		attachables: attachables,
+		clientRecords: map[string]*clientRecord{
+			owner.clientID:        owner,
+			callerRecord.clientID: callerRecord,
+		},
+		clientRuntimes: map[string]*clientRuntime{
+			callerRecord.clientID: callerRuntime,
+		},
+	}
+	owner.daggerSession = sess
+	callerRecord.daggerSession = sess
+	sess.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		return sess.attachables.Wait(ctx, id)
+	}
+	sess.engineUtilClient = &engineutil.Client{Opts: &engineutil.Opts{
+		GetClientCaller:      sess.getClientCaller,
+		GetHostServiceCaller: sess.resolveHostServiceCaller,
+	}}
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	scope, err := sess.acquireRootClientScope(callerRuntime, engine.ClientLeaseRequest, "workspace access")
+	require.NoError(t, err)
+	defer scope.Lease().Release()
+	callerCtx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+
+	workspaceCtx, gateway, err := srv.workspaceOwnerAccess(callerCtx, sess, &core.Workspace{ClientID: owner.clientID})
+	require.NoError(t, err)
+	require.Same(t, sess.engineUtilClient, gateway)
+	require.NotContains(t, sess.clientRuntimes, owner.clientID,
+		"workspace owner access must not require a retained owner runtime")
+
+	ownerMetadata, err := engine.ClientMetadataFromContext(workspaceCtx)
+	require.NoError(t, err)
+	require.Equal(t, owner.clientID, ownerMetadata.ClientID)
+	ownerMetadata.Labels["source"] = "mutated"
+
+	caller, err := gateway.GetSessionCaller(workspaceCtx)
+	require.NoError(t, err)
+	require.Same(t, ownerAttachable, caller,
+		"session gateway must route from immutable owner metadata to the owner attachable")
+
+	queryGateway, err := srv.Engine(workspaceCtx)
+	require.NoError(t, err)
+	require.Same(t, gateway, queryGateway,
+		"workspace Query.Engine paths must use the session-owned gateway")
+	caller, err = queryGateway.GetSessionCaller(workspaceCtx)
+	require.NoError(t, err)
+	require.Same(t, ownerAttachable, caller)
+
+	workspaceCtx, _, err = srv.workspaceOwnerAccess(callerCtx, sess, &core.Workspace{ClientID: owner.clientID})
+	require.NoError(t, err)
+	ownerMetadata, err = engine.ClientMetadataFromContext(workspaceCtx)
+	require.NoError(t, err)
+	require.Equal(t, "record", ownerMetadata.Labels["source"],
+		"workspace access must clone immutable owner metadata")
+}
+
+func TestClientScopeRequiresSealedMetadata(t *testing.T) {
+	t.Parallel()
+
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client", ClientSecretToken: "token"},
+		accepting:      true},
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+	sess := &daggerSession{
+		sessionID:      "session",
+		clientRuntimes: map[string]*clientRuntime{client.clientID: client},
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+	_, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "before-seal")
+	require.ErrorContains(t, err, "not sealed")
+
+	require.NoError(t, sealClientMetadataForTest(sess, client))
+	scope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "after-seal")
+	require.NoError(t, err)
+	scope.Lease().Release()
+}
+
+func TestClientLifecycleScopesSerializeCloseCloneAndRelease(t *testing.T) {
+	t.Parallel()
+
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client", Labels: map[string]string{"scope": "sealed"}},
+		metadataSealed: true,
+		accepting:      true},
+		state:           clientStateInitialized,
+		dagqlRoot:       &core.Query{},
+		workspace:       &core.Workspace{},
+		failedModules:   map[string]error{"old": errors.New("old")},
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: client.clientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+
+	transportScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
+	require.NoError(t, err)
+	client.transportLease = transportScope.Lease()
+	requestScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "POST /query")
+	require.NoError(t, err)
+
+	sess.closeClientScope(client)
+	_, err = sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "late root")
+	require.ErrorContains(t, err, "closed")
+
+	// The accepted request remains a strict capability while reachability is
+	// closing and may still delegate terminal/background work.
+	agentScope, err := requestScope.Clone(engine.ClientLeaseAgent, "agent-1")
+	require.NoError(t, err)
+	tombstoneScope, err := requestScope.Clone(engine.ClientLeaseAgentTombstone, "agent-tombstone-1")
+	require.NoError(t, err)
+	serviceScope, err := requestScope.Clone(engine.ClientLeaseService, "service-1")
+	require.NoError(t, err)
+	sharedScope, err := requestScope.Clone(engine.ClientLeaseSharedWork, "call-1")
+	require.NoError(t, err)
+
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+	snapshot := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, []LifecycleRetentionReason{
+		{Kind: "agent", OwnerID: "agent-1", Count: 1},
+		{Kind: "agent-tombstone", OwnerID: "agent-tombstone-1", Count: 1},
+		{Kind: "request", OwnerID: "POST /query", Count: 1},
+		{Kind: "service", OwnerID: "service-1", Count: 1},
+		{Kind: "shared-work", OwnerID: "call-1", Count: 1},
+	}, snapshot.LeaseCounts)
+	require.Equal(t, 1, snapshot.ActiveRequests)
+
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Add(5)
+		go func() {
+			defer wg.Done()
+			requestScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			agentScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			tombstoneScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			serviceScope.Lease().Release()
+		}()
+		go func() {
+			defer wg.Done()
+			sharedScope.Lease().Release()
+		}()
+	}
+	wg.Wait()
+	require.Empty(t, srv.ClientLifecycleDebugSnapshot().LeaseCounts)
+	sess.clientMu.RLock()
+	_, runtimeRetained := sess.clientRuntimes[client.clientID]
+	_, recordRetained := sess.clientRecords[client.clientID]
+	sess.clientMu.RUnlock()
+	require.False(t, runtimeRetained)
+	require.True(t, recordRetained)
+	require.Equal(t, clientStateReclaimed, client.state)
+	require.Nil(t, client.dagqlRoot, "reclamation must clear execution graph roots from stale lease shells")
+	require.Nil(t, client.workspace)
+	require.Nil(t, client.failedModules)
+	_, err = requestScope.Clone(engine.ClientLeaseChild, "late-child")
+	require.ErrorContains(t, err, "not held")
+}
+
+func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
+	t.Parallel()
+
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client"},
+		metadataSealed: true,
+		accepting:      true},
+		state:           clientStateInitialized,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+	sess := &daggerSession{
+		sessionID:      "session",
+		clientRuntimes: map[string]*clientRuntime{client.clientID: client},
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+	transport, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
+	require.NoError(t, err)
+	client.transportLease = transport.Lease()
+	source, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "request")
+	require.NoError(t, err)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			clone, err := source.Clone(engine.ClientLeaseChild, fmt.Sprintf("child-%d", i))
+			if err == nil {
+				clone.Lease().Release()
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		sess.markSessionRemoved()
+		sess.beginClientScopeTeardown()
+	}()
+	close(start)
+	wg.Wait()
+	source.Lease().Release()
+
+	_, err = sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "late")
+	require.ErrorContains(t, err, "session")
+	_, _, leases := sess.clientLifecycleSnapshot(client)
+	require.Empty(t, leases)
+}
+
+func TestClientRuntimeReclamationRacesCloseLeasesChildAndTeardown(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		srv, sess, parent, ctx, parentRequest := newNestedTransportTestFixture(t)
+		childTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+		require.NoError(t, err)
+		child := sess.clientRuntimes["child"]
+
+		sess.scopeMu.Lock()
+		childRequest := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseRequest, "request")
+		childService := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseService, "service")
+		childShared := sess.newClientLifecycleLeaseLocked(child, engine.ClientLeaseSharedWork, "shared")
+		sess.scopeMu.Unlock()
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for _, action := range []func(){
+			func() { childTransport.Close() },
+			func() { sess.closeClientScope(parent) },
+			func() { parentRequest.Lease().Release() },
+			func() { childRequest.Release() },
+			func() { childService.Release() },
+			func() { childShared.Release() },
+			func() {
+				sess.lifecycleMu.Lock()
+				if sess.state.Load() == sessionStateInitialized {
+					sess.markSessionRemoved()
+					sess.beginClientScopeTeardown()
+				}
+				sess.lifecycleMu.Unlock()
+			},
+		} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				action()
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		sess.scopeMu.Lock()
+		quiescentBeforeRepeat := map[*clientRuntime]time.Time{
+			parent: parent.quiescentAt,
+			child:  child.quiescentAt,
+		}
+		sess.scopeMu.Unlock()
+
+		// Repeat every idempotent edge after the race. No lease may remain and a
+		// runtime that won live-session reclamation must have exactly one stable
+		// quiescent timestamp; teardown is allowed to retain runtime shells until
+		// the session object itself is dropped.
+		childTransport.Close()
+		sess.closeClientScope(parent)
+		parentRequest.Lease().Release()
+		childRequest.Release()
+		childService.Release()
+		childShared.Release()
+		sess.beginClientScopeTeardown()
+
+		for _, runtime := range []*clientRuntime{parent, child} {
+			_, _, leases := sess.clientLifecycleSnapshot(runtime)
+			require.Empty(t, leases)
+			sess.scopeMu.Lock()
+			quiescentAt := runtime.quiescentAt
+			sess.scopeMu.Unlock()
+			if !quiescentAt.IsZero() {
+				require.Equal(t, quiescentBeforeRepeat[runtime], quiescentAt,
+					"idempotent cleanup must not repeat the quiescent transition")
+				runtime.stateMu.RLock()
+				require.Equal(t, clientStateReclaimed, runtime.state)
+				runtime.stateMu.RUnlock()
+			}
+		}
+		require.Contains(t, sess.clientRecords, parent.clientID)
+		require.Contains(t, sess.clientRecords, child.clientID)
+	}
+}
+
+func TestClientLifecycleDebugSnapshotReportsClosedRuntimeRetention(t *testing.T) {
+	t.Parallel()
+
+	closedAt := time.Now().Add(-time.Minute).Round(0)
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID:   "parent",
+		shutdownAt: closedAt},
+		state:       clientStateInitialized,
+		activeCount: 2}
+	child := &clientRuntime{clientRecord: &clientRecord{
+		clientID:        "child",
+		parentClientIDs: []string{"parent"}},
+		state: clientStateInitialized}
+	sess := &daggerSession{
+		sessionID: "session",
+		clientRuntimes: map[string]*clientRuntime{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+		telemetryDebug: LifecycleTelemetryCounts{
+			TracerProviders:          1,
+			LoggerProviders:          1,
+			MeterProviders:           1,
+			ConfiguredSpanProcessors: 4,
+			ConfiguredLogProcessors:  4,
+			ConfiguredMetricReaders:  1,
+			ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
+			ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
+		},
+	}
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	snapshot := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, 2, snapshot.Records)
+	require.Equal(t, 2, snapshot.Runtimes)
+	require.Equal(t, 1, snapshot.ClosedRuntimes)
+	require.Equal(t, 2, snapshot.ActiveRequests)
+	require.NotNil(t, snapshot.OldestClosedRuntime)
+	require.Equal(t, closedAt, *snapshot.OldestClosedRuntime)
+	require.Equal(t, 1, snapshot.Providers.TracerProviders)
+	require.Equal(t, 1, snapshot.Providers.MeterProviders)
+	require.Equal(t, 1, snapshot.Providers.ConfiguredMetricReaders)
+	require.Equal(t, 4, snapshot.Providers.ConfiguredSpanProcessors)
+	require.False(t, snapshot.Providers.QueueOccupancyMeasured)
+
+	require.Len(t, snapshot.Sessions, 1)
+	require.Equal(t, []string{"child", "parent"}, []string{
+		snapshot.Sessions[0].Clients[0].ClientID,
+		snapshot.Sessions[0].Clients[1].ClientID,
+	})
+	gotParent := snapshot.Sessions[0].Clients[1]
+	require.Equal(t, "shutdown-signaled", gotParent.RecordState)
+	require.Equal(t, "closed-retained", gotParent.RuntimeState)
+	require.Zero(t, gotParent.Telemetry.MeterProviders,
+		"client runtimes must not report metric provider ownership")
+	require.Zero(t, gotParent.Telemetry.ConfiguredMetricReaders)
+	require.False(t, gotParent.MetadataSealed)
+	require.ElementsMatch(t, []string{"lifecycle-transition", "request"}, []string{
+		gotParent.RetentionReasons[0].Kind,
+		gotParent.RetentionReasons[1].Kind,
+	})
+}
+
+func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
+	t.Parallel()
+
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
+	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent", parentClientIDs: []string{"root"}}}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root", "parent"}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
+		root.clientID:   root,
+		parent.clientID: parent,
+		child.clientID:  child,
+	}}
+	for _, client := range sess.clientRuntimes {
+		client.daggerSession = sess
+	}
+	installTestClientRecords(sess)
+
+	ancestors, err := sess.ancestorRuntimes(child.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"root", "parent"}, []string{ancestors[0].clientID, ancestors[1].clientID})
+
+	route, err := sess.telemetryRouteClientIDs(child.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"child", "root", "parent"}, route,
+		"telemetry must preserve origin-first, root-to-direct-parent fan-out")
+
+	delivery, err := sess.telemetryDeliveryClientIDs(child.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"root", "parent", "child"}, delivery,
+		"call-payload claims retain their historical ancestor-first ordering")
+
+	route[1] = "mutated"
+	require.Equal(t, []string{"root", "parent"}, child.parentClientIDs,
+		"returned routes must not alias immutable client ancestry")
+}
+
+func TestMetricAttributesPreferImmutableClientScopeOrigin(t *testing.T) {
+	t.Parallel()
+
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", nil, nil)
+	defer lease.Release()
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "scope-origin",
+	}, lease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+	require.NoError(t, err)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "mutable-metadata",
+	})
+
+	config := metric.NewRecordConfig([]metric.RecordOption{
+		telemetryattrs.MetricAttributes(ctx,
+			attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "payload-claim")),
+	})
+	origin, err := metricDataOriginClientID(config.Attributes())
+	require.NoError(t, err)
+	require.Equal(t, "scope-origin", origin)
+}
+
+func TestSessionTelemetryRoutesOriginAndAncestorsExactlyOnce(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs, wcprofSpanCount: newWcprofSpanCounter()}
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root", clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "root"}}}
+	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent", parentClientIDs: []string{"root"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "parent"}}}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root", "parent"}, clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "child"}, shutdownCh: make(chan struct{})}}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: root.clientID,
+		clientRuntimes: map[string]*clientRuntime{
+			root.clientID: root, parent.clientID: parent, child.clientID: child,
+		},
+		telemetryPubSub: srv.telemetryPubSub,
+	}
+	for _, client := range sess.clientRuntimes {
+		client.daggerSession = sess
+	}
+	installTestClientRecords(sess)
+	srv.initializeSessionTelemetry(sess)
+	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+	workGauge, err := sess.meterProvider.Meter("test").Int64Gauge("test.client.work")
+	require.NoError(t, err)
+
+	emit := func(client *clientRuntime, name string, detached bool) trace.SpanID {
+		ctx := engine.ContextWithClientMetadata(context.Background(), client.clientMetadata)
+		ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
+		if detached {
+			ctx = context.WithoutCancel(ctx)
+			client.closeShutdownOnce.Do(func() { close(client.shutdownCh) })
+		}
+		_, span := sess.tracerProvider.Tracer("test").Start(ctx, name)
+		spanID := span.SpanContext().SpanID()
+		span.End()
+		rec := otellog.Record{}
+		rec.SetTimestamp(time.Now())
+		rec.SetBody(otellog.StringValue(name))
+		telemetry.Logger(ctx, "test").Emit(ctx, rec)
+		workGauge.Record(ctx, 1, telemetryattrs.MetricAttributes(ctx))
+		return spanID
+	}
+
+	rootSpanID := emit(root, "root-work", false)
+	childSpanID := emit(child, "detached-child-work", true)
+	require.NoError(t, sess.FlushTelemetry(t.Context(), "test"))
+
+	load := func(clientID string) ([]clientdb.Span, []clientdb.Log, []clientdb.Metric) {
+		db, err := dbs.Open(t.Context(), clientID)
+		require.NoError(t, err)
+		defer db.Close()
+		spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
+		require.NoError(t, err)
+		logs, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		metrics, err := db.Read().SelectMetricsSince(t.Context(), clientdb.SelectMetricsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		return spans, logs, metrics
+	}
+	countSpan := func(spans []clientdb.Span, id trace.SpanID) int {
+		count := 0
+		for _, span := range spans {
+			if span.SpanID == id.String() {
+				count++
+			}
+		}
+		return count
+	}
+
+	originAttr := func(attrsJSON []byte) string {
+		var attrs []*otlpcommonv1.KeyValue
+		require.NoError(t, clientdb.UnmarshalProtoJSONs(attrsJSON, &otlpcommonv1.KeyValue{}, &attrs))
+		for _, attr := range attrs {
+			if attr.Key == telemetryattrs.TelemetryOriginClientIDAttr {
+				return attr.Value.GetStringValue()
+			}
+		}
+		return ""
+	}
+	metricPointCount := func(rows []clientdb.Metric) int {
+		count := 0
+		for _, resourceMetricsPB := range clientdb.MetricsToPB(rows) {
+			resourceMetrics, err := telemetry.ResourceMetricsFromPB(resourceMetricsPB)
+			require.NoError(t, err)
+			for _, scopeMetrics := range resourceMetrics.ScopeMetrics {
+				for _, metrics := range scopeMetrics.Metrics {
+					gauge, ok := metrics.Data.(metricdata.Gauge[int64])
+					require.True(t, ok, "unexpected metric aggregation %T", metrics.Data)
+					for _, point := range gauge.DataPoints {
+						_, hasOrigin := point.Attributes.Value(attribute.Key(telemetryattrs.TelemetryOriginClientIDAttr))
+						require.False(t, hasOrigin, "routing-only origin must not be persisted")
+						count++
+					}
+				}
+			}
+		}
+		return count
+	}
+
+	rootSpans, rootLogs, rootMetrics := load("root")
+	parentSpans, parentLogs, parentMetrics := load("parent")
+	childSpans, childLogs, childMetrics := load("child")
+	// Live span export emits one start and one end snapshot. Each snapshot must
+	// reach each visibility target once, without duplicate ancestry delivery.
+	require.Equal(t, 2, countSpan(rootSpans, rootSpanID))
+	require.Equal(t, 2, countSpan(rootSpans, childSpanID))
+	require.Equal(t, 2, countSpan(parentSpans, childSpanID))
+	require.Equal(t, 2, countSpan(childSpans, childSpanID))
+	require.Zero(t, countSpan(parentSpans, rootSpanID))
+	require.Zero(t, countSpan(childSpans, rootSpanID))
+	require.Len(t, rootLogs, 2)
+	require.Len(t, parentLogs, 1)
+	require.Len(t, childLogs, 1)
+	require.Equal(t, 2, metricPointCount(rootMetrics))
+	require.Equal(t, 1, metricPointCount(parentMetrics))
+	require.Equal(t, 1, metricPointCount(childMetrics))
+	for _, span := range append(append(rootSpans, parentSpans...), childSpans...) {
+		require.Empty(t, originAttr(span.Attributes), "routing-only span origin must not be persisted")
+	}
+	for _, row := range append(append(rootLogs, parentLogs...), childLogs...) {
+		require.Empty(t, originAttr(row.Attributes), "routing-only log origin must not be persisted")
+	}
+
+	// Incoming OTLP/cloud telemetry has no emission context. Its authenticated
+	// origin adapter must overwrite any payload claim and use the same route.
+	require.NoError(t, (originSpanExporter{origin: "parent", next: sess.spanExporter}).ExportSpans(
+		t.Context(), []sdktrace.ReadOnlySpan{childSpans[0].ReadOnly()}))
+	incomingLog := sdklog.Record{}
+	incomingLog.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
+	require.NoError(t, (originLogExporter{origin: "parent", next: sess.logExporter}).Export(
+		t.Context(), []sdklog.Record{incomingLog}))
+	incomingMetrics := &metricdata.ResourceMetrics{ScopeMetrics: []metricdata.ScopeMetrics{{
+		Metrics: []metricdata.Metrics{{
+			Name: "incoming",
+			Data: metricdata.Gauge[int64]{DataPoints: []metricdata.DataPoint[int64]{{
+				Attributes: attribute.NewSet(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "child")),
+				Value:      1,
+			}}},
+		}},
+	}}}
+	require.NoError(t, (originMetricExporter{origin: "parent", next: sess.metricExporter}).Export(
+		t.Context(), incomingMetrics))
+	rootSpans, rootLogs, rootMetrics = load("root")
+	parentSpans, parentLogs, parentMetrics = load("parent")
+	childSpans, childLogs, childMetrics = load("child")
+	require.Equal(t, 3, countSpan(rootSpans, childSpanID))
+	require.Equal(t, 3, countSpan(parentSpans, childSpanID))
+	require.Equal(t, 2, countSpan(childSpans, childSpanID))
+	require.Len(t, rootLogs, 3)
+	require.Len(t, parentLogs, 2)
+	require.Len(t, childLogs, 1)
+	require.Equal(t, 3, metricPointCount(rootMetrics))
+	require.Equal(t, 2, metricPointCount(parentMetrics))
+	require.Equal(t, 1, metricPointCount(childMetrics))
+	require.Empty(t, originAttr(rootLogs[len(rootLogs)-1].Attributes))
+
+	require.Equal(t, 0, dbs.OpenStats().Refs, "exports and reads must release DB handles")
+
+	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
+	sess.state.Store(sessionStateInitialized)
+	snapshot := srv.ClientLifecycleDebugSnapshot()
+	require.Equal(t, 1, snapshot.Providers.TracerProviders)
+	require.Equal(t, 1, snapshot.Providers.LoggerProviders)
+	require.Equal(t, 1, snapshot.Providers.MeterProviders)
+	require.Equal(t, 1, snapshot.Providers.ConfiguredMetricReaders)
+	require.Equal(t, enginetel.LargeSpanQueueSize, snapshot.Providers.ConfiguredSpanQueueSlots)
+	require.Equal(t, enginetel.LogQueueSize, snapshot.Providers.ConfiguredLogQueueSlots)
+	for _, clientSnapshot := range snapshot.Sessions[0].Clients {
+		require.Zero(t, clientSnapshot.Telemetry.MeterProviders)
+		require.Zero(t, clientSnapshot.Telemetry.ConfiguredMetricReaders)
+	}
+}
+
+func TestClientRegistrationRequiresValidExplicitAncestry(t *testing.T) {
+	t.Parallel()
+
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
+	otherRoot := &clientRuntime{clientRecord: &clientRecord{clientID: "other-root"}}
+	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root"}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
+		root.clientID:      root,
+		otherRoot.clientID: otherRoot,
+		child.clientID:     child,
+	}}
+	installTestClientRecords(sess)
+
+	parentIDs, err := sess.parentClientIDsForRegistration("new-root", "", true)
+	require.NoError(t, err)
+	require.Empty(t, parentIDs)
+
+	_, err = sess.parentClientIDsForRegistration("implicit-root", "", false)
+	require.ErrorContains(t, err, "missing parent client ID")
+
+	_, err = sess.parentClientIDsForRegistration("nested", "missing", false)
+	require.ErrorContains(t, err, `parent client "missing" not found`)
+
+	_, err = sess.parentClientIDsForRegistration("cycle", "cycle", false)
+	require.ErrorContains(t, err, "ancestry cycle")
+
+	_, err = sess.parentClientIDsForRegistration("child", "other-root", false)
+	require.ErrorContains(t, err, "different parent ancestry")
+
+	_, err = sess.parentClientIDsForRegistration("child", "", true)
+	require.ErrorContains(t, err, "different parent ancestry")
+}
+
+func TestClientRegistrationRejectsInvalidParentRoute(t *testing.T) {
+	t.Parallel()
+
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
+	broken := &clientRuntime{clientRecord: &clientRecord{clientID: "broken", parentClientIDs: []string{"missing"}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
+		root.clientID:   root,
+		broken.clientID: broken,
+	}}
+	installTestClientRecords(sess)
+
+	_, err := sess.parentClientIDsForRegistration("child", "broken", false)
+	require.ErrorContains(t, err, `ancestor client "missing" not found`)
+
+	broken.parentClientIDs = []string{"root", "root"}
+	_, err = sess.parentClientIDsForRegistration("child", "broken", false)
+	require.ErrorContains(t, err, "reaches \"root\" more than once")
+}
+
+func TestLifecycleDebugAndRouteLookupConcurrentClientMutation(t *testing.T) {
+	t.Parallel()
+
+	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}, state: clientStateInitialized}
+	sess := &daggerSession{
+		sessionID:          "session",
+		mainClientCallerID: root.clientID,
+		clientRuntimes:     map[string]*clientRuntime{root.clientID: root},
+	}
+	root.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			child := &clientRuntime{clientRecord: &clientRecord{
+				clientID:        "transient",
+				daggerSession:   sess,
+				parentClientIDs: []string{root.clientID}},
+				state: clientStateInitialized}
+			sess.clientMu.Lock()
+			sess.clientRecords[child.clientID] = child.clientRecord
+			sess.clientRuntimes[child.clientID] = child
+			sess.clientMu.Unlock()
+			_, _ = sess.telemetryRouteClientIDs(child.clientRecord)
+			sess.clientMu.Lock()
+			delete(sess.clientRecords, child.clientID)
+			delete(sess.clientRuntimes, child.clientID)
+			sess.clientMu.Unlock()
+		}
+	}()
+
+	for range 1000 {
+		snapshot := srv.ClientLifecycleDebugSnapshot()
+		require.Len(t, snapshot.Sessions, 1)
+		got, err := srv.clientRecordFromIDs(sess.sessionID, root.clientID)
+		require.NoError(t, err)
+		route, err := sess.telemetryRouteClientIDs(got)
+		require.NoError(t, err)
+		require.Equal(t, []string{root.clientID}, route)
+	}
+	cancel()
+	wg.Wait()
+}
 
 type fakeSessionCaller struct {
 	id   string
@@ -48,17 +1639,16 @@ func TestLogRecordRowPreservesBytesBody(t *testing.T) {
 	require.Equal(t, payload, body.GetBytesValue())
 }
 
-func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
+func TestTelemetryExportReleasesClientDBHandle(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
-	db, err := dbs.Open(t.Context(), "client")
-	require.NoError(t, err)
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
 
-	client := &daggerClient{keepAliveTelemetryDB: db}
-	require.NoError(t, client.closeKeepAliveTelemetryDB())
-	require.Nil(t, client.keepAliveTelemetryDB)
-	// A cleanup and teardown path converging on the same client is a no-op
-	// after the first path transfers the pointer.
-	require.NoError(t, client.closeKeepAliveTelemetryDB())
+	records := []sdklog.Record{{}}
+	require.NoError(t, ps.Logs("client").Export(t.Context(), records))
+	stats := dbs.OpenStats()
+	require.Equal(t, 1, stats.Stores)
+	require.Equal(t, 3, stats.Streams)
+	require.Zero(t, stats.Refs)
 }
 
 func (caller *fakeSessionCaller) Supports(string) bool {
@@ -69,14 +1659,225 @@ func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
 	return caller.conn
 }
 
+func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	ps := &PubSub{srv: srv}
+	sess := &daggerSession{telemetryPubSub: ps}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: sess,
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	req.Header.Set(enginetel.LiveCursorHeader, "4")
+	resp := httptest.NewRecorder()
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		switch since {
+		case 4, 5:
+			next := since + 1
+			return next, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: fmt.Sprintf("batch-%d", next)}},
+			}, 1, nil
+		default:
+			return since, nil, 0, nil
+		}
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, enginetel.LiveContentType, resp.Header().Get("Content-Type"))
+	require.True(t, resp.Flushed)
+
+	for _, expectedCursor := range []int64{5, 6} {
+		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedCursor, cursor)
+		require.False(t, terminal)
+		require.NotEmpty(t, payload)
+		require.NotEqual(t, byte('{'), payload[0], "payload must be binary protobuf, not protojson")
+		var batch collogspb.ExportLogsServiceRequest
+		require.NoError(t, proto.Unmarshal(payload, &batch))
+		require.Equal(t, fmt.Sprintf("batch-%d", expectedCursor), batch.ResourceLogs[0].SchemaUrl)
+	}
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), cursor)
+	require.Nil(t, payload)
+	require.True(t, terminal)
+	require.Empty(t, resp.Body.Bytes())
+}
+
+func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	rawBody := []byte{0, 1, 2, 0xff}
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set(enginetel.LegacyLiveCursorHeader, "4")
+	resp := httptest.NewRecorder()
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		if since != 4 {
+			return since, nil, 0, nil
+		}
+		return 5, &collogspb.ExportLogsServiceRequest{
+			ResourceLogs: []*otlplogsv1.ResourceLogs{{
+				ScopeLogs: []*otlplogsv1.ScopeLogs{{
+					LogRecords: []*otlplogsv1.LogRecord{{
+						Body: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: rawBody}},
+					}},
+				}},
+			}},
+		}, 1, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, enginetel.LegacyLiveContentType, resp.Header().Get("Content-Type"))
+	require.Equal(t, "keep-alive", resp.Header().Get("Connection"))
+	require.True(t, resp.Flushed)
+
+	reader := sse.NewReadCloser(io.NopCloser(resp.Body))
+	event, err := reader.Next()
+	require.NoError(t, err)
+	require.Equal(t, "subscribed", event.Name)
+
+	event, err = reader.Next()
+	require.NoError(t, err)
+	require.Equal(t, "logs", event.Name)
+	require.Equal(t, "5", event.ID)
+	var batch collogspb.ExportLogsServiceRequest
+	require.NoError(t, protojson.Unmarshal(event.Data, &batch))
+	require.Equal(t, rawBody, batch.ResourceLogs[0].ScopeLogs[0].LogRecords[0].Body.GetBytesValue())
+
+	_, err = reader.Next()
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	shutdownCh := make(chan struct{})
+	close(shutdownCh)
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    shutdownCh,
+	}
+
+	batch := func(since int64, rows int) *collogspb.ExportLogsServiceRequest {
+		logs := make([]*otlplogsv1.ResourceLogs, rows)
+		for i := range logs {
+			logs[i] = &otlplogsv1.ResourceLogs{
+				SchemaUrl: fmt.Sprintf("row-%d-%s", since+int64(i)+1, strings.Repeat("x", 80)),
+			}
+		}
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: logs}
+	}
+	maxPayloadSize := proto.Size(batch(0, 2))
+	require.Greater(t, proto.Size(batch(0, 4)), maxPayloadSize)
+
+	type fetchCall struct {
+		since int64
+		limit int
+	}
+	var calls []fetchCall
+	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+		calls = append(calls, fetchCall{since: since, limit: limit})
+		remaining := 4 - int(since)
+		if remaining == 0 {
+			return since, nil, 0, nil
+		}
+		rows := min(limit, remaining)
+		return since + int64(rows), batch(since, rows), rows, nil
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		req,
+		record,
+		fetcher,
+		maxPayloadSize,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []fetchCall{
+		{since: 0, limit: otlpBatchSize},
+		{since: 0, limit: 2},
+		{since: 2, limit: otlpBatchSize},
+		{since: 4, limit: otlpBatchSize},
+		{since: 4, limit: otlpBatchSize},
+	}, calls)
+
+	for _, expectedCursor := range []int64{2, 4} {
+		cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, expectedCursor, cursor)
+		require.LessOrEqual(t, len(payload), maxPayloadSize)
+		require.False(t, terminal)
+	}
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), cursor)
+	require.Nil(t, payload)
+	require.True(t, terminal)
+}
+
+func TestTelemetryStreamReportsSingleOversizedRow(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+	record := &clientRecord{
+		daggerSession: &daggerSession{telemetryPubSub: ps},
+		clientID:      "client",
+		shutdownCh:    make(chan struct{}),
+	}
+
+	fetches := 0
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	err := ps.streamHandlerWithPayloadLimit(
+		resp,
+		req,
+		record,
+		func(_ context.Context, _ *clientdb.DB, _ int64, _ int) (int64, proto.Message, int, error) {
+			fetches++
+			return 1, &collogspb.ExportLogsServiceRequest{
+				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
+			}, 1, nil
+		},
+		16,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, fetches, "an oversized row must not be fetched repeatedly")
+
+	cursor, payload, terminal, err := enginetel.ReadLiveFrame(resp.Body)
+	require.ErrorIs(t, err, enginetel.ErrLiveStream)
+	require.ErrorContains(t, err, "telemetry row at cursor 1")
+	require.Equal(t, int64(0), cursor)
+	require.Nil(t, payload)
+	require.False(t, terminal)
+}
+
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	t.Parallel()
 
-	// Regression test: activeClientIDs must read sess.clients under clientMu.
+	// Regression test: activeClientIDs must read sess.clientRecords under clientMu.
 	// Without the lock, ranging the map while another goroutine writes it is a
 	// fatal "concurrent map iteration and map write" (caught here under -race).
 	sess := &daggerSession{
-		clients: map[string]*daggerClient{
+		clientRecords: map[string]*clientRecord{
 			"client-a": {clientID: "client-a"},
 		},
 	}
@@ -108,8 +1909,8 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 			}
 
 			sess.clientMu.Lock()
-			sess.clients["transient"] = &daggerClient{clientID: "transient"}
-			delete(sess.clients, "transient")
+			sess.clientRecords["transient"] = &clientRecord{clientID: "transient"}
+			delete(sess.clientRecords, "transient")
 			sess.clientMu.Unlock()
 		}
 	}()
@@ -120,11 +1921,11 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	}
 }
 
-func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
+func TestClientRecordFromIDsConcurrentSessionInitialization(t *testing.T) {
 	t.Parallel()
 
-	// Regression test: clientFromIDs must read sess.state (atomically) and
-	// sess.clients (under clientMu) while another goroutine mutates them during
+	// Regression test: clientRecordFromIDs must read sess.state (atomically) and
+	// sess.clientRecords (under clientMu) while another goroutine mutates them during
 	// session initialization. Without that discipline this is a data race (caught
 	// here under -race).
 	sess := &daggerSession{}
@@ -155,35 +1956,35 @@ func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
 			default:
 			}
 
-			_, _ = srv.clientFromIDs("session-a", "client-a")
+			_, _ = srv.clientRecordFromIDs("session-a", "client-a")
 		}
 	}()
 	<-started
 
 	for i := 0; i < 1000; i++ {
 		sess.clientMu.Lock()
-		sess.clients = map[string]*daggerClient{
+		sess.clientRecords = map[string]*clientRecord{
 			"client-a": {clientID: "client-a"},
 		}
 		sess.clientMu.Unlock()
 		sess.state.Store(sessionStateInitialized)
 		sess.state.Store(sessionStateUninitialized)
 		sess.clientMu.Lock()
-		sess.clients = nil
+		sess.clientRecords = nil
 		sess.clientMu.Unlock()
 	}
 
-	client := &daggerClient{clientID: "client-a"}
+	record := &clientRecord{clientID: "client-a", daggerSession: sess}
 	sess.clientMu.Lock()
-	sess.clients = map[string]*daggerClient{
-		client.clientID: client,
+	sess.clientRecords = map[string]*clientRecord{
+		record.clientID: record,
 	}
 	sess.clientMu.Unlock()
 	sess.state.Store(sessionStateInitialized)
 
-	got, err := srv.clientFromIDs("session-a", client.clientID)
+	got, err := srv.clientRecordFromIDs("session-a", record.clientID)
 	require.NoError(t, err)
-	require.Same(t, client, got)
+	require.Same(t, record, got)
 }
 
 func TestClientsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
@@ -224,13 +2025,13 @@ func TestActiveClientIDsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
 	// activeClientIDs() (the client-DB GC ticker) must also never acquire a
 	// session's lifecycleMu, for the same reason as Clients().
 	live := &daggerSession{
-		sessionID: "live",
-		clients:   map[string]*daggerClient{"c-live": {clientID: "c-live"}},
+		sessionID:     "live",
+		clientRecords: map[string]*clientRecord{"c-live": {clientID: "c-live"}},
 	}
 	live.state.Store(sessionStateInitialized)
 	busy := &daggerSession{
-		sessionID: "busy",
-		clients:   map[string]*daggerClient{"c-busy": {clientID: "c-busy"}},
+		sessionID:     "busy",
+		clientRecords: map[string]*clientRecord{"c-busy": {clientID: "c-busy"}},
 	}
 	busy.state.Store(sessionStateInitialized)
 	srv := &Server{daggerSessions: map[string]*daggerSession{
@@ -289,40 +2090,43 @@ func TestGetOrInitClientReturnsFastForRemovedTombstone(t *testing.T) {
 	}
 }
 
-func TestClientFromIDsStateGating(t *testing.T) {
+func TestClientRecordFromIDsStateGating(t *testing.T) {
 	t.Parallel()
 
-	// clientFromIDs gates on the session's (atomic) lifecycle state without ever
-	// taking lifecycleMu, and never returns a client whose session isn't usable.
-	client := &daggerClient{clientID: "c"}
+	// clientRecordFromIDs gates on the session's atomic lifecycle state without
+	// ever taking lifecycleMu, and never returns a record whose session is not
+	// usable.
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "c"}}
 	sess := &daggerSession{
-		sessionID: "s",
-		clients:   map[string]*daggerClient{"c": client},
+		sessionID:      "s",
+		clientRecords:  map[string]*clientRecord{"c": client.clientRecord},
+		clientRuntimes: map[string]*clientRuntime{"c": client},
 	}
+	client.daggerSession = sess
 	srv := &Server{daggerSessions: map[string]*daggerSession{"s": sess}}
 
 	// uninitialized: not yet usable.
 	sess.state.Store(sessionStateUninitialized)
-	_, err := srv.clientFromIDs("s", "c")
+	_, err := srv.clientRecordFromIDs("s", "c")
 	require.ErrorContains(t, err, "not initialized")
 
 	// removed: retryable not-found (session is tearing down).
 	sess.state.Store(sessionStateRemoved)
-	_, err = srv.clientFromIDs("s", "c")
+	_, err = srv.clientRecordFromIDs("s", "c")
 	var retryable flightcontrol.RetryableError
 	require.ErrorAs(t, err, &retryable)
 
 	// initialized: returns the client.
 	sess.state.Store(sessionStateInitialized)
-	got, err := srv.clientFromIDs("s", "c")
+	got, err := srv.clientRecordFromIDs("s", "c")
 	require.NoError(t, err)
-	require.Same(t, client, got)
+	require.Same(t, client.clientRecord, got)
 }
 
 func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 	t.Parallel()
 
-	// Stress the observer paths (Clients/activeClientIDs/clientFromIDs) against
+	// Stress the observer paths (Clients/activeClientIDs/clientRecordFromIDs) against
 	// concurrent session churn. The churners exercise the observer-visible state
 	// the way the real lifecycle does — registry writes under daggerSessionsMu,
 	// the clients map under clientMu, the lifecycle state via the atomic, and a
@@ -346,14 +2150,17 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 				sess := &daggerSession{
 					sessionID:          id,
 					mainClientCallerID: "m" + id,
-					clients:            map[string]*daggerClient{},
+					clientRecords:      map[string]*clientRecord{},
+					clientRuntimes:     map[string]*clientRuntime{},
 				}
 				// publish, then populate clients, then flip to initialized last.
 				srv.daggerSessionsMu.Lock()
 				srv.daggerSessions[id] = sess
 				srv.daggerSessionsMu.Unlock()
 				sess.clientMu.Lock()
-				sess.clients["c"] = &daggerClient{clientID: "c"}
+				record := &clientRecord{clientID: "c", daggerSession: sess}
+				sess.clientRecords[record.clientID] = record
+				sess.clientRuntimes[record.clientID] = &clientRuntime{clientRecord: record}
 				sess.clientMu.Unlock()
 				sess.state.Store(sessionStateInitialized)
 
@@ -381,7 +2188,7 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 		}
 		_ = srv.Clients()
 		_ = srv.activeClientIDs()
-		_, _ = srv.clientFromIDs("s0", "c")
+		_, _ = srv.clientRecordFromIDs("s0", "c")
 	}
 }
 
@@ -402,24 +2209,111 @@ func newTeardownTestServer(t *testing.T) *Server {
 	}
 }
 
+type cleanupSpanMetricExporter struct {
+	ctx      context.Context
+	tracer   trace.Tracer
+	exported chan<- struct{}
+}
+
+func (exp cleanupSpanMetricExporter) Export(context.Context, *metricdata.ResourceMetrics) error {
+	if exp.exported != nil {
+		select {
+		case exp.exported <- struct{}{}:
+		default:
+		}
+	}
+	return nil
+}
+func (cleanupSpanMetricExporter) ForceFlush(context.Context) error { return nil }
+func (exp cleanupSpanMetricExporter) Shutdown(context.Context) error {
+	_, span := exp.tracer.Start(exp.ctx, "metric cleanup telemetry")
+	span.End()
+	return nil
+}
+func (cleanupSpanMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+func (cleanupSpanMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	srv.clientDBs = clientdb.NewDBs(t.TempDir())
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main"}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		containers:         map[bkgw.Container]struct{}{},
+		shutdownCh:         make(chan struct{}),
+		telemetryPubSub:    srv.telemetryPubSub,
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	srv.initializeSessionTelemetry(sess)
+
+	cleanupCtx := engine.ContextWithClientMetadata(context.Background(), md)
+	exported := make(chan struct{}, 1)
+	exporter := cleanupSpanMetricExporter{
+		ctx:      cleanupCtx,
+		tracer:   sess.tracerProvider.Tracer("test"),
+		exported: exported,
+	}
+	require.NoError(t, sess.meterProvider.Shutdown(t.Context()))
+	sess.meterProvider = sdkmetric.NewMeterProvider(sdkmetric.WithReader(
+		sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(time.Hour)),
+	))
+	gauge, err := sess.meterProvider.Meter("test").Int64Gauge("cleanup.metric")
+	require.NoError(t, err)
+	gauge.Record(cleanupCtx, 1, telemetryattrs.MetricAttributes(cleanupCtx))
+
+	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
+	select {
+	case <-exported:
+	default:
+		t.Fatal("final session telemetry barrier did not flush metrics")
+	}
+	db, err := srv.clientDBs.Open(t.Context(), client.clientID)
+	require.NoError(t, err)
+	defer db.Close()
+	spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	var cleanupSnapshots int
+	for _, span := range spans {
+		if span.Name == "metric cleanup telemetry" {
+			cleanupSnapshots++
+		}
+	}
+	require.Equal(t, 2, cleanupSnapshots,
+		"cleanup span start/end snapshots must pass the final session flush")
+}
+
 // newTeardownTestSession publishes an initialized session whose main client
 // has the given number of active connections. dagqlInFlight starts at 1 so
 // teardown deterministically blocks in the in-flight drain until
 // releaseTeardownDrain is called.
-func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *daggerClient) {
-	client := &daggerClient{
-		clientID:    mainClientID,
-		activeCount: activeCount,
-	}
+func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *clientRuntime) {
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID: mainClientID},
+		activeCount: activeCount}
 	sess := &daggerSession{
 		sessionID:          sessionID,
 		mainClientCallerID: mainClientID,
-		clients:            map[string]*daggerClient{mainClientID: client},
+		clientRuntimes:     map[string]*clientRuntime{mainClientID: client},
 		services:           core.NewServices(),
 		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
 		shutdownCh:         make(chan struct{}),
 	}
 	client.daggerSession = sess
+	installTestClientRecords(sess)
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.dagqlInFlight = 1
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -911,16 +2805,15 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 }
 
 func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
-	client := &daggerClient{
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientID: "client",
 		clientMetadata: &engine.ClientMetadata{
 			WorkspaceModuleScope: "good",
-		},
+		}},
 		pendingModules: []pendingModule{
 			{Kind: moduleLoadKindAmbient, Name: "bad"},
 		},
-		servedWorkspaceModuleNames: map[string]struct{}{"good": {}},
-	}
+		servedWorkspaceModuleNames: map[string]struct{}{"good": {}}}
 	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{ currentTypeDefs { name } }"}`))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -987,35 +2880,351 @@ func TestCallPayloadDeliveryStore(t *testing.T) {
 	t.Parallel()
 
 	sess := &daggerSession{}
-
-	// Client A (top-level, no parents) claims a digest: unseen the first
-	// time, seen for A afterwards.
 	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
-	require.False(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
-	require.True(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
+	require.Equal(t, []string{"clientA"}, sess.callPayloadMissingTargets("xxh3:abc", storeA.targets, true))
+	require.False(t, storeA.CallPayloadNeedsEmission("xxh3:abc"))
 
-	// Client B attaches later: A's claim must not satisfy B's delivery
-	// domain — B's DB never received the payload.
 	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
-	require.False(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
-		"a digest claimed by another client's emission must stay claimable for a late-attaching client")
-	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeB.CallPayloadNeedsEmission("xxh3:abc"),
+		"a digest claimed by another client's emission must stay needed for a late client")
 
-	// A module client under B: its emissions deliver to itself AND B, so a
-	// claim from its context marks both — and it is only "seen" when every
-	// target already has it. B has the digest, the module client does not,
-	// so the first probe still publishes (marking both).
-	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB", "modClient"}}
-	require.False(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
-		"an emission must not be skipped while any target in its delivery domain still needs it")
-	require.True(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
-	// And now B's own store agrees the digest is spent for B.
-	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA", "modClient"}}
+	require.True(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"),
+		"an emission must not be skipped while any route target still needs it")
+	require.Equal(t, []string{"modClient"},
+		sess.callPayloadMissingTargets("xxh3:abc", storeMod.targets, true),
+		"only the missing target must be claimed")
+	require.False(t, storeMod.CallPayloadNeedsEmission("xxh3:abc"))
+}
 
-	// StoreTelemetrySeenKey marks every target unconditionally.
-	storeC := &callPayloadDeliveryStore{session: sess, targets: []string{"clientC", "clientD"}}
-	storeC.StoreTelemetrySeenKey("dag.call.payload:xxh3:def")
-	require.True(t, storeC.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:def"))
+func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	routes := [][]string{{"parent", "childA"}, {"parent", "childB"}}
+	start := make(chan struct{})
+	results := make(chan []string, len(routes))
+	var ready sync.WaitGroup
+	ready.Add(len(routes))
+	for _, route := range routes {
+		go func() {
+			ready.Done()
+			<-start
+			results <- sess.callPayloadMissingTargets("xxh3:overlap", route, true)
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	counts := map[string]int{}
+	for range routes {
+		for _, target := range <-results {
+			counts[target]++
+		}
+	}
+	require.Equal(t, map[string]int{"parent": 1, "childA": 1, "childB": 1}, counts,
+		"overlapping decisions must atomically assign each target exactly once")
+	require.Empty(t, sess.callPayloadMissingTargets("xxh3:overlap", []string{"parent", "childA", "childB"}, true))
+}
+
+type callPayloadRecordCapture struct {
+	records []sdklog.Record
+}
+
+func (capture *callPayloadRecordCapture) Export(_ context.Context, records []sdklog.Record) error {
+	for _, record := range records {
+		capture.records = append(capture.records, record.Clone())
+	}
+	return nil
+}
+
+func (*callPayloadRecordCapture) ForceFlush(context.Context) error { return nil }
+func (*callPayloadRecordCapture) Shutdown(context.Context) error   { return nil }
+
+func scopedLogRecord(t *testing.T, scope string, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	t.Helper()
+
+	capture := new(callPayloadRecordCapture)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)))
+	record := otellog.Record{}
+	record.SetTimestamp(time.Now())
+	record.SetBody(body)
+	record.AddAttributes(attrs...)
+	ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	}))
+	provider.Logger(scope).Emit(ctx, record)
+	require.NoError(t, provider.Shutdown(context.Background()))
+	require.Len(t, capture.records, 1)
+	return capture.records[0]
+}
+
+func serverCallPayload(t *testing.T, field, value string) ([]byte, string) {
+	t.Helper()
+
+	callPB := &callpbv1.Call{
+		Field: field,
+		Type:  &callpbv1.Type{NamedType: "Thing"},
+		Args: []*callpbv1.Argument{{
+			Name:  "value",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: value}},
+		}},
+	}
+	callPB.Digest = digest.FromString(callPB.String()).String()
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(callPB)
+	require.NoError(t, err)
+	return payload, callPB.Digest
+}
+
+func TestClassifyCallPayloadRecord(t *testing.T) {
+	payload, digest := serverCallPayload(t, "original", "value")
+	digestless := &callpbv1.Call{Field: "embedded"}
+	digestlessPayload, err := proto.Marshal(digestless)
+	require.NoError(t, err)
+
+	callType := otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
+	for _, test := range []struct {
+		name       string
+		scope      string
+		body       otellog.Value
+		attrs      []otellog.KeyValue
+		payload    bool
+		wantDigest string
+		wantError  string
+	}{
+		{
+			name:       "call content type and bytes body",
+			scope:      "test.core",
+			body:       otellog.BytesValue(payload),
+			attrs:      []otellog.KeyValue{callType},
+			payload:    true,
+			wantDigest: digest,
+		},
+		{
+			name:  "other content type",
+			scope: "test.core",
+			body:  otellog.BytesValue(payload),
+			attrs: []otellog.KeyValue{otellog.String(otelgo.ContentTypeAttr, "application/json")},
+		},
+		{
+			name:      "wrong body kind",
+			scope:     "test.core",
+			body:      otellog.StringValue(string(payload)),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "body must be bytes",
+		},
+		{
+			name:      "malformed protobuf",
+			scope:     "test.core",
+			body:      otellog.BytesValue([]byte{0xff}),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "decode call payload",
+		},
+		{
+			name:      "missing embedded digest",
+			scope:     "test.core",
+			body:      otellog.BytesValue(digestlessPayload),
+			attrs:     []otellog.KeyValue{callType},
+			payload:   true,
+			wantError: "missing embedded digest",
+		},
+		{
+			name:    "ordinary log",
+			scope:   "test.log",
+			body:    otellog.StringValue("hello"),
+			payload: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := scopedLogRecord(t, test.scope, test.body, test.attrs...)
+			gotDigest, gotPayload, err := classifyCallPayloadRecord(record)
+			require.Equal(t, test.payload, gotPayload)
+			require.Equal(t, test.wantDigest, gotDigest)
+			if test.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestClassifyAgentCheckpointRecord(t *testing.T) {
+	valid := scopedLogRecord(t,
+		telemetryattrs.AgentCheckpointInstrumentationScope,
+		otellog.BytesValue([]byte(`{"version":1,"sequence":7}`)),
+		otellog.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		otellog.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1),
+		otellog.String(telemetryattrs.AgentCheckpointSequenceAttr, "7"),
+	)
+	sequence, checkpoint, err := classifyAgentCheckpointRecord(valid)
+	require.NoError(t, err)
+	require.True(t, checkpoint)
+	require.Equal(t, "7", sequence)
+
+	malformed := scopedLogRecord(t,
+		telemetryattrs.AgentCheckpointInstrumentationScope,
+		otellog.BytesValue([]byte(`{"version":1}`)),
+		otellog.Bool(telemetryattrs.AgentCheckpointAttr, true),
+		otellog.String(telemetryattrs.AgentCheckpointContractAttr, telemetryattrs.AgentCheckpointContractV1),
+	)
+	_, checkpoint, err = classifyAgentCheckpointRecord(malformed)
+	require.True(t, checkpoint, "reserved records must never fall through as ordinary logs")
+	require.ErrorContains(t, err, "invalid checkpoint sequence")
+
+	ordinary := scopedLogRecord(t, "test.log", otellog.StringValue("hello"))
+	_, checkpoint, err = classifyAgentCheckpointRecord(ordinary)
+	require.NoError(t, err)
+	require.False(t, checkpoint)
+}
+
+func TestAgentCheckpointTargetsClaimEachSequenceOnce(t *testing.T) {
+	sess := &daggerSession{}
+	route := []string{"parent", "child"}
+	require.Equal(t, route, sess.agentCheckpointMissingTargets("7", route))
+	require.Empty(t, sess.agentCheckpointMissingTargets("7", route))
+	require.Equal(t, route, sess.agentCheckpointMissingTargets("8", route))
+}
+
+func TestClassifyCallPayloadRecordReadsEmbeddedAddress(t *testing.T) {
+	original, originalDigest := serverCallPayload(t, "lookup", "original")
+	tampered, tamperedDigest := serverCallPayload(t, "lookup", "tampered")
+	require.NotEqual(t, originalDigest, tamperedDigest)
+
+	for _, test := range []struct {
+		body []byte
+		want string
+	}{
+		{body: original, want: originalDigest},
+		{body: tampered, want: tamperedDigest},
+	} {
+		record := scopedLogRecord(t,
+			"test.core",
+			otellog.BytesValue(test.body),
+			otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		)
+		got, payload, err := classifyCallPayloadRecord(record)
+		require.NoError(t, err)
+		require.True(t, payload)
+		require.Equal(t, test.want, got)
+	}
+}
+
+func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
+	payload, _ := serverCallPayload(t, "lookup", "value")
+	record := scopedLogRecord(t,
+		"test.core",
+		otellog.BytesValue(payload),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "origin"),
+		otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String("test.keep", "value"),
+	)
+
+	clean := withoutLogOrigin(record)
+	require.Equal(t, otellog.KindBytes, clean.Body().Kind())
+	require.Equal(t, payload, clean.Body().AsBytes())
+	attrs := map[string]otellog.Value{}
+	clean.WalkAttributes(func(attr otellog.KeyValue) bool {
+		attrs[attr.Key] = attr.Value
+		return true
+	})
+	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
+	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[otelgo.ContentTypeAttr].AsString())
+	require.Equal(t, "value", attrs["test.keep"].AsString())
+}
+
+func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
+	t.Parallel()
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	srv.telemetryPubSub = NewPubSub(srv)
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	parent := &clientRecord{daggerSession: sess, clientID: "parent"}
+	child := &clientRecord{daggerSession: sess, clientID: "child", parentClientIDs: []string{"parent"}}
+	sess.clientRecords[parent.clientID] = parent
+	sess.clientRecords[child.clientID] = child
+	exporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
+
+	original, originalDigest := serverCallPayload(t, "lookup", "original")
+	tampered, tamperedDigest := serverCallPayload(t, "lookup", "tampered")
+	require.NotEqual(t, originalDigest, tamperedDigest)
+
+	payloadRecord := func(origin string, body []byte) sdklog.Record {
+		return scopedLogRecord(t,
+			"test.core",
+			otellog.BytesValue(body),
+			otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
+			otellog.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			otellog.String("test.keep", "value"),
+		)
+	}
+
+	digestless := &callpbv1.Call{Field: "invalid"}
+	digestlessPayload, err := proto.Marshal(digestless)
+	require.NoError(t, err)
+
+	// The parent receives the original first. The same payload from the child
+	// then fills only the child gap, while the tampered payload is independently
+	// addressed and delivered to both. The invalid reserved record in the middle
+	// is consumed without aborting either valid record in the mixed batch.
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{
+		payloadRecord("parent", original),
+		payloadRecord("child", digestlessPayload),
+		payloadRecord("child", original),
+		payloadRecord("child", original),
+		payloadRecord("child", tampered),
+	}))
+
+	load := func(target string) []clientdb.Log {
+		db, err := dbs.Open(t.Context(), target)
+		require.NoError(t, err)
+		defer db.Close()
+		logs, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+		require.NoError(t, err)
+		return logs
+	}
+	parentLogs := load("parent")
+	childLogs := load("child")
+	require.Len(t, parentLogs, 2)
+	require.Len(t, childLogs, 2)
+
+	for _, rows := range [][]clientdb.Log{parentLogs, childLogs} {
+		seenBodies := map[string]bool{}
+		for _, row := range rows {
+			var attrs []*otlpcommonv1.KeyValue
+			require.NoError(t, clientdb.UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
+			var hasPayload, hasExtra bool
+			for _, attr := range attrs {
+				require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,
+					"routing-only origin must not be persisted or streamed")
+				hasPayload = hasPayload || attr.Key == otelgo.ContentTypeAttr && attr.Value.GetStringValue() == telemetryattrs.CallPayloadContentType
+				hasExtra = hasExtra || attr.Key == "test.keep" && attr.Value.GetStringValue() == "value"
+			}
+			require.True(t, hasPayload, "routing must preserve the call payload marker")
+			require.True(t, hasExtra, "routing must strip only the origin attribute")
+
+			var body otlpcommonv1.AnyValue
+			require.NoError(t, proto.Unmarshal(row.Body, &body))
+			seenBodies[string(body.GetBytesValue())] = true
+		}
+		require.Equal(t, map[string]bool{string(original): true, string(tampered): true}, seenBodies)
+
+		resourceLogs := clientdb.LogsToPB(rows)
+		require.Len(t, resourceLogs, 1)
+		require.Len(t, resourceLogs[0].ScopeLogs, 1)
+		scopeLogs := resourceLogs[0].ScopeLogs[0]
+		require.Equal(t, "test.core", scopeLogs.Scope.Name)
+		require.Len(t, scopeLogs.LogRecords, 2)
+		for _, record := range scopeLogs.LogRecords {
+			require.Contains(t, [][]byte{original, tampered}, record.Body.GetBytesValue(),
+				"byte bodies must survive client DB to binary OTLP reconstruction")
+		}
+	}
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
@@ -1233,12 +3442,11 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -1301,12 +3509,11 @@ source = "modules/local"
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -1364,12 +3571,11 @@ func TestDetectAndLoadWorkspaceLoadsPlainModuleCompatWithoutConfig(t *testing.T)
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -1424,13 +3630,12 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 		Ref:        "/repo/explicit",
 		Entrypoint: true,
 	}}
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			ExtraModules: extra,
-		},
-		pendingExtraModules: extra,
-	}
+		}},
+		pendingWorkspaceLoad: true,
+		pendingExtraModules:  extra}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -1478,12 +3683,11 @@ func TestDetectAndLoadWorkspaceCreatesRootlessWorkspaceWithoutInferringModule(t 
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -1537,10 +3741,9 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
-		clientMetadata:       &engine.ClientMetadata{},
-	}
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientMetadata: &engine.ClientMetadata{}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
@@ -1596,12 +3799,11 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
+	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
 			LoadWorkspaceModules: true,
-		},
-	}
+		}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
@@ -1656,10 +3858,9 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 		ClientID: "test-client",
 	})
 
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
-		clientMetadata:       &engine.ClientMetadata{},
-	}
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientMetadata: &engine.ClientMetadata{}},
+		pendingWorkspaceLoad: true}
 
 	srv := &Server{}
 	err := srv.detectAndLoadWorkspace(ctx, client,
@@ -1722,12 +3923,19 @@ func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
 		ClientID: "parent-client",
 	}
 
-	parent := &daggerClient{
-		workspace: bound,
-	}
-	child := &daggerClient{
-		parents: []*daggerClient{parent},
-	}
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID: "parent-client"},
+		workspace: bound}
+	child := &clientRuntime{clientRecord: &clientRecord{
+		clientID:        "child-client",
+		parentClientIDs: []string{parent.clientID}}}
+	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
+		parent.clientID: parent,
+		child.clientID:  child,
+	}}
+	parent.daggerSession = sess
+	child.daggerSession = sess
+	installTestClientRecords(sess)
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, bound, child.workspace)
@@ -1744,39 +3952,100 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 		ClientID: "parent-client",
 	}
 
-	parent := &daggerClient{
-		workspace: parentBound,
-	}
-	child := &daggerClient{
-		workspace: existing,
-		parents:   []*daggerClient{parent},
-	}
+	parent := &clientRuntime{clientRecord: &clientRecord{
+		clientID: "parent-client"},
+		workspace: parentBound}
+	child := &clientRuntime{clientRecord: &clientRecord{
+		clientID:        "child-client",
+		parentClientIDs: []string{parent.clientID}},
+		workspace: existing}
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, existing, child.workspace)
 }
 
-func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
+func TestSpecificClientAttachableConnRejectsInertClient(t *testing.T) {
+	t.Parallel()
+
+	parentConn := &grpc.ClientConn{}
+	parentCaller := &sessionAttachableCaller{
+		ctx:       context.Background(),
+		conn:      parentConn,
+		supported: map[string]struct{}{},
+	}
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{
+		clientID:                 "child",
+		hostServiceProxyClientID: parent.clientID,
+		parentClientIDs:          []string{parent.clientID},
+		inertAttachables:         true,
+	}
+	attachables := newSessionAttachableManager()
+	attachables.callers[parent.clientID] = parentCaller
+	sess := &daggerSession{
+		sessionID:   "session",
+		attachables: attachables,
+		clientRecords: map[string]*clientRecord{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+	}
+	parent.daggerSession = sess
+	child.daggerSession = sess
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	for _, ifAvailable := range []bool{false, true} {
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+			SessionID: sess.sessionID,
+			ClientID:  child.clientID,
+		})
+		conn, ok, err := srv.SpecificClientAttachableConn(ctx, child.clientID, core.SpecificClientAttachableConnOpts{
+			IfAvailable: ifAvailable,
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+		require.ErrorContains(t, err, "SDK client access to host session attachables is denied")
+		require.False(t, ok)
+		require.Nil(t, conn)
+		require.NotSame(t, parentConn, conn)
+	}
+
+	caller, err := sess.resolveHostServiceCaller(t.Context(), child.clientID)
+	require.Error(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Nil(t, caller)
+}
+
+func TestResolveHostServiceCallerFallsBackToParentRecordWithoutRuntime(t *testing.T) {
 	t.Parallel()
 
 	parentCaller := &fakeSessionCaller{id: "parent"}
-	parent := &daggerClient{clientID: "parent"}
-	parent.getHostServiceCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{
+		clientID:                 "child",
+		hostServiceProxyClientID: "parent",
+		parentClientIDs:          []string{parent.clientID},
+	}
+	sess := &daggerSession{
+		attachables: newSessionAttachableManager(),
+		clientRecords: map[string]*clientRecord{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+		clientRuntimes: map[string]*clientRuntime{},
+	}
+	parent.daggerSession = sess
+	child.daggerSession = sess
+	sess.getClientCaller = func(_ context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "parent", id)
 		return parentCaller, nil
 	}
 
-	child := &daggerClient{
-		clientID:                 "child",
-		hostServiceProxyClientID: "parent",
-		parents:                  []*daggerClient{parent},
-	}
-
-	child.daggerSession = &daggerSession{attachables: newSessionAttachableManager()}
-
-	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
 	require.Same(t, parentCaller, caller)
+	require.Empty(t, sess.clientRuntimes, "host proxy routing must use records, not retained runtimes")
 }
 
 func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
@@ -1786,22 +4055,28 @@ func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 		ctx:       context.Background(),
 		supported: map[string]struct{}{},
 	}
-	parent := &daggerClient{clientID: "parent"}
-	parent.getHostServiceCaller = func(context.Context, string) (engineutil.SessionCaller, error) {
-		t.Fatal("unexpected parent fallback")
-		return nil, nil
-	}
 	attachables := newSessionAttachableManager()
 	attachables.callers["child"] = currentCaller
 
-	child := &daggerClient{
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
-		parents:                  []*daggerClient{parent},
-		daggerSession:            &daggerSession{attachables: attachables},
+		parentClientIDs:          []string{parent.clientID},
+	}
+	sess := &daggerSession{
+		attachables: attachables,
+		clientRecords: map[string]*clientRecord{
+			parent.clientID: parent,
+			child.clientID:  child,
+		},
+	}
+	sess.getClientCaller = func(context.Context, string) (engineutil.SessionCaller, error) {
+		t.Fatal("unexpected parent fallback")
+		return nil, nil
 	}
 
-	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
 	require.Same(t, currentCaller, caller)
 }
@@ -1810,13 +4085,13 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 	t.Parallel()
 
 	otherCaller := &fakeSessionCaller{id: "other"}
-	child := &daggerClient{clientID: "child"}
-	child.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+	sess := &daggerSession{}
+	sess.getClientCaller = func(_ context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "other", id)
 		return otherCaller, nil
 	}
 
-	caller, err := child.resolveHostServiceCaller(context.Background(), "other")
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "other")
 	require.NoError(t, err)
 	require.Same(t, otherCaller, caller)
 }
@@ -1827,12 +4102,11 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	t.Run("declared workspace takes precedence", func(t *testing.T) {
 		t.Parallel()
 
-		client := &daggerClient{
-			pendingWorkspaceLoad: false,
+		client := &clientRuntime{clientRecord: &clientRecord{
 			clientMetadata: &engine.ClientMetadata{
 				Workspace: stringPtr("github.com/dagger/dagger@main"),
-			},
-		}
+			}},
+			pendingWorkspaceLoad: false}
 
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingDeclared, mode)
@@ -1842,10 +4116,9 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	t.Run("non-module defaults to host detection", func(t *testing.T) {
 		t.Parallel()
 
-		client := &daggerClient{
-			pendingWorkspaceLoad: true,
-			clientMetadata:       &engine.ClientMetadata{},
-		}
+		client := &clientRuntime{clientRecord: &clientRecord{
+			clientMetadata: &engine.ClientMetadata{}},
+			pendingWorkspaceLoad: true}
 
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingDetectHost, mode)
@@ -1855,10 +4128,9 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	t.Run("module defaults to inheritance", func(t *testing.T) {
 		t.Parallel()
 
-		client := &daggerClient{
-			pendingWorkspaceLoad: false,
-			clientMetadata:       &engine.ClientMetadata{},
-		}
+		client := &clientRuntime{clientRecord: &clientRecord{
+			clientMetadata: &engine.ClientMetadata{}},
+			pendingWorkspaceLoad: false}
 
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingInherit, mode)

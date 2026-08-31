@@ -1,0 +1,383 @@
+# sandbox: a LAST-RESORT escape hatch for Dagger coding agents — run an argv
+# in an arbitrary container ("sandbox") with the workspace mounted at a
+# workdir.
+#
+# Coding agents normally get curated tools (checks, generators, editor tools);
+# this module is for the rest: ad-hoc commands that need a real container.
+# It follows the session-state pattern of modules/engine-lab (state in `let`
+# fields, @cache(Never) + nonce cache-busting, per-call workspace copying)
+# and the Map-state pattern of modules/staff.
+#
+# Mechanics per session (a named entry in the private maps):
+#   - `exec` copies the caller's workspace to /workspace in the sandbox
+#     container, runs the argv there, and stores the resulting container
+#     plus the workspace tree that was copied in (the "before" for change
+#     extraction).
+#   - `changes` extracts /workspace's drift from that before-tree as a
+#     Changeset — the tool layer auto-applies a returned Changeset to the
+#     workspace, so returning it IS delivery.
+#   - Freshness rule: a CONTINUED session only re-copies the CURRENT
+#     workspace when the sandbox holds no un-extracted /workspace changes;
+#     otherwise the container tree is kept (so nothing is clobbered) and a
+#     note points at `changes`. A dirty session whose tree already MATCHES
+#     the current workspace (its extraction was applied) self-heals to
+#     clean — see the drift check in exec.
+#
+# NOTE on the sandbox arg: it is typed Container! and resolved at the
+# CALLER's boundary, never in this module. The tool layer lifts an address
+# string — an image ref like "golang:1.26", a "<module>:<function>" ref to
+# an installed workspace module, or a Container ID from a prior result —
+# via Query.address in the session's workspace-served schema
+# (core/llm_object_tools.go, liftableTypes), and the CLI does the same for
+# --sandbox flags in workspace mode. That is what makes sibling module refs
+# work: an in-module address() call would resolve in THIS module's schema,
+# where installed workspace siblings are not demand-loadable
+# (hack/designs/sandboxes.md §4, "Resolution context is the point").
+#
+# NOT registered in dagger.toml: install per workspace where wanted
+# (hack/designs/sandboxes.md §3: not installed by default anywhere).
+
+let workdir = "/workspace"
+let dangVersion = "v2.1.3"
+# Tail-truncate command output to keep tool results context-friendly.
+let tailLines = 200
+
+# Last `lines` lines of s, with a truncation marker when shortened.
+let tail(s: String!, lines: Int! = tailLines): String! {
+  let all = s.split("\n")
+  if (all.length <= lines) {
+    s
+  } else {
+    let marker = "… (" + toString(all.length - lines) + " earlier lines truncated) …"
+    marker + "\n" + all.takeLast(lines).join("\n")
+  }
+}
+
+# "" means the implicit session, kept under a reserved name.
+let sessionName(session: String!): String! {
+  if (session == "") { "last" } else { session }
+}
+
+# Build the sandbox's workspace like a local clone: reconstruct the checkout
+# from the host git session, then overlay every pending workspace edit. This
+# avoids syncing the entire host directory on each exec while preserving the
+# current tree (including edits git cannot track). Non-git workspaces retain
+# the directory-copy behavior.
+let workspaceTree(ws: Workspace!): Directory! {
+  {
+    let git = ws.git
+    let head = git.head
+    head.tree(discardGitDir: false, depth: 0, includeTags: true)
+      .withChanges(git.uncommitted)
+      .withChanges(git.unmanaged)
+      .sync
+  } rescue {
+    e: Error => ws.directory("/")
+  }
+}
+
+"""
+Run ad-hoc commands in arbitrary containers with the workspace mounted — the
+last-resort escape hatch when no curated tool fits.
+"""
+type Sandbox {
+  # ---- session state --------------------------------------------------------
+  # Keyed by session name. Map[...] cannot be exposed through module API, so
+  # these stay private `let` fields; engine-object handles (Container,
+  # Directory) serialize as IDs in module state and rehydrate on the next
+  # call (the modules/staff pattern).
+
+  # container as it was after the session's last exec
+  let afters: Map[Container!]! = [:]
+  # workspace tree copied in at session start / last refresh — the "before"
+  # side of change extraction
+  let befores: Map[Directory!]! = [:]
+
+  """
+  Compose the sandbox tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  A demo sandbox: plain alpine.
+
+  Guarantees any workspace with this module installed one resolvable
+  module-ref address ("sandbox:demo"), and serves as the module-ref test
+  target.
+  """
+  demo: Container! {
+    container.from("alpine:3.20")
+  }
+
+  """
+  A lightweight sandbox for Git operations.
+  """
+  git: Container! {
+    container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "git"])
+  }
+
+  """
+  A sandbox with the Dang CLI installed.
+  """
+  dang: Container! {
+    container
+      .from("golang:1.25")
+      .withExec(["go", "install", "github.com/vito/dang/v2/cmd/dang@" + dangVersion])
+  }
+
+  """
+  Run an argv in a sandbox container with the workspace copied to /workspace.
+
+  This is a LAST RESORT: prefer curated tools (checks, generators, editor
+  tools) whenever one fits. The workspace is COPIED in, never mounted — the
+  real workspace only changes when you pull the sandbox's edits back out
+  with `changes`.
+  """
+  exec(
+    ws: Workspace!,
+    """
+    The sandbox container to run in. Supply an address: an image ref like
+    "golang:1.26", a "<module>:<function>" reference to an installed
+    module's Container-returning function (see listSandboxes), or a
+    Container ID from a prior result. Ignored when continuing an existing
+    session — the session's stored container is used — unless `fresh`.
+    """
+    sandbox: Container!,
+    """
+    The argv to run, e.g. ["sh", "-c", "ls -la"]. Run with expect: ANY — a
+    nonzero exit is reported, not raised.
+    """
+    args: [String!]!,
+    """
+    Named session to continue or create; "" runs ephemerally (state is still
+    tracked under the implicit name "last" so changes can be pulled).
+    """
+    session: String! = "",
+    """
+    Drop the stored session state first and start over from `sandbox`.
+    """
+    fresh: Boolean! = false,
+  ): Sandbox! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): running a command is a side effect; a cached replay
+    # would silently skip it. The nonce env var busts the exec cache
+    # underneath for the same reason (same trick as engine-lab).
+    let name = sessionName(session)
+    if (fresh) {
+      self.afters = self.afters.without(name)
+      self.befores = self.befores.without(name)
+    }
+
+    let current = workspaceTree(ws)
+
+    # The container to exec in, and the "before" tree in effect for this
+    # session after this call.
+    let ctr = container
+    let sessionBefore = current
+
+    let stored = self.afters[name]
+    if (stored != null) {
+      # Continued session. Only re-copy the CURRENT workspace when the
+      # sandbox holds no un-extracted /workspace changes; blindly re-copying
+      # would clobber work the caller hasn't pulled yet.
+      let prevBefore = self.befores[name]
+      if (prevBefore == null) {
+        raise `invariant violated: session "${name}" has a container but no before-tree`
+      }
+      let pending = stored.directory(workdir).changes(prevBefore)
+      if (pending.isEmpty) {
+        # withoutDirectory first: withDirectory overlays, so files deleted
+        # from the workspace since the last copy would otherwise linger.
+        ctr = stored
+          .withoutDirectory(workdir)
+          .withDirectory(workdir, current)
+        sessionBefore = current
+      } else {
+        # Self-healing for agent mode: `changes` advances the baseline on
+        # ITS returned value, but a Changeset-returning tool does not rebind
+        # the toolset object (core/llm.go: only a tool returning the bound
+        # object's own type does), so the advance is lost and the session
+        # would look dirty forever. When the sandbox tree already matches
+        # the CURRENT workspace — the extracted changes were applied — the
+        # session is de-facto clean: re-copy and move on.
+        let drift = stored.directory(workdir).changes(current)
+        if (drift.isEmpty) {
+          ctr = stored
+            .withoutDirectory(workdir)
+            .withDirectory(workdir, current)
+          sessionBefore = current
+        } else {
+          print(`note: session "${name}" has un-extracted changes under ${workdir}; keeping its tree (the current workspace is NOT re-copied). Call changes(session: "${name}") to pull them.`)
+          ctr = stored
+          sessionBefore = prevBefore
+        }
+      }
+    } else {
+      # New session: the sandbox arrives already resolved — the tool layer
+      # (or the CLI) lifted the caller's address string into a Container at
+      # the caller's boundary (see NOTE at top).
+      ctr = sandbox
+        .withDirectory(workdir, current)
+        .withWorkdir(workdir)
+    }
+
+    let after = ctr
+      # bust Dagger's exec cache so each call actually re-runs
+      .withEnvVariable("SANDBOX_EXEC_NONCE", Random.string)
+      .withExec(
+        args,
+        expect: ReturnType.ANY,
+        experimentalPrivilegedNesting: true,
+      )
+
+    let code = after.exitCode
+    if (code != 0) {
+      print("exit code: " + toString(code))
+    }
+    let stdout = after.stdout
+    if (stdout.trimSpace != "") {
+      print(tail(stdout))
+    }
+    let stderr = after.stderr
+    if (stderr.trimSpace != "") {
+      print("stderr: " + tail(stderr))
+    }
+
+    self.afters = self.afters.with(name, after)
+    self.befores = self.befores.with(name, sessionBefore)
+
+    let delta = after.directory(workdir).changes(sessionBefore)
+    if (!delta.isEmpty) {
+      # .{{path}} first: .length can't be called directly on a GraphQL
+      # object list.
+      let n = delta.diffStats.{{path}}.length
+      print(`sandbox changed ${toString(n)} file(s) under ${workdir} — call changes(session: "${name}") to pull them into the workspace`)
+    }
+
+    self
+  }
+
+  """
+  Extract a session's /workspace drift as a Changeset. Returning it delivers
+  it: the tool layer applies a returned Changeset to the workspace.
+  """
+  changes(
+    """
+    Session to extract from; "" means the implicit "last" session.
+    """
+    session: String! = "",
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    let name = sessionName(session)
+    let after = afters[name]
+    if (after == null) {
+      raise `no sandbox session "${name}" — run exec first (sessions: ${names})`
+    }
+    let before = befores[name]
+    if (before == null) {
+      raise `invariant violated: session "${name}" has a container but no before-tree`
+    }
+    let afterTree = after.directory(workdir)
+    # Advance the baseline so an already-extracted diff is not re-applied by
+    # a later `changes`. KNOWN LIMIT (see final spike notes): this mutation
+    # only persists where the caller keeps the returned object — in a
+    # `dagger call ... exec ... changes` chain the Changeset is terminal, and
+    # in agent mode a non-Sandbox-returning tool does not evolve the bound
+    # toolset state.
+    self.befores = self.befores.with(name, afterTree)
+    afterTree.changes(before)
+  }
+
+  """
+  List available sandboxes and active sessions: the "<module>:<function>"
+  addresses discoverable from the calling workspace's installed modules,
+  plus each live session and whether it holds un-extracted changes.
+  """
+  listSandboxes(ws: Workspace!): String! @cache(policy: FunctionCachePolicy.Never) {
+    let sessions = if (afters.isEmpty) {
+      "(no sandbox sessions)"
+    } else {
+      afters.map { name, after =>
+        let before = befores[name]
+        let state = if (before == null) {
+          "?"
+        } else {
+          let d = after.directory(workdir).changes(before)
+          if (d.isEmpty) {
+            "clean"
+          } else {
+            `${toString(d.diffStats.{{path}}.length)} file(s) pending — call changes(session: "${name}")`
+          }
+        }
+        `${name}: ${state}`
+      }.values.join("\n")
+    }
+    # v2 discovery (hack/designs/sandboxes.md §5): Workspace.addresses lists
+    # every zero-required-arg Container-returning function across the
+    # workspace's installed modules — the exact set exec's address lifting
+    # can resolve. Runs engine-side under the workspace's own client, so
+    # sibling modules load fine (unlike in-module address resolution).
+    let catalog = {
+      let addrs = ws.addresses(type: "Container").{{value, description}}
+      if (addrs.isEmpty) {
+        "(none installed)"
+      } else {
+        addrs.map { a =>
+          let desc = a.description.trimSpace.split("\n")[0]
+          if (desc == "") {
+            a.value
+          } else {
+            `${a.value} — ${desc}`
+          }
+        }.join("\n")
+      }
+    } rescue {
+      e: Error => `(discovery failed: ${e.message})`
+    }
+    "module sandboxes (usable as `sandbox` addresses; any image ref works too):\n"
+      + catalog
+      + "\n\nsessions:\n"
+      + sessions
+  }
+
+  let names: String! {
+    if (afters.isEmpty) {
+      "(none)"
+    } else {
+      afters.keys.join(", ")
+    }
+  }
+
+  let systemPrompt: String! = """
+    You have a sandbox escape hatch: `exec` runs a command in any container
+    with the workspace copied to /workspace. It is a LAST RESORT, and almost
+    always the wrong first move:
+    - Tests and lints: use checks — sandbox a test runner only when checks
+      can't select what you need (e.g. one test via -run) and the iteration
+      saving is significant.
+    - Codegen and formatting: use generators.
+    - Anything a module tool covers: use the module tool — it returns
+      structured results a raw command doesn't.
+
+    Mechanics:
+    - `sandbox` is an address: an image ref like "golang:1.26", or a
+      "module:function" sandbox from `listSandboxes`.
+    - The workspace is COPIED in, not mounted. Nothing you do in the sandbox
+      touches the real workspace until you call `changes`, which extracts
+      /workspace's drift as a Changeset and applies it.
+    - Pass `session` to keep state (installed packages, files outside
+      /workspace) across calls; `fresh: true` starts a session over.
+    - A continued session only sees your latest workspace edits when it has
+      no un-extracted /workspace changes — pull pending changes first.
+
+    Reaching for exec is a signal: if no tool covered the need, note it; and
+    if you exec the same setup twice, graduate it into a sandbox definition —
+    a Container-returning function on a module (an existing one that owns
+    the concern, or a workspace-local `sandboxes` module you create) — then
+    use its address. `listSandboxes` shows the catalog.
+  """
+}

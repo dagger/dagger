@@ -15,7 +15,12 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 type spanLookupKey struct {
@@ -73,6 +78,12 @@ type spanLookup struct {
 	// "beneath" the exec span must reach the install spans' rows too. Fed
 	// from every snapshot row, like causalChildren.
 	causalParents map[string][]string
+
+	// Archive-facing indexes always include the trace ID. Archive reads are
+	// trace-addressed and must not merge the same span ID from another trace.
+	archiveLastRow map[spanLookupKey]int64
+	archiveParent  map[spanLookupKey]spanLookupKey
+	agentSpans     map[string]map[spanLookupKey]struct{}
 }
 
 func newSpanLookup() *spanLookup {
@@ -85,6 +96,9 @@ func newSpanLookup() *spanLookup {
 		children:       make(map[string][]string),
 		causalChildren: make(map[string][]string),
 		causalParents:  make(map[string][]string),
+		archiveLastRow: make(map[spanLookupKey]int64),
+		archiveParent:  make(map[spanLookupKey]spanLookupKey),
+		agentSpans:     make(map[string]map[spanLookupKey]struct{}),
 	}
 }
 
@@ -108,6 +122,22 @@ func (l *spanLookup) addAll(rows []Span) {
 }
 
 func (l *spanLookup) addLocked(row Span, causalTargets []string) {
+	archiveKey := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
+	l.archiveLastRow[archiveKey] = row.ID
+	if row.ParentSpanID.Valid {
+		if _, known := l.archiveParent[archiveKey]; !known {
+			l.archiveParent[archiveKey] = spanLookupKey{traceID: row.TraceID, spanID: row.ParentSpanID.String}
+		}
+	}
+	if isAgentIdentitySpan(row) {
+		spans := l.agentSpans[row.TraceID]
+		if spans == nil {
+			spans = make(map[spanLookupKey]struct{})
+			l.agentSpans[row.TraceID] = spans
+		}
+		spans[archiveKey] = struct{}{}
+	}
+
 	// Link edges are indexed before (and regardless of) the duplicate-snapshot
 	// suppression below: a later snapshot of an already-seen span may carry
 	// links its first row lacked.
@@ -164,6 +194,30 @@ var (
 	testCaseNameAttrMarker  = []byte(`"` + string(semconv.TestCaseNameKey) + `"`)
 	testSuiteNameAttrMarker = []byte(`"` + string(semconv.TestSuiteNameKey) + `"`)
 )
+
+func isAgentIdentitySpan(row Span) bool {
+	if row.TraceID == "" || row.SpanID == "" ||
+		!bytes.Contains(row.Attributes, []byte(`"`+telemetryattrs.AgentAttr+`"`)) ||
+		!bytes.Contains(row.Attributes, []byte(`"`+telemetryattrs.AgentIDAttr+`"`)) {
+		return false
+	}
+	var attrs []*otlpcommonv1.KeyValue
+	if err := UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+		return false
+	}
+	var agent, agentID bool
+	for _, attr := range attrs {
+		switch attr.GetKey() {
+		case telemetryattrs.AgentAttr:
+			value, ok := attr.GetValue().GetValue().(*otlpcommonv1.AnyValue_BoolValue)
+			agent = ok && value.BoolValue
+		case telemetryattrs.AgentIDAttr:
+			value, ok := attr.GetValue().GetValue().(*otlpcommonv1.AnyValue_StringValue)
+			agentID = ok && value.StringValue != ""
+		}
+	}
+	return agent && agentID
+}
 
 // causalLinkTargets decodes row's span links and returns the span IDs it
 // cause-links to. Purpose handling mirrors dagui's link ingestion
@@ -333,6 +387,13 @@ func (l *spanLookup) latestRowIDs(ids map[string]struct{}) []int64 {
 	return rowIDs
 }
 
+func (l *spanLookup) hasSpanForTrace(traceID, spanID string) bool {
+	l.mu.RLock()
+	_, found := l.archiveLastRow[spanLookupKey{traceID: traceID, spanID: spanID}]
+	l.mu.RUnlock()
+	return found
+}
+
 func (l *spanLookup) hasSpan(spanID string) bool {
 	l.mu.RLock()
 	_, found := l.lastRow[spanID]
@@ -355,39 +416,178 @@ func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 	return checks, tests
 }
 
+func (l *spanLookup) archiveAgentSpanIDs(traceID string) []string {
+	l.mu.RLock()
+	spans := l.agentSpans[traceID]
+	ids := make([]string, 0, len(spans))
+	for key := range spans {
+		ids = append(ids, key.spanID)
+	}
+	l.mu.RUnlock()
+	sort.Strings(ids)
+	return ids
+}
+
+func (l *spanLookup) archiveAncestorClosure(traceID string, ids map[string]struct{}) map[string]struct{} {
+	closure := make(map[string]struct{}, len(ids))
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	for id := range ids {
+		key := spanLookupKey{traceID: traceID, spanID: id}
+		for key.spanID != "" {
+			if _, seen := closure[key.spanID]; seen {
+				break
+			}
+			if _, exists := l.archiveLastRow[key]; !exists {
+				break
+			}
+			closure[key.spanID] = struct{}{}
+			key = l.archiveParent[key]
+		}
+	}
+	return closure
+}
+
+func (l *spanLookup) archiveLatestRowIDs(traceID string, ids map[string]struct{}) []int64 {
+	rowIDs := make([]int64, 0, len(ids))
+	l.mu.RLock()
+	for id := range ids {
+		if rowID, found := l.archiveLastRow[spanLookupKey{traceID: traceID, spanID: id}]; found {
+			rowIDs = append(rowIDs, rowID)
+		}
+	}
+	l.mu.RUnlock()
+	sort.Slice(rowIDs, func(i, j int) bool { return rowIDs[i] < rowIDs[j] })
+	return rowIDs
+}
+
 // logLookup indexes log rows by the span they're attributed to, so scoped log
 // reads (SelectLogsBeneathSpan, SelectLogsForSpans) resolve to direct row
 // reads instead of scanning the whole log stream — a scan that is linear in
 // SESSION size, paid per read, on paths that run per LLM tool call. The cost
 // is 8 bytes per log row plus per-span slice overhead; rows are appended with
 // monotonic IDs, so each span's slice is ascending by construction.
+type callPayloadLookupKey struct {
+	traceID string
+	digest  string
+}
+
+type indexedCallPayload struct {
+	key   callPayloadLookupKey
+	rowID int64
+	ok    bool
+}
+
 type logLookup struct {
-	mu         sync.RWMutex
-	rowsBySpan map[string][]int64
+	mu          sync.RWMutex
+	rowsBySpan  map[string][]int64
+	archiveRows map[spanLookupKey][]int64
+	callPayload map[callPayloadLookupKey]int64
 }
 
 func newLogLookup() *logLookup {
-	return &logLookup{rowsBySpan: make(map[string][]int64)}
+	return &logLookup{
+		rowsBySpan:  make(map[string][]int64),
+		archiveRows: make(map[spanLookupKey][]int64),
+		callPayload: make(map[callPayloadLookupKey]int64),
+	}
 }
 
 func (l *logLookup) add(row Log) {
-	if !row.SpanID.Valid {
-		return
-	}
+	payload := callPayloadIndexEntry(row)
 	l.mu.Lock()
-	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
+	l.addLocked(row, payload)
 	l.mu.Unlock()
 }
 
 func (l *logLookup) addAll(rows []Log) {
+	payloads := make([]indexedCallPayload, len(rows))
+	for i, row := range rows {
+		payloads[i] = callPayloadIndexEntry(row)
+	}
 	l.mu.Lock()
-	for _, row := range rows {
-		if !row.SpanID.Valid {
-			continue
-		}
-		l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
+	for i, row := range rows {
+		l.addLocked(row, payloads[i])
 	}
 	l.mu.Unlock()
+}
+
+func (l *logLookup) addLocked(row Log, payload indexedCallPayload) {
+	if row.SpanID.Valid {
+		l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
+		if row.TraceID.Valid {
+			key := spanLookupKey{traceID: row.TraceID.String, spanID: row.SpanID.String}
+			l.archiveRows[key] = append(l.archiveRows[key], row.ID)
+		}
+	}
+	if payload.ok {
+		if _, exists := l.callPayload[payload.key]; !exists {
+			l.callPayload[payload.key] = payload.rowID
+		}
+	}
+}
+
+func callPayloadIndexEntry(row Log) indexedCallPayload {
+	if !row.TraceID.Valid || row.TraceID.String == "" || row.ID <= 0 {
+		return indexedCallPayload{}
+	}
+	var attrs []*otlpcommonv1.KeyValue
+	if err := UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+		return indexedCallPayload{}
+	}
+	claimed := false
+	for _, attr := range attrs {
+		if attr.GetKey() != telemetry.ContentTypeAttr {
+			continue
+		}
+		claimed = attr.GetValue().GetStringValue() == telemetryattrs.CallPayloadContentType
+		break
+	}
+	if !claimed {
+		return indexedCallPayload{}
+	}
+	var body otlpcommonv1.AnyValue
+	if err := proto.Unmarshal(row.Body, &body); err != nil {
+		return indexedCallPayload{}
+	}
+	payload, ok := body.GetValue().(*otlpcommonv1.AnyValue_BytesValue)
+	if !ok {
+		return indexedCallPayload{}
+	}
+	decoded := new(callpbv1.Call)
+	if err := proto.Unmarshal(payload.BytesValue, decoded); err != nil || decoded.GetDigest() == "" {
+		return indexedCallPayload{}
+	}
+	return indexedCallPayload{
+		key: callPayloadLookupKey{
+			traceID: row.TraceID.String,
+			digest:  decoded.GetDigest(),
+		},
+		rowID: row.ID,
+		ok:    true,
+	}
+}
+
+func (l *logLookup) archiveRowIDs(traceID string, ids map[string]struct{}, perSpanTail int) []int64 {
+	var rowIDs []int64
+	l.mu.RLock()
+	for id := range ids {
+		rows := l.archiveRows[spanLookupKey{traceID: traceID, spanID: id}]
+		if perSpanTail > 0 && len(rows) > perSpanTail {
+			rows = rows[len(rows)-perSpanTail:]
+		}
+		rowIDs = append(rowIDs, rows...)
+	}
+	l.mu.RUnlock()
+	sort.Slice(rowIDs, func(i, j int) bool { return rowIDs[i] < rowIDs[j] })
+	return rowIDs
+}
+
+func (l *logLookup) callPayloadRow(traceID, digest string) (int64, bool) {
+	l.mu.RLock()
+	rowID, found := l.callPayload[callPayloadLookupKey{traceID: traceID, digest: digest}]
+	l.mu.RUnlock()
+	return rowID, found
 }
 
 // rowIDsForSpans returns the row IDs of every log row attributed to a span in
@@ -514,6 +714,116 @@ func (s *DB) Close() error {
 	return s.closeFn()
 }
 
+func (s *DB) HighWater() HighWater {
+	s.spans.mu.Lock()
+	s.logs.mu.Lock()
+	s.metrics.mu.Lock()
+	highWater := HighWater{
+		Spans:   s.spans.nextID - 1,
+		Logs:    s.logs.nextID - 1,
+		Metrics: s.metrics.nextID - 1,
+	}
+	s.metrics.mu.Unlock()
+	s.logs.mu.Unlock()
+	s.spans.mu.Unlock()
+	return highWater
+}
+
+// Checkpoint makes the current fixed stream cut durable. It first snapshots
+// all three high-water cursors, then forces every in-memory tail to its spill
+// file and fsyncs each file. Rows appended concurrently after the snapshot may
+// also become durable, but are outside the returned cut.
+func (s *DB) Checkpoint(ctx context.Context) (HighWater, error) {
+	highWater := s.HighWater()
+	type checkpointResult struct {
+		stream string
+		err    error
+	}
+	results := make(chan checkpointResult, 3)
+	for stream, checkpoint := range map[string]func(context.Context) error{
+		"spans":   s.spans.checkpoint,
+		"logs":    s.logs.checkpoint,
+		"metrics": s.metrics.checkpoint,
+	} {
+		go func() {
+			results <- checkpointResult{stream: stream, err: checkpoint(ctx)}
+		}()
+	}
+	var result error
+	for range 3 {
+		checkpoint := <-results
+		if checkpoint.err != nil {
+			result = errors.Join(result, fmt.Errorf("checkpoint %s: %w", checkpoint.stream, checkpoint.err))
+		}
+	}
+	return highWater, result
+}
+
+// SizeBytes returns the physical size of the three telemetry streams. Archive
+// finalization calls this after Checkpoint, when every row in its fixed cut has
+// been flushed to these files.
+func (s *DB) SizeBytes() (int64, error) {
+	streams := []struct {
+		name string
+		stat func() (os.FileInfo, error)
+	}{
+		{name: "spans", stat: s.spans.spill.file.Stat},
+		{name: "logs", stat: s.logs.spill.file.Stat},
+		{name: "metrics", stat: s.metrics.spill.file.Stat},
+	}
+	var size int64
+	for _, stream := range streams {
+		info, err := stream.stat()
+		if err != nil {
+			return 0, fmt.Errorf("stat %s telemetry stream: %w", stream.name, err)
+		}
+		size += info.Size()
+	}
+	return size, nil
+}
+
+// ValidateTraceCut verifies the trace-addressed signals in a fixed stream cut.
+// Metrics have no per-row trace identity; their request trace is validated at
+// ingestion by the session exporter.
+func (s *DB) ValidateTraceCut(ctx context.Context, traceID string, cut HighWater) error {
+	const batchSize = int64(1024)
+	for cursor := int64(0); cursor < cut.Spans; {
+		rows, err := s.SelectSpansRange(ctx, SelectSpansRangeParams{
+			AfterID: cursor, ThroughID: cut.Spans, Limit: batchSize,
+		})
+		if err != nil {
+			return fmt.Errorf("read spans: %w", err)
+		}
+		if len(rows) == 0 {
+			return fmt.Errorf("span stream ended at %d before high-water %d", cursor, cut.Spans)
+		}
+		for _, row := range rows {
+			cursor = row.ID
+			if row.TraceID != traceID {
+				return fmt.Errorf("span row %d has trace %q, want %q", row.ID, row.TraceID, traceID)
+			}
+		}
+	}
+	for cursor := int64(0); cursor < cut.Logs; {
+		rows, err := s.SelectLogsRange(ctx, SelectLogsRangeParams{
+			AfterID: cursor, ThroughID: cut.Logs, Limit: batchSize,
+		})
+		if err != nil {
+			return fmt.Errorf("read logs: %w", err)
+		}
+		if len(rows) == 0 {
+			return fmt.Errorf("log stream ended at %d before high-water %d", cursor, cut.Logs)
+		}
+		for _, row := range rows {
+			cursor = row.ID
+			if !row.TraceID.Valid || row.TraceID.String != traceID {
+				return fmt.Errorf("log row %d has trace %q (valid %t), want %q", row.ID, row.TraceID.String, row.TraceID.Valid, traceID)
+			}
+		}
+	}
+	return nil
+}
+
 func (s *DB) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
 	return s.spans.Since(ctx, arg.ID, storeLimit(arg.Limit))
 }
@@ -524,6 +834,18 @@ func (s *DB) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams) ([]
 
 func (s *DB) SelectMetricsSince(ctx context.Context, arg SelectMetricsSinceParams) ([]Metric, error) {
 	return s.metrics.Since(ctx, arg.ID, storeLimit(arg.Limit))
+}
+
+func (s *DB) SelectSpansRange(ctx context.Context, arg SelectSpansRangeParams) ([]Span, error) {
+	return s.spans.Range(ctx, arg.AfterID, arg.ThroughID, storeLimit(arg.Limit))
+}
+
+func (s *DB) SelectLogsRange(ctx context.Context, arg SelectLogsRangeParams) ([]Log, error) {
+	return s.logs.Range(ctx, arg.AfterID, arg.ThroughID, storeLimit(arg.Limit))
+}
+
+func (s *DB) SelectMetricsRange(ctx context.Context, arg SelectMetricsRangeParams) ([]Metric, error) {
+	return s.metrics.Range(ctx, arg.AfterID, arg.ThroughID, storeLimit(arg.Limit))
 }
 
 func (s *DB) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error) {
@@ -569,6 +891,13 @@ func (s *DB) HasDescendants(spanID string) bool {
 	return s.lookup.hasDescendants(spanID)
 }
 
+// HasSpanForTrace reports whether the store has seen any snapshot of spanID in
+// traceID. Archive callers use the composite identity so a span ID collision in
+// another trace cannot hide a missing archive parent.
+func (s *DB) HasSpanForTrace(traceID, spanID string) bool {
+	return s.lookup.hasSpanForTrace(traceID, spanID)
+}
+
 // HasSpan reports whether the store has seen any snapshot of spanID.
 func (s *DB) HasSpan(spanID string) bool {
 	return s.lookup.hasSpan(spanID)
@@ -591,12 +920,57 @@ func (s *DB) CheckTestSpanIDs() (checks, tests map[string]struct{}) {
 	return s.lookup.markedSpanIDs()
 }
 
+// AgentIdentitySpanIDs returns the valid agent identity span IDs in traceID.
+// IDs are sorted for deterministic archive bootstrap construction.
+func (s *DB) AgentIdentitySpanIDs(traceID string) []string {
+	return s.lookup.archiveAgentSpanIDs(traceID)
+}
+
+// AncestorClosureForTrace is the trace-scoped archive form of
+// AncestorClosure. Every index lookup uses the (trace ID, span ID) pair.
+func (s *DB) AncestorClosureForTrace(traceID string, ids map[string]struct{}) map[string]struct{} {
+	return s.lookup.archiveAncestorClosure(traceID, ids)
+}
+
+// SelectSpansLatestForTrace returns the newest cumulative snapshot for each
+// requested span in one trace, ordered by append row ID.
+func (s *DB) SelectSpansLatestForTrace(ctx context.Context, traceID string, ids map[string]struct{}) ([]Span, error) {
+	return s.readSpanRows(ctx, s.lookup.archiveLatestRowIDs(traceID, ids))
+}
+
+// SelectLogsForTraceSpans returns only logs whose trace and span IDs both
+// match the archive scope.
+func (s *DB) SelectLogsForTraceSpans(ctx context.Context, traceID string, ids map[string]struct{}, perSpanTail int) ([]Log, error) {
+	return s.readLogRows(ctx, s.logIdx.archiveRowIDs(traceID, ids, perSpanTail))
+}
+
+// SelectCallPayload returns the first valid canonical call-payload record for
+// digest in traceID. Payload identity is computed from the encoded call body;
+// it is never trusted from record metadata.
+func (s *DB) SelectCallPayload(ctx context.Context, traceID, digest string) (Log, error) {
+	rowID, found := s.logIdx.callPayloadRow(traceID, digest)
+	if !found {
+		return Log{}, sql.ErrNoRows
+	}
+	row, found, err := s.logs.readID(ctx, rowID)
+	if err != nil {
+		return Log{}, fmt.Errorf("read call payload log row %d: %w", rowID, err)
+	}
+	if !found {
+		return Log{}, fmt.Errorf("indexed call payload log row %d: %w", rowID, sql.ErrNoRows)
+	}
+	return row, nil
+}
+
 // SelectSpansLatest returns the newest snapshot row of every span in ids, in
 // append order. A span's snapshots are cumulative, so its newest row alone
 // reconstructs the state a full sequential replay would end with — this is
 // the span half of a scoped load, sized by the scope instead of the session.
 func (s *DB) SelectSpansLatest(ctx context.Context, ids map[string]struct{}) ([]Span, error) {
-	rowIDs := s.lookup.latestRowIDs(ids)
+	return s.readSpanRows(ctx, s.lookup.latestRowIDs(ids))
+}
+
+func (s *DB) readSpanRows(ctx context.Context, rowIDs []int64) ([]Span, error) {
 	rows := make([]Span, 0, len(rowIDs))
 	for _, rowID := range rowIDs {
 		row, found, err := s.spans.readID(ctx, rowID)
@@ -617,7 +991,10 @@ func (s *DB) SelectSpansLatest(ctx context.Context, ids map[string]struct{}) ([]
 // output to a tail anyway, and the cap keeps one pathological span (e.g. a
 // service that streamed millions of lines) from ballooning the load.
 func (s *DB) SelectLogsForSpans(ctx context.Context, ids map[string]struct{}, perSpanTail int) ([]Log, error) {
-	rowIDs := s.logIdx.rowIDsForSpans(ids, perSpanTail)
+	return s.readLogRows(ctx, s.logIdx.rowIDsForSpans(ids, perSpanTail))
+}
+
+func (s *DB) readLogRows(ctx context.Context, rowIDs []int64) ([]Log, error) {
 	rows := make([]Log, 0, len(rowIDs))
 	for _, rowID := range rowIDs {
 		row, found, err := s.logs.readID(ctx, rowID)

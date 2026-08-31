@@ -72,6 +72,11 @@ type ExecutionMetadata struct {
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
 
+	// ExecHTTPHandlerToken selects a session-scoped HTTP handler for this
+	// execution's container-local forwarding endpoint. It is runtime-only so a
+	// capability token can never enter an exec cache key.
+	ExecHTTPHandlerToken string `json:"-"`
+
 	// ProfArgs is the fully-resolved user command (entrypoint + args), captured
 	// in core at exec-run time BEFORE any engine shim (the QEMU emulator, the
 	// executor's /.init) wraps it, so wall-clock profiling can headline the user's
@@ -197,6 +202,7 @@ func (c *Client) Run(
 		namedSetupFunc{"injectInit", c.injectInit},
 		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
 		namedSetupFunc{"filterEnvs", c.filterEnvs},
+		namedSetupFunc{"setupExecHTTPAuth", c.setupExecHTTPAuth},
 		namedSetupFunc{"setupRootfs", c.setupRootfs},
 		namedSetupFunc{"setUserGroup", c.setUserGroup},
 		namedSetupFunc{"setExitCodePath", c.setExitCodePath},

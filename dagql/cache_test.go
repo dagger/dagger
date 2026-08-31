@@ -19,6 +19,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -279,7 +280,7 @@ func TestCacheRejectsNilTypeResolver(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "type resolver is nil")
 
-	_, _, err = c.lookupCacheForDigests(ctx, "test-session", nil, digest.FromString("nil-type-resolver"), nil)
+	_, _, err = c.lookupCacheForDigests(ctx, "test-session", nil, digest.FromString("nil-type-resolver"), nil, NewResultCallType(Int(0).Type()))
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "type resolver is nil")
 
@@ -313,6 +314,67 @@ func TestCacheRejectsEmptySessionIDForOwningEntrypoints(t *testing.T) {
 	})
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "empty session ID")
+}
+
+func TestSharedCallUsesOneClientScopeLeaseForAllWaiters(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			assert.Equal(t, kind, engine.ClientLeaseSharedWork)
+			assert.Assert(t, strings.HasPrefix(ownerID, "call/"))
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	assert.NilError(t, err)
+	ctx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	assert.NilError(t, err)
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+
+	frame := cacheTestIntCall("leased-singleflight")
+	req := &CallRequest{ResultCall: frame, ConcurrencyKey: "leased-singleflight"}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var executions atomic.Int32
+	call := func() (AnyResult, error) {
+		return cache.GetOrInitCall(ctx, "session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+			if executions.Add(1) == 1 {
+				close(started)
+			}
+			<-release
+			return cacheTestIntResult(frame, 1), nil
+		})
+	}
+
+	results := make(chan error, 2)
+	go func() { _, err := call(); results <- err }()
+	<-started
+	go func() { _, err := call(); results <- err }()
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		for _, ongoing := range cache.ongoingCalls {
+			if ongoing.waiters == 2 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+	close(release)
+	assert.NilError(t, <-results)
+	assert.NilError(t, <-results)
+	assert.Equal(t, executions.Load(), int32(1))
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
 }
 
 func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {
@@ -3890,6 +3952,129 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 	})
 }
 
+func TestCacheEquivalenceLookupsRequireMatchingResultType(t *testing.T) {
+	shared := call.ExtraDigest{
+		Digest: digest.FromString("cross-type-equivalence"),
+		Label:  call.ExtraDigestLabelContent,
+	}
+
+	setup := func(t *testing.T) (*Cache, context.Context, AnyResult, AnyResult) {
+		t.Helper()
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, c)
+
+		stringOut := &ResultCall{
+			Kind:         ResultCallKindField,
+			Type:         NewResultCallType(NewString("").Type()),
+			Field:        "cross-type-string-output",
+			ExtraDigests: []call.ExtraDigest{shared},
+		}
+		stringRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall: &ResultCall{
+				Kind:  ResultCallKindField,
+				Type:  NewResultCallType(NewString("").Type()),
+				Field: "cross-type-string-request",
+			},
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestDetachedResult(stringOut, NewString("wrong type")), nil
+		})
+		assert.NilError(t, err)
+
+		intOut := cacheTestIntCall("cross-type-int-output", shared)
+		intRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall: cacheTestIntCall("cross-type-int-request"),
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(intOut, 42), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, stringRes.cacheSharedResult().id < intRes.cacheSharedResult().id)
+		return c, ctx, stringRes, intRes
+	}
+
+	t.Run("legacy extra digest recipe lookup", func(t *testing.T) {
+		c, ctx, _, intRes := setup(t)
+		oldRecipe := call.New().Append(Int(0).Type(), "cross-type-old-recipe").With(call.WithExtraDigest(shared))
+
+		got, hit, err := c.lookupCacheForDigests(
+			ctx,
+			"recipe-session",
+			noopTypeResolver{},
+			oldRecipe.Digest(),
+			oldRecipe.ExtraDigests(),
+			NewResultCallType(oldRecipe.Type().ToAST()),
+		)
+		assert.NilError(t, err)
+		assert.Assert(t, hit)
+		assert.Equal(t, intRes.cacheSharedResult().id, got.cacheSharedResult().id)
+		assert.Equal(t, 42, cacheTestUnwrapInt(t, got))
+	})
+
+	t.Run("structural lookup", func(t *testing.T) {
+		c, ctx, stringRes, intRes := setup(t)
+		structural := cacheTestIntCall("cross-type-structural")
+		assert.NilError(t, c.TeachCallEquivalentToResult(ctx, "test-session", structural, stringRes))
+		structuralDigest, err := structural.deriveRecipeDigest(c)
+		assert.NilError(t, err)
+		c.egraphMu.Lock()
+		c.removeResultDigestPostingLocked(stringRes.cacheSharedResult().id, structuralDigest.String())
+		c.egraphMu.Unlock()
+
+		got, hit, err := c.lookupCallRequest(ctx, "structural-session", noopTypeResolver{}, &CallRequest{ResultCall: structural})
+		assert.NilError(t, err)
+		assert.Assert(t, hit)
+		assert.Equal(t, intRes.cacheSharedResult().id, got.cacheSharedResult().id)
+		assert.Equal(t, 42, cacheTestUnwrapInt(t, got))
+	})
+
+	t.Run("structural input types", func(t *testing.T) {
+		c, ctx, stringRes, intRes := setup(t)
+		stringChild := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "cross-type-input-child",
+			Receiver: &ResultCallRef{ResultID: uint64(stringRes.cacheSharedResult().id)},
+		}
+		first, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: stringChild}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(stringChild, 100), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !first.HitCache())
+
+		intChild := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "cross-type-input-child",
+			Receiver: &ResultCallRef{ResultID: uint64(intRes.cacheSharedResult().id)},
+		}
+		initCalls := 0
+		second, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: intChild}, func(context.Context) (AnyResult, error) {
+			initCalls++
+			return cacheTestIntResult(intChild, 200), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, initCalls)
+		assert.Assert(t, !second.HitCache())
+		assert.Equal(t, 200, cacheTestUnwrapInt(t, second))
+	})
+
+	t.Run("handle canonicalization", func(t *testing.T) {
+		c, ctx, _, intRes := setup(t)
+		intShared := intRes.cacheSharedResult()
+
+		got, _, _, err := c.sharedResultByResultID(
+			ctx,
+			"handle-session",
+			intShared.id,
+			sharedResultLookupCanonicalEquivalent,
+		)
+		assert.NilError(t, err)
+		assert.Equal(t, intShared.id, got.id)
+		assert.Assert(t, sharedResultHasType(got, NewResultCallType(Int(0).Type())))
+	})
+}
+
 func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	t.Parallel()
 
@@ -3950,7 +4135,7 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 
 	childBDigest, err := childBReq.deriveRecipeDigest(c)
 	assert.NilError(t, err)
-	resolvedChildB, hit, err := c.lookupCacheForDigests(ctx, "test-session", noopTypeResolver{}, childBDigest, childBReq.ExtraDigests)
+	resolvedChildB, hit, err := c.lookupCacheForDigests(ctx, "test-session", noopTypeResolver{}, childBDigest, childBReq.ExtraDigests, childBReq.ResultCall.Type)
 	assert.NilError(t, err)
 	assert.Assert(t, hit)
 	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.cacheSharedResult().id)
@@ -6867,6 +7052,179 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	assert.Assert(t, secondShared != nil)
 	assert.Assert(t, secondShared.resultCall != nil)
 	assert.Equal(t, "first", secondShared.resultCall.SyntheticOp)
+}
+
+func TestCacheArbitraryCallbackUsesOneClientScopeLease(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			if kind != engine.ClientLeaseSharedWork {
+				return nil, fmt.Errorf("arbitrary callback lease kind = %q", kind)
+			}
+			if ownerID != "arbitrary/arbitrary-client-scope" {
+				return nil, fmt.Errorf("arbitrary callback lease owner = %q", ownerID)
+			}
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "test-session",
+		ClientID:  "test-client",
+	}, rootLease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	require.NoError(t, err)
+
+	cache, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.ReleaseSession(ctx, "test-session")) })
+
+	const key = "arbitrary-client-scope"
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	var executions atomic.Int32
+	initializer := func(callbackCtx context.Context) (any, error) {
+		execution := executions.Add(1)
+		if execution == 1 {
+			close(started)
+		}
+		<-unblock
+		if execution != 1 {
+			return nil, fmt.Errorf("initializer executed %d times", execution)
+		}
+		callbackScope, ok := engine.ClientScopeFromContext(callbackCtx)
+		if !ok {
+			return nil, errors.New("initializer callback missing client scope")
+		}
+		if callbackScope.Lease().Kind() != engine.ClientLeaseSharedWork {
+			return nil, fmt.Errorf("initializer callback lease kind = %q", callbackScope.Lease().Kind())
+		}
+		return "value", nil
+	}
+
+	type arbitraryCallResult struct {
+		res ArbitraryCachedResult
+		err error
+	}
+	results := make(chan arbitraryCallResult, 2)
+	call := func() {
+		res, err := cache.GetOrInitArbitrary(ctx, "test-session", key, initializer)
+		results <- arbitraryCallResult{res: res, err: err}
+	}
+	go call()
+	<-started
+	go call()
+
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		ongoing := cache.ongoingArbitraryCalls[key]
+		return ongoing != nil && ongoing.waiters == 2
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+	require.Zero(t, released.Load())
+
+	close(unblock)
+	for range 2 {
+		result := <-results
+		require.NoError(t, result.err)
+		require.Equal(t, "value", result.res.Value())
+	}
+	require.Equal(t, int32(1), executions.Load())
+	// Lease release is ordered before waitCh closes, so every returning waiter
+	// deterministically observes the callback's terminal lifecycle transition.
+	require.Equal(t, int32(1), released.Load())
+
+	cache.callsMu.Lock()
+	completed := cache.completedArbitraryCalls[key]
+	_, ongoing := cache.ongoingArbitraryCalls[key]
+	cache.callsMu.Unlock()
+	require.NotNil(t, completed)
+	require.Nil(t, completed.cancel, "completed result must not retain the detached callback context")
+	require.False(t, ongoing)
+}
+
+func TestCacheArbitraryCallbackCancelsAfterLastWaiter(t *testing.T) {
+	t.Parallel()
+
+	var acquired atomic.Int32
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			acquired.Add(1)
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "test-session",
+		ClientID:  "test-client",
+	}, rootLease)
+	require.NoError(t, err)
+	baseCtx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	require.NoError(t, err)
+	firstCtx, cancelFirst := context.WithCancel(baseCtx)
+	defer cancelFirst()
+	secondCtx, cancelSecond := context.WithCancel(baseCtx)
+	defer cancelSecond()
+
+	cache, err := NewCache(baseCtx, "", nil, nil)
+	require.NoError(t, err)
+
+	const key = "arbitrary-last-waiter-cancel"
+	started := make(chan struct{})
+	callbackDone := make(chan struct{})
+	initializer := func(ctx context.Context) (any, error) {
+		close(started)
+		<-ctx.Done()
+		close(callbackDone)
+		return nil, context.Cause(ctx)
+	}
+
+	results := make(chan error, 2)
+	go func() {
+		_, err := cache.GetOrInitArbitrary(firstCtx, "test-session", key, initializer)
+		results <- err
+	}()
+	<-started
+	go func() {
+		_, err := cache.GetOrInitArbitrary(secondCtx, "test-session", key, initializer)
+		results <- err
+	}()
+	require.Eventually(t, func() bool {
+		cache.callsMu.Lock()
+		defer cache.callsMu.Unlock()
+		ongoing := cache.ongoingArbitraryCalls[key]
+		return ongoing != nil && ongoing.waiters == 2
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), acquired.Load())
+
+	cancelFirst()
+	require.ErrorIs(t, <-results, context.Canceled)
+	select {
+	case <-callbackDone:
+		t.Fatal("shared callback canceled before its last waiter left")
+	default:
+	}
+	require.Zero(t, released.Load())
+
+	cancelSecond()
+	require.ErrorIs(t, <-results, context.Canceled)
+	select {
+	case <-callbackDone:
+	case <-time.After(time.Second):
+		t.Fatal("shared callback was not canceled after its last waiter left")
+	}
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {

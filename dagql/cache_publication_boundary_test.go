@@ -224,7 +224,7 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, replacement.cacheSharedResult().id, resolvedID)
 
-	digestHit, hit, err := c.lookupCacheForDigests(t.Context(), "digest", srv, cacheTestCallDigest(call), nil)
+	digestHit, hit, err := c.lookupCacheForDigests(t.Context(), "digest", srv, cacheTestCallDigest(call), nil, call.Type)
 	assert.NilError(t, err)
 	assert.Assert(t, hit)
 	assert.Equal(t, replacement.cacheSharedResult().id, digestHit.cacheSharedResult().id)

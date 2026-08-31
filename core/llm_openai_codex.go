@@ -16,7 +16,6 @@ import (
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -37,7 +36,10 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 	// Use the OAuth access token as the API key (sets Authorization: Bearer <token>)
 	opts = append(opts, option.WithAPIKey(endpoint.AuthToken))
 
-	// Extract chatgpt_account_id from JWT for required header
+	// Extract chatgpt_account_id from JWT for required header. Both this and
+	// the bearer token above are only the values observed at construction:
+	// when the endpoint carries a credential source, credentialTransport
+	// recomputes both from the current token on every request.
 	if accountID := extractChatGPTAccountID(endpoint.AuthToken); accountID != "" {
 		opts = append(opts, option.WithHeader("chatgpt-account-id", accountID))
 	}
@@ -54,6 +56,11 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 
 var _ LLMClient = (*OpenAICodexClient)(nil)
 
+// IsRetryable reports whether a failed turn is worth resending. The ChatGPT
+// backend gives no reliable signal to key off, so nothing is retried here; a
+// rejected credential is the one exception and is handled centrally, since
+// resending only helps once the credential has been re-resolved (see
+// sendQueryWithRetry).
 func (c *OpenAICodexClient) IsRetryable(err error) bool {
 	return false
 }
@@ -230,13 +237,13 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 				usage.TotalTokens = resp.Usage.TotalTokens
 			}
 			if usage.InputTokens > 0 {
-				inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
+				inputTokens.Record(ctx, usage.InputTokens, llmMetricAttributes(ctx, attrs...))
 			}
 			if usage.CachedTokenReads > 0 {
-				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
+				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, llmMetricAttributes(ctx, attrs...))
 			}
 			if usage.OutputTokens > 0 {
-				outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
+				outputTokens.Record(ctx, usage.OutputTokens, llmMetricAttributes(ctx, attrs...))
 			}
 
 			// Extract text from the completed response (tool calls handled above)
@@ -456,16 +463,40 @@ func codexAPIError(err error) error {
 		}
 	}
 	if msg := llmErrorMessage([]byte(body)); msg != "" {
-		return fmt.Errorf("codex API error (HTTP %d): %s", aerr.StatusCode, msg)
+		return &codexError{statusCode: aerr.StatusCode, message: msg, err: err}
 	}
 	return err
 }
 
+// codexError carries the backend's own explanation as the message while
+// keeping the SDK error reachable underneath, so status-based classification
+// (isAuthFailure) still works on it.
+type codexError struct {
+	statusCode int
+	message    string
+	err        error
+}
+
+func (e *codexError) Error() string {
+	return fmt.Sprintf("codex API error (HTTP %d): %s", e.statusCode, e.message)
+}
+
+func (e *codexError) Unwrap() error { return e.err }
+
 // extractChatGPTAccountID extracts the chatgpt_account_id from a JWT token.
 func extractChatGPTAccountID(token string) string {
+	accountID, _ := extractChatGPTAuthClaims(token)
+	return accountID
+}
+
+// extractChatGPTAuthClaims returns the external-auth metadata Codex app-server
+// requires alongside an access token. Both values live in OpenAI's namespaced
+// auth claim; plan type is optional, while an empty account ID makes the token
+// unusable for external auth.
+func extractChatGPTAuthClaims(token string) (accountID, planType string) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return ""
+		return "", ""
 	}
 
 	// JWT payloads use base64url encoding (may need padding)
@@ -479,19 +510,20 @@ func extractChatGPTAccountID(token string) string {
 
 	decoded, err := base64.URLEncoding.DecodeString(payload)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 
 	var claims map[string]any
 	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
+		return "", ""
 	}
 
 	auth, ok := claims["https://api.openai.com/auth"].(map[string]any)
 	if !ok {
-		return ""
+		return "", ""
 	}
 
-	accountID, _ := auth["chatgpt_account_id"].(string)
-	return accountID
+	accountID, _ = auth["chatgpt_account_id"].(string)
+	planType, _ = auth["chatgpt_plan_type"].(string)
+	return accountID, planType
 }

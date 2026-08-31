@@ -646,7 +646,6 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 ) error {
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
-	var llmArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
 	// The decoded args map includes schema defaults, but the call ID only
@@ -678,14 +677,6 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			//  3) "workspace args" that are automatically injected
 			continue
 		}
-		// An LLM argument on a non-@agent function is auto-injected with the
-		// conversation that dispatched the tool call, making the function a
-		// continuation (see loadLLMArg). An @agent's `base: LLM!` is the
-		// composition entrypoint and is always passed explicitly.
-		if !fn.metadata.IsAgent && argMetadata.IsLLM() {
-			llmArgs = append(llmArgs, argMetadata)
-			continue
-		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
 		if err != nil {
 			return fmt.Errorf("%s.%s(%s=): load user default: %w",
@@ -708,7 +699,7 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 	}
 
-	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 || len(llmArgs) > 0 {
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 {
 		type argInput struct {
 			argName string
 			val     dagql.IDType
@@ -758,25 +749,6 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			})
 		}
 
-		// Process LLM arguments - automatically injected with the conversation
-		// that dispatched this call, when there is one.
-		llmArgVals := make([]*argInput, len(llmArgs))
-		for i, arg := range llmArgs {
-			eg.Go(func() error {
-				llmVal, err := fn.loadLLMArg(ctx)
-				if err != nil {
-					return fmt.Errorf("load llm arg %q: %w", arg.Name, err)
-				}
-
-				llmArgVals[i] = &argInput{
-					argName: arg.Name,
-					val:     llmVal,
-				}
-
-				return nil
-			})
-		}
-
 		// Process user-defined user defaults for objects (and lists of objects)
 		type userDefaultArgInput struct {
 			argName string
@@ -812,15 +784,6 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			}
 		}
 		for _, arg := range workspaceArgVals {
-			if arg == nil {
-				continue
-			}
-			args[arg.argName] = dagql.Opt(arg.val)
-			if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.val), false); err != nil {
-				return err
-			}
-		}
-		for _, arg := range llmArgVals {
 			if arg == nil {
 				continue
 			}
@@ -926,6 +889,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// containerized runtimes. Nil for top-level / constructor calls.
 	if obj, ok := opts.ParentTyped.(dagql.AnyObjectResult); ok {
 		fnCall.parentTyped = obj
+	}
+	// Stamp the agent whose turn dispatched this call, so the function's own
+	// nested API calls can resolve it (core.CallerAgent): message provenance
+	// and the waits-for deadlock guard read it at the engine's central
+	// enqueue/await paths. CallerAgent rather than AgentFromContext, so a
+	// module function calling another module function propagates the agent
+	// through arbitrary nesting.
+	if caller, ok := CallerAgent(ctx); ok {
+		fnCall.SetCallerAgent(caller)
 	}
 
 	// hide all this internal plumbing making up the call
@@ -1329,27 +1301,6 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("get workspace ID: %w", err)
 	}
 	return dagql.NewID[*Workspace](wsID), nil
-}
-
-// loadLLMArg fills an auto-injected LLM argument with the conversation that
-// dispatched this call, bound into the context at LLM tool dispatch (MCP.Call
-// -> [LLMToContext]). The value is the conversation up to and including the
-// in-flight tool call, so a function that transforms it and returns an LLM acts
-// as a continuation: the agent loop resumes from the returned conversation.
-//
-// Unlike a Workspace argument there is no ambient fallback — a conversation
-// only exists at tool dispatch — so calling such a function any other way is an
-// error rather than a silent inheritance.
-func (fn *ModuleFunction) loadLLMArg(ctx context.Context) (dagql.IDType, error) {
-	boundLLM, ok := LLMFromContext(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no conversation in context: an LLM argument is only auto-injected when the function is invoked as an agent tool")
-	}
-	llmID, err := boundLLM.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get bound LLM ID: %w", err)
-	}
-	return dagql.NewID[*LLM](llmID), nil
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {

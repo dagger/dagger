@@ -350,8 +350,8 @@ func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
 // convention: a tool that returns an LLM replaces the conversation, and the loop
 // resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
-// adoptLLM). The tool's LLM! argument is auto-injected with the conversation up
-// to and including its own call, so `install`/`reload`-style self-extension is a
+// adoptLLM). MCP passes the current conversation directly to the tool's hidden
+// LLM! argument, including the tool call itself, so `install`/`reload`-style
 // plain transform.
 func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -426,7 +426,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (12 tools).",
+			"Toolset unchanged (16 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().
