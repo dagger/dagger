@@ -2035,10 +2035,15 @@ func resolveContainerInputPath(container *Container, rawPath string, expand bool
 }
 
 func (lazy *ContainerWithEntrypointLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withEntrypoint", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithEntrypointLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithEntrypointLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withEntrypoint", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.Entrypoint = slices.Clone(lazy.Args)
 			if !lazy.KeepDefaultArgs {
@@ -2052,7 +2057,6 @@ func (lazy *ContainerWithEntrypointLazy) Evaluate(ctx context.Context, container
 		if !lazy.KeepDefaultArgs {
 			container.DefaultArgs = false
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2079,10 +2083,15 @@ func (lazy *ContainerWithEntrypointLazy) EncodePersisted(ctx context.Context, ca
 }
 
 func (lazy *ContainerWithoutEntrypointLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutEntrypoint", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutEntrypointLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutEntrypointLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutEntrypoint", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.Entrypoint = nil
 			if !lazy.KeepDefaultArgs {
@@ -2096,7 +2105,6 @@ func (lazy *ContainerWithoutEntrypointLazy) Evaluate(ctx context.Context, contai
 		if !lazy.KeepDefaultArgs {
 			container.DefaultArgs = false
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2122,10 +2130,15 @@ func (lazy *ContainerWithoutEntrypointLazy) EncodePersisted(ctx context.Context,
 }
 
 func (lazy *ContainerWithDefaultArgsLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withDefaultArgs", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithDefaultArgsLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithDefaultArgsLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withDefaultArgs", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.DefaultArgs = true
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			if lazy.Args == nil {
@@ -2138,7 +2151,6 @@ func (lazy *ContainerWithDefaultArgsLazy) Evaluate(ctx context.Context, containe
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2164,10 +2176,15 @@ func (lazy *ContainerWithDefaultArgsLazy) EncodePersisted(ctx context.Context, c
 }
 
 func (lazy *ContainerWithoutDefaultArgsLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutDefaultArgs", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutDefaultArgsLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutDefaultArgsLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutDefaultArgs", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.DefaultArgs = false
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.Cmd = nil
@@ -2176,7 +2193,6 @@ func (lazy *ContainerWithoutDefaultArgsLazy) Evaluate(ctx context.Context, conta
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2201,10 +2217,15 @@ func (lazy *ContainerWithoutDefaultArgsLazy) EncodePersisted(ctx context.Context
 }
 
 func (lazy *ContainerWithUserLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withUser", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithUserLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithUserLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withUser", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.User = lazy.Name
 			return cfg
@@ -2212,7 +2233,6 @@ func (lazy *ContainerWithUserLazy) Evaluate(ctx context.Context, container *Cont
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2238,10 +2258,15 @@ func (lazy *ContainerWithUserLazy) EncodePersisted(ctx context.Context, cache da
 }
 
 func (lazy *ContainerWithoutUserLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutUser", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutUserLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutUserLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutUser", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.User = ""
 			return cfg
@@ -2249,7 +2274,6 @@ func (lazy *ContainerWithoutUserLazy) Evaluate(ctx context.Context, container *C
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2274,10 +2298,15 @@ func (lazy *ContainerWithoutUserLazy) EncodePersisted(ctx context.Context, cache
 }
 
 func (lazy *ContainerWithWorkdirLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withWorkdir", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithWorkdirLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithWorkdirLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withWorkdir", container, lazy.Parent, group, func(ctx context.Context) error {
 		resolvedPath, err := resolveContainerInputPath(container, lazy.Path, lazy.Expand)
 		if err != nil {
 			return err
@@ -2289,7 +2318,6 @@ func (lazy *ContainerWithWorkdirLazy) Evaluate(ctx context.Context, container *C
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2316,10 +2344,15 @@ func (lazy *ContainerWithWorkdirLazy) EncodePersisted(ctx context.Context, cache
 }
 
 func (lazy *ContainerWithoutWorkdirLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutWorkdir", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutWorkdirLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutWorkdirLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutWorkdir", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.WorkingDir = ""
 			return cfg
@@ -2327,7 +2360,6 @@ func (lazy *ContainerWithoutWorkdirLazy) Evaluate(ctx context.Context, container
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2352,10 +2384,15 @@ func (lazy *ContainerWithoutWorkdirLazy) EncodePersisted(ctx context.Context, ca
 }
 
 func (lazy *ContainerWithEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withEnvVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithEnvVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithEnvVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withEnvVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		value, err := ExpandContainerInput(container, lazy.Value, lazy.Expand)
 		if err != nil {
 			return err
@@ -2367,7 +2404,6 @@ func (lazy *ContainerWithEnvVariableLazy) Evaluate(ctx context.Context, containe
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2395,15 +2431,20 @@ func (lazy *ContainerWithEnvVariableLazy) EncodePersisted(ctx context.Context, c
 }
 
 func (lazy *ContainerWithEnvFileVariablesLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withEnvFileVariables", func(ctx context.Context) error {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithEnvFileVariablesLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithEnvFileVariablesLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withEnvFileVariables", container, lazy.Parent, group, func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
-		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+		if err := cache.Evaluate(ctx, lazy.Source); err != nil {
 			return err
 		}
 		vars, err := lazy.Source.Self().Variables(ctx, false)
@@ -2416,11 +2457,7 @@ func (lazy *ContainerWithEnvFileVariablesLazy) Evaluate(ctx context.Context, con
 			}
 			return cfg
 		})
-		if err != nil {
-			return err
-		}
-		container.Lazy = nil
-		return nil
+		return err
 	})
 }
 
@@ -2454,12 +2491,16 @@ func (lazy *ContainerWithEnvFileVariablesLazy) EncodePersisted(ctx context.Conte
 }
 
 func (lazy *ContainerWithSystemEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withSystemEnvVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithSystemEnvVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithSystemEnvVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withSystemEnvVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.SystemEnvNames = append(container.SystemEnvNames, lazy.Name)
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2485,12 +2526,16 @@ func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Cont
 }
 
 func (lazy *ContainerWithVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withVolatileVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withVolatileVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.WithVolatileVariable(lazy.Name, lazy.Value)
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2517,10 +2562,15 @@ func (lazy *ContainerWithVolatileVariableLazy) EncodePersisted(ctx context.Conte
 }
 
 func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutEnvVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutEnvVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutEnvVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutEnvVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			newEnv := []string{}
 			WalkEnv(cfg.Env, func(k, _, env string) {
@@ -2534,18 +2584,21 @@ func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, conta
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
 
 func (lazy *ContainerWithoutVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutVolatileVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutVolatileVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.WithoutVolatileVariable(lazy.Name)
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2591,10 +2644,15 @@ func (lazy *ContainerWithoutEnvVariableLazy) EncodePersisted(ctx context.Context
 }
 
 func (lazy *ContainerWithLabelLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withLabel", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithLabelLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithLabelLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withLabel", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			if cfg.Labels == nil {
 				cfg.Labels = make(map[string]string)
@@ -2605,7 +2663,6 @@ func (lazy *ContainerWithLabelLazy) Evaluate(ctx context.Context, container *Con
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2632,10 +2689,15 @@ func (lazy *ContainerWithLabelLazy) EncodePersisted(ctx context.Context, cache d
 }
 
 func (lazy *ContainerWithoutLabelLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutLabel", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutLabelLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutLabelLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutLabel", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			delete(cfg.Labels, lazy.Name)
 			return cfg
@@ -2643,7 +2705,6 @@ func (lazy *ContainerWithoutLabelLazy) Evaluate(ctx context.Context, container *
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2669,10 +2730,15 @@ func (lazy *ContainerWithoutLabelLazy) EncodePersisted(ctx context.Context, cach
 }
 
 func (lazy *ContainerWithImageConfigMetadataLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withImageConfigMetadata", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithImageConfigMetadataLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithImageConfigMetadataLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withImageConfigMetadata", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			if lazy.Healthcheck != nil {
 				healthcheck := *lazy.Healthcheck
@@ -2702,7 +2768,6 @@ func (lazy *ContainerWithImageConfigMetadataLazy) Evaluate(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2732,10 +2797,15 @@ func (lazy *ContainerWithImageConfigMetadataLazy) EncodePersisted(ctx context.Co
 }
 
 func (lazy *ContainerWithHealthcheckLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withHealthcheck", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithHealthcheckLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithHealthcheckLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withHealthcheck", container, lazy.Parent, group, func(ctx context.Context) error {
 		healthcheck := lazy.Healthcheck
 		if lazy.Healthcheck.Test != nil {
 			healthcheck.Test = slices.Clone(lazy.Healthcheck.Test)
@@ -2747,7 +2817,6 @@ func (lazy *ContainerWithHealthcheckLazy) Evaluate(ctx context.Context, containe
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2773,10 +2842,15 @@ func (lazy *ContainerWithHealthcheckLazy) EncodePersisted(ctx context.Context, c
 }
 
 func (lazy *ContainerWithoutHealthcheckLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutHealthcheck", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutHealthcheckLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutHealthcheckLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutHealthcheck", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			cfg.Healthcheck = nil
 			return cfg
@@ -2784,7 +2858,6 @@ func (lazy *ContainerWithoutHealthcheckLazy) Evaluate(ctx context.Context, conta
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2809,14 +2882,18 @@ func (lazy *ContainerWithoutHealthcheckLazy) EncodePersisted(ctx context.Context
 }
 
 func (lazy *ContainerSetGPUsLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.setGPUs", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerSetGPUsLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerSetGPUsLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.setGPUs", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithGPU(ctx, ContainerGPUOpts{Devices: slices.Clone(lazy.Devices)}); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2842,14 +2919,18 @@ func (lazy *ContainerSetGPUsLazy) EncodePersisted(ctx context.Context, cache dag
 }
 
 func (lazy *ContainerWithAnnotationLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withAnnotation", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithAnnotationLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithAnnotationLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withAnnotation", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithAnnotation(ctx, lazy.Name, lazy.Value); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2876,14 +2957,18 @@ func (lazy *ContainerWithAnnotationLazy) EncodePersisted(ctx context.Context, ca
 }
 
 func (lazy *ContainerWithoutAnnotationLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutAnnotation", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutAnnotationLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutAnnotationLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutAnnotation", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithoutAnnotation(ctx, lazy.Name); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2909,14 +2994,18 @@ func (lazy *ContainerWithoutAnnotationLazy) EncodePersisted(ctx context.Context,
 }
 
 func (lazy *ContainerWithSecretVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withSecretVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithSecretVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithSecretVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withSecretVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithSecretVariable(ctx, lazy.Name, lazy.Secret); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2952,14 +3041,18 @@ func (lazy *ContainerWithSecretVariableLazy) EncodePersisted(ctx context.Context
 }
 
 func (lazy *ContainerWithoutSecretVariableLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutSecretVariable", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutSecretVariableLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutSecretVariableLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutSecretVariable", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithoutSecretVariable(ctx, lazy.Name); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -2985,14 +3078,18 @@ func (lazy *ContainerWithoutSecretVariableLazy) EncodePersisted(ctx context.Cont
 }
 
 func (lazy *ContainerWithServiceBindingLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withServiceBinding", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithServiceBindingLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithServiceBindingLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withServiceBinding", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithServiceBinding(ctx, lazy.Service, lazy.Alias); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -3028,14 +3125,18 @@ func (lazy *ContainerWithServiceBindingLazy) EncodePersisted(ctx context.Context
 }
 
 func (lazy *ContainerWithExposedPortLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withExposedPort", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithExposedPortLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithExposedPortLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withExposedPort", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithExposedPort(lazy.Port); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -3061,14 +3162,18 @@ func (lazy *ContainerWithExposedPortLazy) EncodePersisted(ctx context.Context, c
 }
 
 func (lazy *ContainerWithoutExposedPortLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutExposedPort", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutExposedPortLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutExposedPortLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutExposedPort", container, lazy.Parent, group, func(ctx context.Context) error {
 		if _, err := container.WithoutExposedPort(lazy.Port, lazy.Protocol); err != nil {
 			return err
 		}
-		container.Lazy = nil
 		return nil
 	})
 }
@@ -3095,12 +3200,16 @@ func (lazy *ContainerWithoutExposedPortLazy) EncodePersisted(ctx context.Context
 }
 
 func (lazy *ContainerWithDefaultTerminalCmdLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withDefaultTerminalCmd", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithDefaultTerminalCmdLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithDefaultTerminalCmdLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withDefaultTerminalCmd", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.DefaultTerminalCmd = lazy.Opts
-		container.Lazy = nil
 		return nil
 	})
 }

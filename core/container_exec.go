@@ -184,12 +184,16 @@ func (lazy *ContainerVolatileExecCacheHitLazy) Evaluate(ctx context.Context, con
 	if lazy == nil {
 		return nil
 	}
-	return lazy.LazyState.Evaluate(ctx, "Container.withExec.cacheHit", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withExec.cacheHit", container, lazy.Parent, group, func(ctx context.Context) error {
 		container.VolatileEnv = slices.Clone(lazy.VolatileEnv)
-		container.Lazy = nil
 		return nil
 	})
 }
