@@ -32,6 +32,9 @@ type containerPartsTestBaseOp struct {
 	mountTargets []string
 	mountRunsMu  sync.Mutex
 	mountRuns    map[string]int
+	// mountBodyHook, when set, runs inside each mount group's body before
+	// it returns (used to rendezvous concurrent group completions).
+	mountBodyHook func(target string)
 }
 
 func (op *containerPartsTestBaseOp) mountRunsFor(target string) int {
@@ -100,6 +103,9 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 					return fmt.Errorf("test base op: no mount at %q", target)
 				}
 				mnt.DirectorySource.SetValue(dir)
+				if op.mountBodyHook != nil {
+					op.mountBodyHook(target)
+				}
 				return nil
 			})
 		}
@@ -356,4 +362,52 @@ func TestContainerDelegationOverwritesStalePreCopiedAccessor(t *testing.T) {
 	gotDir, ok := gotFS.Dir.Peek()
 	require.True(t, ok)
 	require.Equal(t, "/new", gotDir)
+}
+
+// Two sibling groups finishing concurrently both observe full
+// consumption and both clear container.Lazy; the clear must be
+// serialized under the op's LazyMu (write/write on the interface word
+// otherwise, which the race detector flags).
+func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	var rendezvous sync.WaitGroup
+	rendezvous.Add(2)
+	baseOp := &containerPartsTestBaseOp{
+		LazyState:    NewLazyState(),
+		workdir:      "/base",
+		mountTargets: []string{"/a", "/b"},
+		mountBodyHook: func(string) {
+			rendezvous.Done()
+			rendezvous.Wait()
+		},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Mounts: ContainerMounts{
+			{Target: "/a", Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])},
+			{Target: "/b", Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])},
+		},
+		Lazy: baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "concurrent-clear-base", base)
+
+	// Consume every group except the two mounts.
+	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartMetadata))
+	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartFS))
+	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartExecMeta))
+
+	// The last two groups finish together: their bodies rendezvous, so
+	// both completions race the all-consumed check and the Lazy clear.
+	errA := make(chan error, 1)
+	errB := make(chan error, 1)
+	go func() { errA <- cache.EvaluateParts(ctx, baseRes, ContainerPartMount("/a")) }()
+	go func() { errB <- cache.EvaluateParts(ctx, baseRes, ContainerPartMount("/b")) }()
+	require.NoError(t, <-errA)
+	require.NoError(t, <-errB)
+
+	require.Nil(t, base.Lazy)
+	require.False(t, dagql.HasPendingLazyEvaluation(baseRes))
 }

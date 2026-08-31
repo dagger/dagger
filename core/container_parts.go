@@ -194,9 +194,20 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 
 // clearLazyWhenConsumed clears container.Lazy when every group of the op
 // is consumed. Callable only after some group body succeeded, which
-// implies metadata is settled and the op's group set is final. Two
+// implies metadata is settled and the op's group set is final.
+//
+// The consumed-check and the clear happen under one LazyMu hold: two
 // sibling groups finishing concurrently may both observe full
-// consumption and both clear; the write is idempotent.
+// consumption, and the mutex serializes their writes to the Lazy
+// interface word. Readers take no lock, by the same ordering argument
+// the whole-op body's clear has always relied on: the cache paths that
+// re-read object-side lazy state (LazyEvalFunc / LazyEvalFuncForGroup /
+// resolution) only trust it when no attempt is in flight, and attempt
+// retirement under the cache's lazyMu - after the body and this clear
+// returned - orders the clear before those reads; persistence encode
+// runs at flush quiescence; attach-time reads precede any evaluation;
+// HasPendingLazyEvaluation's fallback read is advisory and
+// self-correcting either way it lands.
 func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyContainerParts) error {
 	groups, err := op.ContainerLazyGroups(ctx, container, nil)
 	if err != nil {
@@ -204,13 +215,12 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 	}
 	state := op.ContainerLazyState()
 	state.LazyMu.Lock()
+	defer state.LazyMu.Unlock()
 	for _, group := range groups {
 		if !state.groupConsumedLocked(group) {
-			state.LazyMu.Unlock()
 			return nil
 		}
 	}
-	state.LazyMu.Unlock()
 	container.Lazy = nil
 	return nil
 }
