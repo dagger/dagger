@@ -388,6 +388,19 @@ LiveInClass(k) ==
 LookupEligibleInClass(k) ==
     {r \in LiveInClass(k) : res[r].barrier # "closedErr"}
 
+\* r is pinned for session s: s claimed r directly (a counted session
+\* edge), or r is reachable through the dependency edges of a result s
+\* claimed, which retain r for as long as that claim's edge lives. This
+\* is the model of the claim-at-acquisition invariant: every production
+\* acquisition path claims the result it hands out, so anything a
+\* resolver legitimately holds is pinned and cannot be collected by
+\* another session's release.
+PinnedForSession(s, r) ==
+    \/ <<s, r>> \in countedEdges
+    \/ \E p \in ResultIds :
+         /\ <<s, p>> \in countedEdges
+         /\ r \in DepClosureIn(res, p)
+
 \* "The caller got a result it can actually keep": the session's atomic edge
 \* claim is still counted when the result returns.
 ProtectedReturn(s, r) ==
@@ -459,6 +472,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
      \* conservative (larger) for them.
      lateDeps |-> {},
      persisted |-> persistedFlag, barrier |-> "none",
+     attachErrRefusal |-> FALSE,
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
      laundered |-> launderedFlag,
@@ -479,6 +493,7 @@ DeadHusk ==
     [call |-> CHOOSE c \in Calls : TRUE, registered |-> FALSE,
      released |-> TRUE, own |-> 0, deps |-> {}, lateDeps |-> {},
      persisted |-> FALSE, barrier |-> "none",
+     attachErrRefusal |-> FALSE,
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
      laundered |-> FALSE,
@@ -775,10 +790,7 @@ CreateOc(i) ==
              attachTarget |-> 0,
              \* an attachment-time claim was refused by release marking;
              \* consumed by the deterministic attach-failure branch
-             attachRefused |-> FALSE,
-             \* an attachment-time claim found its target collected (the
-             \* registration guard); an ordinary attachment failure
-             attachGone |-> FALSE])
+             attachRefused |-> FALSE])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
@@ -1157,7 +1169,8 @@ PubIndexFresh(o) ==
        \* unit and consumes possession - no liveness guard, because
        \* release marking does not revoke values the fn already holds.
        \* A dep collected after its session's release is skipped here;
-       \* the code's attach would fail on its registration guard.
+       \* the code's structural-dep pass fails loudly there and rolls the
+       \* partial publication back (rollbackPartialPublicationLocked).
        \E deps \in {{}} \cup {{d} : d \in {r \in ongoingCalls[o].acq :
                        /\ res[r].registered
                        /\ res[r].barrier \in {"none", "closedOk"}}} :
@@ -1171,6 +1184,7 @@ PubIndexFresh(o) ==
                        lateDeps |-> {},
                        persisted |-> FALSE,
                        barrier |-> "open",
+                       attachErrRefusal |-> FALSE,
                        \* fresh results have their typed payload in memory;
                        \* only imported entries carry encoded envelopes
                        payload |-> "decoded",
@@ -1315,9 +1329,8 @@ DepReachable(rf, start, target) ==
 
 PubAttachAddDep(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
-    \* no dependency edge lands after a claim error: the hook returned
+    \* no dependency edge lands after the claim refusal: the hook returned
     /\ ~ongoingCalls[o].attachRefused
-    /\ ~ongoingCalls[o].attachGone
     /\ \E d \in ResultIds :
         /\ res[d].registered
         \* the dep's own attachment is settled, as in PubIndexFresh: the
@@ -1353,11 +1366,10 @@ PubAttachAddDep(o) ==
 PubFinishOk(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     \* the hook returns only after its in-flight claim attempt resolved,
-    \* and a claim error (refused or unregistered) fails the attachment:
-    \* initCompletedResult closes the barrier with that error
+    \* and a claim refusal fails the attachment: initCompletedResult
+    \* closes the barrier with that error
     /\ ongoingCalls[o].attachTarget = 0
     /\ ~ongoingCalls[o].attachRefused
-    /\ ~ongoingCalls[o].attachGone
     /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedOk"]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "done"]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
@@ -1365,24 +1377,37 @@ PubFinishOk(o) ==
 
 \* The attachment hook's attachResult claims a cache-backed child during
 \* publication - after the fn completed, so fn-time acq cannot cover it.
-\* Three steps, as in the code: the hook SELECTS the child it will
-\* attach (no lock), then the claim (trackSessionResult) either records
-\* the edge, refuses on the session tombstone if release marked in
-\* between, or errors on the registration guard if the child was
-\* collected - and only an actual failed attempt (refused or gone)
-\* enables the deterministic attachment failure. This path runs inside
-\* the outer operation (no nested op.finish).
+\* The hook SELECTS the child it will attach (no lock); the claim then
+\* runs FIRST, under the graph lock, before any of the unlocked refresh
+\* work (attachResult's cache-backed branch claims before
+\* ensurePersistedHitValueLoaded), so a successful claim pins the target
+\* for the rest of the attachment. The claim's outcomes: recorded
+\* (PubAttachClaimOk), or refused on the session tombstone if release
+\* marked in between (PubAttachClaimRefused - the one deterministic
+\* attachment error). This path runs inside the outer operation (no
+\* nested op.finish).
+\*
+\* Selection is restricted to targets PINNED for the publishing session,
+\* mirroring the Go invariant the audit established: every production
+\* acquisition path claims at acquisition, so a value's embedded child
+\* is a result the session claimed directly, or one reachable through a
+\* claimed result's dependency edges, which retain it while the claim's
+\* edge lives. A pinned target cannot be collected by another session's
+\* release, so the collected-target claim arm the pre-fix model carried
+\* (the registration-guard error) is unreachable and gone; a
+\* temporary probe over the attach_release_reader space confirms the
+\* enabling state never occurs.
 PubAttachTarget(o) ==
     /\ ongoingCalls[o].pubState = "attaching"
     /\ ongoingCalls[o].attachTarget = 0
     \* the hook returns on its first claim error: no further child is
-    \* selected once either error latched
+    \* selected once the refusal latched
     /\ ~ongoingCalls[o].attachRefused
-    /\ ~ongoingCalls[o].attachGone
     /\ \E r \in ResultIds :
         /\ res[r].registered
         /\ res[r].barrier \in {"none", "closedOk"}
         /\ r \notin ongoingCalls[o].acq
+        /\ PinnedForSession(ongoingCalls[o].sess, r)
         \* the value embeds only children the fn possessed, so a selected
         \* target satisfied the session when it was acquired; the claim
         \* below re-checks the stored set under the graph lock
@@ -1410,22 +1435,6 @@ PubAttachClaimOk(o) ==
                                                   ![o].attachTarget = 0]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
 
-\* the target was collected between the lock-free selection and the
-\* claim: the registration guard refuses ("result is not registered"),
-\* an ordinary attachment failure - not a release refusal
-PubAttachClaimGone(o) ==
-    /\ ongoingCalls[o].pubState = "attaching"
-    /\ ongoingCalls[o].attachTarget # 0
-    \* the claim checks the session tombstone FIRST, then registration,
-    \* in one critical section: a released session gets the release
-    \* refusal (PubAttachClaimRefused), never this error
-    /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
-    /\ ~res[ongoingCalls[o].attachTarget].registered
-    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].attachTarget = 0,
-                                            ![o].attachGone = TRUE]
-    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, evals, epoch, flushed>>
-
 \* release marked the session between target selection and the claim:
 \* trackSessionResult refuses, nothing is recorded, and the attachment
 \* fails deterministically (attachRefused arms PubAttachFailDropHold)
@@ -1439,12 +1448,10 @@ PubAttachClaimRefused(o) ==
                    sessionRelease, evals, epoch, flushed>>
 
 PubAttachFailDropHold(o) ==
-    \* an injected attachment failure, or a deterministic one: an
-    \* attachment-time claim attempt was refused by release marking or
-    \* hit the registration guard on a collected target
+    \* an injected attachment failure, or the deterministic one: an
+    \* attachment-time claim attempt was refused by release marking
     /\ \/ AttachCanFail
        \/ ongoingCalls[o].attachRefused
-       \/ ongoingCalls[o].attachGone
     /\ ongoingCalls[o].pubState = "attaching"
     /\ res' = DecAndCascade(res, ongoingCalls[o].resId)
     /\ ongoingCalls' = [ongoingCalls EXCEPT
@@ -1453,9 +1460,17 @@ PubAttachFailDropHold(o) ==
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* The barrier closes carrying the attachment error. When the failure was a
+\* claim refused by the publishing session's own release (attachRefused),
+\* the latched error is classified (Go: errAttachRefusedByProducerRelease
+\* wrapping the barrier error in initCompletedResult): parked readers from
+\* other sessions convert to a miss instead of failing
+\* (ReadBarrierRefusalMiss). Injected failures stay unclassified.
 PubAttachFailCloseBarrier(o) ==
     /\ ongoingCalls[o].pubState = "attachFailClosing"
-    /\ res' = [res EXCEPT ![ongoingCalls[o].resId].barrier = "closedErr"]
+    /\ res' = [res EXCEPT
+         ![ongoingCalls[o].resId].barrier = "closedErr",
+         ![ongoingCalls[o].resId].attachErrRefusal = ongoingCalls[o].attachRefused]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "failed"]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -1594,8 +1609,10 @@ WaiterReleaseHold(i) ==
 (*                                                                         *)
 (* Go: ensurePersistedHitValueLoaded, cache_persistence_import.go:578-604. *)
 (* Outcomes: a clean barrier returns the result; an error returns the      *)
-(* error. In either case the claimed session edge remains until session    *)
-(* release.                                                                *)
+(* error, except that a hit reader observing the classified               *)
+(* producer-release attachment refusal converts to a miss                  *)
+(* (ReadBarrierRefusalMiss). In every case the claimed session edge        *)
+(* remains until session release.                                          *)
 (*                                                                         *)
 (* A hit serve re-validates the session-resource filter after the barrier  *)
 (* (sessionStillSatisfiesResourceRequirements): the stored required set    *)
@@ -1689,11 +1706,32 @@ PersistHit(i) ==
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* A genuine attachment failure propagates to the parked hit reader.
 ReadBarrierErrHit(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
     /\ res[invocations[i].resId].barrier = "closedErr"
+    /\ ~res[invocations[i].resId].attachErrRefusal
     /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+\* The barrier closed with the classified producer-release refusal: the
+\* parked hit reader is innocent (its own session may still be live and a
+\* fresh execution would succeed), so its serve converts to a miss and
+\* falls through to the singleflight, exactly like ReadBarrierGatedMiss.
+\* The recorded session edge stays until session release. Result-ID value
+\* loads keep propagating the (classified) error in the code: they name
+\* one exact result and have no call to re-execute, and the model already
+\* folds only their serve arm into LookupHit.
+ReadBarrierRefusalMiss(i) ==
+    /\ invocations[i].phase = "readBarrier"
+    /\ invocations[i].path = "hit"
+    /\ res[invocations[i].resId].barrier = "closedErr"
+    /\ res[invocations[i].resId].attachErrRefusal
+    /\ invocations' = [invocations EXCEPT
+         ![i].phase = "join", ![i].resId = 0, ![i].path = "none",
+         ![i].selRequired = {}]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -2731,6 +2769,7 @@ Next ==
          \/ WaiterClaim(i)
          \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
          \/ ReadBarrierOk(i) \/ ReadBarrierGatedMiss(i) \/ PersistHit(i)
+         \/ ReadBarrierRefusalMiss(i)
          \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
          \/ ReadBarrierCancelHit(i) \/ ReadBarrierCancelWait(i)
          \/ DecodeLead(i) \/ DecodeInstall(i) \/ DecodeLeadFinish(i)
@@ -2745,7 +2784,7 @@ Next ==
          \/ FnComplete(o) \/ PubBegin(o)
          \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
          \/ PubAttachTarget(o) \/ PubAttachClaimOk(o)
-         \/ PubAttachClaimRefused(o) \/ PubAttachClaimGone(o)
+         \/ PubAttachClaimRefused(o)
          \/ PubAttachAddDep(o) \/ PubFinishOk(o)
          \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
          \/ PubUnregister(o) \/ FnWindDown(o)
@@ -2808,7 +2847,6 @@ SystemProgress(o) ==
     \/ FnInnerLoadDeliver(o) \/ FnInnerLoadRefused(o)
     \* an in-flight attachment claim attempt always resolves too
     \/ PubAttachClaimOk(o) \/ PubAttachClaimRefused(o)
-    \/ PubAttachClaimGone(o)
     \/ FnComplete(o) \/ PubBegin(o)
     \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
     \/ PubFinishOk(o) \/ PubAttachFailDropHold(o)
@@ -2822,6 +2860,7 @@ WaiterProgress(i) ==
     \/ WaiterClaim(i)
     \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
     \/ ReadBarrierOk(i) \/ ReadBarrierGatedMiss(i) \/ PersistHit(i)
+    \/ ReadBarrierRefusalMiss(i)
     \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
     \/ DecodeLead(i) \/ DecodeInstall(i) \/ DecodeLeadFinish(i)
     \/ DecodeJoin(i) \/ DecodeWake(i)
@@ -2919,9 +2958,10 @@ LiveSpec ==
 (* serve does - settled result, currently satisfied, live session, the     *)
 (* nested operation counted - and FnInnerLoadDeliver hands it over only    *)
 (* on a live operation exit (a marked exit refuses: FnInnerLoadRefused).   *)
-(* PubAttachTarget/ClaimOk/ClaimRefused/ClaimGone do the same for          *)
-(* attachment-time children (ClaimGone is the registration-guard error on  *)
-(* a collected target). Consumption needs no liveness: marking refuses new *)
+(* PubAttachTarget/ClaimOk/ClaimRefused do the same for                    *)
+(* attachment-time children; selection is restricted to targets pinned     *)
+(* for the session (PinnedForSession), so a collected target at claim      *)
+(* time is unreachable. Consumption needs no liveness: marking refuses new *)
 (* claims and undelivered exits but does not revoke delivered values, so   *)
 (* claim -> release-mark -> refusal and deliver -> mark -> completion ->   *)
 (* late refusal are both representable.                                    *)
@@ -3002,6 +3042,9 @@ TypeOK ==
          /\ res[r].handle \in Handles \cup {"none"}
          /\ res[r].required \subseteq Handles
          /\ res[r].lateDeps \subseteq res[r].deps
+         /\ res[r].attachErrRefusal \in BOOLEAN
+         \* the classification exists only on an error-closed barrier
+         /\ res[r].attachErrRefusal => res[r].barrier = "closedErr"
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
@@ -3127,20 +3170,39 @@ LeaseFailureClean ==
 \* no invocation waits on another session's singleflight entry, and a
 \* reused result was delivered to the fn by its own inner load.
 \*
-\* SURFACED FINDING, pinned red by attach_release_reader and awaiting a
-\* ruling: a PUBLISHER's own release can fail an innocent cross-session
-\* reader. Release marks the publishing session between fn completion
-\* and the attachment hook's claim (attachResult -> trackSessionResult);
-\* the claim is refused, attachment fails, the barrier closes with the
-\* error, and a reader of another live session parked at that read
-\* barrier surfaces it as its own failure - no injection anywhere. Same
-\* defect family as the fixed decode_cancel finding (a leader's own
-\* cancellation failing its parked joiners, fixed by a retry
-\* classification); the analogous code fix would classify a
-\* publisher-release attachment failure so parked readers convert to a
-\* miss instead of failing. The property stays strict; configurations
-\* where the finding is reachable do not carry it (resources), and the
-\* pinned configuration holds the red until the ruling.
+\* FIXED FINDING FAMILY (attach_release_reader, now a green regression
+\* check): a session's release could manufacture a failure for a live,
+\* innocent caller through the attachment machinery. Three windows, one
+\* family, same shape as the fixed decode_cancel finding (a leader's own
+\* cancellation failing its parked joiners):
+\*   1. The PUBLISHER's own release marks between fn completion and the
+\*      attachment claim; the claim is refused and attachment fails -
+\*      correct for the publisher's own callers, but a reader of another
+\*      live session parked at the read barrier used to surface it as
+\*      its own failure. Fixed by classifying the barrier error
+\*      (errAttachRefusedByProducerRelease in initCompletedResult,
+\*      latched by attachErrRefusal here): parked hit readers convert to
+\*      a miss and execute the call themselves (ReadBarrierRefusalMiss),
+\*      while genuine attachment failures keep propagating
+\*      (ReadBarrierErrHit).
+\*   2. ANOTHER session's release collected the attachment target
+\*      between the hook's lock-free selection and its claim, and the
+\*      registration guard failed the attachment, failing parked
+\*      readers.
+\*   3. The same collected-target failure reached the publishing call's
+\*      own live singleflight waiters, which never consult the barrier
+\*      (WaiterObservePubErr) - beyond any barrier classification.
+\* Windows 2 and 3 are closed by the claim-at-acquisition invariant the
+\* code enforces and the model now carries: the claim runs first, under
+\* the graph lock, before any unlocked refresh work, and attachment
+\* targets are always pinned for the session (PinnedForSession) - a
+\* claimed result, or one reachable through a claimed result's
+\* dependency edges - so no live session's target can be collected out
+\* from under its claim. A collected target at claim time is an
+\* invariant violation and fails loudly in the code; the related
+\* publication failure paths roll their partially indexed result back
+\* (rollbackPartialPublicationLocked) instead of stranding a
+\* zero-ownership selectable record. The property stays strict.
 NoSpuriousErrors ==
     (~FnCanFail /\ ~AttachCanFail /\ ~LeaseCanFail /\ ~DecodeCanFail) =>
         \A i \in InvocationIds : invocations[i].phase # "failed"
