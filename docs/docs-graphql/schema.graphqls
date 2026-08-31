@@ -5710,7 +5710,11 @@ type Workspace implements Node {
   """List named environments defined in the workspace configuration."""
   envList: [String!]!
 
-  """Write this workspace's pending changes to its local Git workspace."""
+  """
+  Write this workspace's pending changes to its local Git workspace.
+
+  Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
+  """
   export: Void!
 
   """
@@ -6037,6 +6041,24 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with a cache volume mounted at the given path, without mutating the source.
+
+  Like a mounted directory, the cache shadows the source at the mount path and
+  stays out of the pending changeset: it never appears in changes and is never
+  exported to the workspace. Unlike a mounted directory it is writable, and
+  export commits the edits made under it back into the cache volume.
+  """
+  withMountedCache(
+    """
+    Location of the mounted cache. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+
+    """Cache volume to mount."""
+    cache: ID! @expectedType(name: "CacheVolume")
+  ): Workspace!
+
+  """
   Return this workspace with a directory mounted read-only at the given path, without mutating the source.
 
   Mounted content is readable through the normal workspace file tools but
@@ -6182,6 +6204,20 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """
+  Return this workspace with the content mounted at the given path unmounted.
+
+  Removes whatever is mounted there — a cache volume, directory or file —
+  along with anything mounted inside it. Pending edits to a mounted cache volume
+  are discarded rather than committed.
+  """
+  withoutMount(
+    """
+    Location of the mount to remove. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
   ): Workspace!
 
   """Return this workspace with an SDK removed from its config."""
