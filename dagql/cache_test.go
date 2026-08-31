@@ -8150,6 +8150,214 @@ func TestCacheHitKeepsGenuineAttachmentFailure(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(bCtx, "attrelctl-b"))
 }
 
+func TestCachePublicationRollsBackWhenStructuralDepMissing(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "rollback-a-client",
+		SessionID: "rollback-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "rollback-b-client",
+		SessionID: "rollback-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	// Session A publishes the result the failing structural ref will point
+	// at; session B publishes the one whose partial dependency edge must be
+	// unwound.
+	deadFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "rollback-dead-ref",
+	}
+	deadRes, err := c.GetOrInitCall(aCtx, "rollback-a", srv, &CallRequest{ResultCall: deadFrame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, deadFrame)
+	})
+	assert.NilError(t, err)
+	deadShared := deadRes.cacheSharedResult()
+	assert.Assert(t, deadShared != nil && deadShared.id != 0)
+
+	liveFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "rollback-live-dep",
+	}
+	liveRes, err := c.GetOrInitCall(bCtx, "rollback-b", srv, &CallRequest{ResultCall: liveFrame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 2}, liveFrame)
+	})
+	assert.NilError(t, err)
+	liveShared := liveRes.cacheSharedResult()
+	assert.Assert(t, liveShared != nil && liveShared.id != 0)
+
+	// The value's frame references the live dep first (receiver) and the
+	// doomed one second (arg), so the publication adds the live dep's edge
+	// before the missing-ref failure and the rollback must unwind it.
+	valueFrame := &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType((&cacheTestObject{}).Type()),
+		Field:    "rollback-parent",
+		Receiver: &ResultCallRef{ResultID: uint64(liveShared.id), shared: liveShared},
+		Args: []*ResultCallArg{{
+			Name: "doomed",
+			Value: &ResultCallLiteral{
+				Kind:      ResultCallLiteralKindResultRef,
+				ResultRef: &ResultCallRef{ResultID: uint64(deadShared.id), shared: deadShared},
+			},
+		}},
+	}
+	reqFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "rollback-request",
+	}
+
+	// The doomed ref's target is collected inside the window between the
+	// pre-lock digest derivations (which read the target's still-present
+	// frame through the ref's fast-path pointer) and the indexing critical
+	// section, where the dependency pass finds it missing.
+	var (
+		hookOnce      sync.Once
+		resultsBefore int
+		liveOwnBefore int64
+	)
+	c.testBeforePublicationIndex = func(oc *ongoingCall) {
+		hookOnce.Do(func() {
+			assert.NilError(t, c.ReleaseSession(aCtx, "rollback-a"))
+			c.egraphMu.RLock()
+			_, stillRegistered := c.resultsByID[deadShared.id]
+			resultsBefore = len(c.resultsByID)
+			liveOwnBefore = liveShared.incomingOwnershipCount
+			c.egraphMu.RUnlock()
+			assert.Assert(t, !stillRegistered, "the doomed ref's target must be collected before indexing")
+		})
+	}
+
+	var initCalls atomic.Int32
+	runOnce := func() error {
+		_, err := c.GetOrInitCall(bCtx, "rollback-b", srv, &CallRequest{ResultCall: reqFrame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			initCalls.Add(1)
+			return NewResultForCall(&cacheTestObject{Value: 3}, valueFrame.clone())
+		})
+		return err
+	}
+
+	err = runOnce()
+	assert.Assert(t, err != nil, "the publication must fail loudly on the missing structural ref")
+	assert.ErrorContains(t, err, "missing cached result")
+
+	// The rollback must leave no trace of the partial publication: no new
+	// registered record and the live dep's ownership back to its session
+	// edge alone.
+	c.egraphMu.RLock()
+	resultsAfter := len(c.resultsByID)
+	liveOwnAfter := liveShared.incomingOwnershipCount
+	c.egraphMu.RUnlock()
+	assert.Equal(t, resultsBefore, resultsAfter,
+		"the failed publication must not leave a registered record behind")
+	assert.Equal(t, liveOwnBefore, liveOwnAfter,
+		"the partial dependency edge must be unwound")
+
+	// A repeat of the same call must execute again - nothing selectable was
+	// left behind to serve as a stale hit. It fails earlier than the first
+	// attempt (the collected target's frame is gone, so the value's digest
+	// derivation refuses the dead ref), but it fails loudly after
+	// re-executing.
+	err = runOnce()
+	assert.Assert(t, err != nil)
+	assert.Equal(t, int32(2), initCalls.Load(),
+		"the repeated call must re-execute rather than hit a stranded record")
+
+	assert.NilError(t, c.ReleaseSession(bCtx, "rollback-b"))
+}
+
+func TestCacheAttachmentClaimPinsTargetAgainstForeignRelease(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "pin-a-client",
+		SessionID: "pin-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "pin-b-client",
+		SessionID: "pin-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	// Session A publishes the child; session B claims it at acquisition, as
+	// every production acquisition path does.
+	childFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "pin-child",
+	}
+	child, err := c.GetOrInitCall(aCtx, "pin-a", srv, &CallRequest{ResultCall: childFrame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 7}, childFrame)
+	})
+	assert.NilError(t, err)
+	childShared := child.cacheSharedResult()
+	assert.Assert(t, childShared != nil && childShared.id != 0)
+	childID := childShared.id
+	bHeld, err := c.LoadResultByResultID(bCtx, "pin-b", srv, uint64(childID))
+	assert.NilError(t, err)
+	assert.Assert(t, bHeld.cacheSharedResult().id == childID)
+
+	// B's publication embeds the child and parks mid-attachment; A releases
+	// while it is parked. B's claim pins the child, so A's release must not
+	// collect it and the attachment must complete against the original
+	// record.
+	parentFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "pin-parent",
+	}
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		leaf:          child,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+	bDone := make(chan error, 1)
+	var bRes AnyResult
+	go func() {
+		res, err := c.GetOrInitCall(bCtx, "pin-b", srv, &CallRequest{ResultCall: parentFrame}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCall(obj, parentFrame)
+		})
+		bRes = res
+		bDone <- err
+	}()
+	<-obj.attachStarted
+	assert.NilError(t, c.ReleaseSession(aCtx, "pin-a"))
+
+	c.egraphMu.RLock()
+	_, stillRegistered := c.resultsByID[childID]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, stillRegistered, "session B's claim must pin the child across session A's release")
+
+	close(obj.attachRelease)
+	assert.NilError(t, <-bDone)
+	bShared := bRes.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	c.egraphMu.RLock()
+	_, childRetained := bShared.deps[childID]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, childRetained, "the attachment must retain the original pinned child")
+
+	assert.NilError(t, c.ReleaseSession(bCtx, "pin-b"))
+}
+
 func TestCacheWithSessionResourceHandleRefusesAttachedMutation(t *testing.T) {
 	t.Parallel()
 

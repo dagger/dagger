@@ -1866,6 +1866,11 @@ type Cache struct {
 	// requirement generation (lookupCacheForRequest, lookupCacheForDigests,
 	// loadResultByResultID).
 	testBeforeServeRequirementRecheck func(*sharedResult)
+	// publication hook: after the pre-lock digest derivations and before the
+	// indexing critical section (initCompletedResult), the window in which a
+	// structural ref's target can be collected out from under the
+	// publication.
+	testBeforePublicationIndex func(*ongoingCall)
 
 	closeOnce sync.Once
 	closeErr  error
@@ -2593,15 +2598,26 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		shared.setObjClass(objVal.ObjectType())
 	}
 	if shared.id != 0 {
+		// Claim first, under the graph lock, before the unlocked refresh
+		// below: a successful claim pins the result for the rest of the
+		// attachment, so another session's release cannot collect it
+		// between here and the refresh. The claim checks the caller's
+		// session tombstone before registration, so the caller's own
+		// release fails here with the release refusal; a claim that finds
+		// the result already collected fails the attachment loudly, and
+		// that is an invariant violation by the caller rather than a case
+		// to handle - every production acquisition path claims at
+		// acquisition or reaches the result through a claimed one, whose
+		// dependency edges pin it.
+		if err := c.trackSessionResult(ctx, sessionID, res, true); err != nil {
+			return nil, fmt.Errorf("attach dependency result: claim cache-backed result: %w", err)
+		}
 		loaded, err := c.ensurePersistedHitValueLoaded(ctx, resolver, res)
 		if err != nil {
 			return nil, fmt.Errorf("attach dependency result: refresh cache-backed value: %w", err)
 		}
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
 		c.traceAttachResultReusedCacheBacked(ctx, sessionID, shared)
-		if err := c.trackSessionResult(ctx, sessionID, loaded, true); err != nil {
-			return nil, fmt.Errorf("attach dependency result: claim cache-backed result: %w", err)
-		}
 		return loaded, nil
 	}
 	frame := shared.loadResultCall()
@@ -4991,6 +5007,52 @@ func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) 
 	return errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
 }
 
+// rollbackPartialPublicationLocked expunges a freshly indexed result whose
+// publication failed inside the indexing critical section, before any
+// ownership existed. Without it the record would stay registered and
+// digest-indexed with a zero ownership count - selectable by lookups and
+// reachable by no collection path, since collection is only ever triggered
+// by a decrement - and the dependency edges added so far would retain their
+// children forever. It removes the record from the e-graph, unwinds the
+// partial dependency edges, collects any child that loses its last
+// ownership unit, and returns the release hooks to run after the lock
+// drops, the failed result's own hook included - the same hooks the
+// attachment-failure path runs when it collects a failed publication.
+// Callers hold the egraphMu write lock.
+func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *sharedResult) ([]OnReleaseFunc, error) {
+	if res == nil || res.id == 0 {
+		return nil, nil
+	}
+	depIDs := make([]sharedResultID, 0, len(res.deps))
+	for depID := range res.deps {
+		depIDs = append(depIDs, depID)
+	}
+	c.removeResultFromEgraphLocked(ctx, res)
+	res.deps = nil
+	res.depParents = nil
+
+	var (
+		queue []*sharedResult
+		rerr  error
+	)
+	for _, depID := range depIDs {
+		c.forgetDependencyEdgeLocked(res.id, depID)
+		depRes := c.resultsByID[depID]
+		if depRes == nil {
+			continue
+		}
+		var err error
+		queue, err = c.decrementIncomingOwnershipLocked(ctx, depRes, queue)
+		rerr = errors.Join(rerr, err)
+	}
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+	rerr = errors.Join(rerr, collectErr)
+	if res.onRelease != nil {
+		collectReleases = append([]OnReleaseFunc{res.onRelease}, collectReleases...)
+	}
+	return collectReleases, rerr
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
@@ -5262,6 +5324,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 
+	if c.testBeforePublicationIndex != nil {
+		c.testBeforePublicationIndex(oc)
+	}
 	c.egraphMu.Lock()
 	resultCall := oc.res.loadResultCall()
 	indexErr := c.indexWaitResultInEgraphLocked(
@@ -5279,16 +5344,30 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		hasResultTerm,
 		oc.res,
 	)
-	if indexErr != nil {
+	// Indexing registers the fresh result and makes it lookup-visible, but
+	// nothing owns it until the handoff hold below, so a failure anywhere in
+	// this critical section must roll the partial publication back before
+	// unlocking; the error itself still propagates loudly. Adopted results
+	// (resWasCacheBacked) are owned by others and pinned by the handoff hold
+	// taken at adoption, so they are never rolled back.
+	failPartialPublication := func(cause error) error {
+		if resWasCacheBacked {
+			c.egraphMu.Unlock()
+			return cause
+		}
+		cleanupCtx := context.WithoutCancel(ctx)
+		releases, rollbackErr := c.rollbackPartialPublicationLocked(cleanupCtx, oc.res)
 		c.egraphMu.Unlock()
-		return indexErr
+		return errors.Join(cause, rollbackErr, runOnReleaseFuncs(cleanupCtx, releases))
+	}
+	if indexErr != nil {
+		return failPartialPublication(indexErr)
 	}
 	for _, dep := range resultCallDeps {
 		depID := dep.resultID
 		depRes := c.resultsByID[depID]
 		if depRes == nil {
-			c.egraphMu.Unlock()
-			return fmt.Errorf("retain result call ref %d: missing cached result", depID)
+			return failPartialPublication(fmt.Errorf("retain result call ref %d: missing cached result", depID))
 		}
 		if oc.res.deps == nil {
 			oc.res.deps = make(map[sharedResultID]struct{})
@@ -5302,8 +5381,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}
 	if _, err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
-		c.egraphMu.Unlock()
-		return err
+		return failPartialPublication(err)
 	}
 	// The cache-backed path already took the handoff hold when it adopted the
 	// canonical result above; only fresh results take it here.
