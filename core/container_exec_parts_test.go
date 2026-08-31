@@ -119,3 +119,41 @@ func TestContainerExecReadOnlyMountStaysPending(t *testing.T) {
 	require.True(t, roSet)
 	require.True(t, dagql.HasPendingLazyEvaluation(childRes))
 }
+
+// Deliberate pin of the council-ruled VolatileEnv corner: the exec's
+// metadata delegates the parent's volatile names verbatim - the old
+// whole-body evaluation additionally FILTERED the list to
+// session-resolvable names as a side effect of resolving values, so an
+// expand=true reference to a volatile name whose session binding is
+// gone previously expanded to the empty string after an evaluated exec.
+// It now errors explicitly. Resolved values stay local to the run (a
+// snapshot body must not write metadata); consumers read names.
+func TestContainerExecMetadataKeepsVolatileNamesAndExpandErrors(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	baseOp := &containerPartsTestBaseOp{
+		LazyState:   NewLazyState(),
+		workdir:     "/base",
+		volatileEnv: []string{"FOO=stale"},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "volatile-pin-base", base)
+
+	child := newExecPartsTestChild(t, baseRes, base)
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "volatile-pin-child", child)
+
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
+	// The name survives the exec's metadata settle unfiltered.
+	require.Equal(t, []string{"FOO=stale"}, child.VolatileEnv)
+
+	// Expanding a volatile name errors explicitly instead of silently
+	// expanding to empty.
+	_, err := ExpandContainerInput(child, "$FOO", true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `expand cannot be used with volatile env variable "FOO"`)
+}
