@@ -81,9 +81,9 @@ func TestContainerExecReadOnlyMountStaysPending(t *testing.T) {
 	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
 
 	baseOp := &containerPartsTestBaseOp{
-		LazyState:   NewLazyState(),
-		workdir:     "/base",
-		mountTarget: "/ro",
+		LazyState:    NewLazyState(),
+		workdir:      "/base",
+		mountTargets: []string{"/ro"},
 	}
 	base := &Container{
 		FS:           new(LazyAccessor[*Directory, *Container]),
@@ -103,7 +103,7 @@ func TestContainerExecReadOnlyMountStaysPending(t *testing.T) {
 	// The metadata read settles the mount list shape and nothing else:
 	// the read-only mount's source chain stays pending.
 	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
-	require.Equal(t, int32(0), baseOp.mountRuns.Load())
+	require.Equal(t, 0, baseOp.mountRunsFor("/ro"))
 	require.Equal(t, int32(0), baseOp.fsRuns.Load())
 	roMnt := child.mountAt("/ro")
 	require.NotNil(t, roMnt)
@@ -113,7 +113,7 @@ func TestContainerExecReadOnlyMountStaysPending(t *testing.T) {
 	// Demanding the mount part delegates exactly that part: the parent's
 	// mount group runs, its fs group does not, and the exec never runs.
 	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMount("/ro")))
-	require.Equal(t, int32(1), baseOp.mountRuns.Load())
+	require.Equal(t, 1, baseOp.mountRunsFor("/ro"))
 	require.Equal(t, int32(0), baseOp.fsRuns.Load())
 	_, roSet = child.mountAt("/ro").DirectorySource.Peek()
 	require.True(t, roSet)

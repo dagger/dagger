@@ -2460,7 +2460,7 @@ func (container *Container) ExitCode(ctx context.Context) (int, error) {
 }
 
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
-	if err := container.Evaluate(ctx); err != nil {
+	if err := container.evaluatePartsDirect(ctx, ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 
