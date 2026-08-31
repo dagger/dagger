@@ -255,6 +255,46 @@ platform = "arm64"
 	})
 }
 
+func (WorkspaceIncludeSuite) TestIncludedModulesReachTheCommandTree(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// `installed` reads the config; the command tree is built from the API
+	// schema, which needs the modules actually attached to Query. A workspace
+	// can therefore list an inherited module and still not offer it as a
+	// command — reported from the field against an earlier build, so it is
+	// pinned here rather than left to the config read alone.
+	monorepo := workspaceBase(t, c).
+		WithNewFile("/work/shared/tester/dagger.json", `{"name":"tester","sdk":{"source":"dang"}}`).
+		WithNewFile("/work/shared/tester/main.dang", workspaceSelectionDangSource("Tester", "identify", "shared tester")).
+		WithNewFile("/work/common/dagger.toml", `[modules.tester]
+source = "../shared/tester"
+`).
+		WithNewFile("/work/project-a/dagger.toml", `[[include]]
+source = "../common"
+
+[modules.tester.settings]
+greeting = "hello"
+`)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "functions", args: []string{"--silent", "functions"}},
+		{name: "call --help", args: []string{"--silent", "call", "--help"}},
+		{name: "api functions", args: []string{"--silent", "api", "functions"}},
+		{name: "api call --help", args: []string{"--silent", "api", "call", "--help"}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := monorepo.
+				With(workspaceIncludeMonorepoIn("/work/project-a", tc.args...)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "tester", "an inherited module has to be callable, not just listed")
+		})
+	}
+}
+
 func (WorkspaceIncludeSuite) TestLocalModulesOfAGitIncludeAreInherited(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -667,30 +667,35 @@ path include needs no fixture beyond a second file in the workspace.
    modules, `dagger call <module> …` runs them, the effective config shows them
    addressed relative to the *including* project, and `project-b` overrides one
    of their settings without repeating a source.
-7. **A git include's own modules**: the consuming workspace holds a different
+7. **An inherited module reaches the command tree**: a module a path include
+   contributes appears in `dagger functions`, `dagger call --help`,
+   `dagger api functions` and `dagger api call --help`. The command tree is
+   built from the API schema rather than from the config, so a workspace can
+   list an inherited module and still not offer it as a command.
+8. **A git include's own modules**: the consuming workspace holds a different
    module at the very same path the included entry names, which is what the
    re-addressing has to get right. The effective config shows the entry as a ref
    into the included repository at a full commit SHA rather than the path it was
    written as, and the call reaches the included repository's module.
-8. **Modules with no address are left out**: a built-in SDK install and an entry
+9. **Modules with no address are left out**: a built-in SDK install and an entry
    escaping the included repository. Neither appears in the merged config, and
    the warning names both under plain `dagger workspace config`, which skips
    workspace modules entirely.
-9. **No chain**: the included config includes something in turn → explicit error.
-10. **Missing target**: the include points where no config exists → error naming
+10. **No chain**: the included config includes something in turn → explicit error.
+11. **Missing target**: the include points where no config exists → error naming
     the file.
-11. **Dangling override**: a `[modules.x]` patch entry with no source and an
+12. **Dangling override**: a `[modules.x]` patch entry with no source and an
     include that does not provide `x` → clear error.
-12. **Env from the include**: an env defined only in the included config is
+13. **Env from the include**: an env defined only in the included config is
     selectable with `--env` downstream.
-13. **Setting the include through the CLI**:
+14. **Setting the include through the CLI**:
     `dagger workspace config include common/base.toml` writes the block without
     swallowing the bare keys above it, reads back the local source, and the
     effective view then carries what the include provides.
-14. **Writes stay local**: a setting write records only the override — no
+15. **Writes stay local**: a setting write records only the override — no
     inherited ref, no `source = ""` — and uninstalling a module the include
     provides names the include.
-15. **Lockfile**: an ordinary run records a `git-sha` entry naming the included
+16. **Lockfile**: an ordinary run records a `git-sha` entry naming the included
     repository, and a later run resolves the same merged config while leaving
     the lockfile byte-identical.
 
