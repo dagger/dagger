@@ -181,7 +181,7 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 			container.FS = new(LazyAccessor[*Directory, *Container])
 		}
 		container.FS.setValue(rootfsDir)
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
