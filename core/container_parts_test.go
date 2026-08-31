@@ -252,3 +252,108 @@ func TestContainerDirectEvaluateRunsRefinedGroups(t *testing.T) {
 	require.Equal(t, int32(1), baseOp.metaRuns.Load())
 	require.Equal(t, int32(1), baseOp.fsRuns.Load())
 }
+
+// containerPartsTestUnrefinedWriterOp stands in for an unrefined
+// snapshot writer (the withDirectory family): the schema shell keeps the
+// cloned pre-copy fs accessor from construction time, and the
+// whole-result body later replaces fs with the op's output. It
+// implements only Lazy[*Container], never LazyContainerParts.
+type containerPartsTestUnrefinedWriterOp struct {
+	LazyState
+	parent dagql.ObjectResult[*Container]
+	newDir string
+	runs   atomic.Int32
+}
+
+func (op *containerPartsTestUnrefinedWriterOp) Evaluate(ctx context.Context, ctr *Container) error {
+	return op.LazyState.Evaluate(ctx, "test.unrefinedWriter", func(context.Context) error {
+		op.runs.Add(1)
+		dir := &Directory{
+			Dir:      new(LazyAccessor[string, *Directory]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+		}
+		dir.Dir.SetValue(op.newDir)
+		ctr.ensureFSAccessor().SetValue(dir)
+		ctr.Lazy = nil
+		return nil
+	})
+}
+
+func (op *containerPartsTestUnrefinedWriterOp) AttachDependencies(_ context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attach(op.parent)
+	if err != nil {
+		return nil, err
+	}
+	op.parent = parent.(dagql.ObjectResult[*Container])
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (op *containerPartsTestUnrefinedWriterOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return nil, nil
+}
+
+// A construction-time cloned accessor is NOT the parent part's final
+// value when an unrefined writer sits between: A (fs set to /old) ->
+// P = unrefined writer replacing fs with /new (shell keeps the cloned
+// /old pre-copy) -> C = refined metadata op (shell clones P's /old
+// pre-copy). Demanding C's fs must serve the writer's output, so
+// delegation must always evaluate the parent part and copy - a set
+// destination accessor proves nothing about provenance.
+func TestContainerDelegationOverwritesStalePreCopiedAccessor(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	oldDir := &Directory{
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	oldDir.Dir.SetValue("/old")
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+	}
+	base.FS.SetValue(oldDir)
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "stale-precopy-base", base)
+
+	writerFS, err := CloneContainerDirectoryAccessor(ctx, base.FS)
+	require.NoError(t, err)
+	writer := &Container{
+		FS:           writerFS,
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+	}
+	writerOp := &containerPartsTestUnrefinedWriterOp{
+		LazyState: NewLazyState(),
+		parent:    baseRes,
+		newDir:    "/new",
+	}
+	writer.Lazy = writerOp
+	writerRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "stale-precopy-writer", writer)
+
+	childFS, err := CloneContainerDirectoryAccessor(ctx, writer.FS)
+	require.NoError(t, err)
+	child := &Container{
+		FS:           childFS,
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+	}
+	child.Lazy = &ContainerWithEnvVariableLazy{
+		LazyState: NewLazyState(),
+		Parent:    writerRes,
+		Name:      "K",
+		Value:     "v",
+	}
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "stale-precopy-child", child)
+
+	// Sanity: the child's shell really does carry the stale pre-copy.
+	preFS, preSet := child.FS.Peek()
+	require.True(t, preSet)
+	preDir, _ := preFS.Dir.Peek()
+	require.Equal(t, "/old", preDir)
+
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartFS))
+	require.Equal(t, int32(1), writerOp.runs.Load())
+	gotFS, gotSet := child.FS.Peek()
+	require.True(t, gotSet)
+	gotDir, ok := gotFS.Dir.Peek()
+	require.True(t, ok)
+	require.Equal(t, "/new", gotDir)
+}
