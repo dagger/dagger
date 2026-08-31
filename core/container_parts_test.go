@@ -278,6 +278,9 @@ type containerPartsTestUnrefinedWriterOp struct {
 	parent dagql.ObjectResult[*Container]
 	newDir string
 	runs   atomic.Int32
+	// preClearHook, when set, runs inside the body right before the op
+	// consumes itself (used to rendezvous readers with the inline clear).
+	preClearHook func()
 }
 
 func (op *containerPartsTestUnrefinedWriterOp) Evaluate(ctx context.Context, ctr *Container) error {
@@ -289,12 +292,18 @@ func (op *containerPartsTestUnrefinedWriterOp) Evaluate(ctx context.Context, ctr
 		}
 		dir.Dir.SetValue(op.newDir)
 		ctr.ensureFSAccessor().SetValue(dir)
-		ctr.Lazy = nil
+		if op.preClearHook != nil {
+			op.preClearHook()
+		}
+		ctr.consumeLazyOp()
 		return nil
 	})
 }
 
 func (op *containerPartsTestUnrefinedWriterOp) AttachDependencies(_ context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if op.parent.Self() == nil {
+		return nil, nil
+	}
 	parent, err := attach(op.parent)
 	if err != nil {
 		return nil, err
@@ -500,4 +509,140 @@ func TestContainerRoutingReadsRaceRefinedClear(t *testing.T) {
 	require.NoError(t, <-resolveErr)
 	require.NoError(t, <-directErr)
 	require.Nil(t, base.Lazy)
+}
+
+// The routing reads must also be ordered against UNREFINED ops' clears -
+// the dominant everyday writer (every from(image) body ends with one).
+// Two clients reading metadata of the same pending unrefined container
+// while its whole-result body finishes is routine.
+func TestContainerRoutingReadsRaceUnrefinedClear(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	clearImminent := make(chan struct{})
+	op := &containerPartsTestUnrefinedWriterOp{
+		LazyState: NewLazyState(),
+		newDir:    "/made",
+		preClearHook: func() {
+			close(clearImminent)
+			for range 2000 {
+				runtime.Gosched()
+			}
+		},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         op,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "unrefined-clear-race-base", base)
+
+	done := make(chan struct{})
+	finalErr := make(chan error, 1)
+	go func() {
+		defer close(done)
+		finalErr <- cache.Evaluate(ctx, baseRes)
+	}()
+
+	<-clearImminent
+	resolveErr := make(chan error, 1)
+	go func() {
+		// The cache resolver path's routing read.
+		for {
+			select {
+			case <-done:
+				resolveErr <- nil
+				return
+			default:
+			}
+			if err := cache.EvaluateParts(ctx, baseRes, ContainerPartMetadata); err != nil {
+				resolveErr <- err
+				return
+			}
+		}
+	}()
+	directErr := make(chan error, 1)
+	go func() {
+		// The direct narrow-force path's routing read.
+		for {
+			select {
+			case <-done:
+				directErr <- nil
+				return
+			default:
+			}
+			if err := base.evaluatePartsDirect(ctx, ContainerPartMetadata); err != nil {
+				directErr <- err
+				return
+			}
+		}
+	}()
+
+	require.NoError(t, <-finalErr)
+	require.NoError(t, <-resolveErr)
+	require.NoError(t, <-directErr)
+	require.Nil(t, base.Lazy)
+	require.Equal(t, int32(1), op.runs.Load())
+}
+
+// HasPendingLazyEvaluation's fallback (LazyEvalFunc's op-pointer read)
+// must be ordered against the direct-path clear: when every group was
+// consumed through the direct narrow force, the shared result carries no
+// cache-side lazy state, so the fallback read is reached on every call
+// (the cloneContainerForSchemaChild path) while evaluatePartsDirect's
+// final-group completion clears the op.
+func TestContainerHasPendingFallbackRacesDirectClear(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+	_ = cache
+
+	clearImminent := make(chan struct{})
+	baseOp := &containerPartsTestBaseOp{
+		LazyState: NewLazyState(),
+		workdir:   "/base",
+		fsBodyHook: func() {
+			close(clearImminent)
+			for range 2000 {
+				runtime.Gosched()
+			}
+		},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "haspending-direct-race-base", base)
+
+	// Consume everything except fs strictly through the direct path, so
+	// no cache-side group state exists and HasPendingLazyEvaluation
+	// always reaches the value fallback.
+	require.NoError(t, base.evaluatePartsDirect(ctx, ContainerPartMetadata))
+	require.NoError(t, base.evaluatePartsDirect(ctx, ContainerPartExecMeta))
+
+	done := make(chan struct{})
+	finalErr := make(chan error, 1)
+	go func() {
+		defer close(done)
+		finalErr <- base.evaluatePartsDirect(ctx, ContainerPartFS)
+	}()
+
+	<-clearImminent
+	pendingDone := make(chan struct{})
+	go func() {
+		defer close(pendingDone)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			dagql.HasPendingLazyEvaluation(baseRes)
+		}
+	}()
+
+	require.NoError(t, <-finalErr)
+	<-pendingDone
+	require.Nil(t, base.Lazy)
+	require.False(t, dagql.HasPendingLazyEvaluation(baseRes))
 }
