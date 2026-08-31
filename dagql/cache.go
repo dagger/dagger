@@ -3814,6 +3814,19 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 	if err != nil {
 		return err
 	}
+	if len(groups) == 0 {
+		// Cache-side group state can outlive the value's own view of its
+		// deferred work: a body that succeeded consumes the object-side
+		// work (clearing the value's op entirely once the last group is
+		// consumed) while its attempt's bookkeeping is still in flight or
+		// failed and pending retry. A resolver can then no longer name
+		// any group, and evaluating nothing would report success - or
+		// latch completion below - over unfinished bookkeeping. Route the
+		// demand to every group with live cache-side state instead: those
+		// evaluations join the in-flight attempt or retry only the
+		// bookkeeping (their bodies are consumed), never a body.
+		groups = shared.pendingLazyGroups()
+	}
 	for _, group := range groups {
 		if err := c.evaluateGroup(ctx, res, shared, group, partsVal); err != nil {
 			return err
@@ -3823,15 +3836,27 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 	if all {
 		// Only the all-groups pass may set the result-level latch: the
 		// group set is final only once metadata is settled, which the
-		// resolution above performed before returning the set, and every
-		// returned group was just observed complete. A parts-scoped pass
-		// never sets it.
+		// resolution above performed before returning the set. The latch
+		// additionally requires every KNOWN group state settled - not
+		// just the resolved set - so completion can never be recorded
+		// while any group still has an attempt, pending bookkeeping, or
+		// an armed callback.
 		shared.lazyMu.Lock()
-		settled := true
-		for _, group := range groups {
-			if !shared.lazyGroupStateLocked(group).complete {
-				settled = false
-				break
+		settled := shared.lazyWhole.settled()
+		if settled {
+			for _, g := range shared.lazyPartGroups {
+				if !g.settled() {
+					settled = false
+					break
+				}
+			}
+		}
+		if settled {
+			for _, group := range groups {
+				if !shared.lazyGroupStateLocked(group).complete {
+					settled = false
+					break
+				}
 			}
 		}
 		if settled {
@@ -3840,6 +3865,32 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		shared.lazyMu.Unlock()
 	}
 	return nil
+}
+
+// settled reports that the group has no live cache-side work: no
+// published attempt, no pending bookkeeping, no armed stored callback.
+// lazyMu must be held.
+func (g *lazyGroupState) settled() bool {
+	return g.attempt == nil && !g.syncPending && g.eval == nil
+}
+
+// pendingLazyGroups returns every group with live cache-side state, in a
+// deterministic order. Used when resolution can no longer name a
+// consumed value's groups.
+func (res *sharedResult) pendingLazyGroups() []LazyGroupKey {
+	res.lazyMu.Lock()
+	defer res.lazyMu.Unlock()
+	var groups []LazyGroupKey
+	if !res.lazyWhole.settled() {
+		groups = append(groups, LazyGroupWhole)
+	}
+	for key, g := range res.lazyPartGroups {
+		if !g.settled() {
+			groups = append(groups, key)
+		}
+	}
+	slices.Sort(groups)
+	return groups
 }
 
 // evaluateGroup is the per-(result, group) attempt loop: consult the
