@@ -478,45 +478,34 @@ Rules:
   "something is still deferred" (feeds `HasPendingLazyEvaluation` and the
   schema eager/lazy fork), and persistence's form selection (`Lazy == nil`
   → ready form) keeps meaning "fully materialized" (section 8).
-- The op-pointer clear must be safe against every concurrent reader.
-  Refined this after the fix round to match what an ordering argument can
-  and cannot carry:
-  - Sibling completions racing each other's clear (write/write) are
-    serialized by holding the op's `LazyMu` across the all-consumed check
-    and the clear together.
-  - Readers whose group-state guards make the read unreachable during a
-    cache-driven clear need no lock. This holds for the `evaluateGroup`
-    object re-read and `HasPendingLazyEvaluation`: a clear requires every
-    group's body consumed, a cache-consumed group's state under `lazyMu`
-    shows an attempt, completion, or pending bookkeeping, and both
-    readers stop at those guards before touching the pointer. Attempt
-    retirement under `lazyMu` then orders the clear before any later
-    read.
-  - Readers with no such guard — the resolution-phase read
-    (`ResolveLazyEvalGroups`) and the direct narrow force
-    (`evaluatePartsDirect`) read the pointer with no lock and no attempt
-    check — race a concurrent clear on the plain interface word
-    (torn-read crash vector, race-detector red), and no ordering
-    argument can cover them, because they run before any group state is
-    consulted. These reads must share a synchronization point with
-    **every container op-pointer clear that can execute after
-    publication** — the refined `clearLazyWhenConsumed` **and** the
-    inline `container.Lazy = nil` at the end of every unrefined op's
-    body (`from` included), because the routing reads fire for unrefined
-    ops too (they are how an unrefined op routes to the whole-result
-    group). An earlier revision of this bullet named only the refined
-    clear; that was this document's error — the unrefined clears are the
-    more common writer by far. The mechanism is the implementer's choice
-    (a locked store helper replacing the inline nil stores, or an
-    equivalent); post-publication *sets* of the pointer do not exist
-    (construction and decode precede publication), and Directory/File
-    inline clears are exempt because those types have no routing reads —
-    their only readers are the attempt-guarded ones above.
-  - Recorded, not fixed (G24): the direct whole-value path's unlocked
-    pointer read racing a cache-driven clear predates stage 2 (baseline
-    `Container.Evaluate` read the pointer while a cache attempt's body
-    cleared it) and is inherited, not widened, by this design; close it
-    only if the chosen mechanism covers it for free.
+- The op pointer follows one rule (final form, matching the as-built
+  code after the convergence rounds): **after construction, the
+  container's op pointer is only ever read or cleared under a dedicated
+  `lazyOpMu`, each a short hold with no body ever under it.** Reads go
+  through one helper; every post-construction clear — the refined
+  all-groups-consumed clear and the inline self-consumption at the end
+  of every unrefined body — goes through one locked-store helper.
+  Construction-time sets (schema shells, `WithExec`, persisted decode)
+  precede publication and therefore any concurrent access, and stay
+  plain. Sibling completions racing each other's clear are additionally
+  serialized by holding the op's `LazyMu` across the all-consumed check
+  and the clear; the lock order is `LazyMu` then `lazyOpMu`, one way.
+  `LazyEvalFunc` captures the op at closure creation (under the lock),
+  so a consumption between creation and call is a no-op through the
+  op's own latch rather than a nil-interface call. Directory/File
+  inline clears are exempt: those types have no routing reads, and
+  their only pointer readers are unreachable during a clear by the
+  attempt-state guards. Earlier revisions carried a per-reader ordering
+  derivation in place of the uniform rule and twice under-scoped the
+  writers it must pair with (first the refined clear only, then still
+  excluding the baseline-inherited direct-path pair); the uniform rule
+  retires that derivation as load-bearing text — it survives only as
+  the reason the interim states were observed safe — and closes the
+  inherited pair for free, which is what the G24 limit sanctioned. The
+  whole-op `LazyInitComplete` latch is atomic for the same reason: its
+  lock-free fast-path read predates stage 2, but per-part evaluation
+  makes direct-versus-cache overlap on one op routine, and the required
+  race tests observe it.
 - The direct object-side evaluation paths continue to work, coordinated
   per group as enumerated above. Sites whose refinement is a stage-2 win
   (the exec-meta readers) move their forcing to the resolver via
