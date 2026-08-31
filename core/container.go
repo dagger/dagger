@@ -1095,11 +1095,15 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 	if container == nil {
 		return nil
 	}
-	if container.Lazy == nil {
+	lazy := container.lazyOpForRouting()
+	if lazy == nil {
 		return nil
 	}
+	// The captured op runs, not a re-read: a concurrent consumption
+	// between closure creation and call makes this a no-op through the
+	// op's own latch instead of a nil-interface call.
 	return func(ctx context.Context) error {
-		return container.Lazy.Evaluate(ctx, container)
+		return lazy.Evaluate(ctx, container)
 	}
 }
 
@@ -1142,7 +1146,7 @@ func (container *Container) AttachDependencyResultsKinds(
 		return nil, nil
 	}
 
-	lazy := container.Lazy
+	lazy := container.lazyOpForRouting()
 	owned := make([]dagql.DependencyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets)+len(container.Services))
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
@@ -1532,8 +1536,8 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
 	}
-	if container.Lazy != nil {
-		lazyJSON, err := container.Lazy.EncodePersisted(ctx, cache)
+	if lazy := container.lazyOpForRouting(); lazy != nil {
+		lazyJSON, err := lazy.EncodePersisted(ctx, cache)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -3747,7 +3751,7 @@ func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container 
 		if _, err := container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner); err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -3800,7 +3804,7 @@ func (lazy *ContainerWithFileLazy) Evaluate(ctx context.Context, container *Cont
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -3853,7 +3857,7 @@ func (lazy *ContainerWithMountedDirectoryLazy) Evaluate(ctx context.Context, con
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -3906,7 +3910,7 @@ func (lazy *ContainerWithMountedFileLazy) Evaluate(ctx context.Context, containe
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -3959,7 +3963,7 @@ func (lazy *ContainerWithMountedPathDockerfileCompatLazy) Evaluate(ctx context.C
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4005,7 +4009,7 @@ func (lazy *ContainerWithMountedCacheLazy) Evaluate(ctx context.Context, contain
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4049,7 +4053,7 @@ func (lazy *ContainerWithMountedVolumeLazy) Evaluate(ctx context.Context, contai
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4094,7 +4098,7 @@ func (lazy *ContainerWithMountedTempLazy) Evaluate(ctx context.Context, containe
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4129,7 +4133,7 @@ func (lazy *ContainerWithMountedSecretLazy) Evaluate(ctx context.Context, contai
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4175,7 +4179,7 @@ func (lazy *ContainerWithoutMountLazy) Evaluate(ctx context.Context, container *
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4209,7 +4213,7 @@ func (lazy *ContainerWithoutPathLazy) Evaluate(ctx context.Context, container *C
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4243,7 +4247,7 @@ func (lazy *ContainerWithSymlinkLazy) Evaluate(ctx context.Context, container *C
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4278,7 +4282,7 @@ func (lazy *ContainerWithUnixSocketLazy) Evaluate(ctx context.Context, container
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4323,7 +4327,7 @@ func (lazy *ContainerWithoutUnixSocketLazy) Evaluate(ctx context.Context, contai
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }
@@ -4369,7 +4373,7 @@ func (lazy *ContainerImportLazy) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return err
 		}
-		container.Lazy = nil
+		container.consumeLazyOp()
 		return nil
 	})
 }

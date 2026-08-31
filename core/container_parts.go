@@ -117,17 +117,29 @@ var (
 	_ LazyContainerParts = (*ContainerWithRootFSLazy)(nil)
 )
 
-// lazyOpForRouting reads the current Lazy op under lazyOpMu. The
-// resolution phase and the direct narrow force run before any group
-// state is consulted, so no attempt-retirement ordering can cover their
-// pointer read; this lock pairs those reads with the refined clear in
-// clearLazyWhenConsumed. nil means the op is consumed - callers treat
-// it exactly like a value with no deferred work (and the cache side
-// independently routes any pending bookkeeping, see evaluateResolved).
+// lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
+// covers every access: after construction, the op pointer is only ever
+// read or cleared under lazyOpMu, each a short hold with no body ever
+// under it. (Construction-time sets - schema shells, WithExec, persisted
+// decode - precede publication and therefore any concurrent access.)
+// nil means the op is consumed - callers treat it exactly like a value
+// with no deferred work (and the cache side independently routes any
+// pending bookkeeping, see evaluateResolved).
 func (container *Container) lazyOpForRouting() Lazy[*Container] {
 	container.lazyOpMu.Lock()
 	defer container.lazyOpMu.Unlock()
 	return container.Lazy
+}
+
+// consumeLazyOp is the locked-store half of the one-rule contract: every
+// post-construction clear of the op pointer - unrefined bodies consuming
+// themselves, and the refined all-groups-consumed clear - goes through
+// here. Safe to call while holding an op's LazyMu (the lock order is
+// LazyMu, then lazyOpMu, one way).
+func (container *Container) consumeLazyOp() {
+	container.lazyOpMu.Lock()
+	container.Lazy = nil
+	container.lazyOpMu.Unlock()
 }
 
 // ResolveLazyEvalGroups implements dagql.HasLazyEvaluationParts. An
@@ -174,7 +186,7 @@ func (container *Container) LazyEvalFuncForGroup(group dagql.LazyGroupKey) dagql
 	if container == nil {
 		return nil
 	}
-	lazy := container.Lazy
+	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return nil
 	}
@@ -215,20 +227,10 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 //
 // The consumed-check and the clear happen under one LazyMu hold: two
 // sibling groups finishing concurrently may both observe full
-// consumption, and the mutex serializes their writes. The write itself
-// additionally happens under lazyOpMu (nested inside LazyMu, one-way
-// order, held only for the store), pairing it with the routing reads
-// that no group-state guard covers: ResolveLazyEvalGroups and
-// evaluatePartsDirect read the pointer before consulting any group
-// state, so attempt-retirement ordering cannot reach them and they
-// synchronize through lazyOpMu instead (lazyOpForRouting). The
-// remaining lock-free readers each have an ordering argument: the
-// evaluateGroup object re-read and HasPendingLazyEvaluation's fallback
-// stop at group-state guards that a cache-consumed group makes
-// unreachable until attempt retirement (under the cache's lazyMu, after
-// the body and this clear returned) orders the clear first; persistence
-// encode runs at flush quiescence; attach-time reads precede any
-// evaluation.
+// consumption, and the mutex serializes their writes. The store itself
+// goes through consumeLazyOp, per the one-rule contract on the op
+// pointer (see lazyOpForRouting): after construction, every read and
+// every clear of container.Lazy happens under lazyOpMu.
 func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyContainerParts) error {
 	groups, err := op.ContainerLazyGroups(ctx, container, nil)
 	if err != nil {
@@ -242,9 +244,7 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 			return nil
 		}
 	}
-	container.lazyOpMu.Lock()
-	container.Lazy = nil
-	container.lazyOpMu.Unlock()
+	container.consumeLazyOp()
 	return nil
 }
 
