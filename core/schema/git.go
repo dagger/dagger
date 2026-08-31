@@ -372,6 +372,17 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		if candErr != nil {
 			return inst, fmt.Errorf("failed to parse Git URL: %w", candErr)
 		}
+		// Lock entries for a candidate mean an earlier session reached the
+		// remote over that transport, so probing again decides nothing.
+		transportFromLock := false
+		for i, candidate := range candidates {
+			if gitRemoteHasWorkspacePin(ctx, candidate.Remote()) {
+				candidates = candidates[i : i+1]
+				transportFromLock = true
+				break
+			}
+		}
+
 		try := make([][]dagql.NamedInput, 0, len(candidates))
 		for _, candidate := range candidates {
 			try = append(try, []dagql.NamedInput{
@@ -472,11 +483,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 				return inst, err
 			}
-			if _, err := repo.Self().LoadRemote(ctx); err != nil {
-				if errors.Is(err, gitutil.ErrGitAuthFailed) {
-					continue
+			if !transportFromLock {
+				// Only the probe needs this eagerly; resolvers that read remote
+				// metadata load it lazily.
+				if _, err := repo.Self().LoadRemote(ctx); err != nil {
+					if errors.Is(err, gitutil.ErrGitAuthFailed) {
+						continue
+					}
+					return inst, err
 				}
-				return inst, err
 			}
 			return repo, nil
 		}
