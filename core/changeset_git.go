@@ -273,9 +273,9 @@ func diffStringSlices(old, new []string) (added, removed []string) {
 	return
 }
 
-// collapseChildPaths removes paths that are children of directory paths.
+// CollapseChildPaths removes paths that are children of directory paths.
 // For example, if "foo/" is in the list, "foo/bar.txt" is removed.
-func collapseChildPaths(paths []string) []string {
+func CollapseChildPaths(paths []string) []string {
 	if len(paths) == 0 {
 		return nil
 	}

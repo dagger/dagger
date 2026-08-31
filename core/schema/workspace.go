@@ -174,6 +174,58 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
+		dagql.NodeFunc("withCommit", s.withCommit).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.",
+				"The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.",
+				"The operation is message-idempotent: when no committable change exists in scope and reachable history already contains the exact full message, the workspace is returned unchanged. A clean scope with no matching message is still an error.",
+				"The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.").
+			Args(
+				dagql.Arg("message").Doc("Full commit message. Its exact value is also the logical identity used to recognize an already-applied retry across rebases and cherry-picks."),
+				dagql.Arg("paths").Doc("Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else \"Dagger\"."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else \"dagger@localhost\"."),
+			),
+		dagql.NodeFunc("__stagedCommit", s.stagedCommit).
+			IsPersistable().
+			Doc("(Internal-only) The repository tree resulting from staging the commit Workspace.withCommit describes.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Restrict the commit to these paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date."),
+				dagql.Arg("authorName").Doc("Author and committer name."),
+				dagql.Arg("authorEmail").Doc("Author and committer email."),
+			),
+		dagql.NodeFunc("commitsFrom", s.commitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Plan which of another workspace's staged commits can be applied to this one.",
+				"Both workspaces are expected to descend from the same checkout - typically this workspace and one an agent was spawned with. Each of the source's staged commits is classified against this one, oldest first, as if every pickable commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or PICKABLE.",
+				"Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.").
+			Args(
+				dagql.Arg("source").Doc("The workspace whose staged commits to consider."),
+				dagql.Arg("commits").Doc("Restrict the plan to these commit hashes, full or an unambiguous prefix. They are always considered in the source's stack order. Empty considers every staged commit."),
+			),
+		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with another workspace's staged commits replayed on top, without mutating either source.",
+				"Each commit is applied to this workspace's current content as a patch - not as a whole-file overlay - so commits still land cleanly when this workspace has moved on since the source branched off. The replayed commit keeps the original message, date and author identity, and records the original commit as its origin, so pulling the same work again is recognised as already present.",
+				"Commits this workspace already has, and commits whose content is already present, are skipped. A commit that cannot be applied is an error naming the commit and the conflicting paths: plan with commitsFrom first and pass the pickable hashes.").
+			Args(
+				dagql.Arg("source").Doc("The workspace whose staged commits to replay."),
+				dagql.Arg("commits").Doc("Restrict the replay to these commit hashes, full or an unambiguous prefix. They are always applied in the source's stack order. Empty replays every staged commit."),
+			),
+		dagql.NodeFunc("__withReplayedCommit", s.withReplayedCommit).
+			Doc("(Internal-only) Return this workspace with a commit staged, recording the commit it was replayed from.",
+				"Backs one step of Workspace.withCommitsFrom: identical to Workspace.withCommit except that the resulting commit carries the origin, which is how a later pull recognises the work as already present.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Restrict the commit to these paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date."),
+				dagql.Arg("authorName").Doc("Author and committer name."),
+				dagql.Arg("authorEmail").Doc("Author and committer email."),
+				dagql.Arg("origin").Doc("Hash of the commit this one is replayed from, collapsed to its own origin when it already had one."),
+			),
 		dagql.NodeFunc("__withGeneratedLocalDependencies", s.withGeneratedLocalDependencies).
 			Doc("(Internal-only) Return this workspace with a module's generated local dependency closure applied and recorded.",
 				"Applies internally generated local-dependency changes for the module at the given path, and marks the workspace so nested generation for that module does not repeat the staging.").
@@ -431,6 +483,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceStagedCommit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
@@ -444,7 +498,25 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("The checked-out HEAD of this workspace."),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
+		dagql.NodeFunc("unmanaged", s.workspaceGitUnmanaged).
+			Doc("Pending workspace edits git cannot see - gitignored, or inside a nested repository.",
+				"Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed."),
+		dagql.NodeFunc("stagedCommits", s.stagedCommits).
+			Doc("Commits staged in this workspace but not yet saved to the local checkout.",
+				"Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged."),
+		dagql.NodeFunc("__stagedCommitEntry", s.stagedCommitEntry).
+			IsPersistable().
+			Doc("(Internal-only) One entry of WorkspaceGit.stagedCommits.").
+			Args(
+				dagql.Arg("index").Doc("Zero-based index into the staged commit stack, oldest first."),
+			),
 	}.Install(srv)
+
+	dagql.Fields[*core.WorkspaceStagedCommit]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceCommitPick]{}.Install(srv)
+
+	core.WorkspaceCommitPickStatuses.Install(srv, AfterVersion("v1.0.0-0"))
+	core.WorkspaceCommitPickReasons.Install(srv, AfterVersion("v1.0.0-0"))
 
 	dagql.Fields[*core.WorkspaceModule]{
 		dagql.NodeFunc("settings", s.moduleSettings).
@@ -1156,7 +1228,7 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, ownedPaths(resolvedPath), nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withNewFile",
@@ -1183,8 +1255,25 @@ func (s *workspaceSchema) search(
 ) (dagql.Array[*core.SearchResult], error) {
 	ws := parent.Self()
 
+	// Mounted content lives in the mounts tree, never in the source rootfs or
+	// on the host, and ripgrep hard-errors on path operands that don't exist.
+	// So explicit paths that resolve to mounted content are withheld from the
+	// source-side searches — the mounts-side search below covers them via
+	// post-filter — and when every requested path is mount-covered the source
+	// side is skipped entirely.
+	sourcePaths, searchSource, err := s.searchSourcePaths(ctx, ws, args.Paths)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+	sourceArgs := args
+	sourceArgs.Paths = sourcePaths
+
 	var results []*core.SearchResult
-	if ws.HostPath() == "" {
+	switch {
+	case !searchSource:
+		// Every requested path is covered by mounts: results come solely from
+		// the mounts tree below.
+	case ws.HostPath() == "":
 		// No host boundary: search the workspace's in-engine root filesystem.
 		// Overlay edits are already visible here: value/git overlays surface
 		// the changeset's after-tree as the source directory.
@@ -1192,13 +1281,12 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, err
 		}
-		results, err = rootfs.Self().Search(ctx, rootfs, args.SearchOpts, false, args.Paths, args.Globs)
+		results, err = rootfs.Self().Search(ctx, rootfs, sourceArgs.SearchOpts, false, sourceArgs.Paths, sourceArgs.Globs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
-	} else {
-		var err error
-		results, err = s.searchHost(ctx, ws, args)
+	default:
+		results, err = s.searchHost(ctx, ws, sourceArgs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
@@ -1214,7 +1302,9 @@ func (s *workspaceSchema) search(
 
 	// Mounted content is readable through the normal workspace file tools, so
 	// it is searchable too: the mounts tree's results win at and under mount
-	// points, mirroring resolveReadRootfs's shadowing.
+	// points, mirroring resolveReadRootfs's shadowing, and explicit search
+	// paths under mounts — withheld from the source side above — are honored
+	// here via searchDirectoryTree's post-filter.
 	if mounts, ok := ws.MountsDir(); ok {
 		mountResults, err := searchDirectoryTree(ctx, mounts, args)
 		if err != nil {
@@ -1225,6 +1315,49 @@ func (s *workspaceSchema) search(
 
 	emitSearchResults(ctx, results, args.FilesOnly)
 	return dagql.Array[*core.SearchResult](results), nil
+}
+
+// searchSourcePaths filters explicit search paths down to the operands the
+// source-side search (rootfs or host) can safely receive. Mounted content
+// exists only in the mounts tree, and ripgrep hard-errors on missing path
+// operands, so:
+//
+//   - a path at or under a mount point is always dropped: the mounts-side
+//     search covers it via searchDirectoryTree's post-filter;
+//   - a path that is a strict ancestor of a mount point is dropped when the
+//     source doesn't have it — mounts materialize their own parents, so the
+//     path can exist in the workspace view through the mount alone.
+//
+// Paths uninvolved with mounts pass through untouched, so a genuinely
+// nonexistent path still errors like today. The boolean reports whether the
+// source-side search should run at all: false when the caller scoped the
+// search entirely to mounted content.
+func (s *workspaceSchema) searchSourcePaths(
+	ctx context.Context,
+	ws *core.Workspace,
+	paths []string,
+) ([]string, bool, error) {
+	if len(paths) == 0 {
+		return nil, true, nil
+	}
+	sourcePaths := make([]string, 0, len(paths))
+	for _, p := range paths {
+		scope := cleanSearchScope(p)
+		if ws.MountedPath(scope) {
+			continue
+		}
+		if ws.HasMountsUnder(scope) {
+			exists, err := s.workspaceReadPathExists(ctx, ws, scope)
+			if err != nil {
+				return nil, false, err
+			}
+			if !exists {
+				continue
+			}
+		}
+		sourcePaths = append(sourcePaths, p)
+	}
+	return sourcePaths, len(sourcePaths) > 0, nil
 }
 
 // searchHost runs the search client-side against the workspace's host path
@@ -1361,13 +1494,19 @@ func mergeSearchResults(
 	return merged
 }
 
+// cleanSearchScope normalizes a caller-supplied search path to the
+// workspace-root-relative form used for scope comparisons.
+func cleanSearchScope(scope string) string {
+	return path.Clean(strings.TrimPrefix(filepath.ToSlash(scope), "/"))
+}
+
 // searchPathInScopes reports whether a result path falls under any of the
 // requested search paths (matching a file itself or anything beneath a
 // directory).
 func searchPathInScopes(filePath string, scopes []string) bool {
 	fp := path.Clean(filepath.ToSlash(filePath))
 	for _, scope := range scopes {
-		sc := path.Clean(strings.TrimPrefix(filepath.ToSlash(scope), "/"))
+		sc := cleanSearchScope(scope)
 		if sc == "." || fp == sc || strings.HasPrefix(fp, sc+"/") {
 			return true
 		}
@@ -1554,7 +1693,7 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, ownedPaths(resolvedPath), nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		// Clearing first is what lets both overlay branches share this edit:
 		// an edit that ignores whatever the base holds at the path reads the
 		// same on a full read root as on a host overlay's delta root.
@@ -1594,9 +1733,25 @@ func (s *workspaceSchema) withDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	// The edit layers onto what the path already holds, so the base has to
-	// carry it — see overlayEdit's readsExisting.
-	return s.workspaceEdit(ctx, parent, resolvedPath, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	source, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	// Directory.withDirectory MERGES: the delta root ends up owning the
+	// source's files under resolvedPath, and nothing else there. Declaring the
+	// directory itself would put the whole host subtree in the sparse base, and
+	// every host file the source does not also carry would read as deleted — so
+	// the edit owns exactly the paths it writes, while readsExisting seeds the
+	// existing content it merges onto.
+	sourceFiles, err := s.directoryFilePaths(ctx, source)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace withDirectory %q: %w", args.Path, err)
+	}
+	owned := make([]string, 0, len(sourceFiles))
+	for _, p := range sourceFiles {
+		owned = append(owned, path.Join(resolvedPath, p))
+	}
+	return s.workspaceEdit(ctx, parent, resolvedPath, ownedPaths(owned...), []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withDirectory",
@@ -1631,6 +1786,172 @@ func clearedForWrite(
 	return cleared, err
 }
 
+// directoryFilePaths returns every file the given directory holds, as paths
+// relative to it. Directories are deliberately left out: a directory path in a
+// sparse base include list drags in its whole host subtree (see overlayEdit).
+//
+// It diffs against an empty directory rather than globbing because
+// ChangesetPaths always marks a directory entry with a trailing slash, whereas
+// Directory.glob only does so for a new-enough client view — and this is a
+// distinction the overlay cannot afford to get wrong.
+func (s *workspaceSchema) directoryFilePaths(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+) ([]string, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var empty dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &empty, dagql.Selector{Field: "directory"}); err != nil {
+		return nil, err
+	}
+	emptyID, err := empty.ID()
+	if err != nil {
+		return nil, err
+	}
+	var changes dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, dir, &changes, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](emptyID)}},
+	}); err != nil {
+		return nil, err
+	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return filePathsOnly(paths.Added), nil
+}
+
+// removeAndPruneSelectors builds the selector chain for a workspace removal:
+// the removal itself, followed by a withoutDirectory of the topmost ancestor
+// the removal empties (see emptiedAncestorDir). prune is an ancestor of
+// targetPath in the same workspace-relative space, and is only ever set for
+// base-overlay edits — emptiedAncestorDir declines to prune under a mount.
+func removeAndPruneSelectors(targetPath, removeField, prune string) []dagql.Selector {
+	sels := []dagql.Selector{{
+		Field: removeField,
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(targetPath)},
+		},
+	}}
+	if prune != "" {
+		sels = append(sels, dagql.Selector{
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(prune)},
+			},
+		})
+	}
+	return sels
+}
+
+// prunedRemoval is what a removal actually deletes: the path itself, plus the
+// emptied ancestor chain the prune takes with it. Both must be declared, or the
+// prune reads as a deletion nobody asked for and keepRemovalAncestors puts the
+// chain straight back.
+func prunedRemoval(targetPath, prune string) []string {
+	if prune == "" {
+		return []string{targetPath}
+	}
+	return []string{targetPath, prune}
+}
+
+// emptiedAncestorDir reports the topmost workspace-relative ancestor directory
+// of removedPath that the removal will leave empty, or "" when the removal
+// empties no ancestor. Callers remove that directory along with the path, which
+// prunes the whole emptied chain in one selection.
+//
+// Why prune at all: git cannot represent an empty directory, so a workspace
+// tree that keeps one after its last entry is deleted reports a phantom
+// `ADDED dir/ +0 -0` entry in git-anchored status — and can even make
+// Changeset.isEmpty (true) disagree with Changeset.diffStats (one bare dir
+// entry). Deleting the last file in a directory is expected to make the
+// directory go away, exactly as `git rm` leaves no empty parent behind.
+//
+// This is workspace-editor (`git rm`-like) behaviour only: the underlying
+// Directory.withoutFile/withoutDirectory keep their literal semantics, and a
+// directory that is genuinely empty on its own — never emptied by a removal —
+// is left untouched.
+//
+// Emptiness is decided against the workspace's own directory listing (the
+// pre-edit source tree), never the overlay delta root: for host-backed
+// workspaces the delta only holds touched paths, so a directory that still has
+// untouched host files would look empty there and get wrongly whiteouted.
+func (s *workspaceSchema) emptiedAncestorDir(
+	ctx context.Context,
+	ws *core.Workspace,
+	removedPath string,
+) string {
+	// Mounted content is not workspace source: it stays out of
+	// Workspace.changes and is never git-anchored, so an empty directory under
+	// a mount is harmless. Skipping mounts also keeps prune confined to the
+	// base overlay, since a cache-mount edit writes to the mounts tree instead.
+	if ws.MountedPath(removedPath) {
+		return ""
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return ""
+	}
+	topmost := ""
+	child := removedPath
+	for {
+		dir := path.Dir(child)
+		// Never prune the workspace root itself.
+		if dir == "." || dir == "/" || dir == "" {
+			break
+		}
+		// Stop at anything mounted, in either direction: an ancestor that is
+		// itself mounted is out of the base overlay's reach, and one that still
+		// holds a mount beneath it is not empty — reads there keep serving the
+		// mounted content, so whiteouting it in the source would be wrong.
+		if ws.MountedPath(dir) || ws.HasMountsUnder(dir) {
+			break
+		}
+		entries, err := s.workspaceDirEntries(ctx, srv, ws, dir)
+		if err != nil {
+			// Pruning is best-effort cleanup: an unreadable parent just means
+			// there is nothing to prune here.
+			break
+		}
+		// Stop at the first ancestor that still has entries of its own.
+		if len(entries) != 1 || strings.TrimSuffix(entries[0], "/") != path.Base(child) {
+			break
+		}
+		topmost = dir
+		child = dir
+	}
+	return topmost
+}
+
+// workspaceDirEntries lists a workspace directory as the source sees it: host
+// content with overlay edits applied, resolved exactly like every other read of
+// the workspace source. Mounted content is deliberately not overlaid — it is
+// not what a prune whiteouts, and callers stop before listing a directory that
+// holds a mount anyway.
+func (s *workspaceSchema) workspaceDirEntries(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+	dir string,
+) ([]string, error) {
+	root, err := s.resolveRootfs(ctx, ws, dir, core.CopyFilter{}, false)
+	if err != nil {
+		return nil, err
+	}
+	var entries dagql.Array[dagql.String]
+	if err := srv.Select(ctx, root, &entries, dagql.Selector{Field: "entries"}); err != nil {
+		return nil, err
+	}
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = string(e)
+	}
+	return out, nil
+}
+
 type workspaceWithoutFileArgs struct {
 	Path string
 }
@@ -1652,14 +1973,10 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	prune := s.emptiedAncestorDir(ctx, parent.Self(), resolvedPath)
+	return s.workspaceEdit(ctx, parent, resolvedPath, removedPaths(prunedRemoval(resolvedPath, prune)...), nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, base, &updated, dagql.Selector{
-			Field: "withoutFile",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(targetPath)},
-			},
-		})
+		err := srv.Select(ctx, base, &updated, removeAndPruneSelectors(targetPath, "withoutFile", prune)...)
 		return updated, err
 	})
 }
@@ -1685,14 +2002,10 @@ func (s *workspaceSchema) withoutDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
+	prune := s.emptiedAncestorDir(ctx, parent.Self(), resolvedPath)
+	return s.workspaceEdit(ctx, parent, resolvedPath, removedPaths(prunedRemoval(resolvedPath, prune)...), nil, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, base, &updated, dagql.Selector{
-			Field: "withoutDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(targetPath)},
-			},
-		})
+		err := srv.Select(ctx, base, &updated, removeAndPruneSelectors(targetPath, "withoutDirectory", prune)...)
 		return updated, err
 	})
 }
@@ -1751,11 +2064,11 @@ func (s *workspaceSchema) applyChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	touched, err := changesetTouchedPaths(ctx, changesObj.Self())
+	touched, err := changesetOverlayPaths(ctx, changesObj.Self())
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	for _, p := range touched {
+	for _, p := range touched.all() {
 		if err := guardMountedPath(parent.Self(), p); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
@@ -2056,20 +2369,211 @@ func (s *workspaceSchema) mountEdit(
 }
 
 // workspaceEdit dispatches a single-path edit to either a cache mount (when the
-// path lands under one) or the base overlay.
+// path lands under one) or the base overlay. `touched` classifies what the edit
+// does to resolvedPath — see overlayTouched; getting it wrong is not a no-op.
 func (s *workspaceSchema) workspaceEdit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	resolvedPath string,
+	touched overlayTouched,
 	readsExisting []string,
 	edit func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error),
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	if _, ok := parent.Self().CacheMountForPath(resolvedPath); ok {
 		return s.mountEdit(ctx, parent, resolvedPath, edit)
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, readsExisting, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, touched, readsExisting, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		return edit(base, resolvedPath)
 	}, nil)
+}
+
+// workspaceOverlayChanges returns an overlay workspace's pending changes as
+// seen from the staged commits: the overlay's own changeset when nothing is
+// staged, otherwise the diff between the staged tree — the overlay's base with
+// every staged commit's content applied — and the overlay's current tree, which
+// is exactly the uncommitted remainder.
+//
+// Staging a commit deliberately leaves the overlay itself alone, so the tree the
+// workspace serves (Workspace.file / .directory, and every container mount built
+// from them) is byte-identical before and after a commit. Only the diff views
+// move: they re-anchor on the staged tree.
+//
+// The staged tree is built by applying the staged changeset to the overlay's
+// (sparse, touched-paths-only) base, so this stays as sparse as the overlay
+// itself — no full-tree host read is forced by asking for status.
+//
+// The second return value reports whether the workspace has an overlay at all;
+// workspaces without one read their pending changes from git instead.
+func (s *workspaceSchema) workspaceOverlayChanges(
+	ctx context.Context,
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Changeset], bool, error) {
+	overlay, ok := ws.OverlayChanges()
+	if !ok || overlay.Self() == nil {
+		return overlay, false, nil
+	}
+	staged, ok := ws.StagedChanges()
+	if !ok {
+		return overlay, true, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return overlay, true, err
+	}
+	stagedTree, err := stagedTreeOver(ctx, overlay.Self().Before, staged)
+	if err != nil {
+		return overlay, true, err
+	}
+	stagedTreeID, err := stagedTree.ID()
+	if err != nil {
+		return overlay, true, err
+	}
+	var remainder dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, overlay.Self().After, &remainder, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](stagedTreeID)}},
+	}); err != nil {
+		return overlay, true, fmt.Errorf("resolve uncommitted remainder: %w", err)
+	}
+	return remainder, true, nil
+}
+
+// keepRemovalAncestors re-creates, in the delta root, the ancestor directories
+// of every removed path that the removal did not itself delete.
+//
+// A removal is the one edit that puts host content in the sparse base without
+// putting it in the delta root — that is how the removal becomes visible. But
+// the base cannot hold `a/b/c` without also holding `a` and `a/b`, and those
+// ancestors are just as absent from the delta root, so the diff reports them
+// as removed too. Removed paths collapse to their topmost entry, so `a/` is
+// what export deletes: the whole directory, siblings and all, from a request to
+// delete one thing inside it.
+//
+// Recreating the surviving ancestors makes the delta root say what is actually
+// true — `a/` and `a/b/` still exist, `a/b/c` does not — and the removal
+// narrows back to what was asked for. Ancestors that ARE in the removed set
+// (the emptied chain a prune deliberately takes with it, see emptiedAncestorDir)
+// are left alone.
+func keepRemovalAncestors(
+	ctx context.Context,
+	srv *dagql.Server,
+	deltaRoot dagql.ObjectResult[*core.Directory],
+	removed []string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	seen := map[string]struct{}{}
+	var keep []string
+	for _, p := range removed {
+		p = normalizeCommitPath(p)
+		if p == "" {
+			continue
+		}
+		for dir := path.Dir(p); dir != "." && dir != "/" && dir != ""; dir = path.Dir(dir) {
+			// Covered, not equal: an ancestor beneath a pruned chain is gone
+			// with it, and recreating it would recreate the whole chain.
+			if pathCoveredBy(dir, removed) {
+				continue
+			}
+			if _, ok := seen[dir]; ok {
+				continue
+			}
+			seen[dir] = struct{}{}
+			keep = append(keep, dir)
+		}
+	}
+	if len(keep) == 0 {
+		return deltaRoot, nil
+	}
+	slices.Sort(keep)
+	for _, dir := range keep {
+		var updated dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, deltaRoot, &updated, dagql.Selector{
+			Field: "withNewDirectory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(dir)}},
+		}); err != nil {
+			return deltaRoot, fmt.Errorf("preserve ancestor %q of a removal: %w", dir, err)
+		}
+		deltaRoot = updated
+	}
+	return deltaRoot, nil
+}
+
+// assertOverlayRemovalsIntended refuses a host-backed overlay whose changeset
+// reports a removal no edit asked for.
+//
+// A host overlay's removals are *inferred*: they are whatever the sparse base
+// holds and the delta root does not. That makes them only as trustworthy as the
+// bookkeeping that decides what goes into the base — and a mistake there does
+// not fail, it silently deletes files, at whatever scale the mistaken path
+// covers. (A touched `internal/` once cost 660 files.)
+//
+// So the inference is checked against the ledger of what edits actually removed,
+// at the two boundaries where a wrong answer stops being recoverable: staging a
+// commit, and writing the user's checkout. Both already force the changeset, so
+// the check costs one memoized walk of paths already computed.
+//
+// What trips it: a touched directory whose contents the delta root only partly
+// owns, and a write that replaces an existing directory with a file. Both are
+// cases where inferring deletion from absence is wrong, and where the honest
+// answer is to stop.
+func (s *workspaceSchema) assertOverlayRemovalsIntended(
+	ctx context.Context,
+	ws *core.Workspace,
+) error {
+	// Value/git/rootless overlays diff full in-engine trees on both sides:
+	// their removals are observed, not inferred, and there is no ledger.
+	if ws.HostPath() == "" || !ws.ClientLocalBase() {
+		return nil
+	}
+	changes, ok := ws.OverlayChanges()
+	if !ok || changes.Self() == nil {
+		return nil
+	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("verify overlay removals: %w", err)
+	}
+	intended := ws.OverlayRemovedPaths()
+	var unintended []string
+	for _, p := range paths.AllRemoved {
+		if !pathCoveredBy(p, intended) {
+			unintended = append(unintended, p)
+		}
+	}
+	if len(unintended) == 0 {
+		return nil
+	}
+	slices.Sort(unintended)
+	return fmt.Errorf(
+		"workspace would delete %d path(s) that no edit removed: %s; "+
+			"refusing rather than destroying content nothing asked to change",
+		len(unintended), strings.Join(samplePaths(unintended, 5), ", "))
+}
+
+// pathCoveredBy reports whether p is one of, or nested under, the given paths.
+func pathCoveredBy(p string, paths []string) bool {
+	p = normalizeCommitPath(p)
+	if p == "" {
+		return false
+	}
+	for _, q := range paths {
+		q = normalizeCommitPath(q)
+		if q == "" {
+			continue
+		}
+		if p == q || strings.HasPrefix(p, q+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// samplePaths returns at most n paths, with a count of what it left out, for
+// error messages that must stay readable when the list is hundreds long.
+func samplePaths(paths []string, n int) []string {
+	if len(paths) <= n {
+		return paths
+	}
+	return append(slices.Clone(paths[:n]), fmt.Sprintf("and %d more", len(paths)-n))
 }
 
 func (s *workspaceSchema) changes(
@@ -2085,10 +2589,11 @@ func (s *workspaceSchema) changes(
 		return inst, err
 	}
 	if !args.From.Valid {
-		var changes dagql.ObjectResult[*core.Changeset]
-		if overlay, ok := parent.Self().OverlayChanges(); ok {
-			changes = overlay
-		} else {
+		changes, ok, err := s.workspaceOverlayChanges(ctx, parent.Self())
+		if err != nil {
+			return inst, err
+		}
+		if !ok {
 			empty, err := core.NewEmptyChangeset(ctx)
 			if err != nil {
 				return inst, err
@@ -2326,10 +2831,35 @@ func (s *workspaceSchema) export(
 ) (core.Void, error) {
 	ws := parent.Self()
 
+	// Verified before the fast-forward below, so a workspace carrying phantom
+	// deletions is refused with the checkout still untouched.
+	if err := s.assertOverlayRemovalsIntended(ctx, ws); err != nil {
+		return core.Void{}, fmt.Errorf("save: %w", err)
+	}
+
+	// Staged commits land first, as a fast-forward of the local checkout's
+	// current ref, so the remaining overlay changes below are written on top of
+	// the new HEAD (and `git status` on the host then shows exactly them).
+	// Preconditions are verified before anything is written, so a rejected save
+	// leaves the checkout untouched.
+	if len(ws.PendingCommits()) > 0 {
+		if err := s.exportPendingCommits(ctx, ws); err != nil {
+			return core.Void{}, err
+		}
+	}
+
 	// Base export: write the primary overlay changeset to the local Git
 	// workspace. Only a non-empty base changeset requires a valid host path;
 	// cache mount write-through (below) runs regardless of the base source.
-	if changes, ok := ws.OverlayChanges(); ok && changes.Self() != nil {
+	//
+	// The changeset is the staged-relative one: the fast-forward above already
+	// wrote every committed path into the work tree, so what is left to write is
+	// exactly the uncommitted remainder — each path lands once.
+	changes, hasChanges, err := s.workspaceOverlayChanges(ctx, ws)
+	if err != nil {
+		return core.Void{}, err
+	}
+	if hasChanges && changes.Self() != nil {
 		isEmpty, err := changes.Self().IsEmpty(ctx)
 		if err != nil {
 			return core.Void{}, err
@@ -2433,15 +2963,22 @@ func (s *workspaceSchema) cacheMountChanges(
 // discards its pending overlay to re-sync with whatever the host now holds
 // (the CLI's ctrl+u), and any other caller that knows its cached reads are
 // stale.
+//
+// The invalidation is entirely a side effect on the owning client's read epoch,
+// so the result is the PARENT's own object result rather than a new one minted
+// for this call. That is load-bearing: the field carries dagql.PerCallInput (it
+// must re-run, and re-bump, on every call), so a result minted for the current
+// call would carry a random nonce in its ID — and every workspace the caller
+// derives afterwards would chain off that ID for the rest of the session,
+// permanently novel and unmatchable in the cache. Module loads pay that price
+// worst: an agent that reloads once would re-declare its own modules on every
+// subsequent edit. Returning parent keeps the epoch bump and leaves the
+// caller's call chain exactly where it was.
 func (s *workspaceSchema) reloaded(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	_ struct{},
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	// Bump under the workspace's owning client, the same context export bumps
 	// in and the one withWorkspaceHostReadContext reads the epoch from — a
 	// bump under the caller's own client would be a silent no-op whenever the
@@ -2460,7 +2997,7 @@ func (s *workspaceSchema) reloaded(
 			slog.Warn("could not bump workspace read epoch", "error", err)
 		}
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
+	return parent, nil
 }
 
 func (s *workspaceSchema) overlayWorkspaceWithMutation(
@@ -2502,11 +3039,47 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 	ws.SetRootfs(dagql.ObjectResult[*core.Directory]{})
 	// Value/git/rootless workspaces diff full in-engine trees (no TouchedPaths);
 	// the sparse delta-native path is host-only (see overlayEdit).
-	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, nil, changesResult))
+	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, nil, nil, changesResult))
 	if mutate != nil {
 		mutate(ws)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+// overlayTouched is the paths one edit affects, classified by what the sparse
+// base is allowed to hold for them.
+//
+// The classification is the whole safety story of the sparse base, so it is a
+// type rather than a bare []string: an entry in the wrong bucket does not fail,
+// it silently deletes files. See overlayEdit.
+type overlayTouched struct {
+	// Owned are paths whose content the delta root now holds in full. The
+	// sparse base carries them so a modified file has a before-image to diff
+	// against; a path here that the delta root does NOT fully own turns every
+	// host file beneath it into a phantom deletion.
+	//
+	// Only ever leaf files, or directories the edit copied in wholesale. Never
+	// a directory the edit merely wrote *into*, and never a synthesized parent
+	// of an added path — a new file deep in an existing tree owns its own path,
+	// not `internal/`.
+	Owned []string
+	// Removed are paths the edit deliberately deleted. These are the only
+	// paths that may be in the sparse base and absent from the delta root, and
+	// therefore the only removals the resulting changeset may report.
+	Removed []string
+}
+
+func ownedPaths(paths ...string) overlayTouched {
+	return overlayTouched{Owned: paths}
+}
+
+func removedPaths(paths ...string) overlayTouched {
+	return overlayTouched{Removed: paths}
+}
+
+// all returns every path the edit affects, in either bucket.
+func (t overlayTouched) all() []string {
+	return slices.Concat(t.Owned, t.Removed)
 }
 
 // overlayEdit applies an edit to a workspace, producing a new overlay workspace.
@@ -2515,7 +3088,7 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 // host-backed workspaces the delta root — the accumulated edits applied to an
 // empty base, stored as the overlay changeset's After side, which never
 // references the host tree. `touched` are the workspace-relative paths this
-// edit affects.
+// edit affects, classified (see overlayTouched).
 //
 // `readsExisting` names the touched paths whose current content the edit builds
 // on, rather than overwriting outright. Those two bases hold different things
@@ -2533,13 +3106,26 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 // those files (new files sync nothing), and reads resolve sparsely against the
 // host with the changeset applied on top (resolveHostOverlayRootfs).
 //
-// The sparse base preserves changeset semantics: rename detection pairs a
-// removal with an addition, and any removal comes from an edit, which makes
-// both paths touched and therefore present in the base.
+// The sparse base preserves changeset semantics in BOTH directions, and only
+// the first direction is self-evident:
+//
+//   - Every removal must be visible. A removal comes from an edit, which makes
+//     the path touched and therefore present in the base to be diffed away.
+//
+//   - Nothing else may look like a removal. An include pattern that matches a
+//     directory matches everything under it, so a touched *directory* pulls its
+//     entire host subtree into the base. Whatever the delta root does not also
+//     hold there then reads as deleted — silently, and for content no edit ever
+//     mentioned. That is why `touched` is classified: Owned paths must be fully
+//     owned by the delta root, and anything else must be a declared Removed.
+//
+// The second direction is bookkeeping, so it is also checked rather than
+// trusted: assertOverlayRemovalsIntended re-derives the removals the changeset
+// actually reports and refuses any the ledger cannot account for.
 func (s *workspaceSchema) overlayEdit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	touched []string,
+	touched overlayTouched,
 	readsExisting []string,
 	edit func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
 	mutate func(*core.Workspace),
@@ -2567,7 +3153,7 @@ func (s *workspaceSchema) overlayEdit(
 	// Host-backed: apply the edit to the accumulated empty-based delta root, so
 	// neither the overlay build nor computing changes/export ever references the
 	// full host tree.
-	touchedAll := unionPaths(ws.OverlayTouchedPaths(), touched)
+	touchedAll := unionPaths(ws.OverlayTouchedPaths(), touched.all())
 	seededAll := unionPaths(ws.OverlaySeededPaths(), readsExisting)
 	// Resolved before the edit so the seed below comes out of the very base the
 	// changeset is diffed against: one host read on both sides means seeded
@@ -2594,6 +3180,11 @@ func (s *workspaceSchema) overlayEdit(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
+	removedAll := unionPaths(ws.OverlayRemovedPaths(), touched.Removed)
+	deltaRoot, err = keepRemovalAncestors(ctx, srv, deltaRoot, removedAll)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	sparseBaseID, err := sparseBase.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -2608,7 +3199,7 @@ func (s *workspaceSchema) overlayEdit(
 
 	newWS := ws.Clone()
 	newWS.SetRootfs(dagql.ObjectResult[*core.Directory]{})
-	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, seededAll, changesResult))
+	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, removedAll, seededAll, changesResult))
 	if mutate != nil {
 		mutate(newWS)
 	}
@@ -2762,18 +3353,55 @@ func sparseIncludePatterns(paths []string) dagql.ArrayInput[dagql.String] {
 	return includes
 }
 
-// changesetTouchedPaths returns the workspace-relative paths a changeset affects
-// (added, modified, and removed), used to size the sparse diff base.
-func changesetTouchedPaths(ctx context.Context, ch *core.Changeset) ([]string, error) {
+// filePathsOnly drops directory entries from a changeset path list. Every
+// producer of those lists marks a directory with a trailing slash
+// (listSubdirectories, changesetDelta.addedDirs, appendRemovedTree), so the
+// slash is the discriminator.
+func filePathsOnly(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/") {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// changesetOverlayPaths classifies a changeset's paths for the overlay: the
+// content the changed tree owns, and what it deliberately removed.
+//
+// Added is deliberately stripped of its directory entries. A changeset reports
+// one for every directory it creates, including the parents that merely had to
+// exist for a nested file to land — adding `a/b/c.txt` to an empty tree reports
+// `a/`, `a/b/` and `a/b/c.txt`. Those parents name real directories in the
+// workspace whose other contents the change knows nothing about, so carrying
+// them into the sparse base drags in whole host subtrees and turns every
+// sibling into a phantom deletion (see overlayEdit).
+//
+// AllRemoved keeps its directory entries: a removal is precisely the case where
+// the base must carry a subtree the changed tree does not.
+func changesetOverlayPaths(ctx context.Context, ch *core.Changeset) (overlayTouched, error) {
 	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return overlayTouched{}, err
+	}
+	return overlayTouched{
+		Owned:   slices.Concat(filePathsOnly(paths.Added), filePathsOnly(paths.Modified)),
+		Removed: paths.AllRemoved,
+	}, nil
+}
+
+// changesetTouchedPaths returns the workspace-relative paths a changeset affects
+// (added, modified, and removed), used to size the sparse diff base and to scope
+// commits and conflict checks. Synthesized parent directories are excluded — see
+// changesetOverlayPaths.
+func changesetTouchedPaths(ctx context.Context, ch *core.Changeset) ([]string, error) {
+	touched, err := changesetOverlayPaths(ctx, ch)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(paths.Added)+len(paths.Modified)+len(paths.AllRemoved))
-	out = append(out, paths.Added...)
-	out = append(out, paths.Modified...)
-	out = append(out, paths.AllRemoved...)
-	return out, nil
+	return touched.all(), nil
 }
 
 func (s *workspaceSchema) git(
@@ -2858,22 +3486,64 @@ func (s *workspaceSchema) workspaceGitRepository(
 	if ref, ok := ws.SourceGitRef(); ok {
 		return ref.Self().Repo, nil
 	}
-	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
-		return inst, err
-	}
 
-	dir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
-	if err != nil {
-		return inst, fmt.Errorf("workspace git directory: %w", err)
-	}
+	var dir dagql.ObjectResult[*core.Directory]
+	if latest, ok := ws.LatestPendingCommit(); ok && latest.Repo.Self() != nil {
+		// Commits staged engine-side live in this tree's .git; reading the
+		// workspace's own repository would still report the pre-commit HEAD.
+		dir = latest.Repo
+		// The staged tree's work tree is frozen at commit time, so overlay
+		// edits made *after* the commit are missing from it. Applying the
+		// staged-anchored remainder — the diff between the staged tree and
+		// the overlay's current tree — brings the work tree back up to date,
+		// which is what makes GitRepository.uncommitted report the true
+		// remainder.
+		//
+		// It must be the remainder rather than the overlay's own changeset:
+		// the overlay is anchored on the pre-commit checkout, an anchor that
+		// cannot express deleting a path whose only existence is owed to a
+		// staged commit — there "add then delete" cancels out to an empty
+		// delta, so the deletion would silently vanish from the work tree
+		// (and from status, and from any commit naming the path).
+		changes, ok, err := s.workspaceOverlayChanges(ctx, ws)
+		if err != nil {
+			return inst, err
+		}
+		if ok && changes.Self() != nil {
+			changesID, err := changes.ID()
+			if err != nil {
+				return inst, err
+			}
+			srv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return inst, err
+			}
+			if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+				Field: "withChanges",
+				Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+			}); err != nil {
+				return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
+			}
+		}
+	} else {
+		if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
+			return inst, err
+		}
 
-	// Git worktree and submodule checkouts have a .git *pointer file* at their
-	// root, whose target lives outside the workspace boundary. Follow the
-	// pointer against the host and flatten the real git dir into a standalone
-	// .git directory so the LocalGitRepository sees a plain repository.
-	dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
-	if err != nil {
-		return inst, fmt.Errorf("workspace git directory: %w", err)
+		var err error
+		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git directory: %w", err)
+		}
+
+		// Git worktree and submodule checkouts have a .git *pointer file* at their
+		// root, whose target lives outside the workspace boundary. Follow the
+		// pointer against the host and flatten the real git dir into a standalone
+		// .git directory so the LocalGitRepository sees a plain repository.
+		dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git directory: %w", err)
+		}
 	}
 
 	backend := &core.LocalGitRepository{
@@ -2980,11 +3650,31 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
 	ws := parent.Self().Workspace.Self()
-	if changes, ok := ws.OverlayChanges(); ok {
+	if _, ok := ws.OverlayChanges(); ok {
 		if ref, ok := ws.SourceGitRef(); ok {
 			return gitRefWorkspaceChanges(ctx, ws, ref)
 		}
-		return changes, nil
+		if !ws.ClientLocalBase() {
+			// Value/rootless overlays have no local checkout to diff against:
+			// their pending set *is* the overlay. Staged commits re-anchor
+			// this diff on the staged tree, so committed content stops showing
+			// as pending without ever leaving the workspace tree.
+			changes, _, err := s.workspaceOverlayChanges(ctx, ws)
+			return changes, err
+		}
+		// Host-backed overlays fall through to the repository route below.
+		//
+		// "Uncommitted" means the same thing whether or not the agent has
+		// edited anything: everything the work tree holds that the (staged)
+		// HEAD does not. Answering from the overlay changeset instead would
+		// re-anchor the diff on the host's *dirty* state at the moment the
+		// overlay was created, silently dropping every change the checkout
+		// already carried — so a single edit would make files the user had
+		// been working on disappear from status/diff, and from a commit made
+		// with no paths. The repository route diffs the effective tree
+		// (host + overlay, plus the staged commits' .git — see
+		// workspaceGitRepository) against the cleaned HEAD work tree, which
+		// covers both layers at once.
 	}
 	if _, ok := ws.SourceGitRef(); ok {
 		empty, err := core.NewEmptyChangeset(ctx)
@@ -3009,6 +3699,123 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *workspaceSchema) workspaceGitUnmanaged(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResult[*core.Changeset], error) {
+	ws := parent.Self().Workspace.Self()
+
+	// Only host-backed overlays have two different views to compare. For
+	// value, rootless and git-ref workspaces `uncommitted` *is* the overlay
+	// (see workspaceGitUncommitted), so the difference is empty by
+	// construction and reporting anything here would double-report.
+	if ws.HostPath() == "" || !ws.ClientLocalBase() {
+		return emptyChangesetResult(ctx)
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	var uncommitted dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, parent, &uncommitted, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+
+	overlay, remaining, err := s.workspaceUnmanagedRemainder(ctx, ws, uncommitted)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	if len(remaining) == 0 {
+		return emptyChangesetResult(ctx)
+	}
+	scoped, _, err := s.scopeChangesetToPaths(ctx, overlay, remaining)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	return scoped, nil
+}
+
+// workspaceUnmanagedRemainder computes the set difference between the paths the
+// overlay changeset touches (what Workspace.export writes to the checkout) and
+// the paths git's uncommitted view reports (what status/diff/commit operate on).
+//
+// The leftovers are the pending edits git cannot see at all: gitignored paths,
+// paths inside a nested repository, and anything else the cleaned-HEAD baseline
+// in LocalGitRepository.Cleaned leaves byte-identical on both sides of the diff.
+// It is deliberately cause-agnostic, so .git/info/exclude, core.excludesFile and
+// any future mechanism are covered without enumerating them.
+//
+// Returns the overlay changeset alongside the remaining paths, so callers can
+// project the paths back onto it with scopeChangesetToPaths.
+func (s *workspaceSchema) workspaceUnmanagedRemainder(
+	ctx context.Context,
+	ws *core.Workspace,
+	uncommitted dagql.ObjectResult[*core.Changeset],
+) (overlay dagql.ObjectResult[*core.Changeset], remaining []string, err error) {
+	overlay, ok, err := s.workspaceOverlayChanges(ctx, ws)
+	if err != nil || !ok || overlay.Self() == nil {
+		return overlay, nil, err
+	}
+	overlayPaths, err := changesetTouchedPaths(ctx, overlay.Self())
+	if err != nil {
+		return overlay, nil, fmt.Errorf("compute overlay paths: %w", err)
+	}
+	if len(overlayPaths) == 0 {
+		return overlay, nil, nil
+	}
+	if uncommitted.Self() == nil {
+		return overlay, overlayPaths, nil
+	}
+	trackedPaths, err := changesetTouchedPaths(ctx, uncommitted.Self())
+	if err != nil {
+		return overlay, nil, fmt.Errorf("compute uncommitted paths: %w", err)
+	}
+	tracked := make(map[string]struct{}, len(trackedPaths))
+	for _, p := range trackedPaths {
+		tracked[p] = struct{}{}
+	}
+	for _, p := range overlayPaths {
+		if _, ok := tracked[p]; !ok {
+			remaining = append(remaining, p)
+		}
+	}
+	return overlay, remaining, nil
+}
+
+// unmanagedPathsInScope returns the subset of the given resolved commit scope
+// that git cannot track: paths with pending overlay edits that never show up in
+// the workspace's uncommitted set.
+func (s *workspaceSchema) unmanagedPathsInScope(
+	ctx context.Context,
+	ws *core.Workspace,
+	uncommitted dagql.ObjectResult[*core.Changeset],
+	resolved []string,
+) ([]string, error) {
+	if ws.HostPath() == "" || !ws.ClientLocalBase() {
+		return nil, nil
+	}
+	_, remaining, err := s.workspaceUnmanagedRemainder(ctx, ws, uncommitted)
+	if err != nil {
+		return nil, err
+	}
+	return commitPathsInScope(remaining, resolved), nil
+}
+
+func emptyChangesetResult(ctx context.Context) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	empty, err := core.NewEmptyChangeset(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, empty)
 }
 
 func gitRefWorkspaceChanges(

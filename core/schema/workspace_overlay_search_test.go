@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -92,6 +93,54 @@ func TestSearchPathInScopes(t *testing.T) {
 	require.True(t, searchPathInScopes("docs/new.md", []string{"src", "docs"}))
 	require.False(t, searchPathInScopes("docs/new.md", []string{"src"}))
 	require.False(t, searchPathInScopes("docs-extra/new.md", []string{"docs"}))
+}
+
+func TestSearchSourcePaths(t *testing.T) {
+	ctx := context.Background()
+	s := &workspaceSchema{}
+	ws := (&core.Workspace{}).WithMounted(dagql.ObjectResult[*core.Directory]{}, "deps/vendored")
+
+	t.Run("no explicit paths pass through", func(t *testing.T) {
+		paths, searchSource, err := s.searchSourcePaths(ctx, ws, nil)
+		require.NoError(t, err)
+		require.True(t, searchSource)
+		require.Empty(t, paths)
+	})
+
+	t.Run("mount-covered paths are dropped from source operands", func(t *testing.T) {
+		paths, searchSource, err := s.searchSourcePaths(ctx, ws,
+			[]string{"src", "deps/vendored", "/deps/vendored/sub"})
+		require.NoError(t, err)
+		require.True(t, searchSource)
+		require.Equal(t, []string{"src"}, paths)
+	})
+
+	t.Run("all paths mount-covered skips the source side", func(t *testing.T) {
+		paths, searchSource, err := s.searchSourcePaths(ctx, ws,
+			[]string{"deps/vendored", "deps/vendored/sub"})
+		require.NoError(t, err)
+		require.False(t, searchSource)
+		require.Empty(t, paths)
+	})
+
+	t.Run("mount ancestor absent from the source is dropped", func(t *testing.T) {
+		// "deps" exists in the workspace view only because the mount at
+		// deps/vendored materializes its parents; this synthetic workspace has
+		// no source content, so the ancestor must not reach ripgrep.
+		paths, searchSource, err := s.searchSourcePaths(ctx, ws, []string{"deps"})
+		require.NoError(t, err)
+		require.False(t, searchSource)
+		require.Empty(t, paths)
+	})
+
+	t.Run("paths uninvolved with mounts are kept verbatim", func(t *testing.T) {
+		// A genuinely nonexistent path outside any mount still reaches the
+		// source-side search, preserving today's error behavior.
+		paths, searchSource, err := s.searchSourcePaths(ctx, ws, []string{"no/such/dir"})
+		require.NoError(t, err)
+		require.True(t, searchSource)
+		require.Equal(t, []string{"no/such/dir"}, paths)
+	})
 }
 
 func TestMergeGlobMatches(t *testing.T) {

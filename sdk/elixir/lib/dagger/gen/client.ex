@@ -165,6 +165,17 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  The current UTC time in RFC3339 format. Never cached.
+  """
+  @spec current_timestamp(t()) :: {:ok, String.t()} | {:error, term()}
+  def current_timestamp(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentTimestamp")
+
+    Client.execute(client.client, query_builder)
+  end
+
+  @doc """
   The TypeDef representations of the objects currently being served in the session.
   """
   @spec current_type_defs(t(), [

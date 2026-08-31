@@ -161,6 +161,43 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 	})
 }
 
+// TestParallelChangesetToolsPreserveConflicts locks in that a batch whose
+// changesets *cannot* merge cleanly is not thrown away. Two tools rewrite the
+// same lines of the same file; the octopus merge refuses that, so the batch
+// falls back to replaying the changesets as patches with conflict markers.
+// Both sides' work survives, and the agent gets a tree it can repair.
+func (LLMSuite) TestParallelChangesetToolsPreserveConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("make both changes").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "clashFirst"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "clashSecond"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	out, err := base.With(daggerShell(fmt.Sprintf(
+		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "make both changes" | loop | workspace | file shared.txt | contents`,
+		model,
+	))).Stdout(ctx)
+	require.NoError(t, err)
+
+	// Neither side was discarded: both edits are present in the merged file,
+	// bracketed by conflict markers. Before the conflict-preserving fallback
+	// this file still read "line1: placeholder".
+	require.Contains(t, out, "RED")
+	require.Contains(t, out, "BLUE")
+	require.Contains(t, out, "<<<<<<<")
+	require.Contains(t, out, ">>>>>>>")
+	require.NotContains(t, out, "placeholder")
+}
+
 // collectIDFieldNames records every field name reachable in an ID — the
 // receiver spine plus every ID nested in argument literals.
 func collectIDFieldNames(id *call.ID, into map[string]bool) {
@@ -229,4 +266,37 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 		)).Stdout(ctx)
 		require.Error(t, err)
 	})
+}
+
+// TestWorkspaceToolMountsSummarizeCompactly locks in that a tool-returned
+// Workspace whose difference is a mount does not flood the model's context.
+func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("mount the vendored deps, then unmount them").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "mountVendored"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "unmountVendored"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	out, err := base.With(daggerShell(fmt.Sprintf(
+		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "mount the vendored deps, then unmount them" | loop | transcript`,
+		model,
+	))).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Mounted (read-only): mnt/vendored")
+	require.Contains(t, out, "Unmounted: mnt/vendored")
+	require.NotContains(t, out, "vendored-one.txt")
+	require.NotContains(t, out, "vendored-two.txt")
+	require.NotContains(t, out, "vendored-three.txt")
+	require.Contains(t, out, "NOTE.txt")
 }

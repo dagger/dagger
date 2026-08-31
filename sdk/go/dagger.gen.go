@@ -13176,9 +13176,10 @@ func (r *Port) AsNode() Node {
 type Query struct {
 	query *querybuilder.Selection
 
-	defaultPlatform *Platform
-	id              *ID
-	version         *string
+	currentTimestamp *string
+	defaultPlatform  *Platform
+	id               *ID
+	version          *string
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
@@ -13329,6 +13330,16 @@ func (r *Query) CurrentNode() Node {
 	return &NodeClient{
 		query: q,
 	}
+}
+
+// The current UTC time in RFC3339 format. Never cached.
+func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
+	q := r.query.Select("currentTimestamp")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
@@ -16193,6 +16204,57 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
+// WorkspaceCommitsFromOpts contains options for Workspace.CommitsFrom
+type WorkspaceCommitsFromOpts struct {
+	// Restrict the plan to these commit hashes, full or an unambiguous prefix. They are always considered in the source's stack order. Empty considers every staged commit.
+	Commits []string
+}
+
+// Plan which of another workspace's staged commits can be applied to this one.
+//
+// Both workspaces are expected to descend from the same checkout - typically this workspace and one an agent was spawned with. Each of the source's staged commits is classified against this one, oldest first, as if every pickable commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or PICKABLE.
+//
+// Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.
+func (r *Workspace) CommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCommitsFromOpts) ([]WorkspaceCommitPick, error) {
+	assertNotNil("source", source)
+	q := r.query.Select("commitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	q = q.Select("id")
+
+	type commitsFrom struct {
+		Id ID
+	}
+
+	convert := func(fields []commitsFrom) []WorkspaceCommitPick {
+		out := []WorkspaceCommitPick{}
+
+		for i := range fields {
+			val := WorkspaceCommitPick{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceCommitPick")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []commitsFrom
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Selected native workspace config file relative to the workspace cwd, if any.
 func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 	if r.configFile != nil {
@@ -16736,6 +16798,72 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// WorkspaceWithCommitOpts contains options for Workspace.WithCommit
+type WorkspaceWithCommitOpts struct {
+	// Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+	Paths []string
+	// Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+	AuthorName string
+	// Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else "dagger@localhost".
+	AuthorEmail string
+}
+
+// Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+//
+// The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+//
+// The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `authorName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
+			q = q.Arg("authorName", opts[i].AuthorName)
+		}
+		// `authorEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
+			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+	}
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithCommitsFromOpts contains options for Workspace.WithCommitsFrom
+type WorkspaceWithCommitsFromOpts struct {
+	// Restrict the replay to these commit hashes, full or an unambiguous prefix. They are always applied in the source's stack order. Empty replays every staged commit.
+	Commits []string
+}
+
+// Return this workspace with another workspace's staged commits replayed on top, without mutating either source.
+//
+// Each commit is applied to this workspace's current content as a patch - not as a whole-file overlay - so commits still land cleanly when this workspace has moved on since the source branched off. The replayed commit keeps the original message, date and author identity, and records the original commit as its origin, so pulling the same work again is recognised as already present.
+//
+// Commits this workspace already has, and commits whose content is already present, are skipped. A commit that cannot be applied is an error naming the commit and the conflicting paths: plan with commitsFrom first and pass the pickable hashes.
+func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithCommitsFromOpts) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withCommitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -17194,6 +17322,198 @@ func (r *Workspace) AsNode() Node {
 	}
 }
 
+// One of another workspace's staged commits, classified against this workspace.
+type WorkspaceCommitPick struct {
+	query *querybuilder.Selection
+
+	authorEmail *string
+	authorName  *string
+	date        *string
+	id          *ID
+	message     *string
+	origin      *string
+	reason      *WorkspaceCommitPickReason
+	sha         *string
+	status      *WorkspaceCommitPickStatus
+}
+
+func (r *WorkspaceCommitPick) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCommitPick {
+	return &WorkspaceCommitPick{
+		query: q,
+	}
+}
+
+// The author and committer email the commit was made with.
+func (r *WorkspaceCommitPick) AuthorEmail(ctx context.Context) (string, error) {
+	if r.authorEmail != nil {
+		return *r.authorEmail, nil
+	}
+	q := r.query.Select("authorEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The author and committer name the commit was made with.
+func (r *WorkspaceCommitPick) AuthorName(ctx context.Context) (string, error) {
+	if r.authorName != nil {
+		return *r.authorName, nil
+	}
+	q := r.query.Select("authorName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The changes this commit folded in, as recorded in the source workspace.
+func (r *WorkspaceCommitPick) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// The paths that obstruct this commit: the dirty paths for DIRTY, the paths the patch failed on for CONTENT. Empty unless the status is CONFLICT.
+func (r *WorkspaceCommitPick) ConflictPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("conflictPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The RFC3339 author and committer date the commit was made with.
+func (r *WorkspaceCommitPick) Date(ctx context.Context) (string, error) {
+	if r.date != nil {
+		return *r.date, nil
+	}
+	q := r.query.Select("date")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceCommitPick.
+func (r *WorkspaceCommitPick) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceCommitPick) XXX_GraphQLType() string {
+	return "WorkspaceCommitPick"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceCommitPick) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceCommitPick) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceCommitPick) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The full commit message, subject and body.
+func (r *WorkspaceCommitPick) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The hash of the commit the source commit was itself replayed from; empty when it was authored in the source workspace.
+func (r *WorkspaceCommitPick) Origin(ctx context.Context) (string, error) {
+	if r.origin != nil {
+		return *r.origin, nil
+	}
+	q := r.query.Select("origin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Why the commit conflicts, or NONE when it does not.
+func (r *WorkspaceCommitPick) Reason(ctx context.Context) (WorkspaceCommitPickReason, error) {
+	if r.reason != nil {
+		return *r.reason, nil
+	}
+	q := r.query.Select("reason")
+
+	var response WorkspaceCommitPickReason
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The full hash of the commit in the source workspace.
+func (r *WorkspaceCommitPick) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether this commit can be applied to the receiving workspace.
+func (r *WorkspaceCommitPick) Status(ctx context.Context) (WorkspaceCommitPickStatus, error) {
+	if r.status != nil {
+		return *r.status, nil
+	}
+	q := r.query.Select("status")
+
+	var response WorkspaceCommitPickStatus
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceCommitPick as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceCommitPick) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Local git state for a workspace.
 type WorkspaceGit struct {
 	query *querybuilder.Selection
@@ -17256,9 +17576,55 @@ func (r *WorkspaceGit) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Commits staged in this workspace but not yet saved to the local checkout.
+//
+// Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.
+func (r *WorkspaceGit) StagedCommits(ctx context.Context) ([]WorkspaceStagedCommit, error) {
+	q := r.query.Select("stagedCommits")
+
+	q = q.Select("id")
+
+	type stagedCommits struct {
+		Id ID
+	}
+
+	convert := func(fields []stagedCommits) []WorkspaceStagedCommit {
+		out := []WorkspaceStagedCommit{}
+
+		for i := range fields {
+			val := WorkspaceStagedCommit{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceStagedCommit")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []stagedCommits
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
 func (r *WorkspaceGit) Uncommitted() *Changeset {
 	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+//
+// Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+func (r *WorkspaceGit) Unmanaged() *Changeset {
+	q := r.query.Select("unmanaged")
 
 	return &Changeset{
 		query: q,
@@ -17887,6 +18253,160 @@ func (r *WorkspaceSDK) Ref(ctx context.Context) (string, error) {
 // AsNode returns this WorkspaceSDK as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A commit staged in a workspace but not yet saved to the local checkout.
+type WorkspaceStagedCommit struct {
+	query *querybuilder.Selection
+
+	authorEmail *string
+	authorName  *string
+	date        *string
+	id          *ID
+	message     *string
+	origin      *string
+	sha         *string
+}
+
+func (r *WorkspaceStagedCommit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceStagedCommit {
+	return &WorkspaceStagedCommit{
+		query: q,
+	}
+}
+
+// The author and committer email the commit was made with.
+func (r *WorkspaceStagedCommit) AuthorEmail(ctx context.Context) (string, error) {
+	if r.authorEmail != nil {
+		return *r.authorEmail, nil
+	}
+	q := r.query.Select("authorEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The author and committer name the commit was made with.
+func (r *WorkspaceStagedCommit) AuthorName(ctx context.Context) (string, error) {
+	if r.authorName != nil {
+		return *r.authorName, nil
+	}
+	q := r.query.Select("authorName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The changes this commit folded in, relative to the state staged before it.
+func (r *WorkspaceStagedCommit) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// The RFC3339 author and committer date the commit was made with.
+func (r *WorkspaceStagedCommit) Date(ctx context.Context) (string, error) {
+	if r.date != nil {
+		return *r.date, nil
+	}
+	q := r.query.Select("date")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceStagedCommit.
+func (r *WorkspaceStagedCommit) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceStagedCommit) XXX_GraphQLType() string {
+	return "WorkspaceStagedCommit"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceStagedCommit) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceStagedCommit) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceStagedCommit) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The full commit message, subject and body.
+func (r *WorkspaceStagedCommit) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here.
+func (r *WorkspaceStagedCommit) Origin(ctx context.Context) (string, error) {
+	if r.origin != nil {
+		return *r.origin, nil
+	}
+	q := r.query.Select("origin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The full hash of the staged commit.
+func (r *WorkspaceStagedCommit) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceStagedCommit as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceStagedCommit) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -19453,6 +19973,141 @@ const (
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
+)
+
+// Why a staged commit from another workspace cannot be applied to this one.
+type WorkspaceCommitPickReason string
+
+func (WorkspaceCommitPickReason) IsEnum() {}
+
+func (v WorkspaceCommitPickReason) Name() string {
+	switch v {
+	case WorkspaceCommitPickReasonNone:
+		return "NONE"
+	case WorkspaceCommitPickReasonContent:
+		return "CONTENT"
+	case WorkspaceCommitPickReasonDirty:
+		return "DIRTY"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickReason) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickReason) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickReason) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONTENT":
+		*v = WorkspaceCommitPickReasonContent
+	case "DIRTY":
+		*v = WorkspaceCommitPickReasonDirty
+	case "NONE":
+		*v = WorkspaceCommitPickReasonNone
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// No obstruction: the status is not CONFLICT.
+	WorkspaceCommitPickReasonNone WorkspaceCommitPickReason = "NONE"
+
+	// The commit's patch no longer applies to this workspace's content.
+	WorkspaceCommitPickReasonContent WorkspaceCommitPickReason = "CONTENT"
+
+	// This workspace has uncommitted changes on a path the commit touches, so applying it would sweep them into someone else's commit.
+	WorkspaceCommitPickReasonDirty WorkspaceCommitPickReason = "DIRTY"
+)
+
+// Whether one of another workspace's staged commits can be applied to this one.
+type WorkspaceCommitPickStatus string
+
+func (WorkspaceCommitPickStatus) IsEnum() {}
+
+func (v WorkspaceCommitPickStatus) Name() string {
+	switch v {
+	case WorkspaceCommitPickStatusPickable:
+		return "PICKABLE"
+	case WorkspaceCommitPickStatusPicked:
+		return "PICKED"
+	case WorkspaceCommitPickStatusRedundant:
+		return "REDUNDANT"
+	case WorkspaceCommitPickStatusConflict:
+		return "CONFLICT"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickStatus) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickStatus) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickStatus) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONFLICT":
+		*v = WorkspaceCommitPickStatusConflict
+	case "PICKABLE":
+		*v = WorkspaceCommitPickStatusPickable
+	case "PICKED":
+		*v = WorkspaceCommitPickStatusPicked
+	case "REDUNDANT":
+		*v = WorkspaceCommitPickStatusRedundant
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The commit applies cleanly to this workspace and would be staged.
+	WorkspaceCommitPickStatusPickable WorkspaceCommitPickStatus = "PICKABLE"
+
+	// This workspace already has the commit: in its own staged stack, in its git history, or as a commit it already replayed from the same origin.
+	WorkspaceCommitPickStatusPicked WorkspaceCommitPickStatus = "PICKED"
+
+	// Applying the commit would change nothing: its content is already present, for instance because the same edit was made here by hand.
+	WorkspaceCommitPickStatusRedundant WorkspaceCommitPickStatus = "REDUNDANT"
+
+	// The commit cannot be applied; see reason and conflictPaths.
+	WorkspaceCommitPickStatusConflict WorkspaceCommitPickStatus = "CONFLICT"
 )
 
 // selectNode returns a query selection for node(id:) scoped to the

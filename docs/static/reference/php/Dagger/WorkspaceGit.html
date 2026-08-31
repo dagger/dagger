@@ -163,12 +163,32 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_stagedCommits">stagedCommits</a>()
+        
+                                            <p><p>Commits staged in this workspace but not yet saved to the local checkout.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_uncommitted">uncommitted</a>()
         
                                             <p><p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_unmanaged">unmanaged</a>()
+        
+                                            <p><p>Pending workspace edits git cannot see - gitignored, or inside a nested repository.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -331,8 +351,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_stagedCommits">
+        <div class="location">at line 39</div>
+        <code>                    array
+    <strong>stagedCommits</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Commits staged in this workspace but not yet saved to the local checkout.</p></p>                <p><p>Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_uncommitted">
-        <div class="location">at line 37</div>
+        <div class="location">at line 48</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>uncommitted</strong>()
         </code>
@@ -343,6 +395,38 @@
 
         <div class="method-description">
                             <p><p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_unmanaged">
+        <div class="location">at line 59</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>unmanaged</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Pending workspace edits git cannot see - gitignored, or inside a nested repository.</p></p>                <p><p>Workspace.export writes these to the local checkout, but they never appear in <code>uncommitted</code> and cannot be committed.</p></p>        
         </div>
         <div class="tags">
             

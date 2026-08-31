@@ -32,11 +32,33 @@ class WorkspaceGit extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Commits staged in this workspace but not yet saved to the local checkout.
+     *
+     * Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.
+     */
+    public function stagedCommits(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stagedCommits');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'stagedCommits');
+    }
+
+    /**
      * Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
      */
     public function uncommitted(): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('uncommitted');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+     *
+     * Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+     */
+    public function unmanaged(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('unmanaged');
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

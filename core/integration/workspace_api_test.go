@@ -784,6 +784,53 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		require.Equal(t, []string{"shadowed/mounted.txt"}, paths)
 	})
 
+	t.Run("value workspace search scoped to a path existing only through a mount", func(ctx context.Context, t *testctx.T) {
+		// Regression test: .refs/deps exists in no source tree, only in the
+		// mounts tree. Passing it to ripgrep as a path operand against the
+		// source rootfs hard-errored the whole search.
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{".refs/deps"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+	})
+
+	t.Run("value workspace search scoped to source and mount paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{"src", ".refs/deps"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{".refs/deps/vendored.txt", "src/hay.txt"}, paths)
+	})
+
+	t.Run("value workspace search scoped to a mount point ancestor", func(ctx context.Context, t *testctx.T) {
+		// .refs exists in the workspace view only because the mount at
+		// .refs/deps materializes its parents; scoping to it must not error.
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{".refs"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+	})
+
+	t.Run("value workspace search still rejects nonexistent paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{"no/such/dir"},
+		})
+		require.Error(t, err, "a path missing from both the source and the mounts must still error")
+	})
+
 	t.Run("value workspace glob", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		matches, err := valueWorkspace(c).Glob(ctx, "**/*.txt")
@@ -870,6 +917,27 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 			require.Contains(t, paths, ".refs/deps/vendored.txt")
 			require.Contains(t, paths, "shadowed/mounted.txt")
 			require.NotContains(t, paths, "shadowed/real.txt")
+		})
+
+		t.Run("search scoped to a path existing only through a mount", func(ctx context.Context, t *testctx.T) {
+			// Regression test: .refs/deps exists only in the mounts tree, never
+			// on the host. Passing it to the client-side ripgrep as a path
+			// operand hard-errored the whole search.
+			got := mountedQuery(t, `search(pattern: "needle", literal: true, paths: [".refs/deps"]) { filePath }`)
+			paths := []string{}
+			for _, raw := range got["search"].([]any) {
+				paths = append(paths, raw.(map[string]any)["filePath"].(string))
+			}
+			require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+		})
+
+		t.Run("search scoped to host and mount paths", func(ctx context.Context, t *testctx.T) {
+			got := mountedQuery(t, `search(pattern: "needle", literal: true, paths: ["hay.txt", ".refs/deps"]) { filePath }`)
+			paths := []string{}
+			for _, raw := range got["search"].([]any) {
+				paths = append(paths, raw.(map[string]any)["filePath"].(string))
+			}
+			require.Equal(t, []string{".refs/deps/vendored.txt", "hay.txt"}, paths)
 		})
 
 		t.Run("glob sees mounts and shadows the host", func(ctx context.Context, t *testctx.T) {
