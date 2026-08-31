@@ -16396,14 +16396,28 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Write this workspace's pending changes to its local Git workspace.
+// WorkspaceExportOpts contains options for Workspace.Export
+type WorkspaceExportOpts struct {
+	// Client-local Git workspace whose checkout receives the exported commits and changes.
+	To *Workspace
+}
+
+// Write this workspace's pending changes to a local Git workspace.
+//
+// Client-local workspaces export to themselves when to is omitted. Value-backed workspaces require an explicit target.
 //
 // Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
-func (r *Workspace) Export(ctx context.Context) error {
+func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {
 	if r.export != nil {
 		return nil
 	}
 	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `to` optional argument
+		if !querybuilder.IsZeroValue(opts[i].To) {
+			q = q.Arg("to", opts[i].To)
+		}
+	}
 
 	return q.Execute(ctx)
 }
@@ -17641,7 +17655,8 @@ func (r *WorkspaceCommitPick) AsNode() Node {
 type WorkspaceGit struct {
 	query *querybuilder.Selection
 
-	id *ID
+	id   *ID
+	push *string
 }
 
 func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit {
@@ -17697,6 +17712,47 @@ func (r *WorkspaceGit) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// WorkspaceGitPushOpts contains options for WorkspaceGit.Push
+type WorkspaceGitPushOpts struct {
+	// Remote to push to: a remote name from the checkout's configuration, or a URL.
+	//
+	// Default: "origin"
+	Remote string
+	// Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is.
+	Branch string
+	// Allow a non-fast-forward update of the remote ref.
+	Force bool
+}
+
+// Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.
+//
+// The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.
+func (r *WorkspaceGit) Push(ctx context.Context, opts ...WorkspaceGitPushOpts) (string, error) {
+	if r.push != nil {
+		return *r.push, nil
+	}
+	q := r.query.Select("push")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `remote` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Remote) {
+			q = q.Arg("remote", opts[i].Remote)
+		}
+		// `branch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Branch) {
+			q = q.Arg("branch", opts[i].Branch)
+		}
+		// `force` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Force) {
+			q = q.Arg("force", opts[i].Force)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Commits staged in this workspace but not yet saved to the local checkout.

@@ -153,6 +153,7 @@ func (s *workspaceSchema) moduleSource(
 		Field: "asModuleSource",
 		Args: []dagql.NamedInput{
 			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+			{Name: "contextIdentity", Value: dagql.String(ws.GitOrigin())},
 		},
 	}); err != nil {
 		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
@@ -208,7 +209,7 @@ func (s *workspaceSchema) moduleSettings(
 	if err != nil {
 		return nil, err
 	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnvFor(ctx, ws.Self()); ok {
 		effectiveCfg, err = workspace.ApplyEnvOverlay(effectiveCfg, envName)
 		if err != nil {
 			return nil, err

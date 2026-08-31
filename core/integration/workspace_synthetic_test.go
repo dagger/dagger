@@ -24,6 +24,11 @@ func (WorkspaceSuite) TestSyntheticWorkspaceSourceIsPrivateInSchema(ctx context.
 	c := connect(ctx, t)
 
 	res, err := testutil.QueryWithClient[syntheticWorkspaceSchemaResult](c, t, `{
+		query: __type(name: "Query") {
+			fields {
+				name
+			}
+		}
 		workspace: __type(name: "Workspace") {
 			fields {
 				name
@@ -58,6 +63,13 @@ func (WorkspaceSuite) TestSyntheticWorkspaceSourceIsPrivateInSchema(ctx context.
 	for _, field := range []string{"backend", "backendKind", "source", "sourceKind", "workspaceSource", "hostPath", "rootfs", "clientID", "clientId"} {
 		requireNoGraphQLField(t, res.Workspace.Fields, field)
 	}
+	for _, field := range []string{"_workspaceCheckpointChunk", "_workspaceFromGitCheckpoint"} {
+		requireNoGraphQLField(t, res.Query.Fields, field)
+	}
+	for _, field := range []string{"__withWorkspaceCheckpointBundle", "__withWorkspaceCheckpointWorktree"} {
+		requireNoGraphQLField(t, res.Directory.Fields, field)
+	}
+	requireNoGraphQLType(t, res.Schema.Types, "WorkspaceCheckpointChunk")
 	requireNoGraphQLType(t, res.Schema.Types, "WorkspaceSource")
 	requireNoGraphQLType(t, res.Schema.Types, "WorkspaceBackend")
 }
@@ -145,6 +157,86 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	empty, err := ws.Git().Uncommitted().IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, empty)
+}
+
+func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceLoadsAgentsFromTree(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	const gitAgentDoc = "Agent loaded from the GitRef workspace tree."
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.git-agent]\nsource = \"./modules/git-agent\"\n").
+		WithNewFile("modules/git-agent/dagger.json", `{"name":"git-agent","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/git-agent/main.dang", `type GitAgent {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  """`+gitAgentDoc+`"""
+  fromGit(): String! {
+    "git"
+  }
+}
+`)
+	gitDaemon, repoURL := gitService(ctx, t, c, source)
+	ws := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Head().
+		AsWorkspace()
+
+	modules, err := ws.Modules(ctx)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+	name, err := modules[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-agent", name)
+
+	tools, err := ws.Agents().Compose().Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## fromGit")
+	require.Contains(t, tools, gitAgentDoc)
+
+	workspaceID, err := ws.ID(ctx)
+	require.NoError(t, err)
+	var checkpointed struct {
+		Node struct {
+			Checkpoint struct {
+				Git struct {
+					Head struct {
+						CommitSHA string `json:"commitSHA"`
+					} `json:"head"`
+				} `json:"git"`
+				Agents struct {
+					Compose struct {
+						Tools string `json:"tools"`
+					} `json:"compose"`
+				} `json:"agents"`
+			} `json:"checkpoint"`
+		} `json:"node"`
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($id: ID!) {
+  node(id: $id) {
+    ... on Workspace {
+      checkpoint {
+        git { head { commitSHA } }
+        agents { compose { tools } }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{"id": workspaceID},
+	}, &dagger.Response{Data: &checkpointed}))
+	head, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, head, checkpointed.Node.Checkpoint.Git.Head.CommitSHA)
+	require.Contains(t, checkpointed.Node.Checkpoint.Agents.Compose.Tools, "## fromGit")
+
+	// The same tree wrapped by Directory.asWorkspace remains intentionally
+	// module-less; only GitRef values own and serve the modules in their tree.
+	directoryTools, err := source.AsWorkspace().Agents().Compose().Tools(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, directoryTools, "## fromGit")
 }
 
 // TestGitRefBackedSyntheticWorkspaceRoundTripsFromID asserts the simplest ID
@@ -442,7 +534,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState
 
 	err = updated.Export(ctx)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "cannot export a synthetic workspace")
+	require.ErrorContains(t, err, "workspace export requires an explicit target")
 }
 
 // TestSyntheticWorkspaceFindUpValidatesNames asserts that Workspace.findUp
@@ -572,6 +664,7 @@ func hasWorkspaceEntry(entries []string, name string) bool {
 }
 
 type syntheticWorkspaceSchemaResult struct {
+	Query     graphqlType `json:"query"`
 	Workspace graphqlType `json:"workspace"`
 	Directory graphqlType `json:"directory"`
 	GitRef    graphqlType `json:"gitRef"`

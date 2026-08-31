@@ -159,9 +159,6 @@ func (s *workspaceSchema) foldCommitsFrom(
 	receiver, source dagql.ObjectResult[*core.Workspace],
 	shas []string,
 ) ([]workspaceCommitCandidate, dagql.ObjectResult[*core.Workspace], error) {
-	if _, ok := receiver.Self().SourceGitRef(); ok {
-		return nil, receiver, fmt.Errorf("cannot replay commits into a remote git workspace")
-	}
 	srcCommits := source.Self().PendingCommits()
 	candidates, err := selectSourceCommits(srcCommits, shas)
 	if err != nil {

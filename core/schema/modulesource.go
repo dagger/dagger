@@ -937,7 +937,8 @@ func (s *moduleSourceSchema) gitModuleSource(
 }
 
 type directoryAsModuleArgs struct {
-	SourceRootPath string `default:"."`
+	SourceRootPath  string `default:"."`
+	ContextIdentity string `internal:"true" default:""`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -955,6 +956,7 @@ func (s *moduleSourceSchema) directoryAsModule(
 			Field: "asModuleSource",
 			Args: []dagql.NamedInput{
 				{Name: "sourceRootPath", Value: dagql.String(args.SourceRootPath)},
+				{Name: "contextIdentity", Value: dagql.String(args.ContextIdentity)},
 			},
 		},
 		dagql.Selector{
@@ -992,6 +994,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		DirSrc: &core.DirModuleSource{
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
+			ContextIdentity:           workspace.NormalizeGitRemote(args.ContextIdentity),
 		},
 	}
 	if dirSrc.SourceRootSubpath == "" {
@@ -1235,6 +1238,15 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 				},
 			},
 		)
+		if err != nil {
+			return err
+		}
+
+		// A worktree/submodule checkout has a dangling .git pointer file at
+		// the context root; the engine never interprets it (git-ness comes
+		// canonically via MaterializeHostGitCheckout), so drop it before it
+		// poisons git discovery near the synced tree.
+		src.ContextDirectory, err = core.DropRootGitPointerFile(ctx, dag, src.ContextDirectory)
 		if err != nil {
 			return err
 		}

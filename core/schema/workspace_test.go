@@ -13,16 +13,85 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
+	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "workspaceEnv", "gitOrigin", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
 	}
+}
+
+func TestSelectedWorkspaceEnvForUsesCapturedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	ws := &core.Workspace{}
+	ws.SetWorkspaceEnv("dev")
+	env, ok := selectedWorkspaceEnvFor(context.Background(), ws)
+	require.True(t, ok)
+	require.Equal(t, "dev", env)
+}
+
+func TestWorkspaceMetadataComposition(t *testing.T) {
+	t.Parallel()
+
+	base := &core.Workspace{Cwd: "."}
+	withPaths, err := workspaceWithConfigPaths(base, "config/dagger.toml", "config/dagger.lock")
+	require.NoError(t, err)
+	require.NotSame(t, base, withPaths)
+
+	withEnv := workspaceWithConfigEnvironment(withPaths, "dev")
+	require.NotSame(t, withPaths, withEnv)
+
+	withAuthor, err := workspaceWithGitAuthor(withEnv, "Portable Agent", "agent@example.com")
+	require.NoError(t, err)
+	require.NotSame(t, withEnv, withAuthor)
+
+	require.Empty(t, base.ConfigFile)
+	require.Empty(t, base.LockFile)
+	require.Empty(t, base.WorkspaceEnv())
+	require.Empty(t, base.GitAuthorName)
+	require.Empty(t, base.GitAuthorEmail)
+	require.Equal(t, "config/dagger.toml", withAuthor.ConfigFile)
+	require.Equal(t, "config/dagger.lock", withAuthor.LockFile)
+
+	env, ok := selectedWorkspaceEnvFor(context.Background(), withAuthor)
+	require.True(t, ok)
+	require.Equal(t, "dev", env)
+
+	commit := (workspaceWithCommitArgs{}).commitOpts(withAuthor)
+	require.Equal(t, "Portable Agent", commit.AuthorName)
+	require.Equal(t, "agent@example.com", commit.AuthorEmail)
+}
+
+func TestWorkspaceMetadataValidation(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"", "dagger.toml", "config/dagger.toml"} {
+		require.NoError(t, validateWorkspaceMetadataPath("config file", value), value)
+	}
+	for _, value := range []string{"/dagger.toml", "../dagger.toml", "config/../../dagger.toml", "./dagger.toml", "config/../dagger.toml", "config//dagger.toml", "config/"} {
+		err := validateWorkspaceMetadataPath("config file", value)
+		require.Error(t, err, value)
+	}
+
+	base := &core.Workspace{}
+	_, err := workspaceWithConfigPaths(base, "../dagger.toml", "dagger.lock")
+	require.ErrorContains(t, err, "inside the workspace root")
+	_, err = workspaceWithConfigPaths(base, "dagger.toml", "locks/../dagger.lock")
+	require.ErrorContains(t, err, "must be canonical")
+
+	_, err = workspaceWithGitAuthor(base, "Agent", "")
+	require.ErrorContains(t, err, "must be set together")
+	_, err = workspaceWithGitAuthor(base, "", "agent@example.com")
+	require.ErrorContains(t, err, "must be set together")
+	cleared, err := workspaceWithGitAuthor(base, "", "")
+	require.NoError(t, err)
+	require.NotSame(t, base, cleared)
 }
 
 // TestEffectiveWorkspaceConfigBytesAppliesUserOverlay verifies the schema-level
@@ -821,6 +890,21 @@ func TestWorkspaceMigrationDiscoveredLocalModuleConversions(t *testing.T) {
 	require.Equal(t, "tc", cfg.Name)
 	require.Equal(t, "go", cfg.SDK.Source)
 	require.Equal(t, "src", cfg.Source)
+}
+
+func TestCheckpointApprovalSummaryListsCompleteDirtySet(t *testing.T) {
+	summary := checkpointApprovalSummary([]*gitsession.CaptureGitCandidate{
+		{Path: ".env", Classification: "credential-path", Bytes: 12},
+		{Path: "tracked.go", Tracked: true, Bytes: 34},
+		{Path: "safe.txt", Bytes: 56},
+		{Path: "spoof\n- innocent.txt\x1b[2J", Bytes: 78},
+	})
+	require.Equal(t, `Include all selected workspace changes in the portable agent workspace?
+
+- ".env" (untracked, 12 bytes; warning: credential-path)
+- "tracked.go" (tracked, 34 bytes)
+- "safe.txt" (untracked, 56 bytes)
+- "spoof\n- innocent.txt\x1b[2J" (untracked, 78 bytes)`, summary)
 }
 
 func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {

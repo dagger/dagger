@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
@@ -296,6 +297,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
+		dagql.NodeFunc("__withGitWorktree", s.withGitWorktree),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this directory.").
@@ -1879,6 +1881,112 @@ func (s *directorySchema) terminal(
 	}
 
 	return dir, nil
+}
+
+type withGitWorktreeArgs struct {
+	CheckoutPath    string
+	ExpectedHeadSHA string `name:"expectedHeadSHA"`
+}
+
+// withGitWorktree applies the calling client's streamed git-visible worktree
+// delta directly to parent. Keeping this behind a DAG field gives the resulting
+// Directory its own call identity without putting patch bytes in that identity.
+//
+// A persisted recipe can replay after the host checkout has advanced. Its
+// expectedHeadSHA is then intentionally stale, while the workspace it belongs
+// to must follow the live checkout. Rebuild both the canonical base and patch
+// from the current HEAD before retrying; simply dropping the expected-HEAD
+// check would allow a patch to be applied to a different tree.
+func (s *directorySchema) withGitWorktree(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args withGitWorktreeArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("buildkit: %w", err)
+	}
+	pack, err := bk.PackGitWorktree(ctx, args.CheckoutPath, args.ExpectedHeadSHA)
+	if errors.Is(err, engineutil.ErrGitWorktreeHeadMismatch) {
+		parent, pack, err = s.liveGitWorktree(ctx, args.CheckoutPath)
+	}
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return core.MaterializeGitWorktreePack(ctx, parent, pack)
+}
+
+// liveGitWorktree reconstructs a canonical checkout and its worktree delta from
+// one live HEAD. It is only used after a persisted expected SHA proves stale;
+// the ordinary path remains pinned to the workspace read epoch.
+func (s *directorySchema) liveGitWorktree(
+	ctx context.Context,
+	checkoutPath string,
+) (dagql.ObjectResult[*core.Directory], *engineutil.GitWorktreePack, error) {
+	var zero dagql.ObjectResult[*core.Directory]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return zero, nil, err
+	}
+
+	var scratch dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
+		return zero, nil, err
+	}
+	canonical, err := core.MaterializeHostGitCheckout(ctx, srv, scratch, checkoutPath, "")
+	if err != nil {
+		return zero, nil, fmt.Errorf("refresh canonical checkout: %w", err)
+	}
+
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, canonical, &repo, dagql.Selector{Field: "asGit"}); err != nil {
+		return zero, nil, err
+	}
+	var head dagql.Result[*core.GitRef]
+	if err := srv.Select(ctx, repo, &head, dagql.Selector{Field: "head"}); err != nil {
+		return zero, nil, err
+	}
+	if head.Self() == nil || head.Self().Ref == nil || head.Self().Ref.SHA == "" {
+		return zero, nil, fmt.Errorf("refreshed checkout has no canonical HEAD")
+	}
+	headID, err := head.ID()
+	if err != nil {
+		return zero, nil, err
+	}
+	headObject, err := dagql.NewID[*core.GitRef](headID).Load(ctx, srv)
+	if err != nil {
+		return zero, nil, err
+	}
+
+	var clean dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, headObject, &clean, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(true)},
+		},
+	}); err != nil {
+		return zero, nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return zero, nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return zero, nil, fmt.Errorf("buildkit: %w", err)
+	}
+	pack, err := bk.PackGitWorktree(ctx, checkoutPath, head.Self().Ref.SHA)
+	if err != nil {
+		return zero, nil, err
+	}
+	return clean, pack, nil
 }
 
 func (s *directorySchema) asGit(

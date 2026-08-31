@@ -1,7 +1,7 @@
 package core
 
-// Coverage for the save-time fast-forward precondition: staged commits refuse
-// to land when the local branch moved after they were staged.
+// Coverage for concurrent saves: staged commits are replayed when another
+// session advances the local branch before they land.
 
 import (
 	"context"
@@ -24,9 +24,8 @@ func sessionQueryPayload(t testing.TB, query string) string {
 	return string(body)
 }
 
-// TestWorkspaceCommitExportHeadMoved rejects the save when the local branch
-// moved after the commits were staged, rather than fast-forwarding over the
-// user's commit — and leaves the checkout untouched.
+// TestWorkspaceCommitExportHeadMoved replays the staged stack when the local
+// branch moved after it was staged, retaining both sessions' commits.
 //
 // Both queries are POSTed to one `dagger run` session, so they are the *same*
 // client: the second query stages against the session's cached view of the
@@ -41,7 +40,11 @@ func (WorkspaceSuite) TestWorkspaceCommitExportHeadMoved(ctx context.Context, t 
   currentWorkspace {
     withNewFile(path: "c.txt", contents: "c1") {
       withCommit(message: "staged c", date: "`+commitTestDate+`") {
-        git { head { commit } }
+        withNewFile(path: "d.txt", contents: "d1") {
+          withCommit(message: "staged d", date: "`+commitTestDate+`") {
+            git { head { commit } }
+          }
+        }
       }
     }
   }
@@ -50,7 +53,11 @@ func (WorkspaceSuite) TestWorkspaceCommitExportHeadMoved(ctx context.Context, t 
   currentWorkspace {
     withNewFile(path: "c.txt", contents: "c1") {
       withCommit(message: "staged c", date: "`+commitTestDate+`") {
-        export
+        withNewFile(path: "d.txt", contents: "d1") {
+          withCommit(message: "staged d", date: "`+commitTestDate+`") {
+            export
+          }
+        }
       }
     }
   }
@@ -76,17 +83,18 @@ q %s
 
 	out, err := ran.Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "cannot save staged commits: local branch moved from ")
-	require.Contains(t, out,
-		"since the workspace was loaded; commit or stash local changes and reload the workspace")
+	require.NotContains(t, out, `"errors"`)
+	require.Contains(t, out, `"export":null`)
 
-	// The rejected save wrote nothing: the local commit is still the tip, the
-	// work tree is clean, and the staged file never reached disk.
-	require.Equal(t, "local commit", gitOut(ctx, t, ran, "log", "-1", "--pretty=%s"))
+	// The local commit remains in history and both staged commits are replayed
+	// on top of it, in order. Both sessions' files land and the checkout is clean.
+	require.Equal(t, "staged d\nstaged c\nlocal commit", gitOut(ctx, t, ran, "log", "-3", "--pretty=%s"))
 	require.Equal(t, "", gitOut(ctx, t, ran, "status", "--porcelain"))
 	entries, err := ran.Directory(".").Entries(ctx)
 	require.NoError(t, err)
-	require.NotContains(t, entries, "c.txt")
+	require.Contains(t, entries, "local.txt")
+	require.Contains(t, entries, "c.txt")
+	require.Contains(t, entries, "d.txt")
 }
 
 // shellSingleQuote wraps a string in single quotes for safe embedding in a

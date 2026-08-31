@@ -430,6 +430,7 @@ type persistedGitModuleSourcePayload struct {
 type persistedDirModuleSourcePayload struct {
 	OriginalSourceRootSubpath  string `json:"originalSourceRootSubpath,omitempty"`
 	OriginalContextDirResultID uint64 `json:"originalContextDirResultID,omitempty"`
+	ContextIdentity            string `json:"contextIdentity,omitempty"`
 }
 
 type persistedModuleSourceSDKCapabilities struct {
@@ -872,6 +873,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	if src.DirSrc != nil {
 		payload.DirSrc = &persistedDirModuleSourcePayload{
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
+			ContextIdentity:           src.DirSrc.ContextIdentity,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
@@ -962,6 +964,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	if persisted.DirSrc != nil {
 		src.DirSrc = &DirModuleSource{
 			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
+			ContextIdentity:           persisted.DirSrc.ContextIdentity,
 		}
 		if persisted.DirSrc.OriginalContextDirResultID != 0 {
 			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
@@ -1606,6 +1609,18 @@ func (src *ModuleSource) loadContextFromSource(
 			return inst, fmt.Errorf("failed to select host directory: %w", err)
 		}
 
+		// The checkout's dangling .git pointer file (worktree/submodule) only
+		// sits at the context root; the engine never interprets it (git-ness
+		// comes canonically via MaterializeHostGitCheckout), so drop it here.
+		// Loading a subdir whose root has its own .git file would be a nested
+		// submodule checkout -- leave those untouched.
+		if path == ctxPath {
+			inst, err = DropRootGitPointerFile(localSourceCtx, dag, inst)
+			if err != nil {
+				return inst, fmt.Errorf("failed to drop root .git pointer file: %w", err)
+			}
+		}
+
 	case ModuleSourceKindGit:
 		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
 
@@ -1856,11 +1871,43 @@ func (src *ModuleSource) LoadContextGit(
 		return inst, fmt.Errorf("failed to load contextual git: %w", err)
 	}
 
-	// Submodule and worktree checkouts have a .git pointer file whose target
-	// lives outside the context; resolve it into a real .git directory.
-	dir, err = src.resolveGitPointer(ctx, dag, dir)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load contextual git: %w", err)
+	if src.Kind == ModuleSourceKindLocal {
+		// The engine never interprets the host checkout's raw git layout
+		// (worktree/submodule pointer files, commondirs, separate git dirs):
+		// replace whatever .git the synced tree carries with a canonical
+		// reconstruction of the checkout's repository, packed by the client's
+		// own git. Route through the owning client, as loading host paths does.
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		md, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		clientCtx := engine.ContextWithClientMetadata(ctx, md)
+		// Empty cacheKey: a module context is resolved fresh per load, so key
+		// the reconstruction to the checkout's live ref state.
+		dir, err = MaterializeHostGitCheckout(clientCtx, dag, dir, src.Local.ContextDirectoryPath, "")
+		if err != nil {
+			// Propagate ErrNoGitContext unchanged: callers degrade optional
+			// contextual git args to null on it.
+			return inst, err
+		}
+	}
+
+	// Whatever .git the tree now carries decides git-ness: a canonical .git
+	// (just reconstructed), a plain .git directory (a Dir source, or a client
+	// that could not pack its checkout), or none at all. Absence is the
+	// degradable "no git checkout" state -- checked here so it holds even when
+	// the client cannot pack, matching pre-reconstruction behavior. A .git
+	// that exists but cannot be used as a repository fails downstream in asGit
+	// with git's own diagnostics.
+	if _, err := dir.Self().Stat(ctx, dir, dag, ".git", true); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return inst, ErrNoGitContext
+		}
+		return inst, err
 	}
 
 	err = dag.Select(ctx, dir, &inst,
@@ -1944,6 +1991,11 @@ type DirModuleSource struct {
 	OriginalContextDir dagql.ObjectResult[*Directory]
 	// the original source root subpath provided to AsModuleSource
 	OriginalSourceRootSubpath string
+	// ContextIdentity is stable provenance inherited from the Workspace that
+	// produced this directory source. For Git workspaces it is the normalized
+	// origin; empty means the directory is synthetic and content identity is the
+	// only safe cache-volume fallback.
+	ContextIdentity string
 }
 
 type moduleDependencyResolutionKey struct{}
@@ -2084,6 +2136,7 @@ func ResolveDepToSource(
 				Args: []dagql.NamedInput{
 					{Name: "sourceRootPath", Value: dagql.String(depPath)},
 					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+					{Name: "contextIdentity", Value: dagql.String(parentSrc.DirSrc.ContextIdentity)},
 				},
 			}}
 			if depName != "" {

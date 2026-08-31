@@ -306,6 +306,68 @@ func conflictedFiles(ctx context.Context, t *testctx.T, llm *dagger.LLM, baselin
 	return files
 }
 
+// TestResumeAllowsCheckoutHeadToAdvance covers a portable conversation whose
+// tool binding reaches the packed git worktree captured at the old checkout
+// HEAD. Rehydration must rebuild that binding against the new commit rather
+// than rejecting the recorded expected SHA, while still pairing the patch with
+// a canonical checkout of the same HEAD.
+func (LLMSuite) TestResumeAllowsCheckoutHeadToAdvance(ctx context.Context, t *testctx.T) {
+	for _, arrangement := range resumeArrangements() {
+		t.Run(arrangement.name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base\n"), 0o644))
+			git := func(args ...string) {
+				t.Helper()
+				cmd := exec.CommandContext(ctx, "git", append([]string{"-C", workdir}, args...)...)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+			}
+			git("add", "base.txt")
+			git("commit", "-m", "base")
+
+			// Make the packed worktree non-empty and retain its Directory as a
+			// tool binding, which puts __withGitWorktree and its expected HEAD in
+			// the portable recipe rather than merely priming a disposable cache
+			// entry.
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "advance.txt"), []byte("advance\n"), 0o644))
+			cA := connect(ctx, t, dagger.WithWorkdir(workdir))
+			worktree := cA.CurrentWorkspace().Git().Uncommitted().After()
+			_, err := worktree.ID(ctx)
+			require.NoError(t, err)
+			llmA := cA.LLM().
+				WithWorkspace(cA.CurrentWorkspace()).
+				WithTools(worktree).
+				WithPrompt("keep the git worktree binding").
+				WithResponse([]dagger.LLMContentBlockInput{{
+					Kind: dagger.LLMContentBlockKindText,
+					Text: "worktree retained",
+				}})
+			savedID, err := llmA.PortableID(ctx)
+			require.NoError(t, err)
+
+			// Advance HEAD after the recipe has captured the old SHA. The new
+			// commit consumes the formerly untracked file, so a successful
+			// restore also has to re-read the live worktree rather than replaying
+			// the old patch over an unrelated canonical tree.
+			git("add", "advance.txt")
+			git("commit", "-m", "advance checkout")
+			if !arrangement.keepSavingSessionAlive {
+				require.NoError(t, cA.Close())
+			}
+
+			cB := connect(ctx, t, dagger.WithWorkdir(workdir))
+			resumed := dagger.Ref[*dagger.LLM](cB, savedID)
+			reply, err := resumed.LastReply(ctx)
+			require.NoError(t, err,
+				"rehydration must refresh a recorded git worktree after checkout HEAD advances")
+			require.Equal(t, "worktree retained", reply)
+			_, err = resumed.Tools(ctx)
+			require.NoError(t, err)
+		})
+	}
+}
+
 // TestResumeSkipsCommitAlreadyExported covers a saved conversation whose
 // successful Workspace.withCommit has since been exported to the live checkout.
 // On resume the scope is clean, but the exact message in reachable history makes

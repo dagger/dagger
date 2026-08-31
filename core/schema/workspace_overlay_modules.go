@@ -42,24 +42,30 @@ func (s *workspaceSchema) overlayModuleLoader(
 	return mods, nil
 }
 
-// workspaceOverlayModules loads the workspace modules that the workspace's
-// pending overlay affects, resolving their source through the overlay instead
-// of the host checkout.
+// workspaceOverlayModules loads workspace modules whose source must resolve
+// through the workspace's own tree instead of the host checkout.
 //
-// The session's served modules (client.pendingModules, gathered once at
-// workspace detection) are a snapshot of the on-disk workspace: an agent that
-// edits a module's source, or installs a module by staging a dagger.toml edit,
-// cannot see its own work when the conversation is recomposed
-// (Workspace.agents). This resolves the affected entries from
-// workspaceOverlayRootfs, which is host + the overlay's changeset, so the
+// For a client-local workspace, the session's served modules
+// (client.pendingModules, gathered once at workspace detection) are a snapshot
+// of the on-disk workspace: an agent that edits a module's source, or installs a
+// module by staging a dagger.toml edit, cannot see its own work when the
+// conversation is recomposed (Workspace.agents). This resolves affected entries
+// from workspaceOverlayRootfs, which is host + the overlay's changeset, so the
 // self-repair loop (edit module -> reload -> new behavior) closes fully
 // in-session. The resulting module identity is keyed on the overlay directory's
 // ID, so a further edit yields a further reload and an unchanged overlay is a
 // cache hit.
 //
-// Only entries the overlay actually touches are re-resolved; everything else
-// keeps using the served module, so a clean workspace (or one whose edits are
-// unrelated to any module) behaves exactly as before.
+// A module-bearing value workspace has no served-module snapshot at all. Its
+// complete configured set is therefore resolved from its value-backed tree,
+// even when it has no pending overlay. GitRef.asWorkspace and portable
+// checkpoints use this path; Directory.asWorkspace remains intentionally
+// module-less.
+//
+// For client-local workspaces, only entries the overlay actually touches are
+// re-resolved; everything else keeps using the served module, so a clean
+// workspace (or one whose edits are unrelated to any module) behaves exactly as
+// before.
 //
 // Known limitations, deliberate for now:
 //   - an entry REMOVED from dagger.toml in the overlay still resolves through
@@ -76,7 +82,7 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	if ws == nil || ws.ConfigFile == "" {
 		return nil, nil
 	}
-	if _, ok := ws.OverlayChanges(); !ok {
+	if _, ok := ws.OverlayChanges(); !ok && !ws.IsModuleBearingValue() {
 		return nil, nil
 	}
 
@@ -88,15 +94,16 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	if err != nil {
 		return nil, err
 	}
-	// A config edit can add, remove or repoint any entry, so every entry is
-	// suspect; otherwise only the entries whose source tree was edited are.
-	configTouched := ws.OverlayPathTouched(configFile)
+	// A module-bearing value owns the complete config tree, so every entry must
+	// resolve from it. For a client-local overlay, a config edit can add, remove
+	// or repoint any entry; otherwise only edited source trees are suspect.
+	configTouched := ws.IsModuleBearingValue() || ws.OverlayPathTouched(configFile)
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnvFor(ctx, ws); ok {
 		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
 		if err != nil {
 			return nil, err

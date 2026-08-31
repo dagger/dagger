@@ -154,6 +154,18 @@ type Workspace struct {
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
+	// workspaceEnv is the config environment selected when this workspace was
+	// frozen. Portable checkpoints carry it as value state so module calls that
+	// recompose tools through the checkpoint do not depend on request-local
+	// client metadata, which nested module clients intentionally do not inherit.
+	workspaceEnv string
+
+	// gitOrigin is the normalized Git origin identifying this workspace across
+	// clones and content changes. It contains no credentials or transport
+	// details. Checkpoint-derived workspaces preserve it so directory-backed
+	// module sources can retain stable cache-volume provenance.
+	gitOrigin string
+
 	// userConfigKey is the normalized Git remote key identifying this
 	// workspace in user-level config. Empty when the workspace has no usable
 	// remote. Internal only.
@@ -609,6 +621,43 @@ func (ws *Workspace) LocalSourceHostPath() (string, bool) {
 	}
 }
 
+// SetGitOrigin records the normalized, credential-free Git origin for this
+// workspace. It is internal provenance, not a public address: callers derive it
+// from the selected remote and checkpoints preserve it across reconstruction.
+func (ws *Workspace) SetGitOrigin(origin string) {
+	if ws != nil {
+		ws.gitOrigin = workspacepkg.NormalizeGitRemote(origin)
+	}
+}
+
+// GitOrigin returns the normalized Git origin associated with this workspace,
+// or empty when the workspace has no stable Git provenance.
+func (ws *Workspace) GitOrigin() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.gitOrigin
+}
+
+// ExportTarget validates that this workspace can be used as an export
+// destination and returns the owning client and checkout path.
+//
+// Export destinations are deliberately client-local Git workspaces. A value,
+// remote, synthetic, or rootless workspace has no client checkout to write to.
+func (ws *Workspace) ExportTarget(_ context.Context) (clientID, hostPath string, _ error) {
+	if ws == nil {
+		return "", "", fmt.Errorf("workspace is required")
+	}
+	hostPath, err := ws.ExportHostPath()
+	if err != nil {
+		return "", "", err
+	}
+	if ws.ClientID == "" {
+		return "", "", fmt.Errorf("workspace export target must be a client-local Git workspace")
+	}
+	return ws.ClientID, hostPath, nil
+}
+
 func (ws *Workspace) ExportHostPath() (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
@@ -629,6 +678,34 @@ func (ws *Workspace) ExportHostPath() (string, error) {
 		return "", fmt.Errorf("workspace export requires a local Git workspace")
 	default:
 		return "", fmt.Errorf("cannot export workspace source %T", src)
+	}
+}
+
+// IsModuleBearingValue reports whether a value-backed workspace owns the
+// module tree its schema and agent composition must load from. GitRef
+// workspaces are complete checkout values; Directory workspaces remain
+// intentionally module-less.
+func (ws *Workspace) IsModuleBearingValue() bool {
+	if ws == nil {
+		return false
+	}
+	_, ok := ws.BaseSource().(*WorkspaceSourceGitRef)
+	return ok
+}
+
+// WorkspaceEnv returns the config environment captured with this workspace.
+func (ws *Workspace) WorkspaceEnv() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.workspaceEnv
+}
+
+// SetWorkspaceEnv records the config environment a portable workspace must use
+// when resolving modules independently of request-local client metadata.
+func (ws *Workspace) SetWorkspaceEnv(env string) {
+	if ws != nil {
+		ws.workspaceEnv = env
 	}
 }
 
@@ -884,6 +961,8 @@ type persistedWorkspacePayload struct {
 	CacheMounts     []persistedWorkspaceCacheMount `json:"cacheMounts,omitempty"`
 	Source          *persistedWorkspaceSource      `json:"source,omitempty"`
 	CompatWorkspace *workspacepkg.CompatWorkspace  `json:"compatWorkspace,omitempty"`
+	WorkspaceEnv    string                         `json:"workspaceEnv,omitempty"`
+	GitOrigin       string                         `json:"gitOrigin,omitempty"`
 	Address         string                         `json:"address,omitempty"`
 	Cwd             string                         `json:"cwd,omitempty"`
 	ConfigFile      string                         `json:"configFile,omitempty"`
@@ -1068,6 +1147,8 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 
 	payload := persistedWorkspacePayload{
 		CompatWorkspace:  ws.compatWorkspace,
+		WorkspaceEnv:     ws.workspaceEnv,
+		GitOrigin:        ws.gitOrigin,
 		Address:          ws.Address,
 		Cwd:              ws.Cwd,
 		ConfigFile:       ws.ConfigFile,
@@ -1251,6 +1332,8 @@ func (*Workspace) DecodePersistedObject(
 		mountPoints:      persisted.MountPoints,
 		cacheMounts:      cacheMounts,
 		compatWorkspace:  persisted.CompatWorkspace,
+		workspaceEnv:     persisted.WorkspaceEnv,
+		gitOrigin:        workspacepkg.NormalizeGitRemote(persisted.GitOrigin),
 		Address:          persisted.Address,
 		Cwd:              cwd,
 		ConfigFile:       configFile,

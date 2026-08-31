@@ -941,12 +941,15 @@ func attachUserWorkspaceOverlay(
 	remoteKey string,
 	isLocal bool,
 ) error {
-	if clientMD == nil || clientMD.UserConfigPath == "" || hostReadFile == nil {
-		return nil
-	}
 	key := remoteKey
 	if key == "" && isLocal && ws.HasGitRoot {
 		key = localWorkspaceUserConfigKey(ctx, readFile, ws.Root)
+	}
+	if key != "" {
+		coreWS.SetGitOrigin(key)
+	}
+	if clientMD == nil || clientMD.UserConfigPath == "" || hostReadFile == nil {
+		return nil
 	}
 	if key == "" {
 		return nil

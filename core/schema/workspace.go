@@ -18,6 +18,8 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/engineutil"
+	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
@@ -251,6 +253,26 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc("Workspace-relative path to use as the working directory."),
 			),
+		dagql.NodeFunc("withConfigPaths", s.withConfigPaths).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc("Return this workspace with its selected config and lockfile paths.").
+			Args(
+				dagql.Arg("configFile").Doc("Canonical path to the selected config file, relative to the workspace root. Empty clears the selection."),
+				dagql.Arg("lockFile").Doc("Canonical path to the selected lockfile, relative to the workspace root. Empty clears the selection."),
+			),
+		dagql.NodeFunc("withConfigEnvironment", s.withConfigEnvironment).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc("Return this workspace with the selected config environment.").
+			Args(
+				dagql.Arg("name").Doc("Config environment to select. Empty clears the selection."),
+			),
+		dagql.NodeFunc("withGitAuthor", s.withGitAuthor).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc("Return this workspace with the default Git author identity used for commits.").
+			Args(
+				dagql.Arg("name").Doc("Default Git author and committer name."),
+				dagql.Arg("email").Doc("Default Git author and committer email."),
+			),
 		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a directory mounted read-only at the given path, without mutating the source.",
@@ -408,9 +430,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the local Git workspace").
-			Doc("Write this workspace's pending changes to its local Git workspace.",
-				"Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead."),
+			DoNotCache("Writes pending workspace changes to a local Git workspace").
+			Doc("Write this workspace's pending changes to a local Git workspace.",
+				"Client-local workspaces export to themselves when to is omitted. Value-backed workspaces require an explicit target.",
+				"Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.").
+			Args(
+				dagql.Arg("to").
+					View(AfterVersion("v1.0.0-beta.10")).
+					Doc("Client-local Git workspace whose checkout receives the exported commits and changes."),
+			),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -485,6 +513,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
 			),
+		dagql.NodeFunc("checkpoint", s.checkpoint).
+			View(AfterVersion("v1.0.0-beta.10")).
+			DoNotCache("Captures live client Git state after local safety preflight").
+			Doc("Return this workspace as a frozen, host-independent value whose recipe can be replayed without the originating client.",
+				"Replayable sources pass through (with mutable Git refs pinned); an eligible client-local Git checkout is captured; unsupported or non-replayable sources fail with the offending recipe leaf named.").
+			Args(
+				dagql.Arg("include").Doc("Explicitly include and approve matching nonignored paths."),
+				dagql.Arg("exclude").Doc("Exclude matching paths from capture."),
+				dagql.Arg("maxUntrackedFileBytes").Doc("Maximum bytes allowed for one untracked file."),
+				dagql.Arg("maxUntrackedTotalBytes").Doc("Maximum aggregate bytes allowed for untracked files."),
+				dagql.Arg("maxUntrackedFiles").Doc("Maximum number of untracked files allowed."),
+			),
 		dagql.Func("addresses", s.addresses).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare \"module:function\" references.").
@@ -517,6 +557,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("stagedCommits", s.stagedCommits).
 			Doc("Commits staged in this workspace but not yet saved to the local checkout.",
 				"Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged."),
+		dagql.NodeFunc("push", s.workspaceGitPush).
+			DoNotCache("Updates a ref on a remote git repository").
+			Doc("Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.",
+				"The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.").
+			Args(
+				dagql.Arg("remote").Doc("Remote to push to: a remote name from the checkout's configuration, or a URL."),
+				dagql.Arg("branch").Doc("Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is."),
+				dagql.Arg("force").Doc("Allow a non-fast-forward update of the remote ref."),
+			),
 		dagql.NodeFunc("__stagedCommitEntry", s.stagedCommitEntry).
 			IsPersistable().
 			Doc("(Internal-only) One entry of WorkspaceGit.stagedCommits.").
@@ -541,6 +590,497 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceAddress]{}.Install(srv)
+}
+
+type workspaceCheckpointArgs struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Exclude dagql.Optional[dagql.ArrayInput[dagql.String]]
+
+	MaxUntrackedFileBytes  dagql.Optional[dagql.Int]
+	MaxUntrackedTotalBytes dagql.Optional[dagql.Int]
+	MaxUntrackedFiles      dagql.Optional[dagql.Int]
+}
+
+type capturedCheckpointChunk struct {
+	kind gitsession.CaptureGitChunk_Kind
+	data []byte
+}
+
+func (s *workspaceSchema) checkpoint(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceCheckpointArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	if ws == nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint requires a workspace")
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	switch src := ws.Source().(type) {
+	case *core.WorkspaceSourceClientLocal:
+		return s.checkpointClientLocal(ctx, srv, parent, args)
+	case *core.WorkspaceSourceRootlessLocal:
+		return s.checkpointRootless(ctx, srv, parent)
+	case *core.WorkspaceSourceDirectory:
+		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		return parent, nil
+	case *core.WorkspaceSourceGitRef:
+		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		return s.checkpointGitRef(ctx, srv, parent, src, nil)
+	case *core.WorkspaceSourceOverlay:
+		// Rootless workspaces deliberately ignore their host path and accumulate
+		// edits against an in-engine empty tree. Normalize that effective tree
+		// before checking replayability: the live rootless workspace recipe is
+		// client-bound by definition, while the normalized composition below is
+		// the portable value checkpoint is meant to return.
+		if _, ok := src.Base.(*core.WorkspaceSourceRootlessLocal); ok {
+			return s.checkpointRootless(ctx, srv, parent)
+		}
+		if err := checkpointRecipeReplayable(ctx, srv, parent); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		switch base := src.Base.(type) {
+		case *core.WorkspaceSourceDirectory:
+			return parent, nil
+		case *core.WorkspaceSourceGitRef:
+			return s.checkpointGitRef(ctx, srv, parent, base, src)
+		case *core.WorkspaceSourceClientLocal:
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace after workspace edits; checkpoint it before applying overlays")
+		case *core.WorkspaceSourceRootlessLocal:
+			return s.checkpointRootless(ctx, srv, parent)
+		default:
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot normalize overlay base %T", src.Base)
+		}
+	case nil:
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint has no reconstructible source")
+	default:
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint does not support source %T", src)
+	}
+}
+
+func checkpointRecipeReplayable(
+	ctx context.Context,
+	srv *dagql.Server,
+	workspaceResult dagql.ObjectResult[*core.Workspace],
+) error {
+	recipe, err := workspaceResult.RecipeID(ctx)
+	if err != nil {
+		return fmt.Errorf("workspace checkpoint source recipe: %w", err)
+	}
+	if unsafe := srv.ClassifyRecipe(recipe).NotReplayable; unsafe != nil {
+		return fmt.Errorf(
+			"workspace checkpoint source is not replayable: field %s at call %s: %s",
+			unsafe.Field,
+			unsafe.Digest,
+			unsafe.Reason,
+		)
+	}
+	return nil
+}
+
+// checkpointRootless freezes the effective source tree of a context-only local
+// workspace. Rootless workspaces intentionally never read HostPath: their
+// pristine tree is empty, and functional edits accumulate as a full in-engine
+// overlay. Rebuilding that tree through Directory.asWorkspace drops the client
+// route and host path from the value while retaining portable workspace
+// metadata.
+func (s *workspaceSchema) checkpointRootless(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws := parent.Self()
+	if len(ws.PendingCommits()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a rootless workspace with pending commits")
+	}
+	if len(ws.MountPoints()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a rootless workspace with mounts")
+	}
+
+	root, err := s.workspaceOverlayRootfs(ctx, ws)
+	if err != nil {
+		return inst, fmt.Errorf("resolve rootless workspace checkpoint tree: %w", err)
+	}
+	if err := srv.Select(ctx, root, &inst, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(ws.Cwd)}},
+	}); err != nil {
+		return inst, fmt.Errorf("construct rootless workspace checkpoint: %w", err)
+	}
+
+	workspaceEnv, _ := selectedWorkspaceEnvFor(ctx, ws)
+	inst, err = checkpointWorkspaceMetadataComposition(ctx, srv, inst, ws, workspaceEnv)
+	if err != nil {
+		return inst, fmt.Errorf("compose rootless workspace checkpoint metadata: %w", err)
+	}
+	// The live rootless receiver is necessarily client-bound. Classify the
+	// reconstructed value instead, so support for rootless workspaces never
+	// becomes a replayability bypass.
+	if err := checkpointRecipeReplayable(ctx, srv, inst); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) checkpointClientLocal(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceCheckpointArgs,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws := parent.Self()
+	if ws.HostPath() == "" {
+		return inst, fmt.Errorf("workspace checkpoint requires a local Git workspace")
+	}
+	if len(ws.PendingCommits()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace with pending commits")
+	}
+	if len(ws.MountPoints()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot capture a client-local workspace with mounts")
+	}
+
+	caller, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("workspace checkpoint caller metadata: %w", err)
+	}
+	if ws.ClientID == "" || caller.ClientID != ws.ClientID {
+		return inst, fmt.Errorf("workspace checkpoint capture is only available to the workspace's owning client")
+	}
+
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+	query, err := core.CurrentQuery(clientCtx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Engine(clientCtx)
+	if err != nil {
+		return inst, fmt.Errorf("workspace checkpoint engine client: %w", err)
+	}
+
+	policy := &gitsession.CaptureGitPolicy{
+		Include:                checkpointPatterns(args.Include),
+		Exclude:                checkpointPatterns(args.Exclude),
+		MaxUntrackedFileBytes:  checkpointOptionalInt(args.MaxUntrackedFileBytes),
+		MaxUntrackedTotalBytes: checkpointOptionalInt(args.MaxUntrackedTotalBytes),
+		MaxUntrackedFiles:      int32(checkpointOptionalInt(args.MaxUntrackedFiles)),
+		MaxTotalBytes:          256 << 20,
+	}
+
+	var chunks []capturedCheckpointChunk
+	capture := func() (*gitsession.CaptureGitMetadata, error) {
+		chunks = nil
+		return bk.CaptureGit(clientCtx, ws.HostPath(), policy, func(kind gitsession.CaptureGitChunk_Kind, data []byte) error {
+			chunks = append(chunks, capturedCheckpointChunk{kind: kind, data: slices.Clone(data)})
+			return nil
+		})
+	}
+	var metadata *gitsession.CaptureGitMetadata
+	for {
+		metadata, err = capture()
+		var approvalErr *engineutil.GitCaptureApprovalError
+		if !errors.As(err, &approvalErr) {
+			break
+		}
+		if len(approvalErr.Candidates) == 0 {
+			return inst, fmt.Errorf("workspace checkpoint approval required without selected paths")
+		}
+		summary := checkpointApprovalSummary(approvalErr.Candidates)
+		approved, promptErr := bk.PromptBool(clientCtx, "Include workspace changes?", summary)
+		if promptErr != nil {
+			return inst, fmt.Errorf("workspace checkpoint requires approval of every selected dirty path; pass include patterns in noninteractive use: %w", promptErr)
+		}
+		if !approved {
+			return inst, fmt.Errorf("workspace checkpoint rejected selected dirty paths")
+		}
+		for _, candidate := range approvalErr.Candidates {
+			if candidate.ApprovalToken == "" {
+				return inst, fmt.Errorf("workspace checkpoint approval candidate %s has no state token", strconv.Quote(candidate.Path))
+			}
+			policy.ApprovalTokens = append(policy.ApprovalTokens, candidate.ApprovalToken)
+		}
+	}
+	if err != nil {
+		return inst, fmt.Errorf("capture workspace checkpoint: %w", err)
+	}
+
+	bundle := slices.Concat(checkpointBundleChunks(chunks)...)
+	if int64(len(bundle)) != metadata.BundleBytes {
+		return inst, fmt.Errorf("workspace checkpoint bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
+	}
+	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx)
+	inst, err = s.checkpointCapturedGitComposition(clientCtx, srv, ws, metadata, bundle, workspaceEnv)
+	if err != nil {
+		return inst, fmt.Errorf("construct portable workspace checkpoint: %w", err)
+	}
+
+	return inst, nil
+}
+
+func (s *workspaceSchema) checkpointGitRef(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+	source *core.WorkspaceSourceGitRef,
+	overlay *core.WorkspaceSourceOverlay,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws := parent.Self()
+	if len(ws.PendingCommits()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a Git workspace with pending commits")
+	}
+	if len(ws.MountPoints()) > 0 {
+		return inst, fmt.Errorf("workspace checkpoint cannot normalize a Git workspace with mounts")
+	}
+	ref := source.Ref.Self()
+	if ref == nil || ref.Ref == nil || ref.Ref.SHA == "" || ref.Repo.Self() == nil {
+		return inst, fmt.Errorf("workspace checkpoint Git source has no resolved commit")
+	}
+
+	var pinned dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, ref.Repo, &pinned, dagql.Selector{
+		Field: "ref",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}},
+	}); err != nil {
+		return inst, fmt.Errorf("pin workspace Git ref at %s: %w", ref.Ref.SHA, err)
+	}
+	if err := srv.Select(ctx, pinned, &inst, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(ws.Cwd)}},
+	}); err != nil {
+		return inst, fmt.Errorf("normalize pinned Git workspace: %w", err)
+	}
+
+	if overlay != nil && overlay.Changes.Self() != nil {
+		changesID, err := overlay.Changes.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint overlay identity: %w", err)
+		}
+		var withChanges dagql.ObjectResult[*core.Workspace]
+		if err := srv.Select(ctx, inst, &withChanges, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("reapply workspace Git overlay: %w", err)
+		}
+		inst = withChanges
+	}
+
+	workspaceEnv, _ := selectedWorkspaceEnvFor(ctx, ws)
+	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, ws, workspaceEnv)
+}
+
+func (s *workspaceSchema) checkpointCapturedGitComposition(
+	ctx context.Context,
+	srv *dagql.Server,
+	captured *core.Workspace,
+	metadata *gitsession.CaptureGitMetadata,
+	bundleBytes []byte,
+	workspaceEnv string,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	if metadata == nil {
+		return inst, fmt.Errorf("workspace checkpoint capture metadata is missing")
+	}
+
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{
+		Field: "git",
+		Args:  []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}},
+	}); err != nil {
+		return inst, fmt.Errorf("load workspace checkpoint remote: %w", err)
+	}
+
+	if len(bundleBytes) > 0 {
+		var file dagql.ObjectResult[*core.File]
+		if err := srv.Select(ctx, srv.Root(), &file, dagql.Selector{
+			Field: "blob",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("workspace-checkpoint.bundle")},
+				{Name: "contents", Value: dagql.Bytes(bundleBytes)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("embed workspace checkpoint bundle: %w", err)
+		}
+		var bundle dagql.ObjectResult[*core.GitBundle]
+		if err := srv.Select(ctx, file, &bundle, dagql.Selector{Field: "asGitBundle"}); err != nil {
+			return inst, fmt.Errorf("parse workspace checkpoint bundle: %w", err)
+		}
+		bundleID, err := bundle.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint bundle identity: %w", err)
+		}
+		var imported dagql.ObjectResult[*core.GitRepository]
+		if err := srv.Select(ctx, repo, &imported, dagql.Selector{
+			Field: "withBundle",
+			Args: []dagql.NamedInput{
+				{Name: "bundle", Value: dagql.NewID[*core.GitBundle](bundleID)},
+				{Name: "prerequisiteRef", Value: dagql.NewString(metadata.RemoteRef)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("import workspace checkpoint bundle: %w", err)
+		}
+		repo = imported
+	}
+
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, repo, &head, dagql.Selector{
+		Field: "ref",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(metadata.HeadSha)}},
+	}); err != nil {
+		return inst, fmt.Errorf("select workspace checkpoint HEAD %s: %w", metadata.HeadSha, err)
+	}
+	if err := srv.Select(ctx, head, &inst, dagql.Selector{
+		Field: "asWorkspace",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(captured.Cwd)}},
+	}); err != nil {
+		return inst, fmt.Errorf("construct workspace checkpoint from HEAD: %w", err)
+	}
+
+	if metadata.WorktreeSha != "" {
+		treeArgs := []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(false)},
+		}
+		var headTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, head, &headTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
+			return inst, fmt.Errorf("workspace checkpoint HEAD tree: %w", err)
+		}
+		var worktree dagql.ObjectResult[*core.GitRef]
+		if err := srv.Select(ctx, repo, &worktree, dagql.Selector{
+			Field: "ref",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(metadata.WorktreeSha)}},
+		}); err != nil {
+			return inst, fmt.Errorf("select workspace checkpoint worktree %s: %w", metadata.WorktreeSha, err)
+		}
+		var worktreeTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, worktree, &worktreeTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
+			return inst, fmt.Errorf("workspace checkpoint worktree tree: %w", err)
+		}
+		headTreeID, err := headTree.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint HEAD tree identity: %w", err)
+		}
+		var changes dagql.ObjectResult[*core.Changeset]
+		if err := srv.Select(ctx, worktreeTree, &changes, dagql.Selector{
+			Field: "changes",
+			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](headTreeID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("workspace checkpoint worktree changes: %w", err)
+		}
+		changesID, err := changes.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace checkpoint changes identity: %w", err)
+		}
+		var withChanges dagql.ObjectResult[*core.Workspace]
+		if err := srv.Select(ctx, inst, &withChanges, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("apply workspace checkpoint worktree: %w", err)
+		}
+		inst = withChanges
+	}
+
+	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
+}
+
+func checkpointWorkspaceMetadataComposition(
+	ctx context.Context,
+	srv *dagql.Server,
+	workspaceResult dagql.ObjectResult[*core.Workspace],
+	metadata *core.Workspace,
+	workspaceEnv string,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	if err := srv.Select(ctx, workspaceResult, &inst, dagql.Selector{
+		Field: "withConfigPaths",
+		Args: []dagql.NamedInput{
+			{Name: "configFile", Value: dagql.NewString(metadata.ConfigFile)},
+			{Name: "lockFile", Value: dagql.NewString(metadata.LockFile)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	var withEnv dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, inst, &withEnv, dagql.Selector{
+		Field: "withConfigEnvironment",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(workspaceEnv)}},
+	}); err != nil {
+		return inst, err
+	}
+	var withAuthor dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, withEnv, &withAuthor, dagql.Selector{
+		Field: "withGitAuthor",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(metadata.GitAuthorName)},
+			{Name: "email", Value: dagql.NewString(metadata.GitAuthorEmail)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return withAuthor, nil
+}
+
+func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) string {
+	var summary strings.Builder
+	summary.WriteString("Include all selected workspace changes in the portable agent workspace?\n")
+	for _, candidate := range candidates {
+		kind := "untracked"
+		if candidate.Tracked {
+			kind = "tracked"
+		}
+		fmt.Fprintf(&summary, "\n- %s (%s, %d bytes", strconv.Quote(candidate.Path), kind, candidate.Bytes)
+		if candidate.Classification != "" {
+			fmt.Fprintf(&summary, "; warning: %s", candidate.Classification)
+		}
+		summary.WriteString(")")
+	}
+	return summary.String()
+}
+
+func checkpointPatterns(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
+	if !arg.Valid {
+		return nil
+	}
+	patterns := make([]string, len(arg.Value))
+	for i, pattern := range arg.Value {
+		patterns[i] = pattern.String()
+	}
+	return patterns
+}
+
+func checkpointOptionalInt(arg dagql.Optional[dagql.Int]) int64 {
+	if !arg.Valid {
+		return 0
+	}
+	return int64(arg.Value)
+}
+
+func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {
+	const traceChunkBytes = 256 << 10
+	for _, chunk := range chunks {
+		if chunk.kind != gitsession.CAPTURE_CHUNK_BUNDLE {
+			continue
+		}
+		data := chunk.data
+		for len(data) > 0 {
+			n := min(len(data), traceChunkBytes)
+			bundle = append(bundle, slices.Clone(data[:n]))
+			data = data[n:]
+		}
+	}
+	return bundle
 }
 
 type workspaceArgs struct {
@@ -628,6 +1168,9 @@ func syntheticWorkspaceFromGitRef(
 	}
 	ws.SetRootfs(rootResult)
 	ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	if repo := ref.Self().Repo.Self(); repo != nil && repo.URL.Valid {
+		ws.SetGitOrigin(repo.URL.Value.String())
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
@@ -861,7 +1404,41 @@ func (s *workspaceSchema) workspaceReadPathExists(
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
 // Remote: navigates the pre-fetched rootfs.
+//
+// A host-backed workspace's root carries the checkout's dangling .git pointer
+// file (worktree/submodule); the engine never interprets it -- git-ness is
+// provided canonically via materializeWorkspaceGit -- so it is dropped from the
+// root snapshot here, covering every route resolveRootfsInner takes to a root
+// read (host, overlay, references, mount) without disturbing their logic. Only
+// the workspace root carries the pointer, and DropRootGitPointerFile is a no-op
+// unless a `.git` *file* is actually present, so a plain .git directory and
+// value-backed workspaces are untouched.
 func (s *workspaceSchema) resolveRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (dagql.ObjectResult[*core.Directory], error) {
+	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	isRoot := resolvedPath == "." || resolvedPath == "/" || resolvedPath == ""
+	if ws.HostPath() != "" && isRoot && inst.Self() != nil {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = core.DropRootGitPointerFile(ctx, srv, inst)
+		if err != nil {
+			return inst, err
+		}
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) resolveRootfsInner(
 	ctx context.Context,
 	ws *core.Workspace,
 	resolvedPath string,
@@ -2106,6 +2683,100 @@ func (s *workspaceSchema) applyChangeset(
 	}, mutate)
 }
 
+func (s *workspaceSchema) withConfigPaths(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		ConfigFile string
+		LockFile   string
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws, err := workspaceWithConfigPaths(parent.Self(), args.ConfigFile, args.LockFile)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func workspaceWithConfigPaths(parent *core.Workspace, configFile, lockFile string) (*core.Workspace, error) {
+	if err := validateWorkspaceMetadataPath("config file", configFile); err != nil {
+		return nil, err
+	}
+	if err := validateWorkspaceMetadataPath("lock file", lockFile); err != nil {
+		return nil, err
+	}
+	ws := parent.Clone()
+	ws.ConfigFile = configFile
+	ws.LockFile = lockFile
+	return ws, nil
+}
+
+func validateWorkspaceMetadataPath(label, value string) error {
+	if value == "" {
+		return nil
+	}
+	clean := path.Clean(value)
+	if path.IsAbs(value) || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("workspace %s path %q must be inside the workspace root", label, value)
+	}
+	if clean != value {
+		return fmt.Errorf("workspace %s path %q must be canonical", label, value)
+	}
+	return nil
+}
+
+func (s *workspaceSchema) withConfigEnvironment(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct{ Name string },
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := workspaceWithConfigEnvironment(parent.Self(), args.Name)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func workspaceWithConfigEnvironment(parent *core.Workspace, name string) *core.Workspace {
+	ws := parent.Clone()
+	ws.SetWorkspaceEnv(name)
+	return ws
+}
+
+func (s *workspaceSchema) withGitAuthor(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Name  string
+		Email string
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws, err := workspaceWithGitAuthor(parent.Self(), args.Name, args.Email)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func workspaceWithGitAuthor(parent *core.Workspace, name, email string) (*core.Workspace, error) {
+	if (name == "") != (email == "") {
+		return nil, fmt.Errorf("workspace Git author name and email must be set together")
+	}
+	ws := parent.Clone()
+	ws.GitAuthorName = name
+	ws.GitAuthorEmail = email
+	return ws, nil
+}
+
 func (s *workspaceSchema) withWorkdir(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2838,57 +3509,79 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 	return p == cwd || strings.HasPrefix(p, cwd+"/") || strings.HasPrefix(cwd, p+"/")
 }
 
+type workspaceExportArgs struct {
+	To dagql.Optional[dagql.ID[*core.Workspace]]
+}
+
 func (s *workspaceSchema) export(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
-) (core.Void, error) {
+	args workspaceExportArgs,
+) (res dagql.Nullable[core.Void], _ error) {
 	ws := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	// The argument selects only where host writes are routed. All commits,
+	// changes, mount write-through state, and reconciliation metadata continue
+	// to come from the receiver.
+	target := ws
+	if args.To.Valid {
+		targetResult, err := args.To.Value.Load(ctx, srv)
+		if err != nil {
+			return res, fmt.Errorf("load workspace export target: %w", err)
+		}
+		target = targetResult.Self()
+	} else if _, ok := ws.BaseSource().(*core.WorkspaceSourceClientLocal); !ok {
+		return res, fmt.Errorf("workspace export requires an explicit target when exporting a non-client-local workspace; pass a client-local Git workspace with `to`")
+	}
+
+	exportCtx, hostPath, err := workspaceExportContext(ctx, target)
+	if err != nil {
+		return res, fmt.Errorf("invalid workspace export target: %w", err)
+	}
+	if err := s.ensureWorkspaceGitDirectory(ctx, target); err != nil {
+		return res, fmt.Errorf("invalid workspace export target: %w", err)
+	}
 
 	// Verified before the fast-forward below, so a workspace carrying phantom
 	// deletions is refused with the checkout still untouched.
 	if err := s.assertOverlayRemovalsIntended(ctx, ws); err != nil {
-		return core.Void{}, fmt.Errorf("save: %w", err)
+		return res, fmt.Errorf("save: %w", err)
 	}
 
-	// Staged commits land first, as a fast-forward of the local checkout's
-	// current ref, so the remaining overlay changes below are written on top of
-	// the new HEAD (and `git status` on the host then shows exactly them).
-	// Preconditions are verified before anything is written, so a rejected save
-	// leaves the checkout untouched.
+	// Staged commits land first. They fast-forward unchanged when the checkout
+	// has not moved, or are replayed onto its new tip when another save advanced
+	// the branch, so the remaining overlay changes below are written on top of
+	// the resulting HEAD (and `git status` on the host then shows exactly them).
+	// A conflict is prepared away from the checkout and leaves it untouched.
 	if len(ws.PendingCommits()) > 0 {
-		if err := s.exportPendingCommits(ctx, ws); err != nil {
-			return core.Void{}, err
+		if err := s.exportPendingCommits(ctx, ws, target); err != nil {
+			return res, err
 		}
 	}
 
-	// Base export: write the primary overlay changeset to the local Git
-	// workspace. Only a non-empty base changeset requires a valid host path;
-	// cache mount write-through (below) runs regardless of the base source.
-	//
+	// Base export: write the primary overlay changeset to the selected local Git
+	// workspace. The destination was validated above even when this changeset is
+	// empty, so value workspaces cannot use cache-only export to bypass the
+	// explicit-target requirement.
 	// The changeset is the staged-relative one: the fast-forward above already
 	// wrote every committed path into the work tree, so what is left to write is
 	// exactly the uncommitted remainder — each path lands once.
 	changes, hasChanges, err := s.workspaceOverlayChanges(ctx, ws)
 	if err != nil {
-		return core.Void{}, err
+		return res, err
 	}
 	if hasChanges && changes.Self() != nil {
 		isEmpty, err := changes.Self().IsEmpty(ctx)
 		if err != nil {
-			return core.Void{}, err
+			return res, err
 		}
 		if !isEmpty {
-			hostPath, err := ws.ExportHostPath()
-			if err != nil {
-				return core.Void{}, err
-			}
-			exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
-			if err != nil {
-				return core.Void{}, err
-			}
 			if err := changes.Self().Export(exportCtx, hostPath); err != nil {
-				return core.Void{}, err
+				return res, err
 			}
 			if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
 				slog.Warn("could not invalidate workspace after export", "error", err)
@@ -2920,15 +3613,15 @@ func (s *workspaceSchema) export(
 			}
 			changes, err := s.cacheMountChanges(ctx, mounts, mount)
 			if err != nil {
-				return core.Void{}, fmt.Errorf("diff cache mount %q: %w", mount.Target, err)
+				return res, fmt.Errorf("diff cache mount %q: %w", mount.Target, err)
 			}
 			if err := mount.Volume.Self().CommitChanges(ctx, changes.Self()); err != nil {
-				return core.Void{}, fmt.Errorf("commit cache mount %q: %w", mount.Target, err)
+				return res, fmt.Errorf("commit cache mount %q: %w", mount.Target, err)
 			}
 		}
 	}
 
-	return core.Void{}, nil
+	return res, nil
 }
 
 // cacheMountChanges diffs a cache mount's current content in the mounts tree
@@ -3480,8 +4173,9 @@ func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *c
 		return fmt.Errorf("workspace git metadata: %w", err)
 	}
 	// Git worktree and submodule checkouts have a .git *file* pointing at
-	// metadata outside the workspace; that pointer is followed and flattened
-	// when the repository is resolved (see flattenWorkspaceGitPointer), so a
+	// metadata outside the workspace; that layout is never interpreted by the
+	// engine -- the repository is reconstructed canonically from the client's
+	// own git pack when it is resolved (see materializeWorkspaceGit) -- so a
 	// regular .git file is acceptable here.
 	if st.FileType != core.FileTypeRegular && !st.IsDir() {
 		return fmt.Errorf("workspace git metadata .git has type %s, expected directory or pointer file", st.FileType)
@@ -3497,9 +4191,6 @@ func (s *workspaceSchema) workspaceGitRepository(
 	var inst dagql.ObjectResult[*core.GitRepository]
 
 	ws := parent.Self().Workspace.Self()
-	if ref, ok := ws.SourceGitRef(); ok {
-		return ref.Self().Repo, nil
-	}
 
 	var dir dagql.ObjectResult[*core.Directory]
 	if latest, ok := ws.LatestPendingCommit(); ok && latest.Repo.Self() != nil {
@@ -3539,24 +4230,53 @@ func (s *workspaceSchema) workspaceGitRepository(
 				return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
 			}
 		}
+	} else if ref, ok := ws.SourceGitRef(); ok {
+		return ref.Self().Repo, nil
 	} else {
 		if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
 			return inst, err
 		}
 
-		var err error
-		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
-		if err != nil {
-			return inst, fmt.Errorf("workspace git directory: %w", err)
+		var (
+			err  error
+			fast bool
+		)
+		if ws.HostPath() != "" && ws.ClientLocalBase() {
+			dir, fast, err = s.materializeWorkspaceGitWorktree(ctx, ws)
+			if err != nil {
+				return inst, fmt.Errorf("workspace git worktree: %w", err)
+			}
 		}
+		if !fast {
+			dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+			if err != nil {
+				return inst, fmt.Errorf("workspace git directory: %w", err)
+			}
 
-		// Git worktree and submodule checkouts have a .git *pointer file* at their
-		// root, whose target lives outside the workspace boundary. Follow the
-		// pointer against the host and flatten the real git dir into a standalone
-		// .git directory so the LocalGitRepository sees a plain repository.
-		dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
-		if err != nil {
-			return inst, fmt.Errorf("workspace git directory: %w", err)
+			// Git worktree and submodule checkouts have a .git *pointer file* at
+			// their root, whose target lives outside the workspace boundary.
+			// Replace whatever .git the synced tree carries with a canonical
+			// reconstruction of the checkout's repository (packed by the client's
+			// own git), so the LocalGitRepository sees a plain repository.
+			dir, err = s.materializeWorkspaceGit(ctx, ws, dir)
+			if err != nil {
+				return inst, fmt.Errorf("workspace git directory: %w", err)
+			}
+		} else if changes, ok := ws.OverlayChanges(); ok && changes.Self() != nil {
+			changesID, err := changes.ID()
+			if err != nil {
+				return inst, err
+			}
+			srv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return inst, err
+			}
+			if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+				Field: "withChanges",
+				Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+			}); err != nil {
+				return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
+			}
 		}
 	}
 
@@ -3575,13 +4295,106 @@ func (s *workspaceSchema) workspaceGitRepository(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
-// flattenWorkspaceGitPointer resolves a .git pointer file (worktree/submodule
-// checkout) at the workspace root into a standalone .git directory, following
-// the pointer against the workspace's host. A plain .git directory is returned
-// unchanged. A workspace with no host (in-memory rootfs) has nowhere to follow
-// the pointer to, so a pointer file there stays unresolved and downstream git
-// operations report the plain failure.
-func (s *workspaceSchema) flattenWorkspaceGitPointer(
+// materializeWorkspaceGitWorktree builds a host-backed workspace repository
+// without resolving its whole root directory. It checks out the canonical pack
+// for HEAD, asks the client for only the git-visible worktree delta, and applies
+// that delta directly to an engine snapshot. The bool is false when the client
+// predates the delta RPC (or the checkout has no canonical HEAD), in which case
+// callers retain the full-directory compatibility path.
+func (s *workspaceSchema) materializeWorkspaceGitWorktree(
+	ctx context.Context,
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Directory], bool, error) {
+	var inst dagql.ObjectResult[*core.Directory]
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, false, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, false, err
+	}
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return inst, false, err
+	}
+
+	var scratch dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(clientCtx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
+		return inst, false, err
+	}
+	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "epoch:"+epoch)
+	if err != nil {
+		return inst, false, err
+	}
+	if _, err := canonical.Self().Stat(clientCtx, canonical, srv, ".git", true); err != nil {
+		// MaterializeHostGitCheckout leaves scratch unchanged for clients that
+		// do not implement checkout packing.
+		return inst, false, nil
+	}
+
+	var repoResult dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(clientCtx, canonical, &repoResult, dagql.Selector{Field: "asGit"}); err != nil {
+		return inst, false, err
+	}
+	var head dagql.Result[*core.GitRef]
+	if err := srv.Select(clientCtx, repoResult, &head, dagql.Selector{Field: "head"}); err != nil {
+		// An unborn checkout has no HEAD tree. The old directory route retains
+		// its existing behavior for this uncommon state.
+		return inst, false, nil
+	}
+	if head.Self() == nil || head.Self().Ref == nil || head.Self().Ref.SHA == "" {
+		return inst, false, nil
+	}
+	headID, err := head.ID()
+	if err != nil {
+		return inst, false, err
+	}
+	headObject, err := dagql.NewID[*core.GitRef](headID).Load(clientCtx, srv)
+	if err != nil {
+		return inst, false, err
+	}
+
+	var clean dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(clientCtx, headObject, &clean, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(true)},
+		},
+	}); err != nil {
+		return inst, false, err
+	}
+
+	if err := srv.Select(clientCtx, clean, &inst, dagql.Selector{
+		Field: "__withGitWorktree",
+		Args: []dagql.NamedInput{
+			{Name: "checkoutPath", Value: dagql.NewString(ws.HostPath())},
+			{Name: "expectedHeadSHA", Value: dagql.NewString(head.Self().Ref.SHA)},
+		},
+	}); errors.Is(err, engineutil.ErrGitWorktreeUnsupported) {
+		return dagql.ObjectResult[*core.Directory]{}, false, nil
+	} else if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, false, err
+	}
+	return inst, true, nil
+}
+
+// materializeWorkspaceGit replaces a host-backed workspace's synced .git with
+// a canonical reconstruction of the checkout's repository. The client's own
+// git packs the repository (HEAD plus all branches and tags) and the engine
+// rebuilds a standalone .git from that pack. The engine never interprets the
+// host checkout's raw git layout -- worktree/submodule pointer files,
+// commondirs, separate git dirs are all the client git's business -- so the
+// result is identical for a given ref state regardless of how the checkout is
+// laid out on the host.
+//
+// A workspace with no host (in-memory rootfs) keeps its embedded .git: there
+// is no client checkout to pack. A checkout that is not a git repository is
+// returned unchanged so downstream git operations surface the plain "not a git
+// repository" failure, matching pre-worktree behavior.
+func (s *workspaceSchema) materializeWorkspaceGit(
 	ctx context.Context,
 	ws *core.Workspace,
 	dir dagql.ObjectResult[*core.Directory],
@@ -3589,49 +4402,33 @@ func (s *workspaceSchema) flattenWorkspaceGitPointer(
 	if ws.HostPath() == "" {
 		return dir, nil
 	}
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return dir, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dir, err
 	}
-	flattened, err := core.FlattenGitPointer(ctx, srv, dir, ws.HostPath(),
-		func(ctx context.Context, dag *dagql.Server, hostPath string) (dagql.ObjectResult[*core.Directory], error) {
-			return s.loadWorkspaceHostDir(ctx, dag, ws, hostPath)
-		})
+	// Pin the reconstruction to the session's cached view of the checkout by
+	// keying it on the workspace read epoch rather than the checkout's live
+	// ref state: a checkout that advances mid-session must NOT be silently
+	// re-read, or a staged-commit export could fast-forward over the user's
+	// own commit instead of detecting that the local branch moved. The epoch
+	// bumps on export/reload, exactly when the pinned view should be refreshed
+	// -- the same scoping Workspace.file/.directory host reads use.
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return dir, err
+	}
+	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "epoch:"+epoch)
 	if errors.Is(err, core.ErrNoGitContext) {
-		// No .git at all: leave the original directory so downstream
-		// callers surface the plain "not a git repository" failure, matching
+		// No .git at all: leave the original directory so downstream callers
+		// surface the plain "not a git repository" failure, matching
 		// pre-worktree behavior.
 		return dir, nil
 	}
-	return flattened, err
-}
-
-// loadWorkspaceHostDir loads an absolute host path as a Directory, routed
-// through the workspace's owning client session. Unlike workspace reads this
-// is not bounded to the workspace root: gitfile targets legitimately live
-// outside it (e.g. the main checkout's .git). FlattenGitPointer validates what
-// it loads.
-func (s *workspaceSchema) loadWorkspaceHostDir(
-	ctx context.Context,
-	dag *dagql.Server,
-	ws *core.Workspace,
-	hostPath string,
-) (inst dagql.ObjectResult[*core.Directory], err error) {
-	ctx, err = s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return inst, err
-	}
-	err = dag.Select(ctx, dag.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(hostPath)},
-				{Name: "noCache", Value: dagql.Boolean(true)},
-			},
-		},
-	)
-	return inst, err
+	return out, err
 }
 
 func (s *workspaceSchema) workspaceGitHead(
@@ -3640,7 +4437,8 @@ func (s *workspaceSchema) workspaceGitHead(
 	_ struct{},
 ) (dagql.Result[*core.GitRef], error) {
 	var inst dagql.Result[*core.GitRef]
-	if ref, ok := parent.Self().Workspace.Self().SourceGitRef(); ok {
+	ws := parent.Self().Workspace.Self()
+	if ref, ok := ws.SourceGitRef(); ok && len(ws.PendingCommits()) == 0 {
 		return ref, nil
 	}
 	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
@@ -3665,7 +4463,7 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	var inst dagql.ObjectResult[*core.Changeset]
 	ws := parent.Self().Workspace.Self()
 	if _, ok := ws.OverlayChanges(); ok {
-		if ref, ok := ws.SourceGitRef(); ok {
+		if ref, ok := ws.SourceGitRef(); ok && len(ws.PendingCommits()) == 0 {
 			return gitRefWorkspaceChanges(ctx, ws, ref)
 		}
 		if !ws.ClientLocalBase() {
@@ -4592,35 +5390,49 @@ func (s *workspaceSchema) agents(
 	},
 ) (*core.AgentGroup, error) {
 	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
 		return &core.AgentGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
 
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
+	var mods []dagql.ObjectResult[*core.Module]
+	if parent.IsModuleBearingValue() {
+		// A module-bearing value has no owning client or served-module snapshot.
+		// Resolve every configured module from its own value-backed tree;
+		// workspaceOverlayModules treats this as a config-wide invalidation and
+		// therefore includes untouched local modules too.
+		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(nil, overlayMods)
+	} else {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
 
-	// agent composition is strict: a module that can't load is a failure.
-	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
-		return nil, err
-	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
-	if err != nil {
-		return nil, err
-	}
+		// agent composition is strict: a module that can't load is a failure.
+		if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
+			return nil, err
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	// The served modules above are the workspace as it was on disk when the
-	// session started. Re-resolve whatever the workspace's pending overlay
-	// touches, so an agent recomposing itself (install/reload) sees its own
-	// staged edits to module source and to dagger.toml.
-	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
-	if err != nil {
-		return nil, err
+		// The served modules above are the workspace as it was on disk when the
+		// session started. Re-resolve whatever the workspace's pending overlay
+		// touches, so an agent recomposing itself (install/reload) sees its own
+		// staged edits to module source and to dagger.toml.
+		overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+		if err != nil {
+			return nil, err
+		}
+		mods = mergeOverlayModules(mods, overlayMods)
 	}
-	mods = mergeOverlayModules(mods, overlayMods)
 
 	var allAgents []*core.Agent
 	for _, mod := range mods {
@@ -5021,14 +5833,34 @@ func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *
 // workspace's owning client ID. This ensures host filesystem operations route
 // through the correct client session, even when called from a module context.
 func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	if ws.ClientID == "" {
+	return withWorkspaceClientIDContext(ctx, ws.ClientID)
+}
+
+// workspaceExportContext resolves a validated export target's checkout and
+// routes host operations to the client that owns it. The target supplies only
+// this destination; export state and reconciliation metadata come from the
+// receiver workspace.
+func workspaceExportContext(ctx context.Context, target *core.Workspace) (context.Context, string, error) {
+	clientID, hostPath, err := target.ExportTarget(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	exportCtx, err := withWorkspaceClientIDContext(ctx, clientID)
+	if err != nil {
+		return nil, "", err
+	}
+	return exportCtx, hostPath, nil
+}
+
+func withWorkspaceClientIDContext(ctx context.Context, clientID string) (context.Context, error) {
+	if clientID == "" {
 		return nil, fmt.Errorf("workspace has no client ID")
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
 	}
-	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
+	clientMetadata, err := query.SpecificClientMetadata(ctx, clientID)
 	if err != nil {
 		return ctx, fmt.Errorf("get client metadata: %w", err)
 	}

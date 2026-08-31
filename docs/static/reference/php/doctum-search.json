@@ -7624,6 +7624,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceGit::push",
+			"p": "Dagger/WorkspaceGit.html#method_push",
+			"d": "<p>Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceGit::stagedCommits",
 			"p": "Dagger/WorkspaceGit.html#method_stagedCommits",
 			"d": "<p>Commits staged in this workspace but not yet saved to the local checkout.</p>"

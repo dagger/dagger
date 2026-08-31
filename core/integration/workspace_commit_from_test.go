@@ -158,6 +158,194 @@ func statuses(picks []commitPickSnapshot) []dagger.WorkspaceCommitPickStatus {
 	return out
 }
 
+// TestWorkspaceCommitsFromRawGitRef exercises staging and replay directly on
+// ordinary GitRef-backed workspaces. The source ref stays the base HEAD until a
+// virtual commit is staged; after that the staged repository takes precedence
+// for HEAD while the workspace tree and uncommitted remainder stay accurate.
+func (WorkspaceSuite) TestWorkspaceCommitsFromRawGitRef(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("a.txt", "a1\n"))
+	ref := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
+	baseSHA, err := ref.CommitSHA(ctx)
+	require.NoError(t, err)
+
+	base := ref.AsWorkspace()
+	ordinaryHead, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, ordinaryHead)
+	_, err = base.Git().Push(ctx)
+	require.ErrorContains(t, err, "cannot push: cannot export a remote Git workspace")
+
+	source := base.
+		WithNewFile("worker.txt", "from the worker\n").
+		WithNewFile("pending.txt", "leave me pending\n").
+		WithCommit("worker work", commitTestDate, dagger.WorkspaceWithCommitOpts{
+			Paths: []string{"worker.txt"},
+		})
+
+	sourceStaged := stagedCommitsOf(ctx, t, source)
+	require.Len(t, sourceStaged, 1)
+	require.NotEqual(t, baseSHA, sourceStaged[0].SHA)
+	sourceHead, err := source.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sourceStaged[0].SHA, sourceHead)
+	workerContents, err := source.File("worker.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from the worker\n", workerContents)
+	pendingContents, err := source.File("pending.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "leave me pending\n", pendingContents)
+	sourcePending, err := source.Git().Uncommitted().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"pending.txt"}, sourcePending)
+
+	plan := planCommitsFrom(ctx, t, base, source)
+	require.Len(t, plan, 1)
+	require.Equal(t, dagger.WorkspaceCommitPickStatusPickable, plan[0].Status)
+	require.Equal(t, dagger.WorkspaceCommitPickReasonNone, plan[0].Reason)
+
+	applied := base.WithCommitsFrom(source)
+	appliedStaged := stagedCommitsOf(ctx, t, applied)
+	require.Len(t, appliedStaged, 1)
+	require.Equal(t, sourceStaged[0].SHA, appliedStaged[0].Origin)
+	appliedHead, err := applied.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, appliedStaged[0].SHA, appliedHead)
+	appliedContents, err := applied.File("worker.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "from the worker\n", appliedContents)
+	appliedEmpty, err := applied.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, appliedEmpty)
+}
+
+// TestWorkspaceCommitsFromPortableGitCheckpoint covers the receiver shape used
+// by portable workspace checkpointing: a pinned, remote-backed Git workspace
+// with captured metadata. Planning and replay must preserve the same behavior
+// as the ordinary GitRef-backed value tested above.
+func (WorkspaceSuite) TestWorkspaceCommitsFromPortableGitCheckpoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("a.txt", "a1\n"))
+	ref := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
+	baseSHA, err := ref.CommitSHA(ctx)
+	require.NoError(t, err)
+	remote := ref.AsWorkspace()
+	remoteHead, err := remote.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, remoteHead, "an ordinary GitRef workspace still reports its source HEAD")
+	remoteID, err := remote.ID(ctx)
+	require.NoError(t, err)
+
+	var frozen struct {
+		Node struct {
+			Checkpoint struct {
+				ID string
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($id: ID!) {
+  node(id: $id) {
+    ... on Workspace { checkpoint { id } }
+  }
+}`,
+		Variables: map[string]any{"id": remoteID},
+	}, &dagger.Response{Data: &frozen}))
+	require.NotEmpty(t, frozen.Node.Checkpoint.ID)
+
+	var source struct {
+		Node struct {
+			Worker struct {
+				Commit struct {
+					ID  string
+					Git struct {
+						StagedCommits []struct {
+							SHA string
+						}
+					}
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($id: ID!) {
+  node(id: $id) {
+    ... on Workspace {
+      worker: withNewFile(path: "worker.txt", contents: "from the worker\n") {
+        commit: withCommit(message: "worker work", date: "` + commitTestDate + `") {
+          id
+          git { stagedCommits { sha } }
+        }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{"id": frozen.Node.Checkpoint.ID},
+	}, &dagger.Response{Data: &source}))
+	require.NotEmpty(t, source.Node.Worker.Commit.ID)
+	require.Len(t, source.Node.Worker.Commit.Git.StagedCommits, 1)
+	sourceSHA := source.Node.Worker.Commit.Git.StagedCommits[0].SHA
+
+	var replayed struct {
+		Node struct {
+			Plan []struct {
+				Status dagger.WorkspaceCommitPickStatus
+				Reason dagger.WorkspaceCommitPickReason
+			}
+			Applied struct {
+				WorkerFile struct {
+					Contents string
+				}
+				Git struct {
+					Head struct {
+						CommitSHA string
+					}
+					StagedCommits []struct {
+						SHA     string
+						Origin  string
+						Message string
+					}
+					Uncommitted struct {
+						IsEmpty bool
+					}
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($receiver: ID!, $source: ID!) {
+  node(id: $receiver) {
+    ... on Workspace {
+      plan: commitsFrom(source: $source) { status reason }
+      applied: withCommitsFrom(source: $source) {
+        workerFile: file(path: "worker.txt") { contents }
+        git {
+          head { commitSHA }
+          stagedCommits { sha origin message }
+          uncommitted { isEmpty }
+        }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{
+			"receiver": frozen.Node.Checkpoint.ID,
+			"source":   source.Node.Worker.Commit.ID,
+		},
+	}, &dagger.Response{Data: &replayed}))
+
+	require.Len(t, replayed.Node.Plan, 1)
+	require.Equal(t, dagger.WorkspaceCommitPickStatusPickable, replayed.Node.Plan[0].Status)
+	require.Equal(t, dagger.WorkspaceCommitPickReasonNone, replayed.Node.Plan[0].Reason)
+	require.Equal(t, "from the worker\n", replayed.Node.Applied.WorkerFile.Contents)
+	require.Len(t, replayed.Node.Applied.Git.StagedCommits, 1)
+	replayedCommit := replayed.Node.Applied.Git.StagedCommits[0]
+	require.Equal(t, sourceSHA, replayedCommit.Origin)
+	require.Equal(t, "worker work", replayedCommit.Message)
+	require.Equal(t, replayedCommit.SHA, replayed.Node.Applied.Git.Head.CommitSHA)
+	require.True(t, replayed.Node.Applied.Git.Uncommitted.IsEmpty)
+}
+
 // TestWorkspaceCommitsFromFreshPull is the base case: a worker's commit lands
 // in a chief that has not moved, with its metadata intact and a new hash.
 func (WorkspaceSuite) TestWorkspaceCommitsFromFreshPull(ctx context.Context, t *testctx.T) {

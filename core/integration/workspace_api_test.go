@@ -463,6 +463,40 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlayAndExport(ctx context.Context, 
 	require.Equal(t, "staged", string(got))
 }
 
+func (WorkspaceAPISuite) TestWorkspaceExportTarget(ctx context.Context, t *testctx.T) {
+	t.Run("value workspace requires target", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		err := c.Directory().
+			AsWorkspace().
+			WithNewFile("staged.txt", "staged").
+			Export(ctx)
+		require.ErrorContains(t, err, "workspace export requires an explicit target")
+	})
+
+	t.Run("value workspace exports overlay to local target", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+		err := c.Directory().
+			AsWorkspace().
+			WithNewFile("staged.txt", "from value").
+			Export(ctx, dagger.WorkspaceExportOpts{To: c.CurrentWorkspace()})
+		require.NoError(t, err)
+		contents, err := os.ReadFile(filepath.Join(workdir, "staged.txt"))
+		require.NoError(t, err)
+		require.Equal(t, "from value", string(contents))
+	})
+
+	t.Run("non-local target is rejected", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		source := c.Directory().AsWorkspace().WithNewFile("staged.txt", "staged")
+		target := c.Directory().AsWorkspace()
+		err := source.Export(ctx, dagger.WorkspaceExportOpts{To: target})
+		require.ErrorContains(t, err, "invalid workspace export target: cannot export a synthetic workspace")
+	})
+}
+
 // TestHostWorkspaceSparseOverlayDiff verifies that editing an existing host file
 // through the overlay reports it as modified (not added) and exports correctly.
 // The overlay diffs against a sparse base (only the touched paths are synced from
@@ -1060,14 +1094,24 @@ func (WorkspaceAPISuite) TestWorkspaceMountedCache(ctx context.Context, t *testc
 	})
 
 	t.Run("export commits edits into the volume", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		vol := seededVolume(ctx, t, c)
 
-		err := c.Directory().
+		edited := c.Directory().
 			AsWorkspace().
 			WithMountedCache("cache", vol).
-			WithNewFile("cache/written.txt", "written").
-			Export(ctx)
+			WithNewFile("cache/written.txt", "written")
+
+		// A value workspace still needs a target even when export would only
+		// write through a cache mount; validation happens before side effects.
+		err := edited.Export(ctx)
+		require.ErrorContains(t, err, "workspace export requires an explicit target")
+		_, err = volumeFile(ctx, t, c, vol, "written.txt")
+		require.Error(t, err)
+
+		err = edited.Export(ctx, dagger.WorkspaceExportOpts{To: c.CurrentWorkspace()})
 		require.NoError(t, err)
 
 		contents, err := volumeFile(ctx, t, c, vol, "written.txt")
@@ -1081,14 +1125,16 @@ func (WorkspaceAPISuite) TestWorkspaceMountedCache(ctx context.Context, t *testc
 	})
 
 	t.Run("export commits removals into the volume", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		vol := seededVolume(ctx, t, c)
 
 		err := c.Directory().
 			AsWorkspace().
 			WithMountedCache("cache", vol).
 			WithoutFile("cache/seed.txt").
-			Export(ctx)
+			Export(ctx, dagger.WorkspaceExportOpts{To: c.CurrentWorkspace()})
 		require.NoError(t, err)
 
 		_, err = volumeFile(ctx, t, c, vol, "seed.txt")
@@ -1807,7 +1853,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportFailureBySource(ctx context.Context,
 `)
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 		require.Error(t, err)
-		requireErrOut(t, err, "workspace export requires a local Git workspace")
+		requireErrOut(t, err, "workspace export requires an explicit target")
 	})
 
 	t.Run("synthetic directory", func(ctx context.Context, t *testctx.T) {
@@ -1821,7 +1867,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportFailureBySource(ctx context.Context,
     }
   }
 }`, nil)
-		requireErrOut(t, err, "cannot export a synthetic workspace")
+		requireErrOut(t, err, "workspace export requires an explicit target")
 	})
 
 	t.Run("remote git ref", func(ctx context.Context, t *testctx.T) {
@@ -1839,7 +1885,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportFailureBySource(ctx context.Context,
 `)
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", remoteRef, "query", "--doc", queryPath)
 		require.Error(t, err)
-		requireErrOut(t, err, "cannot export a remote Git workspace")
+		requireErrOut(t, err, "workspace export requires an explicit target")
 	})
 }
 

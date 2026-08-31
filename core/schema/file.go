@@ -120,6 +120,10 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
+		dagql.NodeFunc("asGitBundle", s.asGitBundle).
+			View(AfterVersion("v1.0.0-beta.10")).
+			IsPersistable().
+			Doc(`Interpret this file as a Git bundle by lazily parsing its header.`),
 		dagql.NodeFunc("asJSON", s.asJSON).
 			Doc(`Parse the file contents as JSON.`),
 	}.Install(srv)
@@ -414,6 +418,22 @@ func (s *fileSchema) chown(
 		f.File.SetValue(parentPath)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+}
+
+func (s *fileSchema) asGitBundle(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.File],
+	_ struct{},
+) (inst dagql.ObjectResult[*core.GitBundle], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bundle, err := core.ParseGitBundle(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, bundle)
 }
 
 func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.JSONValue, error) {
