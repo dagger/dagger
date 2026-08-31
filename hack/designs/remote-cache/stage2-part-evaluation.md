@@ -1330,6 +1330,21 @@ Items for Erik specifically (each one sentence of what changed and why):
    values outside the run, the fallback is declaring VolatileEnv an exec
    output written by the joint group — which would make metadata reads on
    exec chains run the exec again, so the audit result matters.
+   *Audit outcome (implementation + council round 1):* the only consumer
+   of resolved values is `metaSpec` inside the same run; every other
+   reader (the next exec's resolution loop, `expandEnvVar`,
+   `ExpandContainerInput`, the with/without-volatile edits, persistence)
+   reads names. One corner moves: the old rewrite also *filtered* the
+   list to session-resolvable names, so an `expand=true` reference to a
+   volatile name whose session binding is gone previously expanded to
+   the empty string after an evaluated exec and now errors explicitly
+   ("expand cannot be used with volatile env variable"). Council
+   ruling: accepted — the reaching path needs a cross-session or
+   reloaded container carrying a stale volatile name plus `expand=true`
+   naming it, the new outcome is an actionable error rather than silent
+   emptiness, and exact preservation would either break the
+   one-production rule or make metadata reads run execs. Pinned
+   deliberately by `TestContainerExecMetadataKeepsVolatileNamesAndExpandErrors`.
 5. **`attach_release_reader` cannot be honestly re-bounded by invocation
    count** (measured: the re-break passes at bound 2); the budget fix is
    scenario scoping (release restricted to the publisher session,

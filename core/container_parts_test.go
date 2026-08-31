@@ -25,8 +25,9 @@ type containerPartsTestBaseOp struct {
 	metaRuns atomic.Int32
 	fsRuns   atomic.Int32
 
-	workdir string
-	env     []string
+	workdir     string
+	env         []string
+	volatileEnv []string
 	// mountTargets are read-only directory mounts whose sources this op
 	// fills, each in its own group. mountRuns counts per target.
 	mountTargets []string
@@ -68,6 +69,7 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 			op.metaRuns.Add(1)
 			ctr.Config.WorkingDir = op.workdir
 			ctr.Config.Env = append([]string(nil), op.env...)
+			ctr.VolatileEnv = append([]string(nil), op.volatileEnv...)
 			return nil
 		})
 	case containerDelegationGroup(ContainerPartFS):
