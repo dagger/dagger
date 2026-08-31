@@ -478,21 +478,35 @@ Rules:
   "something is still deferred" (feeds `HasPendingLazyEvaluation` and the
   schema eager/lazy fork), and persistence's form selection (`Lazy == nil`
   → ready form) keeps meaning "fully materialized" (section 8).
-- The clear and every read of the op pointer on parts paths must share a
-  synchronization point. Today the pointer is written only inside a body
-  whose retirement under `lazyMu` orders it before later readers; with
-  per-group evaluation, one group's body clears the pointer while sibling
-  groups are idle and their readers legally consult object-side state, so
-  an unsynchronized interface-field write races those reads (a torn
-  interface read is a real crash vector, and two sibling bodies observing
-  full consumption race each other's clear). The whole-op `LazyMu`
-  travels inside the op the pointer names, so it cannot guard the pointer
-  itself; give the container a dedicated synchronized holder for the op
-  reference (a small mutex- or atomic-based accessor used by the parts
-  paths: the clear, `ResolveLazyEvalGroups`, `LazyEvalFuncForGroup`,
-  `LazyEvalFunc`). Non-parts paths and single-threaded contexts
-  (persistence encode at quiescence, decode) go through the same holder
-  for uniformity.
+- The op-pointer clear must be safe against every concurrent reader.
+  Refined this after the fix round to match what an ordering argument can
+  and cannot carry:
+  - Sibling completions racing each other's clear (write/write) are
+    serialized by holding the op's `LazyMu` across the all-consumed check
+    and the clear together.
+  - Readers whose group-state guards make the read unreachable during a
+    cache-driven clear need no lock. This holds for the `evaluateGroup`
+    object re-read and `HasPendingLazyEvaluation`: a clear requires every
+    group's body consumed, a cache-consumed group's state under `lazyMu`
+    shows an attempt, completion, or pending bookkeeping, and both
+    readers stop at those guards before touching the pointer. Attempt
+    retirement under `lazyMu` then orders the clear before any later
+    read.
+  - Readers with no such guard — the resolution-phase read
+    (`ResolveLazyEvalGroups`) and the direct narrow force
+    (`evaluatePartsDirect`) read the pointer with no lock and no attempt
+    check — race a concurrent refined clear on the plain interface word
+    (torn-read crash vector, race-detector red), and no ordering
+    argument can cover them, because they run before any group state is
+    consulted. These reads and the clear must share a synchronization
+    point; the mechanism is the implementer's choice (a synchronized
+    holder for the pointer, or moving both the clear and these reads
+    under one lock).
+  - Recorded, not fixed (G24): the direct whole-value path's unlocked
+    pointer read racing a cache-driven clear predates stage 2 (baseline
+    `Container.Evaluate` read the pointer while a cache attempt's body
+    cleared it) and is inherited, not widened, by this design; close it
+    only if the chosen mechanism covers it for free.
 - The direct object-side evaluation paths continue to work, coordinated
   per group as enumerated above. Sites whose refinement is a stage-2 win
   (the exec-meta readers) move their forcing to the resolver via
@@ -532,14 +546,19 @@ rootfs. A delegation or metadata-copy step that trusts a set destination
 ("already final, skip") therefore serves stale content and silently
 skips the ancestor's work. The rule: delegation bodies and the metadata
 copy's mount handling must never treat a set destination accessor as
-final — always evaluate the parent's part and overwrite (fresh accessors
-in the metadata copy; unconditional copy in delegation). Overwriting a
-pre-seed is not a violation of section 6: the group body's write is the
-part's one production, and the pre-seed was never one. Write-group
-bodies (`withRootfs`, the exec's output bindings) already overwrite
-unconditionally for the same reason; the exec additionally resets its
-output accessors at construction, which is belt on top of this rule, not
-a substitute for it.
+final — always evaluate the parent's part and overwrite. In the metadata
+copy this means: carry the child's accessor *record* for a mount whose
+target and kind match (keeping the accessor pointer stable for the group
+that fills it), treat any value it holds as stale-until-overwritten, and
+never clone parent accessor values from the metadata body — filling
+snapshot parts is the delegation groups' job. In delegation this means an
+unconditional evaluate-and-copy over any existing destination value.
+Overwriting a pre-seed is not a violation of section 6: the group body's
+write is the part's one production, and the pre-seed was never one.
+Write-group bodies (`withRootfs`, the exec's output bindings) already
+overwrite unconditionally for the same reason; the exec additionally
+resets its output accessors at construction, which is belt on top of this
+rule, not a substitute for it.
 
 **Template A — metadata-only mutation** (covers ~28 ops, section 9):
 
