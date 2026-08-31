@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -67,6 +68,51 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotContains(t, tools, "## greet\n")
 	})
+}
+
+// TestDirectoryWorkspaceHandleBoundTool keeps module tools callable when
+// withTools receives a runtime handle, as currentNode and same-type tool returns
+// do. A value-backed workspace deliberately has only the core served schema, so
+// the handle must be loaded and traced back to its recipe's module schema rather
+// than pinning the core schema as the tool's definition.
+func (LLMSuite) TestDirectoryWorkspaceHandleBoundTool(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.editor]\nsource = \"modules/editor\"\n").
+		WithNewFile("modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/editor/main.dang", `
+type Editor {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  todoWrite(item: String!): Editor! {
+    print(item)
+    self
+  }
+}
+`)
+	ws := source.AsWorkspace()
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("track it").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind:      dagger.LLMContentBlockKindToolCall,
+			CallID:    "call_1",
+			ToolName:  "todoWrite",
+			Arguments: dagger.JSON(`{"item":"tracked"}`),
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindText,
+			Text: "done",
+		}}))
+	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+	transcript, err := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
+		WithPrompt("track it").
+		Loop().
+		Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "done")
 }
 
 // TestParallelChangesetToolsMergeResults locks in that Changeset-returning tools
@@ -299,4 +345,233 @@ func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t
 	require.NotContains(t, out, "vendored-two.txt")
 	require.NotContains(t, out, "vendored-three.txt")
 	require.Contains(t, out, "NOTE.txt")
+}
+
+// TestToolReturningLLMContinues locks in the continuation ring of the state-return
+// convention: a tool that returns an LLM replaces the conversation, and the loop
+// resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
+// adoptLLM). The tool's LLM! argument is auto-injected with the conversation up
+// to and including its own call, so `install`/`reload`-style self-extension is a
+// plain transform.
+func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	t.Run("the loop resumes from the returned conversation", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// continueWithMarker returns llm.withWorkspace(<workspace + marker>). The
+		// marker is only reachable if the loop adopted the RETURNED LLM: without
+		// the continuation arm the returned LLM would merely be synced and
+		// described, leaving the original workspace bound, and this would error.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue" | loop | workspace | file CONTINUED.txt | contents`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "swapped by continuation", strings.TrimSpace(out))
+	})
+
+	t.Run("the conversation survives the swap", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// The turn's tool result is appended to the returned LLM, and the loop
+		// carries on from there — the prompt, the tool call and the final reply
+		// are all in one transcript.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "continue")
+		require.Contains(t, out, "Continuing from the returned conversation.")
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("a conversation that replaces the current one is adopted", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("start fresh").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "startFresh"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// The adopted conversation replays a *second* script: after adoption its
+		// history is not the one the outer script recorded, but the engine's
+		// degraded continuation notice (toolResultSelectors' plain-message arm,
+		// carrying summarizeContinuation's summary as the tool result). The
+		// fixture's startFresh points the fresh conversation at this model, read
+		// from the workspace file written below. If summarizeContinuation's
+		// wording — or the swapper's tool count — changes, this string has to
+		// change with it; the replay provider compares message text exactly.
+		continued := strings.Join([]string{
+			"[continued via tool startFresh]",
+			"Continuing from the returned conversation.",
+			"Toolset unchanged (12 tools).",
+			"Conversation history replaced: 2 messages -> 0 messages.",
+		}, "\n")
+		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt(continued).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// startFresh wipes the history it was handed. There is no lineage gate, so
+		// it is adopted like any other continuation (self-compaction and
+		// summarize-and-restart have exactly this shape) — and the model is TOLD,
+		// which is what makes the swap safe. The turn's tool result has no matching
+		// tool call in the adopted history, so it is carried as a plain message
+		// rather than a protocol-invalid tool result.
+		out, err := base.
+			WithNewFile("continuation-model.txt", continuationModel).
+			With(daggerShell(fmt.Sprintf(
+				`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "start fresh" | loop | transcript`,
+				model,
+			))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Continuing from the returned conversation.")
+		require.Contains(t, out, "Conversation history replaced:")
+		require.Contains(t, out, "[continued via tool startFresh]")
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("at most one continuation per turn", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue twice").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "continueWithMarker"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithToolResult("call_2", "", true).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// LLMs do not merge the way Changesets do, so the second swap in a batch is
+		// refused rather than silently discarding the first.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue twice" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "only one is allowed")
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("the base workspace does not already contain the marker", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerShell(
+			`current-workspace | file CONTINUED.txt | contents`,
+		)).Stdout(ctx)
+		require.Error(t, err)
+	})
+}
+
+// TestAddressableToolArgs covers address lifting of object-typed tool args end
+// to end (hack/designs/sandboxes.md §4): a module function with a required
+// Container! arg still becomes a tool — the arg renders as an address string,
+// and a model-supplied image ref is lifted into a real container via
+// Query.address at dispatch — while a required arg of any other object type
+// (here Directory!) still disqualifies its function, since Container is the
+// only type to have passed the capability review for model-typed address
+// strings (liftableTypes in core/llm_object_tools.go).
+func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-addressable-args")
+
+	t.Run("a required Container arg renders as an address", func(ctx context.Context, t *testctx.T) {
+		tools, err := base.With(daggerShell("llm | with-tools $(runner) | tools")).Stdout(ctx)
+		require.NoError(t, err)
+
+		// exec IS a tool despite its required Container! arg...
+		require.Contains(t, tools, "## exec\n")
+		// ...and its sandbox parameter is described as an address — with the
+		// type's syntax hint from liftableTypes — not as a bare ID.
+		require.Contains(t, tools, "(Container address:")
+		require.Contains(t, tools, "or a Container ID from a prior tool result")
+
+		// lsDir's required Directory! arg is not liftable (host-path
+		// fallback), so lsDir is not exposed as a tool.
+		require.NotContains(t, tools, "## lsDir\n")
+	})
+
+	t.Run("an image ref lifts into a real container", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("what OS is the sandbox running?").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "exec",
+					Arguments: dagger.JSON(fmt.Sprintf(`{"cmd":["cat","/etc/os-release"],"sandbox":%q}`, alpineImage))},
+			}).
+			// Placeholder result: the real tool runs during replay (tool
+			// results are excluded from the replayer's history matching), so
+			// the live stdout flows through.
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "what OS is the sandbox running?" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The tool result is the stdout of the command run inside the lifted
+		// container — proof the address resolved to the real image. "Alpine
+		// Linux" appears only in /etc/os-release; the tool call's argument
+		// says "alpine:<version>", so a failed lift can't false-positive.
+		require.Contains(t, out, "Alpine Linux")
+	})
+
+	t.Run("an encoded Container ID round-trips", func(ctx context.Context, t *testctx.T) {
+		const marker = "address-lift round-trip"
+		ctrID, err := c.Container().From(alpineImage).
+			WithNewFile("/marker.txt", marker).ID(ctx)
+		require.NoError(t, err)
+		args, err := json.Marshal(map[string]any{
+			"cmd":     []string{"cat", "/marker.txt"},
+			"sandbox": string(ctrID),
+		})
+		require.NoError(t, err)
+
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("read the marker").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "exec",
+					Arguments: dagger.JSON(args)},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "read the marker" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The marker is plaintext only inside the container's filesystem —
+		// in the tool call's arguments it is buried in the encoded
+		// (protobuf+base64) ID — so seeing it in the transcript proves the
+		// ID decoded directly into the same container, no address lookup.
+		require.Contains(t, out, marker)
+	})
 }

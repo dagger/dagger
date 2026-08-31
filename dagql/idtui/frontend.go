@@ -16,6 +16,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -721,6 +722,11 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 		fmt.Fprint(out, out.String(fmt.Sprintf("%q", val.String_)).Foreground(termenv.ANSIYellow))
 	case *callpbv1.Literal_Bytes:
 		fmt.Fprint(out, out.String(call.DisplayBytes(val.Bytes)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_DigestedString:
+		fmt.Fprint(out, out.String(call.DisplayDigestedString(
+			val.DigestedString.GetValue(),
+			digest.Digest(val.DigestedString.GetDigest()),
+		)).Foreground(termenv.ANSIYellow))
 	case *callpbv1.Literal_CallDigest:
 		fmt.Fprint(out, out.String(val.CallDigest).Foreground(termenv.ANSIMagenta))
 	case *callpbv1.Literal_Enum:

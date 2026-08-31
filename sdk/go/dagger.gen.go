@@ -16121,6 +16121,40 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare "module:function" references.
+func (r *Workspace) Addresses(ctx context.Context, type_ string) ([]WorkspaceAddress, error) {
+	q := r.query.Select("addresses")
+	q = q.Arg("type", type_)
+
+	q = q.Select("id")
+
+	type addresses struct {
+		Id ID
+	}
+
+	convert := func(fields []addresses) []WorkspaceAddress {
+		out := []WorkspaceAddress{}
+
+		for i := range fields {
+			val := WorkspaceAddress{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceAddress")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []addresses
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // WorkspaceAgentsOpts contains options for Workspace.Agents
 type WorkspaceAgentsOpts struct {
 	// Only include agents matching the specified patterns
@@ -17317,6 +17351,95 @@ func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Wo
 // AsNode returns this Workspace as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Workspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A module function loadable as an address.
+type WorkspaceAddress struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	value       *string
+}
+
+func (r *WorkspaceAddress) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceAddress {
+	return &WorkspaceAddress{
+		query: q,
+	}
+}
+
+// The function's doc string.
+func (r *WorkspaceAddress) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceAddress.
+func (r *WorkspaceAddress) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceAddress) XXX_GraphQLType() string {
+	return "WorkspaceAddress"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceAddress) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceAddress) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceAddress) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The address value, e.g. "sandboxes:go".
+func (r *WorkspaceAddress) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceAddress as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceAddress) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}

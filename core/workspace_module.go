@@ -99,6 +99,55 @@ func (m WorkspaceModules) Sort() {
 	})
 }
 
+// WorkspaceAddress describes a module function loadable as an address: a bare
+// "module:function" reference that Query.address resolves (see
+// hack/designs/sandboxes.md §5).
+type WorkspaceAddress struct {
+	Value       string `field:"true" doc:"The address value, e.g. \"sandboxes:go\"."`
+	Description string `field:"true" doc:"The function's doc string."`
+}
+
+var _ dagql.PersistedObject = (*WorkspaceAddress)(nil)
+var _ dagql.PersistedObjectDecoder = (*WorkspaceAddress)(nil)
+
+func (*WorkspaceAddress) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "WorkspaceAddress",
+		NonNull:   true,
+	}
+}
+
+func (*WorkspaceAddress) TypeDescription() string {
+	return "A module function loadable as an address."
+}
+
+func (a *WorkspaceAddress) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if a == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace address: nil workspace address")
+	}
+	return encodePersistedObjectPayload(a)
+}
+
+func (*WorkspaceAddress) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var a WorkspaceAddress
+	if err := json.Unmarshal(payload, &a); err != nil {
+		return nil, fmt.Errorf("decode persisted workspace address payload: %w", err)
+	}
+	return &a, nil
+}
+
+type WorkspaceAddresses []*WorkspaceAddress
+
+func (a WorkspaceAddresses) Sort() {
+	sort.Slice(a, func(i, j int) bool {
+		return a[i].Value < a[j].Value
+	})
+}
+
 // WorkspaceSDK describes a module entry installed as an SDK in the workspace
 // config.
 type WorkspaceSDK struct {

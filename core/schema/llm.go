@@ -372,21 +372,42 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 		return nil, err
 	}
 	// Resolve the bound object's type from its ID without evaluating it, so the
-	// toolset can be built lazily. The object itself is loaded only when a tool
-	// is actually invoked on it (see MCP.boundToolObject). This is what lets a
+	// toolset can be built lazily. For a user-module type absent from the current
+	// bootstrap schema, ObjectTypeForID rebuilds its defining schema from the
+	// call's module provenance. The object itself is loaded only when a tool is
+	// actually invoked on it (see MCP.boundToolObject). This is what lets a
 	// persisted session restore a binding whose object has side effects or is no
 	// longer reproducible without re-running its construction.
 	if id.Type() != nil {
-		if objType, ok := srv.ObjectType(id.Type().NamedType()); ok {
-			return llm.WithLazyTools(id, objType, args.Except), nil
+		objType, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return llm.WithLazyTools(id, objType, definingServer.Schema(), args.Except), nil
 		}
 	}
-	// Fall back to eager loading if the type isn't resolvable structurally.
+	// Fall back to eager loading if the type isn't resolvable structurally. This
+	// includes handle-form IDs such as currentNode: handles deliberately carry no
+	// module provenance. Once loaded, recover the semantic recipe ID and resolve
+	// its defining server so the binding still captures the module schema rather
+	// than the current bootstrap schema.
 	obj, err := srv.Load(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithTools(obj, args.Except), nil
+	recipeID, err := obj.RecipeID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bound object recipe: %w", err)
+	}
+	_, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, recipeID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("resolve defining schema for bound object type %q", obj.Type().Name())
+	}
+	return llm.WithTools(obj, definingServer.Schema(), args.Except), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {

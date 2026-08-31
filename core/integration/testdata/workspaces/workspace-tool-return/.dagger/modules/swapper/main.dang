@@ -27,6 +27,36 @@ type Swapper {
     ws.withoutMount("mnt/vendored")
   }
 
+  """
+  Continue the conversation with a workspace that has a marker file.
+
+  The auto-injected LLM! is the conversation up to and including this tool
+  call; returning a derived LLM makes the tool a continuation — the agent loop
+  resumes from the returned conversation instead of the one that called it.
+  """
+  continueWithMarker(llm: LLM!): LLM! {
+    llm.withWorkspace(llm.workspace.withNewFile("CONTINUED.txt", "swapped by continuation"))
+  }
+
+  """
+  Hand back a conversation whose history has been wiped.
+
+  There is no lineage gate: any LLM may be adopted, so this IS adopted — the
+  shape of a self-compaction or summarize-and-restart continuation. The turn's
+  tool result has no matching tool call in the returned history, so it is
+  appended as a plain message instead of a (protocol-invalid) tool result.
+
+  The returned conversation is re-pointed at the model recorded in
+  continuation-model.txt: the post-adoption history no longer matches the
+  script the calling conversation was replaying (its first message is the
+  engine's "[continued via tool ...]" notice), so a replay-driven test has to
+  hand the fresh conversation the script that DOES match. The test writes that
+  file into the workspace.
+  """
+  startFresh(llm: LLM!): LLM! {
+    llm.withoutMessageHistory.withModel(llm.workspace.file("continuation-model.txt").contents)
+  }
+
   addFirst(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
     root.withNewFile("FIRST.txt", "first parallel change").changes(root)

@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
 )
 
@@ -28,6 +29,11 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
+	// Let core derive workspace-served schemas (WorkspaceServedSchema) through
+	// the overlay: re-resolving overlay-affected modules needs the overlay
+	// rootfs machinery that lives in this package.
+	core.SetWorkspaceOverlayModuleLoader(s.overlayModuleLoader)
+
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput, dagql.PerSessionInput).
 		NotReplayable("Resolves the calling client's workspace; the result carries that client's ID, which only resolves inside its own session.").
@@ -479,6 +485,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
 			),
+		dagql.Func("addresses", s.addresses).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare \"module:function\" references.").
+			Args(
+				dagql.Arg("type").Doc(`Name of the type the function must return to be listed, e.g. "Container".`),
+			),
 		migrateField,
 	}.Install(srv)
 
@@ -490,6 +502,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigration](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigrationStep](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceAddress](srv).View(AfterVersion("v1.0.0-0")))
 
 	dagql.Fields[*core.WorkspaceGit]{
 		dagql.NodeFunc("__repository", s.workspaceGitRepository).
@@ -527,6 +540,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceSDK]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceAddress]{}.Install(srv)
 }
 
 type workspaceArgs struct {
@@ -4598,6 +4612,16 @@ func (s *workspaceSchema) agents(
 		return nil, err
 	}
 
+	// The served modules above are the workspace as it was on disk when the
+	// session started. Re-resolve whatever the workspace's pending overlay
+	// touches, so an agent recomposing itself (install/reload) sees its own
+	// staged edits to module source and to dagger.toml.
+	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+	mods = mergeOverlayModules(mods, overlayMods)
+
 	var allAgents []*core.Agent
 	for _, mod := range mods {
 		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
@@ -4620,6 +4644,90 @@ func (s *workspaceSchema) agents(
 	}
 
 	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+}
+
+// addresses lists module functions loadable as bare "module:function" address
+// references (hack/designs/sandboxes.md §5): top-level functions on each
+// installed module's main object — the only shape resolveModuleRef can load —
+// whose return type name matches the requested type and whose required args
+// (beyond an auto-injected Workspace) are none.
+func (s *workspaceSchema) addresses(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Type string
+	},
+) ([]*core.WorkspaceAddress, error) {
+	if isSyntheticWorkspace(parent) {
+		return []*core.WorkspaceAddress{}, nil
+	}
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort, like generators: discovery lists what is loadable, and a
+	// module that fails to load contributes no loadable addresses anyway
+	// (resolveModuleRef hard-errors on it). A broken module must not hide the
+	// rest of the workspace's addresses; its load failure surfaces as a
+	// warning from EnsureWorkspaceModules.
+	if _, err := ensureWorkspaceModulesLoaded(ctx, nil, true); err != nil {
+		return nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// An entrypoint module's functions are hoisted onto the Query root and no
+	// module field is served for it, so a "module:function" reference can never
+	// resolve (see demandLoadInstalledModule); exclude those modules here.
+	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	entrypoints := make(map[string]bool, len(cfg.Modules))
+	for name, entry := range cfg.Modules {
+		if entry.Entrypoint {
+			entrypoints[strcase.ToKebab(name)] = true
+		}
+	}
+
+	var addresses core.WorkspaceAddresses
+	for _, mod := range mods {
+		modName := mod.Self().Name()
+		if entrypoints[strcase.ToKebab(modName)] {
+			continue
+		}
+		mainObj, ok := mod.Self().MainObject()
+		if !ok {
+			continue
+		}
+		for _, fnRes := range mainObj.Functions {
+			fn := fnRes.Self()
+			retType := fn.ReturnType.Self()
+			// A list return can't be lifted into a single object; ast.Type.Name
+			// would still report the element type's name, so rule lists out first.
+			if retType.Kind == core.TypeDefKindList {
+				continue
+			}
+			if retType.ToType().Name() != args.Type {
+				continue
+			}
+			if core.FunctionRequiresArgsExceptWorkspace(fn) {
+				continue
+			}
+			// Kebab-case both segments for consistency with CLI-facing names;
+			// resolveModuleRef normalizes with ToLowerCamel, so this round-trips.
+			addresses = append(addresses, &core.WorkspaceAddress{
+				Value:       strcase.ToKebab(modName) + ":" + strcase.ToKebab(fn.Name),
+				Description: fn.Description,
+			})
+		}
+	}
+	addresses.Sort()
+	return addresses, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
