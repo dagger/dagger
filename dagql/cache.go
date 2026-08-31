@@ -1046,10 +1046,11 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	// a callback body clears its object-side pointer while its attempt is
 	// still running cache-side bookkeeping, so object-side state is only
 	// trustworthy when no attempt is in flight.
-	if shared.lazyEvalAttempt != nil || shared.lazySyncPending {
+	g := &shared.lazyWhole
+	if g.attempt != nil || g.syncPending {
 		return true
 	}
-	if shared.lazyEval != nil {
+	if g.eval != nil {
 		return true
 	}
 	return lazyEvalFuncOfResult(res) != nil
@@ -2078,16 +2079,36 @@ type sharedResult struct {
 	// unsynchronized.
 	persistLeaseSyncPending bool
 
-	lazyMu           sync.Mutex
-	lazyEval         LazyEvalFunc
+	// lazyMu guards lazyWhole and lazyEvalComplete.
+	lazyMu sync.Mutex
+	// lazyWhole is the implicit whole-result evaluation group: the lazy
+	// state of values that do not split their deferred work. It is the
+	// former per-result lazy field block, held inline so results that
+	// never split allocate nothing new.
+	lazyWhole lazyGroupState
+	// lazyEvalComplete is the result-level completion latch: everything
+	// deferred anywhere on this result is settled. It is the fast path;
+	// correctness derives from the group state.
 	lazyEvalComplete bool
-	lazyEvalAttempt  *lazyEvalAttempt
-	// lazySyncPending records that a callback body already consumed its
+}
+
+// lazyGroupState is one evaluation group's cache-side lazy state. The
+// fields and their meaning are exactly the former sharedResult lazy
+// fields, per group. All fields are guarded by the owning sharedResult's
+// lazyMu.
+type lazyGroupState struct {
+	// eval is the stored callback for this group.
+	eval LazyEvalFunc
+	// complete records that this group's evaluation succeeded.
+	complete bool
+	// attempt is the currently published attempt for this group.
+	attempt *lazyEvalAttempt
+	// syncPending records that a callback body already consumed its
 	// object-side lazy state but the attempt's cache-side bookkeeping
 	// (snapshot-lease sync, lease release) has not yet succeeded. The next
 	// attempt then retries only that bookkeeping instead of treating the nil
 	// object-side callback as completed evaluation.
-	lazySyncPending bool
+	syncPending bool
 }
 
 type resultAttachmentState uint8
@@ -3526,12 +3547,13 @@ func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 	// orders those writes before a reader that observes no attempt. With an
 	// attempt published, a stored callback, pending bookkeeping, or completed
 	// evaluation, there is nothing to register.
-	if shared.lazyEval != nil || shared.lazyEvalComplete ||
-		shared.lazyEvalAttempt != nil || shared.lazySyncPending {
+	g := &shared.lazyWhole
+	if g.eval != nil || shared.lazyEvalComplete ||
+		g.attempt != nil || g.syncPending {
 		return
 	}
 	if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
-		shared.lazyEval = lazyEval
+		g.eval = lazyEval
 	}
 }
 
@@ -3696,9 +3718,10 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 	}()
 
+	g := &shared.lazyWhole
 	for {
 		shared.lazyMu.Lock()
-		if shared.lazyEvalComplete {
+		if shared.lazyEvalComplete || g.complete {
 			shared.lazyMu.Unlock()
 			return nil
 		}
@@ -3708,7 +3731,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		// state is only trustworthy once no attempt is in flight: retirement
 		// happens under lazyMu after the callback returns, ordering the body's
 		// writes before a reader that observes no attempt.
-		if attempt := shared.lazyEvalAttempt; attempt != nil {
+		if attempt := g.attempt; attempt != nil {
 			lazyOpID := attempt.profOpID
 			// The leader initializes this attempt's OTel wait target under
 			// lazyMu before publishing shared.lazyEvalAttempt
@@ -3759,16 +3782,17 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		// exposes a non-nil callback. Otherwise a nil object-side callback
 		// means nothing deferred remains anywhere.
 		var currentLazyEval LazyEvalFunc
-		if !shared.lazySyncPending {
+		if !g.syncPending {
 			currentLazyEval = lazyEvalFuncOfResult(res)
 			if currentLazyEval == nil {
-				shared.lazyEval = nil
+				g.eval = nil
+				g.complete = true
 				shared.lazyEvalComplete = true
 				shared.lazyMu.Unlock()
 				return nil
 			}
 		}
-		shared.lazyEval = currentLazyEval
+		g.eval = currentLazyEval
 
 		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
 		attemptOp, err := c.beginContextOperation(attemptCtx)
@@ -3778,7 +3802,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 			return fmt.Errorf("start lazy evaluation: %w", err)
 		}
 		evalCtx := attemptCtx
-		lazyEval := shared.lazyEval
+		lazyEval := g.eval
 		resultCall := shared.loadResultCall()
 		if resultCall != nil {
 			evalCtx = ContextWithCall(evalCtx, resultCall)
@@ -3819,7 +3843,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, resultCall)
 			attempt.spanCtx = lazySpan.SpanContext()
 		}
-		shared.lazyEvalAttempt = attempt
+		g.attempt = attempt
 		shared.lazyMu.Unlock()
 
 		go func() {
@@ -3869,18 +3893,19 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 			attempt.retry = lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.cancel = nil
 			if err == nil {
+				g.complete = true
 				shared.lazyEvalComplete = true
-				shared.lazyEval = nil
-				shared.lazySyncPending = false
+				g.eval = nil
+				g.syncPending = false
 			} else if bodyDone {
-				shared.lazySyncPending = true
+				g.syncPending = true
 			}
 			// Retire the shared pointer only after the callback has finished. Old
 			// waiters retain attempt, so they cannot read or decrement a retry's
 			// state; new callers may now safely lead a fresh callback. The pointer
 			// still names this attempt: publishing a successor requires it to be
 			// nil, and only this path clears it.
-			shared.lazyEvalAttempt = nil
+			g.attempt = nil
 			shared.lazyMu.Unlock()
 
 			if c.testAfterLazyEvalFinish != nil {
