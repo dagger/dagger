@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/dagger/dagger/internal/buildkit/executor"
@@ -30,15 +29,24 @@ func cloneContainerForTerminal(ctx context.Context, query *Query, ctr *Container
 	if ctr == nil {
 		return nil, nil
 	}
-	cp := *ctr
-	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
-	cp.Config.Env = slices.Clone(cp.Config.Env)
-	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
-	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
-	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
-	cp.Config.Labels = maps.Clone(cp.Config.Labels)
-	cp.Lazy = nil
-	_ = query
+	// Field-by-field, matching cloneContainerForSchemaChild's shape:
+	// Container carries a mutex now, so a value copy is off the table.
+	cp := Container{
+		fromContentDigestSafe: ctr.fromContentDigestSafe,
+		Config:                CloneContainerImageConfig(ctr.Config),
+		EnabledGPUs:           slices.Clone(ctr.EnabledGPUs),
+		Platform:              ctr.Platform,
+		Annotations:           slices.Clone(ctr.Annotations),
+		Secrets:               slices.Clone(ctr.Secrets),
+		VolatileEnv:           slices.Clone(ctr.VolatileEnv),
+		Sockets:               slices.Clone(ctr.Sockets),
+		ImageRef:              ctr.ImageRef,
+		Ports:                 slices.Clone(ctr.Ports),
+		Services:              slices.Clone(ctr.Services),
+		DefaultTerminalCmd:    ctr.DefaultTerminalCmd,
+		SystemEnvNames:        slices.Clone(ctr.SystemEnvNames),
+		DefaultArgs:           ctr.DefaultArgs,
+	}
 	var err error
 	cp.FS, err = cloneTerminalDirectorySource(ctx, query, ctr.FS)
 	if err != nil {
@@ -52,11 +60,6 @@ func cloneContainerForTerminal(ctx context.Context, query *Query, ctr *Container
 	if err != nil {
 		return nil, err
 	}
-	cp.Secrets = slices.Clone(cp.Secrets)
-	cp.Sockets = slices.Clone(cp.Sockets)
-	cp.Ports = slices.Clone(cp.Ports)
-	cp.Services = slices.Clone(cp.Services)
-	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp, nil
 }
 

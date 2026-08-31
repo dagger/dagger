@@ -117,6 +117,19 @@ var (
 	_ LazyContainerParts = (*ContainerWithRootFSLazy)(nil)
 )
 
+// lazyOpForRouting reads the current Lazy op under lazyOpMu. The
+// resolution phase and the direct narrow force run before any group
+// state is consulted, so no attempt-retirement ordering can cover their
+// pointer read; this lock pairs those reads with the refined clear in
+// clearLazyWhenConsumed. nil means the op is consumed - callers treat
+// it exactly like a value with no deferred work (and the cache side
+// independently routes any pending bookkeeping, see evaluateResolved).
+func (container *Container) lazyOpForRouting() Lazy[*Container] {
+	container.lazyOpMu.Lock()
+	defer container.lazyOpMu.Unlock()
+	return container.Lazy
+}
+
 // ResolveLazyEvalGroups implements dagql.HasLazyEvaluationParts. An
 // unrefined op maps every part to the whole-result group, which is
 // today's behavior byte-for-byte; a refined op settles its own metadata
@@ -125,10 +138,14 @@ var (
 // and never demand sibling groups) and then delegates the mapping to
 // the op.
 func (container *Container) ResolveLazyEvalGroups(ctx context.Context, self dagql.AnyResult, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
-	if container == nil || container.Lazy == nil {
+	if container == nil {
 		return nil, nil
 	}
-	op, ok := container.Lazy.(LazyContainerParts)
+	lazy := container.lazyOpForRouting()
+	if lazy == nil {
+		return nil, nil
+	}
+	op, ok := lazy.(LazyContainerParts)
 	if !ok {
 		return []dagql.LazyGroupKey{dagql.LazyGroupWhole}, nil
 	}
@@ -198,16 +215,20 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 //
 // The consumed-check and the clear happen under one LazyMu hold: two
 // sibling groups finishing concurrently may both observe full
-// consumption, and the mutex serializes their writes to the Lazy
-// interface word. Readers take no lock, by the same ordering argument
-// the whole-op body's clear has always relied on: the cache paths that
-// re-read object-side lazy state (LazyEvalFunc / LazyEvalFuncForGroup /
-// resolution) only trust it when no attempt is in flight, and attempt
-// retirement under the cache's lazyMu - after the body and this clear
-// returned - orders the clear before those reads; persistence encode
-// runs at flush quiescence; attach-time reads precede any evaluation;
-// HasPendingLazyEvaluation's fallback read is advisory and
-// self-correcting either way it lands.
+// consumption, and the mutex serializes their writes. The write itself
+// additionally happens under lazyOpMu (nested inside LazyMu, one-way
+// order, held only for the store), pairing it with the routing reads
+// that no group-state guard covers: ResolveLazyEvalGroups and
+// evaluatePartsDirect read the pointer before consulting any group
+// state, so attempt-retirement ordering cannot reach them and they
+// synchronize through lazyOpMu instead (lazyOpForRouting). The
+// remaining lock-free readers each have an ordering argument: the
+// evaluateGroup object re-read and HasPendingLazyEvaluation's fallback
+// stop at group-state guards that a cache-consumed group makes
+// unreachable until attempt retirement (under the cache's lazyMu, after
+// the body and this clear returned) orders the clear first; persistence
+// encode runs at flush quiescence; attach-time reads precede any
+// evaluation.
 func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyContainerParts) error {
 	groups, err := op.ContainerLazyGroups(ctx, container, nil)
 	if err != nil {
@@ -221,7 +242,9 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 			return nil
 		}
 	}
+	container.lazyOpMu.Lock()
 	container.Lazy = nil
+	container.lazyOpMu.Unlock()
 	return nil
 }
 
@@ -231,7 +254,7 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 // cache-side EvaluateParts. Used by internal reads that hold the
 // container value but not its attached result (metaFileContents).
 func (container *Container) evaluatePartsDirect(ctx context.Context, parts ...dagql.PartKey) error {
-	lazy := container.Lazy
+	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return nil
 	}
