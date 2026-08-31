@@ -27,7 +27,8 @@ public class InputValue
         foreach (var d in Directives)
         {
             var et = d.GetExpectedType();
-            if (et != null) return et;
+            if (et != null)
+                return et;
         }
         return null;
     }

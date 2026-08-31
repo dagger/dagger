@@ -29,13 +29,19 @@ pub type DynFormatTypeFuncs = Arc<dyn FormatTypeFuncs + Send + Sync>;
 
 pub struct CommonFunctions {
     format_type_funcs: DynFormatTypeFuncs,
+    supports_nullable_objects: bool,
 }
 
 impl CommonFunctions {
-    pub fn new(funcs: DynFormatTypeFuncs) -> Self {
+    pub fn new(funcs: DynFormatTypeFuncs, schema_version: Option<&str>) -> Self {
         Self {
             format_type_funcs: funcs,
+            supports_nullable_objects: supports_nullable_objects(schema_version),
         }
+    }
+
+    pub fn supports_nullable_objects(&self) -> bool {
+        self.supports_nullable_objects
     }
 
     pub fn format_input_type(&self, t: &TypeRef) -> String {
@@ -157,6 +163,61 @@ impl CommonFunctions {
         }
 
         representation
+    }
+}
+
+fn supports_nullable_objects(schema_version: Option<&str>) -> bool {
+    let Some(version) = schema_version.filter(|version| !version.is_empty()) else {
+        return true;
+    };
+    let version = version.trim_start_matches('v');
+    let Some((core, prerelease)) = version.split_once('-') else {
+        return version
+            .split('.')
+            .take(3)
+            .map(|part| part.parse::<u64>())
+            .collect::<Result<Vec<_>, _>>()
+            .map(|core| core.as_slice() >= &[1, 0, 0])
+            .unwrap_or(true);
+    };
+    let Ok(core) = core
+        .split('.')
+        .take(3)
+        .map(|part| part.parse::<u64>())
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        return true;
+    };
+    if core.as_slice() != [1, 0, 0] {
+        return core.as_slice() > &[1, 0, 0];
+    }
+    prerelease
+        .strip_prefix("beta.")
+        .and_then(|number| number.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|number| number.parse::<u64>().ok())
+        .map(|number| number >= 10)
+        .unwrap_or(prerelease > "beta")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::supports_nullable_objects;
+
+    #[test]
+    fn nullable_object_version_gate_handles_boundaries_and_development_versions() {
+        for (version, expected) in [
+            (None, true),
+            (Some(""), true),
+            (Some("development"), true),
+            (Some("v0.21.0-dev"), false),
+            (Some("v1.0.0-beta.9-dev"), false),
+            (Some("v1.0.0-beta.10"), true),
+            (Some("v1.0.0-beta.10-dev"), true),
+            (Some("v1.0.0-rc.1"), true),
+            (Some("v1.0.0"), true),
+        ] {
+            assert_eq!(supports_nullable_objects(version), expected, "{version:?}");
+        }
     }
 }
 

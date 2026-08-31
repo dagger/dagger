@@ -21,23 +21,4 @@
     overflow: visible;
   }
 
-  .rightSidebarControls {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-
-  .cloudButton {
-    display: flex !important;
-    margin: 0 !important;
-    white-space: nowrap;
-  }
-
-  .colorModeToggle {
-    display: flex;
-    align-items: center;
-    height: 36px;
-  }
 }

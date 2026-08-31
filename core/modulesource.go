@@ -576,6 +576,15 @@ func (sdk *persistedModuleSourceLazySDK) AsRuntimeTarget() (RuntimeTarget, bool)
 	return persistedModuleSourceLazyRuntimeTarget{sdk: sdk}, true
 }
 
+// AsModule reports no module. Every other capability is a behavior this wrapper
+// can defer behind a recorded flag; a module result is a value, so handing one
+// back would mean loading the SDK eagerly and defeating the laziness. Callers
+// that need the SDK's own module (workspace init's scoped generation) hold a
+// freshly loaded SDK, never a rehydrated one.
+func (sdk *persistedModuleSourceLazySDK) AsModule() (dagql.ObjectResult[*Module], bool) {
+	return dagql.ObjectResult[*Module]{}, false
+}
+
 type persistedModuleSourceLazyRuntime struct {
 	sdk *persistedModuleSourceLazySDK
 }
@@ -1450,17 +1459,17 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
-	// Check if there's an Env - if so, use its workspace as the context for
-	// defaultPath arguments.
+	// Determine the context for defaultPath arguments, in priority order:
+	//
+	//   1. a Workspace explicitly bound into the context (an LLM bound via
+	//      withWorkspace), so the agent's defaultPath args resolve against its
+	//      own (possibly overlaid) workspace;
+	//   2. otherwise the module source itself.
 	//
 	// NOTE: this applies unilaterally, whether the module was loaded from Host,
 	// Git, or a Directory.
-	env, ok, envErr := EnvFromContext(ctx)
-	if envErr != nil {
-		return inst, envErr
-	}
-	if ok {
-		inst, err = src.loadContextFromEnv(ctx, dag, env, path, filterInputs)
+	if ws, ok := WorkspaceFromContext(ctx); ok {
+		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
 	} else {
 		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
 	}
@@ -1497,42 +1506,44 @@ func (src *ModuleSource) LoadContextDir(
 	return inst, nil
 }
 
-func (src *ModuleSource) loadContextFromEnv(
+func (src *ModuleSource) loadContextFromWorkspace(
 	ctx context.Context,
 	dag *dagql.Server,
-	env dagql.ObjectResult[*Env],
+	ws dagql.ObjectResult[*Workspace],
 	path string,
 	filterInputs []dagql.NamedInput,
 ) (inst dagql.ObjectResult[*Directory], err error) {
-	// If path is not absolute, it's relative to the module root directory.
-	// If path is absolute, it's relative to the context directory.
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(src.SourceRootSubpath, path)
-	}
-	sels := []dagql.Selector{
-		{
-			Field: "workspace",
-		},
-	}
-	if path != "." {
-		sels = append(sels, dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(path)},
-			},
-		})
-	}
-	if len(filterInputs) > 0 {
-		sels = append(sels, dagql.Selector{
-			Field: "filter",
-			Args:  filterInputs,
-		})
-	}
-	err = dag.Select(ctx, env, &inst, sels...)
+	// Workspace.directory resolves relative paths against the workspace cwd, but
+	// the contextual path is relative to the workspace (context) root — so
+	// anchor it as an absolute path (see workspaceContextDirPath). The filters
+	// fold directly into the directory selector's native include/exclude/
+	// gitignore args, collapsing the Env path's separate .filter step.
+	dirArgs := append([]dagql.NamedInput{
+		{Name: "path", Value: dagql.String(workspaceContextDirPath(src.SourceRootSubpath, path))},
+	}, filterInputs...)
+	err = dag.Select(ctx, ws, &inst, dagql.Selector{
+		Field: "directory",
+		Args:  dirArgs,
+	})
 	if err != nil {
-		return inst, fmt.Errorf("failed to select env directory: %w", err)
+		return inst, fmt.Errorf("failed to select workspace directory: %w", err)
 	}
 	return inst, nil
+}
+
+// workspaceContextDirPath computes the workspace-root-relative path for a
+// module's contextual (+defaultPath) argument. A relative defaultPath is taken
+// relative to the module root (sourceRootSubpath); an absolute defaultPath is
+// taken relative to the context/workspace root. The result is always an
+// absolute (root-anchored) path: Workspace.directory resolves relative paths
+// against the workspace cwd but absolute paths against the workspace root, and
+// the context path is always root-relative.
+func workspaceContextDirPath(sourceRootSubpath, defaultPath string) string {
+	p := defaultPath
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(sourceRootSubpath, p)
+	}
+	return filepath.Join("/", p)
 }
 
 func (src *ModuleSource) loadContextFromSource(

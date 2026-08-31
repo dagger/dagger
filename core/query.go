@@ -52,7 +52,7 @@ type SpecificClientAttachableConnOpts struct {
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -65,9 +65,6 @@ type Server interface {
 
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
-
-	// If the current client is bound to an environment, return that environment.
-	CurrentEnv(context.Context) (dagql.ObjectResult[*Env], error)
 
 	// Return the modules being served to the current client
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
@@ -99,8 +96,8 @@ type Server interface {
 	// true, returns ok=false for read-only workspace lock sources.
 	CurrentWorkspaceLock(ctx context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error)
 
-	// Stage a lockfile lookup result for the current workspace's live lock state.
-	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
+	// Stage a lockfile value for the current workspace's live lock state.
+	SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error
 
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
@@ -111,6 +108,12 @@ type Server interface {
 
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
+
+	// The claim store for call-payload telemetry, scoped to the current
+	// client's delivery domain — the client and its ancestors, the DBs its
+	// telemetry actually fans out to — rather than the whole session. See
+	// core/dag_call_telemetry.go for why the scopes must differ.
+	CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)
@@ -153,9 +156,8 @@ type Server interface {
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
-	// use the engine-wide default pruning policy, otherwise prune the whole cache
-	// of any releasable entries.
+	// Prune releaseable local-cache entries using explicit disk and/or structural
+	// controls, or the enabled engine-wide default policies when requested.
 	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
@@ -170,6 +172,10 @@ type Server interface {
 
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
+
+	// EngineVolumeState returns the engine-local configuration needed to
+	// resolve operator-managed volumes at exec time.
+	EngineVolumeState() EngineVolumeState
 
 	// Flush telemetry for all clients in the current session.
 	FlushSessionTelemetry(ctx context.Context) error

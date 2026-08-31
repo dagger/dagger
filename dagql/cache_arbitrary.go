@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -18,6 +19,10 @@ type ArbitraryCachedResult interface {
 
 // sharedArbitraryResult is the in-memory-only cache entry for GetOrInitArbitrary values.
 type sharedArbitraryResult struct {
+	// id is the engine-lifetime-unique identity of this entry. A call key can
+	// be legitimately reused after its entry is removed, so removal paths
+	// compare ids to confirm a map entry is the one they hold.
+	id      uint64
 	callKey string
 
 	value any
@@ -80,12 +85,19 @@ func (c *Cache) GetOrInitArbitrary(
 	}
 
 	if res := c.completedArbitraryCalls[callKey]; res != nil {
-		c.callsMu.Unlock()
 		ret := arbitraryResult{
 			shared:   res,
 			hitCache: true,
 		}
-		c.trackSessionArbitrary(sessionID, ret)
+		err := c.acquireSessionArbitraryLocked(sessionID, res)
+		var onRelease OnReleaseFunc
+		if err != nil {
+			onRelease = c.removeUnownedArbitraryLocked(res)
+		}
+		c.callsMu.Unlock()
+		if err != nil {
+			return nil, errors.Join(err, runArbitraryOnRelease(ctx, onRelease))
+		}
 		return ret, nil
 	}
 
@@ -97,7 +109,9 @@ func (c *Cache) GetOrInitArbitrary(
 
 	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	c.nextArbitraryResultID++
 	res := &sharedArbitraryResult{
+		id:      c.nextArbitraryResultID,
 		callKey: callKey,
 
 		waitCh:  make(chan struct{}),
@@ -152,7 +166,6 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 		} else {
 			c.completedArbitraryCalls[res.callKey] = res
 		}
-		c.callsMu.Unlock()
 
 		if isFirstCaller {
 			hitCache = false
@@ -161,19 +174,48 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 			shared:   res,
 			hitCache: hitCache,
 		}
-		c.trackSessionArbitrary(sessionID, ret)
+		claimErr := c.acquireSessionArbitraryLocked(sessionID, res)
+		var onRelease OnReleaseFunc
+		if claimErr != nil {
+			onRelease = c.removeUnownedArbitraryLocked(res)
+		}
+		c.callsMu.Unlock()
+		if claimErr != nil {
+			return nil, errors.Join(claimErr, runArbitraryOnRelease(ctx, onRelease))
+		}
 		return ret, nil
 	}
 
-	if res.ownerSessionCount == 0 && res.waiters == 0 {
-		if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
-			delete(c.ongoingArbitraryCalls, res.callKey)
-		}
-		if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
-			delete(c.completedArbitraryCalls, res.callKey)
-		}
-	}
+	c.removeUnownedArbitraryLocked(res)
 
 	c.callsMu.Unlock()
 	return nil, err
+}
+
+// removeUnownedArbitraryLocked drops an arbitrary value that has neither a
+// session owner nor an active waiter. The caller must hold callsMu.
+func (c *Cache) removeUnownedArbitraryLocked(res *sharedArbitraryResult) OnReleaseFunc {
+	if res == nil || res.ownerSessionCount != 0 || res.waiters != 0 {
+		return nil
+	}
+	removed := false
+	if existing := c.ongoingArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
+		delete(c.ongoingArbitraryCalls, res.callKey)
+		removed = true
+	}
+	if existing := c.completedArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
+		delete(c.completedArbitraryCalls, res.callKey)
+		removed = true
+	}
+	if !removed {
+		return nil
+	}
+	return res.onRelease
+}
+
+func runArbitraryOnRelease(ctx context.Context, onRelease OnReleaseFunc) error {
+	if onRelease == nil {
+		return nil
+	}
+	return onRelease(context.WithoutCancel(ctx))
 }

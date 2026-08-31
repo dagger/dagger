@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-bootstrap"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.12"
 dependencies = [
  "clap",
  "color-eyre",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-codegen"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.12"
 dependencies = [
  "convert_case",
  "dagger-sdk",
@@ -330,7 +330,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.12"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -342,6 +342,7 @@ dependencies = [
  "graphql_client",
  "hex",
  "hex-literal",
+ "home",
  "platform-info",
  "pretty_assertions",
  "rand 0.8.5",
@@ -357,6 +358,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "which",
 ]
 
 [[package]]
@@ -768,6 +770,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
+name = "home"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3d1354bf6b7235cb4a0576c2619fd4ed18183f689b12b006a0ee7329eeff9a5"
+dependencies = [
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "http"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1162,9 +1173,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -2158,6 +2169,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "6.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ee928febd44d98f2f459a4a79bd4d928591333a494a10a868418ac1b39cf1f"
+dependencies = [
+ "either",
+ "home",
+ "rustix",
+ "winsafe",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2332,6 +2355,12 @@ name = "windows_x86_64_msvc"
 version = "0.52.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
+
+[[package]]
+name = "winsafe"
+version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen"

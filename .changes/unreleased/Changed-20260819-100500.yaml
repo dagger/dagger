@@ -1,0 +1,18 @@
+kind: Changed
+body: |
+  `dagger.toml` now records every path the same way: the `path` of an
+  `[[modules.<sdk>.as-sdk.modules]]` or `[[modules.<sdk>.as-sdk.clients]]`
+  entry — and a local client `module` ref — is relative to the directory
+  holding that `dagger.toml`, exactly like `[modules.<name>].source`. A leading
+  `/` anchors at the workspace root, as it does for an `[[include]]` (unlike a
+  `source`, where it still names an absolute filesystem path), and escaping the
+  root is refused. These entries used to be workspace-root-relative whatever
+  they looked like, so a config in a subdirectory spelled the same module two
+  different ways in the same file. Configs at the workspace root, where the two
+  anchors coincide, are unaffected; a `dagger.toml` in a subdirectory written by
+  an earlier version needs its as-sdk paths rewritten relative to itself (or
+  given a leading `/`).
+time: 2026-08-19T10:05:00Z
+custom:
+  Author: eunomie
+  PR: "13892"

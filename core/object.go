@@ -21,9 +21,6 @@ import (
 // ref: https://graphql.org/learn/execution/#trivial-resolvers
 const trivialFieldDirectiveName = "trivialResolveField"
 
-// indicates an ast field is deprecated
-const deprecatedDirectiveName = "deprecated"
-
 type ModuleObjectType struct {
 	typeDef *ObjectTypeDef
 	mod     dagql.ObjectResult[*Module]
@@ -1316,6 +1313,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if query != nil && query.ConstructorArgs != nil {
 					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
 				}
+				ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
 				var result dagql.AnyResult
 				if err := canonical.Select(ctx, canonical.Root(), &result,
 					dagql.Selector{
@@ -1360,6 +1358,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if query != nil && query.ConstructorArgs != nil {
 					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
 				}
+				ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
 				var result dagql.AnyResult
 				if err := canonical.Select(ctx, canonical.Root(), &result,
 					dagql.Selector{

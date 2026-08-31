@@ -40,10 +40,15 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * If the check failed, this is the error
      */
-    public function error(): Error
+    public function error(): ?Error
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('error');
-        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Error::class, new \Dagger\Id((string)$id), 'Error');
     }
 
     /**

@@ -58,6 +58,7 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 	return false
 }
 
+//nolint:gocyclo // streaming response handling is clearest as one protocol state machine
 func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans.
 	dp := newDisplayPhases(ctx, opts.CallDigest)
@@ -78,6 +79,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, err
+	}
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
 	if err != nil {
 		return nil, err
 	}
@@ -193,18 +198,46 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 				}
 			}
 
+		case "response.incomplete", "response.failed":
+			// A turn cut short ends with one of these instead of
+			// response.completed. Anything streamed so far is partial — a
+			// truncated tool call, half a message — so report the stop rather
+			// than letting the partial turn read as a clean finish.
+			var resp responses.Response
+			if event.Type == "response.incomplete" {
+				resp = event.AsResponseIncomplete().Response
+			} else {
+				resp = event.AsResponseFailed().Response
+			}
+			reason := resp.IncompleteDetails.Reason
+			if reason == "" {
+				reason = resp.Error.Message
+			}
+			if reason == "" {
+				reason = string(resp.Status)
+			}
+			return nil, &ModelFinishedError{Reason: reason}
+
 		case "response.completed":
 			e := event.AsResponseCompleted()
 			resp := e.Response
-			if resp.Usage.InputTokens > 0 {
-				usage.InputTokens = resp.Usage.InputTokens
+			cachedTokens := resp.Usage.InputTokensDetails.CachedTokens
+			usage.InputTokens = uncachedInputTokens(resp.Usage.InputTokens, cachedTokens)
+			usage.CachedTokenReads = cachedTokens
+			usage.OutputTokens = resp.Usage.OutputTokens
+			usage.TotalTokens = usage.InputTokens + usage.OutputTokens + usage.CachedTokenReads
+			if resp.Usage.TotalTokens > usage.TotalTokens {
+				usage.TotalTokens = resp.Usage.TotalTokens
+			}
+			if usage.InputTokens > 0 {
 				inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
 			}
-			if resp.Usage.OutputTokens > 0 {
-				usage.OutputTokens = resp.Usage.OutputTokens
+			if usage.CachedTokenReads > 0 {
+				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
+			}
+			if usage.OutputTokens > 0 {
 				outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
 			}
-			usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 
 			// Extract text from the completed response (tool calls handled above)
 			for _, item := range resp.Output {

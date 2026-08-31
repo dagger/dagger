@@ -143,4 +143,13 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('volume');
         return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Load a workspace from a module reference.
+     */
+    public function workspace(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

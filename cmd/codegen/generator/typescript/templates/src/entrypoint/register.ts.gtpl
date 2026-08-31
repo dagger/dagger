@@ -7,10 +7,7 @@ async function register(): Promise<string> {
 {{- end }}
 {{- range $name := sortedKeysObjects $module.Objects }}
 {{- $obj := index $module.Objects $name }}
-  let obj_{{ $obj.Name }} = dag.typeDef().withObject({{ jsString $obj.Name }}
-    {{- if $obj.Description }}, { description: {{ jsString $obj.Description }}{{ if $obj.Deprecated }}, deprecated: {{ jsString $obj.Deprecated }}{{ end }} }
-    {{- else if $obj.Deprecated }}, { deprecated: {{ jsString $obj.Deprecated }} }
-    {{- end }})
+  let obj_{{ $obj.Name }} = {{ renderObjectDef $obj }}
 {{- range $mName := sortedKeysMethods $obj.Methods }}
 {{- $fn := index $obj.Methods $mName }}
   obj_{{ $obj.Name }} = obj_{{ $obj.Name }}.withFunction({{ renderFunctionExpr $fn }})
@@ -18,10 +15,7 @@ async function register(): Promise<string> {
 {{- range $pName := sortedKeysProps $obj.Properties }}
 {{- $prop := index $obj.Properties $pName }}
 {{- if $prop.IsExposed }}
-  obj_{{ $obj.Name }} = obj_{{ $obj.Name }}.withField({{ jsString (propFieldName $prop) }}, {{ renderTypeDef $prop.Type }}
-    {{- if $prop.Description }}, { description: {{ jsString $prop.Description }}{{ if $prop.Deprecated }}, deprecated: {{ jsString $prop.Deprecated }}{{ end }} }
-    {{- else if $prop.Deprecated }}, { deprecated: {{ jsString $prop.Deprecated }} }
-    {{- end }})
+  obj_{{ $obj.Name }} = obj_{{ $obj.Name }}{{ renderFieldCall $prop }}
 {{- end }}
 {{- end }}
 {{- if $obj.Constructor }}
@@ -32,20 +26,16 @@ async function register(): Promise<string> {
 {{- end }}
 {{- range $name := sortedKeysEnums $module.Enums }}
 {{- $e := index $module.Enums $name }}
-  let enum_{{ $e.Name }} = dag.typeDef().withEnum({{ jsString $e.Name }}
-    {{- if $e.Description }}, { description: {{ jsString $e.Description }} }{{ end }})
+  let enum_{{ $e.Name }} = {{ renderEnumDef $e }}
 {{- range $vName := sortedKeysEnumValues $e.Values }}
 {{- $v := index $e.Values $vName }}
-  enum_{{ $e.Name }} = enum_{{ $e.Name }}.withEnumMember({{ jsString $v.Name }}, { value: {{ jsString $v.Value }}
-    {{- if $v.Description }}, description: {{ jsString $v.Description }}{{ end }}
-    {{- if $v.Deprecated }}, deprecated: {{ jsString $v.Deprecated }}{{ end }} })
+  enum_{{ $e.Name }} = enum_{{ $e.Name }}{{ renderEnumMemberCall $v }}
 {{- end }}
   mod = mod.withEnum(enum_{{ $e.Name }})
 {{- end }}
 {{- range $name := sortedKeysIfaces $module.Interfaces }}
 {{- $iface := index $module.Interfaces $name }}
-  let iface_{{ $iface.Name }} = dag.typeDef().withInterface({{ jsString $iface.Name }}
-    {{- if $iface.Description }}, { description: {{ jsString $iface.Description }} }{{ end }})
+  let iface_{{ $iface.Name }} = {{ renderInterfaceDef $iface }}
 {{- range $fnName := sortedKeysMethods $iface.Functions }}
 {{- $fn := index $iface.Functions $fnName }}
   iface_{{ $iface.Name }} = iface_{{ $iface.Name }}.withFunction({{ renderFunctionExpr $fn }})

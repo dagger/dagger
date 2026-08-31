@@ -24,7 +24,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5" // v0.21.7
+	goSDKLibVersion = "fdf4c34a9a67d096aaeef79630017c9c7ff8fe8e" // v0.21.9
 )
 
 /*
@@ -90,6 +90,12 @@ func (sdk *goSDK) AsClientInitializer() (core.ClientInitializer, bool) {
 
 func (sdk *goSDK) AsRuntimeTarget() (core.RuntimeTarget, bool) {
 	return nil, false
+}
+
+// AsModule reports no module: the Go SDK is a packaged codegen binary, not a
+// Dagger module, so it exposes no generator functions of its own.
+func (sdk *goSDK) AsModule() (dagql.ObjectResult[*core.Module], bool) {
+	return dagql.ObjectResult[*core.Module]{}, false
 }
 
 // AlwaysEnablesSelfCalls reports that the Go SDK always enables self calls:

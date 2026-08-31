@@ -65,11 +65,21 @@ The dot is an introspection.Field. */ -}}
 		{{- end }}
     ){{- /* Add subfields */ -}}
       {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}.select("{{- range $i, $v := . | GetArrayField }}{{if $i }} {{ end }}{{ $v.Name | ToLowerCase }}{{- end }}")
+      {{- else if IsNullableObject .TypeRef }}.select("id")
       {{- end }}
 
-    {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if $convertID }}{{ . | FormatFieldOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await ctx.execute()
+    {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if IsNullableObject .TypeRef }}string | null{{ else if $convertID }}{{ . | FormatFieldOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await ctx.execute()
 
-    {{ if $convertID -}}
+    {{ if IsNullableObject .TypeRef -}}
+    if (response === null) {
+      return null
+    }
+      {{- if .TypeRef.IsInterface }}
+    return new _{{ $promiseRetType | FormatProtected | FormatName }}Client(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
+      {{- else }}
+    return new {{ $promiseRetType | FormatProtected | FormatName }}(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
+      {{- end }}
+    {{- else if $convertID -}}
       {{- if IsInterface .ParentObject }}
     return new _{{ $promiseRetType | FormatProtected | FormatName }}Client(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
       {{- else }}

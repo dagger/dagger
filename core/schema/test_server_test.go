@@ -25,6 +25,7 @@ type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
 	dag              *dagql.Server
 	mainClient       *engine.ClientMetadata
+	platform         core.Platform
 	workspaceLock    *workspace.Lock
 	workspaceLockOK  bool
 	workspaceLockErr error
@@ -44,10 +45,6 @@ func (s *currentTypeDefsTestServer) ModuleParent(context.Context) (dagql.ObjectR
 
 func (s *currentTypeDefsTestServer) CurrentFunctionCall(context.Context) (*core.FunctionCall, error) {
 	return nil, nil
-}
-
-func (s *currentTypeDefsTestServer) CurrentEnv(context.Context) (dagql.ObjectResult[*core.Env], error) {
-	return dagql.ObjectResult[*core.Env]{}, nil
 }
 
 func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Workspace, error) {
@@ -89,6 +86,10 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, error) {
 	return s.dag, nil
 }
@@ -97,7 +98,7 @@ func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Ha
 	return nil
 }
 
-func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {
@@ -116,7 +117,7 @@ func (s *currentTypeDefsTestServer) Services(context.Context) (*core.Services, e
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) Platform() core.Platform { return core.Platform{} }
+func (s *currentTypeDefsTestServer) Platform() core.Platform { return s.platform }
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 
@@ -141,6 +142,10 @@ func (s *currentTypeDefsTestServer) SnapshotManager() bkcache.SnapshotManager { 
 func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return nil }
 
 func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
+
+func (s *currentTypeDefsTestServer) EngineVolumeState() core.EngineVolumeState {
+	return core.EngineVolumeState{}
+}
 
 func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error {
 	return nil
@@ -168,6 +173,6 @@ func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) 
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 
-func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspace.LookupResult) error {
+func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
 	return nil
 }

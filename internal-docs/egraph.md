@@ -182,9 +182,28 @@ This is a major design point: the e-graph decides equivalence, but the
 The bridge between symbolic graph and concrete payload is:
 
 - `resultOutputEqClasses`
+- `outputEqClassResults`
 - `termResults`
 - `resultTerms`
 - `egraphResultsByDigest`
+- `resultIndexedDigests`
+- `broadlyIndexedResults`
+
+`resultOutputEqClasses` and `outputEqClassResults` are paired forward and
+inverse indexes. The inverse is keyed by canonical output eq-class roots and
+lets lifecycle cleanup find surviving results without re-deriving membership
+from every digest posting in the class. Association helpers update both
+directions together.
+
+`egraphResultsByDigest` is the lookup-facing digest-to-results index.
+`resultIndexedDigests` records the exact postings created for ordinary runtime
+results, so lifecycle cleanup can remove those postings directly. Imported
+state is different: the persistence schema does not retain exact
+result-to-digest membership, so import reconstructs conservative class-wide
+postings and marks each affected result in `broadlyIndexedResults`. Removal of
+a broad result retains the class-digest scan fallback. A broad result may also
+gain later exact postings; those are recorded normally while its broad marker
+remains authoritative until removal.
 
 These let the cache answer questions like:
 
@@ -213,18 +232,16 @@ Because of that, lookup prefers:
 That behavior lives mainly in:
 
 - `appendTermSetResultsLocked`
-- `firstResultForTermSetDeterministicallyAtLocked`
-- `firstResultForOutputEqClassDeterministicallyAtLocked`
+- `appendDigestResultsLocked`
 
 ## How Call Identity Feeds The E-Graph
 
-The e-graph consumes structural identity produced upstream by `ResultCall` /
-`call.ID`.
+The e-graph consumes structural identity produced upstream by `ResultCall`.
 
-The key functions are in `dagql/call/id.go`:
+The relevant derivations are in `dagql/result_call_frame.go`:
 
-- `SelfDigestAndInputRefs`
-- `SelfDigestAndInputs`
+- `ResultCall.SelfDigestAndInputRefs` derives structural identity.
+- `ResultCall.ContentPreferredDigest` derives content-preferred identity.
 
 The shape is:
 
@@ -237,9 +254,10 @@ That distinction is why structural equivalence works: the cache can say
 "same operation over equivalent inputs" without flattening the whole call into
 one undifferentiated digest.
 
-Content-preferred digest is related but separate. In `dagql/call/id_content.go`,
-it expresses "if outputs are interchangeable by content, what digest should we
-prefer?" It is used as equivalence evidence, not as the authoritative recipe.
+Content-preferred identity is related but separate. If a `ResultCall` has an
+explicit content digest, `ContentPreferredDigest` returns it; otherwise, it
+hashes the call shape while recursively preferring content identity for
+referenced results. It does not replace the authoritative recipe digest.
 
 ## Main Entry Points Into The E-Graph
 
@@ -340,9 +358,13 @@ This reconstructs:
 - digests
 - results
 - terms
-- result/term associations
+- result/output-eq-class associations
 - persisted edges
 - snapshot ownership links
+
+Exact result/term associations are not persisted or reconstructed; imported
+results are recovered through their output classes and conservative broad
+digest postings.
 
 This is how the in-memory e-graph is restored after restart.
 
@@ -353,9 +375,17 @@ This removes a materialized result from the graph when ownership drains to zero.
 It:
 
 - removes result-term associations
-- removes digest indexes for the result
-- removes terms that no longer have any live results in their output eq-class
+- removes exact digest indexes recorded for the result
+- for broadly indexed imported results, also scans affected output classes to
+  remove reconstructed class-wide postings
+- removes paired forward/inverse output-class associations
+- removes terms whose output eq-class has no remaining unexpired result
 - possibly resets the whole e-graph if nothing remains
+
+The survivor check walks `outputEqClassResults` and applies the same expiry
+filter used by lookup. An expired-but-not-yet-collected result therefore does
+not delay term cleanup. It does not opportunistically collect expired results
+or change ownership timing.
 
 ### 10. `compactEqClassesLocked`
 
@@ -366,6 +396,11 @@ can get sparse. Compaction rebuilds the live eq-class space to keep it smaller
 and more coherent.
 
 Today this runs after prune when needed.
+
+Compaction remaps `resultOutputEqClasses` and rebuilds
+`outputEqClassResults` from the remapped forward associations before publishing
+the pair. A full e-graph reset clears both maps with `resultsByID` and the other
+derived indexes, including exact digest reverse lists and broad import markers.
 
 ## Lookup In Detail
 
@@ -386,7 +421,10 @@ then `lookupCacheForRequestLocked` takes a fast path and skips teaching the grap
 anything new. This keeps exact-hit overhead down.
 
 The direct-hit index here is `egraphResultsByDigest`, which indexes request and
-response recipe digests plus extra digests for concrete results.
+response recipe digests plus extra digests for concrete results. Runtime
+publication records these postings exactly in `resultIndexedDigests`; imported
+state safely reconstructs broader class-wide postings because the current
+persistence format lacks that exact reverse membership.
 
 ### Structural Term Hits Are The Fallback
 
@@ -494,14 +532,20 @@ The most e-graph-specific logic lives in `mergeEqClassesLocked` and
 When output digests or extra digests are merged:
 
 1. union-find merges the eq-classes
-2. any terms that mention the merged class as an input may now have different
+2. the losing root's inverse result set is moved to the winning root, and each
+   moved result's forward association is rewritten eagerly
+3. any terms that mention the merged class as an input may now have different
    canonical input roots
-3. those terms get repaired:
+4. those terms get repaired:
    - input roots are rewritten
    - their `termDigest` is recomputed
    - reverse indexes are updated
-4. if previously distinct terms become congruent under the repaired digest, their
+5. if previously distinct terms become congruent under the repaired digest, their
    output eq-classes are merged too
+
+Production result/output associations therefore contain current roots. Read
+paths still normalize defensively, and compaction rebuilds both association
+directions under remapped roots.
 
 That last step is the actual congruence-closure behavior.
 
@@ -704,7 +748,7 @@ well:
    - `importPersistedState`
    - `ensurePersistedHitValueLoaded`
 
-4. `dagql/call/id.go` and `dagql/call/id_content.go`
+4. `dagql/result_call_frame.go`
    - structural identity
    - content-preferred digest
 

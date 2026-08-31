@@ -1,0 +1,5 @@
+[modules.rooter-old]
+source = ".dagger/modules/rooter-old"
+
+[modules.rooter-new]
+source = ".dagger/modules/rooter-new"

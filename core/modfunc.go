@@ -677,11 +677,6 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			//  3) "workspace args" that are automatically injected
 			continue
 		}
-		// Check for Workspace arguments first - they're always injected
-		if argMetadata.IsWorkspace() {
-			workspaceArgs = append(workspaceArgs, argMetadata)
-			continue
-		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
 		if err != nil {
 			return fmt.Errorf("%s.%s(%s=): load user default: %w",
@@ -693,6 +688,12 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 		if hasUserDefault {
 			userDefaults = append(userDefaults, userDefault)
+		} else if argMetadata.IsWorkspace() {
+			// Workspace args inherit the workspace in scope only when the user
+			// did not configure one explicitly. A settings value may itself be
+			// a module reference, so it must go through the ordinary object
+			// default resolver above instead of being shadowed by injection.
+			workspaceArgs = append(workspaceArgs, argMetadata)
 		} else if argMetadata.isContextual() {
 			ctxArgs = append(ctxArgs, argMetadata)
 		}
@@ -882,12 +883,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
-
-	var envContext dagql.ObjectResult[*Env]
-	if env, ok, err := EnvFromContext(ctx); err != nil {
-		return nil, fmt.Errorf("resolve function env context: %w", err)
-	} else if ok {
-		envContext = env
+	// Carry the receiver object (with its dagql ID) engine-side so the module can
+	// reach it via Query.currentNode. It rides the fnCall by reference into the
+	// nested client session (ServeHTTPToNestedClient) for both in-process and
+	// containerized runtimes. Nil for top-level / constructor calls.
+	if obj, ok := opts.ParentTyped.(dagql.AnyObjectResult); ok {
+		fnCall.parentTyped = obj
 	}
 
 	// hide all this internal plumbing making up the call
@@ -899,7 +900,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	err = runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
+	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr
@@ -1242,23 +1243,31 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
-	// The generator framework can hand the SDK a specific workspace to inject
-	// (GeneratorGroup.WorkspaceOverride) — e.g. a scoped/overlaid workspace built
-	// by ModuleSource.generateLocalDependencies. It wins over both the
-	// module-function guard and the ambient currentWorkspace so nested generator
-	// runs receive exactly the workspace the engine constructed.
-	if override, ok := WorkspaceOverrideFromContext(ctx); ok {
-		overrideID, err := override.ID()
+	// Prefer a Workspace explicitly bound into the context (an LLM bound via
+	// withWorkspace, or a generator/check group threading the workspace it was
+	// rolled up from) over the ambient currentWorkspace, so every leaf in the
+	// group resolves the same workspace under the same ID.
+	//
+	// This bound-workspace preference MUST be checked before the
+	// callerInModuleFunction guard below: a generator/check leaf's
+	// auto-injected Workspace! is resolved while running inside the module
+	// runtime, so gating on callerInModuleFunction first would reject the
+	// seeded workspace and leave the leaf reading stale source. The workspace
+	// is still explicit here — the group threaded it via WorkspaceToContext —
+	// so this does not silently inherit a caller's workspace across modules.
+	if boundWS, ok := WorkspaceFromContext(ctx); ok {
+		wsID, err := boundWS.ID()
 		if err != nil {
-			return nil, fmt.Errorf("workspace override id: %w", err)
+			return nil, fmt.Errorf("get bound workspace ID: %w", err)
 		}
-		return dagql.NewID[*Workspace](overrideID), nil
+		return dagql.NewID[*Workspace](wsID), nil
 	}
 
-	// A Workspace is auto-injected only for calls originating outside a module
-	// function (a direct CLI/SDK client, or a schema-walking flow like `dagger
-	// generate`). A running module function must pass a Workspace to its
-	// dependencies explicitly, so they don't silently inherit its workspace.
+	// Otherwise a Workspace is auto-injected only for calls originating outside a
+	// module function (a direct CLI/SDK client, or a schema-walking flow like
+	// `dagger generate`). A running module function must pass a Workspace to its
+	// dependencies explicitly, so a dependency does not silently inherit its
+	// caller's workspace.
 	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
 		return nil, err
 	} else if inModuleFunction {

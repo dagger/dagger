@@ -1,0 +1,82 @@
+---
+title: "dagger.toml"
+slug: /config/reference/dagger-toml
+description: "The dagger.toml workspace configuration file schema."
+---
+
+# dagger.toml
+
+A workspace is configured by a `dagger.toml` file at its root. It records the modules installed in the workspace, their settings, and any per-environment overrides. `dagger install` creates it on first install.
+
+The machine-readable schema is published at [dagger-workspace.schema.json](/reference/dagger-workspace.schema.json).
+
+## Top level
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `modules` | table | Installed modules, keyed by install name. See [`[modules.<name>]`](#modulesname). |
+| `env` | table | Named environment overlays. See [`[env.<name>]`](#envname). |
+| `ports` | table | Host port mappings for services. See [`[ports.<name>]`](#portsname). |
+| `ignore` | array | Path patterns excluded when loading the workspace. |
+| `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
+| `check-generated` | bool | Run generators as checks during `dagger check`, failing when generated files are stale. Defaults to `true`; CLI flags override it. |
+
+Resolved image and Git lookups are pinned in `dagger.lock` alongside the config, and refreshed with `dagger update`.
+
+## `[modules.<name>]`
+
+```toml
+[modules.eslint]
+source = "github.com/dagger/eslint@v0.3.0"
+
+[modules.eslint.settings]
+packageManager = "yarn"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `source` | string | Module address — a workspace-relative path, or a Git ref such as `github.com/org/mod@version`. |
+| `pin` | string | Resolved version for `source`. |
+| `settings` | table | Module settings. Keys are defined by the module; set them with `dagger settings`. |
+| `entrypoint` | bool | Marks this module as the workspace entrypoint. |
+| `legacy-default-path` | bool | Compatibility flag recorded by workspace migration. |
+| `check` | table | `skip = [...]` — check functions to exclude from `dagger check`. |
+| `generate` | table | `skip = [...]` — generators to exclude from `dagger generate`. |
+| `up` | table | `skip = [...]` — services to exclude from `dagger up`. |
+| `as-sdk` | table | SDK-role data, for module entries that act as an SDK in this workspace. See [`as-sdk`](#as-sdk). |
+
+Settings can point at another module's output instead of a literal value — see [Module wiring](../module-wiring.mdx).
+
+## `as-sdk`
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `name` | string | SDK name used by `dagger module init <sdk>` and `dagger api client init <sdk>`. Defaults to the module entry name. |
+| `modules` | array | Workspace-local modules this SDK authors, each with a `path`. |
+| `clients` | array | Generated bindings this SDK produces, each with `path`, `module`, `pin`, and `options`. |
+
+## `[env.<name>]`
+
+An environment overlay carries module settings, and may install modules scoped to itself. See [Environments](../environments.mdx).
+
+```toml
+[env.staging.modules.eslint.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `modules.<name>.settings` | table | Settings applied on top of the base configuration when the environment is selected. |
+| `modules.<name>.source` | string | Installs a module scoped to this environment. Mirrors `[modules.<name>].source`. |
+| `modules.<name>.pin` | string | Resolved version for the scoped `source`. |
+
+## `[ports.<name>]`
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `backendService` | string | Service that backs this host port. |
+| `backendPort` | int | Port on the backing service. |
+
+## User-level file
+
+The same module settings can be set per-user, outside the repository, in `~/.config/dagger/config.toml`. See [User configuration](../user.mdx).

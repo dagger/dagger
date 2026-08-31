@@ -1,7 +1,9 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -238,6 +240,39 @@ func TestResultCallDigestedStringUsesAttachedDigestForStructuralIdentity(t *test
 	require.Equal(t, execMDDigest, refsB[0].Digest)
 }
 
+func TestResultCallBytesPersistAndRebuildRaw(t *testing.T) {
+	t.Parallel()
+
+	contents := []byte{0x00, 0xff, 0xfe, 'b', 'l', 'o', 'b'}
+	frame := cacheTestIntCall("blob")
+	frame.Args = []*ResultCallArg{{
+		Name: "contents",
+		Value: &ResultCallLiteral{
+			Kind:       ResultCallLiteralKindBytes,
+			BytesValue: bytes.Clone(contents),
+		},
+	}}
+
+	payload, err := json.Marshal(frame)
+	require.NoError(t, err)
+	require.Contains(t, string(payload), `"kind":"bytes"`)
+
+	var restored ResultCall
+	require.NoError(t, json.Unmarshal(payload, &restored))
+	require.Equal(t, contents, restored.Args[0].Value.BytesValue)
+
+	pb, err := restored.callPB(nil)
+	require.NoError(t, err)
+	require.Equal(t, contents, pb.GetArgs()[0].GetValue().GetBytes())
+
+	rebuilt, err := restored.recipeID(t.Context(), nil)
+	require.NoError(t, err)
+	lit, ok := rebuilt.Arg("contents").Value().(*call.LiteralBytes)
+	require.True(t, ok)
+	require.Equal(t, contents, lit.Value())
+	require.Equal(t, pb.GetDigest(), rebuilt.Digest().String())
+}
+
 func TestResultCallForkClonesTopLevelMutableState(t *testing.T) {
 	t.Parallel()
 
@@ -383,7 +418,7 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 
 	ref := &ResultCallRef{ResultID: uint64(shared.id), shared: shared}
 	caller := &ResultCall{}
-	id, err := caller.resolveRefRecipeID(ctx, c, ref, map[sharedResultID]struct{}{})
+	id, err := caller.resolveRefRecipeID(ctx, c, ref, map[sharedResultID]struct{}{}, newRecipeIDMemo())
 	require.NoError(t, err)
 	require.Equal(t, contentDigest, id.ContentDigest())
 

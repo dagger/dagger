@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type workspaceInstallArgs struct {
@@ -77,6 +76,71 @@ func planWorkspaceInstallConfig(
 	return plan, nil
 }
 
+// planWorkspaceEnvInstallConfig stages an install scoped to a workspace env:
+// the module is recorded under env.<envName>.modules.* so it is only present
+// when that env is selected. Installing is a write, so a missing env is
+// created by it, matching env-scoped config writes. The overlay entry is
+// recorded even when the base config has the same module, so the env keeps it
+// if the base install is later removed.
+//
+// An existing overlay entry without a source is a settings-only overlay, not an
+// install, so it is upgraded in place (keeping its settings) rather than
+// treated as already installed. When the base config installs the same module
+// from the same source, its pin is copied into the overlay entry: an overlay
+// source is authoritative in [workspace.ApplyEnvOverlay] and its pin travels
+// with it, so a pin-less overlay would silently unpin the module in that env.
+// Otherwise the entry stays pin-less and resolves through dagger.lock, like
+// base installs.
+func planWorkspaceEnvInstallConfig(
+	cfg *workspace.Config,
+	envName string,
+	args workspaceInstallArgs,
+	name string,
+	sourcePath string,
+) (workspaceInstallConfigPlan, error) {
+	plan := workspaceInstallConfigPlan{}
+	if args.AsSdk {
+		return plan, fmt.Errorf("SDKs cannot be installed in env %q; install SDKs in the base workspace config", envName)
+	}
+
+	if base, ok := cfg.Modules[name]; ok && base.AsSDK != nil {
+		return plan, fmt.Errorf("module %q is an SDK; SDKs cannot be installed in env %q", name, envName)
+	}
+
+	if workspace.EnsureEnv(cfg, envName) {
+		plan.Changed = true
+	}
+	env := cfg.Env[envName]
+	entry := workspace.EnvModuleOverlay{Source: sourcePath}
+	if existing, ok := env.Modules[name]; ok {
+		if existing.Source == sourcePath {
+			return plan, nil
+		}
+		if existing.Source != "" {
+			return plan, fmt.Errorf(
+				"module %q already exists in env %q with source %q (new source %q)",
+				name,
+				envName,
+				existing.Source,
+				sourcePath,
+			)
+		}
+		entry.Settings = existing.Settings
+	}
+	if base, ok := cfg.Modules[name]; ok && base.Source == sourcePath {
+		entry.Pin = base.Pin
+	}
+
+	if env.Modules == nil {
+		env.Modules = map[string]workspace.EnvModuleOverlay{}
+	}
+	env.Modules[name] = entry
+	cfg.Env[envName] = env
+	plan.Changed = true
+	plan.Added = true
+	return plan, nil
+}
+
 type workspaceInstallResolution struct {
 	Name         string
 	ConfigSource string
@@ -91,7 +155,6 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 	here bool,
 ) (workspaceInstallResolution, error) {
 	var resolved workspaceInstallResolution
-	ctx = workspaceInstallLookupContext(ctx)
 
 	configDir := workspaceConfigDirectoryForWrite(ws, here)
 	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, ws, ref, configDir)
@@ -220,18 +283,10 @@ func (s *workspaceSchema) resolveExternalWorkspaceInstallSource(
 	configDir string,
 ) (dagql.ObjectResult[*core.ModuleSource], string, error) {
 	var src dagql.ObjectResult[*core.ModuleSource]
-	lockMode := ""
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		lockMode = clientMetadata.LockMode
-	}
 	ctx, err := withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return src, "", err
 	}
-	if lockMode != "" {
-		ctx = workspaceInstallContextWithLockMode(ctx, workspace.LockMode(lockMode))
-	}
-	ctx = workspaceInstallLookupContext(ctx)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return src, "", fmt.Errorf("dagql server: %w", err)
@@ -262,34 +317,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallForOverlay(
 	name string,
 	here bool,
 ) (workspaceInstallResolution, error) {
-	return s.resolveWorkspaceInstall(
-		workspaceInstallContextWithLockMode(ctx, workspace.LockModePinned),
-		ws,
-		ref,
-		name,
-		here,
-	)
-}
-
-func workspaceInstallContextWithLockMode(ctx context.Context, mode workspace.LockMode) context.Context {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return ctx
-	}
-	updated := *clientMetadata
-	updated.LockMode = string(mode)
-	return engine.ContextWithClientMetadata(ctx, &updated)
-}
-
-func workspaceInstallLookupContext(ctx context.Context) context.Context {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil || clientMetadata.LockMode != "" {
-		return ctx
-	}
-
-	refreshed := *clientMetadata
-	refreshed.LockMode = string(workspace.LockModePinned)
-	return engine.ContextWithClientMetadata(ctx, &refreshed)
+	return s.resolveWorkspaceInstall(ctx, ws, ref, name, here)
 }
 
 func workspaceInstallModuleSourceSelector(ref string) dagql.Selector {

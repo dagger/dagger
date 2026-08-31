@@ -62,13 +62,18 @@ export class Host extends BaseClient {
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
-  envVariable = (name: string): HostVariable => {
-
+  envVariable = async (name: string): Promise<HostVariable | null> => {
     const ctx = this._ctx.select(
       "envVariable",
-      { name },
-    )
-    return new HostVariable(ctx)
+      { name},
+    ).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new HostVariable(ctx.copy().selectNode(response, "HostVariable"))
   }
 
   /**

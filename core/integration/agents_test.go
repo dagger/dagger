@@ -1,0 +1,236 @@
+package core
+
+// These tests cover `dagger agent`, which discovers and composes module @agent
+// middlewares (hack/designs/workspace-agents.md §3). They verify cross-module discovery, the base
+// argument being matched by type (not name), nested discovery through
+// object-returning functions, signature validation, and the composed toolset
+// (auto-exclusion of the entrypoint + collision-driven namespacing). Driving the
+// interactive prompt itself needs a live model and is covered by manual QA.
+//
+// See also:
+// - checks_test.go: the @check sibling this machinery is cloned from.
+// - workspace_modules_test.go: installing modules into workspaces.
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"dagger.io/dagger"
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+type AgentsSuite struct{}
+
+func TestAgents(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(AgentsSuite{})
+}
+
+// installAgents mounts the agents testdata and installs the named modules into a
+// fresh /work/modules/app workspace.
+func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*dagger.Container, error) {
+	env, err := specificTestEnv(t, c, "agents")
+	if err != nil {
+		return nil, err
+	}
+	var toml string
+	for _, name := range names {
+		toml += fmt.Sprintf("[modules.%s]\nsource = \"../%s\"\n", name, name)
+	}
+	return env.WithWorkdir("app").WithNewFile("dagger.toml", toml), nil
+}
+
+func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor", "godoc")
+	require.NoError(t, err)
+
+	out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "editor:agent")
+	// godoc's base argument is named `llm`, not `base`; it must still be
+	// discovered, since the base is matched by type rather than name.
+	require.Contains(t, out, "godoc:agent")
+}
+
+// TestSDKAgents covers the @agent marker in the SDKs that carry their own
+// decorator plumbing (the Dang cases above exercise the `@agent` directive
+// directly). Each module declares one @agent function and one tool; the agent
+// must be discovered and its tool must land in the composed toolset.
+func (AgentsSuite) TestSDKAgents(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	for _, tc := range []struct {
+		name   string
+		module string
+		tool   string
+	}{
+		{"python", "editor-py", "readFilePy"},
+		{"typescript", "editor-ts", "readFileTs"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			modGen, err := installAgents(t, c, tc.module)
+			require.NoError(t, err)
+
+			out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, tc.module+":agent")
+
+			out, err = modGen.
+				With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "## "+tc.tool)
+			// The @agent entrypoint is auto-excluded from the toolset.
+			require.NotContains(t, out, "## agent")
+		})
+	}
+}
+
+func (AgentsSuite) TestSelection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor", "godoc")
+	require.NoError(t, err)
+
+	out, err := modGen.With(daggerExec("agent", "-l", "editor")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "editor:agent")
+	require.NotContains(t, out, "godoc:agent")
+}
+
+func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "nested")
+	require.NoError(t, err)
+
+	// The @agent lives on NestedTools, reached via the object-returning function
+	// Nested.tools; the rollup recurses through functions, so it is discoverable.
+	out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "nested:tools:agent")
+}
+
+func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "badagent")
+	require.NoError(t, err)
+
+	// badagent's @agent declares a required `extra: String!` beyond its LLM base,
+	// which must be rejected at module load.
+	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "may only require a single LLM! argument")
+}
+
+func (AgentsSuite) TestValidationRejectsMissingBaseArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "badagent-noarg")
+	require.NoError(t, err)
+
+	// badagent-noarg's @agent takes no LLM! base argument, which must be
+	// rejected at module load — the compose fold has nothing to thread through.
+	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "does not declare a required LLM! argument")
+}
+
+func (AgentsSuite) TestValidationRejectsBadReturnType(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "badagent-return")
+	require.NoError(t, err)
+
+	// badagent-return's @agent returns String! rather than LLM!, which must be
+	// rejected at module load.
+	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "does not return LLM!")
+}
+
+func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor", "godoc")
+	require.NoError(t, err)
+
+	out, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	// The @agent entrypoint is auto-excluded from the toolset, so authors don't
+	// need `except: ["agent"]`.
+	require.NotContains(t, out, "## agent")
+	// Collision: both modules define `shared`. Instead of one silently
+	// shadowing the other, ALL tools of BOTH conflicting modules are served
+	// under namespaced names — the whole toolset, not just the colliding tool,
+	// so each module's toolset stays uniform. (godoc's tools being present at
+	// all proves the `llm`-named base was threaded correctly.)
+	require.Contains(t, out, "## editor_shared")
+	require.Contains(t, out, "shared tool from editor")
+	require.Contains(t, out, "## godoc_shared")
+	require.Contains(t, out, "shared tool from godoc")
+	require.Contains(t, out, "## editor_readFile")
+	require.Contains(t, out, "## godoc_goDoc")
+	require.NotContains(t, out, "## readFile")
+	require.NotContains(t, out, "## goDoc")
+	require.NotContains(t, out, "## shared")
+
+	// A module with no collisions keeps its bare tool names — namespacing only
+	// kicks in when toolsets actually conflict.
+	out, err = modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["editor"]){compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "## readFile")
+	require.Contains(t, out, "## shared")
+	require.NotContains(t, out, "## editor_")
+}
+
+// TestComposeSeedIsWorkspaceBound locks in that compose's default base LLM is
+// bound to the workspace the group was rolled up from. llm() starts unbound
+// (NewLLM no longer binds the ambient workspace), so without the explicit
+// withWorkspace seed, reading the composed LLM's workspace fails with "no
+// workspace is bound to this LLM" — the `dagger agent` startup regression.
+func (AgentsSuite) TestComposeSeedIsWorkspaceBound(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+
+	// Reading the bound workspace back out proves the seed bound one, and the
+	// entries prove it's the env workspace the group was rolled up from (its
+	// root carries the fixture module tree).
+	out, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{workspace{directory(path:"/"){entries}}}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "modules/")
+}
+
+// TestAgentReadsSeedWorkspace covers the mid-fold half of the same regression:
+// an @agent leaf that reads base.workspace during compose (like a real agent
+// scanning project context) must see the seed's bound workspace.
+func (AgentsSuite) TestAgentReadsSeedWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "wsaware")
+	require.NoError(t, err)
+
+	// wsaware:agent derives its system prompt from
+	// base.workspace.file("dagger.toml"), so composing succeeds only when the
+	// seed is workspace-bound (compose runs each leaf eagerly).
+	_, err = modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+}
+
+func (AgentsSuite) TestEmptySelectionComposesBareLLM(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+
+	// A selection matching no agent folds over nothing and returns the bare
+	// workspace-bound LLM (builtins only) — no error, and no editor tools.
+	out, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["does-not-exist"]){compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, out, "## readFile")
+}

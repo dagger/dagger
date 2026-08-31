@@ -1,5 +1,5 @@
-using Dagger.SDK.JsonConverters;
 using System.Text.Json.Serialization;
+using Dagger.SDK.JsonConverters;
 
 namespace Dagger.SDK;
 
@@ -7,9 +7,7 @@ namespace Dagger.SDK;
 /// The unified ID scalar type. All Dagger objects have an ID of this type.
 /// </summary>
 [JsonConverter(typeof(ScalarIdConverter<Id>))]
-public class Id : Scalar
-{
-}
+public class Id : Scalar { }
 
 /// <summary>
 /// Interface for objects that have a unique ID.

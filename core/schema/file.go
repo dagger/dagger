@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"slices"
 
@@ -16,12 +17,22 @@ type fileSchema struct{}
 var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install(srv *dagql.Server) {
+	srv.InstallScalar(dagql.Bytes(nil), AfterVersion("v1.0.0-beta.10"))
+
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("file", s.file).
 			Doc(`Creates a file with the specified contents.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the new file. Example: "foo.txt"`),
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
+				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
+			),
+		dagql.NodeFunc("blob", s.blob).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc(`Creates a file from arbitrary binary contents.`).
+			Args(
+				dagql.Arg("name").Doc(`Name of the new file. Example: "archive.tar"`),
+				dagql.Arg("contents").Doc(`Binary contents of the new file, encoded as base64 at the GraphQL boundary.`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
 	}.Install(srv)
@@ -152,6 +163,43 @@ func (s *fileSchema) file(
 		return inst, err
 	}
 	return inst, nil
+}
+
+type newBlobArgs struct {
+	Name        string
+	Contents    dagql.Bytes
+	Permissions int `default:"0644"`
+}
+
+func (s *fileSchema) blob(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Query],
+	args newBlobArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	if dir, _ := filepath.Split(args.Name); dir != "" {
+		return inst, fmt.Errorf("file name %q must not contain a directory", args.Name)
+	}
+	if err := core.ValidateFileName(args.Name); err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	file := &core.File{
+		Platform: parent.Self().Platform(),
+		Lazy: &core.FileBlobLazy{
+			LazyState:   core.NewLazyState(),
+			Filename:    args.Name,
+			Contents:    args.Contents.Bytes(),
+			Permissions: fs.FileMode(args.Permissions),
+		},
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+	}
+	file.File.SetValue(filepath.Join("/", args.Name))
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core.File], args struct {

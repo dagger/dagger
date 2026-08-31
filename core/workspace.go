@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
@@ -38,6 +39,58 @@ func InvalidateCurrentWorkspace(ctx context.Context) error {
 	return workspaceInvalidator(ctx)
 }
 
+// workspaceReadEpoch hooks expose the calling client's "workspace read epoch":
+// a monotonically bumped token folded into cached host reads (Workspace.file /
+// Workspace.directory) so a single long-lived session can invalidate them when
+// the workspace's on-disk content changes out from under it.
+//
+// host.directory reads are cached per client for the client's whole lifetime
+// (dagql.PerClientInput), so within one session — such as a `dagger agent`
+// conversation — a file read earlier in the session keeps returning its
+// original snapshot even after the agent's edits are exported to disk. Bumping
+// the epoch on Workspace.export (and on Workspace.reloaded, when an agent
+// discards its overlay to re-sync with the host) gives subsequent reads a
+// fresh per-client cache namespace, so they re-read the (now updated) host
+// instead of the stale snapshot.
+//
+// Both hooks are registered by engine/server (which owns the per-client cache);
+// nil in contexts without a server, where the epoch is empty and bumping is a
+// no-op.
+var (
+	workspaceReadEpochGetter func(context.Context) (string, error)
+	workspaceReadEpochBumper func(context.Context) error
+)
+
+// SetWorkspaceReadEpochHooks registers the getter/bumper used to scope and
+// invalidate a client's cached workspace host reads. Mirrors
+// SetWorkspaceInvalidator.
+func SetWorkspaceReadEpochHooks(
+	get func(context.Context) (string, error),
+	bump func(context.Context) error,
+) {
+	workspaceReadEpochGetter = get
+	workspaceReadEpochBumper = bump
+}
+
+// WorkspaceReadEpoch returns the calling client's current workspace read epoch,
+// or "" when no server has registered the hook (nothing to scope by).
+func WorkspaceReadEpoch(ctx context.Context) (string, error) {
+	if workspaceReadEpochGetter == nil {
+		return "", nil
+	}
+	return workspaceReadEpochGetter(ctx)
+}
+
+// BumpWorkspaceReadEpoch advances the calling client's workspace read epoch so
+// cached host reads made before the bump are no longer served. A no-op when no
+// server has registered the hook.
+func BumpWorkspaceReadEpoch(ctx context.Context) error {
+	if workspaceReadEpochBumper == nil {
+		return nil
+	}
+	return workspaceReadEpochBumper(ctx)
+}
+
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
 	// source is the private backing source for workspace filesystem and git
@@ -49,10 +102,35 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
+	// mounts is an in-engine directory tree holding content attached read-only
+	// via Workspace.withMountedDirectory/withMountedFile, keyed by
+	// workspace-root-relative mount path. Internal only — not a GraphQL field,
+	// but persisted and dependency-tracked like rootfs. Nil when the workspace
+	// has no mounts. It is intentionally kept separate from the overlay
+	// changeset so mounted content is readable through the normal workspace
+	// file tools but is never treated as a pending change or exported.
+	mounts dagql.ObjectResult[*Directory]
+
+	// mountPoints lists the workspace-root-relative paths at which content is
+	// mounted, sorted and deduplicated. Reads at or under a mount point
+	// resolve from mounts (shadowing the source), and overlay edits there are
+	// rejected, keeping mounted content read-only.
+	mountPoints []string
+
 	// compatWorkspace stores the originating compat-workspace projection when
 	// this workspace was loaded from a legacy dagger.json instead of an explicit
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
+
+	// userConfigKey is the normalized Git remote key identifying this
+	// workspace in user-level config. Empty when the workspace has no usable
+	// remote. Internal only.
+	userConfigKey string
+
+	// userConfigOverlay is the user-level config overlay matched for this
+	// workspace by userConfigKey. Internal only — user config can carry
+	// personal values that must not surface through GraphQL or IDs.
+	userConfigOverlay *workspacepkg.UserWorkspaceOverlay
 
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
@@ -72,6 +150,16 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
+
+	// StagedGeneration records the workspace-root-relative paths of modules
+	// whose generated local dependency closure has been applied to this
+	// workspace, via the internal Workspace.__withGeneratedLocalDependencies
+	// field. Nested local-dependency generation for a
+	// recorded module short-circuits to an empty changeset — without this, a
+	// dependency's SDK generator re-stages its own dependency closure and
+	// generation fans out exponentially over the dependency DAG. Kept sorted
+	// and deduplicated; carried through Clone so derived workspaces keep it.
+	StagedGeneration []string
 }
 
 // WorkspaceSource is the private backing source for a Workspace.
@@ -120,7 +208,14 @@ type WorkspaceSourceOverlay struct {
 	// uploading the whole workspace. Value/git/rootless overlays leave this nil
 	// and diff full in-engine trees (nothing to upload).
 	TouchedPaths []string
-	Changes      dagql.ObjectResult[*Changeset]
+	// SeededPaths is the subset of TouchedPaths whose pre-existing workspace
+	// content the overlay folded into Changes.After, for edits that build on
+	// what a path already holds (see overlayEdit's readsExisting). Every later
+	// edit re-seeds them from the base it diffs against: content the caller
+	// never wrote, left pinned here, comes back reported as modified the moment
+	// they edit that file on disk.
+	SeededPaths []string
+	Changes     dagql.ObjectResult[*Changeset]
 }
 
 func (*WorkspaceSourceOverlay) workspaceSource() {}
@@ -153,16 +248,19 @@ func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef], explicitCommit bool) Wo
 func NewWorkspaceSourceOverlay(
 	base WorkspaceSource,
 	touchedPaths []string,
+	seededPaths []string,
 	changes dagql.ObjectResult[*Changeset],
 ) WorkspaceSource {
 	if overlay, ok := base.(*WorkspaceSourceOverlay); ok {
 		base = overlay.Base
 	}
-	// The caller accumulates TouchedPaths (union with the parent overlay's)
-	// before constructing, so they are already cumulative here.
+	// The caller accumulates TouchedPaths and SeededPaths (union with the
+	// parent overlay's) before constructing, so they are already cumulative
+	// here.
 	return &WorkspaceSourceOverlay{
 		Base:         base,
 		TouchedPaths: touchedPaths,
+		SeededPaths:  seededPaths,
 		Changes:      changes,
 	}
 }
@@ -284,6 +382,17 @@ func (ws *Workspace) OverlayTouchedPaths() []string {
 	return overlay.TouchedPaths
 }
 
+// OverlaySeededPaths returns the cumulative set of workspace-relative paths
+// whose pre-existing content the overlay folded into its changeset's after
+// side, which every later edit has to refresh from the base it diffs against.
+func (ws *Workspace) OverlaySeededPaths() []string {
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return nil
+	}
+	return overlay.SeededPaths
+}
+
 // OverlayPathTouched reports whether the overlay's edits affect the given
 // workspace-relative path, either directly or via a touched parent directory.
 func (ws *Workspace) OverlayPathTouched(p string) bool {
@@ -379,6 +488,84 @@ func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
 }
 
+func (ws *Workspace) UserConfigKey() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.userConfigKey
+}
+
+func (ws *Workspace) SetUserConfigKey(key string) {
+	ws.userConfigKey = key
+}
+
+func (ws *Workspace) UserConfigOverlay() *workspacepkg.UserWorkspaceOverlay {
+	if ws == nil {
+		return nil
+	}
+	return ws.userConfigOverlay
+}
+
+func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOverlay) {
+	ws.userConfigOverlay = overlay
+}
+
+// MountsDir returns the read-only directory tree holding mounted content,
+// keyed by workspace-root-relative mount path, or false when the workspace has
+// no mounts.
+func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
+	if ws == nil || ws.mounts.Self() == nil {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	return ws.mounts, true
+}
+
+// WithMounted returns a copy of the workspace with the given read-only
+// mounted content tree and the workspace-root-relative path recorded as a
+// mount point, keeping the mount point list sorted and deduplicated.
+func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	p := filepath.ToSlash(path)
+	if i, found := slices.BinarySearch(cp.mountPoints, p); !found {
+		cp.mountPoints = slices.Insert(cp.mountPoints, i, p)
+	}
+	return cp
+}
+
+// MountedPath reports whether a workspace-root-relative path is at or under
+// one of the workspace's mount points.
+func (ws *Workspace) MountedPath(resolvedPath string) bool {
+	if ws == nil {
+		return false
+	}
+	p := filepath.ToSlash(resolvedPath)
+	for _, mp := range ws.mountPoints {
+		if p == mp || strings.HasPrefix(p, mp+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// HasMountsUnder reports whether any mount point lies strictly below the given
+// workspace-root-relative path.
+func (ws *Workspace) HasMountsUnder(resolvedPath string) bool {
+	if ws == nil || len(ws.mountPoints) == 0 {
+		return false
+	}
+	p := filepath.ToSlash(resolvedPath)
+	if p == "." || p == "" {
+		return true
+	}
+	for _, mp := range ws.mountPoints {
+		if strings.HasPrefix(mp, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // CompatWorkspace returns the internal compat-workspace provenance for this
 // workspace. Nil means this workspace was not loaded from legacy compat mode.
 func (ws *Workspace) CompatWorkspace() *workspacepkg.CompatWorkspace {
@@ -407,6 +594,8 @@ var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
 	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
+	MountsResultID  uint64                        `json:"mountsResultID,omitempty"`
+	MountPoints     []string                      `json:"mountPoints,omitempty"`
 	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
 	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
 	Address         string                        `json:"address,omitempty"`
@@ -415,6 +604,8 @@ type persistedWorkspacePayload struct {
 	LockFile        string                        `json:"lockFile,omitempty"`
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
+
+	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -428,6 +619,7 @@ type persistedWorkspaceSource struct {
 	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
 	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
+	SeededPaths    []string                  `json:"seededPaths,omitempty"`
 	HostPath       string                    `json:"hostPath,omitempty"`
 	Base           *persistedWorkspaceSource `json:"base,omitempty"`
 }
@@ -479,6 +671,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 			payload.Base = base
 		}
 		payload.TouchedPaths = src.TouchedPaths
+		payload.SeededPaths = src.SeededPaths
 		if src.Changes.Self() != nil {
 			changesID, err := encodePersistedObjectRef(cache, src.Changes, "workspace overlay changes")
 			if err != nil {
@@ -542,7 +735,7 @@ func decodePersistedWorkspaceSource(
 				return nil, err
 			}
 		}
-		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, changes), nil
+		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, persisted.SeededPaths, changes), nil
 	default:
 		return nil, fmt.Errorf("decode persisted workspace source: unsupported source kind %q", persisted.Kind)
 	}
@@ -555,13 +748,14 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace: ws.compatWorkspace,
-		Address:         ws.Address,
-		Cwd:             ws.Cwd,
-		ConfigFile:      ws.ConfigFile,
-		LockFile:        ws.LockFile,
-		ClientID:        ws.ClientID,
-		HostPath:        ws.hostPath,
+		CompatWorkspace:  ws.compatWorkspace,
+		Address:          ws.Address,
+		Cwd:              ws.Cwd,
+		ConfigFile:       ws.ConfigFile,
+		LockFile:         ws.LockFile,
+		ClientID:         ws.ClientID,
+		HostPath:         ws.hostPath,
+		StagedGeneration: ws.StagedGeneration,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -569,6 +763,14 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.RootfsResultID = rootfsID
+	}
+	if ws.mounts.Self() != nil {
+		mountsID, err := encodePersistedObjectRef(cache, ws.mounts, "workspace mounts")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.MountsResultID = mountsID
+		payload.MountPoints = ws.mountPoints
 	}
 	if ws.Source() != nil {
 		source, err := encodePersistedWorkspaceSource(cache, ws.Source())
@@ -606,6 +808,15 @@ func (*Workspace) DecodePersistedObject(
 		}
 	}
 
+	var mounts dagql.ObjectResult[*Directory]
+	if persisted.MountsResultID != 0 {
+		var err error
+		mounts, err = loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.MountsResultID, "workspace mounts")
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cwd := persisted.Cwd
 	if cwd == "" {
 		cwd = persisted.LegacyPath
@@ -621,14 +832,17 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:          rootfs,
-		compatWorkspace: persisted.CompatWorkspace,
-		Address:         persisted.Address,
-		Cwd:             cwd,
-		ConfigFile:      configFile,
-		LockFile:        lockFile,
-		ClientID:        persisted.ClientID,
-		hostPath:        persisted.HostPath,
+		rootfs:           rootfs,
+		mounts:           mounts,
+		mountPoints:      persisted.MountPoints,
+		compatWorkspace:  persisted.CompatWorkspace,
+		Address:          persisted.Address,
+		Cwd:              cwd,
+		ConfigFile:       configFile,
+		LockFile:         lockFile,
+		ClientID:         persisted.ClientID,
+		hostPath:         persisted.HostPath,
+		StagedGeneration: persisted.StagedGeneration,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
@@ -646,23 +860,25 @@ func (ws *Workspace) AttachDependencyResults(
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	_ = ctx
-	if ws == nil || ws.rootfs.Self() == nil {
-		if ws != nil && ws.source != nil {
-			return attachWorkspaceSource(attach, ws.source)
-		}
+	if ws == nil {
 		return nil, nil
 	}
 
-	attached, err := attach(ws.rootfs)
-	if err != nil {
-		return nil, fmt.Errorf("attach workspace rootfs: %w", err)
+	var deps []dagql.AnyResult
+
+	if ws.rootfs.Self() != nil {
+		attached, err := attach(ws.rootfs)
+		if err != nil {
+			return nil, fmt.Errorf("attach workspace rootfs: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace rootfs: unexpected result %T", attached)
+		}
+		ws.rootfs = typed
+		deps = append(deps, typed)
 	}
-	typed, ok := attached.(dagql.ObjectResult[*Directory])
-	if !ok {
-		return nil, fmt.Errorf("attach workspace rootfs: unexpected result %T", attached)
-	}
-	ws.rootfs = typed
-	deps := []dagql.AnyResult{typed}
+
 	if ws.source != nil {
 		sourceDeps, err := attachWorkspaceSource(attach, ws.source)
 		if err != nil {
@@ -670,6 +886,20 @@ func (ws *Workspace) AttachDependencyResults(
 		}
 		deps = append(deps, sourceDeps...)
 	}
+
+	if ws.mounts.Self() != nil {
+		attached, err := attach(ws.mounts)
+		if err != nil {
+			return nil, fmt.Errorf("attach workspace mounts: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace mounts: unexpected result %T", attached)
+		}
+		ws.mounts = typed
+		deps = append(deps, typed)
+	}
+
 	return deps, nil
 }
 
@@ -739,29 +969,8 @@ func attachWorkspaceSource(
 
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
+	cp.mountPoints = slices.Clone(ws.mountPoints)
 	return &cp
-}
-
-type workspaceOverrideKey struct{}
-
-// ContextWithWorkspaceOverride marks ws as the workspace to hand to SDK
-// functions that take a Workspace argument, in place of the ambient
-// currentWorkspace. Used by the generator framework (GeneratorGroup.Run) to run
-// a workspace's generators against a scoped/overlaid workspace the engine
-// constructed — e.g. ModuleSource.generateLocalDependencies staging a
-// dependency's codegen before generating the dependent.
-func ContextWithWorkspaceOverride(ctx context.Context, ws dagql.ObjectResult[*Workspace]) context.Context {
-	return context.WithValue(ctx, workspaceOverrideKey{}, ws)
-}
-
-// WorkspaceOverrideFromContext returns the override set by
-// ContextWithWorkspaceOverride, if any.
-func WorkspaceOverrideFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], bool) {
-	ws, ok := ctx.Value(workspaceOverrideKey{}).(dagql.ObjectResult[*Workspace])
-	if ok && ws.Self() != nil {
-		return ws, true
-	}
-	return dagql.ObjectResult[*Workspace]{}, false
 }
 
 // WorkspaceGit represents the git state associated with a workspace.

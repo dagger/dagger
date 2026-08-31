@@ -155,6 +155,15 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "agent",
+		Description: dagql.FormatDescription(`Indicates that this function is an agent middleware, composed by dagger agent.`),
+		Args:        dagql.NewInputSpecs(), // none
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+		ViewFilter: AfterVersion("v1.0.0-0"),
+	},
+	{
 		Name:        "cache",
 		Description: dagql.FormatDescription(`Controls the caching behavior of a function.`),
 		Args: dagql.NewInputSpecs(
@@ -233,7 +242,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
 			WithInput(dagql.CurrentSchemaInput).
 			Args(
-				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`),
+				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`).
+					View(AfterVersion("v0.21.0")),
 				dagql.Arg("hideCore").Doc(
 					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
@@ -247,6 +257,41 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
 	}.Install(dag)
+
+	// currentNode returns the object that received the current module function
+	// call, as the universal Node interface — so a module can reference itself
+	// (e.g. to bind its own methods as tools via LLM.withTools) without
+	// reconstructing a fresh instance. It reads the receiver threaded onto the
+	// active FunctionCall (ModuleFunction.Call sets FunctionCall.parentTyped).
+	// DoNotCache: it depends on the ambient call context; a statically typed
+	// caller (Dang) forces it to a concrete id at the call site, so it need not
+	// be reproducible as a lazy call.
+	dag.Root().ObjectType().Extend(
+		dagql.FieldSpec{
+			Name: "currentNode",
+			Description: "The object that received the current module function call, as a Node. " +
+				"Errors when there is no current call, or the call is top-level (e.g. a module constructor).",
+			Type:       nodeInterfaceType{},
+			Args:       dagql.NewInputSpecs(),
+			DoNotCache: "Depends on the ambient module function call context.",
+			ViewFilter: AfterVersion("v1.0.0-0"),
+		},
+		func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
+			query, err := core.CurrentQuery(ctx)
+			if err != nil {
+				return nil, err
+			}
+			fnCall, err := query.CurrentFunctionCall(ctx)
+			if err != nil {
+				return nil, err
+			}
+			node := fnCall.ParentTyped()
+			if node == nil {
+				return nil, fmt.Errorf("currentNode: the current call has no receiving object (top-level or constructor call)")
+			}
+			return node, nil
+		},
+	)
 
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
@@ -397,7 +442,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Errors if the current module is not installed as an SDK in this workspace.`).
 			Args(
 				dagql.Arg("workspace").Doc(
-					`The workspace to resolve SDK-role data against. Defaults to the current workspace.`),
+					`The workspace to resolve SDK-role data against.`),
 			),
 	}.Install(dag)
 
@@ -411,7 +456,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.CurrentModuleAsSDK]{
 		dagql.Func("modules", s.currentModuleAsSDKModules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`The workspace-local modules this SDK authors and manages.`),
+			Doc(`The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.`),
 		dagql.Func("clients", s.currentModuleAsSDKClients).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The generated clients this SDK produces in the workspace.`),
@@ -444,6 +489,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withUp", s.functionWithUp).
 			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
+
+		dagql.Func("withAgent", s.functionWithAgent).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Returns the function with a flag indicating it is an agent middleware.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -715,13 +764,6 @@ func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args stru
 		}
 	}
 	arg := core.NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Deprecated)
-	if arg.IsWorkspace() {
-		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to optionalize workspace arg type: %w", err)
-		}
-		arg.TypeDef = typeDef
-	}
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -767,13 +809,6 @@ func (s *moduleSchema) internalFunctionArg(ctx context.Context, _ *core.Query, a
 		Ignore:         args.Ignore,
 		Deprecated:     args.Deprecated,
 		OriginalName:   args.Name,
-	}
-	if arg.IsWorkspace() {
-		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to optionalize workspace arg type: %w", err)
-		}
-		arg.TypeDef = typeDef
 	}
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
@@ -1562,6 +1597,10 @@ func (s *moduleSchema) functionWithUp(ctx context.Context, fn *core.Function, ar
 	return fn.WithUp(), nil
 }
 
+func (s *moduleSchema) functionWithAgent(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithAgent(), nil
+}
+
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
 	Name           string
 	TypeDef        core.TypeDefID
@@ -2082,6 +2121,14 @@ func (s *moduleSchema) currentModule(
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
 	return self.CurrentFunctionCall(ctx)
+}
+
+// nodeInterfaceType is a dagql.Typed marker naming the universal Node interface,
+// used as currentNode's return type so the field resolves to Node!.
+type nodeInterfaceType struct{}
+
+func (nodeInterfaceType) Type() *ast.Type {
+	return &ast.Type{NamedType: "Node", NonNull: true}
 }
 
 func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {

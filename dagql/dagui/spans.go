@@ -153,28 +153,10 @@ func (span *Span) Call() *callpbv1.Call {
 }
 
 func (span *Span) CallID() (*call.ID, error) {
-	spanCall := span.Call()
-	if spanCall == nil {
+	if span.CallDigest == "" {
 		return nil, fmt.Errorf("no call for span")
 	}
-
-	recipe := &callpbv1.RecipeDAG{
-		RootDigest:    spanCall.Digest,
-		CallsByDigest: map[string]*callpbv1.Call{},
-	}
-	extractIntoDAG(recipe, span.db, spanCall.Digest)
-	dag := &callpbv1.DAG{
-		Value: &callpbv1.DAG_Recipe{
-			Recipe: recipe,
-		},
-	}
-
-	var id call.ID
-	err := id.FromProto(dag)
-	if err != nil {
-		return nil, err
-	}
-	return &id, nil
+	return span.db.CallIDForDigest(span.CallDigest)
 }
 
 func (span *Span) Base() *callpbv1.Call {
@@ -303,6 +285,11 @@ type SpanSnapshot struct {
 	// skipped because it could not be loaded.
 	GenerateSkipped bool `json:",omitempty"`
 
+	// Service marks the long-lived exec span of a started service instance
+	// (running exactly while the service is up; cause-links to the API spans
+	// that installed the Service value).
+	Service bool `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -311,18 +298,28 @@ type SpanSnapshot struct {
 	ContentType string `json:",omitempty"`
 
 	LLMRole          string   `json:",omitempty"`
+	LLMThinking      bool     `json:",omitempty"`
 	LLMTool          string   `json:",omitempty"`
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
 	LLMCallDigest    string   `json:",omitempty"`
 
+	// LLMToolResultTokens is an estimate of the token size of a tool call's
+	// result (the output it fed back into the model's context). The TUI shows
+	// it on the tool-call row so an outsized, context-bloating result is easy
+	// to spot.
+	LLMToolResultTokens int64 `json:",omitempty"`
+
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
 
 	ResumeOutput string `json:",omitempty"`
 
-	CallDigest  string `json:",omitempty"`
+	CallDigest string `json:",omitempty"`
+	// CallPayload carries the legacy span-embedded call payload
+	// (dagger.io/dag.call) still written for older consumers; newer engines
+	// deliver calls over the log channel instead.
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
@@ -453,11 +450,17 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetryattrs.GenerateSkippedAttr:
 		snapshot.GenerateSkipped = val.(bool)
 
-	case "dagger.io/service.name":
+	case telemetryattrs.ServiceAttr:
+		snapshot.Service = val.(bool)
+
+	case telemetryattrs.ServiceNameAttr:
 		snapshot.ServiceName = val.(string)
 
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)
+
+	case "llm.thinking":
+		snapshot.LLMThinking = val.(bool)
 
 	case telemetry.LLMToolAttr:
 		snapshot.LLMTool = val.(string)
@@ -473,6 +476,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)
+
+	case telemetryattrs.LLMToolResultTokensAttr:
+		snapshot.LLMToolResultTokens = asInt64(val)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
@@ -523,6 +529,22 @@ func sliceOf[T any](val any) []T {
 		ts[i] = v.(T)
 	}
 	return ts
+}
+
+// asInt64 coerces an OTel attribute value to int64. The live SDK path yields an
+// int64 directly; the defensive float64 case covers values that round-tripped
+// through a JSON number.
+func asInt64(val any) int64 {
+	switch v := val.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
 }
 
 // PropagateStatusToParentsAndLinks updates the running and failed state of all

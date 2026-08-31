@@ -255,6 +255,24 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		randomB := runRandom(ctx, t, engineClientB)
 		require.NotEqual(t, randomA, randomB, "cache state from before the unclean shutdown should be discarded")
 
+		// The reset renames the invalid worker state aside to a sibling
+		// worker-trash-* directory and removes it in the background; poll the
+		// state volume until the trash is swept, so discarded state cannot
+		// leak across resets.
+		require.Eventually(t, func() bool {
+			out, err := c.
+				Container().
+				From(alpineImage).
+				WithMountedCache("/state", c.CacheVolume(stateKey)).
+				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithExec([]string{"sh", "-ec", "ls -d /state/worker-trash-* 2>/dev/null | wc -l"}).
+				Stdout(ctx)
+			if err != nil {
+				return false
+			}
+			return strings.TrimSpace(out) == "0"
+		}, 120*time.Second, 3*time.Second, "discarded worker state should be swept in the background")
+
 		stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB)
 		upstreamSvcB = nil
 		engineSvcB = nil
@@ -557,8 +575,15 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-generator-group-state-" + identity.NewID()
-		generatorWorkdir, err := filepath.Abs("testdata/generators/hello-with-generators")
-		require.NoError(t, err)
+		// Copy the fixture out of the repo tree before pointing the client
+		// workdir at it. The repo root now carries its own dagger.toml
+		// workspace, so an in-repo workdir makes workspace detection walk up
+		// and load the dev workspace's generators instead of this fixture,
+		// leaving "generate-files" unresolved. An isolated dir has no ancestor
+		// dagger.toml, so detection falls back to the fixture's own dagger.json
+		// compat workspace.
+		generatorWorkdir := t.TempDir()
+		copyTestdataFixture(ctx, t, generatorWorkdir, "generators", "hello-with-generators")
 		clientOpts := []dagger.ClientOpt{
 			dagger.WithWorkdir(generatorWorkdir),
 			dagger.WithLoadWorkspaceModules(),
@@ -949,7 +974,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 			repo := engineClient.Host().Directory(repoDir).AsGit()
 			ref := repo.Head()
-			commitFromRef, err := ref.Commit(ctx)
+			commitFromRef, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 
 			ctr := engineClient.
@@ -1032,7 +1057,15 @@ printf 'layered\n' > /work/layered.txt
 	t.Run("engine-dev container build survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-engine-dev-build-state-" + identity.NewID()
-		repoDir := c.Host().Directory("/app")
+		// Workspace detection anchors on the git root, but the repo tree's .git
+		// varies by environment (a full dir in local checkouts, absent when the
+		// outer check runs from a remote git workspace whose clone discards it).
+		// Normalize: drop whatever is there and plant a worktree-style gitfile,
+		// which workspace detection accepts as the boundary while `go build`'s
+		// buildvcs stamping ignores it (a broken .git directory would be a hard
+		// error there).
+		repoDir := c.Host().Directory("/app", dagger.HostDirectoryOpts{Exclude: []string{".git"}}).
+			WithNewFile(".git", "gitdir: /nonexistent\n")
 		engineDevVersion := "v0.0.0-test"
 		writeRandomScript := "set -eu\nhead -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /tmp/random\n"
 		writeSummaryScript := "set -eu\ntest -x /usr/local/bin/dagger-engine\nprintf '%s|layered\\n' \"$(cat /tmp/random)\" > /tmp/summary\n"
@@ -1093,9 +1126,9 @@ printf 'layered\n' > /work/layered.txt
 				ctr = ctr.WithExec([]string{
 					"sh",
 					"-ec",
-					`test -f /app/toolchains/engine-dev/build/builder.go
-sed -i 's/var versionAnnotation = distconsts.OCIVersionAnnotation/var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"/' /app/toolchains/engine-dev/build/builder.go
-grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app/toolchains/engine-dev/build/builder.go`,
+					`test -f /app/.dagger/modules/engine-dev/build/builder.go
+sed -i 's/var versionAnnotation = distconsts.OCIVersionAnnotation/var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"/' /app/.dagger/modules/engine-dev/build/builder.go
+grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app/.dagger/modules/engine-dev/build/builder.go`,
 				})
 			}
 

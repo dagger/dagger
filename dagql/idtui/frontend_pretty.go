@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	lipglossv1 "github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
@@ -114,7 +115,10 @@ type frontendPretty struct {
 	promptErrLabel  *ErrorLabel
 	queuedMsgLabel  *QueuedMessageLabel
 	statusLine      *StatusLine
+	statusLineData  StatusLineData
+	llmCostFn       LLMCostFunc
 	textInput       *tuist.TextInput
+	promptFrame     *PromptFrame
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
 	editlineFocused bool
@@ -144,6 +148,52 @@ type frontendPretty struct {
 	// a zoom/expand triggered instead of returning mid-round-trip; nil for the
 	// live TUI (which re-renders on arrival) and report mode.
 	fetchWaiter func()
+
+	// reportNestedLogLimit bounds how many log lines a *nested* row (depth > 0)
+	// renders in report mode; 0 means unbounded, the default. Report renders
+	// have no screen height to divide by, so an embedded report (a rendered
+	// trace handed back as an LLM tool result) would otherwise inline every
+	// line of every exec beneath it. The row at depth 0 is the thing the report
+	// is *about* -- its own output stays whole -- while everything below it is
+	// abridged to a tail, mirroring core's captured-log abridging.
+	reportNestedLogLimit int
+
+	// reportHideLogSpans suppresses the inline logs of specific rows in report
+	// mode. It exists for one caller: core renders a scoped report ALONGSIDE
+	// the target's own printed output (kept verbatim, unabridged), and the
+	// report must not repeat what that section already shows. The caller knows
+	// exactly which spans it printed, so it names them here rather than the
+	// renderer guessing at "the root and its children".
+	//
+	// Only the span-tree's inline logs are suppressed; the roll-up sections
+	// (TESTS' failing-case output, surfaced failures) render through their own
+	// views and are unaffected.
+	reportHideLogSpans map[dagui.SpanID]bool
+
+	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
+	// single LLM tool call) rather than describing the whole run. The
+	// surfacing sections no longer need it -- they roll up relative to the
+	// zoom (see surfaceRoot) -- so it now gates exactly two things: the TRACE
+	// verdict header (the enclosing run's verdict, not the subtree's) and the
+	// live-tree promotions, which would reshape the shared, cached DB around
+	// the whole run instead of the subtree being reported on.
+	reportScopedSubtree bool
+
+	// reportHideSpanTree suppresses the span-tree body of a report: the
+	// surfaced sections (CHECKS, TESTS, SERVICES, CONVERSATION, generators)
+	// and the target's own output still render, the raw progress rows don't.
+	//
+	// It exists for the LLM tool-call result, whose reader wants the OUTPUT
+	// its tool produced plus what was SURFACED beneath it -- not a rendering
+	// of every dagql call the call happened to make.
+	reportHideSpanTree bool
+
+	// reportPrimary overrides the primary span for this render WITHOUT
+	// touching the shared DB. A report is scoped by pointing it at a root
+	// span; doing that by mutating db.PrimarySpan (as this used to) leaves
+	// one render's scope behind on a DB that other renders share. See
+	// frontendPretty.primarySpan.
+	reportPrimary dagui.SpanID
 
 	// updated as events are written
 	db           *dagui.DB
@@ -195,9 +245,8 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	formWrap   *teav1.Wrap // bubbletea v1 adapter for huh.Form
-	formModel  *huh.Form   // direct reference for KeyBinds()
-	formSpacer *blankLine  // spacer beneath the form, removed alongside it
+	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
+	formModel *huh.Form   // direct reference for KeyBinds()
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -206,6 +255,7 @@ type frontendPretty struct {
 	spanTrees      map[dagui.SpanID]*SpanTreeView
 	topTrees       []*SpanTreeView // top-level tree views, ordered
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
+	durationViews  map[dagui.SpanID]*DurationView
 
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
@@ -245,6 +295,12 @@ type frontendPretty struct {
 	logPager       *LogPagerView
 	logPagerReturn func()
 	logSearchInput *tuist.TextInput
+
+	// commandView replaces the generic trace screen when a command wants to
+	// own the semantic layout while embedding reusable trace components.
+	commandView       CommandView
+	commandViewHandle *commandViewHandle
+	spanLists         map[*SpanListView]struct{}
 }
 
 // Verify interface compliance at compile time.
@@ -253,6 +309,66 @@ var (
 	_ tuist.Interactive = (*frontendPretty)(nil)
 	_ tuist.Mounter     = (*frontendPretty)(nil)
 )
+
+var _ CommandFrontend = (*frontendPretty)(nil)
+
+// Live reports whether command components are being rendered interactively.
+// Report mode still uses their final rendering, but cannot surface forms or
+// transient login instructions.
+func (fe *frontendPretty) Live() bool {
+	return !fe.reportOnly
+}
+
+type commandViewContext struct {
+	fe *frontendPretty
+}
+
+func (ctx commandViewContext) SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView {
+	return newSpanListView(ctx.fe, root, include)
+}
+
+type commandViewHandle struct {
+	fe *frontendPretty
+}
+
+func (h *commandViewHandle) Update(fn func()) {
+	if h == nil || h.fe == nil {
+		return
+	}
+	h.fe.dispatch(func() {
+		if fn != nil {
+			fn()
+		}
+		if h.fe.commandView != nil {
+			h.fe.commandView.Update()
+		}
+		if h.fe.keymapBar != nil {
+			h.fe.keymapBar.Update()
+		}
+		h.fe.Update()
+	})
+}
+
+// SetView installs a command-owned body in the pretty frontend. Calls are
+// serialized with telemetry updates and rendering by the Tuist event loop.
+func (fe *frontendPretty) SetView(factory ViewFactory) ViewHandle {
+	handle := &commandViewHandle{fe: fe}
+	fe.dispatch(func() {
+		fe.commandViewHandle = handle
+		if factory == nil {
+			fe.commandView = nil
+		} else {
+			fe.commandView = factory(commandViewContext{fe: fe})
+		}
+		if fe.commandView != nil {
+			if _, interactive := fe.commandView.(tuist.Interactive); interactive {
+				fe.tui.SetFocus(fe.commandView)
+			}
+		}
+		fe.Update()
+	})
+	return handle
+}
 
 // treePrefix holds pre-computed prefix strings for a SpanTreeView.
 // These are set by the parent SpanTreeView when rendering its children.
@@ -321,6 +437,12 @@ type SpanTreeView struct {
 	// row can also summarize running effect spans in its title.
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
 
+	// durationViews are inline, self-updating duration components owned by this
+	// rendered occurrence of a span tree, keyed by span ID (a row can summarize
+	// running effect spans in its title). They are only mounted for running rows
+	// in viewport-clipped views; flowing output must remain inert in scrollback.
+	durationViews map[dagui.SpanID]*DurationView
+
 	// childrenGapPrefix is the prefix for gap lines between this node's
 	// children. It shows all ancestor bars + this node's own bar column.
 	// Computed by syncTreeNode. Unlike a child's prefix.cont (which omits
@@ -388,7 +510,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	titleBuf := new(strings.Builder)
 	titleOut := NewOutput(titleBuf, termenv.WithProfile(s.fe.profile))
 	r.indentFunc = s.indentFunc(titleOut)
-	s.fe.renderStep(ctx, titleOut, r, row, "", s, visualFocused)
+	s.fe.renderStep(ctx, titleOut, r, row, s, visualFocused)
 	titleText := titleBuf.String()
 	if titleText != "" {
 		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
@@ -405,6 +527,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 				titleLines[i] = highlightANSI(line, s.fe.searchQuery, style)
 			}
 		}
+		titleLines = s.fe.padUserPrompt(row, titleLines)
 		s.selfLineCount += len(titleLines)
 		ctx.Lines(titleLines...)
 	}
@@ -582,6 +705,60 @@ func (fe *frontendPretty) getOrCreateSpanTreeInScope(spanID dagui.SpanID, scope 
 type statusIconHost interface {
 	RenderChildInline(tuist.Context, tuist.Component) string
 	spinnerForStatus(dagui.SpanID) *tuist.Spinner
+	durationForStatus(dagui.SpanID) *DurationView
+}
+
+// durationTickInterval is how often a running span's DurationView re-renders.
+// FormatDuration shows tenths of a second (%.1fs) under a minute, so ~100ms
+// keeps the ticking duration visually smooth without excess repaints.
+const durationTickInterval = 100 * time.Millisecond
+
+// DurationView is a self-updating component that renders a span's elapsed
+// activity duration. It mirrors the status spinner's lifecycle: it is only
+// mounted while a span is running in a viewport-clipped view, so its OnMount
+// ticker re-renders on an interval and marks itself dirty. Because Compo.Update
+// propagates upward, each tick re-runs the owning SpanTreeView's Render --
+// rebuilding the title line with a fresh clock -- so the duration stays live.
+type DurationView struct {
+	tuist.Compo
+
+	profile termenv.Profile
+
+	// span is refreshed by the owner before each render so the view always
+	// reads the current activity/running state.
+	span *dagui.Span
+}
+
+// OnMount starts the tick loop. The goroutine is bounded by ctx.Done(), which
+// fires when the view is dismounted -- i.e. when the span stops running and the
+// owner falls back to static duration text, stopping the ticks.
+func (d *DurationView) OnMount(ctx tuist.Context) {
+	ticker := time.NewTicker(durationTickInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx.Dispatch(func() { d.Update() })
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (d *DurationView) Render(ctx tuist.Context) {
+	if d.span == nil {
+		ctx.Line("")
+		return
+	}
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(d.profile))
+	// The view only mounts while the span is running (never in the final
+	// render), so this is always a live render: show self time when the row
+	// is materially blocked, and name the live blocker.
+	renderSpanDuration(out, d.span, time.Now(), false)
+	ctx.Line(buf.String())
 }
 
 func (fe *frontendPretty) newStatusSpinner() *tuist.Spinner {
@@ -602,6 +779,18 @@ func (fe *frontendPretty) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
 	return sp
 }
 
+func (fe *frontendPretty) durationForStatus(spanID dagui.SpanID) *DurationView {
+	if fe.durationViews == nil {
+		fe.durationViews = make(map[dagui.SpanID]*DurationView)
+	}
+	dv, ok := fe.durationViews[spanID]
+	if !ok {
+		dv = &DurationView{profile: fe.profile}
+		fe.durationViews[spanID] = dv
+	}
+	return dv
+}
+
 func (s *SpanTreeView) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
 	if s.statusSpinners == nil {
 		s.statusSpinners = make(map[dagui.SpanID]*tuist.Spinner)
@@ -612,6 +801,18 @@ func (s *SpanTreeView) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
 		s.statusSpinners[spanID] = sp
 	}
 	return sp
+}
+
+func (s *SpanTreeView) durationForStatus(spanID dagui.SpanID) *DurationView {
+	if s.durationViews == nil {
+		s.durationViews = make(map[dagui.SpanID]*DurationView)
+	}
+	dv, ok := s.durationViews[spanID]
+	if !ok {
+		dv = &DurationView{profile: s.fe.profile}
+		s.durationViews[spanID] = dv
+	}
+	return dv
 }
 
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
@@ -655,12 +856,28 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	return newWithTerminal(w, db, tuist.NewStdTerminal())
 }
 
+// NewASCIIReporterWithDB returns a report-only pretty frontend backed by db
+// that always renders plain ASCII -- no ANSI escape sequences -- regardless of
+// the ambient color profile. Used to embed a rendered final report in an API
+// result (e.g. an LLM tool result), where the consumer is reading text.
+func NewASCIIReporterWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
+	fe := newWithTerminalProfile(w, db, tuist.NewStdTerminal(), termenv.Ascii)
+	fe.reportOnly = true
+	return fe
+}
+
 // newWithTerminal builds a pretty frontend whose TUI is backed by the given
 // terminal. Production uses NewWithDB (a real std terminal); the headless test
 // harness injects a tuist.HeadlessTerminal so it can drive the frontend
 // synchronously, without the event-loop goroutine.
 func newWithTerminal(w io.Writer, db *dagui.DB, term tuist.Terminal) *frontendPretty {
-	profile := ColorProfile()
+	return newWithTerminalProfile(w, db, term, ColorProfile())
+}
+
+// newWithTerminalProfile is newWithTerminal with an explicit color profile, so
+// callers that need deterministic plain-text output can pin termenv.Ascii
+// instead of inheriting the process environment's profile.
+func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, profile termenv.Profile) *frontendPretty {
 	tui := tuist.New(term)
 	fe := &frontendPretty{
 		db:        db,
@@ -725,9 +942,15 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 }
 
 // SetStatusLine updates the compact status line with LLM token/cost/context
-// data. No-op if there is no active shell/status line.
+// data. The data is retained and re-applied when a shell (re)starts, so an
+// update pushed before the status line exists — e.g. on resume — isn't lost.
 func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 	fe.dispatch(func() {
+		// Remember the latest data even when the status line isn't up yet: on
+		// resume, LoadSession pushes the restored conversation's stats before the
+		// shell (and its status line) is created, so startShell seeds the new
+		// status line from here rather than dropping the update.
+		fe.statusLineData = data
 		if fe.statusLine != nil {
 			fe.statusLine.SetData(data)
 			fe.Update()
@@ -738,6 +961,36 @@ func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 // GetLLMTokenMetrics returns the DB's aggregated LLM token metrics.
 func (fe *frontendPretty) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 	return fe.db.LLMTokenMetrics
+}
+
+// SetLLMCostFunc registers the pricing function used to cost the live metric
+// rollup at render time. Called once by the CLI.
+func (fe *frontendPretty) SetLLMCostFunc(fn LLMCostFunc) {
+	fe.dispatch(func() {
+		fe.llmCostFn = fn
+	})
+}
+
+// llmLiveStats rolls up token usage across all models/sub-agents from the live
+// metrics and prices it via the registered cost function. Returns false until a
+// cost function is set and at least one metric has arrived, so the status line
+// falls back to the last per-step data during the first turn.
+func (fe *frontendPretty) llmLiveStats() (StatusLineLive, bool) {
+	if fe.llmCostFn == nil || fe.db.LLMTokenMetrics == nil {
+		return StatusLineLive{}, false
+	}
+	var live StatusLineLive
+	var any bool
+	for _, m := range fe.db.LLMTokenMetrics.Snapshot() {
+		any = true
+		live.InputTokens += int(m.InputTokens)
+		live.OutputTokens += int(m.OutputTokens)
+		live.CacheReads += int(m.CachedTokenReads)
+		live.CacheWrites += int(m.CachedTokenWrites)
+		live.TotalCost += fe.llmCostFn(m.Provider, m.Model,
+			m.InputTokens, m.OutputTokens, m.CachedTokenReads, m.CachedTokenWrites)
+	}
+	return live, any
 }
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
@@ -777,11 +1030,17 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
-	fe.statusLine = &StatusLine{profile: fe.profile}
+	fe.statusLine = &StatusLine{
+		profile:   fe.profile,
+		data:      fe.statusLineData, // seed from the last SetStatusLine (e.g. a resumed session)
+		liveStats: fe.llmLiveStats,
+		inFlight:  func() bool { return fe.shellRunning },
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
+	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
-	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.promptFrame)
 	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
@@ -810,7 +1069,8 @@ func (fe *frontendPretty) stopShell() {
 		fe.statusLine = nil
 	}
 	if fe.textInput != nil {
-		fe.tui.RemoveChild(fe.textInput)
+		fe.tui.RemoveChild(fe.promptFrame)
+		fe.promptFrame = nil
 		fe.textInput = nil
 	}
 	if fe.notificationOverlay != nil {
@@ -926,7 +1186,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	// report mode, and e.g. `dagger call ... stdout > f` must keep its stdout
 	// clean.
 	reportOut := io.Writer(os.Stderr)
-	if fe.reportOnly && fe.traceID != "" && RunningInAgent() {
+	if fe.reportOnly && fe.traceID != "" && fe.agentStyle() {
 		reportOut = os.Stdout
 	}
 	if renderErr := fe.FinalRender(reportOut); renderErr != nil {
@@ -1061,12 +1321,12 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 		return ErrNonInteractive
 	}
 
-	done := make(chan struct{}, 1)
+	done := make(chan error, 1)
 	wrapCh := make(chan *teav1.Wrap, 1)
 
 	fe.dispatch(func() {
 		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
-			close(done)
+			done <- formCompletionError(f)
 		})
 		fe.Update()
 	})
@@ -1080,9 +1340,16 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 			fe.removeForm(wrap)
 		})
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
+}
+
+func formCompletionError(form *huh.Form) error {
+	if form.State == huh.StateAborted {
+		return errors.Join(ErrInterrupted, huh.ErrUserAborted)
+	}
+	return nil
 }
 
 // removeForm tears the given prompt form out of the TUI. It no-ops unless wrap
@@ -1093,12 +1360,9 @@ func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
 		return
 	}
 	fe.tui.RemoveChild(fe.formWrap)
-	if fe.formSpacer != nil {
-		fe.tui.RemoveChild(fe.formSpacer)
-		fe.formSpacer = nil
-	}
 	fe.formWrap = nil
 	fe.formModel = nil
+	fe.keymapBar.Update()
 	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 	fe.Update()
 }
@@ -1121,39 +1385,72 @@ func (fe *frontendPretty) OpenBrowser(url string) error {
 	return browser.OpenURL(url)
 }
 
-// blankLine is a trivial component that renders a single empty line.
-type blankLine struct{ tuist.Compo }
-
-func (*blankLine) Render(ctx tuist.Context) {
-	ctx.Line("")
-}
-
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
-	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	fe.formModel = form.
+		WithTheme(frontendFormTheme()).
+		WithKeyMap(frontendFormKeyMap()).
+		WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
-	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
 	fe.formWrap.OnQuit(func() {
 		// Remove this form BEFORE invoking result: the callback may
 		// synchronously install a replacement form (e.g. branch()'s "custom
 		// prompt" path chains a second form via handlePromptForm), which
-		// reassigns fe.formWrap/fe.formModel/fe.formSpacer. Removing afterwards
+		// reassigns fe.formWrap/fe.formModel. Removing afterwards
 		// would then see the replacement, hit removeForm's guard and no-op,
 		// leaking this form (and its spacer) on screen. Capture the model first
 		// since removeForm nils fe.formModel.
 		model := fe.formModel
 		fe.removeForm(wrap)
 		result(model)
+		if model.State == huh.StateAborted {
+			// A form owns input focus, so Ctrl+C reaches Huh instead of the
+			// frontend's navigation handler. Preserve the frontend-wide interrupt
+			// contract rather than treating the form's default value as a choice.
+			fe.quitAction(ErrInterrupted)
+		}
 	})
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
-	fe.tui.AddChild(fe.formSpacer)
 	fe.tui.AddChild(fe.keymapBar)
+	fe.keymapBar.Update()
 	fe.tui.SetFocus(fe.formWrap)
 	return wrap
+}
+
+func frontendFormKeyMap() *huh.KeyMap {
+	keymap := huh.NewDefaultKeyMap()
+	keymap.MultiSelect.Toggle.SetHelp("space", "toggle")
+	return keymap
+}
+
+func frontendFormTheme() *huh.Theme {
+	theme := huh.ThemeBase16()
+	theme.Focused.Base = theme.Focused.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Blurred.Base = theme.Blurred.Base.BorderLeft(false).PaddingLeft(0)
+	theme.Focused.SelectSelector = theme.Focused.SelectSelector.SetString("▶ ")
+	theme.Focused.MultiSelectSelector = theme.Focused.MultiSelectSelector.SetString("▶ ")
+	// ThemeBase16 copies its focused selectors into the blurred field styles,
+	// which leaves a stale caret behind after focus moves to another field.
+	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.SetString("  ")
+	theme.Blurred.MultiSelectSelector = theme.Blurred.MultiSelectSelector.SetString("  ")
+	// Give both choices the same strong treatment. ExplicitConfirm supplies the
+	// structural focus marker, so color and background carry no meaning here.
+	button := theme.Focused.FocusedButton.
+		UnsetBackground().
+		Foreground(lipglossv1.Color("8")).
+		Padding(0).
+		MarginRight(0).
+		Bold(false).
+		Faint(false)
+	theme.Focused.FocusedButton = button.Bold(true)
+	theme.Focused.BlurredButton = button
+	theme.Blurred.FocusedButton = button
+	theme.Blurred.BlurredButton = button
+	return theme
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -1165,6 +1462,118 @@ func (fe *frontendPretty) SetVerbosity(n int) {
 		fe.Opts().Verbosity = n
 		fe.Update()
 	})
+}
+
+// ReportRenderOpts are the knobs a caller embedding a rendered report (e.g.
+// core's scoped trace report) sets per render. They are deliberately separate
+// from FrontendOpts' interactive state: a report is rendered once, for a
+// reader who cannot expand a row or press '+'.
+type ReportRenderOpts struct {
+	// Verbosity is the render verbosity (dagui.ShowCompletedVerbosity and up).
+	Verbosity int
+
+	// ExpandCompleted leaves completed steps expanded.
+	ExpandCompleted bool
+
+	// ExpandSpans force-expands specific rows, exactly as if the reader had
+	// expanded them by hand -- IsExpanded consults this before anything else,
+	// so it punches through the roll-up/tool-call boundaries that would
+	// otherwise collapse a row to a bare status line and hide its output.
+	//
+	// This is deliberately *not* "crank Verbosity to ExpandCompletedVerbosity":
+	// that threshold also clears ShowInternalVerbosity and
+	// ShowEncapsulatedVerbosity, which would surface internal and encapsulated
+	// spans the report is meant to hide.
+	ExpandSpans map[dagui.SpanID]bool
+
+	// Filter prunes spans from the tree (dagui.WalkSkip skips the subtree).
+	Filter func(*dagui.Span) dagui.WalkDecision
+
+	// NestedLogLimit bounds the log lines rendered for rows below the top
+	// level; 0 leaves them unbounded. See frontendPretty.reportNestedLogLimit.
+	NestedLogLimit int
+
+	// HideLogSpans suppresses the inline logs of these spans in the span tree,
+	// for a caller that renders their output itself (see
+	// frontendPretty.reportHideLogSpans).
+	HideLogSpans map[dagui.SpanID]bool
+
+	// ScopedSubtree marks the report as being about one subtree rather than the
+	// whole run: it drops the TRACE verdict header, skips the live-tree
+	// promotions, and confines every part of the report -- the span tree AND
+	// the surfaced sections -- to Root's real subtree. See
+	// frontendPretty.reportScopedSubtree and dagui.FrontendOpts.StrictSubtree.
+	ScopedSubtree bool
+
+	// Root is the span the report is about: its primary and zoom span. It is
+	// applied to this render only; the shared DB is never mutated. An invalid
+	// Root means the whole trace (the DB's own primary span).
+	Root dagui.SpanID
+
+	// HideSpanTree drops the span-tree body from the report, leaving the
+	// surfaced sections (CHECKS, TESTS, SERVICES, CONVERSATION, generators)
+	// and the target's own output. See frontendPretty.reportHideSpanTree.
+	HideSpanTree bool
+
+	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
+	// for a reader that has no `dagger` CLI to run. See
+	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
+	RerunSuggestion func(checkNames []string) (heading string, body []string)
+
+	// AgentStyle renders the report for an AI agent rather than a human at a
+	// terminal: greppable "== TITLE ==" headings, unindented section bodies, no
+	// decorative roll-up dots, span IDs surfaced as handles. See
+	// dagui.FrontendOpts.AgentStyle.
+	//
+	// A caller rendering inside the engine sets this unconditionally: there is
+	// no agent env var to sniff there, but the reader of every report it
+	// assembles is an LLM.
+	AgentStyle bool
+}
+
+// SetReportRenderOpts applies opts to this frontend ahead of a FinalRender.
+//
+// A report frontend is constructed fresh per render (see ReportSession), so
+// this is the whole of its render configuration: nothing carries over from a
+// previous report.
+func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
+	fe.dispatch(func() {
+		feOpts := fe.Opts()
+		feOpts.Verbosity = opts.Verbosity
+		feOpts.ExpandCompleted = opts.ExpandCompleted
+		if opts.ExpandSpans != nil {
+			feOpts.SpanExpanded = opts.ExpandSpans
+		} else {
+			// Never leave it nil: the interactive expand path writes to it.
+			feOpts.SpanExpanded = map[dagui.SpanID]bool{}
+		}
+		feOpts.Filter = opts.Filter
+		feOpts.RerunSuggestion = opts.RerunSuggestion
+		feOpts.AgentStyle = opts.AgentStyle
+		// A scoped report renders exactly the root span's real subtree: no
+		// cause-linked or otherwise foreign span may appear in it.
+		feOpts.StrictSubtree = opts.ScopedSubtree
+		fe.reportNestedLogLimit = opts.NestedLogLimit
+		fe.reportHideLogSpans = opts.HideLogSpans
+		fe.reportScopedSubtree = opts.ScopedSubtree
+		fe.reportHideSpanTree = opts.HideSpanTree
+		fe.reportPrimary = opts.Root
+		fe.renderVersion++
+		fe.Update()
+	})
+}
+
+// primarySpan is the span this render is *about*: the report's own root when
+// one was given (see ReportRenderOpts.Root), otherwise the DB's primary span.
+//
+// Reports go through the override so a render never has to mutate the shared
+// DB to scope itself -- which is what used to let one report's scope leak into
+// the next render over the same (cached) DB.
+func (fe *frontendPretty) primarySpan() dagui.SpanID {
+	if fe.reportPrimary.IsValid() {
+		return fe.reportPrimary
+	}
+	return fe.db.PrimarySpan
 }
 
 func (fe *frontendPretty) SetTelemetryError(err error) {
@@ -1299,10 +1708,15 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.). syncSpanTreeState copies this into each
 	// SpanTreeView and marks any changed tree dirty.
-	if !fe.finalRender {
-		fe.finalRender = true
-		fe.Update()
+	fe.finalRender = true
+	// Always mark the tree dirty, even on a repeat FinalRender: nothing
+	// downstream should serve lines memoized under a previous render's
+	// configuration.
+	if fe.commandView != nil {
+		fe.commandView.SetFinal(true)
+		fe.commandView.Update()
 	}
+	fe.Update()
 
 	// Unfocus for the final render.
 	fe.focus(nil)
@@ -1313,7 +1727,7 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	if fe.pinnedZoom.IsValid() {
 		fe.ZoomedSpan = fe.pinnedZoom
 	} else {
-		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.ZoomedSpan = fe.primarySpan()
 	}
 	fe.viewDirty = false
 	fe.recalculateViewLocked()
@@ -1604,6 +2018,7 @@ func (fe *frontendPretty) setupTUI() {
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
 		Keys:             fe.keys,
+		Snug:             fe.keymapSnug,
 	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
@@ -1725,7 +2140,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerateReport() {
+	if fe.commandView != nil || fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasConversation() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -1752,7 +2167,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 				// Only the error re-print is redundant, though: the stdout
 				// stream is the command's own result (e.g. a shell script's
 				// output from before it failed), so still replay it.
-				if err := replayPrimaryOutput(w, fe.db, false); err != nil {
+				if err := replayPrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
 					return err
 				}
 			}
@@ -1787,11 +2202,11 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// errors, whose "Run '... --help' for usage." hint lives on the
 		// primary span's stderr), so nothing above covered that stream and
 		// dropping it here would lose it entirely.
-		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return replayPrimaryOutput(w, fe.db, !fe.hasShownRootError())
+		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailedOrCausedFailure() {
+			return replayPrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
 		}
 	}
-	return renderPrimaryOutput(w, fe.db)
+	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -1823,6 +2238,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 			}
 		}
 		fe.updateTestViews()
+		for view := range fe.spanLists {
+			view.UpdateAll()
+		}
+		if fe.commandView != nil {
+			fe.commandView.Update()
+		}
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -1895,6 +2316,12 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			fe.updateLogPagerForLogs(spanID)
 		}
 		fe.updateTestViews()
+		for view := range fe.spanLists {
+			view.UpdateAll()
+		}
+		if fe.commandView != nil {
+			fe.commandView.Update()
+		}
 		fe.Update()
 	})
 	return nil
@@ -1983,6 +2410,9 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	if fe.formModel != nil {
 		return fe.formModel.KeyBinds()
+	}
+	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
+		return nil
 	}
 
 	if fe.editlineFocused {
@@ -2105,7 +2535,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			KeyEnabled(fe.cloudURL != "")),
 		key.NewBinding(key.WithKeys("T"),
 			key.WithHelp("T", "tests"),
-			KeyEnabled(fe.db != nil && fe.db.HasTests())),
+			KeyEnabled(fe.hasTestsForFocus())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -2150,6 +2580,17 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	}
 }
 
+func (fe *frontendPretty) keymapSnug() bool {
+	return fe.statusLine != nil && fe.formWrap == nil && fe.searchInput == nil && fe.logSearchInput == nil
+}
+
+func (fe *frontendPretty) keymapHeight() int {
+	if fe.keymapSnug() {
+		return 1
+	}
+	return 2
+}
+
 func (fe *frontendPretty) escHelp() string {
 	if fe.searchQuery != "" {
 		return "clear search"
@@ -2182,6 +2623,20 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 	fe.claims = newRenderClaims()
+	if !fe.finalRender {
+		// Update window dimensions before choosing the screen body. Command-owned
+		// views embed the same trace renderers, which depend on this state for
+		// wrapping, log sizing, and resize handling.
+		fe.setWindowSizeLocked(windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()})
+	} else if fe.contentWidth <= 0 {
+		// Final render without a live TUI (report mode). Set to 0
+		// so the renderer doesn't truncate (maxLiteralLen = 0).
+		fe.contentWidth = 0
+	}
+	if fe.commandView != nil {
+		fe.RenderChild(ctx, fe.commandView)
+		return
+	}
 
 	// Coalesce deferred view updates. Multiple ExportSpans batches may
 	// have set viewDirty since the last frame — recalculate once now.
@@ -2194,15 +2649,6 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// midterm's incremental search (only re-scans changed rows).
 	if fe.searchQuery != "" {
 		fe.refreshSearchMatches()
-	}
-
-	if !fe.finalRender {
-		// Update window dimensions from tuist.
-		fe.setWindowSizeLocked(windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()})
-	} else if fe.contentWidth <= 0 {
-		// Final render without a live TUI (report mode). Set to 0
-		// so the renderer doesn't truncate (maxLiteralLen = 0).
-		fe.contentWidth = 0
 	}
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
@@ -2238,7 +2684,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, "", fe, false)
+		}, fe, false)
 		titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 		for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
 			if ctx.Width > 0 {
@@ -2264,7 +2710,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Lines the TUI renders as siblings outside this component, which are
 	// always shown and so must be reserved out of the screen height: the keymap
 	// bar, error label, text input, form, and search input.
-	reserved := 1 // keymap bar
+	reserved := fe.keymapHeight()
 	reserved += fe.errorLabelHeight()
 	reserved += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
 	reserved += fe.statusLineHeight()    // statusLine is a sibling, not rendered here
@@ -2318,7 +2764,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// ScreenHeight means the height is unknown (RenderLines / the report discovery
 	// render, before a frame sizes the terminal) -- render everything, like the
 	// old behaviour.
-	if h := ctx.ScreenHeight(); h > 0 {
+	//
+	// In flowing (shell/prompt) mode we also render everything: tuist pushes the
+	// overflow into the terminal's native scrollback (see flowingMode), so old
+	// output scrolls off the top like a normal REPL while the pinned live region
+	// -- rendered as siblings below -- stays at the bottom of the frame.
+	if h := ctx.ScreenHeight(); h > 0 && !fe.flowingMode() {
 		if avail := h - reserved - len(zoomHeader); avail > 0 && len(body) > avail {
 			body = body[:avail]
 		}
@@ -2336,16 +2787,20 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 // (non-interactive) render: the overall verdict header, the root cause, the
 // checks breakdown, tests, and re-run suggestions -- no live-TUI chrome or
 // truncation. r is the renderer Render already built for this frame.
+//
+//nolint:gocyclo // one section per report concern; splitting obscures the layout
 func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
 	pol := fe.renderPolicy()
 	zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
-		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
+		fe.rowsView.Zoomed.ID != fe.primarySpan()
 
 	// Lead the whole-trace report with the overall verdict -- did it pass or
 	// fail, what command ran, and the top-level error -- the one-glance summary
 	// the server-computed summary used to provide. A zoom titles itself below.
-	if !zoomed {
+	// A subtree-scoped report skips it: the verdict is the enclosing run's, not
+	// the subtree's.
+	if !zoomed && !fe.reportScopedSubtree {
 		if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
 			ctx.Lines(hdr...)
 			ctx.Line("")
@@ -2360,7 +2815,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, "", fe, false)
+		}, fe, false)
 		linesFromView(ctx, zoomBuf.String())
 		ctx.Line("") // separate the header from its content
 	}
@@ -2394,13 +2849,39 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 		ctx.Lines(checkLines...)
 		renderedRows = true
+	} else if genRows := fe.generatorsReport(ctx, r, zoomed); len(genRows) > 0 {
+		// A `dagger generate` run: surface the generators reveal-independently,
+		// the generator analog of the checks section.
+		ctx.Lines(genRows...)
+		renderedRows = true
+		// Skipped unloadable modules can accompany the generators that did run.
+		if skipLines := fe.generateReport(ctx, r, zoomed); len(skipLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(skipLines...)
+		}
 	} else if genLines := fe.generateReport(ctx, r, zoomed); len(genLines) > 0 {
 		// A successful `dagger generate` that skipped an unloadable module:
 		// surface the skips in their own persisted section instead of the raw
 		// progress tree, which collapses on exit 0.
 		ctx.Lines(genLines...)
 		renderedRows = true
-	} else if !rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity {
+	}
+	// At the root, render the LLM conversation reveal-independently: a
+	// CONVERSATION heading then every surfaced message nested under the tool call
+	// that spawned it (renderConversationSection). This is the message analog of
+	// the checks section -- it surfaces the transcript at the top level of any
+	// trace that ran an LLM, without the reveal bubbling or the shell's manual
+	// zoom. When both checks and a conversation surface (rare), the conversation
+	// follows the checks with a blank line between.
+	if convLines := fe.conversationReport(ctx, r, zoomed); len(convLines) > 0 {
+		if renderedRows {
+			ctx.Line("")
+		}
+		ctx.Lines(convLines...)
+		renderedRows = true
+	}
+	if !renderedRows && !fe.reportHideSpanTree &&
+		(!rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity) {
 		// Only fall back to the raw progress tree when there's nothing better.
 		// A plain `dagger call` failure renders its root cause above; dumping
 		// the bootstrap spans (connect / load workspace / parsing args) under
@@ -2411,6 +2892,23 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
 		renderedRows = len(progressLines) > 0
+	}
+
+	// List every surfaced service instance (running or exited, with its
+	// command line and span handle) after the main rows, never in place of
+	// them -- services are easy to lose in the raw tree (their exec spans are
+	// passthrough-hidden), and their logs are often the first thing a
+	// debugging session needs. Agent runs only: an agent may see nothing but
+	// this report, while a human already watched the service run in the tree
+	// above, where the install span carries its logs and health checks.
+	if fe.agentStyle() {
+		if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(svcLines...)
+			renderedRows = true
+		}
 	}
 
 	if zoomed && pol.showOwnDescendantLogs {
@@ -2491,7 +2989,7 @@ func (fe *frontendPretty) renderTraceHeader(r *renderer) []string {
 		icon, word, color = Diamond, "RUNNING", termenv.ANSIYellow
 	}
 	status := out.String(fmt.Sprintf("%s %s", icon, word)).Foreground(color).String()
-	lines := []string{reportHeadingLine(out, "TRACE") + "  " + status}
+	lines := []string{reportHeadingLine(out, fe.agentStyle(), "TRACE") + "  " + status}
 
 	name := root.Name
 	if name == "" {
@@ -2559,6 +3057,7 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 	}
 	tv := &TestView{
 		Profile:         fe.profile,
+		AgentStyle:      fe.agentStyle(),
 		Logs:            fe.logs.Logs,
 		RequestLogs:     fe.requestLogsOnRender,
 		SummaryIndent:   2,
@@ -2578,12 +3077,28 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 	return lines
 }
 
+// agentStyle reports whether opts should render for an AI agent rather than a
+// human at a terminal: either the caller said so explicitly
+// (FrontendOpts.AgentStyle -- the engine-side report path, which has no
+// environment to sniff) or the CLI's environment detection says so.
+//
+// This is the single place the two halves are combined; render code asks for
+// it via frontendPretty.agentStyle (or a component's own AgentStyle field).
+func agentStyle(opts *dagui.FrontendOpts) bool {
+	return opts.AgentStyle || RunningInAgent()
+}
+
+// agentStyle reports whether this frontend is rendering for an AI agent.
+func (fe *frontendPretty) agentStyle() bool {
+	return agentStyle(fe.Opts())
+}
+
 // reportHeadingLine renders a section title in the failure summary's style
 // (daggercmd.section, which idtui can't import without a cycle): a flat,
 // greppable "== TITLE ==" marker under an AI agent, or a bold heading for
 // humans.
-func reportHeadingLine(out TermOutput, title string) string {
-	if RunningInAgent() {
+func reportHeadingLine(out TermOutput, agent bool, title string) string {
+	if agent {
 		return fmt.Sprintf("== %s ==", title)
 	}
 	return out.String(title).Bold().String()
@@ -2592,15 +3107,15 @@ func reportHeadingLine(out TermOutput, title string) string {
 // reportSectionLines renders a titled block: the heading from reportHeadingLine
 // with the body left at the margin under an agent or indented two spaces for
 // humans. body lines are pre-rendered and may already carry styling.
-func reportSectionLines(out TermOutput, title string, body []string) []string {
+func reportSectionLines(out TermOutput, agent bool, title string, body []string) []string {
 	if len(body) == 0 {
 		return nil
 	}
 	lines := make([]string, 0, len(body)+1)
-	lines = append(lines, reportHeadingLine(out, title))
+	lines = append(lines, reportHeadingLine(out, agent, title))
 	for _, b := range body {
 		switch {
-		case RunningInAgent(), b == "":
+		case agent, b == "":
 			lines = append(lines, b)
 		default:
 			lines = append(lines, "  "+b)
@@ -2652,7 +3167,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 				walkChecks(n.Children)
 			}
 		}
-		walkChecks(fe.db.SurfacedChecks())
+		walkChecks(fe.reportChecks())
 		for _, node := range failingLeafTestCases(fe.db.TestView()) {
 			add(node.Span)
 		}
@@ -2664,7 +3179,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		// boundary-contained fixture failures doesn't surface those as drill-ins.
 		root := fe.db.RootSpan
 		if len(targets) == 0 && root != nil && root.IsFailed() &&
-			len(fe.db.SurfacedChecks()) == 0 {
+			len(fe.reportChecks()) == 0 {
 			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
 				for _, origin := range fe.checkRootCauses(root) {
 					add(origin)
@@ -2682,21 +3197,23 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	for _, sel := range targets {
 		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
 	}
-	return reportSectionLines(out, "MORE DETAILS", body)
+	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }
 
 // renderRerunSection prints copy-paste commands to re-run the failed checks,
 // split by intent so the two very different actions read distinctly. For a Cloud
 // trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
 // cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
-// check'); otherwise it emits just "RUN LOCALLY". Only outermost
+// check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
+// be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
+// a CLI to run. Only outermost
 // checks are re-runnable, so sub-checks roll up to their root. Returns nil when
 // no failed check applies. Gated by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
 	}
-	roots := fe.db.SurfacedChecks()
+	roots := fe.reportChecks()
 
 	var names []string
 	seen := map[string]bool{}
@@ -2739,19 +3256,31 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		for _, name := range names {
 			body = append(body, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
-		lines = append(lines, reportSectionLines(out, "RE-RUN IN CI", body)...)
+		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
 	}
 
 	// Run the check locally to reproduce (and then fix) the failure against your
-	// working tree.
+	// working tree. A caller may inject its own vocabulary here (e.g. a tool
+	// call instead of a CLI command) via FrontendOpts.RerunSuggestion.
+	heading := "RUN LOCALLY"
 	body := make([]string, 0, len(names))
 	for _, name := range names {
 		body = append(body, fmt.Sprintf("dagger check %q", name))
 	}
+	if hook := fe.RerunSuggestion; hook != nil {
+		hookHeading, hookBody := hook(names)
+		if hookHeading != "" {
+			heading = hookHeading
+		}
+		body = hookBody
+	}
+	if len(body) == 0 {
+		return lines
+	}
 	if len(lines) > 0 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, reportSectionLines(out, "RUN LOCALLY", body)...)
+	lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 
 	return lines
 }
@@ -2788,15 +3317,15 @@ func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.C
 // roots only; the per-level tallies live on the nested headers.
 func (fe *frontendPretty) renderChecksHeader() []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	return []string{checksHeaderLine(out, fe.db.SurfacedChecks())}
+	return []string{checksHeaderLine(out, fe.agentStyle(), fe.reportChecks())}
 }
 
 // checksHeaderLine renders a "CHECKS" heading with the failed/passed tally for
 // the given checks joined onto the same line (mirroring the TESTS header). The
 // nodes are the checks listed directly beneath this header -- a level -- so the
 // tally agrees with what's rendered right under it.
-func checksHeaderLine(out TermOutput, nodes []*dagui.CheckNode) string {
-	line := reportHeadingLine(out, "CHECKS")
+func checksHeaderLine(out TermOutput, agent bool, nodes []*dagui.CheckNode) string {
+	line := reportHeadingLine(out, agent, "CHECKS")
 	for _, part := range checkBreakdownPartsFor(out, nodes) {
 		line += "  " + part
 	}
@@ -2846,6 +3375,36 @@ func (fe *frontendPretty) errorLabelHeight() int {
 	return 1
 }
 
+// flowingMode reports whether the frontend should let completed history flow
+// into the terminal's native scrollback instead of clamping/cropping it to the
+// viewport. This is the shell/prompt REPL behaviour: old output scrolls off the
+// top like a normal terminal, while the pinned live region (spinners, status
+// line, editline/prompt, keymap) -- rendered as tuist siblings below this
+// component -- stays at the bottom of the frame and so remains visible.
+//
+// tuist enables this naturally: with sync output it renders over-tall frames
+// against the terminal's scrollback (see TUI.doRender/applyFrame), showing the
+// bottom `height` lines and pushing the top into scrollback -- provided nothing
+// mounts a mouse handler (which forces the alt-screen/viewport-clipped model).
+// No mouse-handling component is mounted in plain shell mode (the only one,
+// testSidebarView, belongs to the tests view).
+//
+// It is scoped to live, un-zoomed shell rendering: the final report, the log
+// pager, the tests view, and an explicitly zoomed span all keep the
+// viewport-clipped behaviour, which is correct for those focused views.
+func (fe *frontendPretty) flowingMode() bool {
+	if fe.shell == nil || fe.finalRender {
+		return false
+	}
+	// A zoomed span (user pressed enter to inspect one row) keeps the
+	// viewport-clipped, top-anchored behaviour so its header stays pinned.
+	if fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
+		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		return false
+	}
+	return true
+}
+
 // queuedMessageHeight returns the line count of the queued message label. The
 // label always renders as a single line (see QueuedMessageLabel.Render).
 func (fe *frontendPretty) queuedMessageHeight() int {
@@ -2873,7 +3432,12 @@ func (fe *frontendPretty) editlineHeight() int {
 	}
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
-	return strings.Count(val, "\n") + 1
+	height := strings.Count(val, "\n") + 1
+	// The framed prompt adds a horizontal rule above and below the input.
+	if fe.promptFrame != nil && fe.promptFrame.enabled {
+		height += 2
+	}
+	return height
 }
 
 // formHeight returns the estimated line count of the form wrap
@@ -2890,9 +3454,21 @@ func (fe *frontendPretty) formHeight() int {
 	return strings.Count(view, "\n") + 2 // +1 for the view line, +1 for the spacer
 }
 
+//nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
-	fe.promoteChecksLocked()
+	if !fe.reportScopedSubtree {
+		// Promotion reshapes the trace around what the whole run was about: it
+		// hangs the surfaced checks/conversation/generators off the zoomed span
+		// as revealed spans and marks it passthrough, so RowsView iterates
+		// those instead of its real children. A subtree-scoped report wants
+		// exactly the opposite -- the subtree it was scoped to -- and, since
+		// promotion mutates the (cached, reused) DB's spans, it would also
+		// leave that reshaping behind for every later render.
+		fe.promoteChecksLocked()
+		fe.promoteConversationLocked()
+		fe.promoteGeneratorsLocked()
+	}
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
@@ -2902,7 +3478,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
 	// Report mode already fetches the pinned subtree up front (trace.go --span),
 	// so this is interactive-only; requestSubtree dedups against that.
-	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
 
@@ -2912,13 +3488,52 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// on render -- request it eagerly in both modes. It's a single span
 		// (descendants=false), not the rolled-up build log, so it isn't the
 		// over-fetch interactive cares about.
-		if fe.zoomKind() == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
-			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
-				if prim := fe.db.PrimarySpan; prim.IsValid() {
+		if fe.zoomKind() == zoomRoot && len(fe.reportChecks()) == 0 {
+			if tv := fe.reportTestView(); tv == nil || !tv.HasTests() {
+				if prim := fe.primarySpan(); prim.IsValid() {
 					fe.requestLogsWith(prim, false)
 				}
 			}
 		}
+
+		// Surfaced LLM conversation: NOT report-only, unlike the failure fetches
+		// below. The final report's conversation section (renderMessageNode)
+		// renders in interactive mode too -- on exit, in a single pass with no
+		// lazy re-render to fill it -- so both the interactive Pretty TUI and the
+		// report frontend need these logs pre-fetched, or the transcript degrades
+		// to a bare list of tool-call names. 'dagger trace' drains this fetch
+		// (RequestSurfacedLogs then logFg.Wait, both modes) before the final
+		// render. Each message's content -- a prompt/thinking/response's text, a
+		// tool call's arguments and its execution output -- lives in span logs,
+		// not an attribute. (A live shell has no provider but streams its logs in,
+		// so they're already present.)
+		//
+		// This runs BEFORE the failure fetch: a failed tool-call display span is
+		// also a failed row, and the failure fetch would requestLogs it with the
+		// roll-up its RollUpLogs implies (descendants=true) -- which Cloud returns
+		// empty for (see below) -- latching the requestLogs dedup and losing the
+		// arguments. Fetching descendants=false here first wins that dedup.
+		var reqConversationLogs func(nodes []*dagui.MessageNode)
+		reqConversationLogs = func(nodes []*dagui.MessageNode) {
+			for _, n := range nodes {
+				if n.Span != nil {
+					// Fetch each message span's OWN logs (descendants=false), not its
+					// roll-up. A prompt/thinking/response's text and a tool call's
+					// arguments stream into the span itself; a tool call's execution
+					// output lives in a nested exec span whose logs Cloud's descendant
+					// roll-up won't return here (they cross a RollUpLogs boundary), so
+					// a descendants=true fetch comes back empty and the call renders
+					// bare. So fetch the exec span's own logs directly too -- that's
+					// the result (or error) the LLM saw (see renderMessageLogs).
+					fe.requestLogsWith(n.Span.ID, false)
+					if exec := toolCallExecSpan(n.Span); exec != nil {
+						fe.requestLogsWith(exec.ID, false)
+					}
+				}
+				reqConversationLogs(n.Children)
+			}
+		}
+		reqConversationLogs(fe.reportConversation())
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
@@ -2952,8 +3567,17 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					}
 				}
 			}
-			eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+			eachFailedLeafCheck(fe.reportChecks(), func(n *dagui.CheckNode) {
 				for _, origin := range fe.checkRootCauses(n.Span) {
+					fe.requestLogs(origin.ID)
+				}
+			})
+			eachFailedLeafGenerator(fe.reportGenerators(), func(n *dagui.GeneratorNode) {
+				// The generator span's own rolled-up logs carry the exec failure
+				// (renderGeneratorFailureDetail); explicit origins render like a
+				// check's causes.
+				fe.requestLogs(n.Span.ID)
+				for _, origin := range n.Span.ErrorOrigins.Order {
 					fe.requestLogs(origin.ID)
 				}
 			})
@@ -2998,6 +3622,91 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.applyTuistFocus()
 }
 
+// surfaceRoot returns the span the reveal-independent surfacing (checks,
+// conversation, services, generators) should roll up beneath for this render:
+// the currently ZOOMED span, or nil -- meaning the DB root, i.e. the whole
+// trace -- when the zoom IS the DB root or isn't loaded.
+//
+// Surfacing is zoom-relative (see DB.surfaceRoot): "what ran beneath what I'm
+// looking at". The unzoomed interactive case resolves to nil and is therefore
+// byte-for-byte what it always was, while a subtree-scoped report -- an LLM
+// tool result, whose primary/zoom is the tool-call display span -- gets the
+// checks that tool ran, even though the display span is itself a Boundary.
+func (fe *frontendPretty) surfaceRoot() *dagui.Span {
+	if fe.db == nil {
+		return nil
+	}
+	if !fe.ZoomedSpan.IsValid() {
+		return nil
+	}
+	span := fe.db.Spans.Map[fe.ZoomedSpan]
+	if span == nil || span == fe.db.RootSpan {
+		return nil
+	}
+	return span
+}
+
+// reportChecks returns the surfaced checks this render is *about*: the checks
+// that ran beneath the zoomed span (the whole trace when unzoomed). See
+// frontendPretty.surfaceRoot.
+func (fe *frontendPretty) reportChecks() []*dagui.CheckNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedChecksForSpan(fe.surfaceRoot())
+}
+
+// reportGenerators is reportChecks for `dagger generate` generator runs.
+func (fe *frontendPretty) reportGenerators() []*dagui.GeneratorNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedGeneratorsForSpan(fe.surfaceRoot())
+}
+
+// reportConversation is reportChecks for the LLM transcript.
+func (fe *frontendPretty) reportConversation() []*dagui.MessageNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedConversationForSpan(fe.surfaceRoot())
+}
+
+// reportServices is reportChecks for surfaced service instances.
+func (fe *frontendPretty) reportServices() []*dagui.ServiceNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedServicesForSpan(fe.surfaceRoot())
+}
+
+// reportTestRoot is surfaceRoot for the TESTS section.
+//
+// The test index is trace-global, so asking it for "the tests" hands back
+// every test span in the session -- which is how a report scoped to a tool
+// call that ran no tests at all could still close with a TESTS section
+// belonging to a DIFFERENT call minutes earlier. A scoped report asks about
+// its own subtree instead; unscoped renders (the CLI's end-of-run report,
+// the live TUI) keep the whole-trace view they always had.
+func (fe *frontendPretty) reportTestRoot() *dagui.Span {
+	if !fe.reportScopedSubtree {
+		return nil
+	}
+	return fe.surfaceRoot()
+}
+
+// reportTestView is the test view this render is *about*: the whole trace,
+// or -- for a scoped report -- only the tests beneath its root span.
+func (fe *frontendPretty) reportTestView() *dagui.TestView {
+	if fe.db == nil {
+		return nil
+	}
+	if root := fe.reportTestRoot(); root != nil {
+		return fe.db.TestViewForSpan(root)
+	}
+	return fe.db.TestView()
+}
+
 // promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a
 // trace has checks, mark the root span passthrough so RowsView surfaces the
 // revealed check spans -- all of them -- at the top level instead of the
@@ -3023,6 +3732,83 @@ func (fe *frontendPretty) promoteChecksLocked() {
 	}
 }
 
+// promoteConversationLocked is the LLM-message analog of promoteChecksLocked:
+// when a trace ran an LLM, surface the conversation at the top level instead of
+// the root's setup children (session connect, workspace load). This is what
+// replaces `dagger shell`'s old manual zoom -- and, now that LLM messages no
+// longer set `reveal`, it also wires the surfaced transcript into the host's
+// RevealedSpans (via DB.PromoteConversationTo) so the live tree has something to
+// surface. That derives from the reveal-independent SurfacedConversation tree:
+// top-level turns land under the host and a sub-agent's turns nest under the
+// tool-call span that spawned them, exactly as reveal bubbling used to. Marking
+// the host Passthrough then makes RowsView iterate those revealed spans.
+func (fe *frontendPretty) promoteConversationLocked() {
+	if fe.db == nil {
+		return
+	}
+	// SetPrimary explicitly zooms interactive commands to the CLI root, while
+	// RootSpan is merely the first parentless span received and may be a remote
+	// query root. Promote the span RowsView is actually zoomed to, and ask the
+	// surfacing question about that same span: relative to the trace root it
+	// may be unanswerable when the primary is a sibling parentless span.
+	host := fe.db.RootSpan
+	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
+		host = primary
+	}
+	if host == nil || !fe.db.HasConversationForSpan(host) {
+		return
+	}
+	if host.LLMRole != "" {
+		// The host is itself a message: there is no setup noise above it to hide.
+		return
+	}
+	fe.db.PromoteConversationTo(host)
+	host.Passthrough = true
+	if !fe.ZoomedSpan.IsValid() {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
+// promoteGeneratorsLocked is the `dagger generate` analog of
+// promoteChecksLocked: when a trace ran generators, surface them at the top
+// level instead of the root's setup children (session connect, workspace
+// load). Generator spans no longer set `reveal`, so this wires the
+// reveal-independent SurfacedGenerators tree into the host's RevealedSpans
+// (via DB.PromoteGeneratorsTo) and marks the host Passthrough so RowsView
+// iterates those revealed spans.
+func (fe *frontendPretty) promoteGeneratorsLocked() {
+	if fe.db == nil {
+		return
+	}
+	// SetPrimary explicitly zooms interactive commands to the CLI root, while
+	// RootSpan is merely the first parentless span received and may be a remote
+	// query root. Promote the span RowsView is actually zoomed to, and ask the
+	// surfacing question about that same span: relative to the trace root it
+	// may be unanswerable when the primary is a sibling parentless span.
+	host := fe.db.RootSpan
+	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
+		host = primary
+	}
+	if host == nil || !fe.db.HasGeneratorsForSpan(host) {
+		return
+	}
+	if host.GeneratorName != "" {
+		// The host is itself a generator: there is no setup noise above it to hide.
+		return
+	}
+	fe.db.PromoteGeneratorsTo(host)
+	// Passthrough hides everything but revealed spans, so keep best-effort
+	// generate's skipped-module rows visible mid-run alongside the generators
+	// (the final report persists them via the SKIPPED MODULES section).
+	for _, skip := range fe.db.SkippedModuleSpans() {
+		host.RevealedSpans.Add(skip)
+	}
+	host.Passthrough = true
+	if !fe.ZoomedSpan.IsValid() {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
 // applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
 // test view in tests mode, the SpanTreeView for the selected span in trace mode,
 // or fe itself when no span is selected. Skipped when editline or search has
@@ -3037,6 +3823,18 @@ func (fe *frontendPretty) applyTuistFocus() {
 	}
 	if fe.testsMode && fe.fullscreenTests != nil {
 		fe.tui.SetFocus(fe.fullscreenTests)
+		return
+	}
+	if fe.commandView != nil {
+		if fe.FocusedSpan.IsValid() {
+			for view := range fe.spanLists {
+				if tree := view.scope.spanTrees[fe.FocusedSpan]; tree != nil {
+					fe.tui.SetFocus(tree)
+					return
+				}
+			}
+		}
+		fe.tui.SetFocus(fe.commandView)
 		return
 	}
 	if fe.FocusedSpan.IsValid() {
@@ -3065,12 +3863,37 @@ func (fe *frontendPretty) syncSpanTreeState() {
 	// (see Render), so the content below isn't indented under it.
 	body := fe.rowsView.Body
 	newTops := make([]*SpanTreeView, 0, len(body))
+	// Tool calls whose turn opened with a thinking/response nest under that
+	// reply, because their spans are parented beneath it (see
+	// core/llm_display.go's toolAnchorCtx). But when the model answers a round
+	// with tool calls alone -- no commentary -- those calls parent under the LLM
+	// step instead, so they surface as top-level conversation rows: the first
+	// call sits indented under its reply while every subsequent chained call
+	// hugs the margin. Track whether the current turn has surfaced an assistant
+	// reply and give these orphan tool-call rows the same one-level reveal
+	// indent, so a chain of tool calls reads consistently even with a response
+	// between them. A user prompt starts a fresh turn and clears the anchor.
+	revealIndent := treePrefix{step: "  ", cont: "  ", forChildren: "  ", contWidth: 2}
+	indentToolCalls := false
 	for i, tree := range body {
-		st := fe.getOrCreateSpanTree(tree.Span.ID)
+		span := tree.Span
+		isToolCall := span.LLMTool != ""
+		prefix := treePrefix{}
+		if isToolCall && indentToolCalls {
+			prefix = revealIndent
+		}
+		st := fe.getOrCreateSpanTree(span.ID)
 		st.parent = nil
 		st.indexInParent = i
-		fe.syncTreeNode(st, treePrefix{})
+		fe.syncTreeNode(st, prefix)
 		newTops = append(newTops, st)
+
+		switch {
+		case span.LLMRole == telemetry.LLMRoleUser:
+			indentToolCalls = false
+		case span.LLMRole == telemetry.LLMRoleAssistant && !isToolCall:
+			indentToolCalls = true
+		}
 	}
 	fe.topTrees = newTops
 }
@@ -3257,6 +4080,42 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		return allLines
 	}
 
+	// In flowing (shell/prompt) mode, don't crop: return every line and let
+	// tuist push the overflow into the terminal's native scrollback, so old
+	// output scrolls off the top like a normal REPL while the newest lines and
+	// the pinned live region below stay onscreen.
+	if fe.flowingMode() {
+		// While following the newest output (autoFocus) the focus tracks the
+		// bottom, so it's always onscreen and letting the overflow flow into
+		// scrollback is exactly right. But once the user navigates up into the
+		// history (nav mode), the focused item can sit anywhere above the
+		// bottom of the frame -- and since tuist only shows the bottom `height`
+		// lines, it would scroll offscreen. Crop everything below the focused
+		// item so it becomes the bottom of the flowing region (just above the
+		// pinned chrome) and stays onscreen; content above it still scrolls
+		// into scrollback as usual.
+		if !fe.autoFocus && focusLine >= 0 && ctx.ScreenHeight() > 0 {
+			viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
+			// Only crop when the focused item would actually scroll offscreen.
+			// In the uncropped flowing output tuist shows the bottom
+			// viewportHeight lines, so the focus is already fully onscreen while
+			// its header sits within that window (focusLine >=
+			// len-viewportHeight). Cropping then would be jarring -- moving up a
+			// row or two shouldn't suddenly hide the newest output.
+			if focusLine < len(allLines)-viewportHeight {
+				// The focus is above the fold: crop everything below it so it
+				// stays onscreen, reserving a line for the "… N lines below …"
+				// hint so the user can tell content was cropped and notice new
+				// lines arriving while scrolled up. There's always content below
+				// here, since the focus sits more than a viewport above the end.
+				end := flowingCropEnd(fe, focusLine, max(viewportHeight-1, 1), len(allLines))
+				below := len(allLines) - end
+				return append(allLines[:end:end], fe.cropHintLine(below))
+			}
+		}
+		return allLines
+	}
+
 	// Crop to the visible window so the focused span stays onscreen. The
 	// caller composes progress + chrome and the result must fit the screen
 	// exactly: returning more than the viewport (relying on the terminal to
@@ -3326,6 +4185,43 @@ func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 	return end
 }
 
+// flowingCropEnd computes the end index for the flowing (shell/prompt) nav
+// crop: the caller returns allLines[:end] and lets tuist show the bottom of it,
+// so `end` is chosen to pin the focused item to the bottom of the flowing
+// region while its content still fits onscreen. The whole focused subtree is
+// kept when it fits; when it is taller than the viewport its top is anchored so
+// the header survives (its tail overflows into scrollback), matching cropEnd's
+// tall-focus handling.
+func flowingCropEnd(fe *frontendPretty, focusLine, viewportHeight, totalLines int) int {
+	focusHeight := 1
+	if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+		focusHeight = focused.totalLineCount()
+	}
+	end := min(focusLine+focusHeight, totalLines)
+	// Keep the focused header within the bottom viewport window: the visible
+	// region is [end-viewportHeight, end), so cap end so focusLine stays >=
+	// end-viewportHeight.
+	if end > focusLine+viewportHeight {
+		end = focusLine + viewportHeight
+	}
+	return min(end, totalLines)
+}
+
+// cropHintLine renders the faint "… N lines below …" marker shown at the bottom
+// of the flowing region when nav-mode cropping hides newer content below the
+// focused item. It lets the user tell the conversation was cropped -- and, since
+// the count grows as output streams in, notice new lines arriving while they're
+// scrolled up in the history.
+func (fe *frontendPretty) cropHintLine(below int) string {
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	noun := "lines"
+	if below == 1 {
+		noun = "line"
+	}
+	label := fmt.Sprintf("… %d %s below …", below, noun)
+	return "  " + out.String(label).Foreground(termenv.ANSIBrightBlack).Faint().String()
+}
+
 // totalLineCount returns the total number of rendered lines for a SpanTreeView,
 // including self content, gap lines, and all children.
 func (s *SpanTreeView) totalLineCount() int {
@@ -3393,17 +4289,50 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 	return offset
 }
 
+// padUserPrompt wraps a user prompt's rendered lines in a shaded blank line
+// above and below, extending its ANSIBrightBlack block by one row each way so
+// the prompt reads as a padded card set apart from the transcript. Only applies
+// in the live shell view; other rows, the final report, and plain mode are
+// unchanged.
+func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []string {
+	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser {
+		return lines
+	}
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+	if width <= 0 {
+		return lines
+	}
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	shaded := out.String(strings.Repeat(" ", width)).Background(termenv.ANSIBrightBlack).String()
+	padded := make([]string, 0, len(lines)+2)
+	padded = append(padded, shaded)
+	padded = append(padded, lines...)
+	padded = append(padded, shaded)
+	return padded
+}
+
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
 // using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
 	if fe.shell != nil {
-		if row.Depth == 0 && row.Previous != nil {
+		// Conversation turns get one separating line. Tool calls and ordinary
+		// trace spans stay attached to their parent/preceding message so an agent
+		// session does not become a double-spaced list of implementation details.
+		if row.Depth == 0 && row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleUser {
 			return []string{""}
 		}
-		// Gap above each LLM response to visually group RTTT sequences.
-		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
-			return []string{trimmedPrefix}
+		// A tool call that opens a turn carries no leading blank of its own (an
+		// assistant reply does), so it would sit flush beneath the user's prompt
+		// above it. Add a separating blank so the prompt's shaded card stays
+		// distinct -- a gap we deliberately don't add between a reply and its
+		// tools.
+		if row.Span.LLMTool != "" && row.PreviousVisual != nil &&
+			row.PreviousVisual.Span.LLMRole == telemetry.LLMRoleUser {
+			return []string{""}
 		}
 		return nil
 	}
@@ -4324,6 +5253,17 @@ func (fe *frontendPretty) syncPrompt() {
 		prompt, init := fe.shell.Prompt(ctx, promptOut, fe.promptFg)
 		fe.textInput.Prompt = prompt
 		fe.textInput.Update()
+		// Frame the input (bars + shaded background) when the handler reports LLM
+		// prompt mode, so the live prompt mirrors how a submitted user message is
+		// shaded in scrollback (styleLLMMessageView). Handlers that don't
+		// distinguish modes (plain shell) leave it unframed.
+		if fe.promptFrame != nil {
+			promptMode := false
+			if pm, ok := fe.shell.(interface{ PromptMode() bool }); ok {
+				promptMode = pm.PromptMode()
+			}
+			fe.promptFrame.SetEnabled(promptMode)
+		}
 		if init != nil {
 			fe.runShellAsync(init)
 		}
@@ -4567,20 +5507,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
 		// this check's own orchestrating command error here.
 	} else if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
-		// Filter self-references and causes already rendered elsewhere in this
-		// trace: a span propagated as its own error origin should never be
-		// rendered as the cause of itself, and a cause already shown as a
-		// primary row doesn't need a redundant "↳ ..." block here.
-		origins := make([]*dagui.Span, 0, len(row.Span.ErrorOrigins.Order))
-		for _, cause := range row.Span.ErrorOrigins.Order {
-			if cause.ID == row.Span.ID {
-				continue
-			}
-			if fe.claims.hasError(cause.ID) {
-				continue
-			}
-			origins = append(origins, cause)
-		}
+		origins := fe.renderableErrorOrigins(row.Span)
 		sortErrorOrigins(origins)
 		multi := len(origins) > 1
 		for _, cause := range origins {
@@ -4600,6 +5527,30 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+}
+
+// renderableErrorOrigins filters a failed span's tracked origins down to the
+// ones worth rendering as inline "↳ ..." cause blocks: a span propagated as
+// its own error origin should never be rendered as the cause of itself, a
+// cause already shown as a primary row doesn't need a redundant block, and a
+// cause whose span data never arrived (e.g. an origin linked across a nested
+// session) would render as an empty stub while suppressing the only copy of
+// the message.
+func (fe *frontendPretty) renderableErrorOrigins(span *dagui.Span) []*dagui.Span {
+	origins := make([]*dagui.Span, 0, len(span.ErrorOrigins.Order))
+	for _, cause := range span.ErrorOrigins.Order {
+		if cause.ID == span.ID {
+			continue
+		}
+		if !cause.Received {
+			continue
+		}
+		if fe.claims.hasError(cause.ID) {
+			continue
+		}
+		origins = append(origins, cause)
+	}
+	return origins
 }
 
 func sortErrorOrigins(origins []*dagui.Span) {
@@ -4697,6 +5648,10 @@ func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *r
 	if fe.claims.hasLog(row.Span.ID) {
 		return false
 	}
+	if fe.reportHideLogSpans[row.Span.ID] {
+		// The report's caller prints this span's output itself, verbatim.
+		return false
+	}
 	// Structural lazy fetch: this row renders its own logs (message/rollup
 	// spans), so request them when it renders -- the interactive path no longer
 	// pre-fetches. (Inline expanded-step logs go through LogsView instead.)
@@ -4709,6 +5664,10 @@ func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *r
 		if sh := ctx.ScreenHeight(); sh > 0 {
 			limit = sh / 3
 		}
+	}
+	// See renderInlineLogs: nested rows are abridged in an embedded report.
+	if fe.reportNestedLogLimit > 0 && row.Depth > 0 {
+		limit = fe.reportNestedLogLimit
 	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
@@ -5112,13 +6071,63 @@ func (fe *frontendPretty) hasShownRootError() bool {
 	return fe.claims.hasRootError(fe.err)
 }
 
+// errorShownElsewhere reports whether a failed span's error message is carried
+// by some other output this render pass, so the span's own row can stay terse.
+// The span's tracked error origins normally carry the message — but only if an
+// origin actually renders: as its own row in the current view, as an
+// already-claimed block (root-cause sections render before the tree), or as a
+// root cause the render policy will append after the tree. An origin no output
+// shows — an internal span, or one whose data never arrived — must not
+// suppress the message, or the error would vanish from the report entirely.
+func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
+	if len(span.ErrorOrigins.Order) == 0 {
+		return false
+	}
+	var sectionOrigins []*dagui.Span
+	sectionsComputed := false
+	for _, origin := range span.ErrorOrigins.Order {
+		if origin == nil || origin.ID == span.ID || !origin.Received {
+			continue
+		}
+		if fe.claims.hasError(origin.ID) {
+			return true
+		}
+		if fe.rows != nil && fe.rows.BySpan[origin.ID] != nil {
+			return true
+		}
+		if !sectionsComputed {
+			sectionsComputed = true
+			if pol := fe.renderPolicy(); pol.showRootCause || pol.showRootCauseLast {
+				if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
+					sectionOrigins = fe.checkRootCauses(zoomSpan)
+				}
+			}
+		}
+		for _, sectionOrigin := range sectionOrigins {
+			if sectionOrigin.ID == origin.ID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	if len(row.Span.ErrorOrigins.Order) > 0 {
-		// span's error originated elsewhere; don't repeat the message, the ERROR status
-		// links to its origin instead
+	if fe.errorShownElsewhere(row.Span) {
+		// span's error originated elsewhere and that origin is visible this
+		// pass; don't repeat the message, the ERROR status links to its origin
 		return
 	}
 	fe.claims.claimError(row.Span)
+	// This span's message embeds its origins' messages (error wrapping), so
+	// printing it here also represents them: claim the origins so the
+	// root-cause sections and the CLI's trailing Error: line don't repeat
+	// what was just shown.
+	for _, origin := range row.Span.ErrorOrigins.Order {
+		if origin != nil && origin.ID != row.Span.ID {
+			fe.claims.claimErrorID(origin.ID)
+		}
+	}
 	errorCounts := map[string]int{}
 	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description
@@ -5210,12 +6219,25 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 				// status is always OK.
 				return nil
 			}
-			r.fancyIndent(out, row, false, false)
-			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-			if focused {
-				bar = hl(bar)
+			if span.LLMRole == "" {
+				// Non-conversation message spans keep the bold-pipe chrome before
+				// their trailing duration/status. Conversation turns read as a
+				// transcript, so they skip the pipe and let the reply flow into the
+				// duration directly.
+				r.fancyIndent(out, row, false, false)
+				bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+				if focused {
+					bar = hl(bar)
+				}
+				fmt.Fprint(out, bar)
+			} else {
+				// Conversation turns read as a transcript, so they skip the pipe and
+				// let the reply flow into the duration directly. Align the duration
+				// with the message body's two-column gutter (renderDuration adds one
+				// leading space of its own).
+				r.fancyIndent(out, row, false, false)
+				fmt.Fprint(out, " ")
 			}
-			fmt.Fprint(out, bar)
 		} else {
 			empty = true
 		}
@@ -5238,7 +6260,11 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	if span != nil && !abridged {
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span, !empty)
+		fe.renderDurationDynamic(ctx, out, r, span, statusHost, !empty)
+
+		// Flag how many tokens a tool call's result added to the model's
+		// context, so an outsized one stands out at a glance.
+		r.renderToolResultTokens(out, span)
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {
@@ -5288,24 +6314,91 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	return nil
 }
 
-func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) error {
-	fmt.Fprint(out, prefix)
+func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, statusHost statusIconHost, focused bool) error {
+	// Message span names are implementation labels; their logs are the actual
+	// content. Until content arrives, omit the row entirely and let the status
+	// line carry the in-flight cue instead of rendering an empty bubble.
+	if row.Span.LLMRole != "" && row.Span.LLMTool == "" {
+		fe.requestLogsOnRender(row.Span.ID)
+		logs := fe.logs.Logs[row.Span.ID]
+		if logs == nil || strings.TrimSpace(logs.View()) == "" {
+			return nil
+		}
+	}
+
 	r.fancyIndent(out, row, false, true)
 
-	if row.Span.LLMRole != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
-		case telemetry.LLMRoleAssistant:
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+	if !fe.finalRender && fe.shell != nil {
+		switch {
+		case row.Span.LLMRole == telemetry.LLMRoleUser:
+			// The user's prompt sits on a shaded block; its leading gutter -- or
+			// the focus cue ("❯ ") that stands in for it -- must be shaded too so
+			// line 0 matches the continuation lines, which carry the gutter inside
+			// their background (styleLLMMessageView). Otherwise the cue punches an
+			// unshaded hole in the block. The block is padded to the full content
+			// width, so its right edge is clipped and stays flush.
+			cue := out.String("  ")
+			if focused {
+				cue = out.String(LLMPrompt + " ").Bold()
+			}
+			fmt.Fprint(out, cue.Background(termenv.ANSIBrightBlack))
+		case row.Span.LLMRole == telemetry.LLMRoleAssistant && row.Span.LLMTool == "":
+			// The assistant's reply/thinking opens with a blank separator line and
+			// re-emits its own indent + focus cue on the content line below (see
+			// the LLMRoleAssistant case in the next switch). Emitting the cue here
+			// too would strand a second, lone "❯ " on that blank separator line, so
+			// leave line 0 bare and let the content line carry the sole cue.
+		case focused:
+			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
+		default:
+			fmt.Fprint(out, "  ")
 		}
-		fmt.Fprint(out, " ")
+	}
+
+	if row.Span.LLMRole != "" {
+		// Conversation turns are distinguished by subtle content styling rather
+		// than a role label (see styleLLMMessageView): the user's message sits on
+		// a shaded background, thinking is dim italic, and the assistant's reply
+		// gets no chrome at all -- just plain prose flush to the margin. Tool
+		// calls keep a quiet leading cue since their body is a call, not a
+		// message.
+		switch {
+		case row.Span.LLMTool != "":
+			// Tool calls remain fully interactive; a faint dot marks them without
+			// shouting "tool" on every row.
+			fmt.Fprint(out, out.String("• ").Foreground(termenv.ANSIBrightBlack).Faint())
+		case row.Span.LLMRole == telemetry.LLMRoleAssistant:
+			// The assistant's reply and its thinking both get a blank line ahead so
+			// they read as distinct paragraphs in the transcript, and no leading
+			// chrome at all -- just prose flush to the margin. Thinking's dim italic
+			// look is applied to the content in styleLLMMessageView, whose first
+			// line stays flush to match this.
+			fmt.Fprintln(out)
+			r.fancyIndent(out, row, false, true)
+			if !fe.finalRender && fe.shell != nil {
+				if focused {
+					fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
+				} else {
+					fmt.Fprint(out, "  ")
+				}
+			}
+		default:
+			// The user's prompt renders flush too: its shaded background (applied
+			// in styleLLMMessageView) is the only cue it needs, so it takes no extra
+			// leading space.
+		}
 	} else if !fe.finalRender {
-		fe.renderToggler(out, row, focused)
+		if fe.formWrap != nil {
+			// The form owns input focus, so don't imply that its host span is also
+			// selected. Preserve the column so the title doesn't jump sideways.
+			fmt.Fprint(out, " ")
+		} else {
+			fe.renderToggler(out, row, focused)
+		}
 		fmt.Fprint(out, " ")
 	}
 
-	if err := fe.renderStepTitle(ctx, out, r, row, prefix, statusHost, focused, false); err != nil {
+	if err := fe.renderStepTitle(ctx, out, r, row, "", statusHost, focused, false); err != nil {
 		return err
 	}
 
@@ -5358,7 +6451,7 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 
 	// The braille rollup is a visual density cue; an agent reading the output as
 	// text gets nothing from it but noise, so skip it entirely.
-	if RunningInAgent() {
+	if fe.agentStyle() {
 		return ""
 	}
 
@@ -5522,7 +6615,7 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 		if sb.Len() > 0 {
 			sb.WriteString(" ")
 		}
-		sb.WriteString(out.String(summary).Faint().String())
+		sb.WriteString(out.String(summary).String())
 	}
 	return sb.String()
 }
@@ -5546,49 +6639,54 @@ func (fe *frontendPretty) renderProgressCells(out TermOutput, sb *strings.Builde
 		case item.Current == 0:
 			color = termenv.ANSIBrightBlack
 		}
-		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).Faint().String())
+		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).String())
 	}
 	if rest := len(items) - len(shown); rest > 0 {
-		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
+		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).String())
 	}
 }
 
 // renderProgressTrack renders a single item as a fixed-width left-to-right
-// track with eighth-cell resolution.
-//
-// The whole track is painted on a solid background color. The filled portion
-// is drawn as foreground blocks over it, and the partial boundary cell draws
-// its eighth-block in the fill color on the same background — so its unfilled
-// remainder blends into the empty track. Drawing the partial block on the
-// terminal's default background instead would leave a variable-width gap
-// (the block's unfilled remainder) between the fill and the empty portion.
+// track with eighth-cell resolution, in yellow (running) or green (complete).
 func (fe *frontendPretty) renderProgressTrack(out TermOutput, sb *strings.Builder, item *dagui.ProgressItem) {
 	eighths := int(item.Current * progressTrackWidth * 8 / item.Total)
-	eighths = max(min(eighths, progressTrackWidth*8), 0)
-	full, rem := eighths/8, eighths%8
 	color := termenv.ANSIYellow
 	if item.Complete() {
 		color = termenv.ANSIGreen
 	}
-	track := termenv.ANSIBrightBlack
+	sb.WriteString(progressTrack(out, progressTrackWidth, eighths, color, termenv.ANSIBrightBlack))
+}
+
+// progressTrack renders a fixed-width, left-to-right progress track with
+// eighth-cell resolution: a track of width cells with eighths of them filled
+// (0..width*8), drawn in the fill color over a solid track background.
+//
+// Painting the whole track as a background is what lets a partial boundary cell
+// sit flush against the empty portion: its eighth-block is drawn in the fill
+// color on the track background, so the block's unfilled remainder blends into
+// the track instead of leaving a variable-width gap. Where color is unavailable
+// the empty portion still renders as ░.
+func progressTrack(out TermOutput, width, eighths int, fill, track termenv.Color) string {
+	eighths = max(min(eighths, width*8), 0)
+	full, rem := eighths/8, eighths%8
+	var sb strings.Builder
 	if full > 0 {
-		sb.WriteString(out.String(strings.Repeat(string(horizontalEighths[8]), full)).Foreground(color).Background(track).Faint().String())
+		sb.WriteString(out.String(strings.Repeat(string(horizontalEighths[8]), full)).Foreground(fill).Background(track).String())
 	}
 	if rem > 0 {
-		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).Background(track).Faint().String())
+		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(fill).Background(track).String())
 	}
-	if empty := progressTrackWidth - full - min(rem, 1); empty > 0 {
-		// fg == bg so the light-shade dissolves into a solid track in color
-		// mode, while still rendering as ░ where color is unavailable.
-		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(track).Background(track).Faint().String())
+	if empty := width - full - min(rem, 1); empty > 0 {
+		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(track).Background(track).String())
 	}
+	return sb.String()
 }
 
 // statusIcon returns an icon indicating the span's status, and a bool
 // indicating whether it's interesting enough to reveal at a summary level.
 func (fe *frontendPretty) statusIcon(ctx tuist.Context, host statusIconHost, span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
-		if host == nil {
+		if host == nil || fe.flowingMode() {
 			return DotHalf, true
 		}
 		return host.RenderChildInline(ctx, host.spinnerForStatus(span.ID)), true
@@ -5632,8 +6730,33 @@ func (fe *frontendPretty) renderStatusIcon(ctx tuist.Context, out TermOutput, ro
 	fmt.Fprint(out, statusIcon.String())
 }
 
+// renderDurationDynamic renders a span's duration. Running rows in flowing mode
+// are deliberately inert: the whole over-tall frame flows into native terminal
+// scrollback, where a ticking duration would force Tuist to redraw even when the
+// row is off-screen. Viewport-clipped views keep using a self-updating
+// DurationView; once a span stops, every view falls back to its static final
+// duration.
+func (fe *frontendPretty) renderDurationDynamic(ctx tuist.Context, out TermOutput, r *renderer, span *dagui.Span, host statusIconHost, space bool) {
+	if fe.flowingMode() && span.IsRunningOrEffectsRunning() {
+		return
+	}
+	if !fe.finalRender && host != nil && span.IsRunningOrEffectsRunning() {
+		if space {
+			fmt.Fprint(out, out.String(" "))
+		}
+		dv := host.durationForStatus(span.ID)
+		dv.span = span
+		fmt.Fprint(out, host.RenderChildInline(ctx, dv))
+		return
+	}
+	r.renderDuration(out, span, space)
+}
+
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
-	if span.CheckPassed {
+	if fe.flowingMode() && span.IsRunningOrEffectsRunning() {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("RUNNING").Foreground(termenv.ANSIYellow))
+	} else if span.CheckPassed {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("OK").Foreground(termenv.ANSIGreen))
 	} else if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
@@ -5671,8 +6794,68 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	if view == "" {
 		return false
 	}
+	// Give conversation turns their subtle content styling: the user's prompt
+	// on a shaded background, thinking as dim italic. The assistant's reply and
+	// tool output are left untouched (no chrome at all).
+	if styled, ok := fe.styleLLMMessageView(out, row.Span, logPrefix, view); ok {
+		view = styled
+	}
 	fmt.Fprint(out, view)
 	return true
+}
+
+// styleLLMMessageView applies pi-style per-role content styling to a rendered
+// message Vterm view, returning the restyled view (and true) for the roles it
+// handles. The user's prompt is drawn on a shaded (ANSIBrightBlack) background
+// padded to the content width, so it reads as an inset block; thinking is drawn
+// dim and italic. Other roles -- the assistant's reply, tool calls -- are left
+// verbatim, so this returns false for them.
+func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, logPrefix, view string) (string, bool) {
+	if span.LLMRole == "" || span.LLMTool != "" {
+		return "", false
+	}
+	user := span.LLMRole == telemetry.LLMRoleUser
+	if !user && !span.LLMThinking {
+		return "", false
+	}
+
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		// Strip existing SGR so the role styling owns the line; user prompts and
+		// thinking are prose, not richly formatted output, so nothing of value is
+		// lost, and it keeps a background from being punched out by a reset.
+		plain := ansi.Strip(line)
+		if user {
+			padded := plain
+			if width > 0 {
+				padded = padANSI(clipPlain(plain, width), width)
+			}
+			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
+		} else {
+			// Thinking: dim italic foreground, no background. The first line renders
+			// inline on the already-indented title line (redraw omits the gutter on
+			// line 0), so keep it flush -- only continuation lines carry the gutter.
+			body := plain
+			if i > 0 {
+				body = strings.TrimPrefix(plain, ansi.Strip(logPrefix))
+				b.WriteString(logPrefix)
+			}
+			b.WriteString(out.String(body).Foreground(termenv.ANSIBrightBlack).Italic().String())
+		}
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String(), true
 }
 
 // logLinePrefixes builds the per-line prefix applied to a row's inline log
@@ -5689,6 +6872,35 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		dashed = hl(dashed)
 	}
 
+	// Conversation messages read as a transcript, not a span tree: drop the
+	// bold pipe gutter in favour of a plain indent so the body sits flush like
+	// prose. Only LLM message rows are affected; the regular tree keeps its
+	// pipe. Tool-call output keeps a quiet gutter so its result stays visually
+	// attached to the call.
+	llmMessage := span.LLMRole != ""
+	if llmMessage {
+		gutter := "  "
+		if span.LLMTool != "" {
+			gutter = out.String(VertDash3 + " ").Foreground(termenv.ANSIBrightBlack).Faint().String()
+		}
+		pipe = out.String(gutter)
+		dashed = out.String(gutter)
+	}
+
+	// In shell mode the step title is drawn with a two-cell indent after
+	// fancyIndent (the focus prompt "❯ ", or two spaces when unfocused; see
+	// renderStep). A tool call's output is a separate block beneath the title,
+	// so its gutter has to match that indent to line up under the faint dot
+	// printed in front of the tool name, rather than sitting two columns to its
+	// left. Plain messages (the assistant's reply, thinking, the user's prompt)
+	// render their first line inline on the already-indented title line and
+	// flow their continuation lines through this same gutter, so they must NOT
+	// get the extra indent -- otherwise every line but the first shifts right.
+	shellIndent := ""
+	if !fe.finalRender && fe.shell != nil && span.LLMTool != "" {
+		shellIndent = "  "
+	}
+
 	if row.Depth == -1 {
 		// clear prefix when zoomed
 		logPrefix = prefix
@@ -5697,8 +6909,11 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		fmt.Fprint(pipeBuf, prefix)
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
+		fmt.Fprint(indentOut, shellIndent)
 		fmt.Fprint(indentOut, pipe)
-		fmt.Fprint(indentOut, out.String(" "))
+		if !llmMessage {
+			fmt.Fprint(indentOut, out.String(" "))
+		}
 		logPrefix = pipeBuf.String()
 	}
 
@@ -5706,8 +6921,11 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 	fmt.Fprint(trimBuf, prefix)
 	trimOut := NewOutput(trimBuf, termenv.WithProfile(fe.profile))
 	r.fancyIndent(trimOut, row, false, false)
+	fmt.Fprint(trimOut, shellIndent)
 	fmt.Fprint(trimOut, dashed)
-	fmt.Fprint(trimOut, out.String(" "))
+	if !llmMessage {
+		fmt.Fprint(trimOut, out.String(" "))
+	}
 	trimPrefix = trimBuf.String()
 	return logPrefix, trimPrefix
 }
@@ -5746,7 +6964,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	for _, log := range logs {
+	for _, log := range renderableLogRecords(logs) {
 		// Check for Markdown content type
 		contentType := ""
 		eof := false
@@ -5918,22 +7136,21 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
-			NewForm(
+			huh.NewForm(
 				huh.NewGroup(
-					huh.NewConfirm().
+					NewExplicitConfirm("Yes", "No", dest).
 						Title(title).
 						Description(strings.TrimSpace((&Markdown{
 							Content: message,
 							Width:   fe.window.Width,
-						}).View())).
-						Value(dest),
+						}).View())),
 				),
 			),
-			func(f *huh.Form) { close(done) },
+			func(f *huh.Form) { done <- formCompletionError(f) },
 		)
 		fe.Update()
 	})
@@ -5941,13 +7158,13 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(
@@ -5962,7 +7179,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 						Value(dest),
 				),
 			),
-			func(f *huh.Form) { close(done) },
+			func(f *huh.Form) { done <- formCompletionError(f) },
 		)
 		fe.Update()
 	})
@@ -5970,8 +7187,8 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 

@@ -10,6 +10,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -113,10 +114,15 @@ func (ModuleSuite) TestRuntimeDependencyDoesNotInheritWorkspace(ctx context.Cont
 		WithNewFile("marker.txt", "workspace marker")
 
 	// A can still share its workspace with B when it passes the value explicitly.
+	//
+	// Driven through `dagger call` rather than a raw query: A's own Workspace!
+	// is required, and the CLI defaults it to the current workspace. A raw
+	// GraphQL document gets no such help — it fails validation before reaching
+	// the engine — so passing one there means naming the ID by hand.
 	t.Run("explicit workspace pass succeeds", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQueryAt(".", `{explicitWorkspaceArg}`)).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "explicit-workspace-arg")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"explicitWorkspaceArg":"workspace marker"}`, out)
+		require.Equal(t, "workspace marker", strings.TrimSpace(out))
 	})
 
 	// B must not receive A's contextual workspace through an omitted argument.

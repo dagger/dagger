@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
+	iversion "github.com/dagger/dagger/internal/version"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 )
@@ -68,8 +69,8 @@ func (l *Loader) SDKForModule(
 	fmt.Fprintf(stdio.Stderr, "Could not load SDK %q.\n", sdk.Source)
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "Errors:")
-	fmt.Fprintln(stdio.Stderr, "-", builtinErr)
-	fmt.Fprintln(stdio.Stderr, "-", extErr)
+	fmt.Fprintln(stdio.Stderr, "-", core.StripErrorOrigins(builtinErr.Error()))
+	fmt.Fprintln(stdio.Stderr, "-", core.StripErrorOrigins(extErr.Error()))
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
 	for _, sdk := range sdkmeta.Builtins {
@@ -146,11 +147,46 @@ func (l *Loader) namedSDK(
 		if !ok {
 			return nil, errUnknownBuiltinSDK
 		}
-		return l.SDKForModule(ctx, root, &core.SDKConfig{
+		sdkConfig := &core.SDKConfig{
 			Source:       sdkMod.Source,
 			Config:       sdk.Config,
 			Experimental: sdk.Experimental,
-		}, nil)
+		}
+		loaded, tagErr := l.externalSDKForModule(ctx, root, sdkConfig, nil)
+		if tagErr == nil {
+			return loaded, nil
+		}
+
+		// A bare remote builtin normally resolves at engine.Tag. On main,
+		// VERSION already names the next release before its Git tag exists.
+		// Retry at the exact engine source commit, which is always available
+		// for provenance-stamped builds. Explicit user refs remain authoritative.
+		// TODO(https://github.com/dagger/dagger/issues/13755): Since these
+		// runtimes live in this repository, should bare refs always resolve from
+		// the engine commit instead of pulling by tag first?
+		_, _, hasExplicitVersion := strings.Cut(sdk.Source, "@")
+		if hasExplicitVersion ||
+			!errors.Is(tagErr, core.ErrModuleVersionNotFound) ||
+			iversion.Commit == "" {
+			return nil, tagErr
+		}
+		commitMod, ok := workspaceModuleForBuiltinSDK(sdkNamedParsed, "@"+iversion.Commit)
+		if !ok {
+			return nil, errUnknownBuiltinSDK
+		}
+		sdkConfig.Source = commitMod.Source
+		loaded, commitErr := l.externalSDKForModule(ctx, root, sdkConfig, nil)
+		if commitErr != nil {
+			return nil, fmt.Errorf(
+				"failed to load SDK %q from %q: %w; fallback to engine commit %q failed: %w",
+				sdk.Source,
+				sdkMod.Source,
+				tagErr,
+				iversion.Commit,
+				commitErr,
+			)
+		}
+		return loaded, nil
 	}
 
 	return nil, errUnknownBuiltinSDK

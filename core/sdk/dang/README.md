@@ -60,7 +60,7 @@ so existing modules keep the language semantics they were written against.
 
 ## Caveats
 
-- In-repo dang modules (`toolchains/*`, `cmd/codegen`, `modules/markdownlint`)
+- In-repo dang modules (`.dagger/modules/*`, `cmd/codegen`, `modules/markdownlint`)
   are pinned to the *released* engine version (the released CLI rejects
   configs newer than itself), so they route to the previous major until the
   next dagger release ships. Keep them syntax-neutral across the boundary, or

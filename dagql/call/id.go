@@ -980,6 +980,10 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 		if v.digest != "" {
 			h = h.WithString(v.digest.String())
 		}
+	case *LiteralBytes:
+		const prefix = 'A'
+		h = h.WithByte(prefix).
+			WithBytes(v.value...)
 	default:
 		return nil, fmt.Errorf("unknown literal type %T", v)
 	}

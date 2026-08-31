@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -192,6 +193,7 @@ const (
 const (
 	persistedFileLazyKindDirectoryFile  = "directory.file"
 	persistedFileLazyKindContainerFile  = "container.file"
+	persistedFileLazyKindBlob           = "file.blob"
 	persistedFileLazyKindWithName       = "file.withName"
 	persistedFileLazyKindWithReplaced   = "file.withReplaced"
 	persistedFileLazyKindWithTimestamps = "file.withTimestamps"
@@ -306,6 +308,13 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resul
 	return decodePersistedFileWithSnapshotRole(ctx, dag, resultID, payload, "snapshot")
 }
 
+type FileBlobLazy struct {
+	LazyState
+	Filename    string
+	Contents    []byte
+	Permissions fs.FileMode
+}
+
 type FileWithReplacedLazy struct {
 	LazyState
 	Parent      dagql.ObjectResult[*File]
@@ -339,6 +348,12 @@ type FileSubfileLazy struct {
 	Path   string
 }
 
+type persistedFileBlobLazy struct {
+	Filename    string      `json:"filename"`
+	Contents    []byte      `json:"contents"`
+	Permissions fs.FileMode `json:"permissions"`
+}
+
 type persistedFileWithReplacedLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Search         string `json:"search"`
@@ -369,6 +384,9 @@ type persistedFileSubfileLazy struct {
 
 func encodePersistedFileLazy(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*File]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
+	case *FileBlobLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedFileLazyKindBlob, payload, err
 	case *FileSubfileLazy:
 		payload, err := lazy.EncodePersisted(ctx, cache)
 		return persistedFileLazyKindDirectoryFile, payload, err
@@ -394,6 +412,17 @@ func encodePersistedFileLazy(ctx context.Context, cache dagql.PersistedObjectCac
 
 func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind string, payload json.RawMessage) (Lazy[*File], error) {
 	switch lazyKind {
+	case persistedFileLazyKindBlob:
+		var persisted persistedFileBlobLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted file blob lazy: %w", err)
+		}
+		return &FileBlobLazy{
+			LazyState:   NewLazyState(),
+			Filename:    persisted.Filename,
+			Contents:    slices.Clone(persisted.Contents),
+			Permissions: persisted.Permissions,
+		}, nil
 	case persistedFileLazyKindDirectoryFile:
 		var persisted persistedFileSubfileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -464,6 +493,69 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 	default:
 		return nil, fmt.Errorf("decode persisted file lazy payload: unsupported lazy kind %q", lazyKind)
 	}
+}
+
+func (lazy *FileBlobLazy) Evaluate(ctx context.Context, file *File) error {
+	return lazy.LazyState.Evaluate(ctx, "File.blob", func(ctx context.Context) error {
+		if dir, _ := filepath.Split(lazy.Filename); dir != "" {
+			return fmt.Errorf("file name %q must not contain a directory", lazy.Filename)
+		}
+		if err := ValidateFileName(lazy.Filename); err != nil {
+			return err
+		}
+		permissions := lazy.Permissions
+		if permissions == 0 {
+			permissions = 0o644
+		}
+
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		scratch, err := query.SnapshotManager().Scratch(ctx)
+		if err != nil {
+			return fmt.Errorf("create blob scratch snapshot: %w", err)
+		}
+		newRef, err := query.SnapshotManager().New(
+			ctx,
+			scratch,
+			nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(fmt.Sprintf("blob %s (%d bytes)", lazy.Filename, len(lazy.Contents))),
+		)
+		if err != nil {
+			return fmt.Errorf("create blob snapshot: %w", err)
+		}
+		filePath := filepath.Join("/", lazy.Filename)
+		if err := MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+			resolvedDest, err := containerdfs.RootPath(root, filePath)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(resolvedDest, lazy.Contents, permissions)
+		}); err != nil {
+			return err
+		}
+		snapshot, err := newRef.Commit(ctx)
+		if err != nil {
+			return fmt.Errorf("commit blob snapshot: %w", err)
+		}
+		file.File.setValue(filePath)
+		file.Snapshot.setValue(snapshot)
+		return nil
+	})
+}
+
+func (lazy *FileBlobLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (lazy *FileBlobLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return json.Marshal(persistedFileBlobLazy{
+		Filename:    lazy.Filename,
+		Contents:    slices.Clone(lazy.Contents),
+		Permissions: lazy.Permissions,
+	})
 }
 
 func (lazy *FileSubfileLazy) Evaluate(ctx context.Context, file *File) error {

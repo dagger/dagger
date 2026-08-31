@@ -129,6 +129,9 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	_, span := tracer.Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
+	// Module refs historically use "@" for versions, while other Git-backed
+	// resource addresses use "#". Accept both spellings at this boundary.
+	refString = strings.Replace(refString, "#", "@", 1)
 	scheme, schemelessRef := parseScheme(refString)
 
 	if scheme == NoScheme && isSCPLike(schemelessRef) {

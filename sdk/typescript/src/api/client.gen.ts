@@ -30,6 +30,13 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
+export type AgentGroupComposeOpts = {
+  /**
+   * The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+   */
+  base?: LLM
+}
+
 export type BuildArg = {
   /**
    * The build argument name.
@@ -41,6 +48,11 @@ export type BuildArg = {
    */
   value: string
 }
+
+/**
+ * Arbitrary binary data, represented as a base64-encoded string.
+ */
+export type Bytes = string & { __Bytes: never }
 
 /**
  * Sharing mode of the cache volume.
@@ -1012,13 +1024,6 @@ export type ContainerWithoutUnixSocketOpts = {
   expand?: boolean
 }
 
-export type CurrentModuleAsSdkOpts = {
-  /**
-   * The workspace to resolve SDK-role data against. Defaults to the current workspace.
-   */
-  workspace?: Workspace
-}
-
 export type CurrentModuleGeneratorsOpts = {
   /**
    * Only include generators matching the specified patterns
@@ -1372,13 +1377,27 @@ export type DirectoryWithNewFileOpts = {
   permissions?: number
 }
 
+export type DirectoryWithPatchOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
+export type DirectoryWithPatchFileOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
 export type EngineCacheEntrySetOpts = {
   key?: string
 }
 
 export type EngineCachePruneOpts = {
   /**
-   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
    */
   useDefaultPolicy?: boolean
 
@@ -1401,25 +1420,16 @@ export type EngineCachePruneOpts = {
    * Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
    */
   targetSpace?: string
-}
-
-export type EnvChecksOpts = {
-  /**
-   * Only include checks matching the specified patterns
-   */
-  include?: string[]
 
   /**
-   * When true, only return annotated check functions; exclude generate-as-checks
+   * Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
    */
-  noGenerate?: boolean
-}
+  maxEstimatedBytes?: number
 
-export type EnvServicesOpts = {
   /**
-   * Only include services matching the specified patterns
+   * Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
    */
-  include?: string[]
+  targetEstimatedBytes?: number
 }
 
 export type EnvFileGetOpts = {
@@ -1757,11 +1767,59 @@ export type GeneratorGroupChangesOpts = {
   onConflict?: ChangesetsMergeConflict
 }
 
+export type GitCommitAncestorReleaseTagOpts = {
+  /**
+   * Include pre-release tags when choosing the latest tag.
+   */
+  includePreRelease?: boolean
+}
+
+export type GitCommitReleaseTagOpts = {
+  /**
+   * Include pre-release tags when choosing the latest tag.
+   */
+  includePreRelease?: boolean
+}
+
+export type GitCommitTreeOpts = {
+  /**
+   * Set to true to discard .git directory.
+   */
+  discardGitDir?: boolean
+
+  /**
+   * The depth of the tree to fetch.
+   */
+  depth?: number
+
+  /**
+   * Set to true to populate tag refs in the local checkout .git.
+   */
+  includeTags?: boolean
+}
+
 export type GitRefAsWorkspaceOpts = {
   /**
    * Current working directory inside the workspace root. Defaults to the workspace root.
    */
   cwd?: string
+}
+
+export type GitRefLogOpts = {
+  /**
+   * Maximum number of commits to return.
+   */
+  limit?: number
+
+  /**
+   * Only include commits touching these paths, relative to the root of the repository.
+   */
+  paths?: string[]
+
+  /**
+   * Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+   */
+  base?: GitRef
 }
 
 export type GitRefTreeOpts = {
@@ -2026,6 +2084,13 @@ export type LLMWithResponseOpts = {
    * Total tokens consumed by this response
    */
   totalTokens?: number
+}
+
+export type LLMWithToolsOpts = {
+  /**
+   * Method names to exclude from the toolset (e.g. constructors, entrypoints).
+   */
+  except?: string[]
 }
 
 export type LLMContentBlockInput = {
@@ -2343,6 +2408,50 @@ export function NetworkProtocolNameToValue(name: string): NetworkProtocol {
       return name as NetworkProtocol
   }
 }
+/**
+ * How to handle patch hunks that no longer apply to the target content.
+ */
+export enum PatchConflict {
+  /**
+   * Fail the operation if any part of the patch does not apply.
+   */
+  Fail = "FAIL",
+
+  /**
+   * Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing.
+   */
+  LeaveConflictMarkers = "LEAVE_CONFLICT_MARKERS",
+}
+
+/**
+ * Utility function to convert a PatchConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function PatchConflictValueToName(value: PatchConflict): string {
+  switch (value) {
+    case PatchConflict.Fail:
+      return "FAIL"
+    case PatchConflict.LeaveConflictMarkers:
+      return "LEAVE_CONFLICT_MARKERS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a PatchConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function PatchConflictNameToValue(name: string): PatchConflict {
+  switch (name) {
+    case "FAIL":
+      return PatchConflict.Fail
+    case "LEAVE_CONFLICT_MARKERS":
+      return PatchConflict.LeaveConflictMarkers
+    default:
+      return name as PatchConflict
+  }
+}
 export type PipelineLabel = {
   /**
    * Label name.
@@ -2377,6 +2486,13 @@ export type PortForward = {
    * Transport layer protocol to use for traffic.
    */
   protocol?: NetworkProtocol
+}
+
+export type ClientBlobOpts = {
+  /**
+   * Permissions of the new file. Example: 0600
+   */
+  permissions?: number
 }
 
 export type ClientCacheVolumeOpts = {
@@ -2421,16 +2537,11 @@ export type ClientCurrentTypeDefsOpts = {
   hideCore?: boolean
 }
 
-export type ClientEnvOpts = {
+export type ClientEngineVolumeOpts = {
   /**
-   * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+   * Optional existing subdirectory within the volume payload to mount.
    */
-  privileged?: boolean
-
-  /**
-   * Allow new outputs to be declared and saved in the environment
-   */
-  writable?: boolean
+  subdir?: string
 }
 
 export type ClientEnvFileOpts = {
@@ -2999,6 +3110,20 @@ export function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceAgentsOpts = {
+  /**
+   * Only include agents matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type WorkspaceChangesOpts = {
+  /**
+   * An earlier workspace state to compare against.
+   */
+  from?: Workspace
+}
+
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -3043,6 +3168,23 @@ export type WorkspaceDirectoryOpts = {
    * Apply .gitignore filter rules inside the directory.
    */
   gitignore?: boolean
+}
+
+export type WorkspaceFindRootsOpts = {
+  /**
+   * Directory to start from. Relative paths resolve from the workspace cwd.
+   */
+  start?: string
+
+  /**
+   * File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+   */
+  markers: string[]
+
+  /**
+   * Glob patterns pruning the walk below start (e.g. ["**\/node_modules/**"]).
+   */
+  exclude?: string[]
 }
 
 export type WorkspaceFindUpOpts = {
@@ -3152,11 +3294,16 @@ export type WorkspaceWithInitClientOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Skip running the SDK's generators for the new client.
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceWithInitModuleOpts = {
   /**
-   * Workspace-relative path for the new module.
+   * Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
    */
   path?: string
 
@@ -3179,6 +3326,11 @@ export type WorkspaceWithInitModuleOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Skip running the SDK's generators for the new module.
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceWithModuleOpts = {
@@ -3383,40 +3535,34 @@ export class Address extends BaseClient {
     const ctx = this._ctx.select("volume")
     return new Volume(ctx)
   }
+
+  /**
+   * Load a workspace from a module reference.
+   */
+  workspace = (): Workspace => {
+    const ctx = this._ctx.select("workspace")
+    return new Workspace(ctx)
+  }
 }
 
-export class Binding extends BaseClient {
+export class Agent extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _asString?: string = undefined
-  private readonly _digest?: string = undefined
-  private readonly _isNull?: boolean = undefined
+  private readonly _description?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _typeName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: ID,
-    _asString?: string,
-    _digest?: string,
-    _isNull?: boolean,
-    _name?: string,
-    _typeName?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
     super(ctx)
 
     this._id = _id
-    this._asString = _asString
-    this._digest = _digest
-    this._isNull = _isNull
+    this._description = _description
     this._name = _name
-    this._typeName = _typeName
   }
 
   /**
-   * A unique identifier for this Binding.
+   * A unique identifier for this Agent.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -3431,278 +3577,14 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type Address
+   * The description of the agent
    */
-  asAddress = (): Address => {
-    const ctx = this._ctx.select("asAddress")
-    return new Address(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CacheVolume
-   */
-  asCacheVolume = (): CacheVolume => {
-    const ctx = this._ctx.select("asCacheVolume")
-    return new CacheVolume(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Changeset
-   */
-  asChangeset = (): Changeset => {
-    const ctx = this._ctx.select("asChangeset")
-    return new Changeset(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Check
-   */
-  asCheck = (): Check => {
-    const ctx = this._ctx.select("asCheck")
-    return new Check(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CheckGroup
-   */
-  asCheckGroup = (): CheckGroup => {
-    const ctx = this._ctx.select("asCheckGroup")
-    return new CheckGroup(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Cloud
-   */
-  asCloud = (): Cloud => {
-    const ctx = this._ctx.select("asCloud")
-    return new Cloud(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Container
-   */
-  asContainer = (): Container => {
-    const ctx = this._ctx.select("asContainer")
-    return new Container(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CurrentModuleAsSDK
-   */
-  asCurrentModuleAsSDK = (): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asCurrentModuleAsSDK")
-    return new CurrentModuleAsSDK(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CurrentModuleAsSDKClient
-   */
-  asCurrentModuleAsSDKClient = (): CurrentModuleAsSDKClient => {
-    const ctx = this._ctx.select("asCurrentModuleAsSDKClient")
-    return new CurrentModuleAsSDKClient(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CurrentModuleAsSDKModule
-   */
-  asCurrentModuleAsSDKModule = (): CurrentModuleAsSDKModule => {
-    const ctx = this._ctx.select("asCurrentModuleAsSDKModule")
-    return new CurrentModuleAsSDKModule(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type DiffStat
-   */
-  asDiffStat = (): DiffStat => {
-    const ctx = this._ctx.select("asDiffStat")
-    return new DiffStat(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Directory
-   */
-  asDirectory = (): Directory => {
-    const ctx = this._ctx.select("asDirectory")
-    return new Directory(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Env
-   */
-  asEnv = (): Env => {
-    const ctx = this._ctx.select("asEnv")
-    return new Env(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type EnvFile
-   */
-  asEnvFile = (): EnvFile => {
-    const ctx = this._ctx.select("asEnvFile")
-    return new EnvFile(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type File
-   */
-  asFile = (): File => {
-    const ctx = this._ctx.select("asFile")
-    return new File(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Generator
-   */
-  asGenerator = (): Generator => {
-    const ctx = this._ctx.select("asGenerator")
-    return new Generator(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GeneratorGroup
-   */
-  asGeneratorGroup = (): GeneratorGroup => {
-    const ctx = this._ctx.select("asGeneratorGroup")
-    return new GeneratorGroup(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GitRef
-   */
-  asGitRef = (): GitRef => {
-    const ctx = this._ctx.select("asGitRef")
-    return new GitRef(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GitRepository
-   */
-  asGitRepository = (): GitRepository => {
-    const ctx = this._ctx.select("asGitRepository")
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type HTTPState
-   */
-  asHTTPState = (): HTTPState => {
-    const ctx = this._ctx.select("asHTTPState")
-    return new HTTPState(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type JSONValue
-   */
-  asJSONValue = (): JSONValue => {
-    const ctx = this._ctx.select("asJSONValue")
-    return new JSONValue(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMContentBlock
-   */
-  asLLMContentBlock = (): LLMContentBlock => {
-    const ctx = this._ctx.select("asLLMContentBlock")
-    return new LLMContentBlock(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMMessage
-   */
-  asLLMMessage = (): LLMMessage => {
-    const ctx = this._ctx.select("asLLMMessage")
-    return new LLMMessage(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Module
-   */
-  asModule = (): Module_ => {
-    const ctx = this._ctx.select("asModule")
-    return new Module_(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ModuleConfigClient
-   */
-  asModuleConfigClient = (): ModuleConfigClient => {
-    const ctx = this._ctx.select("asModuleConfigClient")
-    return new ModuleConfigClient(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ModuleSource
-   */
-  asModuleSource = (): ModuleSource => {
-    const ctx = this._ctx.select("asModuleSource")
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Schema
-   */
-  asSchema = (): Schema => {
-    const ctx = this._ctx.select("asSchema")
-    return new Schema(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type SearchResult
-   */
-  asSearchResult = (): SearchResult => {
-    const ctx = this._ctx.select("asSearchResult")
-    return new SearchResult(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type SearchSubmatch
-   */
-  asSearchSubmatch = (): SearchSubmatch => {
-    const ctx = this._ctx.select("asSearchSubmatch")
-    return new SearchSubmatch(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Secret
-   */
-  asSecret = (): Secret => {
-    const ctx = this._ctx.select("asSecret")
-    return new Secret(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Service
-   */
-  asService = (): Service => {
-    const ctx = this._ctx.select("asService")
-    return new Service(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Socket
-   */
-  asSocket = (): Socket => {
-    const ctx = this._ctx.select("asSocket")
-    return new Socket(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Stat
-   */
-  asStat = (): Stat => {
-    const ctx = this._ctx.select("asStat")
-    return new Stat(ctx)
-  }
-
-  /**
-   * Returns the binding's string value
-   */
-  asString = async (): Promise<string> => {
-    if (this._asString) {
-      return this._asString
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
     }
 
-    const ctx = this._ctx.select("asString")
+    const ctx = this._ctx.select("description")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -3710,117 +3592,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type Up
-   */
-  asUp = (): Up => {
-    const ctx = this._ctx.select("asUp")
-    return new Up(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type UpGroup
-   */
-  asUpGroup = (): UpGroup => {
-    const ctx = this._ctx.select("asUpGroup")
-    return new UpGroup(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Volume
-   */
-  asVolume = (): Volume => {
-    const ctx = this._ctx.select("asVolume")
-    return new Volume(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Workspace
-   */
-  asWorkspace = (): Workspace => {
-    const ctx = this._ctx.select("asWorkspace")
-    return new Workspace(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceGit
-   */
-  asWorkspaceGit = (): WorkspaceGit => {
-    const ctx = this._ctx.select("asWorkspaceGit")
-    return new WorkspaceGit(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceMigration
-   */
-  asWorkspaceMigration = (): WorkspaceMigration => {
-    const ctx = this._ctx.select("asWorkspaceMigration")
-    return new WorkspaceMigration(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceMigrationStep
-   */
-  asWorkspaceMigrationStep = (): WorkspaceMigrationStep => {
-    const ctx = this._ctx.select("asWorkspaceMigrationStep")
-    return new WorkspaceMigrationStep(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceModule
-   */
-  asWorkspaceModule = (): WorkspaceModule => {
-    const ctx = this._ctx.select("asWorkspaceModule")
-    return new WorkspaceModule(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceModuleSetting
-   */
-  asWorkspaceModuleSetting = (): WorkspaceModuleSetting => {
-    const ctx = this._ctx.select("asWorkspaceModuleSetting")
-    return new WorkspaceModuleSetting(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceSDK
-   */
-  asWorkspaceSDK = (): WorkspaceSDK => {
-    const ctx = this._ctx.select("asWorkspaceSDK")
-    return new WorkspaceSDK(ctx)
-  }
-
-  /**
-   * Returns the digest of the binding value
-   */
-  digest = async (): Promise<string> => {
-    if (this._digest) {
-      return this._digest
-    }
-
-    const ctx = this._ctx.select("digest")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Returns true if the binding is null
-   */
-  isNull = async (): Promise<boolean> => {
-    if (this._isNull) {
-      return this._isNull
-    }
-
-    const ctx = this._ctx.select("isNull")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Returns the binding name
+   * Return the fully qualified name of the agent
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -3835,18 +3607,74 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Returns the binding type
+   * The original module in which the agent has been defined
    */
-  typeName = async (): Promise<string> => {
-    if (this._typeName) {
-      return this._typeName
-    }
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
 
-    const ctx = this._ctx.select("typeName")
+  /**
+   * The path of the agent within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+}
+
+export class AgentGroup extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this AgentGroup.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+   * @param opts.base The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+   */
+  compose = (opts?: AgentGroupComposeOpts): LLM => {
+    const ctx = this._ctx.select("compose", { ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Return a list of individual agents and their details
+   */
+  list = async (): Promise<Agent[]> => {
+    type list = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Agent(ctx.copy().selectNode(r.id, "Agent")))
   }
 }
 
@@ -4207,9 +4035,15 @@ export class Check extends BaseClient {
   /**
    * If the check failed, this is the error
    */
-  error = (): Error => {
-    const ctx = this._ctx.select("error")
-    return new Error(ctx)
+  error = async (): Promise<Error | null> => {
+    const ctx = this._ctx.select("error").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Error(ctx.copy().selectNode(response, "Error"))
   }
 
   /**
@@ -4611,9 +4445,17 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container's configured docker healthcheck.
    */
-  dockerHealthcheck = (): HealthcheckConfig => {
-    const ctx = this._ctx.select("dockerHealthcheck")
-    return new HealthcheckConfig(ctx)
+  dockerHealthcheck = async (): Promise<HealthcheckConfig | null> => {
+    const ctx = this._ctx.select("dockerHealthcheck").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new HealthcheckConfig(
+      ctx.copy().selectNode(response, "HealthcheckConfig"),
+    )
   }
 
   /**
@@ -4846,7 +4688,9 @@ export class Container extends BaseClient {
 
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
-   * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param address Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+   *
+   * An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -5056,9 +4900,18 @@ export class Container extends BaseClient {
    * @param path Path to check (e.g., "/file.txt").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
    */
-  stat = (path: string, opts?: ContainerStatOpts): Stat => {
-    const ctx = this._ctx.select("stat", { path, ...opts })
-    return new Stat(ctx)
+  stat = async (
+    path: string,
+    opts?: ContainerStatOpts,
+  ): Promise<Stat | null> => {
+    const ctx = this._ctx.select("stat", { path, ...opts }).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Stat(ctx.copy().selectNode(response, "Stat"))
   }
 
   /**
@@ -5925,10 +5778,10 @@ export class CurrentModule extends BaseClient {
    * Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
    *
    * Errors if the current module is not installed as an SDK in this workspace.
-   * @param opts.workspace The workspace to resolve SDK-role data against. Defaults to the current workspace.
+   * @param workspace The workspace to resolve SDK-role data against.
    */
-  asSDK = (opts?: CurrentModuleAsSdkOpts): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asSDK", { ...opts })
+  asSDK = (workspace: Workspace): CurrentModuleAsSDK => {
+    const ctx = this._ctx.select("asSDK", { workspace })
     return new CurrentModuleAsSDK(ctx)
   }
 
@@ -6013,7 +5866,7 @@ export class CurrentModule extends BaseClient {
 }
 
 /**
- * The SDK-role data for the currently executing module, as installed in the active workspace.
+ * The SDK-role data for the currently executing module, as installed in the supplied workspace.
  */
 export class CurrentModuleAsSDK extends BaseClient {
   private readonly _id?: ID = undefined
@@ -6065,7 +5918,7 @@ export class CurrentModuleAsSDK extends BaseClient {
   }
 
   /**
-   * The workspace-local modules this SDK authors and manages.
+   * The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
    */
   modules = async (): Promise<CurrentModuleAsSDKModule[]> => {
     type modules = {
@@ -6696,9 +6549,18 @@ export class Directory extends BaseClient {
    * @param path Path to stat (e.g., "/file.txt").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
    */
-  stat = (path: string, opts?: DirectoryStatOpts): Stat => {
-    const ctx = this._ctx.select("stat", { path, ...opts })
-    return new Stat(ctx)
+  stat = async (
+    path: string,
+    opts?: DirectoryStatOpts,
+  ): Promise<Stat | null> => {
+    const ctx = this._ctx.select("stat", { path, ...opts }).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Stat(ctx.copy().selectNode(response, "Stat"))
   }
 
   /**
@@ -6831,20 +6693,41 @@ export class Directory extends BaseClient {
   /**
    * Retrieves this directory with the given Git-compatible patch applied.
    * @param patch Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
    * @experimental
    */
-  withPatch = (patch: string): Directory => {
-    const ctx = this._ctx.select("withPatch", { patch })
+  withPatch = (patch: string, opts?: DirectoryWithPatchOpts): Directory => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatch", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Directory(ctx)
   }
 
   /**
    * Retrieves this directory with the given Git-compatible patch file applied.
    * @param patch File containing the patch to apply
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
    * @experimental
    */
-  withPatchFile = (patch: File): Directory => {
-    const ctx = this._ctx.select("withPatchFile", { patch })
+  withPatchFile = (
+    patch: File,
+    opts?: DirectoryWithPatchFileOpts,
+  ): Directory => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatchFile", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Directory(ctx)
   }
 
@@ -7061,11 +6944,13 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
-   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * @param opts.useDefaultPolicy Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
    * @param opts.maxUsedSpace Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
    * @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
    * @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
    * @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+   * @param opts.maxEstimatedBytes Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
+   * @param opts.targetEstimatedBytes Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
    */
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
@@ -7460,9 +7345,15 @@ export class EnumTypeDef extends BaseClient {
   /**
    * The location of this enum declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -7593,9 +7484,15 @@ export class EnumValueTypeDef extends BaseClient {
   /**
    * The location of this enum member declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -7611,1444 +7508,6 @@ export class EnumValueTypeDef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-}
-
-export class Env extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this Env.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Return the check with the given name from the installed modules. Must match exactly one check.
-   * @param name The name of the check to retrieve
-   * @experimental
-   */
-  check = (name: string): Check => {
-    const ctx = this._ctx.select("check", { name })
-    return new Check(ctx)
-  }
-
-  /**
-   * Return all checks defined by the installed modules
-   * @param opts.include Only include checks matching the specified patterns
-   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
-   * @experimental
-   */
-  checks = (opts?: EnvChecksOpts): CheckGroup => {
-    const ctx = this._ctx.select("checks", { ...opts })
-    return new CheckGroup(ctx)
-  }
-
-  /**
-   * Retrieves an input binding by name
-   */
-  input = (name: string): Binding => {
-    const ctx = this._ctx.select("input", { name })
-    return new Binding(ctx)
-  }
-
-  /**
-   * Returns all input bindings provided to the environment
-   */
-  inputs = async (): Promise<Binding[]> => {
-    type inputs = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("inputs").select("id")
-
-    const response: Awaited<inputs[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Binding(ctx.copy().selectNode(r.id, "Binding")),
-    )
-  }
-
-  /**
-   * Retrieves an output binding by name
-   */
-  output = (name: string): Binding => {
-    const ctx = this._ctx.select("output", { name })
-    return new Binding(ctx)
-  }
-
-  /**
-   * Returns all declared output bindings for the environment
-   */
-  outputs = async (): Promise<Binding[]> => {
-    type outputs = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("outputs").select("id")
-
-    const response: Awaited<outputs[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Binding(ctx.copy().selectNode(r.id, "Binding")),
-    )
-  }
-
-  /**
-   * Return all services defined by the installed modules
-   * @param opts.include Only include services matching the specified patterns
-   * @experimental
-   */
-  services = (opts?: EnvServicesOpts): UpGroup => {
-    const ctx = this._ctx.select("services", { ...opts })
-    return new UpGroup(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Address in the environment
-   * @param name The name of the binding
-   * @param value The Address value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withAddressInput = (
-    name: string,
-    value: Address,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withAddressInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Address output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withAddressOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withAddressOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CacheVolume in the environment
-   * @param name The name of the binding
-   * @param value The CacheVolume value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCacheVolumeInput = (
-    name: string,
-    value: CacheVolume,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCacheVolumeInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CacheVolume output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCacheVolumeOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Changeset in the environment
-   * @param name The name of the binding
-   * @param value The Changeset value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withChangesetInput = (
-    name: string,
-    value: Changeset,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withChangesetInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Changeset output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withChangesetOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withChangesetOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CheckGroup in the environment
-   * @param name The name of the binding
-   * @param value The CheckGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCheckGroupInput = (
-    name: string,
-    value: CheckGroup,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCheckGroupInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CheckGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCheckGroupOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCheckGroupOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Check in the environment
-   * @param name The name of the binding
-   * @param value The Check value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCheckInput = (name: string, value: Check, description: string): Env => {
-    const ctx = this._ctx.select("withCheckInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Check output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCheckOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCheckOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Cloud in the environment
-   * @param name The name of the binding
-   * @param value The Cloud value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCloudInput = (name: string, value: Cloud, description: string): Env => {
-    const ctx = this._ctx.select("withCloudInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Cloud output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCloudOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCloudOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Container in the environment
-   * @param name The name of the binding
-   * @param value The Container value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withContainerInput = (
-    name: string,
-    value: Container,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withContainerInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Container output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withContainerOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withContainerOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Installs the current module into the environment, exposing its functions to the model
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   */
-  withCurrentModule = (): Env => {
-    const ctx = this._ctx.select("withCurrentModule")
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModuleAsSDKClient in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModuleAsSDKClient value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCurrentModuleAsSDKClientInput = (
-    name: string,
-    value: CurrentModuleAsSDKClient,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKClientInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCurrentModuleAsSDKClientOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKClientOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModuleAsSDK in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModuleAsSDK value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCurrentModuleAsSDKInput = (
-    name: string,
-    value: CurrentModuleAsSDK,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModuleAsSDKModule in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModuleAsSDKModule value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCurrentModuleAsSDKModuleInput = (
-    name: string,
-    value: CurrentModuleAsSDKModule,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKModuleInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCurrentModuleAsSDKModuleOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKModuleOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CurrentModuleAsSDK output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCurrentModuleAsSDKOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type DiffStat in the environment
-   * @param name The name of the binding
-   * @param value The DiffStat value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withDiffStatInput = (
-    name: string,
-    value: DiffStat,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withDiffStatInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired DiffStat output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withDiffStatOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withDiffStatOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Directory in the environment
-   * @param name The name of the binding
-   * @param value The Directory value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withDirectoryInput = (
-    name: string,
-    value: Directory,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withDirectoryInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Directory output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withDirectoryOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withDirectoryOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type EnvFile in the environment
-   * @param name The name of the binding
-   * @param value The EnvFile value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withEnvFileInput = (
-    name: string,
-    value: EnvFile,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withEnvFileInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired EnvFile output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withEnvFileOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withEnvFileOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Env in the environment
-   * @param name The name of the binding
-   * @param value The Env value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withEnvInput = (name: string, value: Env, description: string): Env => {
-    const ctx = this._ctx.select("withEnvInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Env output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withEnvOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withEnvOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type File in the environment
-   * @param name The name of the binding
-   * @param value The File value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withFileInput = (name: string, value: File, description: string): Env => {
-    const ctx = this._ctx.select("withFileInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired File output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withFileOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withFileOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GeneratorGroup in the environment
-   * @param name The name of the binding
-   * @param value The GeneratorGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGeneratorGroupInput = (
-    name: string,
-    value: GeneratorGroup,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withGeneratorGroupInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired GeneratorGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGeneratorGroupOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGeneratorGroupOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Generator in the environment
-   * @param name The name of the binding
-   * @param value The Generator value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGeneratorInput = (
-    name: string,
-    value: Generator,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withGeneratorInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Generator output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGeneratorOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGeneratorOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GitRef in the environment
-   * @param name The name of the binding
-   * @param value The GitRef value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGitRefInput = (name: string, value: GitRef, description: string): Env => {
-    const ctx = this._ctx.select("withGitRefInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired GitRef output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGitRefOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGitRefOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GitRepository in the environment
-   * @param name The name of the binding
-   * @param value The GitRepository value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGitRepositoryInput = (
-    name: string,
-    value: GitRepository,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withGitRepositoryInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired GitRepository output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGitRepositoryOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGitRepositoryOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type HTTPState in the environment
-   * @param name The name of the binding
-   * @param value The HTTPState value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withHTTPStateInput = (
-    name: string,
-    value: HTTPState,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withHTTPStateInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired HTTPState output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withHTTPStateOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withHTTPStateOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type JSONValue in the environment
-   * @param name The name of the binding
-   * @param value The JSONValue value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withJSONValueInput = (
-    name: string,
-    value: JSONValue,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withJSONValueInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired JSONValue output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withJSONValueOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withJSONValueOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type LLMContentBlock in the environment
-   * @param name The name of the binding
-   * @param value The LLMContentBlock value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withLLMContentBlockInput = (
-    name: string,
-    value: LLMContentBlock,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withLLMContentBlockInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLMContentBlock output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMContentBlockOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMContentBlockOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type LLMMessage in the environment
-   * @param name The name of the binding
-   * @param value The LLMMessage value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withLLMMessageInput = (
-    name: string,
-    value: LLMMessage,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withLLMMessageInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLMMessage output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMMessageOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMMessageOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Sets the main module for this environment (the project being worked on)
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   */
-  withMainModule = (module_: Module_): Env => {
-    const ctx = this._ctx.select("withMainModule", {
-      module: module_,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Installs a module into the environment, exposing its functions to the model
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   * @deprecated Use withMainModule instead
-   */
-  withModule = (module_: Module_): Env => {
-    const ctx = this._ctx.select("withModule", {
-      module: module_,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ModuleConfigClient in the environment
-   * @param name The name of the binding
-   * @param value The ModuleConfigClient value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withModuleConfigClientInput = (
-    name: string,
-    value: ModuleConfigClient,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withModuleConfigClientInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired ModuleConfigClient output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withModuleConfigClientOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withModuleConfigClientOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Module in the environment
-   * @param name The name of the binding
-   * @param value The Module value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withModuleInput = (
-    name: string,
-    value: Module_,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withModuleInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Module output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withModuleOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withModuleOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ModuleSource in the environment
-   * @param name The name of the binding
-   * @param value The ModuleSource value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withModuleSourceInput = (
-    name: string,
-    value: ModuleSource,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withModuleSourceInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired ModuleSource output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withModuleSourceOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withModuleSourceOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Schema in the environment
-   * @param name The name of the binding
-   * @param value The Schema value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSchemaInput = (name: string, value: Schema, description: string): Env => {
-    const ctx = this._ctx.select("withSchemaInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Schema output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSchemaOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSchemaOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type SearchResult in the environment
-   * @param name The name of the binding
-   * @param value The SearchResult value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSearchResultInput = (
-    name: string,
-    value: SearchResult,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withSearchResultInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired SearchResult output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSearchResultOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSearchResultOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type SearchSubmatch in the environment
-   * @param name The name of the binding
-   * @param value The SearchSubmatch value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSearchSubmatchInput = (
-    name: string,
-    value: SearchSubmatch,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withSearchSubmatchInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired SearchSubmatch output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSearchSubmatchOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSearchSubmatchOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Secret in the environment
-   * @param name The name of the binding
-   * @param value The Secret value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSecretInput = (name: string, value: Secret, description: string): Env => {
-    const ctx = this._ctx.select("withSecretInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Secret output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSecretOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSecretOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Service in the environment
-   * @param name The name of the binding
-   * @param value The Service value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withServiceInput = (
-    name: string,
-    value: Service,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withServiceInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Service output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withServiceOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withServiceOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Socket in the environment
-   * @param name The name of the binding
-   * @param value The Socket value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSocketInput = (name: string, value: Socket, description: string): Env => {
-    const ctx = this._ctx.select("withSocketInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Socket output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSocketOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSocketOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Stat in the environment
-   * @param name The name of the binding
-   * @param value The Stat value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withStatInput = (name: string, value: Stat, description: string): Env => {
-    const ctx = this._ctx.select("withStatInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Stat output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withStatOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withStatOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Provides a string input binding to the environment
-   * @param name The name of the binding
-   * @param value The string value to assign to the binding
-   * @param description The description of the input
-   */
-  withStringInput = (name: string, value: string, description: string): Env => {
-    const ctx = this._ctx.select("withStringInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declares a desired string output binding
-   * @param name The name of the binding
-   * @param description The description of the output
-   */
-  withStringOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withStringOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type UpGroup in the environment
-   * @param name The name of the binding
-   * @param value The UpGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withUpGroupInput = (
-    name: string,
-    value: UpGroup,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withUpGroupInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired UpGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withUpGroupOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withUpGroupOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Up in the environment
-   * @param name The name of the binding
-   * @param value The Up value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withUpInput = (name: string, value: Up, description: string): Env => {
-    const ctx = this._ctx.select("withUpInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Up output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withUpOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withUpOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Volume in the environment
-   * @param name The name of the binding
-   * @param value The Volume value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withVolumeInput = (name: string, value: Volume, description: string): Env => {
-    const ctx = this._ctx.select("withVolumeInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Volume output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withVolumeOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withVolumeOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Returns a new environment with the provided workspace
-   * @param workspace The directory to set as the host filesystem
-   */
-  withWorkspace = (workspace: Directory): Env => {
-    const ctx = this._ctx.select("withWorkspace", { workspace })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceGit in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceGit value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceGitInput = (
-    name: string,
-    value: WorkspaceGit,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceGitInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceGit output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceGitOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceGitOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Workspace in the environment
-   * @param name The name of the binding
-   * @param value The Workspace value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceInput = (
-    name: string,
-    value: Workspace,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceMigration in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceMigration value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceMigrationInput = (
-    name: string,
-    value: WorkspaceMigration,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceMigration output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceMigrationOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceMigrationStep in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceMigrationStep value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceMigrationStepInput = (
-    name: string,
-    value: WorkspaceMigrationStep,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationStepInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceMigrationStep output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceMigrationStepOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationStepOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceModule in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceModule value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceModuleInput = (
-    name: string,
-    value: WorkspaceModule,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceModule output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceModuleOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceModuleSetting in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceModuleSetting value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceModuleSettingInput = (
-    name: string,
-    value: WorkspaceModuleSetting,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleSettingInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceModuleSetting output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceModuleSettingOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleSettingOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Workspace output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceSDK in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceSDK value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceSDKInput = (
-    name: string,
-    value: WorkspaceSDK,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceSDKInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceSDK output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceSDKOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceSDKOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Returns a new environment without any outputs
-   */
-  withoutOutputs = (): Env => {
-    const ctx = this._ctx.select("withoutOutputs")
-    return new Env(ctx)
-  }
-  workspace = (): Directory => {
-    const ctx = this._ctx.select("workspace")
-    return new Directory(ctx)
-  }
-
-  /**
-   * Call the provided function with current Env.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Env) => Env) => {
-    return arg(this)
   }
 }
 
@@ -9530,9 +7989,15 @@ export class FieldTypeDef extends BaseClient {
   /**
    * The location of this field declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -9739,9 +8204,15 @@ export class File extends BaseClient {
   /**
    * Return file status
    */
-  stat = (): Stat => {
-    const ctx = this._ctx.select("stat")
-    return new Stat(ctx)
+  stat = async (): Promise<Stat | null> => {
+    const ctx = this._ctx.select("stat").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Stat(ctx.copy().selectNode(response, "Stat"))
   }
 
   /**
@@ -9933,9 +8404,15 @@ export class Function_ extends BaseClient {
   /**
    * The location of this function declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -9951,6 +8428,14 @@ export class Function_ extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Returns the function with a flag indicating it is an agent middleware.
+   */
+  withAgent = (): Function_ => {
+    const ctx = this._ctx.select("withAgent")
+    return new Function_(ctx)
   }
 
   /**
@@ -10212,9 +8697,15 @@ export class FunctionArg extends BaseClient {
   /**
    * The location of this arg declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -10779,21 +9270,320 @@ export class GeneratorGroup extends BaseClient {
 }
 
 /**
+ * An immutable git commit.
+ */
+export class GitCommit extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _authorEmail?: string = undefined
+  private readonly _authorName?: string = undefined
+  private readonly _authoredDate?: string = undefined
+  private readonly _committedDate?: string = undefined
+  private readonly _committerEmail?: string = undefined
+  private readonly _committerName?: string = undefined
+  private readonly _message?: string = undefined
+  private readonly _messageBody?: string = undefined
+  private readonly _messageHeadline?: string = undefined
+  private readonly _sha?: string = undefined
+  private readonly _shortSha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _authorEmail?: string,
+    _authorName?: string,
+    _authoredDate?: string,
+    _committedDate?: string,
+    _committerEmail?: string,
+    _committerName?: string,
+    _message?: string,
+    _messageBody?: string,
+    _messageHeadline?: string,
+    _sha?: string,
+    _shortSha?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._authorEmail = _authorEmail
+    this._authorName = _authorName
+    this._authoredDate = _authoredDate
+    this._committedDate = _committedDate
+    this._committerEmail = _committerEmail
+    this._committerName = _committerName
+    this._message = _message
+    this._messageBody = _messageBody
+    this._messageHeadline = _messageHeadline
+    this._sha = _sha
+    this._shortSha = _shortSha
+  }
+
+  /**
+   * A unique identifier for this GitCommit.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The latest semver release tag reachable from this commit.
+   * @param opts.includePreRelease Include pre-release tags when choosing the latest tag.
+   */
+  ancestorReleaseTag = async (
+    opts?: GitCommitAncestorReleaseTagOpts,
+  ): Promise<GitRef | null> => {
+    const ctx = this._ctx.select("ancestorReleaseTag", { ...opts }).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new GitRef(ctx.copy().selectNode(response, "GitRef"))
+  }
+
+  /**
+   * Git author email.
+   */
+  authorEmail = async (): Promise<string> => {
+    if (this._authorEmail) {
+      return this._authorEmail
+    }
+
+    const ctx = this._ctx.select("authorEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git author name.
+   */
+  authorName = async (): Promise<string> => {
+    if (this._authorName) {
+      return this._authorName
+    }
+
+    const ctx = this._ctx.select("authorName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git author date, in RFC3339 format.
+   */
+  authoredDate = async (): Promise<string> => {
+    if (this._authoredDate) {
+      return this._authoredDate
+    }
+
+    const ctx = this._ctx.select("authoredDate")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer date, in RFC3339 format.
+   */
+  committedDate = async (): Promise<string> => {
+    if (this._committedDate) {
+      return this._committedDate
+    }
+
+    const ctx = this._ctx.select("committedDate")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer email.
+   */
+  committerEmail = async (): Promise<string> => {
+    if (this._committerEmail) {
+      return this._committerEmail
+    }
+
+    const ctx = this._ctx.select("committerEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer name.
+   */
+  committerName = async (): Promise<string> => {
+    if (this._committerName) {
+      return this._committerName
+    }
+
+    const ctx = this._ctx.select("committerName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Full commit message.
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Commit message body, excluding the headline.
+   */
+  messageBody = async (): Promise<string> => {
+    if (this._messageBody) {
+      return this._messageBody
+    }
+
+    const ctx = this._ctx.select("messageBody")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * First line of the commit message.
+   */
+  messageHeadline = async (): Promise<string> => {
+    if (this._messageHeadline) {
+      return this._messageHeadline
+    }
+
+    const ctx = this._ctx.select("messageHeadline")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Parent commit SHAs.
+   */
+  parentShas = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("parentShas")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The latest semver release tag that points directly at this commit.
+   * @param opts.includePreRelease Include pre-release tags when choosing the latest tag.
+   */
+  releaseTag = async (
+    opts?: GitCommitReleaseTagOpts,
+  ): Promise<GitRef | null> => {
+    const ctx = this._ctx.select("releaseTag", { ...opts }).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new GitRef(ctx.copy().selectNode(response, "GitRef"))
+  }
+
+  /**
+   * The full commit SHA.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The abbreviated commit SHA.
+   */
+  shortSha = async (): Promise<string> => {
+    if (this._shortSha) {
+      return this._shortSha
+    }
+
+    const ctx = this._ctx.select("shortSha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The filesystem tree at this commit.
+   * @param opts.discardGitDir Set to true to discard .git directory.
+   * @param opts.depth The depth of the tree to fetch.
+   * @param opts.includeTags Set to true to populate tag refs in the local checkout .git.
+   */
+  tree = (opts?: GitCommitTreeOpts): Directory => {
+    const ctx = this._ctx.select("tree", { ...opts })
+    return new Directory(ctx)
+  }
+}
+
+/**
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _commit?: string = undefined
+  private readonly _commitSHA?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _ref?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _commit?: string, _ref?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _commit?: string,
+    _commitSHA?: string,
+    _name?: string,
+    _ref?: string,
+  ) {
     super(ctx)
 
     this._id = _id
     this._commit = _commit
+    this._commitSHA = _commitSHA
+    this._name = _name
     this._ref = _ref
   }
 
@@ -10823,6 +9613,7 @@ export class GitRef extends BaseClient {
 
   /**
    * The resolved commit id at this ref.
+   * @deprecated Use "commitSHA" instead.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -10830,6 +9621,21 @@ export class GitRef extends BaseClient {
     }
 
     const ctx = this._ctx.select("commit")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The resolved commit SHA at this ref.
+   */
+  commitSHA = async (): Promise<string> => {
+    if (this._commitSHA) {
+      return this._commitSHA
+    }
+
+    const ctx = this._ctx.select("commitSHA")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -10846,7 +9652,43 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+   * @param opts.limit Maximum number of commits to return.
+   * @param opts.paths Only include commits touching these paths, relative to the root of the repository.
+   * @param opts.base Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+   */
+  log = async (opts?: GitRefLogOpts): Promise<GitCommit[]> => {
+    type log = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("log", { ...opts }).select("id")
+
+    const response: Awaited<log[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new GitCommit(ctx.copy().selectNode(r.id, "GitCommit")),
+    )
+  }
+
+  /**
+   * The resolved name of this ref.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The resolved ref name at this ref.
+   * @deprecated Use "name" instead.
    */
   ref = async (): Promise<string> => {
     if (this._ref) {
@@ -10858,6 +9700,14 @@ export class GitRef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The commit this ref resolves to.
+   */
+  targetCommit = (): GitCommit => {
+    const ctx = this._ctx.select("targetCommit")
+    return new GitCommit(ctx)
   }
 
   /**
@@ -10947,9 +9797,9 @@ export class GitRepository extends BaseClient {
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
-  commit = (id: string): GitRef => {
+  commit = (id: string): GitCommit => {
     const ctx = this._ctx.select("commit", { id })
-    return new GitRef(ctx)
+    return new GitCommit(ctx)
   }
 
   /**
@@ -10961,10 +9811,12 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Returns details for the latest semver tag.
+   * Return the latest stable release tag, falling back to HEAD when no release exists.
+   *
+   * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
    */
-  latestVersion = (): GitRef => {
-    const ctx = this._ctx.select("latestVersion")
+  latest = (): GitRef => {
+    const ctx = this._ctx.select("latest")
     return new GitRef(ctx)
   }
 
@@ -11489,9 +10341,15 @@ export class InterfaceTypeDef extends BaseClient {
   /**
    * The location of this interface declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -11712,12 +10570,14 @@ export class JSONValue extends BaseClient {
  */
 export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _contextTokens?: number = undefined
   private readonly _contextWindow?: number = undefined
   private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
+  private readonly _reasoningEffort?: string = undefined
   private readonly _replay?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
@@ -11729,12 +10589,14 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _contextTokens?: number,
     _contextWindow?: number,
     _hasPending?: boolean,
     _lastReply?: string,
     _model?: string,
     _portableID?: ID,
     _provider?: string,
+    _reasoningEffort?: string,
     _replay?: ID,
     _sync?: ID,
     _tools?: string,
@@ -11743,12 +10605,14 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._contextTokens = _contextTokens
     this._contextWindow = _contextWindow
     this._hasPending = _hasPending
     this._lastReply = _lastReply
     this._model = _model
     this._portableID = _portableID
     this._provider = _provider
+    this._reasoningEffort = _reasoningEffort
     this._replay = _replay
     this._sync = _sync
     this._tools = _tools
@@ -11771,11 +10635,18 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * returns the type of the current state
+   * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
    */
-  bindResult = (name: string): Binding => {
-    const ctx = this._ctx.select("bindResult", { name })
-    return new Binding(ctx)
+  contextTokens = async (): Promise<number> => {
+    if (this._contextTokens) {
+      return this._contextTokens
+    }
+
+    const ctx = this._ctx.select("contextTokens")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -11791,14 +10662,6 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * return the LLM's current environment
-   */
-  env = (): Env => {
-    const ctx = this._ctx.select("env")
-    return new Env(ctx)
   }
 
   /**
@@ -11883,7 +10746,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
    */
   portableID = async (): Promise<ID> => {
     if (this._portableID) {
@@ -11913,6 +10776,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+   */
+  reasoningEffort = async (): Promise<string> => {
+    if (this._reasoningEffort) {
+      return this._reasoningEffort
+    }
+
+    const ctx = this._ctx.select("reasoningEffort")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
    */
   replay = async (): Promise<LLM> => {
@@ -11921,6 +10799,23 @@ export class LLM extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return new LLM(ctx.copy().selectNode(response, "LLM"))
+  }
+
+  /**
+   * The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+   */
+  skills = async (): Promise<LLMSkill[]> => {
+    type skills = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("skills").select("id")
+
+    const response: Awaited<skills[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new LLMSkill(ctx.copy().selectNode(r.id, "LLMSkill")),
+    )
   }
 
   /**
@@ -11982,29 +10877,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Return a new LLM with the specified function no longer exposed as a tool
-   * @param typeName The type name whose function will be blocked
-   * @param function The function to block
-   *
-   * Will be converted to lowerCamelCase if necessary.
-   */
-  withBlockedFunction = (typeName: string, function_: string): LLM => {
-    const ctx = this._ctx.select("withBlockedFunction", {
-      typeName,
-      function: function_,
-    })
-    return new LLM(ctx)
-  }
-
-  /**
-   * allow the LLM to interact with an environment via MCP
-   */
-  withEnv = (env: Env): LLM => {
-    const ctx = this._ctx.select("withEnv", { env })
-    return new LLM(ctx)
-  }
-
-  /**
    * Add an external MCP server to the LLM
    * @param name The name of the MCP server
    * @param service The MCP service to run and communicate with over stdio
@@ -12021,16 +10893,6 @@ export class LLM extends BaseClient {
    */
   withModel = (model: string, opts?: LLMWithModelOpts): LLM => {
     const ctx = this._ctx.select("withModel", { model, ...opts })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Track an object so the LLM can reference it in subsequent tool calls.
-   * @param tag Arbitrary string tag for the object, typically in TypeName#Number format
-   * @param object The object to track, as a generic ID
-   */
-  withObject = (tag: string, object: ID): LLM => {
-    const ctx = this._ctx.select("withObject", { tag, object })
     return new LLM(ctx)
   }
 
@@ -12053,6 +10915,15 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+   * @param effort The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".
+   */
+  withReasoningEffort = (effort: string): LLM => {
+    const ctx = this._ctx.select("withReasoningEffort", { effort })
+    return new LLM(ctx)
+  }
+
+  /**
    * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
    * @param content The response content
    * @param opts.inputTokens Uncached input tokens sent
@@ -12070,10 +10941,11 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+   * Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+   * @param directory A directory containing skills, each a subdirectory holding a SKILL.md.
    */
-  withStaticTools = (): LLM => {
-    const ctx = this._ctx.select("withStaticTools")
+  withSkills = (directory: Directory): LLM => {
+    const ctx = this._ctx.select("withSkills", { directory })
     return new LLM(ctx)
   }
 
@@ -12094,6 +10966,25 @@ export class LLM extends BaseClient {
    */
   withToolResult = (callId: string, content: string, errored: boolean): LLM => {
     const ctx = this._ctx.select("withToolResult", { callId, content, errored })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
+   * @param object The object whose methods become tools.
+   * @param opts.except Method names to exclude from the toolset (e.g. constructors, entrypoints).
+   */
+  withTools = (object: Node, opts?: LLMWithToolsOpts): LLM => {
+    const ctx = this._ctx.select("withTools", { object, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+   * @param workspace The workspace to work in.
+   */
+  withWorkspace = (workspace: Workspace): LLM => {
+    const ctx = this._ctx.select("withWorkspace", { workspace })
     return new LLM(ctx)
   }
 
@@ -12119,6 +11010,14 @@ export class LLM extends BaseClient {
   withoutSystemPrompts = (): LLM => {
     const ctx = this._ctx.select("withoutSystemPrompts")
     return new LLM(ctx)
+  }
+
+  /**
+   * Return the workspace the LLM is bound to.
+   */
+  workspace = (): Workspace => {
+    const ctx = this._ctx.select("workspace")
+    return new Workspace(ctx)
   }
 
   /**
@@ -12362,6 +11261,71 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
+ */
+export class LLMSkill extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this LLMSkill.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The one-line description from the SKILL.md frontmatter.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The skill name, as passed to ReadSkill.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -12800,17 +11764,29 @@ export class Module_ extends BaseClient {
   /**
    * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
    */
-  runtime = (): Container => {
-    const ctx = this._ctx.select("runtime")
-    return new Container(ctx)
+  runtime = async (): Promise<Container | null> => {
+    const ctx = this._ctx.select("runtime").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Container(ctx.copy().selectNode(response, "Container"))
   }
 
   /**
    * The SDK config used by this module.
    */
-  sdk = (): SDKConfig => {
-    const ctx = this._ctx.select("sdk")
-    return new SDKConfig(ctx)
+  sdk = async (): Promise<SDKConfig | null> => {
+    const ctx = this._ctx.select("sdk").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SDKConfig(ctx.copy().selectNode(response, "SDKConfig"))
   }
 
   /**
@@ -12843,9 +11819,15 @@ export class Module_ extends BaseClient {
   /**
    * The source for the module.
    */
-  source = (): ModuleSource => {
-    const ctx = this._ctx.select("source")
-    return new ModuleSource(ctx)
+  source = async (): Promise<ModuleSource | null> => {
+    const ctx = this._ctx.select("source").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new ModuleSource(ctx.copy().selectNode(response, "ModuleSource"))
   }
 
   /**
@@ -13244,9 +12226,20 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Generate this module's transitive local dependency closure, leaf-first, and return the accumulated changeset.
+   * Return the supplied workspace with this module's generated context applied.
    *
-   * Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
+   * The workspace change baseline is preserved, so a later Workspace.changes call includes this generation together with any other edits made by the caller.
+   * @param workspace The workspace to apply generated files to.
+   */
+  generate = (workspace: Workspace): Workspace => {
+    const ctx = this._ctx.select("generate", { workspace })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.
+   *
+   * Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
    * @param workspace The workspace to generate the local dependencies against.
    */
   generateLocalDependencies = (workspace: Workspace): Changeset => {
@@ -13420,9 +12413,15 @@ export class ModuleSource extends BaseClient {
   /**
    * The SDK configuration of the module.
    */
-  sdk = (): SDKConfig => {
-    const ctx = this._ctx.select("sdk")
-    return new SDKConfig(ctx)
+  sdk = async (): Promise<SDKConfig | null> => {
+    const ctx = this._ctx.select("sdk").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SDKConfig(ctx.copy().selectNode(response, "SDKConfig"))
   }
 
   /**
@@ -13786,9 +12785,15 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * The function used to construct new instances of this object, if any.
    */
-  constructor_ = (): Function_ => {
-    const ctx = this._ctx.select("constructor")
-    return new Function_(ctx)
+  constructor_ = async (): Promise<Function_ | null> => {
+    const ctx = this._ctx.select("constructor").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Function_(ctx.copy().selectNode(response, "Function"))
   }
 
   /**
@@ -13873,9 +12878,15 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * The location of this object declaration.
    */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
+  sourceMap = async (): Promise<SourceMap | null> => {
+    const ctx = this._ctx.select("sourceMap").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new SourceMap(ctx.copy().selectNode(response, "SourceMap"))
   }
 
   /**
@@ -14051,6 +13062,17 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Creates a file from arbitrary binary contents.
+   * @param name Name of the new file. Example: "archive.tar"
+   * @param contents Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+   * @param opts.permissions Permissions of the new file. Example: 0600
+   */
+  blob = (name: string, contents: Bytes, opts?: ClientBlobOpts): File => {
+    const ctx = this._ctx.select("blob", { name, contents, ...opts })
+    return new File(ctx)
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    * @param opts.source Identifier of the directory to use as the cache volume's root.
@@ -14102,19 +13124,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Returns the current environment
-   *
-   * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-   *
-   * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-   * @experimental
-   */
-  currentEnv = (): Env => {
-    const ctx = this._ctx.select("currentEnv")
-    return new Env(ctx)
-  }
-
-  /**
    * The FunctionCall context that the SDK caller is currently executing in.
    *
    * If the caller is not currently executing in a function, this will return an error.
@@ -14130,6 +13139,14 @@ export class Client extends BaseClient {
   currentModule = (): CurrentModule => {
     const ctx = this._ctx.select("currentModule")
     return new CurrentModule(ctx)
+  }
+
+  /**
+   * The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+   */
+  currentNode = (): Node => {
+    const ctx = this._ctx.select("currentNode")
+    return new _NodeClient(ctx)
   }
 
   /**
@@ -14192,14 +13209,13 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Initializes a new environment
-   * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-   * @param opts.writable Allow new outputs to be declared and saved in the environment
-   * @experimental
+   * Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+   * @param name Canonical slash-separated volume name beneath the engine volume namespace.
+   * @param opts.subdir Optional existing subdirectory within the volume payload to mount.
    */
-  env = (opts?: ClientEnvOpts): Env => {
-    const ctx = this._ctx.select("env", { ...opts })
-    return new Env(ctx)
+  engineVolume = (name: string, opts?: ClientEngineVolumeOpts): Volume => {
+    const ctx = this._ctx.select("engineVolume", { name, ...opts })
+    return new Volume(ctx)
   }
 
   /**
@@ -14348,9 +13364,15 @@ export class Client extends BaseClient {
   /**
    * Load any object by its ID.
    */
-  node = (id: ID): Node => {
-    const ctx = this._ctx.select("node", { id })
-    return new _NodeClient(ctx)
+  node = async (id: ID): Promise<Node | null> => {
+    const ctx = this._ctx.select("node", { id }).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new _NodeClient(ctx.copy().selectNode(response, "Node"))
   }
 
   /**
@@ -15558,49 +14580,87 @@ export class TypeDef extends BaseClient {
   /**
    * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
    */
-  asEnum = (): EnumTypeDef => {
-    const ctx = this._ctx.select("asEnum")
-    return new EnumTypeDef(ctx)
+  asEnum = async (): Promise<EnumTypeDef | null> => {
+    const ctx = this._ctx.select("asEnum").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new EnumTypeDef(ctx.copy().selectNode(response, "EnumTypeDef"))
   }
 
   /**
    * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
    */
-  asInput = (): InputTypeDef => {
-    const ctx = this._ctx.select("asInput")
-    return new InputTypeDef(ctx)
+  asInput = async (): Promise<InputTypeDef | null> => {
+    const ctx = this._ctx.select("asInput").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new InputTypeDef(ctx.copy().selectNode(response, "InputTypeDef"))
   }
 
   /**
    * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
    */
-  asInterface = (): InterfaceTypeDef => {
-    const ctx = this._ctx.select("asInterface")
-    return new InterfaceTypeDef(ctx)
+  asInterface = async (): Promise<InterfaceTypeDef | null> => {
+    const ctx = this._ctx.select("asInterface").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new InterfaceTypeDef(
+      ctx.copy().selectNode(response, "InterfaceTypeDef"),
+    )
   }
 
   /**
    * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
    */
-  asList = (): ListTypeDef => {
-    const ctx = this._ctx.select("asList")
-    return new ListTypeDef(ctx)
+  asList = async (): Promise<ListTypeDef | null> => {
+    const ctx = this._ctx.select("asList").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new ListTypeDef(ctx.copy().selectNode(response, "ListTypeDef"))
   }
 
   /**
    * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
    */
-  asObject = (): ObjectTypeDef => {
-    const ctx = this._ctx.select("asObject")
-    return new ObjectTypeDef(ctx)
+  asObject = async (): Promise<ObjectTypeDef | null> => {
+    const ctx = this._ctx.select("asObject").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new ObjectTypeDef(ctx.copy().selectNode(response, "ObjectTypeDef"))
   }
 
   /**
    * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
    */
-  asScalar = (): ScalarTypeDef => {
-    const ctx = this._ctx.select("asScalar")
-    return new ScalarTypeDef(ctx)
+  asScalar = async (): Promise<ScalarTypeDef | null> => {
+    const ctx = this._ctx.select("asScalar").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new ScalarTypeDef(ctx.copy().selectNode(response, "ScalarTypeDef"))
   }
 
   /**
@@ -16047,10 +15107,22 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace's pending overlay changes.
+   * Return all agent middlewares from modules loaded in the workspace.
+   * @param opts.include Only include agents matching the specified patterns
    */
-  changes = (): Changeset => {
-    const ctx = this._ctx.select("changes")
+  agents = (opts?: WorkspaceAgentsOpts): AgentGroup => {
+    const ctx = this._ctx.select("agents", { ...opts })
+    return new AgentGroup(ctx)
+  }
+
+  /**
+   * Return this workspace's changes, with paths relative to its working directory.
+   *
+   * Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
+   * @param opts.from An earlier workspace state to compare against.
+   */
+  changes = (opts?: WorkspaceChangesOpts): Changeset => {
+    const ctx = this._ctx.select("changes", { ...opts })
     return new Changeset(ctx)
   }
 
@@ -16067,7 +15139,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Selected native workspace config file relative to the workspace root, if any.
+   * Selected native workspace config file relative to the workspace cwd, if any.
    */
   configFile = async (): Promise<string> => {
     if (this._configFile) {
@@ -16172,6 +15244,24 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+   *
+   * Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+   *
+   * Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+   * @param opts.start Directory to start from. Relative paths resolve from the workspace cwd.
+   * @param opts.markers File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).
+   * @param opts.exclude Glob patterns pruning the walk below start (e.g. ["**\/node_modules/**"]).
+   */
+  findRoots = async (opts?: WorkspaceFindRootsOpts): Promise<string[]> => {
+    const ctx = this._ctx.select("findRoots", { ...opts })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Search for a file or directory by walking up from the start path within the workspace.
    *
    * Returns the absolute workspace path if found, or null if not found.
@@ -16240,6 +15330,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return a module defined in the workspace configuration.
+   *
+   * Reflects the selected env's effective view.
    * @param name Module name to inspect.
    */
   module_ = (name: string): WorkspaceModule => {
@@ -16262,6 +15354,8 @@ export class Workspace extends BaseClient {
 
   /**
    * List modules defined in the workspace configuration.
+   *
+   * Reflects the selected env's effective view.
    */
   modules = async (): Promise<WorkspaceModule[]> => {
     type modules = {
@@ -16276,6 +15370,14 @@ export class Workspace extends BaseClient {
       (r) =>
         new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
     )
+  }
+
+  /**
+   * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+   */
+  reloaded = (): Workspace => {
+    const ctx = this._ctx.select("reloaded")
+    return new Workspace(ctx)
   }
 
   /**
@@ -16369,6 +15471,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a configuration value written.
+   *
+   * When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
    * @param key Dotted key path.
    * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
    * @param opts.values List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
@@ -16384,12 +15488,27 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a directory merged into the given path, without mutating the source.
+   *
+   * Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+   * @param path Path to merge into. Relative paths resolve from the workspace cwd.
+   * @param source Directory to merge there.
+   */
+  withDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a generated API client initialized.
-   * @param path Workspace-relative output directory for the generated client.
+   *
+   * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+   * @param path Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param module Workspace-relative path or canonical ref for the module the client binds to.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.noGenerate Skip running the SDK's generators for the new client.
    */
   withInitClient = (
     path: string,
@@ -16408,13 +15527,16 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a new module initialized.
+   *
+   * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
    * @param name Name of the new module.
    * @param sdk Workspace SDK name or module entry name to use.
-   * @param opts.path Workspace-relative path for the new module.
+   * @param opts.path Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.noGenerate Skip running the SDK's generators for the new module.
    */
   withInitModule = (
     name: string,
@@ -16427,6 +15549,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a module installed in its config.
+   *
+   * When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
    * @param ref Module reference to install.
    * @param opts.name Override name for the installed module entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -16437,9 +15561,35 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with a directory added, without mutating the source.
-   * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
-   * @param source Directory to add.
+   * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+   *
+   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * @param path Location of the mounted directory. Relative paths resolve from the workspace cwd.
+   * @param source Directory to mount.
+   */
+  withMountedDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withMountedDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+   *
+   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * @param path Location of the mounted file. Relative paths resolve from the workspace cwd.
+   * @param source File to mount.
+   */
+  withMountedFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withMountedFile", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with the given path replaced by a directory, without mutating the source.
+   *
+   * The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
+   * @param path Path to replace. Relative paths resolve from the workspace cwd.
+   * @param source Directory to write there.
    */
   withNewDirectory = (path: string, source: Directory): Workspace => {
     const ctx = this._ctx.select("withNewDirectory", { path, source })
@@ -16507,6 +15657,8 @@ export class Workspace extends BaseClient {
    * Return this workspace with a configuration value removed.
    *
    * Errors when the key is not currently set.
+   *
+   * When the session selects an env, the key is scoped to that env's overlay.
    * @param key Dotted key path (e.g. modules.greeter.settings.greeting).
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
@@ -16519,7 +15671,27 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a directory removed, without mutating the source.
+   * @param path Path of the directory to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutDirectory = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutDirectory", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file removed, without mutating the source.
+   * @param path Path of the file to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutFile = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutFile", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a module removed from its config.
+   *
+   * When the session selects an env, only that env's overlay entry is removed.
    * @param name Name of the installed module entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */

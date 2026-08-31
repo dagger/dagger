@@ -114,7 +114,10 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, :OBJECT_KIND} = Dagger.TypeDef.kind(arg_type_def)
 
       assert {:ok, "Container"} =
-               arg_type_def |> Dagger.TypeDef.as_object() |> Dagger.ObjectTypeDef.name()
+               arg_type_def
+               |> Dagger.TypeDef.as_object()
+               |> unwrap_ok()
+               |> Dagger.ObjectTypeDef.name()
     end
 
     test "list arguments", %{dag: dag} do
@@ -130,7 +133,10 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, :LIST_KIND} = Dagger.TypeDef.kind(arg_type_def)
 
       sub_type_def =
-        arg_type_def |> Dagger.TypeDef.as_list() |> Dagger.ListTypeDef.element_type_def()
+        arg_type_def
+        |> Dagger.TypeDef.as_list()
+        |> unwrap_ok()
+        |> Dagger.ListTypeDef.element_type_def()
 
       assert {:ok, :STRING_KIND} = Dagger.TypeDef.kind(sub_type_def)
 
@@ -143,7 +149,10 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, :LIST_KIND} = Dagger.TypeDef.kind(arg_type_def)
 
       sub_type_def =
-        arg_type_def |> Dagger.TypeDef.as_list() |> Dagger.ListTypeDef.element_type_def()
+        arg_type_def
+        |> Dagger.TypeDef.as_list()
+        |> unwrap_ok()
+        |> Dagger.ListTypeDef.element_type_def()
 
       assert {:ok, :STRING_KIND} = Dagger.TypeDef.kind(sub_type_def)
     end
@@ -176,7 +185,10 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, :OBJECT_KIND} = Dagger.TypeDef.kind(arg_type_def)
 
       assert {:ok, "Directory"} =
-               arg_type_def |> Dagger.TypeDef.as_object() |> Dagger.ObjectTypeDef.name()
+               arg_type_def
+               |> Dagger.TypeDef.as_object()
+               |> unwrap_ok()
+               |> Dagger.ObjectTypeDef.name()
 
       assert {:ok, true} = Dagger.TypeDef.optional(arg_type_def)
     end
@@ -218,7 +230,7 @@ defmodule Dagger.Mod.ModuleTest do
       # No any functions because `init` register as a function.
       assert {:ok, []} = Dagger.ObjectTypeDef.functions(root)
 
-      init = Dagger.ObjectTypeDef.constructor(root)
+      init = Dagger.ObjectTypeDef.constructor(root) |> unwrap_ok()
       assert {:ok, ""} = Dagger.Function.name(init)
       assert {:ok, [arg]} = Dagger.Function.args(init)
       assert {:ok, "name"} = Dagger.FunctionArg.name(arg)
@@ -231,7 +243,10 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, :OBJECT_KIND} = Dagger.TypeDef.kind(return_type_def)
 
       assert {:ok, "ConstructorFunction"} =
-               return_type_def |> Dagger.TypeDef.as_object() |> Dagger.ObjectTypeDef.name()
+               return_type_def
+               |> Dagger.TypeDef.as_object()
+               |> unwrap_ok()
+               |> Dagger.ObjectTypeDef.name()
     end
 
     test "accept and return scalar", %{dag: dag} do
@@ -246,6 +261,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "Platform"} =
                arg_type_def
                |> Dagger.TypeDef.as_scalar()
+               |> unwrap_ok()
                |> Dagger.ScalarTypeDef.name()
 
       return_type_def = Dagger.Function.return_type(accept)
@@ -254,6 +270,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "Platform"} =
                return_type_def
                |> Dagger.TypeDef.as_scalar()
+               |> unwrap_ok()
                |> Dagger.ScalarTypeDef.name()
     end
 
@@ -269,6 +286,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "NetworkProtocol"} =
                arg_type_def
                |> Dagger.TypeDef.as_enum()
+               |> unwrap_ok()
                |> Dagger.EnumTypeDef.name()
 
       return_type_def = Dagger.Function.return_type(accept)
@@ -277,6 +295,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "NetworkProtocol"} =
                return_type_def
                |> Dagger.TypeDef.as_enum()
+               |> unwrap_ok()
                |> Dagger.EnumTypeDef.name()
     end
 
@@ -292,6 +311,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "SimpleEnum"} =
                arg_type_def
                |> Dagger.TypeDef.as_enum()
+               |> unwrap_ok()
                |> Dagger.EnumTypeDef.name()
 
       return_type_def = Dagger.Function.return_type(scan)
@@ -300,6 +320,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "SimpleEnum"} =
                return_type_def
                |> Dagger.TypeDef.as_enum()
+               |> unwrap_ok()
                |> Dagger.EnumTypeDef.name()
 
       assert {:ok, [arg]} = Dagger.Function.args(scan)
@@ -311,7 +332,7 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, :ENUM_KIND} =
                Dagger.TypeDef.kind(type_def)
 
-      enum_type_def = type_def |> Dagger.TypeDef.as_enum()
+      enum_type_def = type_def |> Dagger.TypeDef.as_enum() |> unwrap_ok()
 
       Dagger.EnumTypeDef.description(enum_type_def)
       Dagger.EnumTypeDef.name(enum_type_def)
@@ -331,6 +352,7 @@ defmodule Dagger.Mod.ModuleTest do
         |> Enum.map(fn enum ->
           enum
           |> Dagger.TypeDef.as_enum()
+          |> unwrap_ok()
           |> Dagger.EnumTypeDef.name()
         end)
         |> Enum.map(fn {:ok, name} -> name end)
@@ -377,6 +399,8 @@ defmodule Dagger.Mod.ModuleTest do
   defp root_object(dag, module) do
     module = Module.define(dag, module)
     {:ok, [root_object]} = Dagger.Module.objects(module)
-    Dagger.TypeDef.as_object(root_object)
+    Dagger.TypeDef.as_object(root_object) |> unwrap_ok()
   end
+
+  defp unwrap_ok({:ok, value}), do: value
 end

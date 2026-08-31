@@ -1,6 +1,6 @@
 {
   "name": "daggerverse",
-  "engineVersion": "v0.21.7",
+  "engineVersion": "v0.21.9",
   "sdk": {
     "source": "go"
   },
@@ -12,7 +12,7 @@
     },
     {
       "name": "go",
-      "source": "../../toolchains/go"
+      "source": "../../.dagger/modules/go"
     }
   ],
   "codegen": {

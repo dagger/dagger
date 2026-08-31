@@ -18,6 +18,7 @@ var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
 var FieldsToIgnoreForModuleIntrospection = []string{
 	"Query.currentWorkspace",
+	"Query.engineVolume",
 	"Query.sshfsVolume",
 	"Address.volume",
 }
@@ -112,6 +113,9 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 }
 
 func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
+	if b == nil {
+		return nil, false
+	}
 	for _, e := range b.entries {
 		if e.mod.Name() == name {
 			return e.mod, true

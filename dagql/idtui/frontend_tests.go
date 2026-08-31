@@ -56,8 +56,10 @@ func (row testSidebarRow) testCount() int {
 		}
 		return row.counts.Total()
 	}
-	if row.node != nil && row.node.Kind == dagui.TestNodeCase {
-		return 1
+	if row.node != nil {
+		// Only counted cases (leaves, plus a parent that failed on its own)
+		// contribute, so the "N more tests" tally matches the header totals.
+		return row.node.SelfCounts().Total()
 	}
 	return 0
 }
@@ -69,6 +71,11 @@ type TestView struct {
 	View         func() *dagui.TestView
 	Logs         map[dagui.SpanID]*Vterm
 	SpanChildren func(*dagui.Span) tuist.Component
+
+	// AgentStyle renders the summary heading as a greppable "== TESTS =="
+	// marker rather than bold TTY text. Frontends seed it from their own
+	// dagui.FrontendOpts.AgentStyle (see idtui.agentStyle).
+	AgentStyle bool
 
 	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
 	// tail point at 'dagger cloud logs <trace> <span>' for the full output.
@@ -215,7 +222,7 @@ func (tv *TestView) Render(ctx tuist.Context) {
 		} else {
 			// Leave room for the keymap sibling. Filling the rest of the
 			// screen keeps Tuist's mouse coordinates aligned with rows.
-			viewportHeight = max(ctx.ScreenHeight()-1, 1)
+			viewportHeight = max(ctx.ScreenHeight()-2, 1)
 		}
 	} else if tv.MaxHeight > 0 {
 		viewportHeight = min(viewportHeight, tv.MaxHeight)
@@ -744,7 +751,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 // there is room for.
 func (tv *TestView) renderTestSummaryOneLine(out TermOutput, counts dagui.TestCounts, width int) string {
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	line := prefix + reportHeadingLine(out, tv.summaryHeading())
+	line := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading())
 	if parts := renderTestCountParts(out, counts); len(parts) > 0 {
 		line += "  " + strings.Join(parts, "  ")
 	}
@@ -855,7 +862,7 @@ func (tv *TestView) renderTestSummaryCountsCompact(out TermOutput, counts dagui.
 }
 
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
-	heading := prefix + reportHeadingLine(out, tv.summaryHeading())
+	heading := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading())
 	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
 		heading += " " + renderTestViewerHint(out)
 	}
@@ -1512,8 +1519,12 @@ func (fe *frontendPretty) toggleTestsMode() {
 }
 
 func (fe *frontendPretty) fullscreenTestViewForFocus() *TestView {
-	if span := fe.focusedCheckWithTests(); span != nil {
-		return fe.newFullscreenTestView(span.ID, span.CheckName)
+	if span := fe.focusedTestScope(); span != nil {
+		scopeName := span.CheckName
+		if scopeName == "" {
+			scopeName = span.LLMTool
+		}
+		return fe.newFullscreenTestView(span.ID, scopeName)
 	}
 	if fe.db == nil || !fe.db.HasTests() {
 		return nil
@@ -1521,12 +1532,23 @@ func (fe *frontendPretty) fullscreenTestViewForFocus() *TestView {
 	return fe.newFullscreenTestView(dagui.SpanID{}, "")
 }
 
-func (fe *frontendPretty) focusedCheckWithTests() *dagui.Span {
+func (fe *frontendPretty) hasTestsForFocus() bool {
+	if fe.focusedTestScope() != nil {
+		return true
+	}
+	return fe.db != nil && fe.db.HasTests()
+}
+
+// focusedTestScope finds the nearest visible owner whose root-relative test
+// view is non-empty. Checks and LLM tool calls use the same Boundary ownership
+// rule, so the T affordance must consult the scoped view before falling back to
+// the (possibly empty) global TestView.
+func (fe *frontendPretty) focusedTestScope() *dagui.Span {
 	if fe.db == nil || !fe.FocusedSpan.IsValid() {
 		return nil
 	}
 	for span := fe.db.Spans.Map[fe.FocusedSpan]; span != nil; span = span.ParentSpan {
-		if span.CheckName != "" && fe.db.TestViewForSpan(span).HasTests() {
+		if (span.CheckName != "" || span.LLMTool != "") && fe.db.TestViewForSpan(span).HasTests() {
 			return span
 		}
 	}
@@ -1561,6 +1583,7 @@ func (fe *frontendPretty) inlineTestView(root dagui.SpanID) *TestView {
 func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *TestView {
 	tv := &TestView{
 		Profile:      fe.profile,
+		AgentStyle:   fe.agentStyle(),
 		Logs:         fe.logs.Logs,
 		RequestLogs:  fe.requestLogsOnRender,
 		ScopeName:    scopeName,
@@ -1597,7 +1620,7 @@ func (fe *frontendPretty) updateTestViews() {
 	}
 	for id, st := range fe.spanTrees {
 		span := fe.db.Spans.Map[id]
-		if span != nil && span.CheckName != "" {
+		if span != nil && (span.CheckName != "" || span.LLMTool != "") {
 			st.Update()
 		}
 	}
@@ -1731,7 +1754,7 @@ const (
 )
 
 func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
-	if row == nil || row.Span == nil || row.Span.CheckName == "" {
+	if row == nil || row.Span == nil || (row.Span.CheckName == "" && row.Span.LLMTool == "") {
 		return false
 	}
 	if row.Expanded && !fe.finalRender {
@@ -1751,6 +1774,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		}
 		tv := &TestView{
 			Profile:         s.fe.profile,
+			AgentStyle:      s.fe.agentStyle(),
 			Logs:            s.fe.logs.Logs,
 			SummaryIndent:   2,
 			SummaryLogLines: -1,
@@ -1943,13 +1967,15 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	// identifies the set.
 	if fe.orphanViewMemo.valid &&
 		fe.orphanViewMemo.mutations == fe.db.MutationCount() &&
+		fe.orphanViewMemo.root == surfaceRootID(fe.reportTestRoot()) &&
 		fe.orphanViewMemo.claims == fe.claims &&
 		fe.orphanViewMemo.claimed == fe.claims.testCaseCount() {
 		return fe.orphanViewMemo.view
 	}
-	view := fe.db.TestView()
+	// Scoped reports ask only about their own subtree; see reportTestView.
+	view := fe.reportTestView()
 	var orphan *dagui.TestView
-	if view.HasTests() {
+	if view != nil && view.HasTests() {
 		orphan = view.FilterCases(func(node *dagui.TestNode) bool {
 			return node.Span == nil || !fe.claims.hasTestCase(node.Span.ID)
 		})
@@ -1957,6 +1983,7 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	fe.orphanViewMemo = orphanViewMemo{
 		valid:     true,
 		mutations: fe.db.MutationCount(),
+		root:      surfaceRootID(fe.reportTestRoot()),
 		claims:    fe.claims,
 		claimed:   fe.claims.testCaseCount(),
 		view:      orphan,
@@ -1964,11 +1991,21 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	return orphan
 }
 
+// surfaceRootID keys the orphan-view memo on the root it was built for, so a
+// scoped and an unscoped view can never be served for one another.
+func surfaceRootID(root *dagui.Span) dagui.SpanID {
+	if root == nil {
+		return dagui.SpanID{}
+	}
+	return root.ID
+}
+
 // orphanViewMemo caches orphanTestView's filtered clone for repeated reads
 // within a render pass.
 type orphanViewMemo struct {
 	valid     bool
 	mutations uint64
+	root      dagui.SpanID
 	claims    *renderClaims
 	claimed   int
 	view      *dagui.TestView
@@ -2579,8 +2616,8 @@ func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNo
 }
 
 // nonEmptyTestNodes drops packages/suites that discovered no tests (0 total) so
-// they don't clutter the sidebar and push real results off-screen. A test case
-// always counts >=1 and counts roll up to parents, so this only removes
+// they don't clutter the sidebar and push real results off-screen. Every leaf
+// test case counts >=1 and counts roll up to parents, so this only removes
 // genuinely empty suites; a package with only skipped tests (Skipped > 0) stays.
 func nonEmptyTestNodes(nodes []*dagui.TestNode) []*dagui.TestNode {
 	out := make([]*dagui.TestNode, 0, len(nodes))

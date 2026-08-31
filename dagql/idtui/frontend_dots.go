@@ -154,6 +154,7 @@ func (fe *frontendDots) renderFinalTests() bool {
 	}
 	tv := &TestView{
 		Profile:         fe.profile,
+		AgentStyle:      agentStyle(fe.Opts()),
 		Logs:            fe.logs.testLogs,
 		SummaryLogLines: -1,
 	}
@@ -226,7 +227,7 @@ func (fe *frontendDots) HandlePrompt(ctx context.Context, _, prompt string, dest
 }
 
 func (fe *frontendDots) HandleForm(ctx context.Context, form *huh.Form) error {
-	return form.RunWithContext(ctx)
+	return form.WithTheme(huh.ThemeBase16()).RunWithContext(ctx)
 }
 
 // dotsSpanExporter implements trace.SpanExporter for the dots frontend

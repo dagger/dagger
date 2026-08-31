@@ -13,7 +13,7 @@ Expected stderr:
 
 $ viztest: Viztest! X.Xs CACHED
 ✔ .useCachedExecService: Void X.Xs
-├╴$ container: Container! X.Xs CACHED
+├╴$ container(platform: "linux/ARCH"): Container! X.Xs CACHED
 ├╴✔ .from(address: "busybox"): Container! X.Xs
 ├╴$ withExec echo 'exec-service cached for good' X.Xs CACHED
 ├╴$ withExec echo 'im also cached for good' X.Xs CACHED

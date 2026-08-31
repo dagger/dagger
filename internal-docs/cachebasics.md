@@ -323,9 +323,12 @@ Two calls can be deduped while they are actively running only if they share:
 - the same call identity
 - the same `ConcurrencyKey`
 
-In normal dagql field execution, the default concurrency key is the client ID.
+In normal dagql field execution, the default concurrency key is the session ID
+from the current client metadata.
 
-That is a deliberate tradeoff. Dedupe across clients is possible in principle, but it complicates cancellation/disconnect handling a lot. So today, in-flight singleflight mostly stays within a client.
+That lets equivalent in-flight calls from different clients in the same session
+be deduped together. Calls from different sessions have different default
+concurrency keys.
 
 ## The short mental model
 

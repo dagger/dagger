@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	apiClientListJSON bool
+	apiClientListJSON       bool
+	apiClientInitNoGenerate bool
 )
 
 var apiClientCmd = &cobra.Command{
@@ -32,13 +33,19 @@ var apiClientInitCmd = &cobra.Command{
 	Short: "Initialize a generated API client",
 	Long: `Initialize a generated API client at <path>.
 
+<path> is relative to the current directory; a leading "/" means the workspace
+root.
+
 <sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
 to add more choices.
 
 The engine resolves <sdk> from dagger.toml, validates that it is installed as an
 SDK, plans the generated files and workspace config change, then returns a
 Changeset that the CLI previews and applies through the standard preview/apply
-flow.`,
+flow.
+
+The SDK's generators run scoped to <path>, so the client's bindings come with
+it. Pass --no-generate to record and scaffold the client without them.`,
 	Example: "dagger api client init typescript ./lib/cli .dagger/modules/api",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -55,11 +62,15 @@ var apiClientListCmd = &cobra.Command{
 
 func init() {
 	apiClientListCmd.Flags().BoolVar(&apiClientListJSON, "json", false, "Output the client list in JSON format")
+	apiClientInitCmd.PersistentFlags().BoolVar(&apiClientInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new client")
 
 	apiClientCmd.AddCommand(apiClientInitCmd, apiClientListCmd)
 }
 
 func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("client init does not support --env; it scaffolds clients into the base workspace config")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
@@ -69,30 +80,21 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 		if err != nil {
 			return err
 		}
-		opts := dagger.WorkspaceWithInitClientOpts{}
+		opts := dagger.WorkspaceWithInitClientOpts{
+			NoGenerate: apiClientInitNoGenerate,
+		}
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
-		updated := dag.CurrentWorkspace().WithInitClient(clientPath, sdkName, moduleRef, opts)
-		applied, err := handleWorkspaceResponse(ctx, dag, updated, autoApply)
-		if err != nil {
-			return err
-		}
-		if applied && !silent {
-			fmt.Fprint(cmd.OutOrStdout(), clientInitGenerateHint)
-		}
-		return nil
+		current := dag.CurrentWorkspace()
+		// Root-measured for the same reason as module init: the workspace
+		// config this edits can sit above the caller, and the apply happens
+		// at the workspace root.
+		updated := current.WithInitClient(clientPath, sdkName, moduleRef, opts).WithWorkdir(".")
+		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
+		return err
 	})
 }
-
-// clientInitGenerateHint points the user at the generate step: `api client
-// init` records and scaffolds the client, but its bindings are produced by
-// `dagger generate`.
-const clientInitGenerateHint = `
-  Client scaffolded. Generate its bindings with:
-
-      dagger generate
-`
 
 type apiClientListEntry struct {
 	SDK     string            `json:"sdk"`

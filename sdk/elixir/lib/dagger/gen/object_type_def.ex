@@ -18,15 +18,29 @@ defmodule Dagger.ObjectTypeDef do
   @doc """
   The function used to construct new instances of this object, if any.
   """
-  @spec constructor(t()) :: Dagger.Function.t() | nil
+  @spec constructor(t()) :: {:ok, Dagger.Function.t() | nil} | {:error, term()}
   def constructor(%__MODULE__{} = object_type_def) do
     query_builder =
-      object_type_def.query_builder |> QB.select("constructor")
+      object_type_def.query_builder |> QB.select("constructor") |> QB.select("id")
 
-    %Dagger.Function{
-      query_builder: query_builder,
-      client: object_type_def.client
-    }
+    case Client.execute(object_type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Function{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Function"),
+           client: object_type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -122,15 +136,29 @@ defmodule Dagger.ObjectTypeDef do
   @doc """
   The location of this object declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
+  @spec source_map(t()) :: {:ok, Dagger.SourceMap.t() | nil} | {:error, term()}
   def source_map(%__MODULE__{} = object_type_def) do
     query_builder =
-      object_type_def.query_builder |> QB.select("sourceMap")
+      object_type_def.query_builder |> QB.select("sourceMap") |> QB.select("id")
 
-    %Dagger.SourceMap{
-      query_builder: query_builder,
-      client: object_type_def.client
-    }
+    case Client.execute(object_type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.SourceMap{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SourceMap"),
+           client: object_type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

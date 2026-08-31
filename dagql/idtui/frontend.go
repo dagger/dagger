@@ -123,6 +123,37 @@ type Frontend interface {
 	prompt.PromptHandler
 }
 
+// CommandFrontend is implemented by frontends that can host a command-owned
+// Tuist screen. Commands should treat this as an optional capability and keep
+// a plain-output fallback for streaming frontends.
+type CommandFrontend interface {
+	SetView(ViewFactory) ViewHandle
+	Live() bool
+}
+
+// ViewFactory constructs a command screen using services owned by the pretty
+// frontend. It is invoked on the Tuist event loop.
+type ViewFactory func(ViewContext) CommandView
+
+// CommandView is the body of a command-owned pretty TUI. SetFinal switches the
+// view from transient progress to durable terminal output.
+type CommandView interface {
+	tuist.Component
+	Update()
+	SetFinal(bool)
+}
+
+// ViewContext provides reusable trace-backed components. The trace state is
+// intentionally not mutable by commands.
+type ViewContext interface {
+	SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView
+}
+
+// ViewHandle serializes command model mutations with rendering.
+type ViewHandle interface {
+	Update(func())
+}
+
 // TraceFrontend is the optional interface 'dagger trace' drives for
 // incremental loading and report zooming: snapshot import, lazy span/log
 // providers, surfaced-failure prefetch, and name-based zoom targets. Only the
@@ -139,8 +170,9 @@ type TraceFrontend interface {
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))
 	SetSpanProvider(func(id dagui.SpanID))
-	// SurfacedFailedCheckSpans lists the failed checks' spans (plus their
-	// error origins and links) whose subtrees the report needs prefetched.
+	// SurfacedFailedCheckSpans lists the failed checks' and generators' spans
+	// (plus their error origins and links) whose subtrees the report needs
+	// prefetched.
 	SurfacedFailedCheckSpans() []dagui.SpanID
 	// RequestSurfacedLogs makes the frontend request logs for the failures it
 	// surfaces, so a single final report render includes their detail.
@@ -639,9 +671,16 @@ func (r *renderer) renderSpan(
 				fmt.Fprint(out, " ")
 			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
-			if len(span.LLMToolArgValues) > 0 {
-				// for now, only print the first arg, the rest are likely to be noisy.
-				fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+			// For recognized tools, render a styled summary of the meaningful
+			// args (paths in cyan, descriptions/content faint). Fall back to
+			// dumping the first arg for tools we don't recognize.
+			if !renderToolArgsSummary(out, span.LLMTool, span) {
+				if len(span.LLMToolArgValues) > 0 {
+					// for now, only print the first arg, the rest are likely to be noisy.
+					// Show only its first line so a large multiline value (e.g. a
+					// commit message body) doesn't dominate the row.
+					fmt.Fprint(out, "(", sanitizeSummary(firstLine(span.LLMToolArgValues[0])), ")")
+				}
 			}
 			return nil
 		}
@@ -680,6 +719,8 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 		fmt.Fprint(out, out.String(fmt.Sprintf("%f", val.Float)).Foreground(termenv.ANSIRed))
 	case *callpbv1.Literal_String_:
 		fmt.Fprint(out, out.String(fmt.Sprintf("%q", val.String_)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_Bytes:
+		fmt.Fprint(out, out.String(call.DisplayBytes(val.Bytes)).Foreground(termenv.ANSIYellow))
 	case *callpbv1.Literal_CallDigest:
 		fmt.Fprint(out, out.String(val.CallDigest).Foreground(termenv.ANSIMagenta))
 	case *callpbv1.Literal_Enum:
@@ -740,19 +781,28 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) 
 	if space {
 		fmt.Fprint(out, out.String(" "))
 	}
+	renderSpanDuration(out, span, r.now, r.final)
+}
+
+// renderSpanDuration writes a span's duration—self time rather than
+// wall-clock when the row provably spent material time blocked on other
+// ops—plus a "waiting on X" suffix while the row is blocked right now. It is
+// shared by the static renderer and the live, self-updating DurationView so
+// running rows tell the same story as completed ones.
+func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final bool) {
 	// When a row spent material time provably blocked on other ops, show
 	// the time it actually spent executing, not the wall-clock it was
 	// blocked or dormant for.
-	hb := span.TimeBreakdown(r.now)
+	hb := span.TimeBreakdown(now)
 	// "Blocked right now" only means something while the run is still going:
 	// a final render has no "now", and a failed or canceled row's story is
 	// its error, not whatever it was waiting on when things went wrong.
 	var blocked dagui.TimeSegment
 	var blockedNow bool
-	if !r.final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
-		blocked, blockedNow = hb.BlockedNow(r.now)
+	if !final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		blocked, blockedNow = hb.BlockedNow(now)
 	}
-	shown := span.Activity.Duration(r.now)
+	shown := span.Activity.Duration(now)
 	if hb.Material || blockedNow {
 		shown = hb.Self
 	}
@@ -820,6 +870,55 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 
 		// Filesync Stats
 		r.renderMetric(out, metricsByName, telemetry.FilesyncWrittenBytes, "Written Bytes", colorizeBytes)
+	}
+}
+
+// renderToolResultTokens flags, inline on a tool-call row, how many tokens the
+// tool's result added to the model's context. A tool result is usually the
+// biggest driver of context growth, so surfacing its size makes an inordinate
+// one easy to spot while scanning a conversation. The count is an estimate (see
+// LLMToolResultTokensAttr) and is colored by magnitude so large results stand
+// out; small ones stay faint to keep the transcript quiet.
+func (r renderer) renderToolResultTokens(out TermOutput, span *dagui.Span) {
+	if span == nil || span.LLMTool == "" || span.LLMToolResultTokens <= 0 {
+		return
+	}
+	tokens := span.LLMToolResultTokens
+	badge := out.String(fmt.Sprintf("~%s tok", fmtTokens(tokens)))
+	switch color := tokenSizeColor(tokens); color {
+	case faintColor:
+		badge = badge.Foreground(color).Faint()
+	default:
+		badge = badge.Foreground(color)
+	}
+	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+	fmt.Fprint(out, badge)
+}
+
+// tokenSizeColor grades a token count so a context-bloating tool result reads as
+// a warning: small results stay faint, a few thousand tokens turn yellow, and
+// tens of thousands turn red.
+func tokenSizeColor(tokens int64) termenv.Color {
+	switch {
+	case tokens >= 10_000:
+		return bigColor
+	case tokens >= 2_000:
+		return mbColor
+	default:
+		return faintColor
+	}
+}
+
+// fmtTokens renders a token count compactly (532, 1.2k, 45.2k, 1.2M) so it fits
+// inline on a row without dominating it.
+func fmtTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
 	}
 }
 
@@ -958,7 +1057,14 @@ func humanizeTokens(v int64) string {
 // }
 
 func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
-	return replayPrimaryOutput(w, db, true)
+	return renderPrimaryOutputFor(w, db, db.PrimarySpan)
+}
+
+// renderPrimaryOutputFor is renderPrimaryOutput for an explicit primary span,
+// so a scoped report can replay ITS root's output without the DB's global
+// primary span having to be mutated to point at it.
+func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID) error {
+	return replayPrimaryOutput(w, db, primary, true)
 }
 
 // replayPrimaryOutput replays the primary span's log records to the CLI's
@@ -967,8 +1073,8 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 // engine-wrapped failure output the rendered report already covers, while
 // stdout still carries the command's own results (e.g. a shell script's
 // output from before it failed).
-func replayPrimaryOutput(w io.Writer, db *dagui.DB, includeStderr bool) error {
-	logs := db.PrimaryLogs[db.PrimarySpan]
+func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr bool) error {
+	logs := db.PrimaryLogs[primary]
 	if !includeStderr {
 		var stdout []sdklog.Record
 		for _, l := range logs {

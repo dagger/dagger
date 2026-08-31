@@ -1075,7 +1075,7 @@ func (f *modFunction) HasRequiredArgs() bool {
 func (f *modFunction) RequiredArgs() []*modFunctionArg {
 	args := make([]*modFunctionArg, 0, len(f.Args))
 	for _, arg := range f.Args {
-		if arg.IsRequired() {
+		if arg.IsCallerRequired() {
 			args = append(args, arg)
 		}
 	}
@@ -1085,7 +1085,7 @@ func (f *modFunction) RequiredArgs() []*modFunctionArg {
 func (f *modFunction) OptionalArgs() []*modFunctionArg {
 	args := make([]*modFunctionArg, 0, len(f.Args))
 	for _, arg := range f.Args {
-		if !arg.IsRequired() {
+		if !arg.IsCallerRequired() {
 			args = append(args, arg)
 		}
 	}
@@ -1128,6 +1128,17 @@ type modFunctionArg struct {
 	Ignore       []string
 	flagName     string
 	once         sync.Once
+}
+
+// IsWorkspace reports whether the argument is a core Workspace. The CLI fills
+// these from the session's current workspace rather than exposing a flag, so
+// `dagger call` on a function that declares one stays a plain call.
+func (r *modFunctionArg) IsWorkspace() bool {
+	typeDef := r.TypeDef
+	if typeDef == nil || typeDef.Kind != dagger.TypeDefKindObjectKind || typeDef.AsObject == nil {
+		return false
+	}
+	return typeDef.AsObject.Name == "Workspace" && typeDef.AsObject.SourceModuleName == ""
 }
 
 // FlagName returns the name of the argument using CLI naming conventions.
@@ -1178,6 +1189,16 @@ func (r *modFunctionArg) Long() string {
 
 func (r *modFunctionArg) IsRequired() bool {
 	return !r.TypeDef.Optional && r.DefaultValue == ""
+}
+
+// IsCallerRequired reports whether the caller has to supply the argument.
+//
+// A Workspace is required of the *function* — the signature says so — but not
+// of the caller: the CLI defaults it to the session's current workspace. So it
+// is never a mandatory shell positional and never gets MarkFlagRequired, while
+// staying overridable by passing it explicitly.
+func (r *modFunctionArg) IsCallerRequired() bool {
+	return r.IsRequired() && !r.IsWorkspace()
 }
 
 func (r *modFunctionArg) IsUnsupportedFlag() bool {

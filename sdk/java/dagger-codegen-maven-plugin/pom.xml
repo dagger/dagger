@@ -7,12 +7,12 @@
     <parent>
         <groupId>io.dagger</groupId>
         <artifactId>dagger-sdk-parent</artifactId>
-        <version>1.0.0-beta.8</version>
+        <version>1.0.0-beta.12</version>
     </parent>
 
     <artifactId>dagger-codegen-maven-plugin</artifactId>
     <packaging>maven-plugin</packaging>
-    <version>1.0.0-beta.8</version>
+    <version>1.0.0-beta.12</version>
     <description>Maven plugin for Dagger.io API codegen</description>
 
     <dependencies>
@@ -56,6 +56,16 @@
         <dependency>
             <groupId>com.ongres</groupId>
             <artifactId>fluent-process</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

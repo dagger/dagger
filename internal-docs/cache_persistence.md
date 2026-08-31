@@ -232,17 +232,19 @@ imported-layer indexes on restart.
 
 On graceful shutdown, the cache snapshots and writes:
 
-- all live `sharedResult`s in `resultsByID`
-- all live terms
-- all live eq-classes and their digests
+- complete, clean result dependency closures reachable from persisted edges
+- terms whose output eq-classes contain those retained results
+- the eq-classes and digests referenced by retained results and terms
 - result-to-output-eq-class associations
 - exact result dependency edges
 - persisted root edges
 - result snapshot ownership links
 - snapshot manager persistent metadata rows
 
-That is important: the store does not just save a small set of "roots." It
-saves the live retained cache graph and the metadata needed to reconstruct it.
+That is important: the store does not save only the root rows. It validates each
+persisted root's full dependency closure and saves the complete clean closures
+plus the metadata needed to reconstruct them. A root is omitted if any result in
+its closure is still attaching, finished attachment with an error, or is missing.
 
 In other words, persistence is trying to serialize the current cache state, not
 just enough information to replay everything later.
@@ -257,11 +259,24 @@ Important omissions:
 - per-session tracking state
 - per-session lazy span state
 - arbitrary in-memory cache entries from `cache_arbitrary.go`
+- exact runtime result-to-digest posting membership
 
 Those are runtime-only.
 
 The persisted store is about retained dagql call-cache state and snapshot
 metadata, not every transient runtime structure.
+
+The result-to-output-eq-class rows and eq-class digest rows are sufficient to
+reconstruct safe digest lookup candidates, but not the smaller exact set of
+postings originally created for each result. Import therefore rebuilds
+class-wide digest postings for each result's output classes and marks those
+results as broadly indexed. Lifecycle removal scans those classes only for
+broad imported results; ordinary runtime and persisted-fresh results use their
+in-memory exact reverse posting lists.
+
+This is intentionally schema-compatible. Persisting exact result-to-digest
+membership would require a separate schema/version change and migration and is
+not part of the current format.
 
 ## Persistable Roots
 
@@ -272,7 +287,9 @@ At the dagql field-definition level, `Field.IsPersistable()` sets the field spec
 to mark results of that field as eligible for persistence.
 
 At execution time, that turns into `CallRequest.IsPersistable`, and the cache
-responds by adding a persisted edge for the completed result.
+adds a persisted edge after the completed result finishes dependency attachment
+successfully. A persistable cache hit adds or updates its edge only after the
+hit's attachment barrier and persisted-payload load both succeed.
 
 That persisted edge does two things:
 
@@ -466,7 +483,7 @@ than accidental ownership loss.
 7. rebuild exact dependency edges and increment ownership
 8. load result snapshot links
 9. recompute required session resources
-10. rebuild digest indexes
+10. rebuild conservative class-wide digest indexes and mark their results broad
 11. opportunistically decode some persisted payloads eagerly
 12. load snapshot-manager metadata and restore owner leases
 

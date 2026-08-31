@@ -2775,17 +2775,27 @@ func TestViewsFilterNonObjectTypes(t *testing.T) {
 	class.Implements(iface)
 	srv.InstallObject(class)
 
+	srv.InstallDirective(dagql.DirectiveSpec{
+		Name:        "viewFilteredDirective",
+		Description: "future directive",
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	}.View(dagql.ExactView("future")))
+
 	oldSchema := srv.SchemaForView("old")
 	require.NotContains(t, oldSchema.Types, "ViewFilteredEnum")
 	require.NotContains(t, oldSchema.Types, "ViewFilteredInput")
 	require.NotContains(t, oldSchema.Types, "ViewFilteredInterface")
 	require.NotContains(t, oldSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+	require.NotContains(t, oldSchema.Directives, "viewFilteredDirective")
 
 	futureSchema := srv.SchemaForView("future")
 	require.Equal(t, ast.Enum, futureSchema.Types["ViewFilteredEnum"].Kind)
 	require.Equal(t, ast.InputObject, futureSchema.Types["ViewFilteredInput"].Kind)
 	require.Equal(t, ast.Interface, futureSchema.Types["ViewFilteredInterface"].Kind)
 	require.Contains(t, futureSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+	require.Contains(t, futureSchema.Directives, "viewFilteredDirective")
 }
 
 type CoolInt struct {
@@ -2996,6 +3006,159 @@ func TestImplicitInputCachePerCall(t *testing.T) {
 	var third int
 	require.NoError(t, srv.Select(ctx, srv.Root(), &third, dagql.Selector{Field: "perCallCounter"}))
 	assert.Equal(t, third, 3)
+}
+
+func TestRecipeLoadBytesLiteral(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	srv.InstallScalar(dagql.Bytes(nil))
+	points.Install[Query](srv)
+
+	var gotContents []byte
+	dagql.Fields[Query]{
+		dagql.Func("pointFromBytes", func(_ context.Context, _ Query, args struct {
+			Contents dagql.Bytes
+		}) (*points.Point, error) {
+			gotContents = args.Contents.Bytes()
+			return &points.Point{X: len(args.Contents)}, nil
+		}),
+	}.Install(srv)
+
+	contents := []byte{0x00, 0xff, 0xfe, 0x80, 'b', 'l', 'o', 'b'}
+	recipe := call.New().Append(
+		(&points.Point{}).Type(),
+		"pointFromBytes",
+		call.WithArgs(call.NewArgument("contents", call.NewLiteralBytes(contents), false)),
+	)
+	require.False(t, recipe.IsHandle())
+
+	ctx := dagql.ContextWithCache(testContext(), newCache(t))
+	loaded, err := srv.Load(ctx, recipe)
+	require.NoError(t, err)
+	require.Equal(t, contents, gotContents)
+
+	var gotLen int
+	require.NoError(t, srv.Select(ctx, loaded, &gotLen, dagql.Selector{Field: "x"}))
+	require.Equal(t, len(contents), gotLen)
+}
+
+// TestNotReplayableRecipeLoad covers FieldSpec.NotReplayable on the recipe
+// load path: a marked call replayed from a saved recipe is served from cache
+// inside the session that recorded it, but re-executed when the recipe is
+// loaded by another session — along with every recorded call above it, since
+// a cached ancestor's digest hit would short-circuit the subtree before the
+// marked call is ever reached.
+func TestNotReplayableRecipeLoad(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	cache := newCache(t)
+	points.Install[Query](srv)
+
+	var liveReads atomic.Int64
+	dagql.Fields[Query]{
+		dagql.Func("liveBase", func(ctx context.Context, _ Query, _ struct{}) (*points.Point, error) {
+			return &points.Point{X: int(liveReads.Add(1))}, nil
+		}).
+			WithInput(dagql.PerSessionInput).
+			NotReplayable("test: the recorded digest is a stable key for an unstable value"),
+	}.Install(srv)
+
+	ctxFor := func(sessionID string) context.Context {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID:  "same-client",
+			SessionID: sessionID,
+		})
+		return dagql.ContextWithCache(ctx, cache)
+	}
+	ctxA := ctxFor("session-a")
+
+	// Session A makes the live read and derives a pure call from it.
+	var base dagql.ObjectResult[*points.Point]
+	require.NoError(t, srv.Select(ctxA, srv.Root(), &base, dagql.Selector{Field: "liveBase"}))
+	var derived dagql.ObjectResult[*points.Point]
+	require.NoError(t, srv.Select(ctxA, base, &derived, dagql.Selector{Field: "shiftLeft"}))
+	assert.Equal(t, derived.Self().X, 0, "first live read (1) shifted left")
+
+	savedID := new(call.ID)
+	require.NoError(t, savedID.Decode(recipeIDForObject(t, ctxA, srv, derived)))
+	require.False(t, savedID.IsHandle(), "the saved ID must be recipe-form")
+
+	loadX := func(ctx context.Context) int {
+		res, err := srv.LoadType(ctx, savedID)
+		require.NoError(t, err)
+		obj, ok := res.(dagql.AnyObjectResult)
+		require.True(t, ok)
+		var x int
+		require.NoError(t, srv.Select(ctx, obj, &x, dagql.Selector{Field: "x"}))
+		return x
+	}
+
+	// Replaying inside the recording session stays on the cache: the session
+	// is alive and its view has not been swapped out from under the recipe.
+	assert.Equal(t, loadX(ctxA), 0)
+	assert.Equal(t, int(liveReads.Load()), 1, "same-session replay must not re-execute")
+
+	// Replaying in another session re-executes the marked call, and the pure
+	// shiftLeft above it resolves against the fresh result rather than being
+	// served wholesale from its still-cached digest.
+	assert.Equal(t, loadX(ctxFor("session-b")), 1, "second live read (2) shifted left")
+	assert.Equal(t, int(liveReads.Load()), 2, "cross-session replay must re-execute the marked call")
+}
+
+// TestNotReplayableWithoutSessionStamp documents why a NotReplayable field
+// must also declare PerSessionInput. Without a stamp the recipe loader treats
+// every replay as tainted and skips its own lookups — but the re-issued call
+// still computes its ordinary digest, which for a field with no
+// session-scoped input is identical in every session, so the regular call
+// path serves the recorded value from cache and the resolver never re-runs.
+// The stamp is therefore load-bearing, not hygiene: PerSessionInput is what
+// gives a new session's re-issued call a fresh digest to actually execute
+// under. If this test starts failing because the loads below re-execute, the
+// mechanism got stronger and this pairing requirement may have been lifted —
+// update internal-docs/recipe_replay.md accordingly.
+func TestNotReplayableWithoutSessionStamp(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	cache := newCache(t)
+	points.Install[Query](srv)
+
+	var liveReads atomic.Int64
+	dagql.Fields[Query]{
+		dagql.Func("unstampedLive", func(ctx context.Context, _ Query, _ struct{}) (*points.Point, error) {
+			return &points.Point{X: int(liveReads.Add(1))}, nil
+		}).
+			NotReplayable("test: marked but carrying no session stamp"),
+	}.Install(srv)
+
+	ctxFor := func(sessionID string) context.Context {
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			ClientID:  "same-client",
+			SessionID: sessionID,
+		})
+		return dagql.ContextWithCache(ctx, cache)
+	}
+	ctxA := ctxFor("session-a")
+
+	var base dagql.ObjectResult[*points.Point]
+	require.NoError(t, srv.Select(ctxA, srv.Root(), &base, dagql.Selector{Field: "unstampedLive"}))
+	assert.Equal(t, base.Self().X, 1)
+
+	savedID := new(call.ID)
+	require.NoError(t, savedID.Decode(recipeIDForObject(t, ctxA, srv, base)))
+
+	loadX := func(ctx context.Context) int {
+		res, err := srv.LoadType(ctx, savedID)
+		require.NoError(t, err)
+		obj, ok := res.(dagql.AnyObjectResult)
+		require.True(t, ok)
+		var x int
+		require.NoError(t, srv.Select(ctx, obj, &x, dagql.Selector{Field: "x"}))
+		return x
+	}
+
+	assert.Equal(t, loadX(ctxA), 1,
+		"the re-issued call's own digest hits the regular cache")
+	assert.Equal(t, loadX(ctxFor("session-b")), 1,
+		"without a session-scoped input the digest matches across sessions too, "+
+			"so the marked call still serves the recording session's value")
+	assert.Equal(t, int(liveReads.Load()), 1)
 }
 
 func TestImplicitInputCachePerSchema(t *testing.T) {

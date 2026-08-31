@@ -30,6 +30,25 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Creates a file from arbitrary binary contents.
+  """
+  @spec blob(t(), String.t(), Dagger.Bytes.t(), [{:permissions, integer() | nil}]) ::
+          Dagger.File.t()
+  def blob(%__MODULE__{} = client, name, contents, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("blob")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("contents", contents)
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Constructs a cache volume for a given cache key.
   """
   @spec cache_volume(t(), String.t(), [
@@ -102,28 +121,6 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Returns the current environment
-
-  When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-
-  When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-
-  > #### Experimental {: .warning}
-  >
-  > "Programmatic env access is speculative and might be replaced."
-  """
-  @spec current_env(t()) :: Dagger.Env.t()
-  def current_env(%__MODULE__{} = client) do
-    query_builder =
-      client.query_builder |> QB.select("currentEnv")
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc """
   The FunctionCall context that the SDK caller is currently executing in.
 
   If the caller is not currently executing in a function, this will return an error.
@@ -148,6 +145,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("currentModule")
 
     %Dagger.CurrentModule{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+  """
+  @spec current_node(t()) :: Dagger.Node.t()
+  def current_node(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentNode")
+
+    %Dagger.Node{
       query_builder: query_builder,
       client: client.client
     }
@@ -241,21 +252,17 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Initializes a new environment
-
-  > #### Experimental {: .warning}
-  >
-  > "Environments are not yet stabilized"
+  Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
   """
-  @spec env(t(), [{:privileged, boolean() | nil}, {:writable, boolean() | nil}]) :: Dagger.Env.t()
-  def env(%__MODULE__{} = client, optional_args \\ []) do
+  @spec engine_volume(t(), String.t(), [{:subdir, String.t() | nil}]) :: Dagger.Volume.t()
+  def engine_volume(%__MODULE__{} = client, name, optional_args \\ []) do
     query_builder =
       client.query_builder
-      |> QB.select("env")
-      |> QB.maybe_put_arg("privileged", optional_args[:privileged])
-      |> QB.maybe_put_arg("writable", optional_args[:writable])
+      |> QB.select("engineVolume")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("subdir", optional_args[:subdir])
 
-    %Dagger.Env{
+    %Dagger.Volume{
       query_builder: query_builder,
       client: client.client
     }
@@ -535,15 +542,29 @@ defmodule Dagger.Client do
   @doc """
   Load any object by its ID.
   """
-  @spec node(t(), String.t()) :: Dagger.Node.t() | nil
+  @spec node(t(), String.t()) :: {:ok, Dagger.Node.t() | nil} | {:error, term()}
   def node(%__MODULE__{} = client, id) do
     query_builder =
-      client.query_builder |> QB.select("node") |> QB.put_arg("id", id)
+      client.query_builder |> QB.select("node") |> QB.put_arg("id", id) |> QB.select("id")
 
-    %Dagger.Node{
-      query_builder: query_builder,
-      client: client.client
-    }
+    case Client.execute(client.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Node{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Node"),
+           client: client.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

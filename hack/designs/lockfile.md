@@ -1,14 +1,14 @@
 # Lockfile: Lookup Resolution
 
-## Status: Partially Implemented
+## Status: Implemented
 
 This is the general design reference for Dagger lockfiles.
 
 It describes:
 
-- the lock entry format
-- lock policy and lock mode semantics
-- lock update flows
+- the current v2 lock entry format
+- lockfile version and API-view compatibility
+- automatic discovery and explicit update flows
 - what is implemented now
 - what remains to be built
 
@@ -27,89 +27,79 @@ It describes:
 | Lookup function | A function that turns symbolic inputs into a concrete resolved result. |
 | Lookup inputs | The symbolic arguments to the lookup function. |
 | Lookup result | The concrete resolved value: digest, commit SHA, immutable ID, and so on. |
-| Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `(value, policy)`. |
-| Lock policy | Entry-level refresh intent: `pin` or `float`. |
-| Lock mode | Run-level read/write behavior: `disabled`, `live`, `pinned`, or `frozen`. |
+| Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `value`. |
+| Legacy lock policy | Version 1 entry-level refresh intent: `pin` or `float`. |
 | Lockfile snapshot | Parsed `dagger.lock` state loaded into session-owned live state. |
 | Lockfile delta | Tuple upserts buffered in session-owned live state before final export. |
 
 ## Lock Entry Format
 
-Lockfiles are JSON lines. The first line is the version tuple:
+Lockfiles are JSON lines. Lines starting with `#` are comments and are
+ignored by the parser. The first non-comment line is the version tuple:
 
 ```json
-[["version","1"]]
+[["version","2"]]
 ```
 
-Each entry is a flat ordered tuple:
+Every written lockfile starts with a fixed header comment explaining that the
+file is generated, that it changes as a side effect of running Dagger, and that
+those changes should always be committed. This steers readers (especially
+coding agents, who tend to see lockfile diffs as unrelated to their change and
+discard them) towards checking the file in. Comments are not preserved across
+a parse/marshal round trip; only the fixed header is ever written.
+
+Each entry is an ordered tuple:
 
 ```json
-[namespace, operation, inputs, value, policy]
+[namespace, operation, required-inputs, value, optional-options]
 ```
 
 Examples:
 
 ```json
-["","container.from",["alpine:latest","linux/amd64"],"sha256:3d23f8","pin"]
-["","git.branch",["https://github.com/dagger/dagger.git","main"],"495a8c8ce85670e58560a9561626297a436225c0","float"]
+["","oci-latest",["alpine"],"3.22.1"]
+["","oci-sha",["docker.io/library/alpine:3.22.1"],"sha256:3d23f8"]
+["","git-latest",["https://github.com/dagger/dagger.git"],"refs/tags/v1.2.3"]
+["","git-sha",["https://github.com/dagger/dagger.git","refs/tags/v1.2.3"],"495a8c8ce85670e58560a9561626297a436225c0"]
+["","oci-latest",["registry.example/acme/image"],"2.0.0",[["protocol","http"]]]
 ```
 
 Rules:
 
 - `namespace` is `""` for core lookups.
-- `operation` is a stable lookup key such as `container.from` or `git.branch`.
-- `inputs` is always an ordered positional array.
-- `value` is the resolved immutable result.
-- `policy` is `pin` or `float`.
-- dictionaries, maps, and named-argument encodings are forbidden anywhere in lock entries
+- `operation` describes the resolver operation, not the Dagger API call that
+  requested it.
+- required inputs are positional values in the third-element array.
+- `value` is always a single operation-specific string.
+- optional inputs are encoded after `value` as one array of key-value pairs.
+- the optional array is omitted when every option has its default value.
+- option pairs are unique and sorted by name.
+- dictionaries, maps, and named-argument objects are forbidden.
 - ordering is deterministic by `(namespace, operation, inputs-json)`
-- legacy object-shaped result envelopes are invalid
+- legacy `{"value": ..., "policy": ...}` result envelopes are invalid
 
-## Lock Policy
+Selection and content resolution are separate. `git-latest` and `oci-latest`
+record the selected ref or tag. `git-sha` and `oci-sha` record the immutable
+commit or digest for that selection.
 
-Lock policy is stored per entry.
+Version 1 and unknown future versions are rejected. Version 1 lockfiles must be
+regenerated as version 2 lockfiles.
 
-| Policy | Meaning |
-| --- | --- |
-| `pin` | Prefer the recorded value when the mode allows it. |
-| `float` | Prefer live resolution when the mode allows it. |
+## API Version Compatibility
 
-What users should memorize:
+Pinned-by-default locking begins with API view `v1.0.0-beta.10`. The API view,
+not the engine binary version, controls the behavior so an older module cannot
+silently acquire new lockfile semantics when run by a newer engine.
 
-- `pin`: stay on this recorded result
-- `float`: refresh this result when live resolution is allowed
+Automatic latest-release selection for unversioned modules and bare OCI image
+addresses begins with API view `v1.0.0-beta.11`.
 
-## Lock Mode
+Current API views use pinned locking by default. They read and write v2.
+Missing entries are resolved and recorded; existing pins are reused.
 
-Lock mode is chosen per run, typically with `--lock`.
-
-| Mode | Meaning |
-| --- | --- |
-| `disabled` | Ignore the lockfile completely. |
-| `live` | Resolve everything live and record the result. |
-| `pinned` | Reuse pinned entries, resolve everything else live, and record the result. |
-| `frozen` | Resolve only from the lockfile and fail on misses. |
-
-What users should memorize:
-
-- `disabled`: feature off
-- `live`: refresh while running
-- `pinned`: prefer stable pins, refresh the rest
-- `frozen`: use the lockfile only
-
-## Behavior Matrix
-
-| Mode | Existing `pin` entry | Existing `float` entry | Missing entry |
-| --- | --- | --- | --- |
-| `disabled` | resolve live, do not read or write lockfile | resolve live, do not read or write lockfile | resolve live, do not write |
-| `live` | resolve live and rewrite | resolve live and rewrite | resolve live and write |
-| `pinned` | use lockfile value | resolve live and rewrite | resolve live and write |
-| `frozen` | use lockfile value | use lockfile value | error |
-
-Important consequence:
-
-- in `frozen`, an existing `float` entry is still treated as a recorded snapshot
-- `float` only matters in modes that allow live resolution
+Older API views ignore lockfiles entirely. They neither read nor write lock
+state, regardless of which engine version serves the request. There is no lock
+mode in client metadata or the API.
 
 ## Design Delta From Current Branch
 
@@ -117,9 +107,9 @@ This section is the proposed diff from the current `lockfile` branch.
 
 It is intentionally narrow:
 
-- it only changes the ambient live lock path
+- it only changes the automatic lock path
 - it does not introduce a new public DagQL lockfile API
-- it does not redesign `currentWorkspace.update()` / `dagger lock update()` in the same
+- it does not redesign `currentWorkspace.update()` / `dagger update` in the same
   change
 
 | Area | Current branch | Proposed |
@@ -142,46 +132,13 @@ Concretely, the design change is:
 - export it back once when the main client shuts down gracefully
 - keep lockfile synchronization and final export inside `engine/server`, not `core/schema`
 
-## Update Flows
+## Current Update Flows
 
-There are three real update paths:
-
-### `dagger lock update`
-
-Refresh entries already present in `dagger.lock`.
-
-Properties:
-
-- best-effort by entry type
-- uses the current environment's ambient authentication
-- does not discover new entries on its own
-- thin CLI wrapper over `currentWorkspace.update()`
-
-### `--lock=live`
-
-Run the real workload in live lock mode.
-
-Properties:
-
-- refreshes existing entries the run touches
-- discovers missing entries the run touches
-- reads `dagger.lock` at most once per bound workspace in a session
-- mutates the lockfile server-side throughout the session
-- exports the final lockfile once on graceful session shutdown
-- is the authoritative discovery path for new lock entries
-
-### `currentWorkspace.update(): Changeset!`
-
-Engine API for refreshing entries already present in `dagger.lock`.
-
-Properties:
-
-- returns a `Changeset` instead of writing directly
-- refreshes supported existing entries only
-- errors if `dagger.lock` does not exist
-
-This design update leaves explicit maintenance alone. It only changes the ambient live
-path.
+- Ordinary execution uses pinned behavior: it reuses existing entries and
+  resolves and records misses.
+- `dagger update` explicitly refreshes supported entries already present in
+  `dagger.lock`.
+- Both paths write version 2.
 
 ## Session-State Lifecycle
 
@@ -227,7 +184,7 @@ This follows the existing server/session pattern already used elsewhere in the e
 
 ### Live Execution Path
 
-Ambient execution (`--lock=live`, plus the write-through cases of `pinned`) should:
+Pinned-by-default execution should:
 
 - read current session lockfile state
 - resolve the live lookup
@@ -266,7 +223,7 @@ The important cleanup constraint is:
 - do not add a new public DagQL lockfile API as part of this change
 - do not make hot-path lock reads/writes re-enter DagQL
 - do not keep direct per-consumer caller-host lockfile reads in schema code
-- do not redesign `currentWorkspace.update()` / `dagger lock update()` in the same
+- do not redesign `currentWorkspace.update()` / `dagger update` in the same
   change
 
 ## Lookup Coverage
@@ -275,21 +232,24 @@ Target model: one lock system for all lookup functions.
 
 Current core operation keys:
 
-| Operation | Inputs | Result |
-| --- | --- | --- |
-| `container.from` | `[imageRef, platform]` | image digest |
-| `git.head` | `[remoteURL]` | commit SHA |
-| `git.branch` | `[remoteURL, branchName]` | commit SHA |
-| `git.tag` | `[remoteURL, tagName]` | commit SHA |
-| `git.ref` | `[remoteURL, refName]` | commit SHA |
+| Operation | Required inputs | Optional inputs | Result |
+| --- | --- | --- | --- |
+| `oci-latest` | image name | registry transport | tag |
+| `oci-sha` | tagged image reference | registry transport | OCI digest |
+| `git-latest` | remote URL | `tagPrefix` | tag ref or canonical remote HEAD branch ref |
+| `git-sha` | remote URL, ref | none | commit SHA |
 
 Notes:
 
+- `container.from`, `git.head`, `git.branch`, and `git.tag` are public API
+  operations, not lockfile operations.
+- unsupported lockfile versions, including v1, are rejected.
 - `git.commit` is already pinned by input and does not create lock entries
 - module loading does not create a distinct lock entry; module refs are resolved
   through the underlying Git lookup locks, while declared module dependency pins
   live in module config
-- `git.ref` only creates lock entries for mutable refs
+- symbolic Git refs create `git-sha` entries; unversioned module refs first
+  select through `git-latest`.
 - the recorded Git URL should be the resolved canonical remote URL used for transport
 
 ## Current Implementation
@@ -297,18 +257,16 @@ Notes:
 ### Implemented
 
 - [x] tuple lockfile substrate in `util/lockfile`
-- [x] flat lock entry format `[namespace, operation, inputs, value, policy]`
-- [x] hard cutover to ordered positional tuples only
-- [x] lock policy parsing and validation
-- [x] lock mode parsing and transport through CLI and client metadata
-- [x] nested-client and module-runtime lock mode propagation
+- [x] v2 entries with grouped required inputs and trailing options
+- [x] ordered positional tuple keys with operation-specific result values
+- [x] API-view gating for pinned-by-default locking
 - [x] local workspace lockfile read/write helpers
 - [x] serialized lockfile writes with merge against latest on-disk state
-- [x] `container.from` lookup locking
+- [x] OCI tag-selection and digest-resolution locking
 - [x] Git lookup locking for `head`, `branch`, `tag`, and mutable `ref`
 - [x] `currentWorkspace.update(): Changeset!` temporary umbrella API
-- [x] `dagger lock update`
-- [x] execution-driven discovery via `--lock=live`
+- [x] `dagger update`
+- [x] execution-driven discovery for missing entries
 - [x] unit and integration coverage for substrate, CLI, container, Git, module, and nested execution
 - [x] session-backed live lock state on `daggerSession`
 - [x] lazy one-time lockfile load on first live lock access
@@ -323,19 +281,15 @@ Notes:
 
 ### Implemented Semantics
 
-- [x] `--lock=disabled|live|pinned|frozen`
-- [x] default lock mode is `pinned`
-- [x] `live` writes through
-- [x] `pinned` writes through for `float` and missing entries
-- [x] `frozen` reuses both `pin` and `float` entries and fails on misses
+- [x] current API views default to writable `pinned`
+- [x] older API views default to `disabled`
+- [x] legacy `live` becomes disabled with a warning
+- [x] legacy `pinned` reads pins but warns and suppresses writes
 
 ### Current Consumer Defaults
 
-- [x] `container.from` defaults to `pin`
-- [x] `git.branch` defaults to `float`
-- [x] `git.head` defaults to `float`
-- [x] `git.tag` defaults to `pin`
-- [x] `git.ref` defaults to `pin` for tags and `float` for other mutable refs
+- [x] new v2 entries are pinned until `dagger update`
+- [x] v1 lockfiles are rejected instead of migrated
 
 ## Current Implementation Constraints
 
@@ -347,11 +301,11 @@ These are current branch facts, not necessarily the final target for all future 
 - remote workspaces currently error for lock-aware mutation paths
 - hot lookup paths do not reread `dagger.lock` from the caller host after the session
   snapshot is loaded
-- live lock writes are buffered in session-owned workspace state and exported once on
+- automatic lock writes are buffered in session-owned workspace state and exported once on
   graceful shutdown
 - final export still rereads latest on-disk state and merges the session delta before
   writing
-- `dagger lock update` relies on ambient authentication for private registries and repositories
+- `dagger update` relies on ambient authentication for private registries and repositories
 
 ## Implementation Principle
 
@@ -421,18 +375,18 @@ This file should not:
 
 ### `core/schema/container.go`
 
-#### `container.from` lock integration
+#### OCI lock integration
 
 ```go
-lookupLock, err := loadWorkspaceLookupLock(ctx, query)
-resolution, err := resolveLookupFromLock(lockMode, lookupLock.lock, lockContainerFromOperation, inputs, workspace.PolicyPin)
+lookupLock, err := lookupLockForAPI(ctx, query, lockOCISHAOperation)
+resolution, err := resolveLookupFromLoadedLock(lookupLock, operation, inputs)
 ```
 
 After live resolution:
 
 ```go
 if resolution.ShouldWrite {
- err = lookupLock.SetLookup(lockCoreNamespace, lockContainerFromOperation, inputs, result)
+ err = lookupLock.SetLookup(lockCoreNamespace, operation, inputs, result)
 }
 ```
 
@@ -442,11 +396,9 @@ if resolution.ShouldWrite {
 
 #### Git lookup integration
 
-Each mutable Git lookup follows the same pattern:
-
-- `git.head`
-- `git.branch`
-- mutable `git.ref`
+All symbolic Git APIs resolve commits through `git-sha`. Latest-release
+selection uses `git-latest` first, then resolves the selected ref through
+`git-sha`.
 
 Pinned Git lookups such as immutable refs do not create lock entries.
 
@@ -553,8 +505,8 @@ Important constraints:
 
 ### UX and maintenance follow-ups
 
-- [x] decide whether `disabled` should remain the long-term default
-- [ ] decide whether `dagger lock update` should gain richer output or selection flags
+- [x] make pinned locking the default for supported API views
+- [ ] decide whether `dagger update` should gain richer output or selection flags
 - [ ] decide whether lock update should prune stale entries
 - [ ] decide whether to add a public lockfile DagQL API later
 
@@ -584,10 +536,4 @@ So the intended long-term shape is:
 
 ## Reference Commands
 
-```bash
-dagger --lock=disabled call ...
-dagger --lock=live call ...
-dagger --lock=pinned call ...
-dagger --lock=frozen call ...
-dagger lock update
-```
+`dagger update` refreshes every recorded entry.

@@ -1,0 +1,71 @@
+---
+title: "Clients"
+slug: /api/clients
+description: "Call the Dagger API from your own program: generated clients bound to a module, or the standalone client library for your language."
+---
+
+# Clients
+
+Most of the time you call the Dagger API through the CLI or from inside a [module](../../sdks/index.mdx). A client is for your own program, whether a script, a service, or a test harness, that needs to talk to the engine directly.
+
+There are two ways to get one.
+
+## Generated clients
+
+A generated client is a typed binding to one module's API, including the core API and every module it depends on. It lives in your workspace, `dagger.toml` records it, and `dagger generate` regenerates it along with everything else.
+
+Install the SDK for the language you want the client in, then initialize a client at a path, bound to a module:
+
+```shell
+dagger sdk install typescript
+dagger api client init typescript ./lib/client .dagger/modules/api
+```
+
+`<path>` is where the client goes, relative to the current directory. A leading `/` means the workspace root. `<module>` is a workspace-relative path or a module ref. The engine records the client under the SDK in `dagger.toml` and the SDK's generators write the bindings. Pass `--no-generate` to record the client without generating yet. SDKs can add flags of their own; `dagger api client init <sdk> --help` lists them.
+
+```shell
+dagger api client list          # clients recorded in this workspace
+dagger generate                 # regenerate bindings after the bound module changes
+```
+
+Only SDKs that implement the client contract can generate clients. Today that is [Go](../../sdks/go.mdx), [TypeScript](../../sdks/typescript.mdx), and [PHP](../../sdks/php.mdx). The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
+
+## Standalone client libraries
+
+Each SDK also publishes a plain client library for the core API to its language's package registry. Use it when you don't need module-specific bindings, or in a language that has no generated clients yet.
+
+| Language | Package | Source |
+|---|---|---|
+| Go | `dagger.io/dagger` | [`sdk/go`](https://github.com/dagger/dagger/tree/main/sdk/go) |
+| TypeScript | `@dagger.io/dagger` (npm) | [`sdk/typescript`](https://github.com/dagger/dagger/tree/main/sdk/typescript) |
+| Python | `dagger-io` (PyPI) | [`sdk/python`](https://github.com/dagger/dagger/tree/main/sdk/python) |
+| PHP | `dagger/dagger` (Packagist) | [`sdk/php`](https://github.com/dagger/dagger/tree/main/sdk/php) |
+| Java | `io.dagger:dagger-java-sdk` (Maven) | [`sdk/java`](https://github.com/dagger/dagger/tree/main/sdk/java) |
+| Elixir | `dagger` (Hex) | [`sdk/elixir`](https://github.com/dagger/dagger/tree/main/sdk/elixir) |
+| Rust | `dagger-sdk` (crates.io) | [`sdk/rust`](https://github.com/dagger/dagger/tree/main/sdk/rust) |
+| .NET | `Dagger.SDK` | [`sdk/dotnet`](https://github.com/dagger/dagger/tree/main/sdk/dotnet) |
+
+A client library needs a session with the engine. The simplest way to get one is to run your program under `dagger api with-session`. It starts a session and sets `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` in the program's environment:
+
+```shell
+dagger api with-session go run main.go
+dagger api with-session node index.mjs
+dagger api with-session python main.py
+```
+
+Every library reads those two variables. Progress renders in the same TUI as any other Dagger command, and the run shows up in Dagger Cloud like a `dagger check` would.
+
+## Raw GraphQL
+
+The API is GraphQL underneath, so any HTTP client works. With a session from `dagger api with-session`, post queries to `http://127.0.0.1:$DAGGER_SESSION_PORT/query` with the token as the basic-auth username:
+
+```shell
+jq -n '{query:"{container{id}}"}' | \
+  dagger api with-session sh -c 'curl -s \
+    -u $DAGGER_SESSION_TOKEN: \
+    -H "content-type:application/json" \
+    -d @- \
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
+```
+
+The [API reference](../reference/index.mdx) documents the schema.

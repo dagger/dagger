@@ -75,7 +75,7 @@ type Myapp {
 		require.NoError(t, err)
 		require.Contains(t, out, `"isEmpty": false`)
 		require.Contains(t, out, `"path": "dagger.toml"`)
-		require.Contains(t, out, `"path": ".dagger/modules/myapp/dagger-module.toml"`)
+		require.Contains(t, out, `"path": "dagger-module.toml"`)
 
 		_, err = preview.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "preview should leave the legacy config on disk")
@@ -83,7 +83,7 @@ type Myapp {
 		_, err = preview.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
 		require.Error(t, err, "preview should not write workspace config")
 
-		_, err = preview.WithExec([]string{"test", "-f", ".dagger/modules/myapp/dagger-module.toml"}).Sync(ctx)
+		_, err = preview.WithExec([]string{"test", "-f", "dagger-module.toml"}).Sync(ctx)
 		require.Error(t, err, "preview should not write migrated module config")
 	})
 
@@ -108,13 +108,17 @@ type Myapp {
 		_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
 		require.NoError(t, err, "source directory should remain available after migration")
 
-		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
+		djson, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, djson, `name = "myapp"`)
+		require.Contains(t, djson, `source = "ci"`)
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, ".dagger/modules/myapp")
+		require.Contains(t, configOut, strings.Join([]string{
+			"[modules.myapp]",
+			`source = "."`,
+		}, "\n"))
 
 		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -125,10 +129,76 @@ type Myapp {
 	})
 }
 
+// Generated SDK files become part of the module source after migration. Setup
+// must therefore remove the ignore rules written for the legacy runtime-codegen
+// model while leaving the user's own rules alone.
+func (WorkspaceMigrationSuite) TestWorkspaceMigrateGeneratedCodeGitignore(ctx context.Context, t *testctx.T) {
+	t.Run("migrated module ignores are cleaned", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := legacySDKOnlyGoSource(t, c, "hello after migration").
+			WithNewFile(".gitignore", "# user-owned rules\n*.log\n").
+			With(materializeModuleFiles(".")).
+			WithExec([]string{"grep", "-Fx", "/dagger.gen.go", ".gitignore"}).
+			With(daggerExec("setup", "--auto-apply"))
+
+		gitignore, err := ctr.File(".gitignore").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "# user-owned rules\n*.log\n/.env\n", gitignore)
+
+		out, err := ctr.With(daggerCallAt(".", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello after migration", strings.TrimSpace(out))
+	})
+
+	t.Run("nested-workspace dependency keeps its ignores", func(ctx context.Context, t *testctx.T) {
+		// A dependency with its own toolchains stays legacy and keeps runtime
+		// codegen, so its generated-code ignore rules must survive the
+		// migration happening around it.
+		c := connect(ctx, t)
+
+		nestedGitignore := "# nested rules\n/dagger.gen.go\n/internal/dagger\n/internal/telemetry\n"
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci",
+  "dependencies": [{"name": "nested", "source": "./nested"}]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! { "hello from root" }
+}
+`).
+				WithNewFile("nested/dagger.json", `{"name":"nested","sdk":{"source":"go"},"toolchains":[{"name":"x","source":"./x"}]}`).
+				WithNewFile("nested/main.go", `package main
+
+type Nested struct{}
+
+func (m *Nested) Message() string {
+	return "nested"
+}
+`).
+				WithNewFile("nested/.gitignore", nestedGitignore).
+				With(legacyDangModule("nested/x", "x", "X", "hello from toolchain"))
+		}).With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		_, err = ctr.WithExec([]string{"test", "-f", "nested/dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "the nested workspace dependency should stay legacy")
+
+		gitignore, err := ctr.File("nested/.gitignore").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, nestedGitignore, gitignore, "a module left in legacy format keeps runtime codegen; its ignore rules must stay")
+	})
+}
+
 // TestWorkspaceMigrateOutcomes should cover the main result classes of a
 // migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context, t *testctx.T) {
-	t.Run("non-local source stays in place behind moved config", func(ctx context.Context, t *testctx.T) {
+	t.Run("module config replaces dagger.json in place", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := legacyWorkspaceBase(t, c, `{
@@ -148,12 +218,17 @@ type Myapp {
 		_, err := ctr.WithExec([]string{"test", "-f", "ci/main.dang"}).Sync(ctx)
 		require.NoError(t, err, "source file should remain in its original directory")
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
-		require.Error(t, err, "source file should not be copied to the migrated module config directory")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/modules"}).Sync(ctx)
+		require.NoError(t, err, "migration must not synthesize configs under .dagger/modules")
 
-		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "ci/dagger-module.toml"}).Sync(ctx)
+		require.NoError(t, err, "the module config must not move into the source directory: installs by path point at the dagger.json location")
+
+		djson, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, djson, `source = "../../../ci"`)
+		require.Contains(t, djson, `name = "myapp"`)
+		require.Contains(t, djson, `source = "ci"`,
+			"the source path is preserved as-is")
 
 		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -162,12 +237,16 @@ type Myapp {
 
 	t.Run("sdk-only config migrates before install", func(ctx context.Context, t *testctx.T) {
 		// The allowed path for an SDK-only dagger.json is explicit migration
-		// first, then workspace mutation. Migration creates the parent native
-		// workspace config and preserves the root module, so a later `dagger
-		// install` can safely add dependencies to dagger.toml.
+		// first, then workspace mutation. Migration converts the module config
+		// in place and creates a minimal workspace config pinning only the SDK
+		// runtime, so a later `dagger install` can safely add dependencies to
+		// dagger.toml.
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyGoSource(t, c, "hello from root source").
 			With(legacyDangModule("dep", "dep", "Dep", "hello from dep")).
+			// The converted module keeps working only with its generated code
+			// committed (current-format modules have no runtime codegen).
+			With(materializeModuleFiles(".")).
 			With(daggerExec("setup", "--auto-apply"))
 
 		out, err := ctr.CombinedOutput(ctx)
@@ -178,16 +257,22 @@ type Myapp {
 		_, err = ctr.WithExec([]string{"test", "-f", "main.go"}).Sync(ctx)
 		require.NoError(t, err, "source file should remain at root")
 
-		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
-		require.NoError(t, err, "legacy dagger.json should remain in place")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "legacy dagger.json should be converted in place")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger-module.toml"}).Sync(ctx)
+		require.NoError(t, err, "module config should be converted in place at the root")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
-		require.NoError(t, err, "root parent workspace config should be created")
+		require.NoError(t, err, "minimal workspace config should be created")
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
+		require.NotContains(t, configOut, `[modules.myapp]`,
+			"a repo that is just a dagger module is not installed into the workspace")
+		require.NotContains(t, configOut, "entrypoint")
 
 		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -210,7 +295,9 @@ type Myapp {
 		require.Contains(t, configOut, `source = "dep"`)
 	})
 
-	t.Run("plain module in default dot dagger modules directory migrates", func(ctx context.Context, t *testctx.T) {
+	t.Run("unreferenced module in default dot dagger modules directory is not touched", func(ctx context.Context, t *testctx.T) {
+		// Migration no longer crawls the repo (not even .dagger/modules): only
+		// the selected root config and the local modules it references migrate.
 		c := connect(ctx, t)
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
@@ -231,13 +318,11 @@ type Myapp {
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
-		cfgOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/project/dagger-module.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, cfgOut, `name = "project"`)
-		require.Contains(t, cfgOut, `[runtime]`)
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/project/dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "an unreferenced module keeps its legacy config")
 
-		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/modules/project/dagger.json"}).Sync(ctx)
-		require.NoError(t, err, "legacy project-local module config should be removed after conversion")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/modules/project/dagger-module.toml"}).Sync(ctx)
+		require.NoError(t, err, "an unreferenced module is not converted")
 	})
 
 	t.Run("toolchains are marked with legacy default path", func(ctx context.Context, t *testctx.T) {
@@ -262,14 +347,20 @@ type Myapp {
 		}, "\n"))
 	})
 
-	t.Run("local migrated modules include commented setting hints", func(ctx context.Context, t *testctx.T) {
+	t.Run("migration omits commented settings hints and preserves active settings", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "toolchains": [
-    {"name": "defaults", "source": "./toolchain"}
+    {
+      "name": "defaults",
+      "source": "./toolchain",
+      "customizations": [
+        {"argument": "greeting", "default": "bonjour"}
+      ]
+    }
   ]
 }`, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithDirectory("toolchain", c.Host().Directory(toolchainSrc))
@@ -278,96 +369,9 @@ type Myapp {
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello"`)
-		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET"`)
-		require.NotContains(t, configOut, `# string`)
-		require.NotContains(t, configOut, `# Secret`)
-	})
-
-	t.Run("settings hints skip args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
-
-		ctr := legacyWorkspaceBase(t, c, `{
-  "name": "myapp",
-  "toolchains": [
-    {"name": "defaults", "source": "./toolchain"}
-  ]
-}`, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
-				WithNewFile("toolchain/main.go", `package main
-
-import "dagger/defaults/internal/dagger"
-
-type Defaults struct{}
-
-func New(
-	// Greeting to use.
-	// +default="hello"
-	greeting string,
-	// Secret reference.
-	// +optional
-	secret *dagger.Secret,
-	// Source directory.
-	// +optional
-	dir *dagger.Directory,
-	// Workspace is injected by Dagger.
-	workspace *dagger.Workspace,
-	// Cache volume cannot be resolved from workspace settings.
-	cache *dagger.CacheVolume,
-) *Defaults {
-	return &Defaults{}
-}
-`)
-		}).With(daggerExec("setup", "--auto-apply"))
-
-		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello"`)
-		require.Contains(t, configOut, `# settings.secret = "env://MY_SECRET"`)
-		require.Contains(t, configOut, `# settings.dir = "./path"`)
-		require.NotContains(t, configOut, `settings.workspace`)
-		require.NotContains(t, configOut, `settings.cache`)
-	})
-
-	t.Run("dot dagger source keeps toolchain and migrated main module hints", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		mainModuleSrc := filepath.Join("testdata", "modules", "go", "defaults", "superconstructor")
-		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
-		legacyConfig := `{
-  "name": "superconstructor",
-  "engineVersion": "v0.20.1",
-  "sdk": {"source": "go"},
-  "source": ".dagger",
-  "codegen": {"automaticGitignore": false},
-  "toolchains": [
-    {"name": "defaults", "source": "./toolchain"}
-  ],
-  "disableDefaultFunctionCaching": true
-}`
-
-		ctr := legacyWorkspaceBase(t, c, legacyConfig, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithDirectory(".dagger", c.Host().Directory(mainModuleSrc)).
-				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
-				WithNewFile("dagger.json", legacyConfig)
-		},
-			// The fixture's committed generated files predate this engine. The
-			// migrated module is dagger-module.toml and builds from them as-is,
-			// so refresh them with the current engine's codegen.
-			materializeModuleFiles("."),
-		).With(daggerExec("setup", "--auto-apply"))
-
-		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.superconstructor]`)
-		require.Contains(t, configOut, `# settings.count = 42`)
-		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello"`)
-		require.NotContains(t, configOut, `# int`)
-		require.NotContains(t, configOut, `# string`)
+		require.Contains(t, configOut, `[modules.defaults.settings]`)
+		require.Contains(t, configOut, `greeting = "bonjour"`)
+		require.NotContains(t, configOut, `# settings.`)
 	})
 
 	t.Run("dot dagger source remains in place", func(ctx context.Context, t *testctx.T) {
@@ -392,15 +396,17 @@ type Myapp {
 		_, err := ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
 		require.NoError(t, err)
 
-		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
+		djson, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, djson, `source = "../.."`)
+		require.Contains(t, djson, `name = "myapp"`)
+		require.Contains(t, djson, `source = ".dagger"`,
+			"the source path is preserved as-is")
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
-		require.Error(t, err, "source file should not be copied to the migrated module config directory")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/dagger-module.toml"}).Sync(ctx)
+		require.NoError(t, err, "the module config must not move into the source directory")
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/go.mod"}).Sync(ctx)
-		require.Error(t, err, "source metadata should not be copied to the migrated module config directory")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/modules/myapp"}).Sync(ctx)
+		require.NoError(t, err, "migration must not synthesize configs under .dagger/modules")
 
 		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/main.dang"}).Sync(ctx)
 		require.NoError(t, err, "source file should remain in place")
@@ -424,10 +430,14 @@ type Myapp {
   "source": "ci",
   "toolchains": [{"name": "tc", "source": "./toolchain"}]
 }`, func(ctr *dagger.Container) *dagger.Container {
+			// In 0.21 a module's toolchains were also loaded into its own API,
+			// so module code could call them like dependencies. This module
+			// does exactly that and must keep working after migration.
 			return ctr.
 				WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! { "hello from root" }
+  pub viaToolchain: String! { tc.message }
 }
 `).
 				With(legacyDangModule("toolchain", "tc", "Tc", "hello from toolchain"))
@@ -453,10 +463,23 @@ type Myapp {
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
 		require.Contains(t, wsOut, `path = "toolchain"`)
 
+		// The toolchain is also a dependency of the migrated root module, so
+		// code that called it in 0.21 still resolves.
+		mainCfg, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, mainCfg, `name = "tc"`)
+		require.Contains(t, mainCfg, `source = "./toolchain"`)
+		require.NotContains(t, mainCfg, "toolchains")
+
 		// The converted module loads from its own runtime field.
 		callOut, err := ctr.With(daggerCallAt("toolchain", "message")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from toolchain", strings.TrimSpace(callOut))
+
+		// The root module can still reach the toolchain as a dependency.
+		viaOut, err := ctr.With(daggerCall("via-toolchain")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from toolchain", strings.TrimSpace(viaOut))
 	})
 
 	t.Run("local dependency migrates in place behind rebased reference", func(ctx context.Context, t *testctx.T) {
@@ -486,10 +509,10 @@ type Myapp {
 		_, err = ctr.WithExec([]string{"test", "!", "-e", "libs/foo/dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "legacy dependency config should be removed after in-place conversion")
 
-		mainCfg, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
+		mainCfg, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, mainCfg, "../../../libs/foo",
-			"main module's dependency reference is rebased to the still-in-place converted dependency")
+		require.Contains(t, mainCfg, `"./libs/foo"`,
+			"main module's dependency reference is preserved as-is: the config did not move")
 
 		// The converted dependency's runtime is installed and pinned in the
 		// workspace.
@@ -538,39 +561,36 @@ type Myapp {
 		}
 	})
 
-	t.Run("nested workspace plan resolves its SDK installs", func(ctx context.Context, t *testctx.T) {
+	t.Run("discovered dependency SDK installs resolve to real refs", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		// A globbed .dagger/modules/tool config that itself must-migrate (its
-		// source is a non-root subdir) becomes its OWN workspace plan, with its
-		// own dagger.toml — separate from the top-level workspace the setup
-		// command runs in. Its SDK install (and any it owns for discovered deps)
-		// must still be resolved to a real ref, even though it lives in a config
-		// the current-workspace fixup pass doesn't read. The tool uses `php`,
-		// whose sdks.json ref (github.com/dagger/php-sdk) differs from the
-		// engine-side runtime mapping, so this also pins that the CLI registry —
-		// what `dagger sdk install` uses — wins for these nested configs.
+		// A discovered local dependency's runtime is recorded in the migrated
+		// workspace config by bare short name and must be resolved to a real
+		// ref. The tool uses `php`, whose sdks.json ref
+		// (github.com/dagger/php-sdk) differs from the engine-side runtime
+		// mapping, so this also pins that the CLI registry — what `dagger sdk
+		// install` uses — wins.
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "sdk": {"source": "dang"},
-  "source": "ci"
+  "source": "ci",
+  "dependencies": [{"name": "tool", "source": "./tool"}]
 }`, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hi\" }\n}\n").
-				WithNewFile(".dagger/modules/tool/dagger.json", `{"name":"tool","sdk":{"source":"php"},"source":"src","dependencies":[{"name":"helper","source":"./helper"}]}`).
-				WithNewFile(".dagger/modules/tool/src/index.php", "<?php\n").
-				With(legacyDangModule(".dagger/modules/tool/helper", "helper", "Helper", "help"))
+				WithNewFile("tool/dagger.json", `{"name":"tool","sdk":{"source":"php"},"source":"src"}`).
+				WithNewFile("tool/src/index.php", "<?php\n")
 		}).With(daggerExec("setup", "--auto-apply"))
 
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
-		nested, err := ctr.WithExec([]string{"cat", ".dagger/modules/tool/dagger.toml"}).Stdout(ctx)
+		wsOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		// The tool's own runtime resolves to its sdks.json ref (CLI registry),
-		// and the discovered helper's dang runtime resolves too.
-		require.Contains(t, nested, `source = "github.com/dagger/php-sdk"`, nested)
-		require.Contains(t, nested, `source = "github.com/dagger/dang-sdk"`, nested)
-		require.NotContains(t, nested, `source = "php"`, nested)
+		// The root module's dang runtime and the discovered tool's php runtime
+		// both resolve to their sdks.json refs.
+		require.Contains(t, wsOut, `source = "github.com/dagger/php-sdk"`, wsOut)
+		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`, wsOut)
+		require.NotContains(t, wsOut, `source = "php"`, wsOut)
 	})
 
 	t.Run("pre-existing nested workspace config is left untouched", func(ctx context.Context, t *testctx.T) {
@@ -832,7 +852,7 @@ type Dep1 {
 			require.NoError(t, err)
 			require.Contains(t, stdout+stderr, "prepare migration diff")
 			require.Contains(t, stdout+stderr, "workspace configuration: dagger.toml")
-			require.Contains(t, stdout+stderr, "move module: dagger.json -> .dagger/modules/myapp/dagger-module.toml")
+			require.Contains(t, stdout+stderr, "move module: dagger.json -> dagger-module.toml")
 			require.NotContains(t, stdout+stderr, "Migrated to workspace format")
 		})
 	})
@@ -931,6 +951,10 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateScope(ctx context.Context, t 
 	c := connect(ctx, t)
 
 	t.Run("migrates selected nested config without touching outer config", func(ctx context.Context, t *testctx.T) {
+		// The main expected subdirectory case: a nested dagger.json whose
+		// module source is in a subdirectory migrates module-only — the config
+		// converts to dagger-module.toml in place, and no dagger.toml is
+		// created anywhere (nested workspace configs are never written).
 		ctr := workspaceBase(t, c).
 			WithNewFile("dagger.json", `{
   "name": "outer",
@@ -961,29 +985,161 @@ type Inner {
 			WithWorkdir("/work/nested").
 			With(daggerExec("setup", "--auto-apply"))
 
-		_, err := ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
-		require.NoError(t, err, "nested compat workspace should be migrated")
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "Migrated the module in place; no workspace config was created.")
+
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.toml"}).Sync(ctx)
+		require.NoError(t, err, "migration should not write a nested workspace config")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "../dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "outer legacy config should not be migrated from the nested run")
 
-		_, err = ctr.WithExec([]string{"test", "-f", "../dagger.toml"}).Sync(ctx)
-		require.Error(t, err, "migration should not write root workspace config")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "../dagger.toml"}).Sync(ctx)
+		require.NoError(t, err, "migration should not write root workspace config")
 
-		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
-		require.Error(t, err, "nested legacy config should be removed")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "nested legacy config should be removed")
 
-		nestedConfigOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, nestedConfigOut, `[modules.inner]`)
-		require.NotContains(t, nestedConfigOut, `[modules.outer]`)
-
-		_, err = ctr.WithExec([]string{"test", "!", "-e", "../.dagger/modules/outer/dagger-module.toml"}).Sync(ctx)
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "../dagger-module.toml"}).Sync(ctx)
 		require.NoError(t, err, "outer migrated module config should not be created")
 
-		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/inner/dagger-module.toml"}).Stdout(ctx)
+		djson, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, djson, `source = "../../../src"`)
+		require.Contains(t, djson, `name = "inner"`)
+		require.Contains(t, djson, `source = "src"`,
+			"the source path is preserved as-is")
+	})
+
+	t.Run("plain module in a subdirectory migrates module only", func(ctx context.Context, t *testctx.T) {
+		// Setup run from a subdirectory that is a dagger module migrates just
+		// that module from v0 to v1: dagger.json converts to dagger-module.toml
+		// in place (its local dependencies too), no workspace config is created
+		// anywhere, and module recommendations are skipped.
+		ctr := workspaceBase(t, c).
+			WithNewFile("tools/hello/dagger.json", `{"name":"hello","sdk":{"source":"dang"},"dependencies":[{"name":"dep","source":"./dep"}]}`).
+			WithNewFile("tools/hello/main.dang", `
+type Hello {
+  pub greet: String! {
+    "hello from subdirectory module"
+  }
+}
+`).
+			With(legacyDangModule("tools/hello/dep", "dep", "Dep", "hello from dep")).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"}).
+			WithWorkdir("/work/tools/hello").
+			With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "Migrated the module in place; no workspace config was created.")
+		require.NotContains(t, out, "Step 3: Recommended modules")
+		require.NotContains(t, out, "Run `dagger setup` again")
+
+		for _, dir := range []string{".", "dep"} {
+			_, err = ctr.WithExec([]string{"test", "-f", dir + "/dagger-module.toml"}).Sync(ctx)
+			require.NoError(t, err, "%s should be converted in place", dir)
+			_, err = ctr.WithExec([]string{"test", "!", "-e", dir + "/dagger.json"}).Sync(ctx)
+			require.NoError(t, err, "%s legacy config should be removed", dir)
+		}
+
+		for _, cfg := range []string{"dagger.toml", "dep/dagger.toml", "../../dagger.toml"} {
+			_, err = ctr.WithExec([]string{"test", "!", "-e", cfg}).Sync(ctx)
+			require.NoError(t, err, "no workspace config should be created at %s", cfg)
+		}
+		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/migration-report.md"}).Sync(ctx)
+		require.NoError(t, err, "module-only migration writes no migration report")
+
+		// The converted module config still names its sdk, so it loads without
+		// any workspace.
+		callOut, err := ctr.With(daggerCallAt(".", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from subdirectory module", strings.TrimSpace(callOut))
+	})
+
+	t.Run("subdirectory toolchains hoist into the repo-root workspace", func(ctx context.Context, t *testctx.T) {
+		// Nested dagger.toml files are never created: a subdirectory config
+		// with toolchains installs them into a dagger.toml at the repo root
+		// (local sources rebased), while the module config converts in place
+		// and the module itself is not installed into the workspace.
+		ctr := workspaceBase(t, c).
+			WithNewFile("tools/hello/dagger.json", `{
+  "name": "hello",
+  "sdk": {"source": "dang"},
+  "toolchains": [{"name": "tc", "source": "./toolchain"}]
+}`).
+			WithNewFile("tools/hello/main.dang", `
+type Hello {
+  pub greet: String! {
+    "hello from subdirectory module"
+  }
+}
+`).
+			With(legacyDangModule("tools/hello/toolchain", "tc", "Tc", "hello from toolchain")).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"}).
+			WithWorkdir("/work/tools/hello").
+			With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.toml"}).Sync(ctx)
+		require.NoError(t, err, "no nested workspace config should be created in the module directory")
+
+		wsOut, err := ctr.WithExec([]string{"cat", "/work/dagger.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, wsOut, `[modules.tc]`)
+		require.Contains(t, wsOut, `source = "./tools/hello/toolchain"`,
+			"local toolchain sources are rebased to the repo root")
+		require.NotContains(t, wsOut, `[modules.hello]`,
+			"the subdirectory module is not installed into the repo-wide workspace")
+		// The module's runtime is pinned in the hoisted root workspace and
+		// resolved to its real ref by the setup SDK fixup pass.
+		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
+		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`)
+
+		mjson, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, mjson, `name = "hello"`)
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "legacy config should be removed after in-place conversion")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "toolchain/dagger-module.toml"}).Sync(ctx)
+		require.NoError(t, err, "the local toolchain converts in place")
+
+		reportOut, err := ctr.WithExec([]string{"cat", "/work/.dagger/migration-report.md"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, reportOut, "## tools/hello requires explicit loading")
+	})
+
+	t.Run("subdirectory blueprint config is left legacy with a warning", func(ctx context.Context, t *testctx.T) {
+		// A blueprint needs a workspace config, and hoisting an entrypoint to
+		// the repo root would change repo-wide behavior — the config is left
+		// as legacy, and setup explains the skip instead of claiming there is
+		// nothing to migrate.
+		ctr := workspaceBase(t, c).
+			WithNewFile("tools/hello/dagger.json", `{
+  "name": "hello",
+  "blueprint": {"name": "bp", "source": "github.com/dagger/dagger/modules/wolfi@main"}
+}`).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"}).
+			WithWorkdir("/work/tools/hello").
+			With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "Skipped: skipped migrating tools/hello/dagger.json: it defines a blueprint")
+		require.NotContains(t, out, "Step 3: Recommended modules")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "the blueprint config stays legacy")
+		for _, cfg := range []string{"dagger.toml", "dagger-module.toml", "/work/dagger.toml"} {
+			_, err = ctr.WithExec([]string{"test", "!", "-e", cfg}).Sync(ctx)
+			require.NoError(t, err, "nothing should be written for a skipped blueprint config (%s)", cfg)
+		}
 	})
 
 	t.Run("does not migrate unrelated child config from root", func(ctx context.Context, t *testctx.T) {
@@ -1014,7 +1170,10 @@ type Api {
 		require.NoError(t, err, "child legacy config should stay in place")
 	})
 
-	t.Run("plain modules in default dot dagger modules directory create parent workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("modules in default dot dagger modules directory are not crawled", func(ctx context.Context, t *testctx.T) {
+		// Migration only follows the selected root config and its local
+		// references; with no root dagger.json, modules sitting under
+		// .dagger/modules are left exactly as they are.
 		ctr := workspaceBase(t, c).
 			WithNewFile(".dagger/modules/videostitch/dagger.json", `{
   "name": "videostitch",
@@ -1035,43 +1194,20 @@ type Videostitch struct{}
 
 		output, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, output)
-		// The per-module "requires explicit loading" warnings are recorded in the
-		// on-disk migration report (asserted below), not printed to setup stdout.
 
-		_, err = ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
-		require.NoError(t, err, "root parent workspace config should be created")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.toml"}).Sync(ctx)
+		require.NoError(t, err, "no workspace config should be created")
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/videostitch/dagger.json"}).Sync(ctx)
-		require.Error(t, err, "legacy plain module config should be converted")
+		for _, mod := range []string{"videostitch", "clipper"} {
+			_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/" + mod + "/dagger.json"}).Sync(ctx)
+			require.NoError(t, err, "unreferenced module %s keeps its legacy config", mod)
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/videostitch/dagger-module.toml"}).Sync(ctx)
-		require.NoError(t, err, "plain module config should be converted")
+			_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/modules/" + mod + "/dagger-module.toml"}).Sync(ctx)
+			require.NoError(t, err, "unreferenced module %s is not converted", mod)
+		}
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/clipper/dagger.json"}).Sync(ctx)
-		require.Error(t, err, "legacy plain module config should be converted")
-
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/clipper/dagger-module.toml"}).Sync(ctx)
-		require.NoError(t, err, "plain module config should be converted")
-
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/videostitch/dagger.toml"}).Sync(ctx)
-		require.Error(t, err, "plain module should not get its own workspace config")
-
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/clipper/dagger.toml"}).Sync(ctx)
-		require.Error(t, err, "plain module should not get its own workspace config")
-
-		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
-		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
-		require.Contains(t, configOut, `[modules.dagger-typescript-sdk]`)
-		require.Contains(t, configOut, `source = "github.com/dagger/typescript-sdk"`)
-
-		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, reportOut, "## .dagger/modules/videostitch requires explicit loading")
-		require.Contains(t, reportOut, "**This works**: `dagger -m .dagger/modules/videostitch call --help`")
-		require.Contains(t, reportOut, "**This no longer works**: `cd .dagger/modules/videostitch; dagger call --help`")
-		require.Contains(t, reportOut, "## .dagger/modules/clipper requires explicit loading")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", ".dagger/migration-report.md"}).Sync(ctx)
+		require.NoError(t, err, "no migration report should be written")
 	})
 }
 
@@ -1111,20 +1247,17 @@ type Myapp {
 
 	t.Run("apply moves legacy lockfile while staging migrated pins", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		platform, err := c.DefaultPlatform(ctx)
-		require.NoError(t, err)
 
 		source := "github.com/dagger/dagger/modules/wolfi@main"
 		pin := strings.Repeat("1", 40)
 		legacyLock := workspace.NewLock()
-		require.NoError(t, legacyLock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest", string(platform)}, workspace.LookupResult{
-			Value:  "sha256:" + strings.Repeat("0", 64),
-			Policy: workspace.PolicyPin,
-		}))
-		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, workspace.LookupResult{
-			Value:  pin,
-			Policy: workspace.PolicyFloat,
-		}))
+		require.NoError(t, legacyLock.SetLookup(
+			"",
+			"oci-sha",
+			[]any{"docker.io/library/alpine:latest"},
+			"sha256:"+strings.Repeat("0", 64),
+		))
+		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, pin))
 		existingLockBytes, err := legacyLock.Marshal()
 		require.NoError(t, err)
 
@@ -1143,7 +1276,7 @@ type Myapp {
 
 		lockOut, err := migrated.File("/work/dagger.lock").Contents(ctx)
 		require.NoError(t, err)
-		assertContainerFromLockEntry(t, []byte(lockOut), workspace.PolicyPin)
+		assertOCISHALockEntry(t, []byte(lockOut))
 		assertNoModuleResolveLockEntry(t, []byte(lockOut))
 		_, err = migrated.WithExec([]string{"test", "!", "-e", ".dagger/lock"}).Sync(ctx)
 		require.NoError(t, err)
@@ -1169,16 +1302,16 @@ type Myapp {
   }
 }
 `).
-				WithNewFile(".dagger/modules/myapp/dagger-module.toml", `name = "some-other-module"
+				WithNewFile("dagger-module.toml", `name = "some-other-module"
 `)
 		})
 
 		out, err := ctr.With(daggerExecFail("setup", "--auto-apply")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `migration target ".dagger/modules/myapp/dagger-module.toml" already exists`)
+		require.Contains(t, out, `migration target "dagger-module.toml" already exists`)
 		require.Contains(t, out, "refusing to overwrite")
 
-		conflictOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
+		conflictOut, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, conflictOut, `name = "some-other-module"`)
 

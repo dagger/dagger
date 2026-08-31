@@ -5,6 +5,8 @@ export {
   func,
   check,
   generate,
+  up,
+  agent,
   argument,
   object,
   field,

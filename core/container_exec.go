@@ -673,7 +673,7 @@ func prepareMounts(
 
 		if state.Volume != nil {
 			var err error
-			mountable, err = prepareExecVolumeMount(state.Volume)
+			mountable, err = prepareExecVolumeMount(ctx, state.Volume)
 			if err != nil {
 				return err
 			}
@@ -1484,7 +1484,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 
 			if state.Volume != nil {
-				mountable, err = prepareExecVolumeMount(state.Volume)
+				mountable, err = prepareExecVolumeMount(ctx, state.Volume)
 				if err != nil {
 					return err
 				}
@@ -2119,6 +2119,13 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer detach()
 
+		// Same in-process pattern as ProfArgs above: the FQDN a bound service
+		// actually registered under is only known once it is running, which is
+		// after every execMD digest is computed. execMD is the same pointer the
+		// executor reads, so recording it here reaches the hosts-file setup
+		// without perturbing a cache key.
+		recordBoundServiceFQDNs(execMD, container.Services, runningSvcs)
+
 		execCtx := ctx
 		var cancelExec context.CancelCauseFunc
 		var serviceErrCh <-chan error
@@ -2137,7 +2144,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				ClientVersion:         engine.Version,
 				SessionID:             clientMetadata.SessionID,
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
-				LockMode:              clientMetadata.LockMode,
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
 			}
 		}
@@ -2145,17 +2151,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
-		}
-		// Env is runtime/session context, so keep it off persisted exec state.
-		var envContext dagql.ObjectResult[*Env]
-		if state.FunctionCall != nil {
-			env, ok, err := EnvFromContext(ctx)
-			if err != nil {
-				return fmt.Errorf("resolve exec env context: %w", err)
-			}
-			if ok {
-				envContext = env
-			}
 		}
 
 		execErrCh := make(chan error, 1)
@@ -2174,7 +2169,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				nestedClientMetadata,
 				state.ModuleContext,
 				state.FunctionCall,
-				envContext,
 			)
 		}()
 

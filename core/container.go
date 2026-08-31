@@ -63,6 +63,13 @@ type DefaultTerminalCmdOpts struct {
 
 // Container is a content-addressed container.
 type Container struct {
+	// fromContentDigestSafe tracks whether Container.From can give its result a
+	// content digest based only on the resolved image and platform. It is false
+	// by default so derived containers conservatively retain their call identity.
+	// Only a newly constructed scratch container starts out safe; operations that
+	// do not change container state can preserve it by returning the same value.
+	fromContentDigestSafe bool
+
 	// The container's root filesystem.
 	FS *LazyAccessor[*Directory, *Container]
 
@@ -852,10 +859,17 @@ func (*Container) TypeDescription() string {
 
 func NewContainer(platform Platform) *Container {
 	return &Container{
-		FS:           new(LazyAccessor[*Directory, *Container]),
-		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
-		Platform:     platform,
+		fromContentDigestSafe: true,
+		FS:                    new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot:          new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Platform:              platform,
 	}
+}
+
+// CanUseFromContentDigest reports whether Container.From can safely identify
+// its result using only the resolved image digest and platform.
+func (container *Container) CanUseFromContentDigest() bool {
+	return container != nil && container.fromContentDigestSafe
 }
 
 //nolint:dupl // symmetric with cloneDetachedFileForContainerResult; sharing obscures type specifics

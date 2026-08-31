@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -12,6 +13,21 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/require"
 )
+
+func TestConsumeRecursiveReadOnlyOption(t *testing.T) {
+	t.Parallel()
+
+	input := mount.Mount{Type: "bind", Source: "/source", Options: []string{"rbind", "rro", "nosuid"}}
+	got, recursive := consumeRecursiveReadOnlyOption(input)
+	require.True(t, recursive)
+	require.Equal(t, []string{"rbind", "nosuid"}, got.Options)
+	// The original is retained for diagnostics and other consumers.
+	require.Equal(t, []string{"rbind", "rro", "nosuid"}, input.Options)
+
+	got, recursive = consumeRecursiveReadOnlyOption(mount.Mount{Options: []string{"rbind", "ro"}})
+	require.False(t, recursive)
+	require.Equal(t, []string{"rbind", "ro"}, got.Options)
+}
 
 func TestSetupNetworkUsesPoolForDefaultHostname(t *testing.T) {
 	provider := &recordingNetworkProvider{}

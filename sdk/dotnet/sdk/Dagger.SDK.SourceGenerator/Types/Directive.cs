@@ -24,7 +24,8 @@ public class Directive
     /// </summary>
     public string? GetExpectedType()
     {
-        if (Name != "expectedType") return null;
+        if (Name != "expectedType")
+            return null;
         foreach (var arg in Args)
         {
             if (arg.Name == "name")

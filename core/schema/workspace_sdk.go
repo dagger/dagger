@@ -36,7 +36,11 @@ func (s *workspaceSchema) sdks(
 		if entry.AsSDK == nil {
 			continue
 		}
-		sdks = append(sdks, workspaceSDKFromEntry(configDir, name, entry))
+		sdk, err := workspaceSDKFromEntry(configDir, name, entry)
+		if err != nil {
+			return nil, err
+		}
+		sdks = append(sdks, sdk)
 	}
 	sdks.Sort()
 
@@ -73,9 +77,11 @@ func (s *workspaceSchema) sdk(
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
-	result, err := workspaceSDKResults(ctx, parent, core.WorkspaceSDKs{
-		workspaceSDKFromEntry(configDir, moduleName, entry),
-	})
+	sdk, err := workspaceSDKFromEntry(configDir, moduleName, entry)
+	if err != nil {
+		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
+	}
+	result, err := workspaceSDKResults(ctx, parent, core.WorkspaceSDKs{sdk})
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
@@ -163,7 +169,7 @@ func (s *workspaceSchema) workspaceSDK(
 	return sdk, nil
 }
 
-func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleEntry) *core.WorkspaceSDK {
+func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
 	name := entry.AsSDK.Name
 	if name == "" {
 		name = moduleName
@@ -173,25 +179,35 @@ func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleE
 		Ref:  resolvedModuleEntrySourceWithPin(configDir, entry),
 	}
 	for _, mod := range entry.AsSDK.Modules {
-		source := filepath.ToSlash(cleanWorkspaceRelPath(mod.Path))
+		source, err := workspace.ResolveSDKManagedPath(configDir, mod.Path)
+		if err != nil {
+			return nil, fmt.Errorf("module managed by %q: %w", moduleName, err)
+		}
 		sdk.Modules = append(sdk.Modules, &core.WorkspaceModule{
 			Name:   filepath.ToSlash(filepath.Base(source)),
 			Source: source,
 		})
 	}
 	for _, client := range entry.AsSDK.Clients {
-		ref := client.Module
+		ref, err := resolveSDKManagedClientModule(configDir, client.Module)
+		if err != nil {
+			return nil, fmt.Errorf("client managed by %q: %w", moduleName, err)
+		}
 		if client.Pin != "" && !strings.Contains(ref, "@") {
 			ref += "@" + client.Pin
 		}
+		clientPath, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
+		if err != nil {
+			return nil, fmt.Errorf("client managed by %q: %w", moduleName, err)
+		}
 		sdk.Clients = append(sdk.Clients, &core.WorkspaceModule{
-			Name:   filepath.ToSlash(cleanWorkspaceRelPath(client.Path)),
+			Name:   clientPath,
 			Source: ref,
 		})
 	}
 	core.WorkspaceModules(sdk.Modules).Sort()
 	core.WorkspaceModules(sdk.Clients).Sort()
-	return sdk
+	return sdk, nil
 }
 
 func installedSDKSource(cfg *workspace.Config, name string) (string, workspace.ModuleEntry, string, error) {

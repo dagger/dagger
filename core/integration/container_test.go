@@ -2901,6 +2901,11 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// Ensure the bare second image is already cached. The later From must not
+	// merge with it because the mounted directory is preserved across From.
+	_, err := c.Container().From("golang:1.18.2-alpine").Sync(ctx)
+	require.NoError(t, err)
+
 	dirRes, err := testutil.QueryWithClient[struct {
 		Directory struct {
 			ID core.DirectoryID
@@ -3853,6 +3858,49 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotEqual(t, testRef, pushedRef)
 		require.Contains(t, pushedRef, "@sha256:")
+	}
+}
+
+func (ContainerSuite) TestWithRegistryAuthDoesNotInvalidateCache(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name           string
+		authBeforeFrom bool
+	}{
+		{name: "before from", authBeforeFrom: true},
+		{name: "after from"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			cacheKey := identity.NewID()
+			run := func() string {
+				c := connect(ctx, t)
+				ctr := c.Container()
+				withAuth := func() {
+					ctr = ctr.WithRegistryAuth(
+						"registry.example.com",
+						"anyuser",
+						c.SetSecret("registry-auth-cache-"+cacheKey, "dummy"),
+					)
+				}
+				if tc.authBeforeFrom {
+					withAuth()
+				}
+				ctr = ctr.From(alpineImage)
+				if !tc.authBeforeFrom {
+					withAuth()
+				}
+
+				out, err := ctr.
+					WithEnvVariable("REGISTRY_AUTH_CACHE_KEY", cacheKey).
+					WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).
+					Stdout(ctx)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+
+			out1 := run()
+			out2 := run()
+			require.Equal(t, out1, out2, "registry auth invalidated the execution cache")
+		})
 	}
 }
 
@@ -6242,7 +6290,9 @@ func (ContainerSuite) TestStat(ctx context.Context, t *testctx.T) {
 		From(alpineImage).
 		WithWorkdir("/sub").
 		WithNewFile("subdir/data", "contents")
-	stat := ctr.Stat("subdir/data")
+	stat, err := ctr.Stat(ctx, "subdir/data")
+	require.NoError(t, err)
+	require.NotNil(t, stat)
 
 	fileType, err := stat.FileType(ctx)
 	require.NoError(t, err)
@@ -6259,7 +6309,9 @@ func (ContainerSuite) TestStatWithMountedDir(ctx context.Context, t *testctx.T) 
 	ctr := c.Container().
 		From(alpineImage).
 		WithMountedDirectory("/mnt", d)
-	stat := ctr.Stat("/mnt/the-file")
+	stat, err := ctr.Stat(ctx, "/mnt/the-file")
+	require.NoError(t, err)
+	require.NotNil(t, stat)
 
 	fileType, err := stat.FileType(ctx)
 	require.NoError(t, err)
@@ -6276,7 +6328,9 @@ func (ContainerSuite) TestStatWithMountedFile(ctx context.Context, t *testctx.T)
 	ctr := c.Container().
 		From(alpineImage).
 		WithMountedFile("/mnt-file", f)
-	stat := ctr.Stat("/mnt-file")
+	stat, err := ctr.Stat(ctx, "/mnt-file")
+	require.NoError(t, err)
+	require.NotNil(t, stat)
 
 	fileType, err := stat.FileType(ctx)
 	require.NoError(t, err)
@@ -6504,7 +6558,9 @@ func (ContainerSuite) TestHealthcheckIsPublished(ctx context.Context, t *testctx
 	require.Contains(t, pushedRef, "@sha256:")
 
 	pulledCtr := c.Container().From(pushedRef)
-	configuredHealthcheck := pulledCtr.DockerHealthcheck()
+	configuredHealthcheck, err := pulledCtr.DockerHealthcheck(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, configuredHealthcheck)
 
 	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
 	require.NoError(t, err)
@@ -6538,7 +6594,9 @@ func (ContainerSuite) TestHealthcheckDefaults(ctx context.Context, t *testctx.T)
 		From(alpineImage).
 		WithDockerHealthcheck([]string{"/this-will-fail-and-thats-ok"})
 
-	configuredHealthcheck := ctr.DockerHealthcheck()
+	configuredHealthcheck, err := ctr.DockerHealthcheck(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, configuredHealthcheck)
 
 	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
 	require.NoError(t, err)
@@ -6609,11 +6667,9 @@ func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) 
 		WithDockerHealthcheck([]string{"/waiter-check-please"}).
 		WithoutDockerHealthcheck()
 
-	configuredHealthcheck := ctr.DockerHealthcheck()
-
-	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
+	configuredHealthcheck, err := ctr.DockerHealthcheck(ctx)
 	require.NoError(t, err)
-	require.Empty(t, healthcheckArgs)
+	require.Nil(t, configuredHealthcheck)
 }
 
 func (ContainerSuite) TestManifest(ctx context.Context, t *testctx.T) {

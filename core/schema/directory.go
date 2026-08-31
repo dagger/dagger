@@ -31,11 +31,13 @@ var _ SchemaResolvers = &directorySchema{}
 func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("directory", s.directory).
+			WithInput(engineDefaultPlatformInput).
 			Doc(`Creates an empty directory.`),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
 	core.FileTypes.Install(srv)
+	core.PatchConflicts.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.Fields[*core.Stat]{}.Install(srv)
 
 	dagql.Fields[*core.Directory]{
@@ -239,7 +241,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerClientInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.NodeFunc("dockerBuild", s.dockerBuild).
+		dagql.NodeFuncWithDynamicInputs("dockerBuild", s.dockerBuild, s.dockerBuildDynamicInputs).
+			WithInput(engineDefaultPlatformInput).
 			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
 			Args(
 				dagql.Arg("dockerfile").Doc(`Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`),
@@ -271,6 +274,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
+				dagql.Arg("onConflict").
+					Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("withPatchFile", s.withPatchFile).
 			IsPersistable().
@@ -278,6 +284,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this directory with the given Git-compatible patch file applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`File containing the patch to apply`),
+				dagql.Arg("onConflict").
+					Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
@@ -747,7 +756,8 @@ func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[
 }
 
 type withPatchArgs struct {
-	Patch string
+	Patch      string
+	OnConflict core.PatchConflict `default:"FAIL"`
 }
 
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -769,9 +779,10 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.DirectoryWithPatchFileLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Patch:     patchFile,
+			LazyState:  core.NewLazyState(),
+			Parent:     parent,
+			Patch:      patchFile,
+			OnConflict: args.OnConflict,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
@@ -783,10 +794,10 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 }
 
 type withPatchFileArgs struct {
-	Patch core.FileID
+	Patch      core.FileID
+	OnConflict core.PatchConflict `default:"FAIL"`
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withChanges; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -801,9 +812,10 @@ func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.Object
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.DirectoryWithPatchFileLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Patch:     patchFile,
+			LazyState:  core.NewLazyState(),
+			Parent:     parent,
+			Patch:      patchFile,
+			OnConflict: args.OnConflict,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
@@ -1288,7 +1300,6 @@ type withChangesArgs struct {
 	Changes dagql.ID[*core.Changeset]
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withPatchFile; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1772,6 +1783,24 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		args.NoInit,
 		sshSocket,
 	)
+}
+
+func (s *directorySchema) dockerBuildDynamicInputs(
+	ctx context.Context,
+	_ dagql.ObjectResult[*core.Directory],
+	args dirDockerBuildArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.Platform.Valid {
+		return nil
+	}
+
+	platform, err := currentEngineDefaultPlatform(ctx)
+	if err != nil {
+		return err
+	}
+
+	return req.SetArgInput(ctx, "platform", platform, false)
 }
 
 type directoryTerminalArgs struct {

@@ -370,18 +370,33 @@ defmodule Dagger.Directory do
   Return file status
   """
   @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
-          Dagger.Stat.t() | nil
+          {:ok, Dagger.Stat.t() | nil} | {:error, term()}
   def stat(%__MODULE__{} = directory, path, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("stat")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+      |> QB.select("id")
 
-    %Dagger.Stat{
-      query_builder: query_builder,
-      client: directory.client
-    }
+    case Client.execute(directory.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Stat{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Stat"),
+           client: directory.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -578,10 +593,14 @@ defmodule Dagger.Directory do
   >
   > "This API is highly experimental and may be removed or replaced entirely."
   """
-  @spec with_patch(t(), String.t()) :: Dagger.Directory.t()
-  def with_patch(%__MODULE__{} = directory, patch) do
+  @spec with_patch(t(), String.t(), [{:on_conflict, Dagger.PatchConflict.t() | nil}]) ::
+          Dagger.Directory.t()
+  def with_patch(%__MODULE__{} = directory, patch, optional_args \\ []) do
     query_builder =
-      directory.query_builder |> QB.select("withPatch") |> QB.put_arg("patch", patch)
+      directory.query_builder
+      |> QB.select("withPatch")
+      |> QB.put_arg("patch", patch)
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -596,12 +615,14 @@ defmodule Dagger.Directory do
   >
   > "This API is highly experimental and may be removed or replaced entirely."
   """
-  @spec with_patch_file(t(), Dagger.File.t()) :: Dagger.Directory.t()
-  def with_patch_file(%__MODULE__{} = directory, patch) do
+  @spec with_patch_file(t(), Dagger.File.t(), [{:on_conflict, Dagger.PatchConflict.t() | nil}]) ::
+          Dagger.Directory.t()
+  def with_patch_file(%__MODULE__{} = directory, patch, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("withPatchFile")
       |> QB.put_arg("patch", Dagger.ID.id!(patch))
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
 
     %Dagger.Directory{
       query_builder: query_builder,

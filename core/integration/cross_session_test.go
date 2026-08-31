@@ -720,6 +720,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 				With(daggerCall(
 					"fn",
 					"--cache-bust", cacheBust,
+					"--username", authTokenTestCase.httpAuthUsername,
 					"--token-plaintext", authTokenTestCase.token(),
 					"stdout",
 				)).
@@ -1222,7 +1223,7 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 	gitConfigFile1 := filepath.Join(gitConfigDir1, "config")
 	err := os.WriteFile(
 		gitConfigFile1,
-		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken))),
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername, decodedGitToken(tc.encodedToken))),
 		0644,
 	)
 	require.NoError(t, err)
@@ -1246,7 +1247,7 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 	gitConfigFile2 := filepath.Join(gitConfigDir2, "config")
 	err = os.WriteFile(
 		gitConfigFile2,
-		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken2))),
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername2, decodedGitToken(tc.encodedToken2))),
 		0644,
 	)
 	require.NoError(t, err)
@@ -1396,7 +1397,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 
 	agentSockPath1, cleanup1 := setupPrivateRepoSSHAgent(t)
 	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath1))
-	ref1ID, err := c1.Git(url).Commit(ref).ID(ctx)
+	ref1ID, err := c1.Git(url).Ref(ref).ID(ctx)
 	require.NoError(t, err)
 	var id1 call.ID
 	err = id1.Decode(string(ref1ID))
@@ -1404,7 +1405,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 
 	agentSockPath2, _ := setupPrivateRepoSSHAgent(t)
 	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath2))
-	ref2ID, err := c2.Git(url).Commit(ref).ID(ctx)
+	ref2ID, err := c2.Git(url).Ref(ref).ID(ctx)
 	require.NoError(t, err)
 	var id2 call.ID
 	err = id2.Decode(string(ref2ID))

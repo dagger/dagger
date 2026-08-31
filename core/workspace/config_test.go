@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -678,90 +679,6 @@ source = "modules/greeter"
 		require.Contains(t, out, "[env.local]")
 	})
 
-	t.Run("adds setting hints under module sections", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := &Config{
-			Modules: map[string]ModuleEntry{
-				"greeter": {
-					Source: "modules/greeter",
-				},
-			},
-		}
-
-		updated, err := UpdateConfigBytesWithHints(nil, cfg, map[string][]ConstructorArgHint{
-			"greeter": {{
-				Name:         "greeting",
-				TypeLabel:    "string",
-				Description:  "Greeting to use.",
-				ExampleValue: `"hello"`,
-			}},
-		})
-		require.NoError(t, err)
-		out := string(updated)
-		require.Contains(t, out, "# Greeting to use.\n# settings.greeting = \"hello\"")
-		require.NotContains(t, out, "# settings.greeting = \"hello\" # string")
-	})
-
-	t.Run("adds setting hints inside existing settings sections", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := &Config{
-			Modules: map[string]ModuleEntry{
-				"greeter": {
-					Source: "modules/greeter",
-					Settings: map[string]any{
-						"enabled": true,
-					},
-				},
-			},
-		}
-
-		updated, err := UpdateConfigBytesWithHints(nil, cfg, map[string][]ConstructorArgHint{
-			"greeter": {{
-				Name:         "greeting",
-				TypeLabel:    "string",
-				ExampleValue: `"hello"`,
-			}},
-		})
-		require.NoError(t, err)
-
-		out := string(updated)
-		require.Contains(t, out, "[modules.greeter.settings]")
-		require.Contains(t, out, "# greeting = \"hello\"")
-		require.NotContains(t, out, "# greeting = \"hello\" # string")
-		require.NotContains(t, out, "# settings.greeting = \"hello\"")
-	})
-
-	t.Run("adds setting hints for quoted module and setting names", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := &Config{
-			Modules: map[string]ModuleEntry{
-				"my.module": {
-					Source: "modules/my.module",
-					Settings: map[string]any{
-						"enabled.flag": true,
-					},
-				},
-			},
-		}
-
-		updated, err := UpdateConfigBytesWithHints(nil, cfg, map[string][]ConstructorArgHint{
-			"my.module": {{
-				Name:         "some.key",
-				TypeLabel:    "string",
-				ExampleValue: `"hello"`,
-			}},
-		})
-		require.NoError(t, err)
-
-		out := string(updated)
-		require.Contains(t, out, `[modules."my.module".settings]`)
-		require.Contains(t, out, `"enabled.flag" = true`)
-		require.Contains(t, out, `# "some.key" = "hello"`)
-	})
-
 	t.Run("preserves comments across env removal", func(t *testing.T) {
 		t.Parallel()
 
@@ -792,6 +709,21 @@ region = "us-east-1"
 		require.Contains(t, out, "[env.dev]")
 		require.NotContains(t, out, "[env.ci.modules.greeter.settings]")
 		require.NotContains(t, out, `region = "us-east-1"`)
+	})
+
+	t.Run("undefined env removal lists the defined envs", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte("[env.dev]\n[env.prod]\n"))
+		require.NoError(t, err)
+
+		err = RemoveEnv(cfg, "ci")
+		require.ErrorContains(t, err, `workspace env "ci" is not defined (defined envs: dev, prod)`)
+		// Removal never teaches the create-by-writing gesture.
+		require.NotContains(t, err.Error(), "create it by writing a setting")
+
+		err = RemoveEnv(&Config{}, "ci")
+		require.ErrorContains(t, err, `workspace env "ci" is not defined (no envs defined)`)
 	})
 
 	t.Run("removes existing numeric path segments", func(t *testing.T) {
@@ -884,7 +816,16 @@ func TestApplyEnvOverlay(t *testing.T) {
 		t.Parallel()
 
 		_, err := ApplyEnvOverlay(&Config{}, "ci")
-		require.EqualError(t, err, `workspace env "ci" is not defined`)
+		require.EqualError(t, err, `workspace env "ci" is not defined (no envs defined)`)
+	})
+
+	t.Run("missing env error lists defined envs", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ApplyEnvOverlay(&Config{
+			Env: map[string]EnvOverlay{"ci": {}, "prod": {}},
+		}, "prdo")
+		require.ErrorContains(t, err, `workspace env "prdo" is not defined (defined envs: ci, prod)`)
 	})
 
 	t.Run("rejects unknown module alias", func(t *testing.T) {
@@ -992,6 +933,111 @@ func TestResolveModuleEntrySource(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, "github.com/dagger/dagger/modules/wolfi", ResolveModuleEntrySource(LockDirName, "github.com/dagger/dagger/modules/wolfi"))
 	})
+}
+
+func TestSDKManagedPaths(t *testing.T) {
+	t.Parallel()
+
+	mustResolve := func(t *testing.T, configDir, p string) string {
+		t.Helper()
+		resolved, err := ResolveSDKManagedPath(configDir, p)
+		require.NoError(t, err)
+		return resolved
+	}
+
+	t.Run("resolves against the config directory", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "apps/demo/.dagger/modules/greeter", mustResolve(t, "apps/demo", ".dagger/modules/greeter"))
+		require.Equal(t, "apps/demo", mustResolve(t, "apps/demo", "."))
+		require.Equal(t, "apps/shared", mustResolve(t, "apps/demo", "../shared"))
+		require.Equal(t, ".dagger/modules/greeter", mustResolve(t, ".", ".dagger/modules/greeter"))
+	})
+
+	t.Run("a leading slash anchors at the workspace root", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "tools/greeter", mustResolve(t, "apps/demo", "/tools/greeter"))
+		require.Equal(t, ".", mustResolve(t, "apps/demo", "/"))
+	})
+
+	t.Run("refuses to escape the workspace root", func(t *testing.T) {
+		t.Parallel()
+		_, err := ResolveSDKManagedPath("apps/demo", "../../../outside")
+		require.ErrorContains(t, err, "escapes the workspace root")
+	})
+
+	t.Run("reads Windows separators", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "apps/demo/.dagger/modules/greeter", mustResolve(t, "apps/demo", `.dagger\modules\greeter`))
+	})
+
+	t.Run("treats every entry as a path, never a ref", func(t *testing.T) {
+		t.Parallel()
+		// ResolveModuleEntrySource would hand this back untouched, reading the
+		// dot as a domain; as-sdk entries are always paths.
+		require.Equal(t, "apps/demo/modules/v1.2", mustResolve(t, "apps/demo", "modules/v1.2"))
+	})
+
+	t.Run("records workspace paths relative to the config directory", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct{ configDir, workspacePath, want string }{
+			{"apps/demo", "apps/demo/.dagger/modules/greeter", ".dagger/modules/greeter"},
+			{"apps/demo", "apps/demo", "."},
+			{"apps/demo", "apps/shared", "../shared"},
+			{".", "modules/greeter", "modules/greeter"},
+			{"", "modules/greeter", "modules/greeter"},
+		} {
+			got, err := SDKManagedPathFor(tc.configDir, tc.workspacePath)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+			require.Equal(t, cleanRelPath(tc.workspacePath), mustResolve(t, tc.configDir, got),
+				"round trip through %q", tc.configDir)
+		}
+	})
+}
+
+// A hand-written root-anchored as-sdk entry is legal config; editing the file
+// around it must not restate it in the engine's own spelling.
+func TestRootAnchoredAsSDKPathRoundTrip(t *testing.T) {
+	data := []byte(`[modules.init-fixture]
+source = "sdk/init-fixture"
+
+[modules.init-fixture.as-sdk]
+name = "fixture"
+
+[[modules.init-fixture.as-sdk.modules]]
+path = "/tools/mod"
+
+[[modules.init-fixture.as-sdk.clients]]
+path = "/clients/one"
+module = "/sdk/init-fixture"
+`)
+	cfg, err := ParseConfig(data)
+	require.NoError(t, err)
+
+	entry := cfg.Modules["init-fixture"]
+	require.Equal(t, "/tools/mod", entry.AsSDK.Modules[0].Path)
+
+	// resolution, from a config in a subdirectory
+	got, err := ResolveSDKManagedPath("common", entry.AsSDK.Modules[0].Path)
+	require.NoError(t, err)
+	require.Equal(t, "tools/mod", got)
+	got, err = ResolveSDKManagedPath("common", entry.AsSDK.Clients[0].Path)
+	require.NoError(t, err)
+	require.Equal(t, "clients/one", got)
+
+	// now let the engine add an entry and rewrite the file
+	entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: ".dagger/modules/new"})
+	cfg.Modules["init-fixture"] = entry
+	out, err := UpdateConfigBytes(data, cfg)
+	require.NoError(t, err)
+	t.Logf("rewritten config:\n%s", out)
+
+	reparsed, err := ParseConfig(out)
+	require.NoError(t, err)
+	re := reparsed.Modules["init-fixture"]
+	require.Equal(t, "/tools/mod", re.AsSDK.Modules[0].Path, "hand-written spelling must survive")
+	require.Equal(t, "/clients/one", re.AsSDK.Clients[0].Path)
+	require.Equal(t, "/sdk/init-fixture", re.AsSDK.Clients[0].Module)
 }
 
 func TestDeleteConfigValue(t *testing.T) {
@@ -1202,4 +1248,21 @@ other = "kept"
 		require.NotContains(t, cfg.Modules["my.module"].Settings, "some.key")
 		require.Equal(t, "kept", cfg.Modules["my.module"].Settings["other"])
 	})
+}
+
+func TestUndefinedEnvErrorExtensions(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{Env: map[string]EnvOverlay{"ci": {}, "prod": {}}}
+	err := NewUndefinedEnvError(cfg, "prdo")
+	require.EqualError(t, err, `workspace env "prdo" is not defined (defined envs: ci, prod)`)
+
+	// dagql attaches Extensions() from any error in the wrap chain via
+	// errors.As, so the marker must survive the fmt.Errorf wrapping the
+	// workspace-load path adds.
+	wrapped := fmt.Errorf("query module objects: loading workspace: %w", err)
+	var ext interface{ Extensions() map[string]any }
+	require.True(t, errors.As(wrapped, &ext))
+	require.Equal(t, UndefinedEnvErrorType, ext.Extensions()["_type"])
+	require.Equal(t, "prdo", ext.Extensions()["env"])
 }

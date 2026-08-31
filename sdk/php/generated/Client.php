@@ -24,6 +24,20 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Creates a file from arbitrary binary contents.
+     */
+    public function blob(string $name, Bytes $contents, ?int $permissions = 420): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(
@@ -95,19 +109,6 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Returns the current environment
-     *
-     * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-     *
-     * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-     */
-    public function currentEnv(): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentEnv');
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The FunctionCall context that the SDK caller is currently executing in.
      *
      * If the caller is not currently executing in a function, this will return an error.
@@ -125,6 +126,15 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentModule');
         return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+     */
+    public function currentNode(): Node
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentNode');
+        return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -179,18 +189,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Initializes a new environment
+     * Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
      */
-    public function env(?bool $privileged = false, ?bool $writable = false): Env
+    public function engineVolume(string $name, ?string $subdir = null): Volume
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
-        if (null !== $privileged) {
-        $innerQueryBuilder->setArgument('privileged', $privileged);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engineVolume');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $subdir) {
+        $innerQueryBuilder->setArgument('subdir', $subdir);
         }
-        if (null !== $writable) {
-        $innerQueryBuilder->setArgument('writable', $writable);
-        }
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -409,11 +417,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * Load any object by its ID.
      */
-    public function node(Id $id): Node
+    public function node(Id $id): ?Node
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('node');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('node');
+        $objectQueryBuilder->setArgument('id', $id);
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\NodeClient::class, new \Dagger\Id((string)$id), 'Node');
     }
 
     /**

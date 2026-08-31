@@ -85,6 +85,30 @@ var moduleDepsRmCmd = &cobra.Command{
 	},
 }
 
+var moduleDepsUpdateCmd = &cobra.Command{
+	Use:   "update [module]...",
+	Short: "Update one or more module dependencies",
+	Long: `Update one or more module dependencies.
+
+With no arguments, updates all non-local dependencies.`,
+	Example: "dagger module deps update wolfi@v0.20.2",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+			modSrc, contextDir, err := currentModuleSourceForEdit(ctx, engineClient.Dagger())
+			if err != nil {
+				return err
+			}
+
+			if _, err := modSrc.WithUpdateDependencies(args).UpdatedConfigDirectory().Export(ctx, contextDir); err != nil {
+				return fmt.Errorf("update dependencies: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Updated dependencies.\nRun 'dagger generate' to refresh generated bindings.")
+			return err
+		})
+	},
+}
+
 var moduleDepsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List the current module's dependencies",
@@ -258,7 +282,7 @@ func currentModuleSourceForEdit(ctx context.Context, dag *dagger.Client) (*dagge
 
 func init() {
 	moduleCmd.AddCommand(moduleDepsCmd, moduleEngineCmd, moduleSdkCmd)
-	moduleDepsCmd.AddCommand(moduleDepsAddCmd, moduleDepsRmCmd, moduleDepsListCmd)
+	moduleDepsCmd.AddCommand(moduleDepsAddCmd, moduleDepsRmCmd, moduleDepsUpdateCmd, moduleDepsListCmd)
 	moduleEngineCmd.AddCommand(
 		moduleEngineRequiredCmd,
 		moduleEngineRequireCmd,

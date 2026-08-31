@@ -1,8 +1,13 @@
 package daggercmd
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,6 +48,66 @@ func TestModuleSdkHelpHeuristic(t *testing.T) {
 				}
 			}
 			require.Equal(t, tt.wantDispatch, hasSubcommand)
+		})
+	}
+}
+
+// TestCurrentModuleSDKName covers the lookup against both spellings an
+// as-sdk entry can use: relative to the dagger.toml, or root-anchored.
+func TestCurrentModuleSDKName(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		managedPath string
+		wantErr     string
+	}{
+		{name: "config-relative", managedPath: ".dagger/modules/foo"},
+		{name: "root-anchored", managedPath: "/.dagger/modules/foo"},
+		{name: "escaping", managedPath: "../foo", wantErr: "escapes the workspace root"},
+		{name: "unrelated", managedPath: ".dagger/modules/bar", wantErr: "is not registered"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, workspace.ConfigFileName), fmt.Appendf(nil,
+				"[modules.my-sdk]\nsource = \"github.com/dagger/my-sdk\"\n\n[modules.my-sdk.as-sdk]\n\n[[modules.my-sdk.as-sdk.modules]]\npath = %q\n", tt.managedPath), 0o644))
+			moduleDir := filepath.Join(root, ".dagger", "modules", "foo")
+			require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(moduleDir, modules.Filename), []byte("name = \"foo\"\n"), 0o644))
+
+			t.Chdir(moduleDir)
+			name, err := currentModuleSDKName()
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "my-sdk", name)
+		})
+	}
+}
+
+// A dagger.toml in a subdirectory of the repo is where the two spellings stop
+// coinciding: a config-relative entry is measured from the config, a
+// root-anchored one from the repository root above it.
+func TestCurrentModuleSDKNameFromSubdirectoryConfig(t *testing.T) {
+	for _, tt := range []struct{ name, managedPath string }{
+		{"config-relative", ".dagger/modules/foo"},
+		{"root-anchored", "/common/.dagger/modules/foo"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+			configDir := filepath.Join(root, "common")
+			require.NoError(t, os.MkdirAll(configDir, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(configDir, workspace.ConfigFileName), fmt.Appendf(nil,
+				"[modules.my-sdk]\nsource = \"github.com/dagger/my-sdk\"\n\n[modules.my-sdk.as-sdk]\n\n[[modules.my-sdk.as-sdk.modules]]\npath = %q\n", tt.managedPath), 0o644))
+			moduleDir := filepath.Join(configDir, ".dagger", "modules", "foo")
+			require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(moduleDir, modules.Filename), []byte("name = \"foo\"\n"), 0o644))
+
+			t.Chdir(moduleDir)
+			name, err := currentModuleSDKName()
+			require.NoError(t, err)
+			require.Equal(t, "my-sdk", name)
 		})
 	}
 }

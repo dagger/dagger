@@ -40,7 +40,7 @@ var _ SchemaResolvers = &containerSchema{}
 
 func (s *containerSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("container", s.container).
+		dagql.FuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).
 			Doc(`Creates a scratch container, with no image or metadata.`,
 				`To pull an image, follow up with the "from" function.`).
 			Args(
@@ -69,7 +69,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
 				dagql.Arg("address").Doc(
-					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
+					`Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".`,
+					`An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.`,
 				),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
@@ -239,6 +240,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withVolatileVariable", s.withVolatileVariable).
+			View(AfterVersion("v0.21.4")).
 			WithInput(dagql.PerSessionInput).
 			Doc(`Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.`,
 				`This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.`).
@@ -260,6 +262,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutVolatileVariable", s.withoutVolatileVariable).
+			View(AfterVersion("v0.21.4")).
 			Doc(`Retrieves this container minus the given volatile environment variable.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the volatile environment variable (e.g., "CI_RUN_ID").`),
@@ -379,7 +382,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`).
 					View(AfterVersion("v0.21.0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -394,7 +397,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user or user:group to set for the mounted file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -430,7 +433,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					any effect if/when the cache has already been created.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -454,7 +457,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted secret.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("mode").Doc(`Permission given to the mounted secret (e.g., 0600).`,
 					`This option requires an owner to be set to be active.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -469,7 +472,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted socket.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -500,7 +503,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -533,7 +536,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the files.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -550,7 +553,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`A user:group to set for the file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
@@ -581,7 +584,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 				dagql.Arg("permissions").View(AfterVersion("v0.21.0")),
@@ -603,7 +606,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
-					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+					`environment variables defined in the container (e.g. "/$VAR/foo").`).
+					View(AfterVersion("v0.21.5")),
 			),
 
 		dagql.NodeFunc("stat", s.stat).
@@ -835,7 +839,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("tag").Doc(`Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
 			),
 
-		dagql.Func("withRegistryAuth", s.withRegistryAuth).
+		dagql.NodeFunc("withRegistryAuth", s.withRegistryAuth).
 			WithInput(dagql.PerSessionInput).
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
 			Args(
@@ -844,7 +848,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("secret").Doc(`The API key, password or token to authenticate to this registry`),
 			),
 
-		dagql.Func("withoutRegistryAuth", s.withoutRegistryAuth).
+		dagql.NodeFunc("withoutRegistryAuth", s.withoutRegistryAuth).
 			WithInput(dagql.PerSessionInput).
 			Doc(`Retrieves this container without the registry authentication of a given address.`).
 			Args(
@@ -1001,6 +1005,18 @@ type containerArgs struct {
 	Platform dagql.Optional[core.Platform]
 }
 
+func (s *containerSchema) containerDynamicInputs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Query],
+	args containerArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.Platform.Valid {
+		return nil
+	}
+	return req.SetArgInput(ctx, "platform", parent.Self().Platform(), false)
+}
+
 func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
 	var platform core.Platform
 	if args.Platform.Valid {
@@ -1048,7 +1064,12 @@ func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], i
 	}
 }
 
-const lockContainerFromOperation = "container.from"
+func shouldSelectLatestImageRelease(
+	ctx context.Context,
+	ref reference.Named,
+) bool {
+	return reference.IsNameOnly(ref) && core.Supports(ctx, workspace.LatestReleaseVersion)
+}
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
@@ -1111,8 +1132,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
-	refName = reference.TagNameOnly(refName)
+	latestRelease := shouldSelectLatestImageRelease(ctx, refName)
+	if latestRelease {
+		refName = reference.TrimNamed(refName)
+	} else {
+		// TagNameOnly is deliberately called after testing IsNameOnly so an
+		// implicit tag remains distinguishable from an explicit latest tag.
+		refName = reference.TagNameOnly(refName)
+	}
 	if args.RegistryService.Valid {
 		service, err := args.RegistryService.Value.Load(ctx, srv)
 		if err != nil {
@@ -1194,13 +1221,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		// detach identity from the :tag, make the result purely content-addressed based on the digest, but
-		// only when we are starting from scratch (as opposed to the weird case of calling from later in a chain)
-		parentCall, err := parent.ResultCall()
-		if err != nil {
-			return inst, fmt.Errorf("failed to get parent call: %w", err)
-		}
-		if parentCall.Field == "container" {
+		// Detach identity from the :tag and make the result purely
+		// content-addressed when From is operating on an otherwise untouched
+		// scratch container. Derived containers may carry state that From
+		// preserves, so they must retain their call identity.
+		if parent.Self().CanUseFromContentDigest() {
 			var err error
 			inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(
 				"container.from",
@@ -1216,52 +1241,117 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	var lookupLock *workspaceLookupLock
-	var rawLock *workspace.Lock
-	lockMode := workspace.LockModeDisabled
 	// A ref like "registry:5000/app:latest" can point to different images
 	// depending on registryService, so disable workspace lock entries when
 	// registryService is set.
 	if len(registryServices) == 0 {
-		lockMode, lookupLock, err = lookupLockForMode(ctx, query, lockContainerFromOperation)
+		lookupLock, err = lookupLockForAPI(ctx, query, workspace.LockOperationOCISHA)
 		if err != nil {
 			return inst, err
 		}
-		if lockMode != workspace.LockModeDisabled {
-			rawLock = lookupLock.lock
+	}
+
+	registryLockOptions := func() []workspace.LookupOption {
+		var options []workspace.LookupOption
+		if registryTransport.Protocol != "" {
+			options = append(options, workspace.LookupOption{
+				Name:  "protocol",
+				Value: string(registryTransport.Protocol),
+			})
+		}
+		if registryTransport.InsecureSkipTLSVerify {
+			options = append(options, workspace.LookupOption{
+				Name:  "insecureSkipTLSVerify",
+				Value: true,
+			})
+		}
+		return options
+	}
+
+	if latestRelease {
+		latestOptions := registryLockOptions()
+		latestInputs := workspace.LookupInputs(
+			[]any{refName.String()},
+			latestOptions...,
+		)
+		latestResolution := resolveLookupFromLoadedLock(
+			lookupLock,
+			workspace.LockOperationOCILatest,
+			latestInputs,
+		)
+
+		var selectedTag string
+		if latestResolution.Pin != "" {
+			selectedTag = latestResolution.Pin
+			if err := core.ValidateContainerLatestTag(selectedTag); err != nil {
+				return inst, fmt.Errorf("%s lock value: %w", workspace.LockOperationOCILatest, err)
+			}
+		} else {
+			rslvr, err := query.RegistryResolver(ctx)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get registry resolver: %w", err)
+			}
+			network, detach, err := core.ContainerRegistryNetwork(ctx, registryServices)
+			if err != nil {
+				return inst, err
+			}
+			defer detach()
+
+			listCtx, span := core.Tracer(ctx).Start(
+				ctx,
+				fmt.Sprintf("select latest release for %s", refName.String()),
+				telemetry.Internal(),
+				telemetry.Encapsulate(),
+			)
+			tags, err := rslvr.ListImageTags(listCtx, refName.String(), serverresolver.ListImageTagsOpts{
+				Network:           network,
+				RegistryTransport: registryTransport,
+			})
+			telemetry.EndWithCause(span, &err)
+			if err != nil {
+				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
+			}
+			selectedTag, err = core.SelectLatestContainerTag(tags)
+			if err != nil {
+				return inst, fmt.Errorf("select latest image tag for %q: %w", refName.String(), err)
+			}
+			if latestResolution.ShouldWrite && lookupLock != nil {
+				if err := lookupLock.SetLookup(
+					workspace.CoreLockNamespace,
+					workspace.LockOperationOCILatest,
+					latestInputs,
+					selectedTag,
+				); err != nil {
+					return inst, fmt.Errorf("set lock entry for %s: %w", workspace.LockOperationOCILatest, err)
+				}
+			}
+		}
+		refName, err = reference.WithTag(refName, selectedTag)
+		if err != nil {
+			return inst, fmt.Errorf("apply selected image tag %q: %w", selectedTag, err)
 		}
 	}
 
-	lockInputs := []any{refName.String(), platform.Format()}
-	if registryTransport.Protocol != "" {
-		lockInputs = append(lockInputs, registryTransport.Protocol)
-	}
-	if registryTransport.InsecureSkipTLSVerify {
-		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
-	}
-	lockResolution, err := resolveLookupFromLock(
-		lockMode,
-		rawLock,
-		lockContainerFromOperation,
-		lockInputs,
-		workspace.PolicyPin,
+	shaInputs := workspace.LookupInputs(
+		[]any{refName.String()},
+		registryLockOptions()...,
 	)
-	if err != nil {
-		return inst, fmt.Errorf("container.from lock resolution: %w", err)
-	}
-
-	if lockResolution.Pin != "" {
-		resolvedDigest, err := digest.Parse(lockResolution.Pin)
+	shaResolution := resolveLookupFromLoadedLock(
+		lookupLock,
+		workspace.LockOperationOCISHA,
+		shaInputs,
+	)
+	if shaResolution.Pin != "" {
+		pin := shaResolution.Pin
+		resolvedDigest, err := digest.Parse(pin)
 		if err != nil {
-			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", pin, refName.String(), err)
 		}
 		refName, err = reference.WithDigest(refName, resolvedDigest)
 		if err != nil {
 			return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
 		}
 	} else {
-		// Doesn't have a digest, resolve that now and re-call this field using the canonical
-		// digested ref instead. This ensures the ID returned here is always stable w/ the
-		// digested image ref.
 		rslvr, err := query.RegistryResolver(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get registry resolver: %w", err)
@@ -1286,17 +1376,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
 		}
 
-		if lockResolution.ShouldWrite && lookupLock != nil {
+		if shaResolution.ShouldWrite && lookupLock != nil {
 			if err := lookupLock.SetLookup(
-				lockCoreNamespace,
-				lockContainerFromOperation,
-				lockInputs,
-				workspace.LookupResult{
-					Value:  resolvedDigest.String(),
-					Policy: lockResolution.Policy,
-				},
+				workspace.CoreLockNamespace,
+				workspace.LockOperationOCISHA,
+				shaInputs,
+				resolvedDigest.String(),
 			); err != nil {
-				return inst, fmt.Errorf("set lock entry for container.from: %w", err)
+				return inst, fmt.Errorf("set lock entry for %s: %w", workspace.LockOperationOCISHA, err)
 			}
 		}
 	}
@@ -3314,6 +3401,8 @@ func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult
 		return nil, false, err
 	}
 	ctr := &core.Container{
+		// CanUseFromContentDigest intentionally defaults to false for schema
+		// children: any container transformation may carry state through From.
 		FS:                 clonedFS,
 		MetaSnapshot:       clonedMeta,
 		Config:             core.CloneContainerImageConfig(parent.Self().Config),
@@ -4231,34 +4320,35 @@ type containerWithRegistryAuthArgs struct {
 	Secret   core.SecretID
 }
 
-func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withRegistryAuth(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRegistryAuthArgs) (dagql.ObjectResult[*core.Container], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return parent, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	secret, err := args.Secret.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 
 	secretBytes, err := secret.Self().Plaintext(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 
 	auth, err := query.Auth(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	if err := auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
-		return nil, err
+		return parent, err
 	}
 
+	// Registry credentials belong to the session, not the container.
 	return parent, nil
 }
 
@@ -4266,19 +4356,20 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutRegistryAuthArgs) (dagql.ObjectResult[*core.Container], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	auth, err := query.Auth(ctx)
 	if err != nil {
-		return nil, err
+		return parent, err
 	}
 	if err := auth.RemoveCredential(args.Address); err != nil {
-		return nil, err
+		return parent, err
 	}
 
+	// Registry credentials belong to the session, not the container.
 	return parent, nil
 }
 

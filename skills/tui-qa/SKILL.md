@@ -157,3 +157,75 @@ python3 skills/tui-qa/scripts/tui_qa.py snapshot \
   --at 12.3 \
   --label before-finish
 ```
+
+## Driving an interactive dagger TUI from an agent (tmux)
+
+The `run`/`record` helpers above capture a command; to *drive* an interactive
+TUI (type into a prompt, press keys, watch it react) you need a real pty plus
+keystroke injection. Use `tmux`: `send-keys` injects, `capture-pane -p` reads the
+rendered screen. This is how to QA `dagger agent`, `dagger llm`, or any
+interactive prompt.
+
+Two gotchas specific to dagger, both learned the hard way:
+
+- **`DAGGER_PROGRESS=tty` is mandatory.** The CLI calls `idtui.RunningInAgent()`
+  (env vars like `CLAUDECODE`), and when true it forces the non-interactive
+  *report* frontend — so the live TUI never engages no matter the tty.
+  `DAGGER_PROGRESS=tty` is checked before that agent-detection
+  (`internal/cmd/dagger/main.go`), so it restores the interactive Pretty TUI.
+- **You need a real pty.** `progress=tty` requires `hasTTY`; a tmux pane is a real
+  pty (`[ -t 1 ]` is true inside it), so this satisfies it. Bare piped exec does
+  not. (`DAGGER_TUI_CONSOLE` forces Pretty over HTTP but does **not** currently
+  drive interactive shell/prompt mode — it shows the progress tree, not the
+  prompt overlay — so prefer tmux for interactive QA.)
+
+Recipe:
+
+```bash
+# 1. Launch in a detached pane, in the target workspace, with progress forced.
+tmux new-session -d -s qa -x 200 -y 50
+tmux send-keys -t qa 'cd /path/to/workspace && DAGGER_PROGRESS=tty \
+  /repo/hack/with-dev /repo/bin/dagger agent' Enter
+
+# 2. Poll capture-pane until the bowtie prompt (⋈, "esc nav mode · > run prompt")
+#    appears — that means the interactive TUI (not report mode) engaged.
+tmux capture-pane -t qa -p | tail
+
+# 3. Drive it. `-l` sends a literal string; key names (Enter, C-c) without -l.
+tmux send-keys -t qa -l '>'                         # enter LLM prompt mode
+tmux send-keys -t qa -l 'Edit notes.txt to add a line.'
+tmux send-keys -t qa Enter                          # submit
+
+# 4. Observe by polling capture-pane; tool calls (SchemaSearch, DangEval, …) and
+#    the assistant's text stream into the pane. Inspect written files on disk too.
+tmux capture-pane -t qa -p | sed '/^$/d' | tail -30
+
+# 5. Clean up.
+tmux kill-session -t qa
+```
+
+Notes: `send-keys -l` is literal (preserves spaces/quotes); without `-l`, args are
+tmux key names (`Enter`, `Escape`, `C-c`). Poll with separate calls rather than a
+long foreground `sleep`. For timing/hang analysis of the same session, record the
+pane with `asciinema` and feed the `.cast` to `tui_qa.py analyze`.
+
+## Reading the screen reliably
+
+General to any interactive TUI captured over tmux, not just dagger:
+
+- **Un-wrap before parsing.** `capture-pane -p` hard-wraps at the pane width,
+  splitting long lines mid-token so `grep`/`awk` see garbage (a panic stack
+  becomes unreadable). Add `-J` to join wrapped lines when you parse
+  programmatically.
+- **Include scrollback.** The screen you care about — a final report, an error,
+  a summary — often scrolls above the visible viewport. `capture-pane -p -S -<N>`
+  prepends N lines of history; without it you only get the last `-y` rows.
+- **Check for crashes explicitly.** A TUI on the alt-screen can die into a stack
+  trace a naive "final.txt" glance misses. Grep the pane (or redirect the process
+  with `2>err.log`) for `panic:`, `fatal error`, `concurrent map`,
+  `goroutine \d+ \[`.
+- **Exit gracefully, not abruptly.** Use the app's own quit path so its teardown,
+  final render, and flushes run. `tmux kill-session` / SIGKILL skips all of that,
+  so you lose the end-of-run output and any deferred cleanup. Learn the real quit
+  (often EOF/`C-d` on an *empty* input line, a quit key, or an `exit` command) and
+  confirm the process actually exited before reading the "final" screen.

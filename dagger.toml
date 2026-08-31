@@ -1,0 +1,225 @@
+[modules.changelog]
+source = ".dagger/modules/changelog"
+legacy-default-path = true
+
+# settings.source = "./path"
+
+[modules.ci]
+source = ".dagger/modules/ci"
+legacy-default-path = true
+
+[modules.cli]
+source = ".dagger/modules/cli-dev"
+legacy-default-path = true
+
+[modules.dev]
+source = ".dagger/modules/dev"
+
+[modules.dev.settings]
+# Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
+# active Docker context points somewhere else.
+docker = "unix:///var/run/docker.sock"
+
+[modules.docs]
+source = ".dagger/modules/docs-dev"
+legacy-default-path = true
+
+[modules.elixir-client]
+source = ".dagger/modules/elixir-client-dev"
+legacy-default-path = true
+
+[modules.engine-dev]
+source = ".dagger/modules/engine-dev"
+legacy-default-path = true
+
+[modules.go-client]
+source = ".dagger/modules/go-client-dev"
+legacy-default-path = true
+
+[modules.golang]
+source = "github.com/dagger/go@5683fb4f7e2e909a453eba727fb982077d5d11b5"
+legacy-default-path = true
+
+[modules.golang.settings]
+generate = "docs/current_docs/cli"
+# FIXME: this can be an actual list (dagger.json required a hack)
+lint = ".,engine/distconsts,modules/daggerverse,sdk/go,.dagger/modules/cli-dev,.dagger/modules/docs-dev,.dagger/modules/engine-dev,.dagger/modules/go,.dagger/modules/release,!.dagger/modules/docs-dev/docusaurus,!.dagger/modules/engine-dev/notify,!.dagger/modules/release/apko,!.dagger/modules/release/gh,!.dagger/modules/release/registry-config,!.dagger/modules/release/testdata"
+test = "e2e/**"
+
+[modules.helm]
+source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
+legacy-default-path = true
+
+[modules.helm.settings]
+# The module installs the wolfi `helm` package as `helm~<version>`, and that
+# package moved to the 4.x line, so 3.x versions no longer resolve. Charts are
+# still packaged with helm 3 (see .dagger/modules/release/helm.go); revisit once
+# the module can select the `helm-3` package.
+version = "4.0.1"
+
+[modules.java-client]
+source = ".dagger/modules/java-client-dev"
+legacy-default-path = true
+
+[modules.markdown-lint]
+source = "modules/markdownlint"
+legacy-default-path = true
+
+[modules.php-client]
+source = ".dagger/modules/php-client-dev"
+legacy-default-path = true
+
+[modules.ps-analyzer]
+source = "github.com/dagger/PsScriptAnalyzer@d87a12883dccd495bee98da9d2c20eb44b6f608d"
+legacy-default-path = true
+
+[modules.python-client]
+source = ".dagger/modules/python-client-dev"
+legacy-default-path = true
+
+[modules.release]
+source = ".dagger/modules/release"
+legacy-default-path = true
+
+[modules.rust-client]
+source = ".dagger/modules/rust-client-dev"
+legacy-default-path = true
+
+[modules.security]
+source = ".dagger/modules/security"
+legacy-default-path = true
+
+[modules.security.settings]
+# Paths to exclude from the source tree before scanning.
+ignore = [
+  "bin",
+  ".git",
+  "docs",
+  "sdk/rust/examples",
+  "sdk/rust/crates/dagger-sdk/examples",
+  "core/integration/testdata",
+  "dagql/idtui/viztest",
+]
+
+[modules.shellcheck]
+source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
+legacy-default-path = true
+
+[modules.test-split]
+source = ".dagger/modules/test-split"
+legacy-default-path = true
+
+[modules.typescript-client]
+source = ".dagger/modules/typescript-client-dev"
+legacy-default-path = true
+
+[modules.dagger-dang-sdk]
+source = "github.com/dagger/dang-sdk"
+
+[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[env.dev.modules.engine-lab]
+source = ".dagger/modules/engine-lab"
+
+[env.dev.modules.tui-qa]
+source = ".dagger/modules/tui-qa"
+
+[env.dev.modules.mcp-lab]
+source = ".dagger/modules/mcp-lab"
+
+[env.dev.modules.editor]
+source = "github.com/vito/editor"
+
+[modules.dagger-dang-sdk.as-sdk]
+name = "dang"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "cmd/codegen"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "modules/markdownlint"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/changelog"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/ci"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/dotnet-client-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/elixir-client-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/go-client-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/java-client-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/security"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/test-split"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/typescript-client-dev"
+
+[modules.dagger-go-sdk.as-sdk]
+name = "go"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "modules/alpine"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "modules/git-releaser"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "modules/wolfi"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/cli-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/docs-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/docs-dev/docusaurus"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/engine-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/engine-dev/notify"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/php-client-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/python-client-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/python-client-dev/dockerd"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/release/apko"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/release"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/release/gh"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/release/registry-config"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/rust-client-dev"
+
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/tla-check"

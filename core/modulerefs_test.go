@@ -5,8 +5,44 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dagger/dagger/core/gitref"
+	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 )
+
+func TestModuleGitDefaultRefSelector(t *testing.T) {
+	t.Parallel()
+
+	parsed := &ParsedGitRefString{Parsed: gitref.Parsed{
+		RepoRootSubdir: "/module",
+	}}
+	for _, tc := range []struct {
+		name    string
+		version string
+		field   string
+	}{
+		{name: "legacy API uses HEAD", version: "v1.0.0-beta.9", field: "head"},
+		{name: "current API uses latest", version: workspace.LatestReleaseVersion, field: "latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{
+				View: call.View(tc.version),
+			})
+			selector := moduleGitDefaultRefSelector(ctx, parsed)
+			require.Equal(t, tc.field, selector.Field)
+			if tc.field == "latest" {
+				require.Len(t, selector.Args, 1)
+				require.Equal(t, "tagPrefix", selector.Args[0].Name)
+			} else {
+				require.Empty(t, selector.Args)
+			}
+		})
+	}
+}
 
 func TestMatchVersion(t *testing.T) {
 	vers := []string{"v1.0.0", "v1.0.1", "v2.0.0", "path/v1.0.1", "path/v2.0.1"}
@@ -24,7 +60,7 @@ func TestMatchVersion(t *testing.T) {
 	require.Equal(t, "path/v1.0.1", match3)
 
 	_, err = matchVersion(vers, "v2.0.1", "/")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrModuleVersionNotFound)
 
 	_, err = matchVersion([]string{"hello/v0.3.0"}, "v0.3.0", "/hello")
 	require.NoError(t, err)
@@ -54,6 +90,13 @@ func TestParseRefString(t *testing.T) {
 			urlStr:       "ssh://github.com/shykes/daggerverse/ci@version",
 			wantKind:     ModuleSourceKindGit,
 			wantCloneRef: "ssh://github.com/shykes/daggerverse",
+			wantSubdir:   "ci",
+			wantVersion:  "version",
+		},
+		{
+			urlStr:       "https://github.com/shykes/daggerverse/ci#version",
+			wantKind:     ModuleSourceKindGit,
+			wantCloneRef: "https://github.com/shykes/daggerverse",
 			wantSubdir:   "ci",
 			wantVersion:  "version",
 		},

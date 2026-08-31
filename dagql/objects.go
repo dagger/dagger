@@ -641,7 +641,13 @@ func (r ObjectResult[T]) call(
 	s *Server,
 	req *CallRequest,
 	inputArgs map[string]Input,
-) (AnyResult, error) {
+) (res AnyResult, err error) {
+	// NOTE: named returns are load-bearing: the telemetry done callback
+	// (core.AroundFunc -> telemetry.EndWithCause) stamps the error with the
+	// span's origin marker by writing through the error pointer, and only a
+	// named return makes that mutation visible to the caller. With the marker
+	// propagated, ancestor spans link to the origin instead of repeating the
+	// same message, and frontends collapse the duplicates.
 	ctx = ContextWithCall(ctx, req.ResultCall)
 	fieldName := req.Field
 	view := req.View
@@ -652,10 +658,6 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
-	var (
-		res AnyResult
-		err error
-	)
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
 		telemetryCtx, done := s.telemetry(ctx, req)
 		defer func() {
@@ -923,14 +925,25 @@ type FieldSpec struct {
 	NoTelemetry bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
-	// than performing meaningful work. Used to suppress install-span capture
-	// for synthetic accessors (e.g. auto-generated module object field
-	// accessors) so they don't claim ownership of values they merely return.
+	// than performing meaningful work. Their telemetry spans are internal, and
+	// they skip install-span capture so they don't claim ownership of values
+	// they merely return.
 	Trivial bool
 
 	// PassthroughTelemetry keeps this field's telemetry span available for call
 	// metadata while asking the UI to show its children in its place.
 	PassthroughTelemetry bool
+
+	// NotReplayable marks a field whose result is only meaningful to the
+	// session and client that produced it — a host read, or a value bound to a
+	// client ID. Such a result may still be cached and reused within its own
+	// session, but it must never be served to a *recorded* call being replayed
+	// from a saved ID: the recorded digest is a stable key for an unstable
+	// value, so replaying it would resurrect another session's snapshot or
+	// client binding. The recipe loader re-executes these calls instead, and
+	// taints every recorded call that depends on one. The string value is the
+	// reason.
+	NotReplayable string
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1026,6 +1039,20 @@ type InputSpec struct {
 	// clients, but can't be set in new graphql queries.
 	// This argument will not be exposed in the introspection schema.
 	Internal bool
+
+	// LazyRef marks an ID-typed argument whose value is not needed to
+	// reconstruct the receiver's state when an ID is loaded from its recipe.
+	// The recipe loader carries such an argument through as a lazy reference
+	// instead of eagerly evaluating it (and everything it depends on). The
+	// field's resolver is responsible for loading the referenced object
+	// lazily, only if and when it actually needs the value.
+	//
+	// This exists so that persisted state referencing an object whose
+	// construction has side effects (or has since become impossible to
+	// reproduce) can still be restored: e.g. LLM.withTools records the bound
+	// object only to expose its type's methods as tools, so restoring the
+	// conversation must not re-run the call that produced that object.
+	LazyRef bool
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -1057,6 +1084,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.Internal {
 		spec.Internal = other.Internal
 	}
+	if other.LazyRef {
+		spec.LazyRef = other.LazyRef
+	}
 }
 
 type Argument struct {
@@ -1086,6 +1116,14 @@ func (arg Argument) Internal() Argument {
 	return arg
 }
 
+// LazyRef marks an ID-typed argument as carried by reference (not evaluated)
+// when the receiver's ID is reconstructed from its recipe. See
+// InputSpec.LazyRef.
+func (arg Argument) LazyRef() Argument {
+	arg.Spec.LazyRef = true
+	return arg
+}
+
 func (arg Argument) Default(input Input) Argument {
 	arg.Spec.Default = input
 	return arg
@@ -1093,6 +1131,14 @@ func (arg Argument) Default(input Input) Argument {
 
 func (arg Argument) View(view ViewFilter) Argument {
 	arg.Spec.ViewFilter = view
+	return arg
+}
+
+// Directive attaches a GraphQL directive to the argument, e.g.
+// ExpectedTypeDirective("Node") to convey that an ID-typed argument accepts any
+// object (via the universal Node interface).
+func (arg Argument) Directive(dir *ast.Directive) Argument {
+	arg.Spec.Directives = append(slices.Clone(arg.Spec.Directives), dir)
 	return arg
 }
 
@@ -1331,6 +1377,9 @@ func (fields Fields[T]) Install(server *Server) {
 			Description:        field.Field.Tag.Get("doc"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
+			// Reflected struct fields are pure getter accessors. Keep their spans
+			// available as internal trace detail without presenting them as work.
+			Trivial: true,
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
@@ -1411,6 +1460,16 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	return field
+}
+
+// NotReplayable marks the field's result as unsafe to serve to a replayed
+// recorded call. See FieldSpec.NotReplayable.
+func (field Field[T]) NotReplayable(reason string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.NotReplayable = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 

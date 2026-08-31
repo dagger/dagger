@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -38,7 +39,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
-	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
@@ -108,18 +108,19 @@ type Server struct {
 	// worker/executor-specific config+state
 	//
 
-	runc             *runc.Runc
-	cgroupParent     string
-	networkProviders map[pb.NetMode]network.Provider
-	processMode      oci.ProcessMode
-	dns              *oci.DNSConfig
-	apparmorProfile  string
-	selinux          bool
-	entitlements     entitlements.Set
-	enabledPlatforms []ocispecs.Platform
-	defaultPlatform  ocispecs.Platform
-	registryHosts    docker.RegistryHosts
-	cleanMntNS       *os.File
+	runc                    *runc.Runc
+	cgroupParent            string
+	networkProviders        map[pb.NetMode]network.Provider
+	processMode             oci.ProcessMode
+	dns                     *oci.DNSConfig
+	apparmorProfile         string
+	selinux                 bool
+	entitlements            entitlements.Set
+	enabledPlatforms        []ocispecs.Platform
+	defaultPlatform         ocispecs.Platform
+	registryHosts           docker.RegistryHosts
+	cleanMntNS              *os.File
+	recursiveReadOnlyMounts bool
 
 	//
 	// telemetry config+state
@@ -140,9 +141,13 @@ type Server struct {
 	//
 	// gc related
 	//
-	throttledGC             func()
-	throttledDiskPressureGC func()
-	gcmu                    sync.Mutex
+	throttledSessionGC             func()
+	throttledLocalCachePressureGC  func()
+	gcmu                           sync.Mutex
+	localCacheGCEnabled            bool
+	dagqlCacheMaxEstimatedBytes    int64
+	dagqlCacheTargetEstimatedBytes int64
+	metadataPruneMonitorBlocked    atomic.Bool
 
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelCauseFunc
@@ -156,9 +161,10 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions   map[string]*daggerSession // session id -> session state
-	daggerSessionsMu sync.RWMutex
-	clientDBs        *clientdb.DBs
+	daggerSessions     map[string]*daggerSession // session id -> session state
+	releasedSessionIDs map[string]struct{}
+	daggerSessionsMu   sync.RWMutex
+	clientDBs          *clientdb.DBs
 
 	locker *locker.Locker
 
@@ -181,6 +187,11 @@ type NewServerOpts struct {
 	BuildkitConfig *bkconfig.Config
 }
 
+const (
+	secretSaltEnvName = "DAGGER_SECRET_SALT"
+	secretSaltSize    = 32
+)
+
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
@@ -202,16 +213,29 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		daggerSessions: make(map[string]*daggerSession),
+		daggerSessions:     make(map[string]*daggerSession),
+		releasedSessionIDs: make(map[string]struct{}),
 
 		locker: locker.New(),
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
+	var err error
+	if err := srv.configureLocalCacheGC(cfg.GC, ociCfg.GCConfig); err != nil {
+		return nil, err
+	}
+
 	// Let core (e.g. changeset export) drop this server's per-client workspace
 	// cache after workspace config is written to the host. One engine = one
 	// Server, so a process-global hook is sufficient.
 	core.SetWorkspaceInvalidator(srv.invalidateClientWorkspace)
+
+	// Let core scope and bump each client's "workspace read epoch", so a
+	// long-lived session (e.g. `dagger agent`) can invalidate its cached host
+	// reads once the workspace's on-disk content changes under it (export) or
+	// the agent discards its overlay to re-sync with the host
+	// (Workspace.reloaded).
+	core.SetWorkspaceReadEpochHooks(srv.currentWorkspaceReadEpoch, srv.bumpClientWorkspaceReadEpoch)
 
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
@@ -221,7 +245,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	var err error
 	srv.rootDir, err = filepath.Abs(srv.rootDir)
 	if err != nil {
 		return nil, err
@@ -244,6 +267,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
+
+	// Sweep any worker state moved aside by a cache reset — this startup's or
+	// an interrupted sweep from a previous one — in the background.
+	srv.startLocalCacheTrashSweeper()
 
 	//
 	// clean up old hosts/resolv.conf file. ignore errors
@@ -369,6 +396,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
+	srv.initRecursiveReadOnlyMounts(ctx)
+
 	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open host mount namespace: %w", err)
@@ -424,35 +453,79 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup solver
 	//
 
-	srv.throttledGC = throttle.After(localCacheSessionGCThrottle, srv.gc)
-	srv.throttledDiskPressureGC = throttle.After(localCacheDiskPressureGCThrottle, srv.gcIfDiskPressure)
+	srv.throttledSessionGC = throttle.After(localCacheSessionGCThrottle, srv.gcAfterSessionCompletion)
+	srv.throttledLocalCachePressureGC = throttle.After(localCachePressureGCThrottle, srv.gcIfLocalCachePressure)
 	defer func() {
 		time.AfterFunc(time.Second, srv.gc)
 	}()
-	srv.startDiskPressureGCMonitor()
+	srv.startLocalCachePressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
 
 	// initialize the secret salt
-	secretSaltPath := filepath.Join(srv.rootDir, "secret-salt")
-	srv.secretSalt, err = os.ReadFile(secretSaltPath)
-	if err != nil || len(srv.secretSalt) != 32 {
-		if err != nil && !os.IsNotExist(err) {
-			slog.Warn("failed to read secret salt", "error", err)
-		}
-		srv.secretSalt = make([]byte, 32)
-		_, err = rand.Read(srv.secretSalt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
-		}
-		err = os.WriteFile(secretSaltPath, srv.secretSalt, 0600)
-		if err != nil {
-			slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
-		}
+	srv.secretSalt, err = loadSecretSalt(srv.rootDir)
+	if err != nil {
+		return nil, err
 	}
 
 	return srv, nil
+}
+
+func loadSecretSalt(rootDir string) ([]byte, error) {
+	if encodedSalt, ok := os.LookupEnv(secretSaltEnvName); ok {
+		encoding := base64.StdEncoding.Strict()
+		secretSalt, err := encoding.DecodeString(encodedSalt)
+		if err != nil {
+			return nil, fmt.Errorf("decode %s: %w", secretSaltEnvName, err)
+		}
+		if len(secretSalt) != secretSaltSize {
+			return nil, fmt.Errorf("%s must decode to exactly %d bytes, got %d", secretSaltEnvName, secretSaltSize, len(secretSalt))
+		}
+		if encoding.EncodeToString(secretSalt) != encodedSalt {
+			return nil, fmt.Errorf("%s must use canonical base64 encoding", secretSaltEnvName)
+		}
+		return secretSalt, nil
+	}
+
+	secretSaltPath := filepath.Join(rootDir, "secret-salt")
+	secretSalt, err := os.ReadFile(secretSaltPath)
+	if err == nil && len(secretSalt) == secretSaltSize {
+		return secretSalt, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		slog.Warn("failed to read secret salt", "error", err)
+	}
+
+	secretSalt = make([]byte, secretSaltSize)
+	if _, err := rand.Read(secretSalt); err != nil {
+		return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
+	}
+	if err := os.WriteFile(secretSaltPath, secretSalt, 0600); err != nil {
+		slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
+	}
+	return secretSalt, nil
+}
+
+func (srv *Server) configureLocalCacheGC(gcConfig config.GCConfig, workerGCConfig bkconfig.GCConfig) error {
+	enabled, maximum, target, err := resolveDagqlCacheGCConfig(gcConfig, workerGCConfig)
+	if err != nil {
+		return err
+	}
+	srv.localCacheGCEnabled = enabled
+	srv.dagqlCacheMaxEstimatedBytes = maximum
+	srv.dagqlCacheTargetEstimatedBytes = target
+	return nil
+}
+
+func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
+	var err error
+	srv.recursiveReadOnlyMounts, err = probeRecursiveReadOnlyMounts()
+	if err != nil {
+		// ENOSYS on old kernels and EPERM under namespace/seccomp restrictions
+		// are expected compatibility cases. Retain false and use rbind,ro.
+		slog.DebugContext(ctx, "recursive read-only mounts unavailable; engine volumes will use top-level read-only fallback", "error", err)
+	}
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
@@ -595,8 +668,15 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 }
 
 func (srv *Server) removeLocalCacheStateOnDisk() error {
-	if err := os.RemoveAll(srv.workerRootDir); err != nil {
-		return fmt.Errorf("remove worker state: %w", err)
+	trashDir, err := moveLocalCacheStateToTrash(srv.workerRootDir)
+	if err != nil {
+		return fmt.Errorf("move worker state to trash: %w", err)
+	}
+	if trashDir != "" {
+		// The rename is O(1), so startup proceeds immediately; the trash dir
+		// is removed in the background once startup settles (see
+		// startLocalCacheTrashSweeper).
+		slog.Info("moved invalid worker state aside for background removal", "dir", trashDir)
 	}
 	if err := dagql.RemoveCachePersistenceStore(filepath.Join(srv.rootDir, "dagql-cache.db")); err != nil {
 		return fmt.Errorf("remove dagql persistence state: %w", err)
@@ -754,28 +834,25 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	for _, s := range daggerSessions {
 		s.lifecycleMu.Lock()
 		// Wait out any in-flight init (lifecycleMu serializes it), then tear down
-		// only if the session actually initialized; an already-removed tombstone
-		// or a still-uninitialized session has nothing (more) to remove here.
-		if s.state.Load() == sessionStateInitialized {
+		// only if the session actually initialized. An already-removed tombstone
+		// belongs to the teardown or failed-initialization path that published it;
+		// that path also owns the matching retire-or-delete decision.
+		state := s.state.Load()
+		retire := state == sessionStateInitialized
+		if retire {
 			err = errors.Join(err, srv.removeDaggerSession(ctx, s))
 		}
 		s.lifecycleMu.Unlock()
-		srv.deleteSession(s)
+		if retire {
+			srv.retireSession(s)
+		} else if state == sessionStateUninitialized {
+			srv.deleteSession(s)
+		}
 	}
 
-	if srv.engineCache != nil && len(srv.workerGCPolicies) > 0 {
-		dstat, statErr := disk.GetDiskStat(srv.rootDir)
-		if statErr != nil {
-			err = errors.Join(err, fmt.Errorf("failed to get disk stats for graceful shutdown prune: %w", statErr))
-		} else {
-			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
-			for i := range prunePolicies {
-				prunePolicies[i].CurrentFreeSpace = dstat.Available
-			}
-			_, pruneErr := srv.engineCache.Prune(ctx, prunePolicies)
-			if pruneErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to prune dagql cache during graceful shutdown: %w", pruneErr))
-			}
+	if srv.engineCache != nil && srv.localCacheGCEnabled {
+		if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
 		}
 	}
 
@@ -895,6 +972,13 @@ func (srv *Server) DagqlCacheEntries() int {
 		return 0
 	}
 	return srv.engineCache.Size()
+}
+
+func (srv *Server) DagqlCacheMetadataEstimatedBytes() int64 {
+	if srv.engineCache == nil {
+		return 0
+	}
+	return srv.engineCache.MetadataEstimate().EstimatedBytes
 }
 
 func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {

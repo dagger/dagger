@@ -50,11 +50,11 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Returns details of a commit.
      */
-    public function commit(string $id): GitRef
+    public function commit(string $id): GitCommit
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -76,11 +76,13 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns details for the latest semver tag.
+     * Return the latest stable release tag, falling back to HEAD when no release exists.
+     *
+     * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
      */
-    public function latestVersion(): GitRef
+    public function latest(): GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latestVersion');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

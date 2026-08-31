@@ -263,6 +263,27 @@
             "kind": "OBJECT_KIND",
             "name": "Service"
           }
+        },
+        "agentSomething": {
+          "name": "agentSomething",
+          "description": "",
+          "arguments": {
+            "base": {
+              "name": "base",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "LLM"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "LLM"
+          }
         }
       },
       "properties": {

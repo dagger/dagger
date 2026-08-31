@@ -2,12 +2,17 @@ package generator
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"golang.org/x/mod/semver"
 )
+
+const nullableObjectSDKCutoverVersion = "v1.0.0-beta.10"
+
+var betaVersion = regexp.MustCompile(`^(v\d+\.\d+\.\d+-beta\.\d+)`)
 
 const (
 	QueryStructName       = "Query"
@@ -257,4 +262,14 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 
 func (c *CommonFunctions) CheckVersionCompatibility(minVersion string) bool {
 	return semver.Compare(c.schemaVersion, minVersion) >= 0
+}
+
+func SupportsNullableObjects(schemaVersion string) bool {
+	if schemaVersion == "" || !semver.IsValid(schemaVersion) {
+		return true
+	}
+	if version := betaVersion.FindString(schemaVersion); version != "" {
+		schemaVersion = version
+	}
+	return semver.Compare(schemaVersion, nullableObjectSDKCutoverVersion) >= 0
 }

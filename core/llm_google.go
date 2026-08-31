@@ -287,6 +287,11 @@ func (c *GenaiClient) processStreamResponse(
 		if candidate.Content == nil {
 			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
 		}
+		// A blocked or truncated candidate can arrive with content attached, so
+		// the finish reason is checked even when Content is set.
+		if !genaiFinishedCleanly(candidate.FinishReason) {
+			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
+		}
 
 		for _, part := range candidate.Content.Parts {
 			sig := ""
@@ -347,6 +352,21 @@ func (c *GenaiClient) processStreamResponse(
 	flushThinking()
 	flushText()
 	return contentBlocks, tokenUsage, nil
+}
+
+// genaiFinishedCleanly reports whether a candidate's finish reason means the
+// model finished normally. Gemini's enum is almost entirely failure modes
+// (SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, MALFORMED_FUNCTION_CALL,
+// ...), so this allows the good reasons rather than listing the bad ones. A
+// finish reason is reported only on the last streamed chunk, so an empty one
+// means the turn is still in progress.
+func genaiFinishedCleanly(reason genai.FinishReason) bool {
+	switch reason {
+	case "", genai.FinishReasonStop, genai.FinishReasonUnspecified:
+		return true
+	default:
+		return false
+	}
 }
 
 // decodeThoughtSignature turns a base64-encoded thought signature (as stored on
@@ -475,12 +495,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 
 	// records token usage metrics and updates the final summary struct based on metadata from the stream.
 	tokenHandler := func(usageMeta *genai.GenerateContentResponseUsageMetadata) (usageSummary LLMTokenUsage) {
-		candidatesTokens := int64(usageMeta.CandidatesTokenCount)
-		promptTokens := int64(usageMeta.PromptTokenCount)
 		cachedTokens := int64(usageMeta.CachedContentTokenCount)
+		promptTokens := uncachedInputTokens(int64(usageMeta.PromptTokenCount), cachedTokens)
+		outputTokensTotal := int64(usageMeta.CandidatesTokenCount + usageMeta.ThoughtsTokenCount)
 
-		if candidatesTokens > 0 {
-			outputTokens.Record(ctx, candidatesTokens, metric.WithAttributes(attrs...))
+		if outputTokensTotal > 0 {
+			outputTokens.Record(ctx, outputTokensTotal, metric.WithAttributes(attrs...))
 		}
 		if promptTokens > 0 {
 			inputTokens.Record(ctx, promptTokens, metric.WithAttributes(attrs...))
@@ -489,10 +509,13 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 			inputTokensCacheReads.Record(ctx, cachedTokens, metric.WithAttributes(attrs...))
 		}
 
-		usageSummary.OutputTokens += candidatesTokens
-		usageSummary.InputTokens += promptTokens
-		usageSummary.CachedTokenReads += cachedTokens
-		usageSummary.TotalTokens += candidatesTokens + promptTokens
+		usageSummary.OutputTokens = outputTokensTotal
+		usageSummary.InputTokens = promptTokens
+		usageSummary.CachedTokenReads = cachedTokens
+		usageSummary.TotalTokens = promptTokens + outputTokensTotal + cachedTokens
+		if totalTokens := int64(usageMeta.TotalTokenCount); totalTokens > usageSummary.TotalTokens {
+			usageSummary.TotalTokens = totalTokens
+		}
 
 		return usageSummary
 	}

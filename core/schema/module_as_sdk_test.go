@@ -3,9 +3,59 @@ package schema
 import (
 	"testing"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCurrentModuleAsSDKModulesForCwd(t *testing.T) {
+	modules := func(paths ...string) []*core.CurrentModuleAsSDKModule {
+		result := make([]*core.CurrentModuleAsSDKModule, 0, len(paths))
+		for _, path := range paths {
+			result = append(result, &core.CurrentModuleAsSDKModule{Path: path})
+		}
+		return result
+	}
+	paths := func(modules []*core.CurrentModuleAsSDKModule) []string {
+		result := make([]string, 0, len(modules))
+		for _, mod := range modules {
+			result = append(result, mod.Path)
+		}
+		return result
+	}
+
+	managed := modules(
+		".",
+		"services/api",
+		"services/api/src/tool",
+		"services/web",
+		"libraries/auth",
+	)
+	tests := []struct {
+		name string
+		cwd  string
+		want []string
+	}{
+		{name: "root sees all modules", cwd: ".", want: []string{".", "services/api", "services/api/src/tool", "services/web", "libraries/auth"}},
+		{name: "directory sees ancestor and descendants", cwd: "services", want: []string{".", "services/api", "services/api/src/tool", "services/web"}},
+		{name: "module cwd suppresses farther ancestor", cwd: "services/api", want: []string{"services/api", "services/api/src/tool"}},
+		{name: "inside module selects nearest ancestor", cwd: "services/api/src", want: []string{"services/api", "services/api/src/tool"}},
+		{name: "deep inside module selects nearest ancestor only", cwd: "services/api/internal", want: []string{"services/api"}},
+		{name: "unrelated directory selects root module", cwd: "other", want: []string{"."}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := currentModuleAsSDKModulesForCwd(managed, test.cwd)
+			require.Equal(t, test.want, paths(got))
+		})
+	}
+
+	t.Run("deduplicates normalized paths", func(t *testing.T) {
+		got := currentModuleAsSDKModulesForCwd(modules("services/api", "services/./api", "services/web"), "services")
+		require.Equal(t, []string{"services/api", "services/web"}, paths(got))
+	})
+}
 
 func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 	goSDK := workspace.ModuleEntry{

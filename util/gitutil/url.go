@@ -176,22 +176,35 @@ func IsGitTransport(remote string) bool {
 }
 
 func fromURL(url *url.URL) *GitURL {
+	path, fragment := splitGitVersion(url.Path, url.Fragment)
 	return &GitURL{
 		Scheme:   url.Scheme,
 		User:     url.User,
 		Host:     url.Host,
-		Path:     url.Path,
-		Fragment: splitGitFragment(url.Fragment),
+		Path:     path,
+		Fragment: fragment,
 	}
 }
 
 func fromSCPStyleURL(url *sshutil.SCPStyleURL) *GitURL {
+	path, fragment := splitGitVersion(url.Path, url.Fragment)
 	return &GitURL{
 		Scheme:   SSHProtocol,
 		User:     url.User,
 		Host:     url.Host,
-		Path:     url.Path,
-		Fragment: splitGitFragment(url.Fragment),
+		Path:     path,
+		Fragment: fragment,
 		scpStyle: true,
 	}
+}
+
+// splitGitVersion accepts the module-source "@ref" spelling in addition to
+// the BuildKit-style "#ref" fragment. An explicit fragment takes precedence.
+func splitGitVersion(path, fragment string) (string, *GitURLFragment) {
+	if fragment == "" {
+		if repoPath, ref, ok := strings.Cut(path, "@"); ok {
+			return repoPath, splitGitFragment(ref)
+		}
+	}
+	return path, splitGitFragment(fragment)
 }

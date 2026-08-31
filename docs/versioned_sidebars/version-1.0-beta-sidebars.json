@@ -1,0 +1,232 @@
+{
+  "current": [
+    {
+      "type": "category",
+      "label": "Getting Started",
+      "collapsible": true,
+      "collapsed": false,
+      "items": [
+        "getting-started/introduction",
+        "getting-started/quickstart",
+        "getting-started/workspace-setup",
+        "getting-started/pre-push",
+        "getting-started/post-push"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "CLI",
+      "collapsible": true,
+      "collapsed": false,
+      "items": [
+        "cli/install",
+        "cli/checking",
+        "cli/generating",
+        "cli/services",
+        "cli/calling-functions",
+        {
+          "type": "doc",
+          "id": "cli/reference/index",
+          "label": "Reference"
+        }
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Configuration",
+      "link": {
+        "type": "doc",
+        "id": "config/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "config/environments",
+        "config/user",
+        "config/module-wiring",
+        "config/migrate-dagger-json",
+        {
+          "type": "category",
+          "label": "Reference",
+          "link": {
+            "type": "doc",
+            "id": "config/reference/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "config/reference/dagger-toml"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Modules",
+      "link": {
+        "type": "doc",
+        "id": "modules/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "modules/go",
+        "modules/deno",
+        "modules/pytest",
+        "modules/jest",
+        "modules/vitest",
+        "modules/playwright",
+        "modules/eslint",
+        "modules/prettier",
+        "modules/biomejs",
+        "modules/shellcheck",
+        "modules/psscriptanalyzer",
+        "modules/helm"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "SDKs",
+      "link": {
+        "type": "doc",
+        "id": "sdks/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "sdks/dang",
+        "sdks/go",
+        "sdks/typescript",
+        "sdks/python",
+        "sdks/java",
+        "sdks/php",
+        "sdks/elixir"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "API",
+      "link": {
+        "type": "doc",
+        "id": "api/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "category",
+          "label": "Reference",
+          "link": {
+            "type": "doc",
+            "id": "api/reference/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "api/reference/query",
+              "label": "Query (top-level)"
+            },
+            "api/reference/container",
+            "api/reference/directory",
+            "api/reference/file",
+            "api/reference/service",
+            "api/reference/secret",
+            "api/reference/cache-volume",
+            "api/reference/git-repository",
+            "api/reference/llm",
+            "api/reference/changeset",
+            "api/reference/workspace",
+            {
+              "type": "category",
+              "label": "Other types",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                "api/reference/address",
+                "api/reference/agent",
+                "api/reference/agent-group",
+                "api/reference/check",
+                "api/reference/check-group",
+                "api/reference/client-filesync-mirror",
+                "api/reference/cloud",
+                "api/reference/current-module",
+                "api/reference/current-module-as-sdk",
+                "api/reference/current-module-as-sdk-client",
+                "api/reference/current-module-as-sdk-module",
+                "api/reference/diff-stat",
+                "api/reference/engine",
+                "api/reference/engine-cache",
+                "api/reference/engine-cache-entry",
+                "api/reference/engine-cache-entry-set",
+                "api/reference/enum-type-def",
+                "api/reference/enum-value-type-def",
+                "api/reference/env-file",
+                "api/reference/env-variable",
+                "api/reference/error",
+                "api/reference/error-value",
+                "api/reference/exportable",
+                "api/reference/field-type-def",
+                "api/reference/function",
+                "api/reference/function-arg",
+                "api/reference/function-call",
+                "api/reference/function-call-arg-value",
+                "api/reference/generated-code",
+                "api/reference/generator",
+                "api/reference/generator-group",
+                "api/reference/git-commit",
+                "api/reference/git-ref",
+                "api/reference/healthcheck-config",
+                "api/reference/host",
+                "api/reference/http-state",
+                "api/reference/input-type-def",
+                "api/reference/interface-type-def",
+                "api/reference/json-value",
+                "api/reference/label",
+                "api/reference/list-type-def",
+                "api/reference/llm-content-block",
+                "api/reference/llm-message",
+                "api/reference/llm-skill",
+                "api/reference/llm-token-usage",
+                "api/reference/module",
+                "api/reference/module-config-client",
+                "api/reference/module-source",
+                "api/reference/node",
+                "api/reference/object-type-def",
+                "api/reference/port",
+                "api/reference/remote-git-mirror",
+                "api/reference/scalar-type-def",
+                "api/reference/schema",
+                "api/reference/sdk-config",
+                "api/reference/search-result",
+                "api/reference/search-submatch",
+                "api/reference/socket",
+                "api/reference/source-map",
+                "api/reference/stat",
+                "api/reference/syncer",
+                "api/reference/terminal",
+                "api/reference/type-def",
+                "api/reference/up",
+                "api/reference/up-group",
+                "api/reference/volume",
+                "api/reference/workspace-git",
+                "api/reference/workspace-migration",
+                "api/reference/workspace-migration-step",
+                "api/reference/workspace-module",
+                "api/reference/workspace-module-setting",
+                "api/reference/workspace-sdk"
+              ]
+            },
+            "api/reference/all"
+          ]
+        },
+        {
+          "type": "doc",
+          "id": "api/clients/index",
+          "label": "Clients"
+        }
+      ]
+    }
+  ]
+}

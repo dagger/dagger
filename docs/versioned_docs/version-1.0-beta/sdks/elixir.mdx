@@ -1,0 +1,932 @@
+---
+title: "Elixir SDK"
+slug: /sdks/elixir
+description: "Develop Dagger modules in Elixir: create modules with the Elixir SDK module, define objects and functions with defn, manage dependencies, regenerate bindings, and ship releases."
+---
+
+# Elixir SDK
+
+The Elixir SDK lets you write Dagger modules in Elixir. A module is an ordinary Mix project. Its main module uses `Dagger.Mod.Object` and declares functions with `defn`, and the SDK turns those into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. In return, your module gets a generated, typed Elixir client for the whole Dagger API, reachable through `dag()`. That covers containers, directories, files, secrets, services, and every module you depend on.
+
+This page is a standalone guide to the Elixir SDK. It assumes you already understand the platform concepts covered in the [SDKs overview](./index.mdx):
+
+- [Types](../api/reference/index.mdx), which explains how SDK types map to the Dagger API
+- [Generating code](../cli/generating.mdx), which explains how generators and tooling return diffs for you to apply
+
+A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The Elixir SDK supports checks only today. See [Checks, cache policy, directives, and ignore patterns](#checks-cache-policy-directives-and-ignore-patterns) for the Elixir syntax and the current limitations.
+
+The Elixir SDK is itself a Dagger module, `github.com/dagger/elixir-sdk`. Install it into your workspace once, then create and maintain Elixir modules with Dagger's SDK and module commands:
+
+```shell
+# Install the Elixir SDK into your workspace (once)
+dagger sdk install github.com/dagger/elixir-sdk
+
+# Create an Elixir module
+dagger module init elixir-sdk my-module
+```
+
+:::note
+Unlike Go, Python, or TypeScript, `elixir` is not a name in the CLI's built-in SDK registry, so `dagger sdk install elixir` does not resolve. Pass the full reference instead. Dagger installs a directly referenced SDK under the basename of its ref, here `elixir-sdk`, and that is the name you pass to `dagger module init`. If you want a shorter name, pick it at install time with `dagger sdk install --name elixir github.com/dagger/elixir-sdk`, then run `dagger module init elixir my-module`.
+:::
+
+## Create a module
+
+:::note
+Run these commands from inside a Git repository. That is where Dagger creates the new module.
+:::
+
+Install the Elixir SDK into your workspace, then create a new module. The required arguments are the SDK and module name:
+
+```shell
+dagger sdk install github.com/dagger/elixir-sdk
+dagger module init elixir-sdk my-module
+```
+
+Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../cli/generating.mdx), a structured diff of the files it wants to create. Dagger shows it to you for review before writing anything to disk.
+
+:::tip
+If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here github.com/dagger/elixir-sdk` to create it in the current directory.
+:::
+
+### Where the module is created
+
+By default, `dagger module init` places the new module beside the `dagger.toml` it is editing:
+
+```
+<dagger.toml directory>/.dagger/modules/<name>
+```
+
+That is the workspace root unless the config lives in a subdirectory, as it does when several projects share one repository.
+
+Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
+
+```shell
+dagger module init elixir-sdk my-module --path ci     # ./ci
+dagger module init elixir-sdk my-module --path /ci    # <workspace root>/ci
+```
+
+Dagger registers a custom path as a module authored by the SDK, but does not install it as a callable workspace module. Run `dagger install ./ci` to install it too.
+
+Pass `--template` to pick a starter. `default` gives you a working module with two example functions; `empty` gives you a bare object module with no functions:
+
+```shell
+dagger module init elixir-sdk my-module --template empty
+```
+
+List the Elixir SDK's module initialization options with:
+
+```shell
+dagger module init elixir-sdk --help
+```
+
+### Resulting file layout
+
+Once initialized and generated, an Elixir module is a regular Mix project:
+
+```text
+my-module/
+├── dagger-module.toml
+├── mix.exs                       # depends on ./dagger_sdk by path
+├── .formatter.exs
+├── README.md
+├── lib/
+│   └── my_module.ex              # your code
+└── dagger_sdk/                   # generated: the Elixir SDK + typed API bindings
+    ├── mix.exs
+    └── lib/
+        └── dagger/
+            ├── gen/              # bindings generated from your engine's schema
+            └── ...
+```
+
+The Dagger module name determines the Elixir names: `my-module` becomes the Mix application `:my_module`, the source file `lib/my_module.ex`, and the Elixir module `MyModule`. The runtime looks up the entrypoint module by that derived name, so keep `defmodule` in step with the module name.
+
+:::note
+`dagger module init` writes `dagger-module.toml`, updates the workspace config, and seeds `mix.exs`, `.formatter.exs`, `README.md`, and `lib/my_module.ex` from the SDK's template. It then runs the Elixir SDK's generator for the new module as part of the same changeset. The generator writes `dagger_sdk/`, the SDK library plus API bindings. A fresh module's `mix.exs` depends on `./dagger_sdk`, so it does not compile until that directory exists. Commit `dagger_sdk/` along with the rest of the module. The runtime builds from the committed sources and does not regenerate them. Pass `--no-generate` to scaffold without generating, then run `dagger generate` before you build.
+:::
+
+The module config records the runtime separately from the SDK that authors it:
+
+```toml title="dagger-module.toml" template
+name = "my-module"
+engineVersion = "v{{ version }}"
+
+[runtime]
+source = "github.com/dagger/elixir-sdk/runtime"
+```
+
+Elixir has no built-in engine runtime, so `runtime.source` points at the Elixir SDK's own runtime module. That runtime compiles your module in an `elixir:*-alpine` container and runs `mix dagger.entrypoint.invoke <ModuleName>`. The workspace's `dagger.toml` separately records the module under `modules.elixir-sdk.as-sdk`, and Elixir binding generation uses that authoring relationship to discover workspace modules. Nobody writes the files in `dagger_sdk/` by hand; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
+
+## Define objects and functions
+
+An Elixir module is an ordinary Mix project. The main object is the Elixir module named after your Dagger module (`my-module` → `MyModule`), and it calls `use Dagger.Mod.Object, name: "MyModule"`. Every function declared with the `defn` macro becomes a callable Dagger Function.
+
+```elixir title="lib/my_module.ex"
+defmodule MyModule do
+  @moduledoc """
+  A simple example module to say hello.
+
+  Further documentation for the module here.
+  """
+
+  use Dagger.Mod.Object, name: "MyModule"
+
+  @doc """
+  Return a greeting.
+  """
+  defn hello(name: String.t(), greeting: String.t()) :: String.t() do
+    "#{greeting}, #{name}!"
+  end
+
+  @doc """
+  Return a loud greeting.
+  """
+  defn loud_hello(name: String.t(), greeting: String.t()) :: String.t() do
+    String.upcase("#{greeting}, #{name}!")
+  end
+end
+```
+
+Key rules:
+
+- `use Dagger.Mod.Object, name: "..."` marks the Elixir module as a Dagger object. The `name` is the object's name in the Dagger API.
+- `defn name(arg: type, ...) :: return_type do ... end` declares a Dagger Function. Argument and return types are ordinary Elixir typespecs, and the SDK converts them to Dagger types when it registers the module.
+- The SDK exposes only `defn` functions. Plain `def` and `defp` functions are private Elixir helpers that callers never see.
+- `use Dagger.Mod.Object` imports `dag/0`, which returns the client for the Dagger API. Use `dag()` to start any pipeline.
+- A function fails when it raises or returns an `{:error, reason}` tuple. The SDK accepts and unwraps `{:ok, value}`, so you can return the result of a leaf call such as `Dagger.Container.stdout/1` directly.
+
+Call your functions exactly like any other module, from the directory that contains `dagger-module.toml` or with `-m <path>`:
+
+```shell
+dagger api call hello --name=World --greeting=Hello
+# Hello, World!
+
+dagger api call loud-hello --name=World --greeting=Hello
+# HELLO, WORLD!
+```
+
+The CLI converts Elixir function and argument names to kebab-case (`loud_hello` → `loud-hello`, `string_arg` → `--string-arg`).
+
+### Fields, state, and the constructor
+
+An object carries state in an `object do ... end` block of `field` declarations, which defines a struct. A `defn init` function becomes the module's constructor. Its arguments become arguments of the main object, and it returns the initialized struct. Use it for module-wide configuration and shared state.
+
+A function receives the object's state when its first parameter is a bare variable, conventionally `self`, placed before the keyword list of arguments:
+
+```elixir title="lib/my_module.ex"
+defmodule MyModule do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "MyModule"
+
+  object do
+    field :name, String.t(), doc: "Who to greet"
+  end
+
+  defn init(name: {String.t(), default: "world"}) :: MyModule.t() do
+    %__MODULE__{name: name}
+  end
+
+  @doc """
+  Return a greeting for the configured name.
+  """
+  defn greeting(self) :: String.t() do
+    "Hello, #{self.name}!"
+  end
+
+  @doc """
+  Return a copy of this object with a different name.
+  """
+  defn with_name(self, name: String.t()) :: MyModule.t() do
+    %{self | name: name}
+  end
+end
+```
+
+```shell
+dagger api call --name=Elixir greeting
+# Hello, Elixir!
+
+dagger api call with-name --name=Dagger greeting
+# Hello, Dagger!
+```
+
+Fields are public state. They appear in the API, and Dagger serializes them between functions in a chain. A field typed `T | nil` is optional; every other field is required when you build the struct. `field` accepts `doc:` and `deprecated:` options. The Elixir SDK has no private-field marker, so keep values you don't want to expose out of `object do` and recompute them in a helper instead.
+
+A common constructor pattern accepts a `Dagger.Workspace.t()` so the module can read the project it runs against. Store the project directory once as a field and reuse it from every function. See [Workspace inputs](#workspace-inputs).
+
+## Arguments and return values
+
+Dagger derives a function's argument and return types from the typespecs in the `defn` signature. The mapping is:
+
+| Elixir typespec | Dagger type |
+|---|---|
+| `String.t()` or `binary()` | `String` |
+| `integer()` | `Int` |
+| `float()` | `Float` |
+| `boolean()` | `Boolean` |
+| `list(T)` or `[T]` | `[T]` (list) |
+| `T \| nil` | optional `T` |
+| `Dagger.Directory.t()` | `Directory` |
+| `Dagger.File.t()` | `File` |
+| `Dagger.Container.t()` | `Container` |
+| `Dagger.Secret.t()` | `Secret` |
+| `Dagger.Service.t()` | `Service` |
+| `Dagger.Workspace.t()` | `Workspace` (auto-populated) |
+| `Dagger.Void.t()` | `Void` (no return value) |
+| `MyObject.t()` (a module using `Dagger.Mod.Object`) | object `MyObject` |
+| `MyEnum.t()` (a module using `Dagger.Mod.Enum`) | enum |
+
+Any other type generated under the `Dagger` namespace (`Dagger.CacheVolume.t()`, `Dagger.Platform.t()`, …) maps to the corresponding core type. An unsupported typespec raises `ArgumentError` at compile time.
+
+### Documentation
+
+Doc attributes become API documentation, shown by `dagger api functions` and `dagger api call --help`. `@moduledoc` documents the module, and its first line is the short description. `@doc` directly above a `defn` documents the function. The `doc:` argument option documents an argument. To attach options to an argument, wrap its type and options in a tuple:
+
+```elixir
+@doc """
+Return a greeting.
+"""
+defn hello(name: {String.t(), doc: "Who to greet"}) :: String.t() do
+  "Hello, #{name}!"
+end
+```
+
+The full set of argument options is:
+
+| Option | Meaning |
+|---|---|
+| `doc: "..."` | description shown in `--help` |
+| `default: value` | optional argument with a default value |
+| `default_path: "..."` | on `Dagger.Directory.t()` or `Dagger.File.t()`, load this path when the caller omits the argument |
+| `ignore: [...]` | on `Dagger.Directory.t()`, gitignore-style patterns to exclude from the loaded directory |
+| `deprecated: "..."` | mark the argument deprecated with a reason |
+
+### Optional and default arguments
+
+Dagger arguments are required by default. Make one optional with a `| nil` union, or give it a default with the `default:` option:
+
+```elixir title="optional"
+defn hello(name: String.t() | nil) :: String.t() do
+  if name, do: "Hello, #{name}", else: "Hello, world"
+end
+```
+
+```elixir title="default value"
+defn hello(name: {String.t(), default: "world"}) :: String.t() do
+  "Hello, #{name}"
+end
+```
+
+- `T | nil` makes the argument optional. It is `nil` when the caller omits it, so you can tell that the caller left it out.
+- `default: value` makes the argument optional and supplies a default value when the caller omits it. The default also becomes the Elixir function's default argument, so calling `hello()` from other Elixir code in the module yields the same value.
+
+### Nullability
+
+Use a `| nil` union (for example `Dagger.Secret.t() | nil`) when an argument may be absent. `nil` corresponds to a null or omitted value. Non-optional types are always present. Declare a function that returns nothing with `Dagger.Void.t()`. Dagger discards whatever it returns (`:ok` is conventional), and only a raise or an `{:error, _}` tuple fails the call.
+
+### Enums
+
+Model a closed set of values with a module that uses `Dagger.Mod.Enum`. Dagger turns it into an enum and validates inputs. Each value's atom name is what callers pass. To give a value a description, or a different serialized name, use the keyword forms:
+
+```elixir title="lib/my_module.ex"
+defmodule Severity do
+  @moduledoc "Vulnerability severity levels"
+
+  use Dagger.Mod.Enum,
+    name: "Severity",
+    values: [
+      UNKNOWN: [doc: "Undetermined risk; analyze further."],
+      LOW: [doc: "Minimal risk; routine fix."],
+      MEDIUM: [doc: "Moderate risk; timely fix."],
+      HIGH: [doc: "Serious risk; quick fix needed."],
+      CRITICAL: [doc: "Severe risk; immediate action."]
+    ]
+end
+
+defmodule MyModule do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "MyModule"
+
+  defn scan(ref: String.t(), severity: {Severity.t(), default: Severity.high()}) :: String.t() do
+    dag()
+    |> Dagger.Client.container()
+    |> Dagger.Container.from("aquasec/trivy:0.50.4")
+    |> Dagger.Container.with_exec([
+      "trivy", "image",
+      "--severity=#{Atom.to_string(severity)}",
+      ref
+    ])
+    |> Dagger.Container.stdout()
+  end
+end
+```
+
+Inside the function the argument arrives as an atom (`:HIGH`). The enum module also defines a lowercase accessor per value (`Severity.high()`), which is the form to use for a `default:`.
+
+Passing a value outside the enum fails with an error that lists the allowed choices:
+
+```shell
+dagger api call scan --ref=alpine:latest --severity=FOO
+# Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+```
+
+### Custom object types
+
+Return a struct from another `Dagger.Mod.Object` module to expose a custom object. Its fields become readable values, and its `defn` functions become chainable functions. Dagger discovers custom objects by following function return types from the main object, so every custom object must be the direct return type of at least one function. In the API schema, Dagger prefixes their names with the module name to avoid collisions:
+
+```elixir title="lib/my_module.ex"
+defmodule MyModule.Account do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "Account"
+
+  object do
+    field :username, String.t()
+    field :email, String.t()
+  end
+
+  defn url(self) :: String.t() do
+    "https://github.com/#{self.username}"
+  end
+end
+
+defmodule MyModule.Organization do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "Organization"
+
+  object do
+    field :url, String.t()
+    field :repositories, [Dagger.GitRepository.t()]
+  end
+
+  defn member(self, username: String.t()) :: MyModule.Account.t() do
+    %MyModule.Account{username: username, email: "#{username}@example.com"}
+  end
+end
+
+defmodule MyModule do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "MyModule"
+
+  defn dagger_organization() :: MyModule.Organization.t() do
+    url = "https://github.com/dagger"
+
+    %MyModule.Organization{
+      url: url,
+      repositories: [Dagger.Client.git(dag(), url <> "/dagger")]
+    }
+  end
+end
+```
+
+You can then chain calls on the CLI and API:
+
+```shell
+dagger api call dagger-organization member --username=jane url
+```
+
+### Deprecation
+
+Deprecate a function with Elixir's standard `@deprecated "reason"` attribute (or `@doc deprecated: "reason"`), an argument or field with the `deprecated:` option, and a whole object with `@moduledoc deprecated: "reason"`. The reason appears in the API and in `--help`.
+
+### Interfaces
+
+The Elixir SDK does not yet support declaring interfaces. Accept concrete core types or values from your own custom objects instead.
+
+## Working with core Dagger types
+
+The generated client exposes the entire Dagger API. `dag()` returns a `Dagger.Client`. Every core type is a module under the `Dagger` namespace (`Dagger.Container`, `Dagger.Directory`, …), and its functions take the value as the first argument, so pipelines read well with `|>`. Functions that return a leaf value (`stdout`, `entries`, `contents`, `sync`, …) return `{:ok, value}` or `{:error, reason}`. Everything else returns a new lazy value.
+
+### Containers
+
+Each builder function returns a new, immutable `Dagger.Container`. Nothing mutates in place. Every step is content-addressed, and Dagger caches it automatically.
+
+```elixir
+@doc """
+Build and return a container.
+"""
+defn build(source: Dagger.Directory.t()) :: Dagger.Container.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("node:20")
+  |> Dagger.Container.with_directory("/app", source)
+  |> Dagger.Container.with_workdir("/app")
+  |> Dagger.Container.with_exec(["npm", "install"])
+  |> Dagger.Container.with_exec(["npm", "run", "build"])
+end
+```
+
+### Directories and files
+
+`Dagger.Directory` and `Dagger.File` are first-class, "just-in-time" artifacts. You can accept them as arguments, return them, mount them into containers, and export them to the host. Less common parameters go in a trailing keyword list. For example, `with_directory` accepts `exclude:`:
+
+```elixir
+@doc """
+Copy a directory into a container, excluding some paths.
+"""
+defn copy_directory_with_exclusions(
+       source: {Dagger.Directory.t(), doc: "Source directory"},
+       exclude: {[String.t()] | nil, doc: "Exclusion patterns"}
+     ) :: Dagger.Container.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("alpine:latest")
+  |> Dagger.Container.with_directory("/src", source, exclude: exclude || [])
+end
+```
+
+The same pattern holds everywhere. Required parameters are positional, and optional ones live in a trailing keyword list whose keys are the snake_cased API argument names.
+
+### Workspace inputs {#workspace-inputs}
+
+When a module needs to read the user's project, such as its source tree or config files, it takes a `Dagger.Workspace.t()` argument, almost always on the constructor. You don't pass it. Dagger fills it in from the current workspace and uploads nothing up front. Dagger pulls project content lazily, when a function actually reads a path, so a module can declare access to the whole workspace cheaply and only pay for what it touches.
+
+```elixir title="lib/my_module.ex"
+defmodule MyModule do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "MyModule"
+
+  object do
+    field :source, Dagger.Directory.t()
+  end
+
+  defn init(ws: Dagger.Workspace.t()) :: MyModule.t() do
+    # Pull the workspace root as a Directory (lazy, no upload yet).
+    %__MODULE__{source: Dagger.Workspace.directory(ws, "/")}
+  end
+
+  @doc """
+  Functions reuse the pulled Directory like any other.
+  """
+  defn build(self) :: Dagger.Container.t() do
+    dag()
+    |> Dagger.Client.container()
+    |> Dagger.Container.from("node:20")
+    |> Dagger.Container.with_directory("/app", self.source)
+    |> Dagger.Container.with_workdir("/app")
+    |> Dagger.Container.with_exec(["npm", "install"])
+    |> Dagger.Container.with_exec(["npm", "run", "build"])
+  end
+end
+```
+
+The `Dagger.Workspace` client module exposes accessors for reading project content:
+
+| Accessor | Signature | Returns |
+|---|---|---|
+| `directory` | `Dagger.Workspace.directory(ws, path, opts \\ [])` | a `Dagger.Directory` at `path` |
+| `file` | `Dagger.Workspace.file(ws, path)` | a `Dagger.File` at `path` |
+| `find_up` | `Dagger.Workspace.find_up(ws, name, opts \\ [])` | `{:ok, path}`, the workspace path of `name`, searching upward |
+
+**Path resolution.** A relative path resolves from the workspace's current working directory. An absolute path (starting with `/`) resolves from the workspace root, also called the boundary. So `Dagger.Workspace.directory(ws, "/")` is the whole project root, while `Dagger.Workspace.directory(ws, ".")` is wherever the user invoked Dagger from.
+
+**Excluding files.** `directory` takes `exclude:`, `include:`, and `gitignore:` options to filter what gets pulled. Filter tightly. Every file you load is one more file that can invalidate the cache, and `_build` and `deps` change far more often than your code does:
+
+```elixir
+defn init(ws: Dagger.Workspace.t()) :: MyModule.t() do
+  %__MODULE__{
+    source:
+      Dagger.Workspace.directory(ws, "/",
+        exclude: ["_build", "deps", ".git"]
+        # include: ["lib/", "mix.*"],   # allowlist instead
+        # gitignore: true               # apply .gitignore rules
+      )
+  }
+end
+```
+
+`find_up` walks up from a start path and returns the absolute workspace path of the first match, stopping at the workspace boundary. A relative start path resolves from the workspace cwd; pass `from: "..."` to change it. Use it to locate a project root marker such as `mix.exs`.
+
+:::tip
+To use the current workspace, declare a `Dagger.Workspace.t()` argument on the module constructor or function. Dagger injects it and omits it from the CLI arguments.
+:::
+
+`default_path:` and `ignore:` remain available on `Dagger.Directory.t()` and `Dagger.File.t()` arguments for modules that want a path-defaulted argument the caller can override. Prefer a `Dagger.Workspace.t()` for project content.
+
+### Secrets
+
+Accept sensitive values as `Dagger.Secret.t()`, never as plain strings. Dagger scrubs secret plaintext from logs, caches, and crash reports:
+
+```elixir
+@doc """
+Query the GitHub API.
+"""
+defn github_api(token: {Dagger.Secret.t(), doc: "GitHub API token"}) :: String.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("alpine:3.17")
+  |> Dagger.Container.with_secret_variable("GITHUB_API_TOKEN", token)
+  |> Dagger.Container.with_exec(["apk", "add", "curl"])
+  |> Dagger.Container.with_exec([
+    "sh", "-c",
+    ~s(curl "https://api.github.com/repos/dagger/dagger/issues" --header "Authorization: Bearer $GITHUB_API_TOKEN")
+  ])
+  |> Dagger.Container.stdout()
+end
+```
+
+Callers supply secrets through providers on the CLI:
+
+```shell
+dagger api call github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger api call github-api --token=file:./token.txt      # file
+dagger api call github-api --token=cmd:"gh auth token"   # command output
+dagger api call github-api --token=op://vault/item/field # 1Password
+```
+
+### Services
+
+Return `Dagger.Service.t()` to expose a long-running service, and bind it into other containers with `with_service_binding`. Services are content-addressed, so a given definition always gets the same hostname and port conflicts never come up:
+
+```elixir
+@doc """
+Start and return an HTTP service.
+"""
+defn http_service() :: Dagger.Service.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("python")
+  |> Dagger.Container.with_workdir("/srv")
+  |> Dagger.Container.with_new_file("index.html", "Hello, world!")
+  |> Dagger.Container.with_exposed_port(8080)
+  |> Dagger.Container.as_service(args: ["python", "-m", "http.server", "8080"])
+end
+
+@doc """
+Send a request to an HTTP service and return the response.
+"""
+defn get() :: String.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("alpine")
+  |> Dagger.Container.with_service_binding("www", http_service())
+  |> Dagger.Container.with_exec(["wget", "-O-", "http://www:8080"])
+  |> Dagger.Container.stdout()
+end
+```
+
+## Module dependencies
+
+A module can depend on other Dagger modules and call them through the generated client. The generator writes a dependency's objects and functions into `dagger_sdk/` alongside the core API, so a dependency named `hello` becomes a `Dagger.Hello` module that you reach through `Dagger.Client.hello(dag())`. `dagger-module.toml` records dependencies under `dependencies`:
+
+```toml title="dagger-module.toml" template
+name = "dev"
+engineVersion = "v{{ version }}"
+
+[runtime]
+source = "github.com/dagger/elixir-sdk/runtime"
+
+[[dependencies]]
+name = "hello"
+source = "github.com/shykes/daggerverse/hello@v0.3.0"
+
+[[dependencies]]
+name = "wolfi"
+source = "../wolfi"
+```
+
+A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, such as `github.com/shykes/daggerverse/hello@v0.3.0`.
+
+Manage dependencies with the CLI's `dagger module deps` commands from the module directory rather than hand-editing `dagger-module.toml`.
+
+Add a dependency by source:
+
+```shell
+dagger module deps add github.com/shykes/daggerverse/hello@v0.3.0
+```
+
+List the current dependencies:
+
+```shell
+dagger module deps list
+```
+
+Remove a dependency by name:
+
+```shell
+dagger module deps rm hello
+```
+
+After changing dependencies, [regenerate bindings](#regenerate-bindings-and-generated-files) so the new module's functions appear in `dagger_sdk/`.
+
+## Regenerate bindings and generated files {#regenerate-bindings-and-generated-files}
+
+An Elixir module uses generated code alongside your handwritten `lib/`:
+
+- `dagger_sdk/`, a vendored copy of the Elixir SDK library (`lib/dagger/*.ex`, `mix.exs`, `mix.lock`, `.formatter.exs`, `LICENSE`). Its `lib/dagger/gen/` is replaced by bindings generated from your engine's schema: all core types (`Dagger.Container`, `Dagger.Directory`, …), every dependency's objects and functions, and `Dagger.Client`.
+
+You do not edit these files by hand, but you do commit them. Dagger does not regenerate them when it loads a module configured with `dagger-module.toml`, including a module installed from Git. Because `mix.exs` depends on `{:dagger, path: "./dagger_sdk"}`, the module does not compile without them. Mark the directory as generated so code review skips it:
+
+```text title=".gitattributes"
+/dagger_sdk/** linguist-generated
+```
+
+Regenerate them whenever you change your module's functions, bump the engine version, or add or remove a dependency. Use `dagger generate`, which returns a changeset:
+
+```shell
+# Review the regenerated files, then apply
+dagger generate
+```
+
+`dagger generate` discovers and runs every generator in the workspace. For modules registered under the Elixir SDK, that includes binding regeneration. To regenerate a single module, call the SDK's `mod` function directly:
+
+```shell
+dagger api call elixir-sdk mod --path .dagger/modules/my-module generate
+```
+
+Apply and commit the resulting changeset. This keeps the generated client in sync with the functions and dependencies available to your module.
+
+:::note
+A `.dagger-elixir-sdk-skip-generate` marker in a module or one of its ancestors skips Elixir binding regeneration for that module.
+:::
+
+:::tip
+Generated SDK bindings are not in `.gitignore`; commit them with your module. Do ignore Mix build output, `_build/` and `deps/`, which the runtime recreates inside its container.
+:::
+
+If `dagger_sdk/mix.exs` is missing when the engine loads the module (for example, right after `dagger module init --no-generate`), the runtime vendors the SDK and generates the bindings on the fly so the module still loads. That fallback never writes to your workspace; run `dagger generate` to write the files.
+
+## Engine version
+
+Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the CLI's `dagger module engine` commands from the module directory.
+
+Read the currently required version:
+
+```shell
+dagger module engine required
+```
+
+Pin a specific version, the current engine, or the latest stable release:
+
+```shell template
+# A specific version
+dagger module engine require v{{ version }}
+
+# Whatever engine you're running now
+dagger module engine require-current
+
+# Latest stable release
+dagger module engine require-latest
+```
+
+Bumping the engine version usually means the generated bindings should change too, so follow with `dagger generate`.
+
+## Checks, cache policy, directives, and ignore patterns
+
+The three first-class function types are checks, generators, and services. A useful, reusable module provides at least one of them, so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. See the [SDKs overview](./index.mdx) for the full treatment. In Elixir, you mark a function with a module attribute placed directly above its `defn`:
+
+| Attribute | Return type | Run by | Purpose |
+|---|---|---|---|
+| `@check true` | `Dagger.Void.t()` (or `Dagger.Container.t()`) | `dagger check` | validate the project (test/lint/scan) |
+
+:::note
+The Elixir SDK supports checks and cache policies only. It has no equivalent of the `@generate` and `@up` markers, so an Elixir module cannot expose generators to `dagger generate` or services to `dagger up`. A `defn` may still return `Dagger.Changeset.t()` or `Dagger.Service.t()` for callers to use explicitly. If you need generators or `up` services, write that module in [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx). This is the main limitation to weigh before picking Elixir for a module.
+:::
+
+The Elixir-specific pieces are:
+
+### Attributes and options
+
+Elixir modules use module attributes to add Dagger metadata that typespecs can't express:
+
+| Directive | Placement | Meaning |
+|---|---|---|
+| `@check true` | above a `defn` | mark the function as a [check](#checks) |
+| `@cache :never` / `@cache :per_session` / `@cache ttl: "10m"` | above a `defn` | set the function's [cache policy](#cache-policy) |
+| `@deprecated "reason"` | above a `defn` | mark the function deprecated |
+
+Each attribute applies to the next `defn` only; the SDK resets it once the function is declared. Per-argument metadata (`doc:`, `default:`, `default_path:`, `ignore:`, `deprecated:`) goes in [argument options](#documentation) instead.
+
+### Ignore patterns
+
+A module reads the user's project through a `Dagger.Workspace.t()` argument (see [Workspace inputs](#workspace-inputs)). To filter what gets pulled, use the `exclude:` option when reading a workspace directory. Filter tightly. The less you load, the fewer cache invalidations you get:
+
+```elixir
+defn init(ws: Dagger.Workspace.t()) :: MyModule.t() do
+  %__MODULE__{
+    source: Dagger.Workspace.directory(ws, "/", exclude: ["_build", "deps", ".git"])
+  }
+end
+```
+
+For a path-defaulted `Dagger.Directory.t()` argument, the `ignore:` option does the same job (see [the argument options](#documentation)).
+
+### Checks {#checks}
+
+Set `@check true` on a function to make it a check, a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it raises or returns `{:error, reason}`, or when it returns a `Dagger.Container.t()` whose execution exits non-zero.
+
+```elixir
+@doc """
+Lint the project.
+"""
+@check true
+defn lint(self) :: Dagger.Void.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("elixir:1.19-alpine")
+  |> Dagger.Container.with_mounted_directory("/src", self.source)
+  |> Dagger.Container.with_workdir("/src")
+  |> Dagger.Container.with_exec(["mix", "format", "--check-formatted"])
+  |> Dagger.Container.sync()
+  |> case do
+    {:ok, _} -> :ok
+    error -> error
+  end
+end
+
+@doc """
+A check can also return a container; a non-zero exit fails the check.
+"""
+@check true
+defn build() :: Dagger.Container.t() do
+  dag()
+  |> Dagger.Client.container()
+  |> Dagger.Container.from("alpine:3")
+  |> Dagger.Container.with_exec(["true"])
+end
+```
+
+You can also declare checks on custom object types to group them, for example a `Test` object with `lint` and `unit` checks.
+
+### Cache policy {#cache-policy}
+
+By default Dagger caches function results keyed by their inputs. Tune it per function with the `@cache` attribute:
+
+```elixir
+# Re-run at most every 10 minutes
+@cache ttl: "10m"
+defn latest_release() :: String.t() do
+  # ...
+end
+
+# Cache for the current session only
+@cache :per_session
+defn session_id() :: String.t() do
+  # ...
+end
+
+# Never cache (always re-execute)
+@cache :never
+defn current_time() :: String.t() do
+  # ...
+end
+```
+
+A cache hit skips the function entirely. A miss runs it, but individual operations inside may still hit the layer cache.
+
+## Testing Elixir modules
+
+Because an Elixir module is an ordinary Mix project, you can test it two ways, and the two cover different things.
+
+### Idiomatic ExUnit tests
+
+You can unit-test pure Elixir logic, such as parsing a report or formatting a summary, with ExUnit and no engine involved. Add a `test/test_helper.exs` containing `ExUnit.start()` and write tests against your helpers:
+
+```elixir title="test/my_module_test.exs"
+defmodule MyModuleTest do
+  use ExUnit.Case, async: true
+
+  test "summarizes an issue" do
+    issue = %{file: "app/main.ex", line: 12, message: "undefined name"}
+    assert MyModule.Report.summary(issue) == "app/main.ex:12 error: undefined name"
+  end
+end
+```
+
+Run them like any Mix test suite (these don't require the engine, but they do need the generated `dagger_sdk/` so the project compiles):
+
+```shell
+mix deps.get
+mix test
+```
+
+### Functional tests via checks
+
+For behavior that exercises containers and the Dagger API, write functions in your module and invoke them, or model them as checks so they run under `dagger check`. A check that builds, lints, or tests your project doubles as both a CI gate and a smoke test:
+
+```shell
+# Smoke test: does it build?
+dagger api call build
+
+# Run all checks
+dagger check
+
+# Run generators and confirm there's no drift
+dagger check --generate
+```
+
+### In CI
+
+Run `dagger check` in CI to run every check the module exposes. The heavy lifting happens in content-addressed containers, so the same command behaves the same on a laptop and on a CI runner, with full caching:
+
+```yaml title=".github/workflows/ci.yml"
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@v6
+        with:
+          verb: check
+```
+
+## IDE and Mix setup
+
+A generated module is a self-contained Mix project. `mix.exs` depends on the vendored SDK by path, so the only thing local compilation and editor support (ElixirLS, Lexical, and similar) need is that `dagger_sdk/` exists. Run `dagger generate` if it is missing, then fetch the SDK's own dependencies and compile:
+
+```shell
+mix deps.get
+mix compile
+```
+
+The template seeds `.formatter.exs` with `import_deps: [:dagger]`, so `mix format` understands `defn`. Keep Mix build output out of Git and out of the runtime container by adding it to `.gitignore`:
+
+```text title=".gitignore"
+/_build
+/deps
+/cover
+/doc
+/erl_crash.dump
+/*.ez
+```
+
+**Elixir version.** The template requires `elixir: "~> 1.17"`. The runtime compiles your module in the Elixir SDK's pinned `elixir:*-otp-28-alpine` image with `MIX_ENV=prod`. The runtime module fixes the exact image, and `dagger-module.toml` cannot change it.
+
+**Third-party dependencies.** Add Hex packages to `deps/0` in `mix.exs` as usual. The runtime runs `mix deps.get --only prod` before compiling, so it fetches any dependency you add inside the runtime container:
+
+```elixir title="mix.exs"
+defp deps do
+  [
+    {:dagger, path: "./dagger_sdk"},
+    {:req, "~> 0.5"}
+  ]
+end
+```
+
+**HTTP client.** The SDK talks to the engine through Erlang's built-in `httpc` by default. To use [Req](https://hex.pm/packages/req) instead, add it as a dependency and configure the client:
+
+```elixir title="config/config.exs"
+import Config
+
+config :dagger, client: Dagger.Core.GraphQLClient.Req
+```
+
+## Packaging and release
+
+You distribute an Elixir SDK module as a Git repository. There is no build artifact to publish. Consumers fetch the source by reference, and the runtime compiles it from the committed `dagger_sdk/` and `lib/`.
+
+Recommended release checklist:
+
+1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+2. **Commit the generated bindings.** Run `dagger generate`, review the changes, and commit `dagger_sdk/` with your module.
+3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
+
+Before publishing, run `dagger check --generate` to confirm that the committed bindings are up to date.
+
+Consumers can install your module into a workspace with:
+
+```shell
+dagger install github.com/you/your-module@v1.2.0
+```
+
+To add it as a dependency of another module, run these commands from that module's directory:
+
+```shell
+dagger module deps add github.com/you/your-module@v1.2.0
+dagger generate
+```
+
+A module reference follows `[proto://]host/repo[/subpath][@version]`. The version may be a tag, branch, or commit, and Dagger resolves it over HTTPS or SSH depending on the authentication available.
+
+## Troubleshooting
+
+**`dagger init` / `dagger develop` not found.** Install the Elixir SDK with `dagger sdk install github.com/dagger/elixir-sdk`, scaffold with `dagger module init elixir-sdk <name>`, and regenerate with `dagger generate`.
+
+**`dagger sdk install elixir` reports the SDK is not in the registry.** Install Elixir by full reference: `dagger sdk install github.com/dagger/elixir-sdk`. Add `--name elixir` if you want `dagger module init elixir` to work.
+
+**`dagger sdk install` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory.
+
+**Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
+
+**`mix deps.get` fails on `{:dagger, path: "./dagger_sdk"}`.** The generated SDK is missing. Run `dagger generate` and apply the changeset, then retry.
+
+**A new function or dependency doesn't show up.** Run `dagger generate`. The API you can call comes from the bindings in `dagger_sdk/`, which must match your code and `dagger-module.toml`.
+
+**`dagger generate` does not regenerate bindings.** A `.dagger-elixir-sdk-skip-generate` marker is likely present in the module or one of its ancestors.
+
+**`type ... is not supported` at compile time.** `defn` only accepts the typespecs listed under [Arguments and return values](#arguments-and-return-values). Use `String.t()` rather than `String`, `[T]` for lists, and `T | nil` for optional values.
+
+**`Cannot find module MyModule` from the runtime.** The runtime derives the entrypoint module name from the Dagger module name (`my-module` → `MyModule`). Rename the `defmodule` to match, or keep the names in step when renaming the module.
+
+**Engine version mismatch.** Align the module with `dagger module engine require <version>` (or `require-current` / `require-latest`), then regenerate.
+
+## Next steps
+
+- [SDKs overview](./index.mdx), the platform concepts that apply to every SDK
+- [Types](../api/reference/index.mdx)
+- [Generating code](../cli/generating.mdx)

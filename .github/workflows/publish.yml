@@ -138,7 +138,6 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: macos-15-intel
     steps:
@@ -179,8 +178,6 @@ jobs:
       - uses: docker/setup-qemu-action@v3
 
       - uses: actions/checkout@v4
-      - name: "FIXME: SkipWorkspaceModules workaround"
-        run: rm dagger.json # FIXME: general workaround that does the equivalent of SkipWorkspaceModules(). See #12932, #12933
 
       - uses: actions/setup-go@v5
         with:
@@ -226,7 +223,6 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -281,7 +277,6 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04-arm
     steps:
@@ -329,14 +324,12 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: "Set CLI Test URL"
         run: |
-          rm dagger.json # FIXME: general workaround that does the equivalent of SkipWorkspaceModules(). See #12932, #12933
           if [ ${{ github.event_name }} == 'push' ]; then
             BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
@@ -384,7 +377,6 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04-arm
     steps:
@@ -432,14 +424,12 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: "Set CLI Test URL"
         run: |
-          rm dagger.json # FIXME: general workaround that does the equivalent of SkipWorkspaceModules(). See #12932, #12933
           if [ ${{ github.event_name }} == 'push' ]; then
             BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
@@ -496,7 +486,6 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
-      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04-arm
     steps:

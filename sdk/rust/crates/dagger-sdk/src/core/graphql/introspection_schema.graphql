@@ -3,6 +3,7 @@ schema {
 }
 
 type Query {
+  __schemaVersion: String!
   __schema: __Schema
 }
 

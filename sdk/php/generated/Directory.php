@@ -311,14 +311,19 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Return file status
      */
-    public function stat(string $path, ?bool $doNotFollowSymlinks = false): Stat
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): ?Stat
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
-        $innerQueryBuilder->setArgument('path', $path);
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $objectQueryBuilder->setArgument('path', $path);
         if (null !== $doNotFollowSymlinks) {
-        $innerQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        $objectQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
         }
-        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
     }
 
     /**
@@ -470,20 +475,26 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves this directory with the given Git-compatible patch applied.
      */
-    public function withPatch(string $patch): Directory
+    public function withPatch(string $patch, ?PatchConflict $onConflict = null): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatch');
         $innerQueryBuilder->setArgument('patch', $patch);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Retrieves this directory with the given Git-compatible patch file applied.
      */
-    public function withPatchFile(File $patch): Directory
+    public function withPatchFile(File $patch, ?PatchConflict $onConflict = null): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
         $innerQueryBuilder->setArgument('patch', $patch);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

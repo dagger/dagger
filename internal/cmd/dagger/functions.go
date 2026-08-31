@@ -56,6 +56,7 @@ const (
 	Socket        string = "Socket"
 	GitRepository string = "GitRepository"
 	GitRef        string = "GitRef"
+	Workspace     string = "Workspace"
 )
 
 var (
@@ -305,7 +306,10 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		if ctx.Err() != nil {
 			cmd.PrintErrln("Canceled.")
 		} else if rerr != nil {
-			cmd.PrintErrln(cmd.ErrPrefix(), rerr.Error())
+			// Strip [traceparent:...] error-origin markers — they are span
+			// attribution plumbing for the TUI, not part of the message.
+			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(rerr.Error(), ""))
+			cmd.PrintErrln(cmd.ErrPrefix(), msg)
 
 			if fc.needsHelp {
 				cmd.Println()
@@ -596,7 +600,7 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 			}
 			return err
 		}
-		if arg.IsRequired() {
+		if arg.IsCallerRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())
 		}
 		cmd.Flags().SetAnnotation(
@@ -683,6 +687,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
 
 	missingFlags := []string{}
+	workspaceArgs := []string{}
 
 	type flagResult struct {
 		idx   int
@@ -695,14 +700,14 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	flags := cmd.LocalNonPersistentFlags()
 	for i, a := range fn.SupportedArgs() {
 		flag := flags.Lookup(a.FlagName())
-		if flag == nil {
-			if a.IsRequired() {
-				missingFlags = append(missingFlags, a.FlagName())
+		if flag == nil || !flag.Changed {
+			// A required Workspace comes from the session, not the user: fill it
+			// from currentWorkspace so the call doesn't demand a flag for the
+			// thing the CLI already knows.
+			if a.IsWorkspace() && a.IsRequired() {
+				workspaceArgs = append(workspaceArgs, a.Name)
+				continue
 			}
-			continue
-		}
-
-		if !flag.Changed {
 			if a.IsRequired() {
 				missingFlags = append(missingFlags, a.FlagName())
 			}
@@ -734,6 +739,16 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 	if len(missingFlags) > 0 {
 		return fmt.Errorf(`required flag(s) "%s" not set`, strings.Join(missingFlags, `", "`))
+	}
+
+	if len(workspaceArgs) > 0 {
+		wsID, err := fc.c.Dagger().CurrentWorkspace().ID(fc.ctx)
+		if err != nil {
+			return fmt.Errorf("resolve current workspace for %q: %w", fn.Name, err)
+		}
+		for _, name := range workspaceArgs {
+			fc.q = fc.q.Arg(name, wsID)
+		}
 	}
 
 	return nil
@@ -966,12 +981,12 @@ func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response
 	})
 }
 
-func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace, autoApply bool) (bool, error) {
+func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, autoApply bool) (bool, error) {
 	workspace, err := materializeWorkspace(ctx, dag, workspace)
 	if err != nil {
 		return false, err
 	}
-	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(), changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, _ *dagger.Changeset) error {
+	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(dagger.WorkspaceChangesOpts{From: before}), changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, _ *dagger.Changeset) error {
 		return workspace.Export(ctx)
 	})
 }
@@ -1030,12 +1045,9 @@ func handleChangesetResponseWithApply(
 		var confirm bool
 		form := idtui.NewForm(
 			huh.NewGroup(
-				huh.NewConfirm().
+				idtui.NewExplicitConfirm("Apply", "Discard", &confirm).
 					Title("Apply changes?").
-					Description(description).
-					Affirmative("Apply").
-					Negative("Discard").
-					Value(&confirm),
+					Description(description),
 			),
 		)
 		if err := Frontend.HandleForm(ctx, form); err != nil {
@@ -1063,6 +1075,15 @@ func handleChangesetResponseWithApply(
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
 func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
+	return startInteractivePromptModeWithResume(ctx, dag, response, "", false)
+}
+
+// startInteractivePromptModeWithResume is like startInteractivePromptMode but
+// optionally resumes a previously saved session before entering the interactive
+// loop. When resume is true and sessionID is empty, an interactive picker is
+// shown; when sessionID is non-empty, that session is resumed directly. The
+// resumed conversation replaces the composed LLM as the starting point.
+func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Client, response any, sessionID string, resume bool) error {
 	// Extract the LLM ID from the response
 	var llmID string
 	switch v := response.(type) {
@@ -1092,8 +1113,26 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}
-	if err := handler.llmSession.updateLLMAndAgentVar(llm); err != nil {
+	// Remember the composed agent group as the base to reset to on .clear, so
+	// clearing history returns to the initially selected agents rather than a
+	// blank LLM.
+	handler.llmSession.initialLLM = llm
+	if err := handler.llmSession.updateLLM(llm); err != nil {
 		return err
+	}
+
+	// Optionally resume a previously saved session, replacing the composed LLM
+	// as the starting point. With no session id, present the interactive picker.
+	if resume {
+		if sessionID != "" {
+			if err := handler.llmSession.LoadSession(ctx, ctx, sessionID); err != nil {
+				return err
+			}
+			handler.initialPrompt = ""
+			handler.sessionUUID = ""
+		} else if err := handler.resumeSessionInteractive(ctx); err != nil {
+			return err
+		}
 	}
 
 	// Start interactive mode
@@ -1112,6 +1151,11 @@ func printID(w io.Writer, response any, typeDef *modTypeDef) error {
 		return nil
 	case typeDef.AsObject != nil:
 		switch v := response.(type) {
+		case nil:
+			// A nullable object field that resolved to null. "null" is both valid
+			// JSON and unambiguous in plain output.
+			_, err := fmt.Fprintln(w, "null")
+			return err
 		case string:
 			return printEncodedID(w, v)
 		case map[string]any:

@@ -23,12 +23,29 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 type fakeSessionCaller struct {
 	id   string
 	conn *grpc.ClientConn
+}
+
+func TestLogRecordRowPreservesBytesBody(t *testing.T) {
+	payload := []byte{0, 1, 2, 0xff}
+	var record sdklog.Record
+	record.SetBody(otellog.BytesValue(payload))
+
+	row, err := logRecordRow(&record)
+	require.NoError(t, err)
+
+	var body otlpcommonv1.AnyValue
+	require.NoError(t, proto.Unmarshal(row.Body, &body))
+	require.Equal(t, payload, body.GetBytesValue())
 }
 
 func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
@@ -377,10 +394,11 @@ func newTeardownTestServer(t *testing.T) *Server {
 	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
 	require.NoError(t, err)
 	return &Server{
-		daggerSessions:  map[string]*daggerSession{},
-		engineCache:     cache,
-		wcprofSpanCount: newWcprofSpanCounter(),
-		throttledGC:     func() {},
+		daggerSessions:     map[string]*daggerSession{},
+		releasedSessionIDs: map[string]struct{}{},
+		engineCache:        cache,
+		wcprofSpanCount:    newWcprofSpanCounter(),
+		throttledSessionGC: func() {},
 	}
 }
 
@@ -427,6 +445,13 @@ func sessionInRegistry(srv *Server, sessionID string) bool {
 	return ok
 }
 
+func sessionIDReleased(srv *Server, sessionID string) bool {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	_, ok := srv.releasedSessionIDs[sessionID]
+	return ok
+}
+
 func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	t.Parallel()
 
@@ -461,6 +486,7 @@ func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return !sessionInRegistry(srv, "s")
 	}, 10*time.Second, 10*time.Millisecond, "session never finished background teardown")
+	require.True(t, sessionIDReleased(srv, "s"))
 	select {
 	case <-sess.shutdownCh:
 	case <-time.After(10 * time.Second):
@@ -500,11 +526,23 @@ func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("same-id getOrInitClient blocked on background teardown")
 	}
+	require.False(t, sessionIDReleased(srv, "s"), "session ID retired before teardown completed")
 
 	releaseTeardownDrain(sess)
 	require.Eventually(t, func() bool {
-		return !sessionInRegistry(srv, "s")
+		return !sessionInRegistry(srv, "s") && sessionIDReleased(srv, "s")
 	}, 10*time.Second, 10*time.Millisecond)
+
+	_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata: &engine.ClientMetadata{
+			SessionID:         "s",
+			ClientID:          "m",
+			ClientSecretToken: "token",
+		},
+	})
+	require.ErrorContains(t, err, "already used and released")
+	var retryable flightcontrol.RetryableError
+	require.False(t, errors.As(err, &retryable))
 }
 
 func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
@@ -526,11 +564,42 @@ func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
 
 	require.Equal(t, sessionStateInitialized, sess.state.Load())
 	require.True(t, sessionInRegistry(srv, "s"))
+	require.False(t, sessionIDReleased(srv, "s"))
 	select {
 	case <-sess.shutdownCh:
 		t.Fatal("reap tore down a session with a live main client")
 	default:
 	}
+}
+
+func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{
+		daggerSessions:     map[string]*daggerSession{},
+		releasedSessionIDs: map[string]struct{}{},
+	}
+	srv.daggerSessionsMu.Lock()
+	failed, created, err := srv.getOrCreateSessionLocked("s", "m")
+	srv.daggerSessionsMu.Unlock()
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// This is the getOrInitClient failed-initialization cleanup: publish removed,
+	// release lifecycleMu, then delete without retiring the ID.
+	failed.state.Store(sessionStateRemoved)
+	failed.lifecycleMu.Unlock()
+	srv.deleteSession(failed)
+	require.False(t, sessionIDReleased(srv, "s"))
+
+	srv.daggerSessionsMu.Lock()
+	retry, created, err := srv.getOrCreateSessionLocked("s", "m")
+	srv.daggerSessionsMu.Unlock()
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotSame(t, failed, retry)
+	retry.lifecycleMu.Unlock()
+	srv.deleteSession(retry)
 }
 
 func TestConcurrentReapsSingleTeardown(t *testing.T) {
@@ -638,14 +707,14 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	t.Run("constructor match loads only matching module", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"foo"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"foo"})
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("unknown root field with multiple entrypoints loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"doThing"})
 		require.Equal(t, mods, filtered)
 	})
 
@@ -653,42 +722,59 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		oneEntrypoint := []pendingModule{mods[0], mods[1]}
-		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, nil, []string{"doThing"})
 		require.Equal(t, []pendingModule{mods[1]}, filtered)
+	})
+
+	t.Run("unknown root field skips entrypoint already recorded as failed", func(t *testing.T) {
+		t.Parallel()
+
+		oneEntrypoint := []pendingModule{mods[0], mods[1]}
+		failed := map[string]error{"bar-baz": errors.New("boom")}
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, failed, []string{"doThing"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("named root field still selects a failed module", func(t *testing.T) {
+		t.Parallel()
+
+		failed := map[string]error{"foo": errors.New("boom")}
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, failed, []string{"foo"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("introspection loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"__schema"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"__schema"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current typedefs loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentTypeDefs"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"currentTypeDefs"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current module loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentModule"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"currentModule"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("core-only query loads none", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"container", "version"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"container", "version"})
 		require.Empty(t, filtered)
 	})
 
 	t.Run("current workspace loads none (resolvers load on demand)", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentWorkspace"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"currentWorkspace"})
 		require.Empty(t, filtered)
 	})
 
@@ -696,7 +782,7 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		served := map[string]struct{}{"my-mod": {}}
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, nil, []string{"myMod"})
 		require.Empty(t, filtered)
 	})
 
@@ -704,14 +790,14 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		served := map[string]struct{}{"my-mod": {}}
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod", "foo"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, nil, []string{"myMod", "foo"})
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("env loads all (resolver snapshots served deps)", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"env"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"env"})
 		require.Equal(t, mods, filtered)
 	})
 
@@ -720,7 +806,7 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 
 		// The type name in load<Type>FromID needn't embed the module name, so
 		// only a full load can guarantee the field exists.
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"loadSomethingFromID"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"loadSomethingFromID"})
 		require.Equal(t, mods, filtered)
 	})
 }
@@ -736,7 +822,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("no scope delegates to root-field demand", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "", false)
 		require.False(t, applied)
 		require.Equal(t, mods, selected)
 	})
@@ -744,7 +830,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("scoped typedefs loads target plus entrypoint", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "foo", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "foo", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{foo, entry}, selected)
 	})
@@ -752,7 +838,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("kebab-case token matches declared module name", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "bar-baz", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "bar-baz", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{barBaz, entry}, selected)
 	})
@@ -760,7 +846,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("unknown token loads pending entrypoint alone", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "greet", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "greet", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{entry}, selected)
 	})
@@ -769,7 +855,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		t.Parallel()
 
 		noEntry := []pendingModule{foo, barBaz}
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, []string{"currentTypeDefs"}, "greet", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, nil, []string{"currentTypeDefs"}, "greet", false)
 		require.True(t, applied)
 		require.Equal(t, noEntry, selected)
 	})
@@ -778,7 +864,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		t.Parallel()
 
 		for _, field := range []string{"env", "__schema", "currentModule"} {
-			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", field}, "foo", false)
+			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs", field}, "foo", false)
 			require.False(t, applied, field)
 			require.Equal(t, mods, selected, field)
 		}
@@ -787,7 +873,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("no typedefs field delegates without consuming", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"foo"}, "barBaz", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"foo"}, "barBaz", false)
 		require.False(t, applied)
 		require.Equal(t, []pendingModule{foo}, selected)
 	})
@@ -795,7 +881,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("typedefs plus module field unions both demands", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", "foo"}, "bar-baz", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs", "foo"}, "bar-baz", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{foo, barBaz, entry}, selected)
 	})
@@ -804,7 +890,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		t.Parallel()
 
 		served := map[string]struct{}{"my-mod": {}}
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, []string{"currentTypeDefs"}, "myMod", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, nil, []string{"currentTypeDefs"}, "myMod", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{entry}, selected)
 	})
@@ -818,7 +904,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		// still-pending workspace module.
 		served := map[string]struct{}{"entry": {}}
 		pending := []pendingModule{foo, barBaz}
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(pending, served, []string{"currentTypeDefs"}, "greet", true)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(pending, served, nil, []string{"currentTypeDefs"}, "greet", true)
 		require.True(t, applied)
 		require.Empty(t, selected)
 	})
@@ -870,6 +956,66 @@ func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("request module loading did not finish")
 	}
+}
+
+func TestWithRequestTelemetrySuppression(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, nil)
+	ctx, suppressed := withRequestTelemetrySuppression(context.Background(), req)
+	require.False(t, suppressed)
+	require.False(t, dagql.IsSkipped(ctx))
+
+	req.Header.Set(engine.SuppressTelemetryHeader, "false")
+	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
+	require.False(t, suppressed)
+	require.False(t, dagql.IsSkipped(ctx))
+
+	req.Header.Set(engine.SuppressTelemetryHeader, "true")
+	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
+	require.True(t, suppressed)
+	require.True(t, dagql.IsSkipped(ctx), "the suppressed request's context must carry the dagql skip flag so core.AroundFunc emits nothing")
+}
+
+// TestCallPayloadDeliveryStore pins the claim scoping that keeps call-payload
+// telemetry per delivery target: a digest claimed by one client's emission
+// must NOT count as seen for a client outside that emission's delivery domain
+// (the AGENT_QA P0 — a nested `dagger agent` attaching to a long-running
+// session could never rebuild worker IDs, because the session-wide claim was
+// spent before its DB existed).
+func TestCallPayloadDeliveryStore(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+
+	// Client A (top-level, no parents) claims a digest: unseen the first
+	// time, seen for A afterwards.
+	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
+	require.False(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// Client B attaches later: A's claim must not satisfy B's delivery
+	// domain — B's DB never received the payload.
+	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
+	require.False(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
+		"a digest claimed by another client's emission must stay claimable for a late-attaching client")
+	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// A module client under B: its emissions deliver to itself AND B, so a
+	// claim from its context marks both — and it is only "seen" when every
+	// target already has it. B has the digest, the module client does not,
+	// so the first probe still publishes (marking both).
+	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB", "modClient"}}
+	require.False(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
+		"an emission must not be skipped while any target in its delivery domain still needs it")
+	require.True(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	// And now B's own store agrees the digest is spent for B.
+	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// StoreTelemetrySeenKey marks every target unconditionally.
+	storeC := &callPayloadDeliveryStore{session: sess, targets: []string{"clientC", "clientD"}}
+	storeC.StoreTelemetrySeenKey("dag.call.payload:xxh3:def")
+	require.True(t, storeC.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:def"))
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
@@ -1408,6 +1554,8 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 		false,
 		dagql.ObjectResult[*core.Directory]{},
 		nil,
+		nil,
+		"",
 	)
 	require.NoError(t, err)
 	require.Equal(t, "subdir", client.workspace.Cwd)
@@ -1467,6 +1615,8 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 		false,
 		dagql.ObjectResult[*core.Directory]{},
 		nil,
+		nil,
+		"",
 	)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)
@@ -1577,60 +1727,6 @@ func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
 	}
 	child := &daggerClient{
 		parents: []*daggerClient{parent},
-	}
-
-	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
-	require.Same(t, bound, child.workspace)
-}
-
-// TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes verifies
-// currentWorkspace inheritance stops when a module function calls another module
-// function. The boundary is the active function call, not module context.
-func TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes(t *testing.T) {
-	t.Parallel()
-
-	srv := &Server{}
-	bound := &core.Workspace{
-		ClientID: "root-client",
-	}
-
-	root := &daggerClient{
-		workspace: bound,
-	}
-	moduleParent := &daggerClient{
-		workspace: bound,
-		parents:   []*daggerClient{root},
-		fnCall:    &core.FunctionCall{Name: "parent"},
-	}
-	child := &daggerClient{
-		parents: []*daggerClient{root, moduleParent},
-		fnCall:  &core.FunctionCall{Name: "child"},
-	}
-
-	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
-	require.Nil(t, child.workspace)
-}
-
-// TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent keeps the
-// new boundary narrow: regular nested clients still inherit a parent workspace.
-func TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent(t *testing.T) {
-	t.Parallel()
-
-	srv := &Server{}
-	bound := &core.Workspace{
-		ClientID: "root-client",
-	}
-
-	root := &daggerClient{
-		workspace: bound,
-	}
-	moduleParent := &daggerClient{
-		workspace: bound,
-		parents:   []*daggerClient{root},
-		mod:       sessionTestModuleResult(t, "parent"),
-	}
-	child := &daggerClient{
-		parents: []*daggerClient{root, moduleParent},
 	}
 
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
@@ -1848,7 +1944,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			}},
 			LoadWorkspaceModules:  true,
 			EagerRuntime:          true,
-			LockMode:              string(workspace.LockModeFrozen),
 			Workspace:             stringPtr("github.com/dagger/base@main"),
 			WorkspaceEnv:          stringPtr("parent-ci"),
 			WorkspaceModuleScope:  "parent-scope",
@@ -1871,7 +1966,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Empty(t, md.Labels)
 		require.Equal(t, "/tmp/ssh.sock", md.SSHAuthSocketPath)
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
-		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
 		require.Empty(t, md.ExtraModules)
 		require.False(t, md.LoadWorkspaceModules)
 		require.False(t, md.EagerRuntime)
@@ -1908,7 +2002,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			LoadWorkspaceModules:           true,
 			EagerRuntime:                   true,
 			SuppressCompatWorkspaceWarning: true,
-			LockMode:                       string(workspace.LockModeLive),
 			Workspace:                      &workspaceRef,
 			WorkspaceEnv:                   &workspaceEnv,
 			WorkspaceModuleScope:           "good-mod",
@@ -1926,7 +2019,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
-		require.Equal(t, string(workspace.LockModeLive), md.LockMode)
 		require.True(t, md.LoadWorkspaceModules)
 		require.True(t, md.EagerRuntime)
 		require.True(t, md.SuppressCompatWorkspaceWarning)
@@ -1937,23 +2029,6 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Ref:        "github.com/dagger/mod",
 			Entrypoint: true,
 		}}, md.ExtraModules)
-		require.True(t, md.UseRecipeIDsByDefault)
-	})
-
-	t.Run("keeps parent lock mode when forwarded metadata omits it", func(t *testing.T) {
-		t.Parallel()
-
-		forwarded := engine.ClientMetadata{
-			ClientVersion:     "v-test",
-			AllowedLLMModules: []string{"child"},
-		}
-
-		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
-
-		require.Equal(t, "v-test", md.ClientVersion)
-		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
-		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
-		require.Nil(t, md.WorkspaceEnv)
 		require.True(t, md.UseRecipeIDsByDefault)
 	})
 
@@ -2209,10 +2284,7 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	t.Parallel()
 
 	legacy := workspace.NewLock()
-	require.NoError(t, legacy.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
-		Value:  "sha256:deadbeef",
-		Policy: workspace.PolicyPin,
-	}))
+	require.NoError(t, legacy.SetLookup("", "oci-sha", []any{"alpine:latest"}, "sha256:deadbeef"))
 	legacyBytes, err := legacy.Marshal()
 	require.NoError(t, err)
 
@@ -2229,10 +2301,9 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	}, ws)
 	require.NoError(t, err)
 
-	got, ok, err := lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
-	require.NoError(t, err)
+	got, ok := lock.GetLookup("", "oci-sha", []any{"alpine:latest"})
 	require.True(t, ok)
-	require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, got)
+	require.Equal(t, "sha256:deadbeef", got)
 }
 
 type fakeWorkspaceLockStateReader struct {

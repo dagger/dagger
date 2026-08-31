@@ -824,15 +824,12 @@ func TestBlockerLabelFromCallArgs(t *testing.T) {
 		}},
 		Digest: "sha256:test-withexec",
 	}
-	payload, err := call.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
+	db.Calls[call.Digest] = call
 
 	db.ImportSnapshots([]SpanSnapshot{
 		{ID: q, Name: "query", StartTime: at(0)},
 		{ID: w, ParentID: q, Name: "Container.withExec", StartTime: at(2), EndTime: at(2.5),
-			CallDigest: call.Digest, CallPayload: payload},
+			CallDigest: call.Digest},
 		{ID: s, ParentID: q, Name: "Container.stdout", StartTime: at(3)},
 		{ID: x, ParentID: s, Name: "Container.stdout", StartTime: at(3)},
 		{ID: r, ParentID: x, Name: "resume withExec", StartTime: at(3),
@@ -880,15 +877,12 @@ func TestLiveChainResolvesToWorkingOp(t *testing.T) {
 		}},
 		Digest: "sha256:test-c",
 	}
-	payload, err := cCall.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
+	db.Calls[cCall.Digest] = cCall
 
 	db.ImportSnapshots([]SpanSnapshot{
 		{ID: q, Name: "query", StartTime: at(0)},
 		{ID: cRow, ParentID: q, Name: "Container.withExec", StartTime: at(0.5), EndTime: at(0.9),
-			CallDigest: cCall.Digest, CallPayload: payload},
+			CallDigest: cCall.Digest},
 		{ID: cExec, ParentID: cRow, Name: "exec sh", StartTime: at(1)},
 		{ID: bRow, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)},
 		{ID: mC, ParentID: bRow, Name: "resume withExec", StartTime: at(2),

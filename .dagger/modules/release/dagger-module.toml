@@ -1,0 +1,61 @@
+name = "release"
+engineVersion = "v0.21.9"
+include = ["../../../go.mod", "../../../go.sum"]
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "changelog"
+  source = "../changelog"
+
+[[dependencies]]
+  name = "cli-dev"
+  source = "../cli-dev"
+
+[[dependencies]]
+  name = "docs-dev"
+  source = "../docs-dev"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "gh"
+  source = "gh"
+
+[[dependencies]]
+  name = "go-client-dev"
+  source = "../go-client-dev"
+
+[[dependencies]]
+  name = "notify"
+  source = "../engine-dev/notify"
+
+[[dependencies]]
+  name = "php-client-dev"
+  source = "../php-client-dev"
+
+[[dependencies]]
+  name = "python-client-dev"
+  source = "../python-client-dev"
+
+[[dependencies]]
+  name = "elixir-client-dev"
+  source = "../elixir-client-dev"
+
+[[dependencies]]
+  name = "rust-client-dev"
+  source = "../rust-client-dev"
+
+[[dependencies]]
+  name = "typescript-client-dev"
+  source = "../typescript-client-dev"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "../../../modules/wolfi"
+
+[codegen]
+  automaticGitignore = false

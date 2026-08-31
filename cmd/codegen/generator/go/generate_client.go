@@ -90,12 +90,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
-		return &generator.GeneratedState{
-			Overlay: layerfs.New(layers...),
-			PostCommands: []*exec.Cmd{
-				exec.Command("go", "mod", "tidy"),
-			},
-		}, nil
+		return g.generatedClientState(layerfs.New(layers...), exec.Command("go", "mod", "tidy"))
 	}
 
 	// New behavior: create separate go.mod for client in subdirectory
@@ -194,12 +189,24 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	// remove the require directive if the parent doesn't actually import the
 	// client yet. The user should run go mod tidy on the parent when ready.
 
-	genSt := &generator.GeneratedState{
-		Overlay:      layerfs.New(layers...),
-		PostCommands: postCmds,
+	return g.generatedClientState(layerfs.New(layers...), postCmds...)
+}
+
+func (g *GoGenerator) generatedClientState(overlay fs.FS, postCommands ...*exec.Cmd) (*generator.GeneratedState, error) {
+	staleBindings, err := findStaleDependencyBindings(
+		g.Config.OutputDir,
+		g.Config.ClientConfig.ClientDir,
+		overlay,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find stale dependency bindings: %w", err)
 	}
 
-	return genSt, nil
+	return &generator.GeneratedState{
+		Overlay:      overlay,
+		RemovePaths:  staleBindings,
+		PostCommands: postCommands,
+	}, nil
 }
 
 func (g *GoGenerator) writeClientGoMod(mfs *memfs.FS, clientGoModFilePath string, existingClientGoModData []byte) error {

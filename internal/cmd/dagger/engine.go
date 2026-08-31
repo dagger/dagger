@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -15,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
@@ -77,6 +77,17 @@ func runnerHostForEngineVersion(version string) string {
 }
 
 type runClientCallback func(context.Context, *client.Client) error
+
+type disableFrontendTelemetryKey struct{}
+
+func withoutFrontendTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, disableFrontendTelemetryKey{}, true)
+}
+
+func frontendTelemetryDisabled(ctx context.Context) bool {
+	disabled, _ := ctx.Value(disableFrontendTelemetryKey{}).(bool)
+	return disabled
+}
 
 func withEngine(
 	ctx context.Context,
@@ -177,12 +188,6 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.Interactive = interactive
 	params.InteractiveCommand = interactiveCommandParsed
 
-	effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
-	if err != nil {
-		return params, err
-	}
-	params.LockMode = effectiveLockMode
-
 	if hasTTY {
 		params.PromptHandler = Frontend
 	}
@@ -205,6 +210,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 // session would keep seeing the legacy dagger.json ("run dagger setup first").
 func withSetupSessions(
 	ctx context.Context,
+	before func(context.Context),
 	fn func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error,
 ) (rerr error) {
 	params := client.Params{
@@ -219,7 +225,12 @@ func withSetupSessions(
 	}
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
+		if before != nil {
+			before(ctx)
+		}
 
+		// Telemetry deliberately starts after the untraced setup phase (Cloud
+		// login), so credentials established there apply to the whole trace.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
@@ -273,23 +284,13 @@ func applyWorkspaceClientParams(params *client.Params) error {
 		env := workspaceEnv
 		params.WorkspaceEnv = &env
 	}
+	if params.UserConfigPath == "" {
+		// The shared user-level config file (~/.config/dagger/config.toml, or
+		// $DAGGER_CONFIG). The engine reads its [workspaces.*] section for
+		// user-level workspace overrides.
+		params.UserConfigPath = llmconfig.ConfigFile
+	}
 	return nil
-}
-
-func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
-	effective := paramLockMode
-	if effective == "" {
-		effective = globalLockMode
-	}
-	if effective == "" {
-		return "", nil
-	}
-
-	mode, err := workspace.ParseLockMode(effective)
-	if err != nil {
-		return "", err
-	}
-	return string(mode), nil
 }
 
 // skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
@@ -310,16 +311,23 @@ var skipSharedTelemetryExporters bool
 // Such sessions render to a discard frontend and have no reason to export to
 // Cloud, so they simply skip the shared exporters.
 func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+}
+
+type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
+
+func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) telemetry.Config {
 	cfg := telemetry.Config{
 		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
-
-		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
-		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
-		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
+	}
+	if !frontendTelemetryDisabled(ctx) {
+		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
+		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
 	if !skipSharedTelemetryExporters {
-		if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
+		if spans, logs, metrics, ok := configuredCloudExporters(ctx); ok {
 			// Wrap the Cloud span exporter in a LARGE-queue live processor instead of
 			// letting telemetry.Init wrap it with the default 2048-slot BSP, so the
 			// CLI→Cloud hop does not silently drop spans on a big burst — a cold engine

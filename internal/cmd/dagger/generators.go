@@ -5,10 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
@@ -181,19 +178,14 @@ func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dag
 	if err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintf(tw, "%s\t%s\n",
-		termenv.String("Name").Bold(),
-		termenv.String("Description").Bold(),
-	)
+	items := make([]commandListItem, 0, len(info.Generators))
 	for _, generator := range info.Generators {
-		firstLine := generator.Description
-		if idx := strings.Index(generator.Description, "\n"); idx != -1 {
-			firstLine = generator.Description[:idx]
-		}
-		fmt.Fprintf(tw, "%s\t%s\n", generator.Name, firstLine)
+		items = append(items, commandListItem{
+			Name:    generator.Name,
+			Comment: firstDescriptionLine(generator.Description),
+		})
 	}
-	return tw.Flush()
+	return writeCommandList(cmd.OutOrStdout(), items)
 }
 
 // 'dagger generators' (runs by default)

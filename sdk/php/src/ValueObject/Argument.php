@@ -11,7 +11,6 @@ use Dagger\Exception\UnsupportedType;
 use Dagger\Json;
 use ReflectionNamedType;
 use ReflectionParameter;
-use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 use RuntimeException;
 
 final readonly class Argument
@@ -62,6 +61,12 @@ final readonly class Argument
             defaultPath: $defaultPathAttribute?->path,
             ignore: $ignoreAttribute?->ignore,
         );
+    }
+
+    public function isRequired(): bool
+    {
+        return $this->default === null
+            && $this->defaultPath === null;
     }
 
     private static function getType(ReflectionParameter $parameter): ListOfType | Type

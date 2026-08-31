@@ -20,7 +20,8 @@ public static class Formatter
             "Boolean" => SyntaxFacts.GetText(SyntaxKind.BoolKeyword),
             "Int" => SyntaxFacts.GetText(SyntaxKind.IntKeyword),
             "Float" => SyntaxFacts.GetText(SyntaxKind.FloatKeyword),
-            _ => typeName.ToPascalCase(),
+            "ID" => "Id",
+            _ => typeName,
         };
     }
 }

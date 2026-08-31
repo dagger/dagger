@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -348,6 +349,135 @@ func (f *fakeStartable) Fail() error {
 func (f *fakeStartable) Exit(err error) {
 	f.exitErr = err
 	close(f.waitResult)
+}
+
+// RunningServices backs the ListServices builtin: it must scope to the
+// requested session, order deterministically, and expose (possibly absent)
+// telemetry span handles without panicking.
+func TestServicesRunningServicesListing(t *testing.T) {
+	t.Parallel()
+
+	ctxA := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "list-session-a",
+		ClientID:  "client-a",
+	})
+	ctxB := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "list-session-b",
+		ClientID:  "client-b",
+	})
+
+	services := core.NewServices()
+
+	svc1 := newStartable("list-1")
+	svc2 := newStartable("list-2")
+	other := newStartable("list-other")
+
+	host1 := svc1.Succeed()
+	running1, err := services.Start(ctxA, svc1.Digest(), svc1, false)
+	require.NoError(t, err)
+	host2 := svc2.Succeed()
+	_, err = services.Start(ctxA, svc2.Digest(), svc2, false)
+	require.NoError(t, err)
+	otherHost := other.Succeed()
+	_, err = services.Start(ctxB, other.Digest(), other, false)
+	require.NoError(t, err)
+
+	hostsOf := func(svcs []*core.RunningService) []string {
+		hosts := make([]string, len(svcs))
+		for i, svc := range svcs {
+			hosts[i] = svc.Host
+		}
+		return hosts
+	}
+
+	// scoped to a session, ordered by hostname
+	require.Equal(t, []string{host1, host2}, hostsOf(services.RunningServices("list-session-a")))
+	require.Equal(t, []string{otherHost}, hostsOf(services.RunningServices("list-session-b")))
+	// empty session ID lists everything
+	require.ElementsMatch(t, []string{host1, host2, otherHost}, hostsOf(services.RunningServices("")))
+	// unknown session lists nothing
+	require.Empty(t, services.RunningServices("list-session-c"))
+
+	// the fake runtime records no telemetry spans; the accessors must report
+	// that gracefully rather than panic
+	require.False(t, running1.ServiceSpanContext().IsValid())
+	require.Empty(t, running1.InstallSpanContexts())
+}
+
+// ExitedServices backs the exited half of the ListServices builtin: a service
+// that ran and exited — crash included — must stay listed for its session,
+// with its span handles and exit information intact, rather than vanish from
+// the registry exactly when its logs matter most.
+func TestServicesExitedServicesListing(t *testing.T) {
+	t.Parallel()
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "exited-session-a",
+		ClientID:  "client-a",
+	})
+
+	services := core.NewServices()
+
+	stub := newStartable("exited-1")
+	installCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{2},
+	})
+
+	host := stub.Succeed()
+	running, err := services.StartWithOpts(ctx, stub.Digest(), stub, core.ServiceStartOpts{
+		OriginSpanContexts: []trace.SpanContext{installCtx},
+	})
+	require.NoError(t, err)
+	require.Equal(t, host, running.Host)
+
+	// nothing has exited yet
+	require.Empty(t, services.ExitedServices("exited-session-a"))
+
+	// crash the service; the exit is observed asynchronously, so wait for
+	// the registry's watcher to record the tombstone
+	exitErr := errors.New("oh no, crashed")
+	stub.Exit(exitErr)
+	require.Eventually(t, func() bool {
+		return len(services.ExitedServices("exited-session-a")) == 1
+	}, 10*time.Second, 10*time.Millisecond)
+
+	// dropped from the running listing...
+	require.Empty(t, services.RunningServices("exited-session-a"))
+
+	// ...but retained as a tombstone with identity, exit info, and the span
+	// handles needed to read its logs after the fact
+	exited := services.ExitedServices("exited-session-a")[0]
+	require.Equal(t, host, exited.Host)
+	require.Equal(t, stub.Digest(), exited.Key.Digest)
+	require.Equal(t, exitErr, exited.ExitErr)
+	require.Equal(t, -1, exited.ExitCode) // no exit code carried by a plain error
+	require.Equal(t, []trace.SpanContext{installCtx}, exited.InstallSpanContexts())
+	// the fake runtime records no service span; the accessor must degrade
+	// gracefully, mirroring RunningService
+	require.False(t, exited.ServiceSpanContext().IsValid())
+
+	// an ExecError exit surfaces its exit code in the tombstone
+	crasher := newStartable("exited-2")
+	crasherHost := crasher.Succeed()
+	_, err = services.Start(ctx, crasher.Digest(), crasher, false)
+	require.NoError(t, err)
+	crasher.Exit(&core.ExecError{Err: errors.New("exited"), ExitCode: 3})
+	require.Eventually(t, func() bool {
+		return len(services.ExitedServices("exited-session-a")) == 2
+	}, 10*time.Second, 10*time.Millisecond)
+	crashed := services.ExitedServices("exited-session-a")[1]
+	require.Equal(t, crasherHost, crashed.Host)
+	require.Equal(t, 3, crashed.ExitCode)
+
+	// tombstones are scoped to their session: unknown sessions see nothing,
+	// the empty session ID sees everything
+	require.Empty(t, services.ExitedServices("exited-session-b"))
+	require.Len(t, services.ExitedServices(""), 2)
+
+	// closing the session prunes its tombstones
+	require.NoError(t, services.StopSessionServices(ctx, "exited-session-a"))
+	require.Empty(t, services.ExitedServices("exited-session-a"))
 }
 
 // TestServicesDetachRace tests the race condition where:

@@ -194,12 +194,17 @@ public class Helpers {
    *
    * <p>'$' is escaped for JavaPoet's format strings, while '&amp;', '&lt;' and '&gt;' are HTML
    * entities so that descriptions containing markup-like tokens (e.g. {@code <name>}) don't get
-   * parsed as HTML tags by the javadoc tool.
+   * parsed as HTML tags by the javadoc tool. The comment terminator is escaped so glob examples
+   * such as {@code **&#47;node_modules/**} cannot end the generated Javadoc early.
    */
   static String escapeJavadoc(String str) {
     if (str == null) {
       return "";
     }
-    return str.replace("$", "$$").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    return str.replace("$", "$$")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("*/", "*&#47;");
   }
 }

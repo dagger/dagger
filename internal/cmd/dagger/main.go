@@ -40,6 +40,7 @@ import (
 
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
@@ -48,6 +49,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
@@ -58,14 +60,13 @@ var (
 	workspaceRef string
 	workspaceEnv string
 
-	silent                   bool
+	silent                   = silentFromEnv()
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
 	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
 	expandCompleted          = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
 	debugFlag                bool
 	progress                 string
-	lockMode                 string
 	interactive              bool
 	interactiveCommand       string
 	interactiveCommandParsed []string
@@ -92,6 +93,12 @@ var (
 const daggerXReleaseEnv = "DAGGER_X_RELEASE"
 
 var githubCommitAPI = "https://api.github.com/repos/dagger/dagger/commits/"
+
+func silentFromEnv() bool {
+	// DAGGER_SILENT is the environment equivalent of --silent.
+	silent, _ := strconv.ParseBool(os.Getenv("DAGGER_SILENT"))
+	return silent
+}
 
 func init() {
 	// allow user explicitly setting progress via env, but default it to "auto"
@@ -160,6 +167,7 @@ func init() {
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
 	upCmd.GroupID = "daily"
+	agentCmd.GroupID = "daily"
 	activityCmd.GroupID = "daily"
 
 	moduleDepInstallCmd.GroupID = "workspace"
@@ -187,10 +195,10 @@ func init() {
 		queryCmd,
 		apiCmd,
 		traceCmd,
-		lockCmd,
 		settingsCmd,
 		checksCmd,
 		upCmd,
+		agentCmd,
 		generateCmd,
 		workspaceCmd,
 		moduleDepInstallCmd,
@@ -407,13 +415,12 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
-	flags.StringVar(&workspaceEnv, "env", "", "Apply the named workspace environment overlay")
+	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
-	flags.StringVar(&lockMode, "lock", "", "Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
@@ -485,7 +492,7 @@ func execXRelease(ctx context.Context) error {
 		return fmt.Errorf("download experimental release CLI: %w", err)
 	}
 
-	msg := fmt.Sprintf("running build from %s", ref)
+	msg := fmt.Sprintf("running dagger from %s", ref)
 	if release {
 		msg += fmt.Sprintf("; using release %s", engineRef)
 	} else if resolved {
@@ -660,10 +667,14 @@ func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
 }
 
 func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
-	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
+	// Writes to the repository's workspace config need a local workspace.
+	// --global writes target the user-level config file instead, which is
+	// always local to the caller, so a remote workspace stays selectable as
+	// the key/introspection target.
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 && !workspaceConfigGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
-	if isWorkspaceSettingsWriteCommand(cmd, args) {
+	if isWorkspaceSettingsWriteCommand(cmd, args) && !workspaceSettingsGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
 
@@ -713,8 +724,10 @@ func isObviouslyRemoteWorkspaceRef(ref string) bool {
 		}
 	}
 
-	head, _, hasSlash := strings.Cut(ref, "/")
-	return hasSlash && strings.Contains(head, ".")
+	// A single dotted token ("my.dir") is far more likely a directory that does
+	// not exist yet than a host, so stay conservative and require a path.
+	_, _, hasSlash := strings.Cut(ref, "/")
+	return hasSlash && !workspace.IsLocalRef(ref, "")
 }
 
 func Tracer() trace.Tracer {
@@ -914,7 +927,10 @@ func Main() {
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			exitWithCode(2)
 		default:
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			// Strip [traceparent:...] error-origin markers — they are span
+			// attribution plumbing for the TUI, not part of the message.
+			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), msg)
 			var es interp.ExitStatus
 			if errors.As(err, &es) {
 				exitWithCode(int(es))

@@ -228,7 +228,6 @@ type ModuleRuntime interface {
 		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
 		moduleContext dagql.ObjectResult[*Module],
-		envContext dagql.ObjectResult[*Env],
 	) error
 }
 
@@ -248,7 +247,6 @@ func (r *ContainerRuntime) Call(
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
 	moduleContext dagql.ObjectResult[*Module],
-	envContext dagql.ObjectResult[*Env],
 ) error {
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -298,11 +296,7 @@ func (r *ContainerRuntime) Call(
 		return fmt.Errorf("exec function: %w", err)
 	}
 
-	syncCtx := ctx
-	if envContext.Self() != nil {
-		syncCtx = EnvToContext(syncCtx, envContext)
-	}
-	err = execCtr.Sync(syncCtx)
+	err = execCtr.Sync(ctx)
 	if err != nil {
 		if fnCall.Name == "" {
 			return fmt.Errorf("call constructor: %w", err)
@@ -432,6 +426,12 @@ type SDK interface {
 
 	// Transform the SDK into a RuntimeTarget if it implements it.
 	AsRuntimeTarget() (RuntimeTarget, bool)
+
+	// AsModule returns the Dagger module backing this SDK, for SDKs that are
+	// themselves modules. Callers use it to reach the SDK's own functions —
+	// notably its generators — without going through workspace module loading.
+	// Builtin SDKs are packaged binaries rather than modules and return false.
+	AsModule() (dagql.ObjectResult[*Module], bool)
 
 	// AttachDependencyResults attaches any cache-backed results embedded in the
 	// SDK implementation and returns the results the owning ModuleSource must

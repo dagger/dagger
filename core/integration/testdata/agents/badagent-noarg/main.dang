@@ -1,0 +1,8 @@
+"""A deliberately malformed agent module (missing the LLM! base arg) for validation tests."""
+type BadagentNoarg {
+  """@agent without the required LLM! base argument, which the contract forbids."""
+  @agent
+  pub agent: LLM! {
+    llm
+  }
+}

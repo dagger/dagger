@@ -103,6 +103,28 @@ type ExecutionMetadata struct {
 	// core->executor hand-off is an in-process pointer, so excluding it from
 	// JSON cannot drop it before use.
 	UserFacingSpanCtx trace.SpanContext `json:"-"`
+
+	// HostAliasFQDNs maps a HostAliases key (a bound service's advertised
+	// hostname) to the fully qualified name the running service actually
+	// registered in DNS under. A service with a custom hostname is namespaced
+	// into the domain of whichever module started it (core.Service.startContainer),
+	// and that FQDN is the only name the dnsname CNI plugin registers. The
+	// consuming exec only searches its own module domain plus the session
+	// domain, so re-deriving the name from the bare hostname fails outright
+	// whenever the service was first started by a different module. Recording
+	// the FQDN keeps an explicit WithServiceBinding working across that
+	// boundary without installing the producer's domain as a search domain,
+	// which would expose every other service scoped to it.
+	//
+	// Only entries for names in the engine's DNS domain are set; tunnel
+	// services report a host-side dial address instead and must keep resolving
+	// through the search-domain sweep in setupNetwork.
+	//
+	// json:"-" is load-bearing for the same reason as ProfArgs above: this
+	// run-time-only value must never perturb an exec cache key, and the
+	// core->executor hand-off is an in-process pointer, so excluding it from
+	// JSON cannot drop it before use.
+	HostAliasFQDNs map[string]string `json:"-"`
 }
 
 func (c *Client) Run(
@@ -119,7 +141,6 @@ func (c *Client) Run(
 	nestedClientMetadata *engine.ClientMetadata,
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
-	nestedClientEnv dagql.AnyObjectResult,
 ) (rerr error) {
 	if id == "" {
 		id = randid.NewID()
@@ -142,7 +163,6 @@ func (c *Client) Run(
 		nestedClientMetadata,
 		nestedClientModule,
 		nestedClientFunctionCall,
-		nestedClientEnv,
 	)
 
 	execIdent := state.id

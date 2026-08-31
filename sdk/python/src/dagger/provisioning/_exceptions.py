@@ -12,6 +12,10 @@ class DownloadError(ProvisionError):
         return f"Failed to download the Dagger CLI: {super().__str__()}"
 
 
+class CLIReleaseUnavailableError(DownloadError):
+    """The requested Dagger CLI release is unavailable."""
+
+
 class SessionError(ProvisionError):
     """Error while starting an engine session."""
 

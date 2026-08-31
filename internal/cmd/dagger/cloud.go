@@ -139,6 +139,9 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	if err := auth.SetCurrentOrg(selectedOrg); err != nil {
 		return err
 	}
+	if err := clearSetupCloudLoginPromptPreference(); err != nil {
+		return err
+	}
 
 	fmt.Fprintln(outW, "Success.")
 

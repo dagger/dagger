@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,11 +107,11 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-services")
 
-	// Call the module's CurrentEnvServices function which queries
-	// dag.CurrentEnv().Services().List() to verify services are visible
-	// from within the module execution context.
+	// Call the module's WorkspaceServices function, which lists
+	// Workspace.services via an auto-injected Workspace arg, to verify
+	// services are visible from within the module execution context.
 	out, err := modGen.
-		With(daggerExec("call", "current-env-services")).
+		With(daggerExec("call", "workspace-services")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "web")
@@ -131,6 +132,35 @@ func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "port collision")
 	require.Contains(t, out, "8080")
+}
+
+func (UpSuite) TestUpValidationRejectsBadSignature(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("wrong return type", func(ctx context.Context, t *testctx.T) {
+		modGen, err := upTestEnv(t, c)
+		require.NoError(t, err)
+
+		// badup-return's @up returns Container!, which must be rejected at module load.
+		out, err := modGen.WithWorkdir("badup-return").
+			With(daggerExecFail("up", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@up functions must return the core Service! type")
+	})
+
+	t.Run("required arg", func(ctx context.Context, t *testctx.T) {
+		modGen, err := upTestEnv(t, c)
+		require.NoError(t, err)
+
+		// badup-arg's @up declares a required `image: String!`, which must be
+		// rejected at module load.
+		out, err := modGen.WithWorkdir("badup-arg").
+			With(daggerExecFail("up", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@up functions must be callable with no arguments")
+	})
 }
 
 func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
@@ -177,12 +207,18 @@ func (UpSuite) TestUpModuleWiring(ctx context.Context, t *testctx.T) {
 	// plain-string module reference in workspace settings:
 	// settings.<arg> = "<module>:<function>". These strings route through the
 	// Address decoders (see core/schema/address.go: resolveModuleRef, wired
-	// into .service() and .container()). Supported for Service (+up functions)
-	// and Container. The same decoders back CLI object flags, so a constructor
-	// arg like --app=<module>:<function> resolves identically.
+	// into the corresponding Address object decoders). Supported for Service
+	// (+up functions), Container, Directory, File, and Workspace. The same
+	// decoders back CLI object flags, so a constructor arg like
+	// --app=<module>:<function> resolves identically.
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
+	// Optional Workspace args inherit the ambient workspace when no setting is
+	// configured. Keep its marker valid so the shared consumer fixture can
+	// derive a File in every subtest; the wiring case overrides this workspace
+	// with container-provider:workspace and observes a different marker.
+	modGen = modGen.WithNewFile("app/marker.txt", "ambient")
 
 	t.Run("without refs", func(ctx context.Context, t *testctx.T) {
 		ctr := modGen.
@@ -233,6 +269,71 @@ settings.base = "container-provider:image"
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-provider")
+	})
+
+	t.Run("artifact refs via settings", func(ctx context.Context, t *testctx.T) {
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.directory = "container-provider:directory"
+settings.file = "container-provider:file"
+settings.sourceWorkspace = "container-provider:workspace"
+`)
+
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "directory-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "container-provider", strings.TrimSpace(out))
+
+		out, err = ctr.
+			With(daggerExec("call", "service-ref-consumer", "file-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "container-provider", strings.TrimSpace(out))
+
+		out, err = ctr.
+			With(daggerExec("call", "service-ref-consumer", "workspace-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "container-provider", strings.TrimSpace(out))
+	})
+
+	t.Run("provider with required Workspace arg", func(ctx context.Context, t *testctx.T) {
+		// The referenced module declares a required Workspace! — on its
+		// constructor (image) and on the function itself (image-for). The
+		// engine builds the <module>:<function> call by hand, so it must
+		// supply that workspace before dagql's non-null check; the injection
+		// hook that fills optional Workspace args runs too late to help
+		// (see core/schema/address.go resolveModuleRef). Regression: after
+		// Workspace args stopped being published as nullable, this failed
+		// with `missing required argument: "ws"`.
+		//
+		// The provider bakes the workspace's marker.txt into PROVIDED_BY,
+		// proving it received the caller's workspace and not just any one.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("marker.txt", "app-workspace")
+		for _, fn := range []string{"image", "image-for"} {
+			t.Run(fn, func(ctx context.Context, t *testctx.T) {
+				out, err := ctr.
+					WithNewFile("dagger.toml", `[modules.workspace-container-provider]
+source = "../workspace-container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "workspace-container-provider:`+fn+`"
+`).
+					With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "workspace-container-provider:app-workspace")
+			})
+		}
 	})
 
 	t.Run("service ref via CLI flag", func(ctx context.Context, t *testctx.T) {

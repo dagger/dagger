@@ -1,0 +1,5 @@
+type Bad {
+  pub broken: String! {
+    this is intentionally invalid dang source
+  }
+}

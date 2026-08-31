@@ -1,0 +1,20 @@
+kind: Fixed
+body: |
+  A local module ref carrying a dot outside its first path segment — the shape a
+  workspace-relative ref takes from a monorepo subdirectory, like
+  `common/.dagger/mymod` — is no longer mistaken for a git ref. `dagger api
+  client init go clients/api common/.dagger/mymod` failed with `local path
+  "common/.dagger/mymod" does not exist`; only the segment ahead of the first
+  separator is read as a host now, the way Go import paths are.
+
+  Paths typed on Windows are read as paths too. The engine always runs on Linux,
+  where a backslash is an ordinary character, so `dagger module init --path
+  common\clients\one` used to create a single directory named
+  `common\clients\one`, `dagger install ..\dep` never collapsed the `..`, and
+  a `..\..\` spelling slipped past the check that refuses to escape the
+  workspace root. Separators are normalized where a workspace path, a local
+  module ref or an as-sdk entry is read.
+time: 2026-08-19T12:45:00Z
+custom:
+  Author: eunomie
+  PR: "13892"

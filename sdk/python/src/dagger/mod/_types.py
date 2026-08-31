@@ -25,6 +25,7 @@ class FunctionDefinition:
     check: bool = False
     generator: bool = False
     service: bool = False
+    agent: bool = False
 
 
 class Enum(str, base.Enum):

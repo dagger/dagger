@@ -262,6 +262,8 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
 	assert.NilError(t, err)
 	assert.Assert(t, resA != nil)
+	resultID := uint64(resA.cacheSharedResult().id)
+	assert.Assert(t, resultID != 0)
 
 	reqCall, err := resA.ResultCall()
 	assert.NilError(t, err)
@@ -278,14 +280,56 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	initCalls := 0
-	_, err = cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
-		initCalls++
-		return nil, errors.New("unexpected initializer call")
-	})
-	assert.Assert(t, err != nil)
-	assert.Equal(t, 0, initCalls)
-	assert.Assert(t, strings.Contains(err.Error(), "decode persisted hit payload"))
+	loadServer := cacheTestServer(t)
+	routes := []struct {
+		name      string
+		sessionID string
+		load      func(string) error
+	}{
+		{
+			name:      "request lookup",
+			sessionID: "rollback-request",
+			load: func(sessionID string) error {
+				_, err := cB.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+					return nil, errors.New("unexpected initializer call")
+				})
+				return err
+			},
+		},
+		{
+			name:      "digest lookup",
+			sessionID: "rollback-digest",
+			load: func(sessionID string) error {
+				_, _, err := cB.lookupCacheForDigests(ctx, sessionID, noopTypeResolver{}, cacheTestCallDigest(reqCall), nil)
+				return err
+			},
+		},
+		{
+			name:      "result ID lookup",
+			sessionID: "rollback-result-id",
+			load: func(sessionID string) error {
+				_, err := cB.LoadResultByResultID(ctx, sessionID, loadServer, resultID)
+				return err
+			},
+		},
+	}
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			for range 2 {
+				err := route.load(route.sessionID)
+				assert.Assert(t, err != nil)
+				assert.Assert(t, strings.Contains(err.Error(), "decode persisted hit payload"))
+			}
+			cB.sessionMu.Lock()
+			_, recorded := cB.sessionResultIDsBySession[route.sessionID][sharedResultID(resultID)]
+			cB.sessionMu.Unlock()
+			assert.Assert(t, recorded, "failed read removed its session edge")
+			assertCacheOwnershipExact(t, cB)
+			assert.NilError(t, cB.ReleaseSession(ctx, route.sessionID))
+			assertCacheOwnershipExact(t, cB)
+		})
+	}
+	assertCacheDerivedIndexesConsistent(t, cB)
 }
 
 func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) {

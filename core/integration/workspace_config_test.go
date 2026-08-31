@@ -178,6 +178,28 @@ func newWorkspaceModuleSettingsCtr(t *testctx.T, c *dagger.Client, configTOML st
 func (WorkspaceSuite) TestWorkspaceModuleSettingsRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	t.Run("git refs accept the same separators in sources and settings", func(ctx context.Context, t *testctx.T) {
+		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.wolfi]
+source = "https://github.com/dagger/dagger/modules/wolfi#v0.20.2"
+
+[modules.superconstructor]
+source = "defaults/superconstructor"
+entrypoint = true
+
+[modules.superconstructor.settings]
+count = 7
+greeting = "hello"
+dir = "https://github.com/dagger/dagger@v0.18.3"
+file = "/foo/hello.txt"
+password = "env://PASSWORD"
+service = "tcp://www:80"
+`)
+
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "dir", "entries"}, nestedExec).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "README.md")
+	})
+
 	t.Run("workspace module settings drive constructor help and runtime", func(ctx context.Context, t *testctx.T) {
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
 source = "defaults/superconstructor"
@@ -304,7 +326,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 			"cwd": "/app/sub",
 			"configFile": %q
 		}
-	}`, filepath.Join("app", workspace.ConfigFileName)), string(out))
+	}`, filepath.Join("..", workspace.ConfigFileName)), string(out))
 }
 
 func (WorkspaceSuite) TestWorkspaceModuleSettingsPolicy(ctx context.Context, t *testctx.T) {
@@ -542,11 +564,12 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated := c.CurrentWorkspace().WithConfigValue(
+		current := c.CurrentWorkspace()
+		updated := current.WithConfigValue(
 			"modules.example.source",
 			"github.com/dagger/example",
 		)
-		added, err := updated.Changes().AddedPaths(ctx)
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspace.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))

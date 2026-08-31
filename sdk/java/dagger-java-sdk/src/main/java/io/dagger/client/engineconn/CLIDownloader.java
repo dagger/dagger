@@ -1,7 +1,7 @@
 package io.dagger.client.engineconn;
 
 import java.io.*;
-import java.net.URL;
+import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,7 +37,7 @@ class CLIDownloader {
   }
 
   public CLIDownloader() {
-    this(url -> new URL(url).openStream());
+    this(FileFetcher::fetchURL);
   }
 
   public String downloadCLI(String version) throws IOException {
@@ -93,11 +93,22 @@ class CLIDownloader {
     return String.format("dagger_v%s_%s_%s.%s", version, getOS(), getArch(), ext);
   }
 
-  private Map<String, String> fetchChecksumMap(String version) throws IOException {
+  Map<String, String> fetchChecksumMap(String version) throws IOException {
     Map<String, String> checksums = new HashMap<>();
     String checksumMapURL =
         String.format("https://dl.dagger.io/dagger/releases/%s/checksums.txt", version);
-    try (BufferedInputStream in = new BufferedInputStream(fetcher.fetch(checksumMapURL))) {
+    try (FileFetcher.Response response = fetcher.fetch(checksumMapURL)) {
+      if (response.statusCode() != HttpURLConnection.HTTP_OK) {
+        String message =
+            String.format(
+                "Failed to download checksums from %s: %s", checksumMapURL, response.status());
+        if (isCLIReleaseUnavailable(response.statusCode())) {
+          throw new CLIReleaseUnavailableException(message);
+        }
+        throw new IOException(message);
+      }
+
+      BufferedInputStream in = new BufferedInputStream(response.body());
       ByteArrayOutputStream out = new ByteArrayOutputStream();
       byte[] dataBuffer = new byte[1024];
       int bytesRead;
@@ -115,7 +126,7 @@ class CLIDownloader {
     }
   }
 
-  private String extractCLI(String archiveName, String version, Path dest) throws IOException {
+  String extractCLI(String archiveName, String version, Path dest) throws IOException {
     String cliArchiveURL =
         String.format("https://dl.dagger.io/dagger/releases/%s/%s", version, archiveName);
     LOG.info("Downloading Dagger CLI from " + cliArchiveURL);
@@ -126,8 +137,14 @@ class CLIDownloader {
       throw new IOException("Could not instantiate SHA-256 digester", nsae);
     }
     LOG.info("Extracting archive...");
-    try (InputStream in =
-        new BufferedInputStream(new DigestInputStream(fetcher.fetch(cliArchiveURL), sha256))) {
+    try (FileFetcher.Response response = fetcher.fetch(cliArchiveURL)) {
+      if (response.statusCode() != HttpURLConnection.HTTP_OK) {
+        throw new IOException(
+            String.format(
+                "Failed to download CLI archive from %s: %s", cliArchiveURL, response.status()));
+      }
+
+      InputStream in = new BufferedInputStream(new DigestInputStream(response.body(), sha256));
       if (isWindows()) {
         extractZip(in, dest);
       } else {
@@ -136,6 +153,12 @@ class CLIDownloader {
       byte[] checksum = sha256.digest();
       return HexFormat.of().formatHex(checksum);
     }
+  }
+
+  private static boolean isCLIReleaseUnavailable(int statusCode) {
+    // dl.dagger.io returns 403 for missing S3 objects.
+    return statusCode == HttpURLConnection.HTTP_FORBIDDEN
+        || statusCode == HttpURLConnection.HTTP_NOT_FOUND;
   }
 
   private void extractZip(InputStream in, Path dest) throws IOException {

@@ -52,6 +52,12 @@ func Address(value string) *dagger.Address {
 	return client.Address(value)
 }
 
+// Creates a file from arbitrary binary contents.
+func Blob(name string, contents dagger.Bytes, opts ...dagger.BlobOpts) *dagger.File {
+	client := initClient()
+	return client.Blob(name, contents, opts...)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()
@@ -78,18 +84,6 @@ func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	return client.Container(opts...)
 }
 
-// Returns the current environment
-//
-// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-//
-// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-//
-// Experimental: Programmatic env access is speculative and might be replaced.
-func CurrentEnv() *dagger.Env {
-	client := initClient()
-	return client.CurrentEnv()
-}
-
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -102,6 +96,12 @@ func CurrentFunctionCall() *dagger.FunctionCall {
 func CurrentModule() *dagger.CurrentModule {
 	client := initClient()
 	return client.CurrentModule()
+}
+
+// The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+func CurrentNode() dagger.Node {
+	client := initClient()
+	return client.CurrentNode()
 }
 
 // The TypeDef representations of the objects currently being served in the session.
@@ -136,12 +136,10 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
-// Initializes a new environment
-//
-// Experimental: Environments are not yet stabilized
-func Env(opts ...dagger.EnvOpts) *dagger.Env {
+// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+func EngineVolume(name string, opts ...dagger.EngineVolumeOpts) *dagger.Volume {
 	client := initClient()
-	return client.Env(opts...)
+	return client.EngineVolume(name, opts...)
 }
 
 // Initialize an environment file
@@ -225,9 +223,9 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 }
 
 // Load any object by its ID.
-func Node(id dagger.ID) dagger.Node {
+func Node(ctx context.Context, id dagger.ID) (dagger.Node, error) {
 	client := initClient()
-	return client.Node(id)
+	return client.Node(ctx, id)
 }
 
 // Load a GraphQL introspection schema for merging.

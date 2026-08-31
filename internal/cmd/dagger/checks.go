@@ -7,8 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
 
@@ -174,43 +172,18 @@ func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Chec
 }
 
 func writeCheckList(w io.Writer, checks []*CheckInfo) error {
-	showType := false
+	items := make([]commandListItem, 0, len(checks))
 	for _, c := range checks {
+		comment := firstDescriptionLine(c.Description)
 		if c.Type == "generate" {
-			showType = true
-			break
+			comment = generatedCheckComment(c.Description)
 		}
+		items = append(items, commandListItem{
+			Name:    c.Name,
+			Comment: comment,
+		})
 	}
-
-	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	if showType {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n",
-			termenv.String("Name").Bold(),
-			termenv.String("Type").Bold(),
-			termenv.String("Description").Bold(),
-		)
-	} else {
-		fmt.Fprintf(tw, "%s\t%s\n",
-			termenv.String("Name").Bold(),
-			termenv.String("Description").Bold(),
-		)
-	}
-	for _, check := range checks {
-		firstLine := check.Description
-		if idx := strings.Index(check.Description, "\n"); idx != -1 {
-			firstLine = check.Description[:idx]
-		}
-		if showType {
-			checkType := check.Type
-			if checkType == "" {
-				checkType = "check"
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, checkType, firstLine)
-		} else {
-			fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
-		}
-	}
-	return tw.Flush()
+	return writeCommandList(w, items)
 }
 
 // 'dagger checks' (runs by default)

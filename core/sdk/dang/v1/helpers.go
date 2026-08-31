@@ -19,6 +19,7 @@ import (
 	"github.com/vito/dang/pkg/introspection"
 	"github.com/vito/dang/pkg/ioctx"
 	"github.com/vito/dang/pkg/querybuilder"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
@@ -32,9 +33,8 @@ func (r *runtime) eval(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
-	envContext dagql.ObjectResult[*core.Env],
 ) ([]byte, error) {
-	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, envContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
+	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
@@ -44,7 +44,7 @@ func (r *runtime) eval(
 			}
 			dagMod, err := initDangModule(ctx, srv, env)
 			if err != nil {
-				return nil, fmt.Errorf("init module: %w", err)
+				return nil, err
 			}
 			return json.Marshal(dagMod)
 		}
@@ -72,11 +72,10 @@ func evalDangSource(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
-	envContext dagql.ObjectResult[*core.Env],
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
-	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, envContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
+	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
 		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
 		if err != nil {
@@ -94,7 +93,13 @@ func evalDangSource(
 			AutoImport: true,
 		})
 
-		stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+		// Route the program's stdout/stderr to the USER-FACING span, not
+		// whatever span happens to be current — see the v2 runtime's copy of
+		// this comment (core/sdk/dang/v2/helpers.go): a module function call
+		// runs under dagql's passthrough call_exec profiling span, and logs
+		// parented there vanish from the row that should show them.
+		stdioCtx := trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))
+		stdio := telemetry.SpanStdio(stdioCtx, core.InstrumentationLibrary)
 		ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 		ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 
@@ -428,7 +433,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 	}
 
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
-		return res, fmt.Errorf("failed to select module: %w", err)
+		return res, err
 	}
 
 	return res, nil
@@ -528,7 +533,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 }
 
 // functionDirectiveSelectors converts function-level directives (@check,
-// @generate, @up, @cache) into dagql selectors.
+// @generate, @up, @agent, @cache) into dagql selectors.
 func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
 	for _, directive := range directives {
@@ -539,6 +544,8 @@ func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, direct
 			sels = append(sels, dagql.Selector{Field: "withGenerator"})
 		case "up":
 			sels = append(sels, dagql.Selector{Field: "withUp"})
+		case "agent":
+			sels = append(sels, dagql.Selector{Field: "withAgent"})
 		case "cache":
 			sel, err := cacheDirectiveSelector(ctx, env, directive)
 			if err != nil {

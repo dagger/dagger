@@ -3372,6 +3372,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		c.egraphMu.Unlock()
 
@@ -3419,6 +3420,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		c.egraphMu.Unlock()
 
@@ -4389,7 +4391,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	assert.Equal(t, 0, len(c.resultOutputEqClasses))
 }
 
-func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) {
+func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -4439,12 +4441,9 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
 	assert.Assert(t, ok)
 
-	foreignSet := c.egraphResultsByDigest[foreignDigest.String()]
-	if foreignSet == nil {
-		foreignSet = newSharedResultIDSet()
-		c.egraphResultsByDigest[foreignDigest.String()] = foreignSet
-	}
-	foreignSet.Insert(shared.id)
+	// Removal covers production-recorded exact postings and broad imported
+	// postings, not arbitrary white-box mutations that bypass bookkeeping.
+	c.addResultDigestPostingLocked(shared.id, foreignDigest.String(), resultDigestPostingExact)
 	c.egraphMu.Unlock()
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
@@ -4717,12 +4716,19 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 			default:
 			}
 
-			if _, err := buildArray(ownerCtx, ownerSessionID); err != nil {
+			producerSessionID := fmt.Sprintf("stress-array-producer-session-%d", iter)
+			producerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-array-producer-client-%d", iter),
+				SessionID: producerSessionID,
+			})
+			producerCtx = ContextWithCache(producerCtx, c)
+			producerCtx = srvToContext(producerCtx, srv)
+			if _, err := buildArray(producerCtx, producerSessionID); err != nil {
 				producerErrCh <- err
 				return
 			}
 			time.Sleep(50 * time.Microsecond)
-			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+			if err := c.ReleaseSession(producerCtx, producerSessionID); err != nil {
 				producerErrCh <- err
 				return
 			}
@@ -4806,6 +4812,7 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 		err = errors.Join(err, producerErr)
 	default:
 	}
+	assert.NilError(t, c.ReleaseSession(ownerCtx, ownerSessionID))
 	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-array-seed-session"))
 	if msg := failure.Load(); msg != nil {
 		t.Fatalf("reproduced array hit call-frame race after %d attempts and %d hits: %s", attempts.Load(), hitCount.Load(), *msg)
@@ -5274,14 +5281,21 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 	go func() {
 		defer close(ownerDone)
 		<-start
-		for {
+		for iter := 0; ; iter++ {
 			select {
 			case <-stopOwner:
 				return
 			default:
 			}
 
-			res, err := buildArray(ownerCtx, ownerSessionID)
+			producerSessionID := fmt.Sprintf("stress-load-by-id-owner-session-%d", iter)
+			producerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-load-by-id-owner-client-%d", iter),
+				SessionID: producerSessionID,
+			})
+			producerCtx = ContextWithCache(producerCtx, c)
+			producerCtx = srvToContext(producerCtx, srv)
+			res, err := buildArray(producerCtx, producerSessionID)
 			if err != nil {
 				ownerErrCh <- err
 				return
@@ -5295,7 +5309,7 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 
 			time.Sleep(50 * time.Microsecond)
 
-			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+			if err := c.ReleaseSession(producerCtx, producerSessionID); err != nil {
 				ownerErrCh <- err
 				return
 			}
@@ -5526,6 +5540,181 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 	assert.Equal(t, 1, base.Size())
 }
 
+func TestCacheLatePersistableJoinCommitsBeforeHandoffRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		lateWaiters         int
+		canceledFinalWaiter bool
+	}{
+		{
+			name:        "successful final waiter",
+			lateWaiters: 2,
+		},
+		{
+			name:                "canceled final waiter",
+			lateWaiters:         1,
+			canceledFinalWaiter: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unwrapValue := func(res AnyResult) int {
+				t.Helper()
+				value, ok := UnwrapAs[cacheTestLeaseCheckedInt](res)
+				assert.Assert(t, ok, "expected cacheTestLeaseCheckedInt result, got %T", res)
+				return int(value.Int)
+			}
+
+			ctx := cacheTestContext(t.Context())
+			cacheIface, err := NewCache(ctx, "", nil, nil)
+			assert.NilError(t, err)
+			c := cacheIface
+
+			const (
+				sessionID      = "late-persistable-session"
+				concurrencyKey = "late-persistable-concurrency"
+			)
+			key := cacheTestIntCall("late-persistable-commit")
+			callConcKeys := callConcurrencyKeys{
+				callKey:        cacheTestCallDigest(key).String(),
+				concurrencyKey: concurrencyKey,
+			}
+
+			publicationReachedAttachment := make(chan struct{})
+			allowPublicationToFinish := make(chan struct{})
+			leaderResCh := make(chan AnyResult, 1)
+			leaderErrCh := make(chan error, 1)
+			go func() {
+				res, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{
+					ResultCall:     key,
+					ConcurrencyKey: concurrencyKey,
+					TTL:            60,
+				}, func(context.Context) (AnyResult, error) {
+					return cacheTestDetachedResult(key, cacheTestLeaseCheckedInt{
+						Int: NewInt(42),
+						onAttach: func(context.Context) error {
+							close(publicationReachedAttachment)
+							<-allowPublicationToFinish
+							return nil
+						},
+					}), nil
+				})
+				leaderResCh <- res
+				leaderErrCh <- err
+			}()
+
+			select {
+			case <-publicationReachedAttachment:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for publication to reach dependency attachment")
+			}
+
+			// Simulate requests whose e-graph lookup missed before indexing but
+			// whose callsMu admission happens while publication is attaching. Keep
+			// their waiter slots outstanding so the leader cannot release the
+			// publication handoff before the test selects the final waiter.
+			c.callsMu.Lock()
+			oc := c.ongoingCalls[callConcKeys]
+			assert.Assert(t, oc != nil)
+			oc.isPersistable.Store(true)
+			oc.waiters += tc.lateWaiters
+			expectedExpiry := time.Now().Unix() + 3600
+			oc.persistedEdgeExpiresAtUnix = expectedExpiry
+			c.callsMu.Unlock()
+
+			close(allowPublicationToFinish)
+			var leaderRes AnyResult
+			select {
+			case leaderRes = <-leaderResCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for leader result")
+			}
+			select {
+			case err := <-leaderErrCh:
+				assert.NilError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for leader error")
+			}
+			assert.Equal(t, 42, unwrapValue(leaderRes))
+
+			c.callsMu.Lock()
+			assert.Assert(t, oc.needsPersistedEdge)
+			assert.Equal(t, tc.lateWaiters, oc.waiters)
+			_, ongoing := c.ongoingCalls[callConcKeys]
+			c.callsMu.Unlock()
+			assert.Assert(t, !ongoing)
+
+			if tc.canceledFinalWaiter {
+				// Leave only the handoff owner. If persistence happened after the
+				// decrement, this final cancellation would collect the result.
+				assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+
+				// Publication is complete and no goroutine reads waitCh anymore.
+				// Replace the closed channel so wait deterministically selects the
+				// canceled path for the synthetic final waiter.
+				oc.waitCh = make(chan struct{})
+				canceledCtx, cancel := context.WithCancel(ctx)
+				cancel()
+				_, err := c.wait(canceledCtx, sessionID, noopTypeResolver{}, oc, &CallRequest{
+					ResultCall:     key,
+					ConcurrencyKey: concurrencyKey,
+					IsPersistable:  true,
+				}, true)
+				assert.ErrorIs(t, err, context.Canceled)
+			} else {
+				for range tc.lateWaiters {
+					res, err := c.wait(ctx, sessionID, noopTypeResolver{}, oc, &CallRequest{
+						ResultCall:     key,
+						ConcurrencyKey: concurrencyKey,
+						IsPersistable:  true,
+					}, true)
+					assert.NilError(t, err)
+					assert.Equal(t, 42, unwrapValue(res))
+				}
+				assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+			}
+
+			shared := leaderRes.cacheSharedResult()
+			c.egraphMu.RLock()
+			edge, found := c.persistedEdgesByResult[shared.id]
+			live := c.resultsByID[shared.id] == shared
+			ownershipCount := shared.incomingOwnershipCount
+			c.egraphMu.RUnlock()
+			assert.Assert(t, found)
+			assert.Equal(t, expectedExpiry, edge.expiresAtUnix)
+			assert.Assert(t, live)
+			assert.Equal(t, int64(1), ownershipCount)
+			assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+			assert.Equal(t, 1, c.Size())
+		})
+	}
+}
+
+func TestOngoingCallPersistableIntentConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	oc := &ongoingCall{}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for range 10_000 {
+			oc.isPersistable.Store(true)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for range 10_000 {
+			_ = oc.isPersistable.Load()
+		}
+	}()
+	close(start)
+	wg.Wait()
+	assert.Assert(t, oc.isPersistable.Load())
+}
+
 func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
@@ -5589,7 +5778,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 1, len(c.resultOutputEqClasses))
 
 	initCallsAfter := 0
-	resC, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+	resC, err := c.GetOrInitCall(ctx, "persistable-hit-after-release", noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		initCallsAfter++
@@ -5599,7 +5788,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 0, initCallsAfter)
 	assert.Assert(t, resC.HitCache())
 	assert.Equal(t, 17, cacheTestUnwrapInt(t, resC))
-	cacheTestReleaseSession(t, c, ctx)
+	assert.NilError(t, c.ReleaseSession(ctx, "persistable-hit-after-release"))
 }
 
 func TestCacheMakeResultUnpruneableRetainsAcrossSessionClose(t *testing.T) {
@@ -6166,16 +6355,20 @@ func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
 		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
 		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
 	}
-	c.resultOutputEqClasses[1] = map[eqClassID]struct{}{a: {}}
-	c.resultOutputEqClasses[2] = map[eqClassID]struct{}{b: {}}
-	c.resultOutputEqClasses[3] = map[eqClassID]struct{}{c1: {}}
-	compacted, oldSlots, newSlots := c.compactEqClassesLocked()
+	c.addResultOutputEqClassLocked(1, a)
+	c.addResultOutputEqClassLocked(2, b)
+	c.addResultOutputEqClassLocked(3, c1)
+	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
+	forced, forcedOldSlots, forcedNewSlots := c.compactEqClassesLocked(true)
 	c.egraphMu.Unlock()
 
 	assert.Assert(t, !compacted)
 	assert.Equal(t, 5, oldSlots)
 	assert.Equal(t, 3, newSlots)
-	assert.Equal(t, 6, len(c.egraphParents))
+	assert.Assert(t, forced)
+	assert.Equal(t, 5, forcedOldSlots)
+	assert.Equal(t, 3, forcedNewSlots)
+	assert.Equal(t, 4, len(c.egraphParents))
 }
 
 func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
@@ -6347,8 +6540,8 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 
 	rootEq := c.ensureEqClassForDigestLocked(baseCtx, "prune-structural-root")
 	provenanceEq := c.ensureEqClassForDigestLocked(baseCtx, "prune-structural-provenance-only")
-	c.resultOutputEqClasses[root.id] = map[eqClassID]struct{}{rootEq: {}}
-	c.resultOutputEqClasses[provenanceOnly.id] = map[eqClassID]struct{}{provenanceEq: {}}
+	c.addResultOutputEqClassLocked(root.id, rootEq)
+	c.addResultOutputEqClassLocked(provenanceOnly.id, provenanceEq)
 	c.persistedEdgesByResult = map[sharedResultID]persistedEdge{
 		provenanceOnly.id: {
 			resultID:          provenanceOnly.id,

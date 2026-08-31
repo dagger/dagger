@@ -18,6 +18,7 @@ import (
 
 	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -34,6 +35,28 @@ func TestWorkspaceModules(t *testing.T) {
 // TestWorkspaceModuleInstall covers module installation through both the CLI
 // and the Workspace overlay/export API.
 func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *testctx.T) {
+	t.Run("module init creates its explicit path with standard permissions", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "dang")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "dang", "editor", "--path", "editor")
+		require.NoError(t, err)
+
+		info, err := os.Stat(filepath.Join(workdir, "editor"))
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o755), info.Mode().Perm(),
+			"module directory mode: got %#o, want %#o", info.Mode().Perm(), os.FileMode(0o755))
+
+		config, err := os.ReadFile(filepath.Join(workdir, "editor", workspacecfg.ModuleConfigFileName))
+		require.NoError(t, err, "engine-authored module config should be preserved")
+		require.Contains(t, string(config), fmt.Sprintf("engineVersion = %q", engine.Version))
+		_, err = os.Stat(filepath.Join(workdir, "editor", "main.dang"))
+		require.NoError(t, err, "SDK-authored starter source should be preserved")
+	})
+
 	t.Run("Workspace.WithModule initializes config and lock for remote modules", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
@@ -41,8 +64,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
 
-		updated := c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		added, err := updated.Changes().AddedPaths(ctx)
+		current := c.CurrentWorkspace()
+		updated := current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{workspacecfg.ConfigFileName, workspacecfg.LockFileName}, added)
 		require.NoError(t, updated.Export(ctx))
@@ -54,18 +78,21 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, err)
 		require.Contains(t, cfg.Modules, "mywolfi")
 		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
+		require.Empty(t, cfg.Modules["mywolfi"].Pin)
 		require.False(t, cfg.Modules["mywolfi"].Entrypoint)
+		require.NotContains(t, string(configBytes), "pin =")
 
 		require.NoError(t, c.Close())
 
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
-		require.Contains(t, string(lockBytes), `"git.tag"`)
+		require.Contains(t, string(lockBytes), `"git-sha"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated = c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
-		empty, err := updated.Changes().IsEmpty(ctx)
+		current = c.CurrentWorkspace()
+		updated = current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		empty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
 	})
@@ -80,8 +107,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		updated := c.CurrentWorkspace().WithModule("./dep")
-		added, err := updated.Changes().AddedPaths(ctx)
+		current := c.CurrentWorkspace()
+		updated := current.WithModule("./dep")
+		added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{workspacecfg.ConfigFileName}, added)
 		require.NoError(t, updated.Export(ctx))
@@ -118,6 +146,22 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, "dep", cfg.Modules["dep"].Source)
 	})
 
+	t.Run("install omits commented settings hints", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "defaults", "superconstructor")
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		require.NoError(t, err)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+		require.NotContains(t, string(configBytes), "# settings.")
+	})
+
 	t.Run("workspace install pins Git resolution without a modules.resolve entry", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
@@ -134,7 +178,15 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
-		require.Contains(t, string(lockBytes), `"git.tag"`)
+		require.Contains(t, string(lockBytes), `"git-sha"`)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+		cfg, err := workspacecfg.ParseConfig(configBytes)
+		require.NoError(t, err)
+		require.Equal(t, ref, cfg.Modules["wolfi"].Source)
+		require.Empty(t, cfg.Modules["wolfi"].Pin)
+		require.NotContains(t, string(configBytes), "pin =")
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {

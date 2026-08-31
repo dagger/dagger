@@ -1,7 +1,7 @@
 package core
 
 // These tests cover the Dagger engine process and the client/engine contract.
-// They verify signal handling, engine naming, `dagger api exec`, version
+// They verify signal handling, engine naming, `dagger api with-session`, version
 // compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
 // client metadata reuse.
 //
@@ -258,7 +258,7 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 		name string
 		cmd  string
 	}{
-		{"exec", "dagger api exec"},
+		{"with-session", "dagger api with-session"},
 		{"compat", "dagger run"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {
@@ -769,12 +769,13 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 		// find the lines with metrics we care about testing
 		soughtMetrics := map[string]struct{}{
-			"dagger_connected_clients":                 {},
-			"dagger_dagql_cache_entries":               {},
-			"dagger_local_cache_total_disk_size_bytes": {},
-			"dagger_local_cache_entries":               {},
+			"dagger_connected_clients":                    {},
+			"dagger_dagql_cache_entries":                  {},
+			"dagger_dagql_cache_metadata_estimated_bytes": {},
+			"dagger_local_cache_total_disk_size_bytes":    {},
+			"dagger_local_cache_entries":                  {},
 		}
-		foundMetrics := map[string]int{}
+		foundMetrics := map[string]float64{}
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
 
@@ -783,7 +784,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 				if !found {
 					continue
 				}
-				num, err := strconv.Atoi(numStr)
+				num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
 				require.NoError(t, err)
 
 				delete(soughtMetrics, metricName)
@@ -807,22 +808,27 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 			switch metricName {
 			case "dagger_connected_clients":
 				if num != 1 {
-					t.Logf("expected dagger_connected_clients = 1, got %d", num)
+					t.Logf("expected dagger_connected_clients = 1, got %v", num)
 					validatedAll = false
 				}
 			case "dagger_dagql_cache_entries":
 				if num < 0 {
-					t.Logf("expected dagger_dagql_cache_entries >= 0, got %d", num)
+					t.Logf("expected dagger_dagql_cache_entries >= 0, got %v", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_metadata_estimated_bytes":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_metadata_estimated_bytes >= 0, got %v", num)
 					validatedAll = false
 				}
 			case "dagger_local_cache_total_disk_size_bytes":
 				if num <= 0 {
-					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %d", num)
+					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %v", num)
 					validatedAll = false
 				}
 			case "dagger_local_cache_entries":
 				if num <= 0 {
-					t.Logf("expected dagger_local_cache_entries >= 0, got %d", num)
+					t.Logf("expected dagger_local_cache_entries >= 0, got %v", num)
 					validatedAll = false
 				}
 			default:

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
@@ -64,6 +65,39 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 		return nil, fmt.Errorf("%w: workspace not loaded", core.ErrNoCurrentWorkspace)
 	}
 	return client.workspace, nil
+}
+
+// currentWorkspaceReadEpoch returns the calling client's workspace read epoch
+// as a stable string token, folded by the workspace read resolvers into their
+// host reads' per-client cache namespace (see bumpClientWorkspaceReadEpoch).
+// Epoch 0 (never bumped) maps to "" so untouched sessions keep the client's
+// default namespace and share cache entries as before.
+func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	epoch := client.workspaceReadEpoch.Load()
+	if epoch == 0 {
+		return "", nil
+	}
+	return strconv.FormatUint(epoch, 10), nil
+}
+
+// bumpClientWorkspaceReadEpoch advances the calling client's workspace read
+// epoch, so cached host reads (Workspace.file / Workspace.directory) taken
+// before the bump are no longer served for the rest of the session. Triggered
+// from Workspace.export, after the agent's changes are written to disk, and
+// from Workspace.reloaded when its overlay is discarded instead, so the next
+// read re-reads the live host instead of a stale per-client host.directory
+// snapshot cached earlier in the session.
+func (srv *Server) bumpClientWorkspaceReadEpoch(ctx context.Context) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	client.workspaceReadEpoch.Add(1)
+	return nil
 }
 
 func canonicalModuleReference(src *core.ModuleSource) string {
@@ -156,29 +190,23 @@ func workspaceRefFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 }
 
 // workspaceEnvFromClientMetadata returns the explicitly declared workspace
-// environment selection, if present.
+// environment selection, if present. An explicit empty string means "no env"
+// (clients use it to opt a session out of overlay application, e.g. env-scoped
+// settings writes that create the env); it matches selectedWorkspaceEnv's
+// treatment of empty as not-set.
 func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bool) {
 	if clientMD == nil {
 		return "", false
 	}
-	if clientMD.WorkspaceEnv != nil {
+	if clientMD.WorkspaceEnv != nil && *clientMD.WorkspaceEnv != "" {
 		return *clientMD.WorkspaceEnv, true
 	}
 	return "", false
 }
 
-// isModuleRuntimeClient reports whether client represents code executing inside
-// a module function. It keys off an active function call, not merely a module in
-// context: a client that only serves a module's schema (e.g. the CLI running
-// `dagger generate`) is not a runtime and still inherits its parent workspace.
-func isModuleRuntimeClient(client *daggerClient) bool {
-	return client != nil && client.fnCall != nil
-}
-
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
-// onto the current client. Inheritance stops when a module runtime client would
-// inherit through another module runtime parent, so workspace context does not
-// flow from one module runtime into a dependency module runtime.
+// onto the current client. This keeps nested clients aligned with their parent
+// workspace for currentWorkspace() resolution.
 func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error {
 	client.workspaceMu.Lock()
 	if client.workspace != nil {
@@ -189,9 +217,6 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 
 	for i := len(client.parents) - 1; i >= 0; i-- {
 		parent := client.parents[i]
-		if isModuleRuntimeClient(client) && isModuleRuntimeClient(parent) {
-			return nil
-		}
 		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
 			return err
 		}
@@ -361,6 +386,10 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
 		core.NewWorkspaceSourceGitRef(gitRef.Result, gitutil.IsCommitSHA(parsedRef.version)),
+		// The workspace tree is remote, but user-level config still comes from
+		// the caller's host; the key is the declared remote itself.
+		client.engineUtilClient.ReadCallerHostFile,
+		workspace.NormalizeGitRemote(parsedRef.cloneRef),
 	)
 }
 
@@ -378,7 +407,9 @@ func (srv *Server) detectAndLoadWorkspace(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{}, nil)
+	// For local workspaces readFile already reads the caller's host, so it
+	// doubles as the user-level config reader.
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{}, nil, readFile, "")
 }
 
 // pendingModule represents a module to be loaded from workspace discovery,
@@ -627,6 +658,12 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 	prebuiltSource core.WorkspaceSource,
+	// hostReadFile reads files from the caller's host regardless of where the
+	// workspace tree lives; it serves the user-level config file.
+	hostReadFile func(context.Context, string) ([]byte, error),
+	// remoteKey is the pre-computed user-config key for remote workspaces.
+	// Empty for local workspaces, whose key derives from the git origin.
+	remoteKey string,
 ) error {
 	clientMD := client.clientMetadata
 	loadModules := client.pendingWorkspaceLoad &&
@@ -737,10 +774,22 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return fmt.Errorf("building workspace: %w", err)
 	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
+	if err := attachUserWorkspaceOverlay(ctx, clientMD, readFile, hostReadFile, ws, coreWS, remoteKey, isLocal); err != nil {
+		return err
+	}
 	client.workspace = coreWS
 
 	if !loadModules {
 		return nil
+	}
+
+	// User-level overrides merge over the repository config before any env
+	// overlay so that user-defined environments are selectable.
+	if overlay := coreWS.UserConfigOverlay(); overlay != nil {
+		wsConfig, err = workspace.ApplyUserOverlay(wsConfig, overlay)
+		if err != nil {
+			return err
+		}
 	}
 
 	if hasWorkspaceEnv {
@@ -876,6 +925,128 @@ func (srv *Server) buildCoreWorkspace(
 	return coreWS, nil
 }
 
+// attachUserWorkspaceOverlay resolves the workspace's user-config key (its
+// normalized Git remote) and, when the caller's user-level config file has a
+// matching [workspaces.*] entry, attaches that overlay to coreWS. The overlay
+// is applied to the effective workspace config by module loading and by the
+// schema-level config read paths.
+func attachUserWorkspaceOverlay(
+	ctx context.Context,
+	clientMD *engine.ClientMetadata,
+	readFile func(context.Context, string) ([]byte, error),
+	hostReadFile func(context.Context, string) ([]byte, error),
+	ws *workspace.Workspace,
+	coreWS *core.Workspace,
+	remoteKey string,
+	isLocal bool,
+) error {
+	if clientMD == nil || clientMD.UserConfigPath == "" || hostReadFile == nil {
+		return nil
+	}
+	key := remoteKey
+	if key == "" && isLocal && ws.HasGitRoot {
+		key = localWorkspaceUserConfigKey(ctx, readFile, ws.Root)
+	}
+	if key == "" {
+		return nil
+	}
+	coreWS.SetUserConfigKey(key)
+
+	data, err := hostReadFile(ctx, clientMD.UserConfigPath)
+	if err != nil {
+		if isWorkspaceNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("reading user config %s: %w", clientMD.UserConfigPath, err)
+	}
+	userCfg, err := workspace.ParseUserConfig(data)
+	if err != nil {
+		return fmt.Errorf("parsing user config %s: %w", clientMD.UserConfigPath, err)
+	}
+	coreWS.SetUserConfigOverlay(userCfg.MatchWorkspaceOverlay(key))
+	return nil
+}
+
+// localWorkspaceUserConfigKey derives the user-config key for a local
+// workspace from its git origin remote, resolved the way `git config --get`
+// would see it (include/includeIf directives followed). Best-effort: a
+// workspace without a usable origin has no key and matches no user-level
+// overrides.
+func localWorkspaceUserConfigKey(
+	ctx context.Context,
+	readFile func(context.Context, string) ([]byte, error),
+	root string,
+) string {
+	data, configPath, gitDir, err := readLocalGitConfig(ctx, readFile, root)
+	if err != nil {
+		return ""
+	}
+	branch := ""
+	if headData, herr := readFile(ctx, filepath.Join(gitDir, "HEAD")); herr == nil {
+		branch = workspace.GitBranchFromHEAD(headData)
+	}
+	data = workspace.ResolveGitConfigIncludes(ctx, readFile, workspace.GitConfigState{
+		ConfigPath: configPath,
+		GitDir:     gitDir,
+		Branch:     branch,
+	}, data)
+	origin, ok := workspace.GitRemoteURL(data, "origin")
+	if !ok {
+		return ""
+	}
+	return workspace.NormalizeGitRemote(origin)
+}
+
+// readLocalGitConfig reads <root>/.git/config, following a .git worktree or
+// submodule file to its gitdir (and the gitdir's commondir) when .git is not a
+// directory. It returns the config contents together with the config file's
+// path and the repository's per-worktree gitdir, which include resolution and
+// includeIf conditions need.
+func readLocalGitConfig(
+	ctx context.Context,
+	readFile func(context.Context, string) ([]byte, error),
+	root string,
+) (data []byte, configPath, gitDir string, rerr error) {
+	gitDir = filepath.Join(root, ".git")
+	configPath = filepath.Join(gitDir, "config")
+	data, err := readFile(ctx, configPath)
+	if err == nil {
+		return data, configPath, gitDir, nil
+	}
+
+	gitFileData, ferr := readFile(ctx, filepath.Join(root, ".git"))
+	if ferr != nil {
+		return nil, "", "", err
+	}
+	gitDir, ok := workspace.ParseGitDirFile(gitFileData)
+	if !ok {
+		return nil, "", "", fmt.Errorf("invalid .git file in %s", root)
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
+	}
+	gitDir = filepath.Clean(gitDir)
+
+	configPath = filepath.Join(gitDir, "config")
+	if data, cerr := readFile(ctx, configPath); cerr == nil {
+		return data, configPath, gitDir, nil
+	}
+	// Linked worktrees keep the shared config in the common git dir.
+	if commonData, cerr := readFile(ctx, filepath.Join(gitDir, "commondir")); cerr == nil {
+		commonDir := strings.TrimSpace(string(commonData))
+		if commonDir != "" {
+			if !filepath.IsAbs(commonDir) {
+				commonDir = filepath.Join(gitDir, commonDir)
+			}
+			configPath = filepath.Join(filepath.Clean(commonDir), "config")
+			if data, cerr := readFile(ctx, configPath); cerr == nil {
+				return data, configPath, gitDir, nil
+			}
+		}
+	}
+	return nil, "", "", err
+}
+
 func localWorkspaceAddress(root, workspaceCwd string) string {
 	workspaceDir := filepath.Join(root, workspaceCwd)
 	return (&url.URL{
@@ -981,7 +1152,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, err.Error())
+				loadFailures = append(loadFailures, loadFailureMessage(err))
 				continue
 			}
 			kept = append(kept, mod)
@@ -1019,7 +1190,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			client.recordFailedModule(load.mod, loadErr)
 			if bestEffort {
 				reportSkippedModule(ctx, moduleProgressName(load.mod), loadErr)
-				loadFailures = append(loadFailures, loadErr.Error())
+				loadFailures = append(loadFailures, loadFailureMessage(loadErr))
 				continue
 			}
 			if firstErr == nil {
@@ -1295,8 +1466,9 @@ func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served
 
 // filterPendingWorkspaceModulesForRootFields selects the pending modules a
 // request's root fields reference. served modules are recognized without
-// loading.
-func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string) []pendingModule {
+// loading. failed names modules already recorded as unloadable (see
+// daggerClient.failedModules); the unknown-field fallback skips them.
+func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string) []pendingModule {
 	if len(mods) == 0 || rootFieldsRequireFullWorkspaceSchema(rootFields) {
 		return mods
 	}
@@ -1334,11 +1506,24 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 
 	if unknownRootField {
 		entrypoints := pendingWorkspaceEntrypointIndexes(mods)
-		switch len(entrypoints) {
+		// The fallback is a guess that the unrecognized field might be an
+		// entrypoint function. A module already recorded as failed can't serve
+		// anything, so selecting it would only replay its load error — breaking
+		// requests that deliberately proceeded without it, like `dagger
+		// generate`'s follow-up queries after the generators listing skipped
+		// the broken entrypoint best-effort. Leave it pending and let GraphQL
+		// validation report the unresolved field or type.
+		alive := entrypoints[:0]
+		for _, i := range entrypoints {
+			if _, ok := failed[moduleProgressName(mods[i])]; !ok {
+				alive = append(alive, i)
+			}
+		}
+		switch len(alive) {
 		case 0:
 			// Leave the field unresolved; GraphQL validation will report the real error.
 		case 1:
-			selected[entrypoints[0]] = true
+			selected[alive[0]] = true
 		default:
 			// More than one possible entrypoint could serve the field. Preserve the
 			// existing behavior, including any conflict error from arbitration.
@@ -1361,9 +1546,9 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 // load-everything contribution with the scoped module set. Any other
 // full-schema field keeps loading everything, scope untouched. The second
 // result reports whether the scope was applied, so the caller can consume it.
-func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
 	if scope == "" || len(mods) == 0 {
-		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+		return filterPendingWorkspaceModulesForRootFields(mods, served, failed, rootFields), false
 	}
 
 	hasCurrentTypeDefs := false
@@ -1376,11 +1561,11 @@ func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, serv
 		remaining = append(remaining, field)
 	}
 	if !hasCurrentTypeDefs || rootFieldsRequireFullWorkspaceSchema(remaining) {
-		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+		return filterPendingWorkspaceModulesForRootFields(mods, served, failed, rootFields), false
 	}
 
 	wanted := make(map[string]struct{})
-	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, remaining) {
+	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, failed, remaining) {
 		wanted[moduleProgressName(mod)] = struct{}{}
 	}
 	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope, entrypointServed) {
@@ -1425,7 +1610,6 @@ func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {
 			"__type",
 			"__schemaJSONFile",
 			"__workspaceModule",
-			"currentEnv",
 			"currentModule",
 			// currentTypeDefs returns the full served schema (bare `dagger
 			// functions`, the in-engine MCP/LLM tool builder), so it needs
@@ -1484,7 +1668,6 @@ func isCoreRootField(field string) bool {
 		"changeset",
 		"cloud",
 		"container",
-		"currentEnv",
 		"currentFunctionCall",
 		"currentModule",
 		// currentWorkspace's selector resolvers load on demand from their
@@ -1691,6 +1874,13 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 		),
 	)
 	telemetry.EndWithCause(span, &cause)
+}
+
+// loadFailureMessage renders a load error as a display string, stripping the
+// [traceparent:...] error-origin markers — they are span-attribution plumbing,
+// not part of the message.
+func loadFailureMessage(err error) string {
+	return core.StripErrorOrigins(err.Error())
 }
 
 func moduleLoadErr(load moduleLoadRequest, err error) error {
@@ -1977,7 +2167,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
 	return resolved, nil
 }

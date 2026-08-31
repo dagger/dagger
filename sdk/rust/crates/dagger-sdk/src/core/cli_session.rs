@@ -108,16 +108,12 @@ impl InnerCliSession {
             format!("dagger.io/sdk.version:{}", env!("CARGO_PKG_VERSION")),
         ]);
 
-        let proc = tokio::process::Command::new(
-            cli_path
-                .to_str()
-                .ok_or(eyre::anyhow!("could not get string from path"))?,
-        )
-        .args(args.as_slice())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        let proc = tokio::process::Command::new(cli_path)
+            .args(args.as_slice())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
         //TODO: Add retry mechanism
 
@@ -150,15 +146,21 @@ impl InnerCliSession {
             loop {
                 tokio::select! {
                     line = stdout_bufr.next_line() => {
-                        if let Ok(Some(line)) = line {
-                            if let Ok(conn) = serde_json::from_str::<ConnectParams>(&line) {
-                                sender.send(conn).await.unwrap();
-                                continue;
-                            }
+                        match line {
+                            Ok(Some(line)) => {
+                                if let Ok(conn) = serde_json::from_str::<ConnectParams>(&line) {
+                                    sender.send(conn).await.unwrap();
+                                    continue;
+                                }
 
-                            if let Some(logger) = &logger {
-                                logger.stdout(&line).unwrap();
+                                if let Some(logger) = &logger {
+                                    logger.stdout(&line).unwrap();
+                                }
                             }
+                            // EOF or read error: the process is gone, so stop
+                            // reading; dropping the sender lets get_conn fail
+                            // instead of waiting forever.
+                            _ => break,
                         }
                     },
                     _ = rx.recv() => {
@@ -179,10 +181,13 @@ impl InnerCliSession {
             loop {
                 tokio::select! {
                     line = stderr_bufr.next_line() => {
-                        if let Ok(Some(line)) = line {
-                            if let Some(logger) = &logger {
-                                logger.stderr(&line).unwrap();
+                        match line {
+                            Ok(Some(line)) => {
+                                if let Some(logger) = &logger {
+                                    logger.stderr(&line).unwrap();
+                                }
                             }
+                            _ => break,
                         }
                     },
                     _ = rx.recv() => {

@@ -144,20 +144,143 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func functionRequiresArgs(fn *Function) bool {
+// argRequired reports whether an argument must be supplied by the caller.
+// NOTE: we count on user defaults already merged in the schema at this point.
+func argRequired(arg *FunctionArg) bool {
+	// "regular optional" -> not required
+	if arg.TypeDef.Self().Optional {
+		return false
+	}
+	// "contextual optional" -> not required
+	if arg.DefaultPath != "" {
+		return false
+	}
+	// default value -> not required
+	if arg.DefaultValue != nil {
+		return false
+	}
+	// engine-supplied -> not required. A Workspace is declared required so the
+	// signature says so, but it resolves from the workspace in scope rather than
+	// from the caller — the same reason a contextual arg is exempt above.
+	if arg.IsWorkspace() {
+		return false
+	}
+	return true
+}
+
+// agentBaseArgName is the conventional name for an @agent middleware's base
+// argument, used only as a fallback when the actual LLM! argument can't be
+// resolved. The base is identified by *type* — a single required LLM! arg — not
+// by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
+// compose fold (AgentGroup.Compose) fills that argument with the running
+// accumulator explicitly.
+const agentBaseArgName = "base"
+
+// isCoreLLMArg reports whether an argument is of the core LLM type. Like
+// IsWorkspace, the SourceModuleName guard keeps it to the core LLM (functions
+// can't currently accept types from other modules, but be explicit anyway).
+func isCoreLLMArg(arg *FunctionArg) bool {
+	typeDef := arg.TypeDef.Self()
+	return typeDef.Kind == TypeDefKindObject &&
+		typeDef.AsObject.Value.Self().Name == "LLM" &&
+		typeDef.AsObject.Value.Self().SourceModuleName == ""
+}
+
+// returnsCoreObject reports whether the function returns the named core object
+// type, non-null. The SourceModuleName guard keeps it to the core type, not a
+// module-local type that happens to share its name.
+func returnsCoreObject(fn *Function, name string) bool {
+	ret := fn.ReturnType.Self()
+	return !ret.Optional &&
+		ret.Kind == TypeDefKindObject &&
+		ret.AsObject.Value.Self().Name == name &&
+		ret.AsObject.Value.Self().SourceModuleName == ""
+}
+
+// validateUpFunction enforces the @up contract: the function must return the
+// core Service! type and must be callable with no caller-supplied arguments,
+// since `dagger up` starts services without any.
+func validateUpFunction(obj *ObjectTypeDef, fn *Function) error {
+	if !returnsCoreObject(fn, "Service") {
+		return fmt.Errorf("object %q function %q is marked @up but returns %s; @up functions must return the core Service! type",
+			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
+	}
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()
-		// NOTE: we count on user defaults already merged in the schema at this point
-		// "regular optional" -> ok
-		if arg.TypeDef.Self().Optional {
+		if argRequired(arg) {
+			return fmt.Errorf("object %q function %q is marked @up but declares required argument %q; @up functions must be callable with no arguments",
+				obj.OriginalName, fn.OriginalName, arg.OriginalName)
+		}
+	}
+	return nil
+}
+
+// validateGeneratorFunction enforces the @generate contract: the function must
+// return the core Changeset! type and must be callable with no caller-supplied
+// arguments, since `dagger generate` runs generators without any.
+func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
+	if !returnsCoreObject(fn, "Changeset") {
+		return fmt.Errorf("object %q function %q is marked @generate but returns %s; @generate functions must return the core Changeset! type",
+			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
+	}
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if argRequired(arg) {
+			return fmt.Errorf("object %q function %q is marked @generate but declares required argument %q; @generate functions must be callable with no arguments",
+				obj.OriginalName, fn.OriginalName, arg.OriginalName)
+		}
+	}
+	return nil
+}
+
+// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
+// §3): the function must return LLM! and must declare exactly one required
+// argument, an LLM! (the base the compose fold supplies, whatever it is
+// named). A non-LLM! return, a missing base, or any other required argument is
+// a hard error at module load.
+func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
+	if !returnsCoreObject(fn, "LLM") {
+		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
+			obj.OriginalName, fn.OriginalName)
+	}
+	baseExempted := false
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if !argRequired(arg) {
 			continue
 		}
-		// "contextual optional" -> ok
-		if arg.DefaultPath != "" {
+		if !baseExempted && isCoreLLMArg(arg) {
+			baseExempted = true
 			continue
 		}
-		// default value -> ok
-		if arg.DefaultValue != nil {
+		return fmt.Errorf("object %q function %q is marked @agent but declares required argument %q; an @agent function may only require a single LLM! argument (the base the compose fold supplies)",
+			obj.OriginalName, fn.OriginalName, arg.OriginalName)
+	}
+	if !baseExempted {
+		return fmt.Errorf("object %q function %q is marked @agent but does not declare a required LLM! argument; @agent functions must have the agent(base: LLM!): LLM! shape (the base the compose fold supplies)",
+			obj.OriginalName, fn.OriginalName)
+	}
+	return nil
+}
+
+// functionRequiresCallerArgs reports whether a function has required arguments
+// the caller has to supply, which disqualifies it from no-arg enumeration.
+//
+// Engine-supplied arguments don't count, because nothing is asked of the
+// caller: an @agent function's single required LLM! is the base the compose
+// fold supplies explicitly (hack/designs/workspace-agents.md §3), and a
+// Workspace! — exempted in argRequired, alongside contextual args — resolves
+// from the workspace in scope. Both are declared required so the signature says
+// so, and both are filled in before the call.
+func functionRequiresCallerArgs(fn *Function) bool {
+	baseExempted := false
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if !argRequired(arg) {
+			continue
+		}
+		if fn.IsAgent && !baseExempted && isCoreLLMArg(arg) {
+			baseExempted = true
 			continue
 		}
 		return true
@@ -1206,81 +1329,115 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 	obj := typeDef.Self().AsObject.Value.Self()
 
 	for _, fieldRes := range obj.Fields {
-		field := fieldRes.Self()
-		if gqlFieldName(field.Name) == "id" {
-			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
-		}
-		// Workspace cannot be stored as a field on a module object
-		if field.TypeDef.Self().Kind == TypeDefKindObject && field.TypeDef.Self().AsObject.Value.Self().Name == "Workspace" {
-			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
-				obj.OriginalName,
-				field.OriginalName,
-			)
-		}
-		fieldType, ok, err := mod.lookupValidationModType(ctx, field.TypeDef, state)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for type def: %w", err)
-		}
-		if ok {
-			sourceMod := fieldType.SourceMod()
-			// fields can reference core types and local types, but not types from other modules
-			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-					obj.OriginalName,
-					field.OriginalName,
-					sourceMod.Name(),
-				)
-			}
-		}
-		if err := mod.validateTypeDef(ctx, field.TypeDef, state); err != nil {
+		if err := mod.validateObjectField(ctx, obj, fieldRes.Self(), state); err != nil {
 			return err
 		}
 	}
 
 	for fn := range obj.functions() {
-		if gqlFieldName(fn.Name) == "id" {
-			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
-		}
-		// Check if this is a type from another (non-core) module
-		retType, ok, err := mod.lookupValidationModType(ctx, fn.ReturnType, state)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for type def: %w", err)
-		}
-		if ok {
-			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-					obj.OriginalName,
-					fn.OriginalName,
-					sourceMod.Name(),
-				)
-			}
-		}
-		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
+		if err := mod.validateObjectFunction(ctx, obj, fn, state); err != nil {
 			return err
-		}
-
-		for _, argRes := range fn.Args {
-			arg := argRes.Self()
-			argType, ok, err := mod.lookupValidationModType(ctx, arg.TypeDef, state)
-			if err != nil {
-				return fmt.Errorf("failed to get mod type for type def: %w", err)
-			}
-			if ok {
-				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-					return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-						obj.OriginalName,
-						fn.OriginalName,
-						arg.OriginalName,
-						sourceMod.Name(),
-					)
-				}
-			}
-			if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
+}
+
+func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {
+	if gqlFieldName(field.Name) == "id" {
+		return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+	}
+	// Workspace cannot be stored as a field on a module object
+	if field.TypeDef.Self().Kind == TypeDefKindObject && field.TypeDef.Self().AsObject.Value.Self().Name == "Workspace" {
+		return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+			obj.OriginalName,
+			field.OriginalName,
+		)
+	}
+	// fields can reference core types and local types, but not types from other modules
+	depName, err := mod.externalTypeDep(ctx, field.TypeDef, state)
+	if err != nil {
+		return err
+	}
+	if depName != "" {
+		return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+			obj.OriginalName,
+			field.OriginalName,
+			depName,
+		)
+	}
+	return mod.validateTypeDef(ctx, field.TypeDef, state)
+}
+
+func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
+	if gqlFieldName(fn.Name) == "id" {
+		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+	}
+	if fn.IsUp {
+		if err := validateUpFunction(obj, fn); err != nil {
+			return err
+		}
+	}
+	if fn.IsGenerator {
+		if err := validateGeneratorFunction(obj, fn); err != nil {
+			return err
+		}
+	}
+	if fn.IsAgent {
+		if err := validateAgentFunction(obj, fn); err != nil {
+			return err
+		}
+	}
+	depName, err := mod.externalTypeDep(ctx, fn.ReturnType, state)
+	if err != nil {
+		return err
+	}
+	if depName != "" {
+		return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+			obj.OriginalName,
+			fn.OriginalName,
+			depName,
+		)
+	}
+	if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
+		return err
+	}
+
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		depName, err := mod.externalTypeDep(ctx, arg.TypeDef, state)
+		if err != nil {
+			return err
+		}
+		if depName != "" {
+			return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+				obj.OriginalName,
+				fn.OriginalName,
+				arg.OriginalName,
+				depName,
+			)
+		}
+		if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// externalTypeDep returns the name of the dependency module that owns the given
+// type def, or "" if it's a core type, a local type, or not resolvable yet.
+func (mod *Module) externalTypeDep(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) (string, error) {
+	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)
+	if err != nil {
+		return "", fmt.Errorf("failed to get mod type for type def: %w", err)
+	}
+	if !ok {
+		return "", nil
+	}
+	sourceMod := modType.SourceMod()
+	if sourceMod == nil || sourceMod.Name() == ModuleName || sourceMod.Name() == mod.Name() {
+		return "", nil
+	}
+	return sourceMod.Name(), nil
 }
 
 func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
@@ -2462,7 +2619,7 @@ func (mod *Module) WithObject(ctx context.Context, def dagql.ObjectResult[*TypeD
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {
@@ -2489,7 +2646,7 @@ func (mod *Module) WithInterface(ctx context.Context, def dagql.ObjectResult[*Ty
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {
@@ -2516,7 +2673,7 @@ func (mod *Module) WithEnum(ctx context.Context, def dagql.ObjectResult[*TypeDef
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {

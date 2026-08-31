@@ -143,9 +143,23 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	// the module field, then the function field. dagql's typed Select enforces
 	// that the function's return type matches dest, producing a clear
 	// type-mismatch error.
+	//
+	// Both selectors are built by hand, so a required Workspace! on the
+	// constructor or the function has to be supplied here: dagql rejects a
+	// missing non-null argument in preselect, before the injection hook that
+	// fills workspace args runs (see core.WithBoundWorkspaceArgs). The value
+	// resolves the same way it does everywhere else — the workspace bound into
+	// the context, else the session's current one.
+	ctorArgs := core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil)
+	var fnArgs []dagql.NamedInput
+	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
+		if fnSpec, ok := objType.FieldSpec(functionField, srv.View); ok {
+			fnArgs = core.WithBoundWorkspaceArgs(ctx, srv, fnSpec.Args.Inputs(srv.View), nil)
+		}
+	}
 	selectors := []dagql.Selector{
-		{Field: moduleField},
-		{Field: functionField},
+		{Field: moduleField, Args: ctorArgs},
+		{Field: functionField, Args: fnArgs},
 	}
 	if err := srv.Select(ctx, root, dest, selectors...); err != nil {
 		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
@@ -285,6 +299,10 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
 			Doc(`Load a volume from the address.`),
+		dagql.NodeFunc("workspace", s.workspace).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc(`Load a workspace from a module reference.`),
 	}.Install(srv)
 }
 
@@ -320,6 +338,9 @@ func (s *addressSchema) file(
 ) {
 	var q []dagql.Selector
 	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
 	gitURL, err := gitutil.ParseURL(addr)
 	if err == nil {
 		// Remote file
@@ -409,6 +430,9 @@ func (s *addressSchema) directory(
 ) {
 	var q []dagql.Selector
 	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
 	gitURL, err := gitutil.ParseURL(addr)
 	if err == nil {
 		// Remote directory (using git remote)
@@ -811,6 +835,21 @@ func (s *addressSchema) service(
 	return inst, nil
 }
 
+func (s *addressSchema) workspace(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.Address],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.Workspace],
+	err error,
+) {
+	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
+	return inst, fmt.Errorf("workspace address %q must reference an installed module as <module>:<function>", addr)
+}
+
 func (s *addressSchema) volume(
 	ctx context.Context,
 	r dagql.ObjectResult[*core.Address],
@@ -830,6 +869,34 @@ func (s *addressSchema) volume(
 	addr := r.Self().Value
 	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
 		return inst, err
+	}
+
+	u, err := url.Parse(addr)
+	if err != nil {
+		return inst, fmt.Errorf("parse volume address: %w", err)
+	}
+	if u.Scheme == "engine-volume" {
+		parsed, err := parseEngineVolumeAddress(addr)
+		if err != nil {
+			return inst, err
+		}
+		argsList := []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(parsed.Name)},
+		}
+		if parsed.HasSubdir {
+			argsList = append(argsList, dagql.NamedInput{
+				Name:  "subdir",
+				Value: dagql.Opt(dagql.NewString(parsed.Subdir)),
+			})
+		}
+		err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+			Field: "engineVolume",
+			Args:  argsList,
+		})
+		return inst, err
+	}
+	if u.Scheme != "sshfs" {
+		return inst, fmt.Errorf("unsupported volume address %q: must use sshfs:// or engine-volume://", addr)
 	}
 
 	parsed, err := parseSSHFSVolumeAddress(addr)
@@ -885,6 +952,65 @@ func (s *addressSchema) volume(
 		return inst, err
 	}
 	return inst, nil
+}
+
+type engineVolumeAddress struct {
+	Name      string
+	Subdir    string
+	HasSubdir bool
+}
+
+func parseEngineVolumeAddress(addr string) (engineVolumeAddress, error) {
+	var parsed engineVolumeAddress
+	u, err := url.Parse(addr)
+	if err != nil {
+		return parsed, fmt.Errorf("parse volume address: %w", err)
+	}
+	if u.Scheme != "engine-volume" {
+		return parsed, fmt.Errorf("unsupported volume address %q: must use engine-volume://", addr)
+	}
+	if u.Opaque != "" || u.Host == "" {
+		return parsed, fmt.Errorf("engine volume address must put the name after engine-volume://")
+	}
+	if u.User != nil {
+		return parsed, fmt.Errorf("engine volume address must not include user information")
+	}
+	if u.Fragment != "" {
+		return parsed, fmt.Errorf("volume address must not include a fragment")
+	}
+	if u.RawPath != "" {
+		return parsed, fmt.Errorf("engine volume address name must not use percent encoding")
+	}
+	if u.ForceQuery {
+		return parsed, fmt.Errorf("engine volume address must not include an empty query")
+	}
+
+	queryVals, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return parsed, fmt.Errorf("parse engine volume address query: %w", err)
+	}
+	if values, ok := queryVals["subdir"]; ok {
+		if len(values) != 1 {
+			return parsed, fmt.Errorf("engine volume address query parameter %q must be specified once", "subdir")
+		}
+		parsed.HasSubdir = true
+		parsed.Subdir = values[0]
+		delete(queryVals, "subdir")
+	}
+	if len(queryVals) > 0 {
+		return parsed, fmt.Errorf("unsupported volume address query parameter %q", firstQueryKey(queryVals))
+	}
+
+	parsed.Name = u.Host + u.Path
+	if err := core.ValidateEngineVolumeName(parsed.Name); err != nil {
+		return engineVolumeAddress{}, err
+	}
+	if parsed.HasSubdir {
+		if err := core.ValidateEngineVolumeSubdir(parsed.Subdir); err != nil {
+			return engineVolumeAddress{}, err
+		}
+	}
+	return parsed, nil
 }
 
 func currentRootQuery(ctx context.Context) (*core.Query, *dagql.Server, error) {

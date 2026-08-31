@@ -313,12 +313,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if outputEqID == 0 {
 				return fmt.Errorf("import result_output_eq_class: missing eq_class %d", row.EqClassID)
 			}
-			outputEqClasses := c.resultOutputEqClasses[resultID]
-			if outputEqClasses == nil {
-				outputEqClasses = make(map[eqClassID]struct{})
-				c.resultOutputEqClasses[resultID] = outputEqClasses
-			}
-			outputEqClasses[outputEqID] = struct{}{}
+			c.addResultOutputEqClassLocked(resultID, outputEqID)
 		}
 
 		for _, row := range resultDepRows {
@@ -369,19 +364,22 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 		for resultID := range c.resultsByID {
 			outputEqClasses := c.outputEqClassesForResultLocked(resultID)
+			if len(outputEqClasses) > 0 {
+				c.markResultBroadlyIndexedLocked(resultID)
+			}
 			for outputEqID := range outputEqClasses {
 				for dig := range c.eqClassToDigests[outputEqID] {
-					set := c.egraphResultsByDigest[dig]
-					if set == nil {
-						set = newSharedResultIDSet()
-						c.egraphResultsByDigest[dig] = set
-					}
-					set.Insert(resultID)
+					c.addResultDigestPostingLocked(resultID, dig, resultDigestPostingBroad)
 				}
 			}
 		}
 
-		c.nextSharedResultID = maxResultID + 1
+		// Only move the result-ID counter forward: numeric result IDs must be
+		// engine-lifetime unique, so importing must never re-expose an ID the
+		// running engine already allocated.
+		if c.nextSharedResultID <= maxResultID {
+			c.nextSharedResultID = maxResultID + 1
+		}
 		c.nextEgraphTermID = maxTermID + 1
 		c.nextEgraphClassID = maxEqClassID + 1
 		if c.nextSharedResultID == 0 {

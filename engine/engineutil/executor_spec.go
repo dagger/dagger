@@ -124,7 +124,6 @@ type execState struct {
 	nestedClientMetadata     *engine.ClientMetadata
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
-	nestedClientEnv          dagql.AnyObjectResult
 
 	doneErr error
 	done    chan struct{}
@@ -143,7 +142,6 @@ func newExecState(
 	nestedClientMetadata *engine.ClientMetadata,
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
-	nestedClientEnv dagql.AnyObjectResult,
 ) *execState {
 	execMDCopy := &ExecutionMetadata{}
 	if execMD != nil {
@@ -165,7 +163,6 @@ func newExecState(
 		nestedClientMetadata:     nestedClientMetadata,
 		nestedClientModule:       nestedClientModule,
 		nestedClientFunctionCall: nestedClientFunctionCall,
-		nestedClientEnv:          nestedClientEnv,
 		done:                     make(chan struct{}),
 	}
 }
@@ -309,12 +306,23 @@ func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
 	for target, aliases := range state.execMD.HostAliases {
 		var ips []net.IP
 		var errs error
+		// The FQDN the running service actually registered under, when core
+		// knew it (see ExecutionMetadata.HostAliasFQDNs). It is tried first
+		// because a service scoped to another module's domain is unreachable
+		// via the search domains installed for this exec.
+		candidates := []string{}
+		if fqdn := state.execMD.HostAliasFQDNs[target]; fqdn != "" {
+			candidates = append(candidates, fqdn)
+		}
 		for _, domain := range append([]string{""}, extraSearchDomains...) {
 			qualified := target
 			if domain != "" {
 				qualified += "." + domain
 			}
+			candidates = append(candidates, qualified)
+		}
 
+		for _, qualified := range candidates {
 			var err error
 			ips, err = net.LookupIP(qualified)
 			if err == nil {
@@ -544,6 +552,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	)))
 
 	for _, mnt := range state.nonRootMounts {
+		mnt, recursiveReadOnly := consumeRecursiveReadOnlyOption(mnt)
 		dstPath, err := fs.RootPath(state.spec.Root.Path, mnt.Target)
 		if err != nil {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
@@ -591,7 +600,13 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		overlayIncompatDir := overlay.VolatileIncompatDir(mnt)
 
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			if err := mount.Unmount(dstPath, 0); err != nil {
+			var err error
+			if slices.Contains(mnt.Options, "rbind") {
+				err = mount.UnmountRecursive(dstPath, 0)
+			} else {
+				err = mount.Unmount(dstPath, 0)
+			}
+			if err != nil {
 				return err
 			}
 			if overlayIncompatDir != "" {
@@ -601,9 +616,36 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 			}
 			return nil
 		})
+
+		if recursiveReadOnly {
+			if err := unix.MountSetattr(unix.AT_FDCWD, dstPath, unix.AT_RECURSIVE, &unix.MountAttr{
+				Attr_set: unix.MOUNT_ATTR_RDONLY,
+			}); err != nil {
+				return fmt.Errorf("make mount %s recursively read-only: %w", mnt.Target, err)
+			}
+		}
 	}
 
 	return nil
+}
+
+// consumeRecursiveReadOnlyOption handles the OCI rro option for mounts Dagger
+// materializes before runc. containerd's mount helper does not interpret rro,
+// so leaving it in Options would pass it to mount(2) as filesystem data.
+func consumeRecursiveReadOnlyOption(mnt mount.Mount) (mount.Mount, bool) {
+	var recursiveReadOnly bool
+	options := make([]string, 0, len(mnt.Options))
+	for _, option := range mnt.Options {
+		if option == "rro" {
+			recursiveReadOnly = true
+			continue
+		}
+		options = append(options, option)
+	}
+	if recursiveReadOnly {
+		mnt.Options = options
+	}
+	return mnt, recursiveReadOnly
 }
 
 func (c *Client) setUserGroup(_ context.Context, state *execState) error {
@@ -1083,9 +1125,12 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
-		ReadHeaderTimeout: 10 * time.Second,
+		// NOTE: no ReadHeaderTimeout (gosec G112) — see cmd/engine/main.go. On
+		// Go >= 1.26.6 it becomes a hard lifetime cap on unencrypted HTTP/2
+		// connections, which would kill every module function call that runs
+		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}

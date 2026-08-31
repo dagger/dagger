@@ -3,11 +3,7 @@ package daggercmd
 import (
 	"context"
 	_ "embed"
-	"fmt"
-	"strings"
 
-	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
@@ -96,19 +92,14 @@ func listServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGro
 	if err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintf(tw, "%s\t%s\n",
-		termenv.String("Name").Bold(),
-		termenv.String("Description").Bold(),
-	)
+	items := make([]commandListItem, 0, len(info.Ups))
 	for _, up := range info.Ups {
-		firstLine := up.Description
-		if idx := strings.Index(up.Description, "\n"); idx != -1 {
-			firstLine = up.Description[:idx]
-		}
-		fmt.Fprintf(tw, "%s\t%s\n", up.Name, firstLine)
+		items = append(items, commandListItem{
+			Name:    up.Name,
+			Comment: firstDescriptionLine(up.Description),
+		})
 	}
-	return tw.Flush()
+	return writeCommandList(cmd.OutOrStdout(), items)
 }
 
 func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command) error {

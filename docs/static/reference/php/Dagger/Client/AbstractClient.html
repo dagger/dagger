@@ -161,7 +161,7 @@
                     object
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_loadObjectFromId">loadObjectFromId</a>(string $className, <a href="../../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
+                    <a href="#method_loadObjectFromId">loadObjectFromId</a>(string $className, <a href="../../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id, string|null $graphQLTypeName = null)
         
                                             <p><p>Load an object by its ID using node(id:) with an inline fragment.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -304,9 +304,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadObjectFromId">
-        <div class="location">at line 66</div>
+        <div class="location">at line 67</div>
         <code>                    object
-    <strong>loadObjectFromId</strong>(string $className, <a href="../../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
+    <strong>loadObjectFromId</strong>(string $className, <a href="../../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id, string|null $graphQLTypeName = null)
         </code>
     </h3>
     <div class="details">    
@@ -329,6 +329,11 @@
                 <td><a href="../../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
                 <td>$id</td>
                 <td><p>The object's ID</p></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$graphQLTypeName</td>
+                <td><p>GraphQL type name when it differs from the PHP class name</p></td>
             </tr>
             </table>
 

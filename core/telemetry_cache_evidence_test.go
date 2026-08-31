@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -286,6 +287,19 @@ func TestAroundFuncCacheEvidenceLifecycle(t *testing.T) {
 
 	ended := sr.Ended()
 	assert.Equal(t, 1, len(ended))
+	var sawDigest, sawCall bool
+	for _, attr := range ended[0].Attributes() {
+		switch string(attr.Key) {
+		case telemetry.DagDigestAttr:
+			sawDigest = true
+		case telemetry.DagCallAttr:
+			sawCall = true
+		}
+	}
+	assert.Assert(t, sawDigest, "call span must retain its digest")
+	// Legacy CLIs only read the span-carried payload; without it they walk
+	// creator spans and recurse forever. Keep it alongside the log records.
+	assert.Assert(t, sawCall, "call span must carry a legacy call payload")
 	got := evidenceTestCacheAttrs(t, ended[0].Attributes())
 	assert.Equal(t, got[telemetryattrs.CacheContractAttr], telemetryattrs.CacheContractV1)
 	assert.Equal(t, got[telemetryattrs.CacheOutcomeAttr], "executed")

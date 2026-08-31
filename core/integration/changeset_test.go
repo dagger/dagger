@@ -7,9 +7,13 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -848,6 +852,68 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 	s.testWithChangesSymlinks(t)
 }
 
+// Regression test for a snapshot use-after-release: Directory.withChanges with
+// an empty changeset used to store the parent's snapshot ref instance on the
+// derived directory instead of opening its own handle. Once the derived cache
+// entry was collected (session close plus cache prune), releasing its snapshot
+// handle invalidated the parent's still-cached snapshot, and every later use
+// of the parent from any session failed with "invalid immutable ref". A
+// dedicated nested engine is used because the repro requires an unrestricted
+// prune of the engine-wide cache.
+func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	keeper, err := dagger.Connect(ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { keeper.Close() })
+
+	parentOf := func(cl *dagger.Client) *dagger.Directory {
+		return cl.Directory().WithNewFile("marker.txt", "shared parent")
+	}
+
+	// keeper takes shared ownership of the parent's cache entry so it outlives
+	// the second session below.
+	_, err = parentOf(keeper).Sync(ctx)
+	require.NoError(t, err)
+
+	// A second session derives a directory from the same parent by applying an
+	// empty changeset, evaluates it, and disconnects.
+	poisoner, err := dagger.Connect(ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	_, err = parentOf(poisoner).WithChanges(poisoner.Changeset()).Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, poisoner.Close())
+
+	// The closed session's cache refs release asynchronously, and the derived
+	// entry is only collected once a prune removes its persisted edge. Keep
+	// pruning and re-mounting the parent long enough to cover both; with the
+	// shared-handle bug the glob fails with "invalid immutable ref" as soon as
+	// the derived entry is collected.
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		require.NoError(t, keeper.Engine().LocalCache().Prune(ctx))
+		// Vary the pattern so each call is a fresh (uncached) evaluation that
+		// has to mount the parent snapshot.
+		pattern := fmt.Sprintf("*%d*", time.Now().UnixNano())
+		_, err := parentOf(keeper).Glob(ctx, pattern)
+		require.NoError(t, err)
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+}
+
 func (s ChangesetSuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
 	s.testChangeApplying(t, func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
 		return dest.WithPatchFile(source.AsPatch())
@@ -1376,9 +1442,12 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 
 		resultDir := beforeDir.WithChanges(changes)
 
-		fileType, err := resultDir.Stat("node", dagger.DirectoryStatOpts{
+		stat, err := resultDir.Stat(ctx, "node", dagger.DirectoryStatOpts{
 			DoNotFollowSymlinks: true,
-		}).FileType(ctx)
+		})
+		require.NoError(t, err)
+		require.NotNil(t, stat)
+		fileType, err := stat.FileType(ctx)
 		require.NoError(t, err)
 		require.Equal(t, dagger.FileTypeRegularType, fileType)
 
@@ -1417,9 +1486,12 @@ func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
 		resultDir := beforeDir.WithChanges(afterDir.Changes(beforeDir))
 
 		assertFileType := func(p string, expected dagger.FileType) {
-			fileType, err := resultDir.Stat(p, dagger.DirectoryStatOpts{
+			stat, err := resultDir.Stat(ctx, p, dagger.DirectoryStatOpts{
 				DoNotFollowSymlinks: true,
-			}).FileType(ctx)
+			})
+			require.NoError(t, err)
+			require.NotNil(t, stat)
+			fileType, err := stat.FileType(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expected, fileType, p)
 		}
@@ -2052,5 +2124,67 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Equal(t, fmt.Sprintf("content from changeset %d", i), content)
 		}
+	})
+}
+
+// Changesets that modify different regions of the same file must all survive
+// a merge. Merge branches are populated with full-file content, but git
+// re-derives line-level hunks against the merge base, so the content overlay
+// must not coarsen merging to whole-file granularity.
+func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line%d", i+1)
+	}
+	base := c.Directory().WithNewFile("f.txt", strings.Join(lines, "\n")+"\n")
+
+	withLine := func(in []string, n int, text string) []string {
+		out := slices.Clone(in)
+		out[n-1] = text
+		return out
+	}
+	fileContent := func(in []string) string {
+		return strings.Join(in, "\n") + "\n"
+	}
+	edit := func(n int, text string) *dagger.Changeset {
+		return base.
+			WithNewFile("f.txt", fileContent(withLine(lines, n, text))).
+			Changes(base)
+	}
+
+	top := edit(1, "TOP-EDIT")
+	mid := edit(15, "MID-EDIT")
+	bot := edit(30, "BOT-EDIT")
+
+	t.Run("two-way", func(ctx context.Context, t *testctx.T) {
+		merged, err := top.WithChangeset(mid).Sync(ctx)
+		require.NoError(t, err)
+		content, err := merged.After().File("f.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t,
+			fileContent(withLine(withLine(lines, 1, "TOP-EDIT"), 15, "MID-EDIT")),
+			content)
+	})
+
+	t.Run("octopus", func(ctx context.Context, t *testctx.T) {
+		merged, err := c.Changeset().
+			WithChangesets([]*dagger.Changeset{top, mid, bot}).
+			Sync(ctx)
+		require.NoError(t, err)
+		content, err := merged.After().File("f.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t,
+			fileContent(withLine(withLine(withLine(lines, 1, "TOP-EDIT"), 15, "MID-EDIT"), 30, "BOT-EDIT")),
+			content)
+	})
+
+	// Overlapping edits still conflict; only separate regions compose. (Where
+	// exactly nearby-but-disjoint edits stop composing is git's merge
+	// heuristics, deliberately not pinned here.)
+	t.Run("overlapping edits conflict", func(ctx context.Context, t *testctx.T) {
+		_, err := edit(10, "A-EDIT").WithChangeset(edit(10, "B-EDIT")).Sync(ctx)
+		require.Error(t, err)
 	})
 }

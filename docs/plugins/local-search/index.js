@@ -55,7 +55,10 @@ module.exports = function localSearchPlugin(context, options) {
         if (!route.startsWith(baseUrl)) continue;
         // Index the default version (served at the root) and the unreleased
         // "next" version, tagging each entry so the UI can scope results to
-        // whichever version the reader is on. Old versions stay out (excluded).
+        // whichever version the reader is on. Older snapshots are served under
+        // a /<version>/ prefix by Docusaurus, so skipping version-prefixed
+        // routes keeps them out of the index without naming the latest version.
+        if (/^\d+\.\d+\.\d+(\/|$)/.test(route.slice(baseUrl.length))) continue;
         if (exclude.some((frag) => route.includes(frag))) continue;
         const version = route.startsWith(nextPrefix) ? "next" : "";
 

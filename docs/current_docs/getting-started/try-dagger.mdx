@@ -1,0 +1,60 @@
+---
+title: "Try Dagger"
+slug: /getting-started/try-dagger
+description: "Run a Dagger Check in an example project"
+---
+
+# Try Dagger
+
+In this guide, you will add a Check to an example project. You will fix a failure and run the Check successfully.
+
+## Requirements
+
+- [Dagger CLI](./install.mdx)
+- [Git](https://git-scm.com/downloads)
+- A running container runtime, such as [Docker](https://docs.docker.com/engine/install/) or Podman
+
+## Clone the example project
+
+Clone the repository and open its directory:
+
+```shell
+git clone --depth 1 https://github.com/dagger/hello-dagger.git
+cd hello-dagger
+```
+
+## Add a Check
+
+Install the official Prettier module:
+
+```shell
+dagger install github.com/dagger/prettier
+```
+
+The command creates `dagger.toml`. It also adds `prettier:check` to the workspace.
+
+## Run the Check
+
+```shell
+dagger check
+```
+
+`prettier:check` reports unformatted files. The command exits with an error.
+
+## Fix the formatting
+
+Run Prettier and apply its changeset:
+
+```shell
+dagger api call prettier write -y
+```
+
+## Verify the result
+
+Run the Check again:
+
+```shell
+dagger check
+```
+
+You are done when the output shows that `prettier:check` passed.

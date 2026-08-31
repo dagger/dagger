@@ -162,6 +162,7 @@ func runCanonicalSwapReleaseAttempt(t *testing.T, attempt int) (adoptedSibling b
 	assert.NilError(t, got.err)
 	gotShared := got.res.cacheSharedResult()
 	assert.Assert(t, gotShared != nil)
+	assertCacheDerivedIndexesConsistent(t, c)
 
 	adoptedSibling = gotShared == sharedA
 	siblingReleased = releasedA.Load()

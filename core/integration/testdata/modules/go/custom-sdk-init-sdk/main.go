@@ -31,8 +31,12 @@ func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSourc
 		}), nil
 }
 
-func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
-	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
+func (m *CoolSdk) ModuleRuntime(ctx context.Context, modSource *dagger.ModuleSource, introspectionJson *dagger.File) (*dagger.Container, error) {
+	runtime, err := modSource.WithSDK("go").AsModule().Runtime(ctx)
+	if err != nil || runtime == nil {
+		return runtime, err
+	}
+	return runtime.WithEnvVariable("COOL", "true"), nil
 }
 
 func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {

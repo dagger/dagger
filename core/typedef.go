@@ -45,6 +45,9 @@ type Function struct {
 	// IsUp indicates whether this function returns a service to be started with `dagger up`
 	IsUp bool
 
+	// IsAgent indicates whether this function is an agent middleware (base: LLM!): LLM!
+	IsAgent bool
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -176,6 +179,11 @@ func (fn *Function) Directives() []*ast.Directive {
 			Name: "up",
 		})
 	}
+	if fn.IsAgent {
+		directives = append(directives, &ast.Directive{
+			Name: "agent",
+		})
+	}
 	hasNonDefaultCachePolicy := (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault)
 	if hasNonDefaultCachePolicy || fn.CacheTTLSeconds.Valid {
 		dir := &ast.Directive{
@@ -247,12 +255,6 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		argTypeDef, err := modType.TypeDef(ctx)
 		if err != nil {
 			return spec, fmt.Errorf("failed to resolve canonical typedef for arg %q: %w", argSelf.Name, err)
-		}
-
-		// Workspace arguments are always optional, regardless of how they're declared in code.
-		// They are automatically injected when not explicitly set.
-		if argSelf.IsWorkspace() {
-			argTypeDef.Self().Optional = true
 		}
 
 		input := argTypeDef.Self().ToInput()
@@ -366,6 +368,12 @@ func (fn *Function) WithGenerator() *Function {
 func (fn *Function) WithUp() *Function {
 	fn = fn.Clone()
 	fn.IsUp = true
+	return fn
+}
+
+func (fn *Function) WithAgent() *Function {
+	fn = fn.Clone()
+	fn.IsAgent = true
 	return fn
 }
 
@@ -672,7 +680,12 @@ func (arg *FunctionArg) isContextual() bool {
 }
 
 // IsWorkspace returns true if the argument is of type Workspace.
-// Workspace arguments are always optional and automatically injected when not set.
+//
+// Either way it is supplied by the engine rather than the caller (see
+// argRequired); the declaration only decides how. An optional one is filled by
+// dagql's injection hook, while a required one has to be on the selector before
+// the call, since preselect rejects a missing non-null argument before that
+// hook runs.
 func (arg *FunctionArg) IsWorkspace() bool {
 	typeDef := arg.TypeDef.Self()
 	return typeDef.Kind == TypeDefKindObject &&
@@ -2391,6 +2404,22 @@ type FunctionCall struct {
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
 
 	returnState *functionCallReturnState
+
+	// parentTyped is the receiver object the function was called on, carrying its
+	// dagql ID. It is engine-side only (not persisted, not sent to the module),
+	// and backs Query.currentNode so a module can reference the object that
+	// received the call. Nil for top-level / constructor calls.
+	parentTyped dagql.AnyResult
+}
+
+// ParentTyped returns the receiver object the function was called on (with its
+// dagql ID), or nil for a top-level / constructor call. It backs
+// Query.currentNode.
+func (fnCall *FunctionCall) ParentTyped() dagql.AnyResult {
+	if fnCall == nil {
+		return nil
+	}
+	return fnCall.parentTyped
 }
 
 type persistedFunctionCall FunctionCall
@@ -2675,6 +2704,7 @@ type persistedFunction struct {
 	IsCheck            bool                `json:"isCheck,omitempty"`
 	IsGenerator        bool                `json:"isGenerator,omitempty"`
 	IsUp               bool                `json:"isUp,omitempty"`
+	IsAgent            bool                `json:"isAgent,omitempty"`
 	ParentOriginalName string              `json:"parentOriginalName,omitempty"`
 	OriginalName       string              `json:"originalName,omitempty"`
 }
@@ -2851,6 +2881,7 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
 		IsUp:               fn.IsUp,
+		IsAgent:            fn.IsAgent,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}
@@ -2899,6 +2930,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
 		IsUp:               fn.IsUp,
+		IsAgent:            fn.IsAgent,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}

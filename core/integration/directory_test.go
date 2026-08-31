@@ -362,6 +362,93 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestWithDirectoryOpaqueSourceAncestor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := c.Container().
+		From(alpineImage).
+		WithDirectory("/data", c.Directory().
+			WithNewFile("a/x.txt", "old").
+			WithNewFile("a/b/y.txt", "old")).
+		WithExec([]string{"sh", "-c", "rm -rf /data/a && mkdir -p /data/a/b && echo new > /data/a/b/new.txt"}).
+		Directory("/data")
+
+	mountedFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/view", source).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\n", mountedFiles)
+
+	exportPath := filepath.Join(t.TempDir(), "export")
+	_, err = source.Export(ctx, exportPath)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(exportPath, "a", "b", "new.txt"))
+	require.NoFileExists(t, filepath.Join(exportPath, "a", "x.txt"))
+	require.NoFileExists(t, filepath.Join(exportPath, "a", "b", "y.txt"))
+
+	copiedFiles, err := c.Container().
+		From(alpineImage).
+		WithDirectory("/view", source).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\n", copiedFiles)
+
+	copiedSubdirFiles, err := c.Container().
+		From(alpineImage).
+		WithDirectory("/view", source.Directory("a/b")).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new.txt\n", copiedSubdirFiles)
+}
+
+func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := c.Container().
+		From(alpineImage).
+		WithDirectory("/data", c.Directory().
+			WithNewFile("a/x.txt", "old").
+			WithNewFile("a/b/y.txt", "old").
+			WithNewFile("a/b/keep.txt", "old")).
+		WithExec([]string{"sh", "-c", "rm -rf /data/a/b"}).
+		WithExec([]string{"sh", "-c", "mkdir -p /data/a/b && echo new > /data/a/b/new.txt"}).
+		Directory("/data")
+
+	mountedFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/view", source).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\na/x.txt\n", mountedFiles)
+
+	copied := c.Directory().WithDirectory("view", source)
+	copiedFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/result", copied).
+		WithExec([]string{"sh", "-c", "find /result/view -type f | sed 's#^/result/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\na/x.txt\n", copiedFiles)
+
+	contents, err := copied.File("view/a/b/new.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new\n", contents)
+
+	copiedSubdir := c.Directory().WithDirectory("view", source.Directory("a/b"))
+	copiedSubdirFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/result", copiedSubdir).
+		WithExec([]string{"sh", "-c", "find /result/view -type f | sed 's#^/result/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new.txt\n", copiedSubdirFiles)
+}
+
 func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1564,6 +1651,46 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 
 func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+
+	t.Run("onConflict LEAVE_CONFLICT_MARKERS", func(ctx context.Context, t *testctx.T) {
+		// The patch expects "Hello, World!" in hello.txt, but the content has
+		// drifted; other.txt still matches. This is the session-resume shape:
+		// a recorded patch replayed against files that moved on.
+		dir := c.Directory().
+			WithNewFile("hello.txt", "Hello, Drifted!\n").
+			WithNewFile("other.txt", "unchanged\n")
+
+		patch := `--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-Hello, World!
++Hello, Dagger!
+--- a/other.txt
++++ b/other.txt
+@@ -1 +1 @@
+-unchanged
++updated
+`
+
+		// The default (FAIL) rejects the whole patch on the drifted hunk.
+		_, err := dir.WithPatch(patch).Sync(ctx)
+		require.Error(t, err)
+
+		// LEAVE_CONFLICT_MARKERS applies what fits and marks what doesn't.
+		patched := dir.WithPatch(patch, dagger.DirectoryWithPatchOpts{
+			OnConflict: dagger.PatchConflictLeaveConflictMarkers,
+		})
+		content, err := patched.File("hello.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "<<<<<<< workspace")
+		require.Contains(t, content, "Hello, Dagger!")
+		require.Contains(t, content, "Hello, Drifted!")
+		require.Contains(t, content, ">>>>>>> patch")
+
+		other, err := patched.File("other.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "updated\n", other)
+	})
 
 	t.Run("basic patch application", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a simple file
@@ -2834,9 +2961,11 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	t.Run("file-exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat := c.Directory().
+		stat, err := c.Directory().
 			WithNewFile("f", "data", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
-			Stat("f")
+			Stat(ctx, "f")
+		require.NoError(t, err)
+		require.NotNil(t, stat)
 
 		name, err := stat.Name(ctx)
 		require.NoError(t, err)
@@ -2856,9 +2985,11 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("file-dir-exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat := c.Directory().
+		stat, err := c.Directory().
 			WithNewDirectory("d", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o750}).
-			Stat("d")
+			Stat(ctx, "d")
+		require.NoError(t, err)
+		require.NotNil(t, stat)
 
 		name, err := stat.Name(ctx)
 		require.NoError(t, err)
@@ -2878,9 +3009,7 @@ func (DirectorySuite) TestStat(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("empty-path-fails", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stat := c.Directory().Stat("")
-
-		_, err := stat.Name(ctx)
+		_, err := c.Directory().Stat(ctx, "")
 		require.ErrorContains(t, err, ": no such file or directory")
 	})
 }
