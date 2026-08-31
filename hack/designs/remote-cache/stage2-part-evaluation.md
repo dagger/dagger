@@ -495,13 +495,23 @@ Rules:
   - Readers with no such guard — the resolution-phase read
     (`ResolveLazyEvalGroups`) and the direct narrow force
     (`evaluatePartsDirect`) read the pointer with no lock and no attempt
-    check — race a concurrent refined clear on the plain interface word
+    check — race a concurrent clear on the plain interface word
     (torn-read crash vector, race-detector red), and no ordering
     argument can cover them, because they run before any group state is
-    consulted. These reads and the clear must share a synchronization
-    point; the mechanism is the implementer's choice (a synchronized
-    holder for the pointer, or moving both the clear and these reads
-    under one lock).
+    consulted. These reads must share a synchronization point with
+    **every container op-pointer clear that can execute after
+    publication** — the refined `clearLazyWhenConsumed` **and** the
+    inline `container.Lazy = nil` at the end of every unrefined op's
+    body (`from` included), because the routing reads fire for unrefined
+    ops too (they are how an unrefined op routes to the whole-result
+    group). An earlier revision of this bullet named only the refined
+    clear; that was this document's error — the unrefined clears are the
+    more common writer by far. The mechanism is the implementer's choice
+    (a locked store helper replacing the inline nil stores, or an
+    equivalent); post-publication *sets* of the pointer do not exist
+    (construction and decode precede publication), and Directory/File
+    inline clears are exempt because those types have no routing reads —
+    their only readers are the attempt-guarded ones above.
   - Recorded, not fixed (G24): the direct whole-value path's unlocked
     pointer read racing a cache-driven clear predates stage 2 (baseline
     `Container.Evaluate` read the pointer while a cache attempt's body
