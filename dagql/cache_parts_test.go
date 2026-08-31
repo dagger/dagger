@@ -623,3 +623,111 @@ func waitForCondition(t *testing.T, cond func() bool, description string) {
 	}
 	t.Fatalf("timed out waiting for %s", description)
 }
+
+// partsTestConsumptionAwareResolve mirrors the container's real resolver
+// shape after full consumption: once every group's work is consumed (the
+// container.Lazy == nil analog) it under-reports and returns zero
+// groups. Cache-side state can still be pending at that point (a body
+// consumed its work while its attempt's bookkeeping failed or is in
+// flight), and the cache must not treat empty resolution as completion.
+func partsTestConsumptionAwareResolve(obj *cacheTestPartsObject) func(context.Context, AnyResult, []PartKey) ([]LazyGroupKey, error) {
+	return func(ctx context.Context, self AnyResult, parts []PartKey) ([]LazyGroupKey, error) {
+		obj.mu.Lock()
+		consumed := true
+		for _, fn := range obj.groupEval {
+			if fn != nil {
+				consumed = false
+				break
+			}
+		}
+		obj.mu.Unlock()
+		if consumed {
+			return nil, nil
+		}
+		return partsTestDirectResolve(ctx, self, parts)
+	}
+}
+
+// A resolver that under-reports groups after consumption must not let a
+// demand bypass pending bookkeeping: with a group's body consumed and
+// its lease sync pending, whole-result evaluation retries exactly the
+// bookkeeping, propagates its failure, and never latches completion
+// over it.
+func TestEvaluatePartsEmptyResolutionRetriesPendingBookkeeping(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mgr := &lazyBookkeepingSnapshotManager{
+			attachEntered: make(chan struct{}),
+			attachResult:  make(chan error),
+		}
+		ctx, c := newPartsTestCache(t, mgr)
+
+		var outRuns atomic.Int32
+		obj := &cacheTestPartsObject{Value: 1}
+		obj.resolveFn = partsTestConsumptionAwareResolve(obj)
+		obj.groupEval = map[LazyGroupKey]LazyEvalFunc{
+			partsTestGroupMeta: func(context.Context) error { return nil },
+			partsTestGroupOut: func(context.Context) error {
+				outRuns.Add(1)
+				obj.mu.Lock()
+				obj.snapshotLinks = []PersistedSnapshotRefLink{{
+					RefKey: "under-reported-snapshot",
+					Role:   "snapshot",
+				}}
+				obj.mu.Unlock()
+				return nil
+			},
+		}
+		res := newPartsTestResult(t, c, ctx, obj)
+
+		// Settle the metadata group (no links yet, so its bookkeeping
+		// performs no attach).
+		if err := c.EvaluateParts(ctx, res, partsTestPartMeta); err != nil {
+			t.Fatal(err)
+		}
+
+		// The output body succeeds and consumes its work; the attempt's
+		// lease sync fails. Every group is now consumed, so the resolver
+		// under-reports zero groups while out's bookkeeping is pending.
+		eval1 := make(chan error, 1)
+		go func() { eval1 <- c.EvaluateParts(ctx, res, partsTestPartFS) }()
+		waitLazyRetrySignal(t, mgr.attachEntered, "first bookkeeping attach")
+		injected := errors.New("attach owner lease failed")
+		mgr.attachResult <- injected
+		if err := waitLazyRetryError(t, eval1, "first output evaluation"); !errors.Is(err, injected) {
+			t.Fatalf("first output evaluation returned %v, want %v", err, injected)
+		}
+
+		// Whole-result evaluation must retry the pending bookkeeping (not
+		// the body) and propagate a repeated failure instead of latching
+		// vacuous completion off the empty resolution.
+		injected2 := errors.New("attach owner lease failed again")
+		eval2 := make(chan error, 1)
+		go func() { eval2 <- c.Evaluate(ctx, res) }()
+		waitLazyRetrySignal(t, mgr.attachEntered, "retried bookkeeping attach")
+		mgr.attachResult <- injected2
+		if err := waitLazyRetryError(t, eval2, "second whole evaluation"); !errors.Is(err, injected2) {
+			t.Fatalf("second whole evaluation returned %v, want %v", err, injected2)
+		}
+		if !HasPendingLazyEvaluation(res) {
+			t.Fatal("result must stay pending while bookkeeping is unresolved")
+		}
+		if got := outRuns.Load(); got != 1 {
+			t.Fatalf("output body ran %d times, want 1 (bookkeeping-only retries)", got)
+		}
+
+		// A successful bookkeeping retry settles everything.
+		eval3 := make(chan error, 1)
+		go func() { eval3 <- c.Evaluate(ctx, res) }()
+		waitLazyRetrySignal(t, mgr.attachEntered, "final bookkeeping attach")
+		mgr.attachResult <- nil
+		if err := waitLazyRetryError(t, eval3, "final whole evaluation"); err != nil {
+			t.Fatal(err)
+		}
+		if HasPendingLazyEvaluation(res) {
+			t.Fatal("result must not be pending after bookkeeping settled")
+		}
+		if got := outRuns.Load(); got != 1 {
+			t.Fatalf("output body ran %d times after settling, want 1", got)
+		}
+	})
+}
