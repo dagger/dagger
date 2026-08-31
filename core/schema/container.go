@@ -1648,7 +1648,7 @@ func (s *containerSchema) stdout(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 	return parent.Self().Stdout(ctx)
@@ -1689,7 +1689,7 @@ func (s *containerSchema) stderr(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 	return parent.Self().Stderr(ctx)
@@ -1730,7 +1730,7 @@ func (s *containerSchema) combinedOutput(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 	return parent.Self().CombinedOutput(ctx)
@@ -1741,7 +1741,7 @@ func (s *containerSchema) exitCode(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return 0, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return 0, err
 	}
 	return parent.Self().ExitCode(ctx)
@@ -1916,7 +1916,7 @@ func (s *containerSchema) entrypoint(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 	return slices.Clone(parent.Self().Config.Entrypoint), nil
@@ -1981,7 +1981,7 @@ func (s *containerSchema) defaultArgs(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 	return slices.Clone(parent.Self().Config.Cmd), nil
@@ -2039,7 +2039,7 @@ func (s *containerSchema) user(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return "", err
 	}
 	return parent.Self().Config.User, nil
@@ -2104,7 +2104,7 @@ func (s *containerSchema) workdir(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return "", err
 	}
 	return parent.Self().Config.WorkingDir, nil
@@ -2371,7 +2371,7 @@ func (s *containerSchema) envVariables(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
@@ -2394,7 +2394,7 @@ func (s *containerSchema) envVariable(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return none, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return none, err
 	}
 
@@ -2426,7 +2426,7 @@ func (s *containerSchema) labels(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
@@ -2455,7 +2455,7 @@ func (s *containerSchema) label(ctx context.Context, parent dagql.ObjectResult[*
 	if err != nil {
 		return none, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return none, err
 	}
 
@@ -3104,7 +3104,7 @@ func (s *containerSchema) mounts(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
@@ -3265,7 +3265,7 @@ func (s *containerSchema) healthcheck(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return inst, err
 	}
 	if parent.Self().Config.Healthcheck == nil || len(parent.Self().Config.Healthcheck.Test) == 0 || parent.Self().Config.Healthcheck.Test[0] == "NONE" {
@@ -4090,7 +4090,7 @@ func (s *containerSchema) platform(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return core.Platform{}, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return core.Platform{}, err
 	}
 	return parent.Self().Platform, nil
@@ -4566,7 +4566,7 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
