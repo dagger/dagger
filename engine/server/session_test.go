@@ -1821,6 +1821,45 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 	require.Same(t, otherCaller, caller)
 }
 
+func TestNeverServesAttachables(t *testing.T) {
+	t.Parallel()
+
+	newClient := func(proxyID string, registered bool) *daggerClient {
+		attachables := newSessionAttachableManager()
+		if registered {
+			attachables.callers["child"] = &sessionAttachableCaller{
+				ctx:       context.Background(),
+				supported: map[string]struct{}{},
+			}
+		}
+		return &daggerClient{
+			clientID:                 "child",
+			hostServiceProxyClientID: proxyID,
+			daggerSession:            &daggerSession{attachables: attachables},
+		}
+	}
+
+	t.Run("synthetic nested client without attachables", func(t *testing.T) {
+		t.Parallel()
+		require.True(t, newClient("parent", false).neverServesAttachables("child"))
+	})
+
+	t.Run("synthetic nested client that registered attachables", func(t *testing.T) {
+		t.Parallel()
+		require.False(t, newClient("parent", true).neverServesAttachables("child"))
+	})
+
+	t.Run("client with its own session waits", func(t *testing.T) {
+		t.Parallel()
+		require.False(t, newClient("", false).neverServesAttachables("child"))
+	})
+
+	t.Run("another client still waits", func(t *testing.T) {
+		t.Parallel()
+		require.False(t, newClient("parent", false).neverServesAttachables("other"))
+	})
+}
+
 func TestWorkspaceBindingMode(t *testing.T) {
 	t.Parallel()
 
