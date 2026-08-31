@@ -199,7 +199,7 @@ func TestLazyEmitNestedOverrideNoCrossStamping(t *testing.T) {
 	// Outer lazy eval, triggered by the consumer.
 	outerEvalCtx := engine.ContextWithClientMetadata(consumerCtx,
 		&engine.ClientMetadata{SessionID: sessionID, ClientID: "c"})
-	outerCBCtx, outerLazy, outerIsResume := c.beginOTelLazyOp(outerEvalCtx, outerResultID, &ResultCall{Field: "outerDir"})
+	outerCBCtx, outerLazy, outerIsResume := c.beginOTelLazyOp(outerEvalCtx, outerResultID, LazyGroupWhole, &ResultCall{Field: "outerDir"})
 	if !outerIsResume {
 		t.Fatal("outer: producer context captured ⇒ resume re-point case")
 	}
@@ -210,7 +210,7 @@ func TestLazyEmitNestedOverrideNoCrossStamping(t *testing.T) {
 	// The outer work itself triggers a NESTED lazy eval (its own beginOTelLazyOp on
 	// the outer-work subtree ctx, which still carries the outer override).
 	innerEvalCtx := engine.ContextWithClientMetadata(outerWorkCtx, &engine.ClientMetadata{SessionID: sessionID, ClientID: "c"})
-	innerCBCtx, innerLazy, innerIsResume := c.beginOTelLazyOp(innerEvalCtx, innerResultID, &ResultCall{Field: "innerDir"})
+	innerCBCtx, innerLazy, innerIsResume := c.beginOTelLazyOp(innerEvalCtx, innerResultID, LazyGroupWhole, &ResultCall{Field: "innerDir"})
 	if !innerIsResume {
 		t.Fatal("inner: producer context captured ⇒ resume re-point case")
 	}
