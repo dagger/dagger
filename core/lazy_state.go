@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
@@ -18,8 +19,28 @@ type Lazy[T dagql.Typed] interface {
 }
 
 type LazyState struct {
+	// LazyMu guards LazyInitComplete and groups. For whole-op evaluation
+	// (Evaluate) it is additionally held across the body, as it always
+	// was. Per-group evaluation (EvaluateGroup) holds it only for latch
+	// checks and map access, never across a body: carrying the
+	// hold-across-the-body shape to groups would serialize sibling groups
+	// of one op against each other.
 	LazyMu           *sync.Mutex
 	LazyInitComplete bool
+	// groups holds per-group run-once state; nil until the first named-
+	// group use, so ops evaluated whole allocate nothing new.
+	groups map[dagql.LazyGroupKey]*lazyGroupOnce
+}
+
+// lazyGroupOnce is one group's object-side run-once state. mu is held
+// across the group's body: it serializes every runner of this group
+// (cache attempt or direct call) and makes the second a no-op via done,
+// exactly the whole-op coordination Evaluate provides, per group. done
+// is atomic so consumption checks never block on a sibling runner's
+// in-flight body.
+type lazyGroupOnce struct {
+	mu   sync.Mutex
+	done atomic.Bool
 }
 
 func NewLazyState() LazyState {
@@ -68,6 +89,97 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	}
 	lazy.LazyInitComplete = true
 	return nil
+}
+
+// EvaluateGroup runs one evaluation group's body exactly once. Per op
+// exactly one of Evaluate and EvaluateGroup is in use, mirroring the
+// cache-side regime split between whole-result and named-group
+// evaluation.
+func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group dagql.LazyGroupKey, run func(context.Context) error) (rerr error) {
+	if lazy.LazyMu == nil {
+		return fmt.Errorf("invalid %s: missing LazyMu", typeName)
+	}
+
+	lazy.LazyMu.Lock()
+	if lazy.LazyInitComplete {
+		lazy.LazyMu.Unlock()
+		return nil
+	}
+	g := lazy.groups[group]
+	if g == nil {
+		if lazy.groups == nil {
+			lazy.groups = make(map[dagql.LazyGroupKey]*lazyGroupOnce)
+		}
+		g = &lazyGroupOnce{}
+		lazy.groups[group] = g
+	}
+	lazy.LazyMu.Unlock()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.done.Load() {
+		return nil
+	}
+	if run == nil {
+		g.done.Store(true)
+		return nil
+	}
+
+	start := time.Now()
+	slog.InfoContext(ctx, "start lazy group evaluation",
+		"field", typeName,
+		"group", string(group),
+	)
+	defer func() {
+		args := []any{
+			"field", typeName,
+			"group", string(group),
+			"duration", time.Since(start),
+		}
+		if rerr != nil {
+			args = append(args, "err", rerr)
+		}
+		slog.InfoContext(ctx, "end lazy group evaluation", args...)
+	}()
+
+	if rerr = run(ctx); rerr != nil {
+		return rerr
+	}
+	g.done.Store(true)
+	return nil
+}
+
+// GroupConsumed reports whether the group's body already ran to success
+// (or the whole op is complete).
+func (lazy *LazyState) GroupConsumed(group dagql.LazyGroupKey) bool {
+	if lazy.LazyMu == nil {
+		return false
+	}
+	lazy.LazyMu.Lock()
+	defer lazy.LazyMu.Unlock()
+	return lazy.groupConsumedLocked(group)
+}
+
+// groupConsumedLocked requires LazyMu held. done is read atomically, not
+// under g.mu, so a consumption check never blocks on a sibling runner's
+// in-flight body; a stale false only costs a no-op re-entry into
+// EvaluateGroup, which g.mu resolves.
+func (lazy *LazyState) groupConsumedLocked(group dagql.LazyGroupKey) bool {
+	if lazy.LazyInitComplete {
+		return true
+	}
+	g := lazy.groups[group]
+	if g == nil {
+		return false
+	}
+	return g.done.Load()
+}
+
+// ContainerLazyState exposes the op's lazy latch state to the container
+// group-routing layer. Promoted through embedding, it makes every
+// embedding op satisfy that slice of LazyContainerParts for free.
+func (lazy *LazyState) ContainerLazyState() *LazyState {
+	return lazy
 }
 
 type LazyAccessor[V any, T dagql.Typed] struct {
