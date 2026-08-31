@@ -276,11 +276,19 @@ type HasLazyEvaluationParts interface {
 
     // ResolveLazyEvalGroups maps the requested parts to the groups that
     // fill them, in the order they should be evaluated. nil parts means
-    // "every group that currently has deferred work". self is the
-    // attached result wrapping this value. Resolution may evaluate the
-    // value's own metadata part (via the cache) to settle positional
-    // parts; it must never evaluate snapshot content. The mapping must be
-    // deterministic and stable once metadata is settled.
+    // "every group of the value's shape". Resolution enumerates by
+    // SHAPE, never by remaining work: whether anything remains for a
+    // group (complete, pending bookkeeping, armed callback) is the
+    // cache's per-group decision, which object-side state cannot see.
+    // The cache defends this independently (5.2, 5.4): outstanding
+    // cache-side group state is evaluated and blocks the completion
+    // latch even when resolution under-reports, so a value that can no
+    // longer enumerate its shape (its op consumed and cleared) cannot
+    // strand pending bookkeeping. self is the attached result wrapping
+    // this value. Resolution may evaluate the value's own metadata part
+    // (via the cache) to settle positional parts; it must never evaluate
+    // snapshot content. The mapping must be deterministic and stable
+    // once metadata is settled.
     ResolveLazyEvalGroups(ctx context.Context, self AnyResult, parts []PartKey) ([]LazyGroupKey, error)
 
     // LazyEvalFuncForGroup returns the group's remaining deferred work,
@@ -470,6 +478,21 @@ Rules:
   "something is still deferred" (feeds `HasPendingLazyEvaluation` and the
   schema eager/lazy fork), and persistence's form selection (`Lazy == nil`
   → ready form) keeps meaning "fully materialized" (section 8).
+- The clear and every read of the op pointer on parts paths must share a
+  synchronization point. Today the pointer is written only inside a body
+  whose retirement under `lazyMu` orders it before later readers; with
+  per-group evaluation, one group's body clears the pointer while sibling
+  groups are idle and their readers legally consult object-side state, so
+  an unsynchronized interface-field write races those reads (a torn
+  interface read is a real crash vector, and two sibling bodies observing
+  full consumption race each other's clear). The whole-op `LazyMu`
+  travels inside the op the pointer names, so it cannot guard the pointer
+  itself; give the container a dedicated synchronized holder for the op
+  reference (a small mutex- or atomic-based accessor used by the parts
+  paths: the clear, `ResolveLazyEvalGroups`, `LazyEvalFuncForGroup`,
+  `LazyEvalFunc`). Non-parts paths and single-threaded contexts
+  (persistence encode at quiescence, decode) go through the same holder
+  for uniformity.
 - The direct object-side evaluation paths continue to work, coordinated
   per group as enumerated above. Sites whose refinement is a stage-2 win
   (the exec-meta readers) move their forcing to the resolver via
@@ -489,9 +512,34 @@ func materializeContainerMetadataFromParent(ctx context.Context, dst *Container,
 // delegateContainerPart evaluates the parent's part and copies its
 // value into dst's accessor for the same part (detached clone for
 // Directory/File values, same reference for snapshot refs — the same
-// cloning the existing CloneContainer* helpers do).
+// cloning the existing CloneContainer* helpers do). It ALWAYS evaluates
+// the parent and ALWAYS overwrites dst's accessor, even when dst is
+// already set — see the pre-seed rule below.
 func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.ObjectResult[*Container], part dagql.PartKey) error
 ```
+
+**Construction-time pre-seeds are not productions.** The one-production
+rule (section 6) covers values written by group bodies. It does not cover
+accessor values cloned into a shell at schema construction
+(`cloneContainerForSchemaChild`), because those are cloned from the
+parent's *shell*, and an unevaluated snapshot-writing ancestor's shell
+carries its own parent's value for the parts it will later write:
+`withDirectory` and the mount mutations install their lazy op with the
+cloned accessors untouched, so a chain like
+`evaluated.withDirectory(p, d).withEnvVariable(k, v)` gives the
+`withEnvVariable` child a **set** fs accessor holding the pre-copy
+rootfs. A delegation or metadata-copy step that trusts a set destination
+("already final, skip") therefore serves stale content and silently
+skips the ancestor's work. The rule: delegation bodies and the metadata
+copy's mount handling must never treat a set destination accessor as
+final — always evaluate the parent's part and overwrite (fresh accessors
+in the metadata copy; unconditional copy in delegation). Overwriting a
+pre-seed is not a violation of section 6: the group body's write is the
+part's one production, and the pre-seed was never one. Write-group
+bodies (`withRootfs`, the exec's output bindings) already overwrite
+unconditionally for the same reason; the exec additionally resets its
+output accessors at construction, which is belt on top of this rule, not
+a substitute for it.
 
 **Template A — metadata-only mutation** (covers ~28 ops, section 9):
 
@@ -700,11 +748,24 @@ so it cannot be set from a stale view of the group set:
 
 - For a parts value, only a pass that (i) called
   `ResolveLazyEvalGroups(ctx, res, nil)` — the all-groups form — **after**
-  the metadata part was settled, and (ii) then observed every returned
-  group complete, may set the latch. `EvaluateParts` never sets it. The
-  ordering matters because the group set is only final once metadata is
-  settled (3.4); a resolution that predates metadata settling could miss
-  groups.
+  the metadata part was settled, (ii) then observed every returned group
+  complete, and (iii) observed **no allocated group state** on the result
+  with a published attempt, pending bookkeeping, or incomplete status,
+  may set the latch. `EvaluateParts` never sets it. Condition (iii) is
+  not redundant with (ii): resolution enumerates from object-side state,
+  which a consumed op can no longer report (an op whose last body
+  succeeded clears the value's op pointer while the group's cache-side
+  bookkeeping may still be pending), so the returned set can be empty or
+  shrunken while the cache still owes work. An evaluate pass that finds
+  such outstanding state evaluates those groups — joining or leading
+  their bookkeeping retries — rather than trusting the resolution
+  answer. Without (iii), a lease-sync failure on the final group would
+  be silently latched over: permanent false completion with
+  snapshot-owner leases never attached, the exact harm class
+  `LazyCompleteSettled` exists to forbid.
+- The ordering in (i) matters because the group set is only final once
+  metadata is settled (3.4); a resolution that predates metadata settling
+  could miss groups.
 - For a non-parts value, the latch is set exactly as today (single group
   completes, or the value reports no callback).
 
@@ -1052,6 +1113,18 @@ Run discipline, per Erik's overnight ruling (superseding the
 full-suite-before-push rule in `dagql/tla/README.md` for this stage):
 before handoff, run the touched configurations plus the quick set; run
 the full suite only if time permits.
+
+Outcome record (post-implementation review): `attach_release_reader` and
+`resources_gated_growth` were scoped under budget with re-breaks
+re-verified. `resources_restart` (~110M distinct states) cannot be
+scoped honestly with the new constants — its scenario is persistence
+itself, so persistable intent is load-bearing and single-session release
+scoping is vacuous; per step 3 it needs a split or a new scenario
+switch, left for Erik's ruling (G26). The delegate configuration runs
+the singleton-group shape: group multiplicity is covered by the other
+parts configurations, delegation is a cross-result mechanism orthogonal
+to group count, and the measured multi-group shapes exceeded the budget
+(killed past 45M and 79M distinct states, still growing).
 
 ---
 
