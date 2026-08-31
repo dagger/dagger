@@ -1,0 +1,11 @@
+kind: Changed
+body: |
+  `Workspace.export` now writes to the host of the current client — the client
+  that makes the call — like `Directory.export`. It no longer writes to the
+  client that created the workspace, so a module can no longer write files onto
+  its caller's host through a received `Workspace`. CLI export flows
+  (`dagger install`, `dagger generate`, `dagger ws config`, …) are unchanged.
+time: 2026-08-30T00:00:00.000000000-07:00
+custom:
+    Author: shykes
+    PR: "14008"

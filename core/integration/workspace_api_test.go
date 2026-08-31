@@ -913,6 +913,25 @@ func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Cont
 	require.Equal(t, "staged", string(got))
 }
 
+// TestWorkspaceExportStaysOnCurrentClient locks in the Workspace.export
+// contract from dagger/dagger#14007: a module handed the caller's workspace
+// exports into its own sandbox, never onto the caller's host.
+func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	moduleDir := filepath.Join(workdir, "sandbox")
+	copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-export-sandbox")
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export")
+	require.NoError(t, err, string(out))
+	require.Equal(t, "exported", strings.TrimSpace(string(out)),
+		"a module's export succeeds against its own sandboxed environment")
+
+	_, err = os.Stat(filepath.Join(workdir, "sneaky.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist,
+		"a module must not write to its caller's workspace through Workspace.export")
+}
+
 // TestHostWorkspaceGitLog covers workspace.git.head.log against a host
 // checkout: the workspace's git ref is an ordinary GitRef, so it lists commits
 // like any other.
