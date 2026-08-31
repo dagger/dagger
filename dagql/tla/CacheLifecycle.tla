@@ -132,6 +132,23 @@ CONSTANTS
     AllowPruneCut,      \* enable the PruneCut action; off in configs that
                         \* isolate a question from prune races
 
+    \* --- scenario scoping (run budget) -----------------------------------
+    \* These narrow which external events a configuration explores, in the
+    \* existing style: configurations select scenarios, never
+    \* implementations. Defaults (ReleaseSessions = Sessions,
+    \* PersistableIntent = TRUE) preserve every configuration's previous
+    \* state space exactly.
+    ReleaseSessions,    \* which sessions may release. A configuration whose
+                        \* question involves only one session's release can
+                        \* restrict it here instead of paying for every
+                        \* session's release interleavings. WARNING: a
+                        \* proper subset breaks session interchangeability,
+                        \* so such a configuration must not declare
+                        \* session symmetry (use SymmCalls, not Symm).
+    PersistableIntent,  \* whether Spawn may choose persistable requests.
+                        \* FALSE removes the persisted-edge machinery from
+                        \* scenarios where it plays no role.
+
     \* --- optional machinery -----------------------------------------------
     \* These scope a configuration to the machinery its question needs.
     \* Turning one off removes those actions from the state space entirely,
@@ -200,9 +217,15 @@ CONSTANTS
 \* assign a class to every call and to nothing else.
 ASSUME /\ DOMAIN ClassOf = Calls
        /\ Calls # {}
+       /\ ReleaseSessions \subseteq Sessions
+       /\ PersistableIntent \in BOOLEAN
 
 \* Convenience value for configs: every call in one equivalence class.
 OneClass == [c \in Calls |-> "k1"]
+
+\* Convenience values for configs: the scenario-scoping defaults.
+AllSessions == Sessions
+PersistableChoices == IF PersistableIntent THEN BOOLEAN ELSE {FALSE}
 DistinctClasses == [c \in Calls |-> c]
 EquivalenceClasses == {ClassOf[c] : c \in Calls}
 
@@ -212,6 +235,10 @@ EquivalenceClasses == {ClassOf[c] : c \in Calls}
 \* Safety configs only: TLC's symmetry reduction can give wrong answers
 \* for liveness properties.
 Symm == Permutations(Sessions) \cup Permutations(Calls)
+
+\* Call-only symmetry, for configurations that break session
+\* interchangeability (ReleaseSessions a proper subset of Sessions).
+SymmCalls == Permutations(Calls)
 
 VARIABLES
     invocations,        \* one record per issued GetOrInitCall; its phase
@@ -621,7 +648,7 @@ NewInvocation(s, c, p, o, admitted) ==
 Spawn ==
     /\ Len(invocations) < MaxInvocations
     /\ ~flushed.closing
-    /\ \E s \in Sessions, c \in Calls, p \in BOOLEAN :
+    /\ \E s \in Sessions, c \in Calls, p \in PersistableChoices :
         /\ DrainOnRelease => sessionRelease[s].phase = "live"
         /\ LET admitted == sessionRelease[s].phase = "live" IN
            /\ invocations' = Append(invocations,
@@ -636,7 +663,7 @@ SpawnNested ==
     /\ ModelNestedCalls
     /\ Len(invocations) < MaxInvocations
     /\ ~flushed.closing
-    /\ \E s \in Sessions, c \in Calls, p \in BOOLEAN :
+    /\ \E s \in Sessions, c \in Calls, p \in PersistableChoices :
         /\ \E o \in OngoingCallIds :
              /\ ongoingCalls[o].sess = s
              /\ ongoingCalls[o].fnState \in {"running", "canceled"}
@@ -2100,6 +2127,7 @@ InvocationOperationExit(i) ==
 \* totally ordered even though neither takes the cache-wide session mutex.
 ReleaseSessionMark(s) ==
     /\ AllowRelease
+    /\ s \in ReleaseSessions
     /\ sessionRelease[s].phase = "live"
     /\ DrainOnRelease =>
          \A i \in InvocationIds :
