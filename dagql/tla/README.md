@@ -16,14 +16,19 @@ fail, and for deliberately accepted model findings.
 `CacheLifecycle_orphaned_lease.cfg` restores the release rule under
 which a completed call's operation and client leases were orphaned when
 its last waiter left through cancellation, and must violate
-`SharedLeaseReleasedWhenRetired`. One
-is tracked today, awaiting a ruling: a publisher's own release between
-fn completion and attachment fails innocent cross-session readers
-parked at the attach barrier (`attach_release_reader`; the same defect
-family as the fixed `decode_cancel` joiner finding, and the analogous
-fix is a retry/miss classification for parked readers). Every other
-configuration is a green regression gate, and the `expectedOutcome`
-map is the authoritative list. (The most recently closed findings: `resources_gated_growth` — a
+`SharedLeaseReleasedWhenRetired`. None
+is tracked today: every configuration is a green regression check, and
+the `expectedOutcome` map is the authoritative list. (The most
+recently closed findings: `attach_release_reader` — a session's release
+manufacturing failures for live, innocent callers through the
+attachment machinery — fixed by classifying the producer-release
+barrier error so parked readers convert their hit to a miss and execute
+the call themselves (the same retry shape as the fixed `decode_cancel`
+joiner finding), and by claiming the attachment target under the graph
+lock before any unlocked refresh work, with target selection pinned by
+the claim-at-acquisition invariant so no other session's release can
+collect a target out from under its claim;
+`resources_gated_growth` — a
 result's stored requirement set growing after the lookup filter ran —
 fixed by a serve-time re-validation keyed on a per-result requirement
 generation captured at selection (explicit retention edges accept
@@ -54,8 +59,10 @@ dagger --env dev call tla-check one --config=resources
 # the full suite: REQUIRED before pushing changes under dagql/tla,
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
-# (resources_gated_growth ~114M, resources_restart ~110M, lazy_import
-# ~62M, resources_latedep_cascade ~57M, persist ~47M)
+# (attach_release_reader ~863M distinct states - the reader-conversion
+# retries opened its space up and it now takes nearly two hours alone -
+# and resources_gated_growth ~114M, resources_restart ~110M,
+# lazy_import ~62M, resources_latedep_cascade ~57M, persist ~47M)
 dagger --env dev check tla-check:cache-lifecycle
 ```
 
