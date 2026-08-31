@@ -30,6 +30,7 @@ The dagql cache does not know anything about `Directory`, `File`, `Container`, o
 - `dagql.HasLazyEvaluation`
 - `dagql.LazyEvalFunc`
 - `dagql.Cache.Evaluate`
+- `dagql.HasLazyEvaluationParts` and `dagql.Cache.EvaluateParts` (per-part evaluation, below)
 
 Any result can participate in lazy evaluation if its wrapped value implements:
 
@@ -46,9 +47,11 @@ That means the mechanism is generic. In practice, the engine mostly uses it for 
 The key dagql entry points are:
 
 - `dagql.Cache.Evaluate`
-  The public API for forcing one or more attached results to finish lazy evaluation.
-- `dagql.Cache.evaluateOne`
-  The per-result implementation that handles singleflight, recursion detection, cancelation, call-context restoration, and telemetry resumption.
+  The public API for forcing one or more attached results to finish every piece of their lazy evaluation.
+- `dagql.Cache.EvaluateParts`
+  The public API for forcing only the named parts of one attached result. On a value that does not split its deferred work this degenerates to `Evaluate`.
+- `dagql.Cache.evaluateGroup`
+  The per-(result, group) implementation that handles singleflight, recursion detection, cancelation, call-context restoration, and telemetry resumption. For values that do not split their work there is exactly one group, so this is the familiar per-result loop.
 - `dagql.Cache.registerLazyEvaluation`
   Stores the current lazy callback on the attached `sharedResult` when a result is first published or when a cache/persisted hit is re-wrapped.
 - `dagql.HasPendingLazyEvaluation`
@@ -71,21 +74,20 @@ The tests in `dagql/cache_test.go` cover both behaviors.
 
 ## `sharedResult` Lazy State
 
-Attached results carry cache-owned lazy state in `dagql.sharedResult`:
+Attached results carry cache-owned lazy state in `dagql.sharedResult`, organized per evaluation group (`lazyGroupState`):
 
-- `lazyEval`
-- `lazyEvalComplete`
-- `lazyEvalAttempt`
-- `lazySyncPending`
+- `lazyWhole` is the implicit whole-result group, held inline: the lazy state of values that do not split their deferred work. Results that never split allocate nothing beyond it.
+- `lazyPartGroups` holds the named groups of a parts value; nil until first use. Per value exactly one regime is in use: a parts value never uses `lazyWhole` and a non-parts value never uses named groups.
+- `lazyEvalComplete` is the result-level completion latch: everything deferred anywhere on the result is settled. It is only the fast path; correctness derives from the per-group state.
 
-This state is guarded by `lazyMu`.
+Each group record carries the same four fields the per-result state used to:
 
-Conceptually:
+- `eval` is the group's stored callback
+- `complete` means the group's evaluation succeeded
+- `attempt` is the group's currently running callback attempt, including its completion channel, cancel function, waiter count, outcome, and telemetry wait targets
+- `syncPending` means a previous attempt's callback body succeeded but the attempt's cache-side bookkeeping (snapshot-lease sync, lease release) did not; the next attempt retries only that bookkeeping
 
-- `lazyEval` is the callback the cache should run
-- `lazyEvalComplete` means the attached result is fully materialized
-- `lazyEvalAttempt` is the currently running callback attempt, including its completion channel, cancel function, waiter count, outcome, and telemetry wait targets
-- `lazySyncPending` means a previous attempt's callback body succeeded but the attempt's cache-side bookkeeping (snapshot-lease sync, lease release) did not; the next attempt retries only that bookkeeping
+This state is guarded by `lazyMu`. `syncResultSnapshotLeases` itself is additionally serialized per result (`leaseSyncMu`) because concurrent group attempts make concurrent lease syncs routine and the read-diff-write sync must not interleave.
 
 Waiters retain the particular attempt record they joined. When its callback
 finishes, the cache stores the outcome on that record and removes it as the
@@ -107,15 +109,16 @@ This matters because the `sharedResult` is the stable cache-owned object, while 
 
 ## Evaluate Flow
 
-For a single result, `Cache.evaluateOne` works roughly like this:
+For a single result, `Cache.evaluateResolved` routes the demand: a value that does not implement `HasLazyEvaluationParts` goes straight to the whole-result group; a parts value has its demand resolved to named groups (`ResolveLazyEvalGroups`, run outside `lazyMu` because it may re-enter the cache to settle the value's own metadata part) and each group is evaluated in order. `Cache.evaluateGroup` then works roughly like this, per (result, group):
 
-1. Validate that the cache and result are non-nil.
-2. Require that the result is attached to a real `sharedResult`.
-3. Detect recursive lazy evaluation using a stack of `sharedResultID`s stored in context.
-4. If the result is already fully materialized, return.
-5. If another goroutine is already evaluating this result, retain its attempt record and wait on its channel. This check comes before reading any object-side lazy state: callback bodies (Directory, File, Container) clear their object-side `Lazy` pointer while their attempt is still running cache-side bookkeeping, so object-side state is only trustworthy once no attempt is published.
-6. With no attempt in flight, check pending bookkeeping first: `lazySyncPending` means a previous attempt's body already succeeded and consumed the value's deferred work, so the value's callback is not re-read and the next attempt retries only the bookkeeping. Otherwise re-read the current `LazyEvalFunc` from the wrapped value; if it is nil, mark the result complete and return.
-7. Otherwise start an attempt in a background goroutine and wait for it: the callback body if one is armed, then the cache-side bookkeeping; or only the bookkeeping when `lazySyncPending` is set.
+1. Validate that the cache and result are non-nil, and that the result is attached to a real `sharedResult`.
+2. Detect recursive lazy evaluation using a stack of `(sharedResultID, group)` pairs stored in context, pushed at group entry. The resolution phase legitimately re-enters the same result for its metadata group before the requested group is entered; re-entering the same (result, group) is refused.
+3. If the result's result-level latch or this group's completion is set, return.
+4. If another goroutine is already evaluating this group, retain its attempt record and wait on its channel. This check comes before reading any object-side lazy state: callback bodies (Directory, File, Container) clear their object-side state while their attempt is still running cache-side bookkeeping, so object-side state is only trustworthy once no attempt is published.
+5. With no attempt in flight, check pending bookkeeping first: the group's `syncPending` means a previous attempt's body already succeeded and consumed the group's deferred work, so the group's callback is not re-read and the next attempt retries only the bookkeeping. Otherwise re-read the group's current callback from the wrapped value (`LazyEvalFuncForGroup` for named groups, `LazyEvalFunc` for the whole group); if it is nil, mark the group complete and return.
+6. Otherwise start an attempt in a background goroutine and wait for it: the callback body if one is armed, then the cache-side bookkeeping; or only the bookkeeping when the group's `syncPending` is set.
+
+The result-level `lazyEvalComplete` latch is set by whole-group completion for non-parts values, and for parts values only by a whole-value pass that resolved the full group set after metadata settled and observed every returned group complete. A parts-scoped `EvaluateParts` never sets it.
 
 Two details are especially important.
 
@@ -201,6 +204,25 @@ So the rule is simple:
 - genuine failure is returned and leaves the result pending
 - cancellation caused by abandoned shared work is retried for healthy callers
 
+## Per-Part Evaluation (Stage 2)
+
+A value may split its deferred work into independently evaluable pieces by implementing `dagql.HasLazyEvaluationParts`:
+
+- A `PartKey` names one separately evaluable piece of the value (dagql treats keys as opaque; the value's package defines them).
+- A `LazyGroupKey` names one evaluation group. Every part maps to exactly one group, a group's single body fills all its parts, and an attempt is per (result, group). There are no part-level attempts.
+- `ResolveLazyEvalGroups(ctx, self, parts)` maps requested parts to groups in evaluation order (nil parts means everything). Resolution may evaluate the value's own metadata part via the cache — the only self-demand anywhere — so positional questions (which mounts exist) are answered before any snapshot group's body starts. It must never evaluate snapshot content.
+- `LazyEvalFuncForGroup(group)` is the per-group consumption contract, exactly like `LazyEvalFunc` per group: nil once the group's work is consumed, and the cache independently guarantees a group's body never runs twice.
+
+Rules the container implementation follows (and any future parts value should):
+
+- Every part is written exactly once, by its own group's body, and never rewritten. A delegation body copies from the parent's already-latched part, so a part's value is independent of the order sibling groups run in.
+- Group bodies never demand sibling groups of their own op. The only intra-result demand is the resolution-phase metadata settling, which completes before any requested group's body starts.
+- A refined container op keeps `container.Lazy` non-nil until its last group is consumed, which keeps `LazyEvalFunc() != nil` meaning "something is still deferred" and persistence's ready-form selection (`Lazy == nil`) meaning "fully materialized". A partially evaluated result persists in the lazy form: the recipe, exactly like an unevaluated result; partial progress is re-derived on demand after restart.
+
+For containers the parts are `metadata` (every plain field), `fs`, `execMeta`, and `mount:<target>` (target-keyed: targets are unique in a mount list and survive add/remove/replace). Refined ops fall into two templates: metadata-only mutations (metadata group applies the field edit; every snapshot part is its own delegation group) and snapshot writers (the exec's joint `execOutputs` group fills fs, execMeta, and every writable mount from one process run; `withRootfs`'s `write` group fills fs from its source). Unrefined ops map every part to the whole-result group and behave exactly as before, so chains refine incrementally: a refined child of an unrefined parent simply evaluates the parent fully when it delegates.
+
+Failure and retry are per group: a group body failure leaves that group retryable and its siblings untouched; success is permanent per group. Two callers wanting different parts of one result do not serialize at either layer — their groups' attempts are independent, and object-side sibling groups hold different per-group mutexes.
+
 ## The Second Layer: `core.Lazy[T]`
 
 The cache-level mechanism is only half the story. The object implementations use a second layer in `core/lazy_state.go`:
@@ -215,19 +237,14 @@ type Lazy[T dagql.Typed] interface {
 
 This is the object-side contract.
 
-Every concrete lazy type in `core` embeds a `LazyState`:
+Every concrete lazy type in `core` embeds a `LazyState`.
 
-```go
-type LazyState struct {
- LazyMu           *sync.Mutex
- LazyInitComplete bool
-}
-```
-
-`LazyState.Evaluate` gives per-instance idempotence:
+`LazyState.Evaluate` gives per-instance idempotence for whole-op evaluation:
 
 - if the instance already finished, it returns immediately
 - otherwise it locks `LazyMu`, runs the callback once, and marks the instance complete on success
+
+`LazyState.EvaluateGroup` is the per-group form used by refined container ops: each group has its own mutex held across only that group's body (`LazyMu` guards the latch map and is never held across a body, so sibling groups of one op run concurrently), and a second runner of the same group observes the group's done flag and returns. Per op exactly one of the two entry points is in use.
 
 This is distinct from the cache-level singleflight.
 
