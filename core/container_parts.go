@@ -78,6 +78,40 @@ type LazyContainerParts interface {
 
 var _ dagql.HasLazyEvaluationParts = (*Container)(nil)
 
+// The refined (template A) container ops. An op missing from this list
+// is unrefined and keeps whole-result evaluation.
+var (
+	_ LazyContainerParts = (*ContainerWithEntrypointLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutEntrypointLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithDefaultArgsLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutDefaultArgsLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithUserLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutUserLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithWorkdirLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutWorkdirLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithEnvVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithEnvFileVariablesLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithSystemEnvVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithVolatileVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutEnvVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutVolatileVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithLabelLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutLabelLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithImageConfigMetadataLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithHealthcheckLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutHealthcheckLazy)(nil)
+	_ LazyContainerParts = (*ContainerSetGPUsLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithAnnotationLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutAnnotationLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithSecretVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutSecretVariableLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithServiceBindingLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithExposedPortLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutExposedPortLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithDefaultTerminalCmdLazy)(nil)
+	_ LazyContainerParts = (*ContainerVolatileExecCacheHitLazy)(nil)
+)
+
 // ResolveLazyEvalGroups implements dagql.HasLazyEvaluationParts. An
 // unrefined op maps every part to the whole-result group, which is
 // today's behavior byte-for-byte; a refined op settles its own metadata
