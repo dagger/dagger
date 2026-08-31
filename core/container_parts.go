@@ -317,10 +317,12 @@ func templateAContainerGroups(ctr *Container, parts []dagql.PartKey) ([]dagql.La
 // metadata part and copies the plain fields onto dst: the split-out
 // metadata half of materializeContainerStateFromParent. The mount list
 // shape is copied from the parent, carrying over dst's existing source
-// accessor for a mount whose target and kind match (parts are keyed by
-// target and written once, so an already-set accessor holds the final
-// value) and giving any other mount a fresh empty accessor for its
-// delegation group to fill.
+// accessor RECORD for a mount whose target and kind match - keeping the
+// accessor pointer stable for the group that fills it (any pre-copied
+// value it holds is stale-until-overwritten; delegation always copies
+// the parent's part over it) - and giving any other mount a fresh empty
+// accessor. Parent accessor values are never cloned here: filling
+// snapshot parts is the delegation groups' job, not metadata's.
 func materializeContainerMetadataFromParent(ctx context.Context, dst *Container, parent dagql.ObjectResult[*Container]) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
@@ -382,9 +384,16 @@ func materializeContainerMetadataFromParent(ctx context.Context, dst *Container,
 // delegateContainerPart evaluates the parent's part and copies its value
 // into dst's accessor for the same part: a detached clone for
 // Directory/File values and a reopened handle for snapshot refs, the
-// same cloning the CloneContainer* helpers do. An already-set dst
-// accessor is left alone: parts are written once, so a value pre-seeded
-// at construction is the parent part's final value already.
+// same cloning the CloneContainer* helpers do. It always evaluates the
+// parent and copies, even over an already-set destination accessor: a
+// construction-time pre-copy proves nothing about provenance, because
+// schema shells clone whatever accessor value is currently visible
+// without forcing the parent, so an unrefined writer between an
+// evaluated ancestor and this op leaves the shell holding the
+// ancestor's value while the parent's pending body will replace it.
+// (The overwritten pre-copy's reopened ref is dropped without an
+// explicit release, exactly as the whole-op parent-state copy always
+// did when it replaced construction-time clones.)
 func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.ObjectResult[*Container], part dagql.PartKey) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
@@ -398,11 +407,6 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 
 	switch {
 	case part == ContainerPartFS:
-		if dst.FS != nil {
-			if _, set := dst.FS.Peek(); set {
-				return nil
-			}
-		}
 		if err := cache.EvaluateParts(ctx, parent, part); err != nil {
 			return err
 		}
@@ -414,11 +418,6 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 		return nil
 
 	case part == ContainerPartExecMeta:
-		if dst.MetaSnapshot != nil {
-			if _, set := dst.MetaSnapshot.Peek(); set {
-				return nil
-			}
-		}
 		if err := cache.EvaluateParts(ctx, parent, part); err != nil {
 			return err
 		}
@@ -439,16 +438,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 		if dstMnt == nil {
 			return fmt.Errorf("delegate container part %q: no mount at target", part)
 		}
-		switch {
-		case dstMnt.DirectorySource != nil:
-			if _, set := dstMnt.DirectorySource.Peek(); set {
-				return nil
-			}
-		case dstMnt.FileSource != nil:
-			if _, set := dstMnt.FileSource.Peek(); set {
-				return nil
-			}
-		default:
+		if dstMnt.DirectorySource == nil && dstMnt.FileSource == nil {
 			return fmt.Errorf("delegate container part %q: mount has no snapshot source", part)
 		}
 		if err := cache.EvaluateParts(ctx, parent, part); err != nil {
