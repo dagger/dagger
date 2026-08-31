@@ -19,14 +19,19 @@ type Lazy[T dagql.Typed] interface {
 }
 
 type LazyState struct {
-	// LazyMu guards LazyInitComplete and groups. For whole-op evaluation
-	// (Evaluate) it is additionally held across the body, as it always
-	// was. Per-group evaluation (EvaluateGroup) holds it only for latch
-	// checks and map access, never across a body: carrying the
+	// LazyMu guards the latch transitions and groups. For whole-op
+	// evaluation (Evaluate) it is additionally held across the body, as
+	// it always was. Per-group evaluation (EvaluateGroup) holds it only
+	// for latch checks and map access, never across a body: carrying the
 	// hold-across-the-body shape to groups would serialize sibling groups
 	// of one op against each other.
-	LazyMu           *sync.Mutex
-	LazyInitComplete bool
+	LazyMu *sync.Mutex
+	// lazyInitComplete is the whole-op latch. Atomic because the
+	// long-standing lock-free fast path in Evaluate reads it while a
+	// concurrent runner's body sets it, and per-part evaluation makes
+	// direct-versus-cache overlap on one op routine; the latch is still
+	// only ever set under LazyMu.
+	lazyInitComplete atomic.Bool
 	// groups holds per-group run-once state; nil until the first named-
 	// group use, so ops evaluated whole allocate nothing new.
 	groups map[dagql.LazyGroupKey]*lazyGroupOnce
@@ -50,11 +55,11 @@ func NewLazyState() LazyState {
 }
 
 func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(context.Context) error) (rerr error) {
-	if lazy.LazyInitComplete {
+	if lazy.lazyInitComplete.Load() {
 		return nil
 	}
 	if run == nil {
-		lazy.LazyInitComplete = true
+		lazy.lazyInitComplete.Store(true)
 		return nil
 	}
 
@@ -65,7 +70,7 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	lazy.LazyMu.Lock()
 	defer lazy.LazyMu.Unlock()
 
-	if lazy.LazyInitComplete {
+	if lazy.lazyInitComplete.Load() {
 		return nil
 	}
 
@@ -87,7 +92,7 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	if rerr = run(ctx); rerr != nil {
 		return rerr
 	}
-	lazy.LazyInitComplete = true
+	lazy.lazyInitComplete.Store(true)
 	return nil
 }
 
@@ -101,7 +106,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	}
 
 	lazy.LazyMu.Lock()
-	if lazy.LazyInitComplete {
+	if lazy.lazyInitComplete.Load() {
 		lazy.LazyMu.Unlock()
 		return nil
 	}
@@ -165,7 +170,7 @@ func (lazy *LazyState) GroupConsumed(group dagql.LazyGroupKey) bool {
 // in-flight body; a stale false only costs a no-op re-entry into
 // EvaluateGroup, which g.mu resolves.
 func (lazy *LazyState) groupConsumedLocked(group dagql.LazyGroupKey) bool {
-	if lazy.LazyInitComplete {
+	if lazy.lazyInitComplete.Load() {
 		return true
 	}
 	g := lazy.groups[group]
