@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,6 +37,9 @@ type containerPartsTestBaseOp struct {
 	// mountBodyHook, when set, runs inside each mount group's body before
 	// it returns (used to rendezvous concurrent group completions).
 	mountBodyHook func(target string)
+	// fsBodyHook, when set, runs inside the fs group's body before it
+	// returns.
+	fsBodyHook func()
 }
 
 func (op *containerPartsTestBaseOp) mountRunsFor(target string) int {
@@ -81,6 +85,9 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 			}
 			dir.Dir.SetValue("/")
 			ctr.ensureFSAccessor().SetValue(dir)
+			if op.fsBodyHook != nil {
+				op.fsBodyHook()
+			}
 			return nil
 		})
 	default:
@@ -412,4 +419,85 @@ func TestContainerConcurrentGroupCompletionClearsLazyOnce(t *testing.T) {
 
 	require.Nil(t, base.Lazy)
 	require.False(t, dagql.HasPendingLazyEvaluation(baseRes))
+}
+
+// The resolution-phase read (ResolveLazyEvalGroups) and the direct
+// narrow force (evaluatePartsDirect) read the op pointer before any
+// group state is consulted, so no attempt-retirement ordering covers
+// them; they must share a synchronization point with the refined
+// clear. Two readers hammer both paths while the op's final group
+// completes and clears - red under -race without the shared lock.
+func TestContainerRoutingReadsRaceRefinedClear(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	clearImminent := make(chan struct{})
+	baseOp := &containerPartsTestBaseOp{
+		LazyState: NewLazyState(),
+		workdir:   "/base",
+		fsBodyHook: func() {
+			close(clearImminent)
+			// Hold the body open briefly so the readers below overlap
+			// the window between body return and attempt retirement.
+			for range 2000 {
+				runtime.Gosched()
+			}
+		},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "routing-race-base", base)
+
+	// Consume everything except fs, so the fs completion is the clear.
+	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartMetadata))
+	require.NoError(t, cache.EvaluateParts(ctx, baseRes, ContainerPartExecMeta))
+
+	done := make(chan struct{})
+	finalErr := make(chan error, 1)
+	go func() {
+		defer close(done)
+		finalErr <- cache.EvaluateParts(ctx, baseRes, ContainerPartFS)
+	}()
+
+	<-clearImminent
+	resolveErr := make(chan error, 1)
+	go func() {
+		// The cache resolver path: ResolveLazyEvalGroups' pointer read.
+		for {
+			select {
+			case <-done:
+				resolveErr <- nil
+				return
+			default:
+			}
+			if err := cache.EvaluateParts(ctx, baseRes, ContainerPartMetadata); err != nil {
+				resolveErr <- err
+				return
+			}
+		}
+	}()
+	directErr := make(chan error, 1)
+	go func() {
+		// The direct narrow-force path: evaluatePartsDirect's pointer read.
+		for {
+			select {
+			case <-done:
+				directErr <- nil
+				return
+			default:
+			}
+			if err := base.evaluatePartsDirect(ctx, ContainerPartMetadata); err != nil {
+				directErr <- err
+				return
+			}
+		}
+	}()
+
+	require.NoError(t, <-finalErr)
+	require.NoError(t, <-resolveErr)
+	require.NoError(t, <-directErr)
+	require.Nil(t, base.Lazy)
 }

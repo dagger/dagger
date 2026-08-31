@@ -122,6 +122,13 @@ type Container struct {
 	DefaultArgs bool
 
 	Lazy Lazy[*Container]
+
+	// lazyOpMu orders the op-pointer reads that no group-state guard
+	// covers (the resolution-phase read and the direct narrow force,
+	// which run before any group state is consulted) against the refined
+	// per-group clear. Held only for the pointer access, never across
+	// any body. See lazyOpForRouting and clearLazyWhenConsumed.
+	lazyOpMu sync.Mutex
 }
 
 type ContainerWithEntrypointLazy struct {
