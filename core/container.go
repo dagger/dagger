@@ -3240,7 +3240,8 @@ func (lazy *ContainerRootFSLazy) Evaluate(ctx context.Context, dir *Directory) e
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
+		// The rootfs view needs exactly the parent's fs part.
+		if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartFS); err != nil {
 			return err
 		}
 
@@ -3404,7 +3405,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
+		// Locating the path needs only the parent's metadata (the mount
+		// list and working directory); the selected part is evaluated
+		// below, and untouched sibling parts stay pending.
+		if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMetadata); err != nil {
 			return err
 		}
 
@@ -3443,6 +3447,9 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 				}
 			}
 		case mnt.DirectorySource != nil:
+			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMount(mnt.Target)); err != nil {
+				return err
+			}
 			mountedDir, ok := mnt.DirectorySource.Peek()
 			if !ok || mountedDir == nil {
 				return fmt.Errorf("container directory lazy: missing mounted directory source for %s", mnt.Target)
@@ -3560,7 +3567,10 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Parent); err != nil {
+		// Locating the path needs only the parent's metadata (the mount
+		// list and working directory); the selected part is evaluated
+		// below, and untouched sibling parts stay pending.
+		if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMetadata); err != nil {
 			return err
 		}
 
@@ -3595,6 +3605,9 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 				return err
 			}
 		case mnt.DirectorySource != nil:
+			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMount(mnt.Target)); err != nil {
+				return err
+			}
 			mountedDir, ok := mnt.DirectorySource.Peek()
 			if !ok || mountedDir == nil {
 				return fmt.Errorf("container file lazy: missing mounted directory source for %s", mnt.Target)
@@ -3639,6 +3652,9 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			file.Lazy = nil
 			return nil
 		case mnt.FileSource != nil:
+			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartMount(mnt.Target)); err != nil {
+				return err
+			}
 			mountedFile, ok := mnt.FileSource.Peek()
 			if !ok || mountedFile == nil {
 				return fmt.Errorf("container file lazy: missing mounted file source for %s", mnt.Target)

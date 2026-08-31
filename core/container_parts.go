@@ -215,6 +215,38 @@ func (container *Container) clearLazyWhenConsumed(ctx context.Context, op LazyCo
 	return nil
 }
 
+// evaluatePartsDirect is the direct object-side narrow force: settle
+// metadata, then run only the groups filling the given parts. For an
+// unrefined op it degenerates to full evaluation, exactly like the
+// cache-side EvaluateParts. Used by internal reads that hold the
+// container value but not its attached result (metaFileContents).
+func (container *Container) evaluatePartsDirect(ctx context.Context, parts ...dagql.PartKey) error {
+	lazy := container.Lazy
+	if lazy == nil {
+		return nil
+	}
+	op, ok := lazy.(LazyContainerParts)
+	if !ok {
+		return container.Evaluate(ctx)
+	}
+	if err := container.runLazyGroup(ctx, op, ContainerLazyGroupMetadata); err != nil {
+		return err
+	}
+	groups, err := op.ContainerLazyGroups(ctx, container, parts)
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if group == ContainerLazyGroupMetadata {
+			continue
+		}
+		if err := container.runLazyGroup(ctx, op, group); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // evaluateAllLazyGroups is the direct object-side whole-op path for a
 // refined op: run the remaining groups sequentially, metadata group
 // first, each under its own per-group latch. It never holds two group

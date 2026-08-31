@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -21,15 +22,22 @@ import (
 type containerPartsTestBaseOp struct {
 	LazyState
 
-	metaRuns  atomic.Int32
-	fsRuns    atomic.Int32
-	mountRuns atomic.Int32
+	metaRuns atomic.Int32
+	fsRuns   atomic.Int32
 
 	workdir string
 	env     []string
-	// mountTarget, when set, is a read-only directory mount whose source
-	// this op fills in its own group.
-	mountTarget string
+	// mountTargets are read-only directory mounts whose sources this op
+	// fills, each in its own group. mountRuns counts per target.
+	mountTargets []string
+	mountRunsMu  sync.Mutex
+	mountRuns    map[string]int
+}
+
+func (op *containerPartsTestBaseOp) mountRunsFor(target string) int {
+	op.mountRunsMu.Lock()
+	defer op.mountRunsMu.Unlock()
+	return op.mountRuns[target]
 }
 
 var _ LazyContainerParts = (*containerPartsTestBaseOp)(nil)
@@ -71,17 +79,25 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 			return nil
 		})
 	default:
-		if op.mountTarget != "" && group == containerDelegationGroup(ContainerPartMount(op.mountTarget)) {
+		for _, target := range op.mountTargets {
+			if group != containerDelegationGroup(ContainerPartMount(target)) {
+				continue
+			}
 			return op.LazyState.EvaluateGroup(ctx, "test.base", group, func(context.Context) error {
-				op.mountRuns.Add(1)
+				op.mountRunsMu.Lock()
+				if op.mountRuns == nil {
+					op.mountRuns = make(map[string]int)
+				}
+				op.mountRuns[target]++
+				op.mountRunsMu.Unlock()
 				dir := &Directory{
 					Dir:      new(LazyAccessor[string, *Directory]),
 					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 				}
 				dir.Dir.SetValue("/")
-				mnt := ctr.mountAt(op.mountTarget)
+				mnt := ctr.mountAt(target)
 				if mnt == nil {
-					return fmt.Errorf("test base op: no mount at %q", op.mountTarget)
+					return fmt.Errorf("test base op: no mount at %q", target)
 				}
 				mnt.DirectorySource.SetValue(dir)
 				return nil
