@@ -7859,6 +7859,297 @@ func TestCacheDigestLookupRechecksSessionResourcesAfterLateExplicitDependency(t 
 	f.releaseSessions(t, slot)
 }
 
+// cacheTestProducerReleaseWindow drives session A's publication into the
+// producer-release window: A's call publishes a result whose dependency
+// attachment is parked (cacheTestBlockingAttachObj holding a plain child),
+// the test waits for session B's serve to select the result and park at the
+// attach barrier, releases session A, and then unparks the attachment,
+// whose child claim is refused because A is released. The returned outcome
+// channel carries A's call error.
+type cacheTestProducerReleaseWindow struct {
+	cache    *Cache
+	srv      *Server
+	frame    *ResultCall
+	obj      *cacheTestBlockingAttachObj
+	parentID sharedResultID
+	aCtx     context.Context
+	bCtx     context.Context
+	aDone    chan error
+}
+
+func newCacheTestProducerReleaseWindow(t *testing.T, slot string) *cacheTestProducerReleaseWindow {
+	t.Helper()
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-a-client",
+		SessionID: slot + "-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-b-client",
+		SessionID: slot + "-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: slot + "-parent",
+	}
+	child, err := NewResultForCall(NewString("child-value"), &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(NewString("").Type()),
+		Field: slot + "-child",
+	})
+	assert.NilError(t, err)
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		leaf:          child,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	w := &cacheTestProducerReleaseWindow{
+		cache: c, srv: srv, frame: frame, obj: obj,
+		aCtx: aCtx, bCtx: bCtx,
+		aDone: make(chan error, 1),
+	}
+	go func() {
+		_, err := c.GetOrInitCall(aCtx, slot+"-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCall(obj, frame)
+		})
+		w.aDone <- err
+	}()
+	<-obj.attachStarted
+	w.parentID = sharedResultID(obj.selfID)
+	assert.Assert(t, w.parentID != 0)
+	return w
+}
+
+// releaseProducerAndUnpark waits for session B to have selected the parked
+// parent (the recorded session edge proves the selection), releases session
+// A while attachment is still parked, and then unparks the attachment so
+// its child claim runs against the released session.
+func (w *cacheTestProducerReleaseWindow) releaseProducerAndUnpark(t *testing.T, slot string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		w.cache.sessionMu.Lock()
+		_, selected := w.cache.sessionResultIDsBySession[slot+"-b"][w.parentID]
+		w.cache.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	assert.NilError(t, w.cache.ReleaseSession(w.aCtx, slot+"-a"))
+	close(w.obj.attachRelease)
+}
+
+// assertProducerKeptAttachmentError asserts session A's own call failed with
+// the claim refusal and that the classified barrier form did not leak into
+// the producer's error.
+func (w *cacheTestProducerReleaseWindow) assertProducerKeptAttachmentError(t *testing.T) {
+	t.Helper()
+	aErr := <-w.aDone
+	assert.Assert(t, aErr != nil, "the producing session's call must fail with the attachment error")
+	assert.Assert(t, errors.Is(aErr, ErrCacheSessionReleased))
+	assert.Assert(t, !errors.Is(aErr, errAttachRefusedByProducerRelease),
+		"the classified barrier form must not replace the producer's own error")
+}
+
+func TestCacheHitConvertsToMissWhenProducerReleaseFailsAttachment(t *testing.T) {
+	t.Parallel()
+
+	const slot = "attrelhit"
+	w := newCacheTestProducerReleaseWindow(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := w.cache.GetOrInitCall(w.bCtx, slot+"-b", w.srv, &CallRequest{ResultCall: w.frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			return NewResultForCall(&cacheTestBlockingAttachObj{
+				Value:         99,
+				attachStarted: make(chan struct{}),
+				attachRelease: func() chan struct{} { ch := make(chan struct{}); close(ch); return ch }(),
+			}, w.frame.clone())
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	w.releaseProducerAndUnpark(t, slot)
+	w.assertProducerKeptAttachmentError(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err,
+		"an innocent parked reader must not surface the producer's release as its own failure")
+	assert.Equal(t, int32(1), bInitCalls.Load(),
+		"session B must fall through to the singleflight and execute its own call")
+	bShared := bOut.res.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	assert.Assert(t, bShared.id != w.parentID)
+
+	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
+}
+
+func TestCacheDigestLookupConvertsToMissWhenProducerReleaseFailsAttachment(t *testing.T) {
+	t.Parallel()
+
+	const slot = "attreldig"
+	w := newCacheTestProducerReleaseWindow(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		hit bool
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, hit, err := w.cache.lookupCacheForDigests(w.bCtx, slot+"-b", w.srv, cacheTestCallDigest(w.frame), nil)
+		bDone <- callOutcome{res: res, hit: hit, err: err}
+	}()
+
+	w.releaseProducerAndUnpark(t, slot)
+	w.assertProducerKeptAttachmentError(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Assert(t, !bOut.hit,
+		"the digest lookup must convert the parked hit into a miss after the producer-release attachment failure")
+	assert.Assert(t, bOut.res == nil)
+
+	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
+}
+
+func TestCacheLoadResultByResultIDStillFailsWhenProducerReleaseFailsAttachment(t *testing.T) {
+	t.Parallel()
+
+	const slot = "attrelload"
+	w := newCacheTestProducerReleaseWindow(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := w.cache.LoadResultByResultID(w.bCtx, slot+"-b", w.srv, uint64(w.parentID))
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	w.releaseProducerAndUnpark(t, slot)
+	w.assertProducerKeptAttachmentError(t)
+
+	// A by-ID load names one exact result and has no call to re-execute, so
+	// it keeps propagating the attachment error; the classified form stays
+	// visible in the chain for callers that want to distinguish it.
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil)
+	assert.Assert(t, errors.Is(bOut.err, errAttachRefusedByProducerRelease))
+
+	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
+}
+
+func TestCacheHitKeepsGenuineAttachmentFailure(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "attrelctl-a-client",
+		SessionID: "attrelctl-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "attrelctl-b-client",
+		SessionID: "attrelctl-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "attrelctl-parent",
+	}
+	genuineErr := errors.New("cache-test genuine attachment failure")
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachErr:     genuineErr,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	aDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(aCtx, "attrelctl-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCall(obj, frame)
+		})
+		aDone <- err
+	}()
+	<-obj.attachStarted
+	parentID := sharedResultID(obj.selfID)
+	assert.Assert(t, parentID != 0)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(bCtx, "attrelctl-b", srv, &CallRequest{ResultCall: frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			return NewResultForCall(&cacheTestObject{Value: 99}, frame.clone())
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c.sessionMu.Lock()
+		_, selected := c.sessionResultIDsBySession["attrelctl-b"][parentID]
+		c.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Both sessions stay live: this failure is the attachment hook's own.
+	close(obj.attachRelease)
+
+	aErr := <-aDone
+	assert.ErrorContains(t, aErr, genuineErr.Error())
+
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil,
+		"a genuine attachment failure must keep propagating to parked readers")
+	assert.ErrorContains(t, bOut.err, genuineErr.Error())
+	assert.Assert(t, !errors.Is(bOut.err, errAttachRefusedByProducerRelease))
+	assert.Equal(t, int32(0), bInitCalls.Load(),
+		"a genuine failure must not convert the reader to a miss")
+
+	assert.NilError(t, c.ReleaseSession(aCtx, "attrelctl-a"))
+	assert.NilError(t, c.ReleaseSession(bCtx, "attrelctl-b"))
+}
+
 func TestCacheWithSessionResourceHandleRefusesAttachedMutation(t *testing.T) {
 	t.Parallel()
 

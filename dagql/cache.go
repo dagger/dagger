@@ -143,6 +143,17 @@ var ErrCacheSessionReleased = errors.New("cache session released")
 var ErrCacheClosed = errors.New("cache closed")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
+// errAttachRefusedByProducerRelease classifies a dependency-attachment
+// failure caused by the publishing session's own release refusing an
+// attachment-time claim. It wraps only the error latched on the attach
+// barrier: a reader from another live session that parked on the barrier is
+// innocent (a fresh execution would succeed), so the hit-serve paths convert
+// such a failure to a miss instead of surfacing the producer's release as
+// the reader's own error. Every other attachment failure propagates to
+// parked readers unchanged, and the publishing invocation itself always
+// keeps the attachment error.
+var errAttachRefusedByProducerRelease = errors.New("dependency attachment refused by the producing session's release")
+
 const cacheSessionReleasedBit uint64 = 1 << 63
 
 // cacheSessionLifecycle is retained for the engine lifetime, matching the
@@ -4758,6 +4769,12 @@ func (c *Cache) lookupCacheForDigests(
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
+		if errors.Is(err, errAttachRefusedByProducerRelease) {
+			// The producing session's release failed the attachment; this
+			// reader is innocent, so convert to a miss keeping the
+			// recorded session edge (see lookupCacheForRequest).
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	if c.testBeforeServeRequirementRecheck != nil {
@@ -5312,7 +5329,17 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.egraphMu.Unlock()
 		oc.handoffHoldActive = false
 		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-		finishAttachDeps(attachErr)
+		// Attachment runs under the publishing session, so a session-release
+		// refusal in the hook's own error chain can only be that session's
+		// release. Latch the classified form on the barrier for parked
+		// readers; the classification reads the hook error alone, so the
+		// joined cleanup errors cannot reclassify a genuine failure. The
+		// publishing invocation keeps the unclassified attachment error.
+		barrierErr := attachErr
+		if errors.Is(err, ErrCacheSessionReleased) {
+			barrierErr = fmt.Errorf("%w: %w", errAttachRefusedByProducerRelease, attachErr)
+		}
+		finishAttachDeps(barrierErr)
 		return attachErr
 	}
 	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
