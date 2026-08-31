@@ -1021,6 +1021,16 @@ func (c *Cache) lookupCacheForRequest(
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
+		if errors.Is(err, errAttachRefusedByProducerRelease) {
+			// The hit's attachment failed only because the producing
+			// session was released before its attachment-time claim ran.
+			// This reader is innocent and a fresh execution would succeed,
+			// so fall through to the singleflight instead of surfacing the
+			// producer's release as this caller's failure. The recorded
+			// session edge stays until session release, exactly as the
+			// requirement re-validation's miss conversion below keeps it.
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	if c.testBeforeServeRequirementRecheck != nil {
