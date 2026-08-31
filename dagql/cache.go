@@ -2516,8 +2516,8 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 		return err
 	}
 	ref.ResultID = uint64(resultID)
-	if shared, _, _, _, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
-		ref.shared = shared
+	if lookup, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
+		ref.shared = lookup.res
 	}
 	ref.Call = nil
 	return nil
