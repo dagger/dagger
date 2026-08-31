@@ -47,6 +47,19 @@ way:
 baseCtr = "base-images:chromium"
 ```
 
+## Wire a file, directory, or workspace
+
+Build artifacts and workspaces can be passed between modules in the same way.
+A function returning a `File`, `Directory`, or `Workspace` can be referenced by
+a matching constructor argument:
+
+```toml
+[modules.packager.settings]
+binary = "builder:binary"
+assets = "frontend:assets"
+source = "source-prep:workspace"
+```
+
 ## Use a reference on the command line
 
 A module reference is an ordinary address string, so it also works as a CLI
@@ -75,8 +88,12 @@ dagger api call playwright --service=myapp:serve test
 If you author modules, wiring changes how you shape a constructor:
 
 - **Accept collaborators as optional constructor arguments.** An optional
-  `Service` or `Container` argument is a wiring point. Without one, users
-  need a glue module to connect yours to anything.
+  `Service`, `Container`, `File`, `Directory`, or `Workspace` argument is a
+  wiring point. Without one, users need a glue module to connect yours to
+  anything.
+- **Consume workspaces in the constructor.** A module object cannot retain a
+  `Workspace` as a field. Derive and store the `File`, `Directory`, or other
+  value your module needs from the wired workspace instead.
 - **Put workspace-level configuration on the constructor, not on function
   arguments.** Settings map to constructor arguments. A shard count, a
   service, or a base image belongs there if the workspace should configure it

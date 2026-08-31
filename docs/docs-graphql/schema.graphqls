@@ -94,6 +94,9 @@ type Address implements Node {
 
   """Load a volume from the address."""
   volume: Volume!
+
+  """Load a workspace from a module reference."""
+  workspace: Workspace!
 }
 
 type Agent implements Node {
