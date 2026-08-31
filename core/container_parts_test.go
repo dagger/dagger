@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync/atomic"
 	"testing"
 
@@ -20,11 +21,15 @@ import (
 type containerPartsTestBaseOp struct {
 	LazyState
 
-	metaRuns atomic.Int32
-	fsRuns   atomic.Int32
+	metaRuns  atomic.Int32
+	fsRuns    atomic.Int32
+	mountRuns atomic.Int32
 
 	workdir string
 	env     []string
+	// mountTarget, when set, is a read-only directory mount whose source
+	// this op fills in its own group.
+	mountTarget string
 }
 
 var _ LazyContainerParts = (*containerPartsTestBaseOp)(nil)
@@ -66,6 +71,22 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 			return nil
 		})
 	default:
+		if op.mountTarget != "" && group == containerDelegationGroup(ContainerPartMount(op.mountTarget)) {
+			return op.LazyState.EvaluateGroup(ctx, "test.base", group, func(context.Context) error {
+				op.mountRuns.Add(1)
+				dir := &Directory{
+					Dir:      new(LazyAccessor[string, *Directory]),
+					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+				}
+				dir.Dir.SetValue("/")
+				mnt := ctr.mountAt(op.mountTarget)
+				if mnt == nil {
+					return fmt.Errorf("test base op: no mount at %q", op.mountTarget)
+				}
+				mnt.DirectorySource.SetValue(dir)
+				return nil
+			})
+		}
 		// execMeta: nothing ever ran, nothing to fill.
 		return op.LazyState.EvaluateGroup(ctx, "test.base", group, nil)
 	}

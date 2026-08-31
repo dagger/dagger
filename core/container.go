@@ -3297,24 +3297,75 @@ func (lazy *ContainerRootFSLazy) EncodePersisted(ctx context.Context, cache dagq
 }
 
 func (lazy *ContainerWithRootFSLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withRootfs", func(ctx context.Context) error {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return err
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+// ContainerLazyGroups implements the withRootfs mapping (a static
+// snapshot writer): the fs part is the written part; metadata delegates
+// with the ImageRef clear as its one edit; everything else delegates.
+func (lazy *ContainerWithRootFSLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	if parts == nil {
+		groups := []dagql.LazyGroupKey{ContainerLazyGroupMetadata, ContainerLazyGroupWrite}
+		for _, part := range containerSnapshotParts(ctr) {
+			if part == ContainerPartFS {
+				continue
+			}
+			groups = append(groups, containerDelegationGroup(part))
 		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
+		return groups, nil
+	}
+	var groups []dagql.LazyGroupKey
+	seen := make(map[dagql.LazyGroupKey]struct{}, len(parts))
+	for _, part := range parts {
+		var group dagql.LazyGroupKey
+		switch part {
+		case ContainerPartMetadata:
+			group = ContainerLazyGroupMetadata
+		case ContainerPartFS:
+			group = ContainerLazyGroupWrite
+		default:
+			group = containerDelegationGroup(part)
 		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
+		if _, dup := seen[group]; dup {
+			continue
 		}
-		_, err = container.WithRootFS(ctx, lazy.Source)
-		if err != nil {
-			return err
-		}
-		container.Lazy = nil
-		return nil
-	})
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+func (lazy *ContainerWithRootFSLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withRootfs", group, func(ctx context.Context) error {
+			if err := materializeContainerMetadataFromParent(ctx, container, lazy.Parent); err != nil {
+				return err
+			}
+			container.ImageRef = ""
+			return nil
+		})
+	case ContainerLazyGroupWrite:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withRootfs", group, func(ctx context.Context) error {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+				return err
+			}
+			detached, err := cloneDetachedDirectoryForContainerResult(ctx, lazy.Source.Self())
+			if err != nil {
+				return err
+			}
+			container.ensureFSAccessor().SetValue(detached)
+			return nil
+		})
+	default:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withRootfs", group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, container, lazy.Parent, dagql.PartKey(group))
+		})
+	}
 }
 
 func (lazy *ContainerWithRootFSLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
