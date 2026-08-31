@@ -91,15 +91,16 @@ var expectedOutcome = map[string]string{
 	"resources_latedep_recheck": "",
 	"resources_latedep_cascade": "",
 
-	// accepted finding: a publisher's own release between fn completion
-	// and the attachment hook's claim refuses that claim, fails the
-	// attachment, closes the barrier with the error, and a live
-	// cross-session reader parked at the read barrier surfaces it as its
-	// own failure - no injection anywhere. Same defect family as the
-	// fixed decode_cancel joiner finding; the analogous fix classifies
-	// the failure so parked readers convert to a miss. Red pending the
-	// ruling; see the config header.
-	"attach_release_reader": "NoSpuriousErrors",
+	// green: a session's release can no longer manufacture a failure for
+	// a live, innocent caller through the attachment machinery. The
+	// publisher's own release still fails the publisher, but its barrier
+	// error is classified so parked cross-session readers convert to a
+	// miss and execute the call themselves; and attachment targets are
+	// always pinned for the session (the claim-at-acquisition invariant,
+	// with the claim running before the unlocked refresh), so no other
+	// session's release can collect a target out from under its claim.
+	// See the config header.
+	"attach_release_reader": "",
 }
 
 type TlaCheck struct {
