@@ -139,12 +139,19 @@ func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil 
 // loader's class for that op is "resume <field>" rather than native's
 // profCallClass — a benign divergence because the lazy op's self-time is ~0 and
 // it never ranks in the bottleneck oracle.
-func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, resultCall *ResultCall) (context.Context, trace.Span, bool) {
+func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall) (context.Context, trace.Span, bool) {
 	if clientMD, err := engine.ClientMetadataFromContext(evalCtx); err == nil && clientMD.SessionID != "" {
 		if originalSpanCtx, ok := c.sessionLazySpanContext(clientMD.SessionID, sharedID); ok {
 			spanName := "resume lazy evaluation"
 			if resultCall != nil && resultCall.Field != "" {
 				spanName = "resume " + resultCall.Field
+			}
+			// Named groups get their own resume spans; the group key in
+			// the name distinguishes "resume withExec (metadata)" from
+			// "resume withExec (execOutputs)". The whole group keeps
+			// today's names byte-for-byte.
+			if group != LazyGroupWhole {
+				spanName += " (" + string(group) + ")"
 			}
 			// Lazy failure attribution: link the resume span back to all API spans
 			// that installed/own this result in the session (dagui interprets
