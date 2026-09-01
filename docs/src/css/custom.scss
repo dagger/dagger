@@ -738,26 +738,30 @@ aside[class*="docSidebarContainer"] {
   }
 }
 
-// Top-level categories read as the website's mono section labels.
-.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible {
-  margin-bottom: 0.15rem;
+// Top-level sections read as the website's mono section labels. A section with
+// child pages renders as a collapsible category. A section whose only page is
+// its own index renders as a plain link, so both need the same treatment.
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link,
+.theme-doc-sidebar-item-link-level-1 > .menu__link {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-dim);
 
-  > .menu__link {
-    font-family: var(--font-mono);
-    font-size: var(--text-label);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-dim);
-
-    &:hover {
-      background: transparent;
-      color: var(--color-fg);
-    }
+  &:hover {
+    background: transparent;
+    color: var(--color-fg);
   }
 }
 
-.theme-doc-sidebar-item-category-level-1 {
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible {
+  margin-bottom: 0.15rem;
+}
+
+.theme-doc-sidebar-item-category-level-1,
+.theme-doc-sidebar-item-link-level-1 {
   margin-bottom: 1.4rem;
 }
 
