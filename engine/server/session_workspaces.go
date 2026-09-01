@@ -1307,6 +1307,8 @@ func (srv *Server) resolveModuleLoadBatch(
 // candidate wins: only when none is served yet (extras outrank ambient).
 // Multiple candidates in one batch are a workspace configuration error.
 func (client *daggerClient) arbitrateAmbientEntrypoints(loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+	collapseSameSourceEntrypointNominations(loads, resolved)
+
 	var candidates []int
 	for i := range resolved {
 		if resolved[i].primaryEntrypoint {
@@ -1973,6 +1975,33 @@ func dedupeResolvedModuleLoads(
 	return dedupLoads, dedupResolved
 }
 
+// Nominating one module through several config entries — a symlinked or
+// differently spelled path — is redundant, not a conflict, so arbitration must
+// not see it as one. Demoted entries stay served under their own names.
+func collapseSameSourceEntrypointNominations(loads []moduleLoadRequest, resolved []resolvedModuleLoad) {
+	nominated := make(map[string]int, len(resolved))
+	for i := range resolved {
+		if !resolved[i].primaryEntrypoint {
+			continue
+		}
+		key, collapsible := entrypointNominationIdentity(loads[i], resolved[i])
+		if !collapsible {
+			continue
+		}
+		winner, ok := nominated[key]
+		if !ok {
+			nominated[key] = i
+			continue
+		}
+		if shouldPreferEntrypointNomination(loads[winner], resolved[winner], loads[i], resolved[i]) {
+			resolved[winner].primaryEntrypoint = false
+			nominated[key] = i
+			continue
+		}
+		resolved[i].primaryEntrypoint = false
+	}
+}
+
 func arbitrateResolvedModuleLoads(
 	loads []moduleLoadRequest,
 	resolved []resolvedModuleLoad,
@@ -1980,6 +2009,7 @@ func arbitrateResolvedModuleLoads(
 	if len(loads) == 0 {
 		return nil
 	}
+	collapseSameSourceEntrypointNominations(loads, resolved)
 
 	candidatesByTier := map[moduleLoadKind][]int{
 		moduleLoadKindAmbient: nil,
@@ -2028,15 +2058,43 @@ func entrypointConflictError(kind moduleLoadKind, indexes []int, loads []moduleL
 	}
 }
 
+// Redundant only if the nominations would produce the same module apart from
+// its name, so settings are in the key: differently configured entries are
+// distinct roots and must still conflict. False keeps a nomination whose key
+// can't be built, rather than silently demoting it.
+func entrypointNominationIdentity(load moduleLoadRequest, resolved resolvedModuleLoad) (string, bool) {
+	self := resolved.primary.Self()
+	if self == nil || self.GetSource() == nil {
+		return "", false
+	}
+	mod := load.mod
+	// The name override is the one asModule arg that must not affect the key.
+	mod.Name = ""
+	args, err := asModuleArgsForPendingModule(mod)
+	if err != nil {
+		return "", false
+	}
+	parts := make([]string, 0, len(args)+2)
+	parts = append(parts, canonicalModuleReference(self.GetSource()), self.GetSource().Pin())
+	for _, arg := range args {
+		parts = append(parts, arg.String())
+	}
+	return strings.Join(parts, "|"), true
+}
+
+// One source installed under several names is several instances, all of which
+// must be served (#14013). Canonicalized as the CLI compares names, so `-m` and
+// the workspace entry naming the same module still collapse.
 func resolvedModuleLoadIdentity(mod dagql.ObjectResult[*core.Module]) string {
 	self := mod.Self()
-	if self == nil || self.GetSource() == nil {
-		if self == nil {
-			return ""
-		}
-		return "name:" + self.Name()
+	if self == nil {
+		return ""
 	}
-	return canonicalModuleReference(self.GetSource()) + "|" + self.GetSource().Pin()
+	name := canonicalWorkspaceModuleName(self.Name())
+	if self.GetSource() == nil {
+		return "name:" + name
+	}
+	return canonicalModuleReference(self.GetSource()) + "|" + self.GetSource().Pin() + "|" + name
 }
 
 // resolveModule resolves a module through the dagql pipeline.
