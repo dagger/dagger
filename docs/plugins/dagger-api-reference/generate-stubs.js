@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-check
-// Regenerates the thin per-type MDX stubs under current_docs/api/reference.
+// Regenerates the thin per-type MDX stubs under current_docs/reference/api.
 // Each stub just renders <ApiType name="..." />; all content comes from
 // docs-graphql/schema.graphqls at build time via the dagger-api-reference
 // plugin. The set of stubs is derived from the schema (every core type, with
@@ -30,7 +30,7 @@ function typeSlug(name) {
 }
 
 const oldOutDir = path.resolve(__dirname, "../../current_docs/extending/types");
-const outDir = path.resolve(__dirname, "../../current_docs/api/reference");
+const outDir = path.resolve(__dirname, "../../current_docs/reference/api");
 fs.mkdirSync(outDir, { recursive: true });
 
 const banner =
@@ -82,7 +82,7 @@ coreTypes.forEach((name, index) => {
 title: "${name}"
 description: "${name} API reference, generated from the Dagger GraphQL schema."
 sidebar_position: ${index + 2}
-slug: /api/reference/${slug}
+slug: /reference/api/${slug}
 ---
 
 ${banner}

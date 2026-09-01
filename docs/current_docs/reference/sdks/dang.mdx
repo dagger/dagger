@@ -4,7 +4,7 @@ slug: /reference/sdks/dang
 description: "Develop Dagger modules with Dang, Dagger's native DSL. No codegen, no build step, no generated client files."
 ---
 
-import { daggerVersion } from '../partials/version.js';
+import { daggerVersion } from '../../partials/version.js';
 
 # Dang SDK
 
@@ -15,7 +15,7 @@ Use Dang when your module mostly orchestrates the Dagger API: containers, files,
 Every SDK shares a few platform concepts. Read these first if they are new to you:
 
 - [SDKs overview](./index.mdx) explains what a module is and how it fits into a workspace.
-- [Types](../../api/reference/index.mdx) covers the types your functions accept and return.
+- [Types](../api/index.mdx) covers the types your functions accept and return.
 - [Generating code](../../cli/generating.mdx) shows how Dagger represents file diffs. `init` and generators both use them.
 
 ## A note on tooling: Dang is delivered as a Dagger module
@@ -168,7 +168,7 @@ container
   .withExec(["npm", "install"])
 ```
 
-Every method returns a new immutable value. Nothing mutates in place. Dagger caches each step by its inputs, so a re-run skips unchanged work. It is the same model as Docker layer caching, applied to the entire API. See the [type reference](../../api/reference/index.mdx) for the underlying model.
+Every method returns a new immutable value. Nothing mutates in place. Dagger caches each step by its inputs, so a re-run skips unchanged work. It is the same model as Docker layer caching, applied to the entire API. See the [type reference](../api/index.mdx) for the underlying model.
 
 ## Define objects and functions
 
@@ -883,5 +883,5 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 ## Next steps
 
 - [SDKs overview](./index.mdx)
-- [Types](../../api/reference/index.mdx)
+- [Types](../api/index.mdx)
 - [Generating code](../../cli/generating.mdx)
