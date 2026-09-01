@@ -287,6 +287,49 @@ func TestLLMConfigured(t *testing.T) {
 	}
 }
 
+// TestConfigSaveOutsideConfigRoot verifies that Save creates the directory the
+// config file actually lives in. DAGGER_CONFIG can point anywhere, and a Save
+// that only mkdirs ConfigRoot fails for such a user — which for an OAuth
+// refresh means the one-time refresh token is spent and the result is lost.
+func TestConfigSaveOutsideConfigRoot(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origConfigRoot := ConfigRoot
+	origConfigFile := ConfigFile
+	t.Cleanup(func() {
+		ConfigRoot = origConfigRoot
+		ConfigFile = origConfigFile
+	})
+
+	// The XDG root and the config file deliberately live in different trees,
+	// as they do when DAGGER_CONFIG is set.
+	ConfigRoot = filepath.Join(tempDir, "xdg", "dagger")
+	ConfigFile = filepath.Join(tempDir, "elsewhere", "nested", "dagger.toml")
+
+	cfg := &Config{
+		LLM: LLMConfig{
+			DefaultProvider: "anthropic",
+			Providers: map[string]Provider{
+				"anthropic": {APIKey: "sk-ant-test", Enabled: true},
+			},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+	if !ConfigExists() {
+		t.Fatalf("Save() did not create %s", ConfigFile)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if diff := cmp.Diff(cfg, loaded); diff != "" {
+		t.Errorf("Loaded config differs from original (-want +got):\n%s", diff)
+	}
+}
+
 func TestConfigConcurrentWrites(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -550,7 +593,11 @@ func TestRefreshOAuthProviderConcurrent(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func() {
 			<-start
-			token, err := RefreshOAuthProviderIfNeeded("anthropic")
+			refreshed, err := RefreshOAuthProviderIfNeeded(t.Context(), "anthropic")
+			var token string
+			if refreshed != nil {
+				token = refreshed.AuthToken
+			}
 			results <- result{token, err}
 		}()
 	}
