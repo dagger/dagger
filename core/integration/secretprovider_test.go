@@ -438,7 +438,7 @@ func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
 	out, err := querySecretWithOIDCBrowserSimulation(
 		queryCtx,
 		ctr,
-		"vault://oidctest.foo",
+		"vault://secret/oidctest.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -470,12 +470,12 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 	}{
 		{
 			name:                    "without-ttl",
-			secret:                  "vault://without-ttl.password",
+			secret:                  "vault://secret/without-ttl.password",
 			expectedUpdatedPassword: "original-password",
 		},
 		{
 			name:                    "with-ttl",
-			secret:                  "vault://with-ttl.password?ttl=2s",
+			secret:                  "vault://secret/with-ttl.password?ttl=2s",
 			expectedUpdatedPassword: "updated-password",
 		},
 	}
