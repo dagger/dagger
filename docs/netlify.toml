@@ -1465,16 +1465,10 @@
   to = "/sdks"
   status = 301
 
-# /reference/cli moved to /cli/reference.
-[[redirects]]
-  from = "/reference/cli/*"
-  to = "/cli/reference/:splat"
-  status = 301
-
-[[redirects]]
-  from = "/reference/cli"
-  to = "/cli/reference"
-  status = 301
+# /reference/cli moved to /cli/reference. Both rules were DELETED by the
+# "1.0 -> reference section" migration below, which moved the CLI reference
+# back to /reference/cli. A real page serves that path again, so the rules
+# were dead, and keeping them would have pointed the path at its own source.
 
 # The trigger guides were cut. Set up Cloud Checks is the surviving page on
 # running checks after a push.
@@ -1503,12 +1497,11 @@
 # yet. The disabled rules further down still point at /reference/*; retarget
 # them once the pages land somewhere.
 
-# Catch-all for retired /cli/... pages. Kept last in this block so the specific
-# rules above win; moved here from the wildcard section for the same reason.
-[[redirects]]
-  from = "/cli/*"
-  to = "/cli/reference"
-  status = 301
+# Catch-all for retired /cli/... pages. MOVED to the end of the
+# "1.0 -> reference section" block below. That migration empties /cli, so this
+# wildcard had to fall below the specific /cli/... rules that migration adds --
+# Netlify takes the first match, and a wildcard whose namespace is vacated
+# otherwise matches its own target and loops.
 
 ## end: migration 0.21 -> 1.0 ##
 
@@ -2358,6 +2351,118 @@
 #   status = 301
 #
 ## end: disabled 1.0 redirects ##
+
+## start: migration 1.0 -> reference section ##
+##
+## Rules for the restructure that introduced the top-level Reference section,
+## renamed the CLI section to Using Dagger, and moved the config schema pages.
+## Written once -- append a new block rather than editing these.
+##
+## Namespace ownership across the two migrations:
+##
+##   /cli/*          0.21 owns, 1.0 owns, this migration vacates -> /using/*
+##   /reference/cli  0.21 owns, 1.0 vacates, this migration re-occupies
+##   /api/*          1.0 owns, this migration vacates -> /reference/api/*
+##   /modules/*      1.0 owns, this migration vacates -> /reference/modules/*
+##   /sdks/*         1.0 owns, this migration vacates -> /reference/sdks/*
+##
+## Two rules in the 0.21 -> 1.0 block above were changed for this migration,
+## both noted in place: the /reference/cli pair was deleted, and the /cli/*
+## catch-all moved to the end of this block.
+
+# The CLI section became Using Dagger. Its command reference moved to the new
+# Reference section; specific rule first so the /cli/* catch-all cannot take it.
+[[redirects]]
+  from = "/cli/reference"
+  to = "/reference/cli"
+  status = 301
+
+[[redirects]]
+  from = "/cli/checking"
+  to = "/using/checking"
+  status = 301
+
+[[redirects]]
+  from = "/cli/generating"
+  to = "/using/generating"
+  status = 301
+
+[[redirects]]
+  from = "/cli/services"
+  to = "/using/services"
+  status = 301
+
+[[redirects]]
+  from = "/cli/calling-functions"
+  to = "/using/calling-functions"
+  status = 301
+
+# The API section collapsed into Reference. It had two children: the type
+# reference and Clients. Clients moved out to /reference/client-libraries, so
+# the intermediate /api/reference level was dropped.
+[[redirects]]
+  from = "/api/clients"
+  to = "/reference/client-libraries"
+  status = 301
+
+[[redirects]]
+  from = "/api/reference"
+  to = "/reference/api"
+  status = 301
+
+[[redirects]]
+  from = "/api/reference/*"
+  to = "/reference/api/:splat"
+  status = 301
+
+# The API hub page was merged into the type overview.
+[[redirects]]
+  from = "/api"
+  to = "/reference/api"
+  status = 301
+
+# Modules and SDKs moved under Reference unchanged.
+[[redirects]]
+  from = "/modules"
+  to = "/reference/modules"
+  status = 301
+
+[[redirects]]
+  from = "/modules/*"
+  to = "/reference/modules/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/sdks"
+  to = "/reference/sdks"
+  status = 301
+
+[[redirects]]
+  from = "/sdks/*"
+  to = "/reference/sdks/:splat"
+  status = 301
+
+# The config schema pages became Reference / Configuration files. The rest of
+# /config stays where it is; only the label changed.
+[[redirects]]
+  from = "/config/reference"
+  to = "/reference/config-files"
+  status = 301
+
+[[redirects]]
+  from = "/config/reference/*"
+  to = "/reference/config-files/:splat"
+  status = 301
+
+# Catch-all for retired /cli/... pages, moved down from the 0.21 -> 1.0 block
+# because this migration vacates /cli. Retargeted from /cli/reference, which no
+# longer exists, to where that page now lives. Keep last in this block.
+[[redirects]]
+  from = "/cli/*"
+  to = "/reference/cli"
+  status = 301
+
+## end: migration 1.0 -> reference section ##
 
 ## start: 1.0 fallback (keep last) ##
 ##
