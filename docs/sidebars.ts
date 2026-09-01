@@ -76,11 +76,11 @@ module.exports = {
     },
 
     // ========================================
-    // CONFIGURATION
+    // CONFIGURING YOUR WORKSPACE
     // ========================================
     {
       type: "category",
-      label: "Configuration",
+      label: "Configuring your Workspace",
       link: {
         type: "doc",
         id: "config/index",
