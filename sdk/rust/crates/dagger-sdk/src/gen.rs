@@ -15564,7 +15564,8 @@ impl Workspace {
         let query = self.selection.select("envList");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write this workspace's pending changes to its local Git workspace.
+    /// Write this workspace's pending changes to its local Git workspace on the current client's host.
+    /// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
         query.execute(self.graphql_client.clone()).await
