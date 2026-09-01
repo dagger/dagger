@@ -93,19 +93,6 @@ module.exports = {
         "config/user",
         "config/module-wiring",
         "config/migrate-dagger-json",
-        {
-          type: "category",
-          label: "Reference",
-          link: {
-            type: "doc",
-            id: "config/reference/index",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "config/reference/dagger-toml",
-          ],
-        },
       ],
     },
 
@@ -186,6 +173,19 @@ module.exports = {
           type: "doc",
           id: "reference/client-libraries/index",
           label: "Client libraries",
+        },
+        {
+          type: "category",
+          label: "Configuration files",
+          link: {
+            type: "doc",
+            id: "reference/config-files/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "reference/config-files/dagger-toml",
+          ],
         },
       ],
     },
