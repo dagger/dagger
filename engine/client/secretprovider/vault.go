@@ -105,11 +105,11 @@ func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 
 	secretDataAny := vaultCache[cacheKey].data[secretField]
 	if secretDataAny == nil {
-		return nil, fmt.Errorf("secret %q not found in path %q", secretField, secretPath)
+		return nil, fmt.Errorf("secret %q not found in path \"%s/%s\"", secretField, mount, secretPath)
 	}
 	secretData, ok := secretDataAny.(string)
 	if !ok {
-		return nil, fmt.Errorf("secret %q in path %q is not a string", secretField, secretPath)
+		return nil, fmt.Errorf("secret %q in path \"%s/%s\" is not a string", secretField, mount, secretPath)
 	}
 	return []byte(secretData), nil
 }

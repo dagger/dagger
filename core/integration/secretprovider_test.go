@@ -275,14 +275,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 
 	// Create a secret with a client
 	secretValue := "secret" + identity.NewID()
-	_, err = vaultImage.
-		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
-		WithServiceBinding("vault", vaultServer).
-		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
-		WithEnvVariable("VAULT_TOKEN", "myroot").
-		WithEnvVariable("NOCACHE", time.Now().String()).
-		WithExec([]string{"vault", "kv", "put", "/secret/testsecret", "foo=" + secretValue}).
-		Sync(ctx)
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", secretValue)
 	require.NoError(t, err)
 
 	// Test Vault provider with token auth
@@ -297,7 +290,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	out, err := fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.foo",
+		"vault://secret/testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -306,15 +299,15 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	_, err = fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.bar",
+		"vault://secret/testsecret.bar",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
-	requireErrOut(t, err, `secret "bar" not found in path "testsecret"`)
+	requireErrOut(t, err, `secret "bar" not found in path "secret/testsecret"`)
 
 	_, err = fetchSecret(
 		ctx,
 		ctr,
-		"vault://nosecret.baz",
+		"vault://secret/nosecret.baz",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret not found`)
@@ -324,7 +317,7 @@ func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
-	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", "secret"+identity.NewID())
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", "secret"+identity.NewID())
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
 		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
@@ -332,7 +325,7 @@ func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx
 	_, err := fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.foo",
+		"vault://secret/testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
@@ -349,7 +342,7 @@ func (SecretProvider) TestVaultOIDCMissingVaultAddr(ctx context.Context, t *test
 	_, err := fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.foo",
+		"vault://secret/testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "VAULT_ADDR must be set when using Vault OIDC fallback auth")
@@ -360,7 +353,7 @@ func (SecretProvider) TestVaultOIDCTokenPriority(ctx context.Context, t *testctx
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
 	secretValue := "secret" + identity.NewID()
-	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", secretValue)
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", secretValue)
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
 		WithEnvVariable("VAULT_TOKEN", "myroot").
@@ -370,7 +363,7 @@ func (SecretProvider) TestVaultOIDCTokenPriority(ctx context.Context, t *testctx
 	out, err := fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.foo",
+		"vault://secret/testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -382,7 +375,7 @@ func (SecretProvider) TestVaultOIDCCachedToken(ctx context.Context, t *testctx.T
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
 	secretValue := "secret" + identity.NewID()
-	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", secretValue)
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", secretValue)
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
 		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
@@ -391,7 +384,7 @@ func (SecretProvider) TestVaultOIDCCachedToken(ctx context.Context, t *testctx.T
 	out, err := fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.foo",
+		"vault://secret/testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -402,7 +395,7 @@ func (SecretProvider) TestVaultOIDCExpiredCachedToken(ctx context.Context, t *te
 	c := connect(ctx, t)
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
-	seedVaultSecret(ctx, t, vaultImage, vaultServer, "testsecret", "foo", "secret"+identity.NewID())
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", "secret"+identity.NewID())
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
 		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
@@ -411,7 +404,7 @@ func (SecretProvider) TestVaultOIDCExpiredCachedToken(ctx context.Context, t *te
 	_, err := fetchSecret(
 		ctx,
 		ctr,
-		"vault://testsecret.foo",
+		"vault://secret/testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
@@ -797,7 +790,7 @@ func seedVaultSecret(ctx context.Context, t *testctx.T, vaultImage *dagger.Conta
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithEnvVariable("VAULT_TOKEN", "myroot").
 		WithEnvVariable("NOCACHE", time.Now().String()).
-		WithExec([]string{"vault", "kv", "put", "/secret/" + path, field + "=" + value}).
+		WithExec([]string{"vault", "kv", "put", path, field + "=" + value}).
 		Sync(ctx)
 	require.NoError(t, err)
 }
