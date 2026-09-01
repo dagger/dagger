@@ -20,7 +20,7 @@ function typeSlug(name: string): string {
 }
 
 function apiTypeSidebarItem(name: string) {
-  const id = `api/reference/${typeSlug(name)}`;
+  const id = `reference/api/${typeSlug(name)}`;
   const label = promotedApiTypeLabels[name];
   return label ? { type: "doc", id, label } : id;
 }
@@ -161,28 +161,12 @@ module.exports = {
             "reference/sdks/elixir",
           ],
         },
-      ],
-    },
-
-    // ========================================
-    // API
-    // ========================================
-    {
-      type: "category",
-      label: "API",
-      link: {
-        type: "doc",
-        id: "api/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
         {
           type: "category",
-          label: "Reference",
+          label: "API",
           link: {
             type: "doc",
-            id: "api/reference/index",
+            id: "reference/api/index",
           },
           collapsible: true,
           collapsed: true,
@@ -195,10 +179,14 @@ module.exports = {
               collapsed: true,
               items: otherApiTypeItems,
             },
-            "api/reference/all",
+            "reference/api/all",
           ],
         },
-        { type: "doc", id: "api/clients/index", label: "Clients" },
+        {
+          type: "doc",
+          id: "reference/client-libraries/index",
+          label: "Client libraries",
+        },
       ],
     },
   ],
