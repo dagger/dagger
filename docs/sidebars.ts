@@ -110,30 +110,38 @@ module.exports = {
     },
 
     // ========================================
-    // MODULES
+    // REFERENCE
     // ========================================
     {
       type: "category",
-      label: "Modules",
-      link: {
-        type: "doc",
-        id: "modules/index",
-      },
+      label: "Reference",
       collapsible: true,
       collapsed: true,
       items: [
-        "modules/go",
-        "modules/deno",
-        "modules/pytest",
-        "modules/jest",
-        "modules/vitest",
-        "modules/playwright",
-        "modules/eslint",
-        "modules/prettier",
-        "modules/biomejs",
-        "modules/shellcheck",
-        "modules/psscriptanalyzer",
-        "modules/helm",
+        {
+          type: "category",
+          label: "Modules",
+          link: {
+            type: "doc",
+            id: "reference/modules/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "reference/modules/go",
+            "reference/modules/deno",
+            "reference/modules/pytest",
+            "reference/modules/jest",
+            "reference/modules/vitest",
+            "reference/modules/playwright",
+            "reference/modules/eslint",
+            "reference/modules/prettier",
+            "reference/modules/biomejs",
+            "reference/modules/shellcheck",
+            "reference/modules/psscriptanalyzer",
+            "reference/modules/helm",
+          ],
+        },
       ],
     },
 
