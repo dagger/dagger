@@ -1,6 +1,6 @@
 ---
 title: "Elixir SDK"
-slug: /sdks/elixir
+slug: /reference/sdks/elixir
 description: "Develop Dagger modules in Elixir: create modules with the Elixir SDK module, define objects and functions with defn, manage dependencies, regenerate bindings, and ship releases."
 ---
 
@@ -10,8 +10,8 @@ The Elixir SDK lets you write Dagger modules in Elixir. A module is an ordinary 
 
 This page is a standalone guide to the Elixir SDK. It assumes you already understand the platform concepts covered in the [SDKs overview](./index.mdx):
 
-- [Types](../api/reference/index.mdx), which explains how SDK types map to the Dagger API
-- [Generating code](../cli/generating.mdx), which explains how generators and tooling return diffs for you to apply
+- [Types](../../api/reference/index.mdx), which explains how SDK types map to the Dagger API
+- [Generating code](../../cli/generating.mdx), which explains how generators and tooling return diffs for you to apply
 
 A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The Elixir SDK supports checks only today. See [Checks, cache policy, directives, and ignore patterns](#checks-cache-policy-directives-and-ignore-patterns) for the Elixir syntax and the current limitations.
 
@@ -42,7 +42,7 @@ dagger sdk install github.com/dagger/elixir-sdk
 dagger module init elixir-sdk my-module
 ```
 
-Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../cli/generating.mdx), a structured diff of the files it wants to create. Dagger shows it to you for review before writing anything to disk.
+Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../cli/generating.mdx), a structured diff of the files it wants to create. Dagger shows it to you for review before writing anything to disk.
 
 :::tip
 If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here github.com/dagger/elixir-sdk` to create it in the current directory.
@@ -928,5 +928,5 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 ## Next steps
 
 - [SDKs overview](./index.mdx), the platform concepts that apply to every SDK
-- [Types](../api/reference/index.mdx)
-- [Generating code](../cli/generating.mdx)
+- [Types](../../api/reference/index.mdx)
+- [Generating code](../../cli/generating.mdx)

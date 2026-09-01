@@ -1,5 +1,5 @@
 ---
-slug: /sdks
+slug: /reference/sdks
 title: "SDKs"
 description: "When to build a Dagger module, how to develop one, and how to design an API people can call."
 ---
@@ -14,14 +14,14 @@ It's language-agnostic. For syntax, pick your [SDK](#choose-your-sdk).
 
 Build a module when a workflow should become a durable, named interface rather than a remembered sequence of steps. That usually means something run often, in more than one place, that encodes a project's conventions or composes with other modules. A module earns its name by improving the caller's experience: better names, typed inputs, structured outputs, and clear errors. Wrapping a single command in a module just for ceremony isn't worth it.
 
-Install a module into a workspace (`dagger.toml`) to make it part of the commands a project offers; publish a reusable module when several projects need the same capability. See the [Quickstart](../getting-started/quickstart.mdx).
+Install a module into a workspace (`dagger.toml`) to make it part of the commands a project offers; publish a reusable module when several projects need the same capability. See the [Quickstart](../../getting-started/quickstart.mdx).
 
 ## Developer workflow
 
 Dagger ships no language-specific module tooling in the CLI. Instead, each SDK is itself a Dagger module, such as `github.com/dagger/go-sdk` or `dang-sdk`, and you call its functions to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
 
-1. **Scaffold** a new module. The SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../cli/generating.mdx) you apply.
-2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](../api/reference/index.mdx).
+1. **Scaffold** a new module. The SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../../cli/generating.mdx) you apply.
+2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](../../api/reference/index.mdx).
 3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
 4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
 5. **Check and test** with the module's checks and your own tests.
@@ -44,7 +44,7 @@ Start from the call you want people to remember, then make it obvious.
 A module can expose plain functions that just return values. That's valid and composes fine. But a module earns its place by plugging into Dagger's workflows. There are three first-class function types, and a useful reusable module provides at least one:
 
 - **Checks** validate the project: tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as Cloud Checks.
-- **Generators** produce source changes as reviewable [changesets](../cli/generating.mdx): codegen, formatting, lockfile updates. They run with `dagger generate`.
+- **Generators** produce source changes as reviewable [changesets](../../cli/generating.mdx): codegen, formatting, lockfile updates. They run with `dagger generate`.
 - **Services** expose a long-running process such as a database, web server, or proxy, started with `dagger up`.
 
 You mark a function as one of these in your SDK with `@check`, `@generate`, `@up`, or the language's equivalent; see your [SDK guide](#choose-your-sdk). A module that offers none of them is often better left as a plain function call than packaged as a module.

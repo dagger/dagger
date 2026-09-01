@@ -142,29 +142,25 @@ module.exports = {
             "reference/modules/helm",
           ],
         },
-      ],
-    },
-
-    // ========================================
-    // SDKS
-    // ========================================
-    {
-      type: "category",
-      label: "SDKs",
-      link: {
-        type: "doc",
-        id: "sdks/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "sdks/dang",
-        "sdks/go",
-        "sdks/typescript",
-        "sdks/python",
-        "sdks/java",
-        "sdks/php",
-        "sdks/elixir",
+        {
+          type: "category",
+          label: "SDKs",
+          link: {
+            type: "doc",
+            id: "reference/sdks/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "reference/sdks/dang",
+            "reference/sdks/go",
+            "reference/sdks/typescript",
+            "reference/sdks/python",
+            "reference/sdks/java",
+            "reference/sdks/php",
+            "reference/sdks/elixir",
+          ],
+        },
       ],
     },
 

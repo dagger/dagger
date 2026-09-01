@@ -6,7 +6,7 @@ description: "Call the Dagger API from your own program: generated clients bound
 
 # Clients
 
-Most of the time you call the Dagger API through the CLI or from inside a [module](../../sdks/index.mdx). A client is for your own program, whether a script, a service, or a test harness, that needs to talk to the engine directly.
+Most of the time you call the Dagger API through the CLI or from inside a [module](../../reference/sdks/index.mdx). A client is for your own program, whether a script, a service, or a test harness, that needs to talk to the engine directly.
 
 There are two ways to get one.
 
@@ -28,7 +28,7 @@ dagger api client list          # clients recorded in this workspace
 dagger generate                 # regenerate bindings after the bound module changes
 ```
 
-Only SDKs that implement the client contract can generate clients. Today that is [Go](../../sdks/go.mdx), [TypeScript](../../sdks/typescript.mdx), and [PHP](../../sdks/php.mdx). The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
+Only SDKs that implement the client contract can generate clients. Today that is [Go](../../reference/sdks/go.mdx), [TypeScript](../../reference/sdks/typescript.mdx), and [PHP](../../reference/sdks/php.mdx). The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
 
 ## Standalone client libraries
 
