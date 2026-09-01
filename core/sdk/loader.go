@@ -53,6 +53,18 @@ func (l *Loader) SDKForModule(
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
 	defer telemetry.EndWithCause(span, &rerr)
 
+	// Embedded runtime refs short-circuit the whole dispatch: the runtime is a
+	// generated file in the module's own directory, so no SDK module — builtin
+	// or external — is resolved or loaded. A malformed embed ref fails hard
+	// here rather than falling through to be misread as a module ref.
+	if IsEmbeddedRuntimeSource(sdk.Source) {
+		filename, err := EmbeddedRuntimeFilename(sdk.Source)
+		if err != nil {
+			return nil, err
+		}
+		return &embeddedRuntimeSDK{root: query, filename: filename}, nil
+	}
+
 	builtinSDK, builtinErr := l.namedSDK(ctx, query, sdk)
 	if builtinErr == nil {
 		return builtinSDK, nil
