@@ -6,25 +6,11 @@ description: "Configure Dagger in your project"
 
 # Quickstart
 
-In this guide, you will configure Dagger in your project. You will install suitable modules and run at least one Check.
+In this guide, you will create a basic Dagger configuration for your project, and run your first Checks locally.
 
 Complete [Try Dagger](./try-dagger.mdx) before you start.
 
-## Open your project
-
-Open a terminal at the root of your project:
-
-```shell
-cd path/to/your/project
-```
-
-Replace `path/to/your/project` with the path to your local checkout.
-
-Verify that the Git `origin` remote points to the GitHub repository that you want to configure:
-
-```shell
-git remote get-url origin
-```
+Dagger configures the project that you run it in. Run every command in this guide from your project root.
 
 ## Install modules
 
@@ -36,24 +22,20 @@ dagger setup
 
 Select the modules that match your project. Then select **Install selected**.
 
+The first install creates `dagger.toml` at the repository root. This file holds the workspace configuration for everyone who uses the repository.
+
 If Dagger migrates an old configuration, run `dagger setup` again.
 
 ### If setup finds no modules
 
-If Dagger reports `No recommendations`, search for a module that supports a tool in your project.
-
-For example, use these commands if the project uses ESLint:
+If Dagger reports `No recommendations`, search for a module by the name of a tool in your project. For example, if the project uses ESLint:
 
 ```shell
 dagger search eslint
 dagger install github.com/dagger/eslint
 ```
 
-The first install creates `dagger.toml` at the repository root.
-
-Install only modules that match tools in the project.
-
-## Configure modules if necessary
+## Configure modules
 
 Most modules use suitable default settings. List the available settings:
 
@@ -61,17 +43,15 @@ Most modules use suitable default settings. List the available settings:
 dagger settings
 ```
 
-Change a setting only when it applies to the project.
-
-For example, use this command if you installed ESLint and the project uses Yarn:
+Change a setting when the default does not match the project. For example, if you installed ESLint and the project uses Yarn:
 
 ```shell
 dagger settings eslint packageManager yarn
 ```
 
-The settings are stored in `dagger.toml`. They apply to all users of the workspace.
+Settings are stored in `dagger.toml`, so they apply to all users of the workspace.
 
-## Verify the workspace
+## Run Generators and Checks
 
 List the workspace Generators:
 
@@ -79,7 +59,7 @@ List the workspace Generators:
 dagger generate -l
 ```
 
-If the command lists Generators, run them:
+If the list is not empty, run them:
 
 ```shell
 dagger generate
@@ -93,16 +73,10 @@ List the Checks:
 dagger check -l
 ```
 
-Verify that the list contains at least one Check that validates your project.
-
-If the list has no applicable Checks, install another suitable module.
-
-Run the Checks:
+If no Check validates your project, install another suitable module. If at least one does, run the Checks:
 
 ```shell
 dagger check
 ```
 
 You are done when at least one Check runs and all Checks pass.
-
-Keep all files that Dagger created or changed.

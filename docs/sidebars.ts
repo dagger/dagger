@@ -20,7 +20,7 @@ function typeSlug(name: string): string {
 }
 
 function apiTypeSidebarItem(name: string) {
-  const id = `api/reference/${typeSlug(name)}`;
+  const id = `reference/api/${typeSlug(name)}`;
   const label = promotedApiTypeLabels[name];
   return label ? { type: "doc", id, label } : id;
 }
@@ -60,28 +60,27 @@ module.exports = {
     },
 
     // ========================================
-    // CLI
+    // USING DAGGER
     // ========================================
     {
       type: "category",
-      label: "CLI",
+      label: "Using Dagger",
       collapsible: true,
       collapsed: false,
       items: [
-        "cli/checking",
-        "cli/generating",
-        "cli/services",
-        "cli/calling-functions",
-        { type: "doc", id: "cli/reference/index", label: "Reference" },
+        "using/checking",
+        "using/generating",
+        "using/services",
+        "using/calling-functions",
       ],
     },
 
     // ========================================
-    // CONFIGURATION
+    // CONFIGURING YOUR WORKSPACE
     // ========================================
     {
       type: "category",
-      label: "Configuration",
+      label: "Configuring your Workspace",
       link: {
         type: "doc",
         id: "config/index",
@@ -93,92 +92,68 @@ module.exports = {
         "config/user",
         "config/module-wiring",
         "config/migrate-dagger-json",
+      ],
+    },
+
+    // ========================================
+    // REFERENCE
+    // ========================================
+    {
+      type: "category",
+      label: "Reference",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        { type: "doc", id: "reference/cli/index", label: "CLI" },
         {
           type: "category",
-          label: "Reference",
+          label: "Modules",
           link: {
             type: "doc",
-            id: "config/reference/index",
+            id: "reference/modules/index",
           },
           collapsible: true,
           collapsed: true,
           items: [
-            "config/reference/dagger-toml",
+            "reference/modules/go",
+            "reference/modules/deno",
+            "reference/modules/pytest",
+            "reference/modules/jest",
+            "reference/modules/vitest",
+            "reference/modules/playwright",
+            "reference/modules/eslint",
+            "reference/modules/prettier",
+            "reference/modules/biomejs",
+            "reference/modules/shellcheck",
+            "reference/modules/psscriptanalyzer",
+            "reference/modules/helm",
           ],
         },
-      ],
-    },
-
-    // ========================================
-    // MODULES
-    // ========================================
-    {
-      type: "category",
-      label: "Modules",
-      link: {
-        type: "doc",
-        id: "modules/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "modules/go",
-        "modules/deno",
-        "modules/pytest",
-        "modules/jest",
-        "modules/vitest",
-        "modules/playwright",
-        "modules/eslint",
-        "modules/prettier",
-        "modules/biomejs",
-        "modules/shellcheck",
-        "modules/psscriptanalyzer",
-        "modules/helm",
-      ],
-    },
-
-    // ========================================
-    // SDKS
-    // ========================================
-    {
-      type: "category",
-      label: "SDKs",
-      link: {
-        type: "doc",
-        id: "sdks/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "sdks/dang",
-        "sdks/go",
-        "sdks/typescript",
-        "sdks/python",
-        "sdks/java",
-        "sdks/php",
-        "sdks/elixir",
-      ],
-    },
-
-    // ========================================
-    // API
-    // ========================================
-    {
-      type: "category",
-      label: "API",
-      link: {
-        type: "doc",
-        id: "api/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
         {
           type: "category",
-          label: "Reference",
+          label: "SDKs",
           link: {
             type: "doc",
-            id: "api/reference/index",
+            id: "reference/sdks/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "reference/sdks/dang",
+            "reference/sdks/go",
+            "reference/sdks/typescript",
+            "reference/sdks/python",
+            "reference/sdks/java",
+            "reference/sdks/php",
+            "reference/sdks/elixir",
+          ],
+        },
+        {
+          type: "category",
+          label: "API",
+          link: {
+            type: "doc",
+            id: "reference/api/index",
           },
           collapsible: true,
           collapsed: true,
@@ -191,11 +166,36 @@ module.exports = {
               collapsed: true,
               items: otherApiTypeItems,
             },
-            "api/reference/all",
+            "reference/api/all",
           ],
         },
-        { type: "doc", id: "api/clients/index", label: "Clients" },
+        {
+          type: "doc",
+          id: "reference/client-libraries/index",
+          label: "Client libraries",
+        },
+        {
+          type: "category",
+          label: "Configuration files",
+          link: {
+            type: "doc",
+            id: "reference/config-files/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "reference/config-files/dagger-toml",
+          ],
+        },
       ],
     },
+
+    // ========================================
+    // SELF-HOSTING
+    // ========================================
+    // Docusaurus renders a category with no items as a plain link, so this is a
+    // doc entry until the section has pages. custom.scss styles a level-1 link
+    // as a section label, the same as a level-1 category.
+    { type: "doc", id: "self-hosting/index", label: "Self-hosting" },
   ],
 };
