@@ -16,7 +16,7 @@ Every SDK shares a few platform concepts. Read these first if they are new to yo
 
 - [SDKs overview](./index.mdx) explains what a module is and how it fits into a workspace.
 - [Types](../api/index.mdx) covers the types your functions accept and return.
-- [Generating code](../../cli/generating.mdx) shows how Dagger represents file diffs. `init` and generators both use them.
+- [Generating code](../../using/generating.mdx) shows how Dagger represents file diffs. `init` and generators both use them.
 
 ## A note on tooling: Dang is delivered as a Dagger module
 
@@ -34,7 +34,7 @@ The functions you will use most often:
 
 | Function | Purpose |
 |---|---|
-| `init` | Create a new Dang SDK module. Returns a [changeset](../../cli/generating.mdx) of files to write. |
+| `init` | Create a new Dang SDK module. Returns a [changeset](../../using/generating.mdx) of files to write. |
 | `mod` | Resolve the Dang module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `path`. |
 | `mod deps` | Add, remove, list, and update module dependencies. |
 | `mod generate` | Regenerate module metadata. For Dang this is close to a no-op, since there are no client bindings to regenerate. |
@@ -60,7 +60,7 @@ dagger install github.com/dagger/dang-sdk
 dagger api call dang-sdk init --name my-ci
 ```
 
-`init` returns a [changeset](../../cli/generating.mdx). Dagger shows it to you for review before writing any files into your workspace.
+`init` returns a [changeset](../../using/generating.mdx). Dagger shows it to you for review before writing any files into your workspace.
 
 `init` takes these arguments:
 
@@ -770,7 +770,7 @@ pub lint: Container @check {
 
 ### Generators {#generators}
 
-A generator produces a [changeset](../../cli/generating.mdx), a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source. `dagger generate` runs all generators and presents the combined changeset for review:
+A generator produces a [changeset](../../using/generating.mdx), a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source. `dagger generate` runs all generators and presents the combined changeset for review:
 
 ```dang
 pub generateProto: Changeset @generate {
@@ -877,11 +877,11 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 - **Target path already has a module.** If `init` reports "The target path must not already contain a Dagger module", choose a different `--path` or remove the existing module first.
 - **Parser and type errors.** Dang reports these straight from the module source. Check the non-null markers (`!`), that the last expression in a function body matches the declared return type, and that every custom type and enum name you reference exists.
 - **A `Void` function must end in `null`.** A `Void` function usually calls `.sync` on a container or service to force evaluation, then returns `null` as its final expression.
-- **Changeset not written.** Most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](../../cli/generating.mdx) and touch nothing on disk until you review and apply it.
+- **Changeset not written.** Most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](../../using/generating.mdx) and touch nothing on disk until you review and apply it.
 - **Stale generation expectations.** Dang has no client codegen, so there are no generated bindings to regenerate. If a tutorial tells you to commit generated SDK files, skip that step.
 
 ## Next steps
 
 - [SDKs overview](./index.mdx)
 - [Types](../api/index.mdx)
-- [Generating code](../../cli/generating.mdx)
+- [Generating code](../../using/generating.mdx)

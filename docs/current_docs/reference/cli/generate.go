@@ -5,7 +5,7 @@ package clidocs
 
 // Mount the generated reference into this module's generate source so the
 // toolchain diffs the regenerated output against the committed file.
-//go:generate:include reference/**
+//go:generate:include index.mdx
 
 // The page's URL is not set here: it comes from the `slug` in
 // internal/cmd/dagger/docsgen/frontmatter.mdx. Moving this page means editing
@@ -13,4 +13,4 @@ package clidocs
 //
 // TODO: keep the path in one place.
 
-//go:generate go -C ../../../ run ./internal/cmd/dagger/docsgen -out docs/current_docs/cli/reference/index.mdx -include-experimental
+//go:generate go -C ../../../../ run ./internal/cmd/dagger/docsgen -out docs/current_docs/reference/cli/index.mdx -include-experimental

@@ -60,19 +60,18 @@ module.exports = {
     },
 
     // ========================================
-    // CLI
+    // USING DAGGER
     // ========================================
     {
       type: "category",
-      label: "CLI",
+      label: "Using Dagger",
       collapsible: true,
       collapsed: false,
       items: [
-        "cli/checking",
-        "cli/generating",
-        "cli/services",
-        "cli/calling-functions",
-        { type: "doc", id: "cli/reference/index", label: "Reference" },
+        "using/checking",
+        "using/generating",
+        "using/services",
+        "using/calling-functions",
       ],
     },
 
@@ -105,6 +104,7 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
+        { type: "doc", id: "reference/cli/index", label: "CLI" },
         {
           type: "category",
           label: "Modules",

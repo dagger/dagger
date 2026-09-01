@@ -11,7 +11,7 @@ The Java SDK lets you write Dagger modules in Java. You write plain Java classes
 This page is a standalone guide to the Java SDK. It assumes you already know the platform concepts covered in the [SDKs overview](./index.mdx):
 
 - [Types](../api/index.mdx) covers how SDK types map to the Dagger API
-- [Generating code](../../cli/generating.mdx) covers how generators and tooling return diffs for you to apply
+- [Generating code](../../using/generating.mdx) covers how generators and tooling return diffs for you to apply
 
 A module worth sharing provides at least one of the three first-class function types: a check, a generator, or a service. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Java syntax.
 
@@ -40,7 +40,7 @@ dagger sdk install java
 dagger module init java my-module
 ```
 
-Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../cli/generating.mdx), a structured diff of the files to create. Dagger shows it to you for review before writing anything to disk.
+Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files to create. Dagger shows it to you for review before writing anything to disk.
 
 :::tip
 If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here java` to create it in the current directory.
@@ -1021,7 +1021,7 @@ A `void` check must actually execute something, such as `sync()`, `stdout()`, or
 
 ### Generators {#generators}
 
-Annotate a function with `@Generate` (in addition to `@Function`) to make it a generator. It runs a tool, captures the resulting directory, diffs that against the source, and returns the result as a `Changeset`. `dagger generate` discovers and runs every generator and presents the combined [changeset](../../cli/generating.mdx) for you to review and apply.
+Annotate a function with `@Generate` (in addition to `@Function`) to make it a generator. It runs a tool, captures the resulting directory, diffs that against the source, and returns the result as a `Changeset`. `dagger generate` discovers and runs every generator and presents the combined [changeset](../../using/generating.mdx) for you to review and apply.
 
 ```java
 /** Format the source. */
@@ -1044,7 +1044,7 @@ public Changeset format() {
 A `@Generate` function you write is distinct from the SDK's own generator, which vendors the SDK and entrypoint. `dagger generate` runs both kinds.
 :::
 
-See [Generating code](../../cli/generating.mdx).
+See [Generating code](../../using/generating.mdx).
 
 ### Services {#up-services}
 
@@ -1199,5 +1199,5 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 - [SDKs overview](./index.mdx) for the platform concepts that apply to every SDK
 - [Types](../api/index.mdx)
-- [Generating code](../../cli/generating.mdx)
+- [Generating code](../../using/generating.mdx)
 - [Quickstart](../../getting-started/quickstart.mdx)
