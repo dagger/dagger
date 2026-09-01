@@ -83,20 +83,37 @@ func hostGitInit(t *testctx.T, dir string) {
 	require.NoError(t, err, out)
 }
 
-func (LockfileSuite) TestDefaultRejectsV1Lockfile(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeContainerFromQuery(t, workdir)
-	lockPath := filepath.Join(workdir, workspace.LockFileName)
-	lockContents := strings.Join([]string{
-		`[["version","1"]]`,
-		`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
-	}, "\n")
-	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+func (LockfileSuite) TestDefaultReplacesInvalidLockfile(ctx context.Context, t *testctx.T) {
+	tests := map[string]string{
+		"v1": strings.Join([]string{
+			`[["version","1"]]`,
+			`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+		}, "\n"),
+		"malformed v2": strings.Join([]string{
+			`[["version","2"]]`,
+			`["","oci-sha"]`,
+		}, "\n"),
+	}
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
+	for name, lockContents := range tests {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			hostGitInit(t, workdir)
+			writeEmptyWorkspaceConfig(t, workdir)
+			queryPath := writeContainerFromQuery(t, workdir)
+			lockPath := filepath.Join(workdir, workspace.LockFileName)
+			require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+			out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+			require.NoError(t, err, string(out))
+			require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+			lockBytes, err := os.ReadFile(lockPath)
+			require.NoError(t, err)
+			require.NotEqual(t, lockContents, string(lockBytes))
+			assertOCISHALockEntry(t, lockBytes)
+		})
+	}
 }
 
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
