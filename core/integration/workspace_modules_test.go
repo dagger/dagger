@@ -541,3 +541,35 @@ func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Co
 	require.NoError(t, err)
 	return cfg
 }
+
+// TestWorkspaceModuleInitConcurrent stresses many identical SDK-managed
+// module initializations racing in one engine. Identical workspaces are what
+// let content-addressed caching pair physically different materializations of
+// the same tree, which is the precondition for stat-only phantom diff entries
+// reaching the init changeset merge (see ChangesetSuite's
+// TestMergePhantomStatOnlyChanges for the distilled mechanism). Losing the
+// engine-owned changes here — dagger-module.toml missing, or myapp absent
+// from dagger.toml — is the historical failure shape.
+func (WorkspaceModulesSuite) TestWorkspaceModuleInitConcurrent(ctx context.Context, t *testctx.T) {
+	for i := range 12 {
+		t.Run(fmt.Sprintf("init %d", i), func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+
+			_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "go")
+			require.NoError(t, err)
+
+			_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "go", "myapp")
+			require.NoError(t, err)
+
+			_, err = os.Stat(filepath.Join(workdir, ".dagger", "modules", "myapp", "dagger-module.toml"))
+			require.NoError(t, err, "engine-owned dagger-module.toml must survive init")
+
+			cfg := readInstalledWorkspaceConfig(t, workdir)
+			require.Contains(t, cfg.Modules, "myapp", "engine-owned dagger.toml modification must survive init")
+			goSDK := cfg.Modules["dagger-go-sdk"]
+			require.NotNil(t, goSDK.AsSDK)
+			require.Equal(t, []workspacecfg.SDKManagedModule{{Path: ".dagger/modules/myapp"}}, goSDK.AsSDK.Modules)
+		})
+	}
+}
