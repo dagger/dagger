@@ -68,21 +68,40 @@ type Swapper {
   }
 
   """
-  Rewrite both lines of shared.txt one way.
+  Rewrite both lines of shared.txt one way, and add NEW.txt.
 
   Paired with clashSecond to produce two parallel changesets that rewrite the
-  same lines, i.e. a batch that cannot merge cleanly.
+  same lines and add the same new file with different content, i.e. a batch
+  that cannot merge cleanly.
   """
   clashFirst(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
-    root.withNewFile("shared.txt", "line1: RED\nline2: RED\n").changes(root)
+    root
+      .withNewFile("shared.txt", "line1: RED\nline2: RED\n")
+      .withNewFile("NEW.txt", "red new file\n")
+      .changes(root)
   }
 
   """
-  Rewrite both lines of shared.txt the other way. See clashFirst.
+  Rewrite both lines of shared.txt the other way, and add NEW.txt. See
+  clashFirst.
   """
   clashSecond(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
-    root.withNewFile("shared.txt", "line1: BLUE\nline2: BLUE\n").changes(root)
+    root
+      .withNewFile("shared.txt", "line1: BLUE\nline2: BLUE\n")
+      .withNewFile("NEW.txt", "blue new file\n")
+      .changes(root)
+  }
+
+  """
+  Delete shared.txt.
+
+  Paired with clashFirst for a modify/delete conflict: one call rewrites the
+  file, the other removes it.
+  """
+  removeShared(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withoutFile("shared.txt").changes(root)
   }
 }

@@ -208,40 +208,84 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 }
 
 // TestParallelChangesetToolsPreserveConflicts locks in that a batch whose
-// changesets *cannot* merge cleanly is not thrown away. Two tools rewrite the
-// same lines of the same file; the octopus merge refuses that, so the batch
-// falls back to replaying the changesets as patches with conflict markers.
-// Both sides' work survives, and the agent gets a tree it can repair.
+// changesets *cannot* merge cleanly is not thrown away. The octopus merge
+// refuses any conflict, so the batch falls back to pairwise git merges that
+// leave the conflicts in the tree (Changeset.withChangeset with
+// LEAVE_CONFLICT_MARKERS). Both sides' work survives, and the agent gets a
+// tree it can repair.
 func (LLMSuite) TestParallelChangesetToolsPreserveConflicts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
-		WithPrompt("make both changes").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "clashFirst"},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "clashSecond"},
-		}).
-		WithToolResult("call_1", "", false).
-		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
+	// batchModel scripts one turn that calls the given tools in parallel.
+	batchModel := func(ctx context.Context, t *testctx.T, tools ...string) string {
+		var calls []dagger.LLMContentBlockInput
+		var results []string
+		for i, tool := range tools {
+			callID := fmt.Sprintf("call_%d", i+1)
+			calls = append(calls, dagger.LLMContentBlockInput{
+				Kind: dagger.LLMContentBlockKindToolCall, CallID: callID, ToolName: tool,
+			})
+			results = append(results, callID)
+		}
+		llm := c.LLM().WithPrompt("make both changes").WithResponse(calls)
+		for _, callID := range results {
+			llm = llm.WithToolResult(callID, "", false)
+		}
+		return cannedReplayModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 		}))
+	}
+	loopThen := func(ctx context.Context, t *testctx.T, model, then string) string {
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "make both changes" | loop | %s`,
+			model, then,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
 
-	out, err := base.With(daggerShell(fmt.Sprintf(
-		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "make both changes" | loop | workspace | file shared.txt | contents`,
-		model,
-	))).Stdout(ctx)
-	require.NoError(t, err)
+	t.Run("overlapping edits and a file added on both sides get markers", func(ctx context.Context, t *testctx.T) {
+		// clashFirst and clashSecond rewrite the same lines of shared.txt and
+		// both add NEW.txt, with different content.
+		model := batchModel(ctx, t, "clashFirst", "clashSecond")
 
-	// Neither side was discarded: both edits are present in the merged file,
-	// bracketed by conflict markers. Before the conflict-preserving fallback
-	// this file still read "line1: placeholder".
-	require.Contains(t, out, "RED")
-	require.Contains(t, out, "BLUE")
-	require.Contains(t, out, "<<<<<<<")
-	require.Contains(t, out, ">>>>>>>")
-	require.NotContains(t, out, "placeholder")
+		// Neither side was discarded: both edits are present in the merged
+		// file, bracketed by conflict markers. Before the conflict-preserving
+		// fallback this file still read "line1: placeholder".
+		shared := loopThen(ctx, t, model, "workspace | file shared.txt | contents")
+		require.Contains(t, shared, "RED")
+		require.Contains(t, shared, "BLUE")
+		require.Contains(t, shared, "<<<<<<<")
+		require.Contains(t, shared, ">>>>>>>")
+		require.NotContains(t, shared, "placeholder")
+
+		// An add/add conflict gets the same treatment. A patch replay cannot
+		// express it: git apply --reject skips a file that already exists,
+		// silently keeping only the first side's version.
+		added := loopThen(ctx, t, model, "workspace | file NEW.txt | contents")
+		require.Contains(t, added, "red new file")
+		require.Contains(t, added, "blue new file")
+		require.Contains(t, added, "<<<<<<<")
+		require.Contains(t, added, ">>>>>>>")
+
+		// The agent is told, and pointed at the markers.
+		transcript := loopThen(ctx, t, model, "transcript")
+		require.Contains(t, transcript, "could not be merged cleanly")
+		require.Contains(t, transcript, "resolve them before building on these changes")
+	})
+
+	t.Run("a file modified on one side and deleted on the other keeps the modified version", func(ctx context.Context, t *testctx.T) {
+		model := batchModel(ctx, t, "clashFirst", "removeShared")
+
+		// git's rule for an unresolved modify/delete: the modified version
+		// stays, so the rewrite is not lost to the deletion.
+		shared := loopThen(ctx, t, model, "workspace | file shared.txt | contents")
+		require.Equal(t, "line1: RED\nline2: RED\n", shared)
+
+		transcript := loopThen(ctx, t, model, "transcript")
+		require.Contains(t, transcript, "could not be merged cleanly")
+	})
 }
 
 // collectIDFieldNames records every field name reachable in an ID — the
@@ -397,7 +441,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (14 tools).",
+			"Toolset unchanged (15 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().

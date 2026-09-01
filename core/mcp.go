@@ -1550,9 +1550,9 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 // call's work, which is the expensive part: the agents have already done their
 // reasoning, edits and verification by the time we get here.
 //
-// So on failure, fall back to replaying the changesets as patches onto their
-// common base with PatchConflictLeaveMarkers, which applies every hunk that
-// fits and leaves git-style conflict markers where it doesn't. The work is
+// So on failure, fall back to folding the changesets together one at a time
+// with Changeset.withChangeset in LEAVE_CONFLICT_MARKERS mode: the same
+// three-way git merge, allowed to leave the conflicts in the tree. The work is
 // preserved and the agent gets a tree it can inspect and repair, rather than an
 // error and an empty workspace. The returned note is non-empty in that case, so
 // the caller can tell the agent to resolve the markers.
@@ -1566,7 +1566,7 @@ func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.Obj
 		return merged, "", nil
 	}
 
-	merged, err := patchMergeChangesets(ctx, srv, changes)
+	merged, err := markerMergeChangesets(ctx, srv, changes)
 	if err != nil {
 		// Preserving the work didn't pan out either; report the original merge
 		// failure, with the fallback's own failure as context.
@@ -1578,11 +1578,18 @@ func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.Obj
 // conflictMarkerNote tells the agent what happened to its changes when the
 // clean merge failed. The underlying git error names the conflicting paths
 // (e.g. "CONFLICT (content): Merge conflict in foo.go"), which is the most
-// useful part, so it is quoted verbatim.
+// useful part, so it is quoted verbatim. The rules it states are git's own for
+// a merge left unresolved, as Changeset.withChangeset's LEAVE_CONFLICT_MARKERS
+// applies them: overlapping edits and files added on both sides get markers, a
+// file modified on one side and deleted on the other keeps the modified
+// version, and a binary file keeps the earlier call's version.
 func conflictMarkerNote(mergeErr error) string {
 	return fmt.Sprintf(`NOTE: parallel edits from this batch overlapped, so they could not be merged cleanly.
-Rather than discarding them, every change that applied cleanly was kept, and
-git-style conflict markers (<<<<<<< / ======= / >>>>>>>) were left where it did not.
+Rather than discarding them, they were merged with git-style conflict markers
+(<<<<<<< / ======= / >>>>>>>) left wherever edits overlap, including a file added
+by more than one call. A file modified by one call and deleted by another keeps
+the modified version; a binary file changed by more than one call keeps the
+earlier call's version.
 Search the workspace for conflict markers and resolve them before building on these changes.
 
 The merge reported:
@@ -1612,58 +1619,37 @@ func octopusMergeChangesets(ctx context.Context, srv *dagql.Server, changes []da
 	return merged, nil
 }
 
-// patchMergeChangesets replays each changeset as a patch onto their shared base
-// directory, in order, tolerating hunks that no longer apply by leaving conflict
-// markers. It is the conflict-preserving fallback for octopusMergeChangesets.
+// markerMergeChangesets folds the changesets into one with successive
+// Changeset.withChangeset merges in LEAVE_CONFLICT_MARKERS mode. It is the
+// conflict-preserving fallback for octopusMergeChangesets: the same three-way
+// git merge, run pairwise because the octopus strategy cannot leave a merge
+// unresolved, so every kind of conflict gets git's own treatment — markers for
+// overlapping edits and for a file added on both sides, the modified version
+// for a modify/delete pair — instead of the hunk-level best effort of a patch
+// replay, which can only mark what git apply rejects and skips a file it
+// cannot patch at all.
 //
-// Parallel tool calls in one batch all diff against the same workspace
-// snapshot, so changes[0]'s Before is the common base for all of them.
-func patchMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	base := changes[0].Self().Before
-	if base.Self() == nil {
-		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("changeset has no before directory")
-	}
-	baseID, err := base.ID()
-	if err != nil {
-		return dagql.ObjectResult[*Changeset]{}, err
-	}
-
-	current := base
-	for i, changeset := range changes {
-		var patch dagql.ObjectResult[*File]
-		if err := srv.Select(ctx, changeset, &patch, dagql.Selector{
-			View:  srv.View,
-			Field: "asPatch",
-		}); err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("render changeset %d as patch: %w", i, err)
-		}
-		patchID, err := patch.ID()
+// Merging through the withChangeset field rather than the raw Go method keeps
+// the result an attached dagql result, which applyChangeset needs.
+func markerMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	merged := changes[0]
+	for i, changeset := range changes[1:] {
+		id, err := changeset.ID()
 		if err != nil {
-			return dagql.ObjectResult[*Changeset]{}, err
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
 		}
-		var patched dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, current, &patched, dagql.Selector{
+		var next dagql.ObjectResult[*Changeset]
+		if err := srv.Select(ctx, merged, &next, dagql.Selector{
 			View:  srv.View,
-			Field: "withPatchFile",
+			Field: "withChangeset",
 			Args: []dagql.NamedInput{
-				{Name: "patch", Value: dagql.NewID[*File](patchID)},
-				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+				{Name: "changes", Value: dagql.NewID[*Changeset](id)},
+				{Name: "onConflict", Value: LeaveConflictMarkersOnMergeConflict},
 			},
 		}); err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("apply changeset %d as patch: %w", i, err)
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("merge changeset %d with conflict markers: %w", i+1, err)
 		}
-		current = patched
-	}
-
-	var merged dagql.ObjectResult[*Changeset]
-	if err := srv.Select(ctx, current, &merged, dagql.Selector{
-		View:  srv.View,
-		Field: "changes",
-		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*Directory](baseID)},
-		},
-	}); err != nil {
-		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("rebuild changeset from patched base: %w", err)
+		merged = next
 	}
 	return merged, nil
 }
