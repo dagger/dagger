@@ -1006,6 +1006,55 @@ const (
 	FailOnConflicts
 )
 
+// ChangesetMergeConflict is the API enum behind Changeset.withChangeset's
+// onConflict argument. It lives in core, next to PatchConflict, so core code
+// that merges through the withChangeset field (rather than the raw Go method,
+// which would return a detached result) can name a strategy.
+type ChangesetMergeConflict string
+
+var ChangesetMergeConflictEnum = dagql.NewEnum[ChangesetMergeConflict]()
+
+var (
+	FailEarlyOnMergeConflict = ChangesetMergeConflictEnum.RegisterView("FAIL_EARLY",
+		// starting with engine version 0.15.0 Go codegen only exposes scoped enum values
+		// like ChangesetMergeConflictFailEarly and doesn't expose anymore unscopped enum values (FailEarly)
+		// unscopped enum values will conflict as the same value is defined twice in ChangesetMergeConflictEnum and
+		// ChangesetsMergeConflictEnum.
+		// Ensure those enum values are only exposed on engines >= 0.15.0
+		// Values are removed on this enum ChangesetMergeConflictEnum and not ChangesetsMergeConflictEnum so that
+		// there's never an empty enum, that causes troubles with other SDKs like python
+		AfterVersion("v0.15.0"),
+		`Fail before attempting merge if file-level conflicts are detected`)
+	FailOnMergeConflict = ChangesetMergeConflictEnum.RegisterView("FAIL",
+		AfterVersion("v0.15.0"),
+		`Attempt the merge and fail if git merge fails due to conflicts`)
+	LeaveConflictMarkersOnMergeConflict = ChangesetMergeConflictEnum.Register("LEAVE_CONFLICT_MARKERS",
+		`Let git create conflict markers in files. For modify/delete conflicts, keeps the modified version. Fails on binary conflicts.`)
+	PreferOursOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_OURS",
+		`The conflict is resolved by applying the version of the calling changeset`)
+	PreferTheirsOnMergeConflict = ChangesetMergeConflictEnum.Register("PREFER_THEIRS",
+		`The conflict is resolved by applying the version of the other changeset`)
+)
+
+func (proto ChangesetMergeConflict) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ChangesetMergeConflict",
+		NonNull:   true,
+	}
+}
+
+func (proto ChangesetMergeConflict) TypeDescription() string {
+	return "Strategy to use when merging changesets with conflicting changes."
+}
+
+func (proto ChangesetMergeConflict) Decoder() dagql.InputDecoder {
+	return ChangesetMergeConflictEnum
+}
+
+func (proto ChangesetMergeConflict) ToLiteral() call.Literal {
+	return ChangesetMergeConflictEnum.Literal(proto)
+}
+
 // WithChangeset merges another changeset into this one using git-based 3-way merge.
 // The onConflictStrategy determines how conflicts are handled:
 //   - FailEarlyOnConflict: fail before merge if file-level conflicts are detected

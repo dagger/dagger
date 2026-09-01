@@ -115,7 +115,7 @@ func mergeWorkspaceInitChangeset(ctx context.Context, base dagql.ObjectResult[*c
 		Field: "withChangeset",
 		Args: []dagql.NamedInput{
 			{Name: "changes", Value: dagql.NewID[*core.Changeset](sdkChangesID)},
-			{Name: "onConflict", Value: FailEarlyOnMergeConflict},
+			{Name: "onConflict", Value: core.FailEarlyOnMergeConflict},
 		},
 	}); err != nil {
 		return base, fmt.Errorf("merge sdk init changes: %w", err)
