@@ -274,10 +274,11 @@ func (AgentsSuite) TestOverlayModuleSourceIsResolvedThroughOverlay(ctx context.C
 // TestOverlayModuleSourceEdit locks in the self-repair loop: an agent that
 // edits a module's source and recomposes itself must see its own STAGED edit,
 // with nothing exported to disk. The edit is staged and the toolset selected in
-// a single query, off the Workspace returned by withNewFile. Two layers
-// cooperate: workspaceOverlayModules re-resolves the module through the overlay
-// for composition (Workspace.agents), and WorkspaceServedSchema layers the same
-// overlay modules onto the served schema LLM.tools renders from.
+// a single query, off the Workspace returned by withNewFile.
+// workspaceOverlayModules re-resolves the module through the overlay for
+// composition (Workspace.agents), and the resulting binding pins that module's
+// schema (boundTool.definingSchema), so LLM.tools renders from the
+// overlay-loaded definition rather than the served (on-disk) one.
 func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor")

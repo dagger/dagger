@@ -22,26 +22,6 @@ type overlayModule struct {
 	mod  dagql.ObjectResult[*core.Module]
 }
 
-// overlayModuleLoader adapts workspaceOverlayModules to the hook core's
-// WorkspaceServedSchema consumes (core.SetWorkspaceOverlayModuleLoader), so the
-// schema an overlay-carrying workspace serves — the one the LLM's tools render
-// from and dispatch against — reflects the same overlay-resolved modules that
-// Workspace.agents composes.
-func (s *workspaceSchema) overlayModuleLoader(
-	ctx context.Context,
-	ws dagql.ObjectResult[*core.Workspace],
-) ([]dagql.ObjectResult[*core.Module], error) {
-	overlay, err := s.workspaceOverlayModules(ctx, ws, nil)
-	if err != nil {
-		return nil, err
-	}
-	mods := make([]dagql.ObjectResult[*core.Module], 0, len(overlay))
-	for _, om := range overlay {
-		mods = append(mods, om.mod)
-	}
-	return mods, nil
-}
-
 // workspaceOverlayModules loads the workspace modules that the workspace's
 // pending overlay affects, resolving their source through the overlay instead
 // of the host checkout.

@@ -28,11 +28,6 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
-	// Let core derive workspace-served schemas (WorkspaceServedSchema) through
-	// the overlay: re-resolving overlay-affected modules needs the overlay
-	// rootfs machinery that lives in this package.
-	core.SetWorkspaceOverlayModuleLoader(s.overlayModuleLoader)
-
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
