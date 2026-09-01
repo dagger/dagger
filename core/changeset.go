@@ -1404,21 +1404,21 @@ func gitMetaPath(p string) bool {
 	return p == ".git" || strings.HasPrefix(p, ".git/")
 }
 
-// withoutGitMeta returns a copy of p with all entries under the workspace-root
-// .git directory removed.
-func (p *ChangesetPaths) withoutGitMeta() *ChangesetPaths {
+// withoutGitMeta returns a copy of ch with all entries under the
+// workspace-root .git directory removed.
+func (ch *ChangesetPaths) withoutGitMeta() *ChangesetPaths {
 	dropGitMeta := func(paths []string) []string {
 		return slices.DeleteFunc(slices.Clone(paths), gitMetaPath)
 	}
 	filtered := &ChangesetPaths{
-		Added:      dropGitMeta(p.Added),
-		Modified:   dropGitMeta(p.Modified),
-		Removed:    dropGitMeta(p.Removed),
-		AllRemoved: dropGitMeta(p.AllRemoved),
+		Added:      dropGitMeta(ch.Added),
+		Modified:   dropGitMeta(ch.Modified),
+		Removed:    dropGitMeta(ch.Removed),
+		AllRemoved: dropGitMeta(ch.AllRemoved),
 	}
-	if p.Renamed != nil {
-		filtered.Renamed = make(map[string]string, len(p.Renamed))
-		for newPath, oldPath := range p.Renamed {
+	if ch.Renamed != nil {
+		filtered.Renamed = make(map[string]string, len(ch.Renamed))
+		for newPath, oldPath := range ch.Renamed {
 			if gitMetaPath(newPath) || gitMetaPath(oldPath) {
 				continue
 			}
