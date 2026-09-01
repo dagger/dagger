@@ -1,7 +1,5 @@
 # Cost of a remote git module source
 
-Line numbers refer to `f4082d763f`, before the changes in section 6.
-
 ## 1. Summary
 
 When a module names a git repository as its runtime, every CLI command
@@ -13,8 +11,9 @@ contacted that repository again. Three separate causes, none of them related:
 | 2 | The engine runs `git ls-remote` to select a transport. | 0.7 s to 3.4 s |
 | 3 | The engine asks the git host whether the repository is public. | 0.2 s to 9.8 s, once for each client |
 
-Section 6 removes cause 1 and cause 2. It reduces cause 3 to one request for
-each command.
+Section 6 removes cause 1 and reduces cause 3 to one request for each command.
+This change does not fix cause 2. Section 4 explains why the workspace lock
+cannot safely remove it.
 
 The symptom, measured on the `python:generate-all` span of `dagger generate`:
 
@@ -30,14 +29,13 @@ visible git operations cost about 1.6 s, against 10.4 s for the whole path.
 ## 2. The workspace lock is not the cause
 
 The lock already prevents live git resolution. When it holds an entry, `ref`
-(`core/schema/git.go:1043`) and `latest` (`core/schema/git.go:2065`) return the
-pinned value without touching the network. Against a full lock the
-`GitRepository.latest` span costs 0.00 s.
+and `latest` (`core/schema/git.go`) return the pinned value without touching
+the network. Against a full lock the `GitRepository.latest` span costs 0.00 s.
 
 `726ddb673f` (#13897), `e50018a6e2` (#13754) and `f6f662ca6d` (#13088) made
 that the default. All three are already in `v1.0.0-beta.11`, the version that
-showed the numbers above. No code at the three cause sites changed between that
-tag and `main`.
+showed the numbers above. The code at all three cause sites is still identical
+between that tag and `main`.
 
 All three causes below happen **before** the engine reads the lock.
 
@@ -45,21 +43,22 @@ All three causes below happen **before** the engine reads the lock.
 
 The largest cost is not a git operation.
 
-`ParseRefString` (`core/modulerefs.go:52`) must decide whether a ref string
-names a git repository or a local directory. `FastKindCheck`
-(`core/gitref/gitref.go:80`) decides from the text alone for `./runtime` and
-for `https://github.com/org/repo`. It cannot decide for `github.com/org/repo`,
+`ParseRefString` (`core/modulerefs.go`) must decide whether a ref string names
+a git repository or a local directory. `FastKindCheck`
+(`core/gitref/gitref.go`) decides from the text alone for `./runtime` and for
+`https://github.com/org/repo`. It cannot decide for `github.com/org/repo`,
 which is the form users write.
 
 For that ambiguous form, `ParseRefString` asks the calling client's file system
-whether such a directory exists (`core/modulerefs.go:82` →
-`core/modulesource.go:2179` → `engine/engineutil/filesync.go:119`).
+whether such a directory exists. The request runs through `CallerStatFS`
+(`core/modulesource.go`) and `StatCallerHostPath`
+(`engine/engineutil/filesync.go`).
 
 During `dagger generate` the code generator runs in a synthetic nested client,
-created for in-engine dang evaluation (`core/sdk/dang/v2/sdk.go:124`). That
-client never registers session attachables, because it has no file system to
-offer. `getClientCaller` (`engine/server/session.go:836`) waited for them
-anyway, up to 10 seconds. The wait could never succeed, so it always expired:
+created for in-engine dang evaluation (`core/sdk/dang/v2/sdk.go`). That client
+never registers session attachables, because it has no file system to offer.
+`getClientCaller` (`engine/server/session.go`) waited for them anyway, up to
+10 seconds. The wait could never succeed, so it always expired:
 
 ```text
 parseRefString stat error error="failed to stat path: failed to get requester session: context deadline exceeded"
@@ -77,17 +76,17 @@ This is also why only `generate` paid. `dagger call` resolves the module source
 in the CLI client, which does have a file system. There the request cost
 0.000253 s.
 
-`resolveHostServiceCaller` (`engine/server/session.go:1055`) already knows this
-class of client and routes host-backed services to the parent instead. The file
+`resolveHostServiceCaller` (`engine/server/session.go`) already knows this class
+of client and routes host-backed services to the parent instead. The file
 system path did not.
 
 ## 4. Cause 2 — an `ls-remote` to select a transport
 
 A scheme-less ref string does not say whether to use HTTPS or SSH. The `git`
-resolver finds this at `core/schema/git.go:369` and builds one candidate for
-each entry in `cloneURLFallbackProtocols` (`util/gitutil/url.go:139`). To find
-which candidate answers, it calls `LoadRemote` on each one
-(`core/schema/git.go:475`), which runs `ls-remote`.
+resolver (`core/schema/git.go`) sees this when `gitutil.ParseURL` fails, and
+builds one candidate for each entry in `cloneURLFallbackProtocols`
+(`util/gitutil/url.go`). To find which candidate answers, it calls `LoadRemote`
+on each one, which runs `ls-remote`.
 
 That loop never reads the workspace lock. It runs on every command, for every
 scheme-less ref string. This is why a pinned commit SHA did not help: the
@@ -95,12 +94,35 @@ resolver selects the transport before it resolves any ref.
 
 Measured `ls-remote` span: 0.72 s, 2.96 s and 3.39 s in different runs.
 
+The lock cannot supply the answer. Contributors share and commit `dagger.lock`,
+so it names the transport that another contributor could reach. That is not
+necessarily the transport this user can reach. One contributor pins over SSH,
+and the next has HTTPS access only. An earlier version of this branch selected
+the locked transport. A scheme-less source with SSH-only lock entries then
+failed outright:
+
+| Engine | Result for a scheme-less source, SSH-only lock entries |
+|---|---|
+| `v1.0.0-beta.11` | `https://github.com/dagger/dagger-test-modules` |
+| Locked transport | `git failed to determine Git URL protocol` |
+
+The source string must keep control of network access. An explicit `https://`
+or `ssh://` source already needs no probe. A scheme-less source must still try
+HTTPS and then SSH whenever the engine has to contact the repository.
+
+Two directions remain open. `git-latest` and `git-sha` could key on a
+normalized, scheme-less repository identity, so that every URL form of one
+repository shares a single entry. The probe could also move to the first
+operation that needs the network. It would then never run when the lock and
+the local cache answer the whole request. Both directions belong with the lock
+design, not with this change.
+
 ## 5. Cause 3 — a visibility request for each client
 
 Before attaching the user's git credentials, the engine asks whether the
-repository is public (`core/schema/git.go:764`). That is an unauthenticated
-HTTP request for the ref advertisement. It had no cache and no span, so it was
-invisible in traces.
+repository is public, in `IsRemotePublic` (`core/schema/git.go`). That is an
+unauthenticated HTTP request for the ref advertisement. It had no cache and no
+span, so it was invisible in traces.
 
 The engine caches the `git` field per client. One command can reach the same
 repository from the CLI client and again from a module's dependency resolution,
@@ -125,24 +147,7 @@ way `resolveHostServiceCaller` does for host-backed services. That would give
 module code implicit read access to the user's files, which is a wider grant
 than a performance problem justifies.
 
-### 6.2 Take the transport from the lock
-
-`core/schema/git.go`. Before probing, the resolver checks whether the lock
-already holds `git-*` entries for one of the candidates. If it does, an earlier
-session already reached the repository over that transport, so the resolver
-keeps only that candidate and skips `LoadRemote`. Remote metadata stays lazy
-(`core/git.go:225`), so whoever needs it still loads it.
-
-The check reuses `gitRemoteHasWorkspacePin` (`core/schema/git.go:1019`), which
-the failure branch of the visibility request already consults for the same
-reason.
-
-This adds no new data to `dagger.lock` and no new risk of a stale answer. The
-inputs of `git-sha` and `git-latest` entries already carry the full URL with
-its scheme. A user on a different transport therefore finds no entry, and
-probes as before.
-
-### 6.3 Cache the visibility answer for each session
+### 6.2 Cache the visibility answer for each session
 
 `core/schema/git.go`. The answer now comes from the engine cache, keyed by
 session and repository URL, and the request gets a `git remote visibility`
@@ -158,45 +163,39 @@ That needs its own decision.
 
 ## 7. Measurements
 
-Engine built from this branch against the released `v1.0.0-beta.11`. Same
-workspaces, same host, warm caches. Module runtime is
-`github.com/dagger/python-sdk/runtime`.
+Engine built from this branch against the released `v1.0.0-beta.11`, with the
+branch based on `f4082d763f`. Same workspaces, same host, warm caches. Module
+runtime is `github.com/dagger/python-sdk/runtime`.
 
 | Command | Measurement | Before | After |
 |---|---|---|---|
-| `generate` | `generators` span | 12.75 s, 12.80 s | 2.01 s, 2.26 s, 3.30 s |
-| `generate` | `parseRefString` for the runtime ref | 10.001478 s, 10.000348 s | 0.00064 s, 0.00071 s |
-| `generate` | `git ls-remote` spans | 2 | 0 |
-| `generate` | `git remote visibility` | untraced, once per client | 0.37 s, then 0.00 s from cache |
-| `call` | `load workspace` span | 2.46 s, 2.77 s | 1.56 s, 1.80 s |
-| `call` | `git ls-remote` spans | 1 | 0 |
+| `generate` | `generators` span | 12.75 s, 12.80 s | 2.41 s, 3.74 s |
+| `generate` | `parseRefString` for the runtime ref | 10.001478 s, 10.000348 s | 0.00059 s, 0.00076 s |
+| `generate` | `git remote visibility` | untraced, once per client | 0.18 s, then 0.00 s from cache |
+| `call` | `load workspace` span | 2.46 s, 2.77 s | 2.15 s, 2.24 s |
 
-The workspace SDK can be the remote git ref instead of the module runtime. In
-that case the `generate` `generators` span drops from 4.81 s to 2.81 s, and its
-3.39 s `ls-remote` disappears.
+`call` gains less than `generate`, because it never paid cause 1. Its gain is
+the second visibility request only.
 
-A fully pinned scheme-less ref string that points at a host which does not
-exist now resolves with no network at all:
+With the workspace SDK as the remote git ref instead of the module runtime, the
+`generate` `generators` span drops from 4.81 s to 2.85 s.
 
-```graphql
-{ git(url: "git.example.invalid/dagger.git") { latest { ref commit } } }
-```
+The count of `ls-remote` calls does not change. One transport probe for each
+command remains, as section 4 describes.
 
-| Version | Result |
-|---|---|
-| `v1.0.0-beta.11` | `git error: exit status 128`, after an `ls-remote` |
-| This branch | `{"ref":"refs/tags/v1.2.3","commit":"0123…4567"}` in 0.00 s |
+Read the `parseRefString` row against its base. `b1449dc2d4` later added a
+`?dagger-get=1` redirect probe to `ParseRefString` for every https and
+scheme-less ref. That probe has no span of its own, so its cost lands inside
+`parseRefString`. On `b1449dc2d4` the same span costs 0.05 s to 0.65 s for a
+scheme-less ref. The 10 s timeout is still gone, which is what this row shows.
 
 ## 8. Tests and reproduction
 
-Two tests in `core/integration/lockfile_test.go` use that unreachable host and
-differ only in the lock:
-
-- `TestGitLatestPinnedSchemelessRemoteSkipsTransportProbe` — the lock holds
-  entries for the HTTPS candidate, so the command must succeed with no network.
-  Fails on `v1.0.0-beta.11`, passes here.
-- `TestUnpinnedSchemelessRemoteStillProbesTransport` — the lock is empty, so
-  the command must still probe and still fail. Passes on both.
+`TestSchemelessRemoteIgnoresLockedTransport` in
+`core/integration/lockfile_test.go` guards section 4. It gives the workspace a
+lock that names only the SSH form of a repository, then resolves the
+scheme-less source and requires the HTTPS form. The earlier lock-based
+transport selection fails it.
 
 `TestNeverServesAttachables` in `engine/server/session_test.go` covers the four
 cases of the fail-fast condition.

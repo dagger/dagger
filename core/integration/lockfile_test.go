@@ -675,34 +675,29 @@ func (LockfileSuite) TestGitLatestPinnedHTTPSUnavailableRemoteUsesPin(ctx contex
 	require.Contains(t, string(out), pinnedCommit)
 }
 
-// A scheme-less ref (how module sources are normally written) makes the git
-// resolver try each candidate transport and ls-remote it to see which one
-// answers. When the workspace lock already holds entries for one of those
-// candidates, that transport served the remote before, so the probe has
-// nothing left to decide and must not run: an unreachable remote still
-// resolves entirely from the pin.
-func (LockfileSuite) TestGitLatestPinnedSchemelessRemoteSkipsTransportProbe(ctx context.Context, t *testctx.T) {
-	const schemelessRemote = "git.example.invalid/dagger.git"
-	const pinnedRemote = "https://" + schemelessRemote
-	const pinnedCommit = "0123456789abcdef0123456789abcdef01234567"
+// A scheme-less source must keep its own transport fallback. The workspace
+// lock is shared and committed, so it can name a transport that this user
+// cannot reach: one contributor pins over SSH, the next has HTTPS access only.
+// Selecting the locked transport strands the second contributor on a
+// repository they can otherwise read.
+func (LockfileSuite) TestSchemelessRemoteIgnoresLockedTransport(ctx context.Context, t *testctx.T) {
+	const schemelessRemote = "github.com/dagger/dagger-test-modules"
+	const sshRemote = "ssh://" + schemelessRemote
 
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+	queryPath := writeQueryDoc(t, workdir, "git-url.graphql", `{
   git(url: "`+schemelessRemote+`") {
-    latest {
-      ref
-      commit
-    }
+    url
   }
 }
 `)
 	writeGitLatestLockForRemote(
 		t,
 		workdir,
-		pinnedRemote,
-		"refs/tags/v1.2.3@"+pinnedCommit,
+		sshRemote,
+		"refs/heads/main@4232918aa11c5347758ce657659e92f43610f0ff",
 	)
 
 	out, err := hostDaggerExec(
@@ -715,36 +710,7 @@ func (LockfileSuite) TestGitLatestPinnedSchemelessRemoteSkipsTransportProbe(ctx 
 		queryPath,
 	)
 	require.NoError(t, err)
-	require.Contains(t, string(out), "refs/tags/v1.2.3")
-	require.Contains(t, string(out), pinnedCommit)
-}
-
-// Without lock entries there is nothing to pick a transport from, so the
-// resolver still probes every candidate and reports that none answered.
-func (LockfileSuite) TestUnpinnedSchemelessRemoteStillProbesTransport(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
-  git(url: "git.example.invalid/dagger.git") {
-    latest {
-      ref
-      commit
-    }
-  }
-}
-`)
-
-	_, err := hostDaggerExec(
-		ctx,
-		t,
-		workdir,
-		"--silent",
-		"query",
-		"--doc",
-		queryPath,
-	)
-	require.Error(t, err)
+	require.Contains(t, string(out), "https://"+schemelessRemote)
 }
 
 func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t *testctx.T) {
