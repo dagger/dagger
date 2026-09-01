@@ -51,8 +51,14 @@ type SpecificClientAttachableConnOpts struct {
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
-	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	// Register a unique nested transport using the creating context's held
+	// client scope before the proxy begins serving.
+	RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error)
+
+	// Handle an HTTP request from a registered nested Dagger client. When
+	// inertAttachables is true, host session attachable access is denied rather
+	// than inherited from the parent or awaited on the synthetic client.
+	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -129,7 +135,8 @@ type Server interface {
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
-	// The engine utility client for the current client
+	// The session-owned engine utility gateway for the current executable scope.
+	// Caller-facing operations route from immutable ClientMetadata in context.
 	Engine(context.Context) (*engineutil.Client, error)
 
 	// The session-owned registry resolver for the current client.

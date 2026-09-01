@@ -13,6 +13,8 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -879,7 +881,13 @@ func gitConfigSelectors(ctx context.Context, bk *engineutil.Client) ([]dagql.Sel
 
 	gitconfig, err := bk.GetGitConfig(ctx)
 	if err != nil {
-		return nil, err
+		if status.Code(err) != codes.PermissionDenied {
+			return nil, err
+		}
+		// An in-engine SDK client has no host attachables by design. Its module
+		// dependencies must still be buildable; they simply do not inherit the
+		// caller's ambient Git configuration.
+		gitconfig = nil
 	}
 
 	for _, entry := range gitconfig {
