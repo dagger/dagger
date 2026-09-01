@@ -18,7 +18,7 @@ where relevant:
 
 - [SDKs overview](./index.mdx) covers what a module is and how it runs
 - [Types](../api/index.mdx) covers how language types map to the Dagger API
-- [Generating code](../../cli/generating.mdx) covers how generated files are reviewed and applied
+- [Generating code](../../using/generating.mdx) covers how generated files are reviewed and applied
 
 :::important
 Module development tooling lives in the SDK module, not the `dagger` CLI.
@@ -41,7 +41,7 @@ dagger install github.com/dagger/typescript-sdk
 dagger api call typescript-sdk init --name=my-module
 ```
 
-`init` returns a [changeset](../../cli/generating.mdx) describing the files to
+`init` returns a [changeset](../../using/generating.mdx) describing the files to
 create, which Dagger shows you to review before anything is written to disk.
 
 `init` arguments (from `dagger api call typescript-sdk init --help`):
@@ -727,7 +727,7 @@ returns a non-zero exit code (which surfaces as a thrown error when you `sync`).
 
 ### Generators {#generators}
 
-A generator produces a [changeset](../../cli/generating.mdx), a diff between the
+A generator produces a [changeset](../../using/generating.mdx), a diff between the
 current source and generated output. Mark it with `@generate()` and return a
 `Changeset`. `dagger generate` runs every generator and presents the combined
 changeset for review.
@@ -774,7 +774,7 @@ project-specific output (API clients, config, scaffolding) and are run by
 
 A service is a long-running container, such as a database, web server, or other
 dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
-starts every service in the module. See [Services](../../cli/services.mdx).
+starts every service in the module. See [Services](../../using/services.mdx).
 
 ```typescript
 import { Service, dag, object, func, up } from "@dagger.io/dagger"

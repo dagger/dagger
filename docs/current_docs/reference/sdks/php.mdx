@@ -11,7 +11,7 @@ The PHP SDK lets you write Dagger modules in PHP. You define plain PHP classes a
 This page is a standalone guide to the PHP SDK. It assumes you already understand the platform concepts covered in the [SDKs overview](./index.mdx):
 
 - [Types](../api/index.mdx) explains how SDK types map to the Dagger API
-- [Generating code](../../cli/generating.mdx) explains how generators and tooling return diffs for you to apply
+- [Generating code](../../using/generating.mdx) explains how generators and tooling return diffs for you to apply
 
 A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The PHP SDK currently supports checks. See [Checks, directives, and ignore patterns](#checks-directives-and-ignore-patterns) for the PHP syntax and what is still missing.
 
@@ -38,7 +38,7 @@ dagger sdk install php
 dagger module init php my-module
 ```
 
-Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../cli/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
+Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
 
 :::tip
 If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here php` to create it in the current directory.
@@ -1079,5 +1079,5 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 - [SDKs overview](./index.mdx) covers platform concepts that apply to every SDK
 - [Types](../api/index.mdx)
-- [Generating code](../../cli/generating.mdx)
+- [Generating code](../../using/generating.mdx)
 - [Quickstart](../../getting-started/quickstart.mdx)
