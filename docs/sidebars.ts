@@ -189,5 +189,12 @@ module.exports = {
         },
       ],
     },
+
+    // ========================================
+    // SELF-HOSTING
+    // ========================================
+    // A category needs at least one item, so this is a plain doc entry until
+    // the section has pages.
+    { type: "doc", id: "self-hosting/index", label: "Self-hosting" },
   ],
 };
