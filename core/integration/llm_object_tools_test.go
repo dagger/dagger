@@ -368,6 +368,10 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		require.NoError(t, err)
 		require.Contains(t, out, "continue")
 		require.Contains(t, out, "Continuing from the returned conversation.")
+		// The continuation bound a different workspace than it was handed, so
+		// the model is shown what changed, as it would be for a Workspace swap.
+		require.Contains(t, out, "Workspace changed:")
+		require.Contains(t, out, "CONTINUED.txt")
 		require.Contains(t, out, "done")
 	})
 
@@ -443,6 +447,106 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		require.NoError(t, err)
 		require.Contains(t, out, "only one is allowed")
 		require.Contains(t, out, "done")
+	})
+
+	// Continuations run after the turn's other calls, on the state those calls
+	// produced (MCP.SplitContinuationCalls), so `[edit, reload]` reloads the
+	// edit. addFirst returns a Changeset and so lands in the changeset phase
+	// whichever order the model emitted; the continuation receives a
+	// conversation with that changeset already overlaid and adds its marker on
+	// top. Both files must survive, and neither call may be refused.
+	loopThen := func(ctx context.Context, t *testctx.T, prompt, model, then string) string {
+		t.Helper()
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "%s" | loop | %s`,
+			model, prompt, then,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	for _, tc := range []struct {
+		name  string
+		calls []dagger.LLMContentBlockInput
+	}{
+		{
+			name: "an edit emitted before the continuation is carried into it",
+			calls: []dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "addFirst"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "continueWithMarker"},
+			},
+		},
+		{
+			name: "an edit emitted after the continuation is carried into it too",
+			calls: []dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addFirst"},
+			},
+		},
+		{
+			name: "a returned Workspace feeds the continuation",
+			calls: []dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "continueWithMarker"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			model := cannedReplayModel(ctx, t, c, c.LLM().
+				WithPrompt("edit and continue").
+				WithResponse(tc.calls).
+				WithToolResult("call_1", "", false).
+				WithToolResult("call_2", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+				}))
+
+			transcript := loopThen(ctx, t, "edit and continue", model, "transcript")
+			require.NotContains(t, transcript, "already ran this turn")
+			require.Contains(t, transcript, "Continuing from the returned conversation.")
+			require.Contains(t, transcript, "done")
+
+			require.Equal(t, "swapped by continuation", strings.TrimSpace(
+				loopThen(ctx, t, "edit and continue", model, "workspace | file CONTINUED.txt | contents")))
+			edited, editedContents := "FIRST.txt", "first parallel change"
+			if tc.calls[0].ToolName == "swap" {
+				edited, editedContents = "SWAPPED.txt", "swapped by tool"
+			}
+			require.Equal(t, editedContents, strings.TrimSpace(
+				loopThen(ctx, t, "edit and continue", model, "workspace | file "+edited+" | contents")))
+		})
+	}
+
+	t.Run("a continuation reached out of order refuses the work it would drop", func(ctx context.Context, t *testctx.T) {
+		// Wrapping the continuation in the timeout builtin runs it in the
+		// destructive phase instead of last, so the changeset phase runs after
+		// it — on a workspace the adopted conversation will never see. The
+		// changeset call is refused rather than silently dropped, the model is
+		// told to re-issue it, and the loop carries on from the continuation.
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue then edit").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "timeout",
+					Arguments: dagger.JSON(`{"duration":"1m","tool":"continueWithMarker","arguments":{}}`)},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addFirst"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithToolResult("call_2", "", true).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		transcript := loopThen(ctx, t, "continue then edit", model, "transcript")
+		require.Contains(t, transcript, "Continuing from the returned conversation.")
+		require.Contains(t, transcript, "re-issue this call in the next turn")
+		require.Contains(t, transcript, "done")
+
+		require.Equal(t, "swapped by continuation", strings.TrimSpace(
+			loopThen(ctx, t, "continue then edit", model, "workspace | file CONTINUED.txt | contents")))
+		_, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue then edit" | loop | workspace | file FIRST.txt | contents`,
+			model,
+		))).Stdout(ctx)
+		require.Error(t, err, "the refused changeset must not have landed")
 	})
 
 	t.Run("the base workspace does not already contain the marker", func(ctx context.Context, t *testctx.T) {

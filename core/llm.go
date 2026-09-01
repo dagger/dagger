@@ -1740,19 +1740,50 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 	llm.mcp.SetSelfLLM(responded)
 
-	resultMsgs := llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays)
+	// Continuations — tools returning an LLM — run in a second batch after
+	// every other call, so the conversation they receive already carries the
+	// turn's workspace and binding changes: `[editModule, reload]` reloads the
+	// edit. See MCP.SplitContinuationCalls.
+	regularCalls, continuationCalls := llm.mcp.SplitContinuationCalls(tools, toolCalls)
+	resultMsgs := llm.mcp.CallBatch(ctx, tools, regularCalls, res.ToolCallDisplays)
+
+	// In-step state changes — a Changeset overlaid onto the bound workspace, a
+	// Workspace returned, an object rebound as the new state — live only on this
+	// step's transient MCP clone. They must be re-recorded onto the materialized
+	// state as withWorkspace/withTools selectors, or later steps rebuild history
+	// from the stale bindings and silently revert them.
+	stateSels := stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore)
+
+	base := responded
+	if len(continuationCalls) > 0 {
+		if len(stateSels) > 0 {
+			// Fold the turn's state into the conversation the continuations
+			// receive, so they transform what the turn produced rather than
+			// what it started from. Materialized here instead of at the end,
+			// the way the response itself was above.
+			var withState dagql.ObjectResult[*LLM]
+			if err := srv.Select(ctx, responded, &withState, stateSels...); err != nil {
+				for _, tc := range continuationCalls {
+					endToolCallDisplay(res.ToolCallDisplays, tc.CallID, true, err.Error())
+				}
+				endRemainingDisplaySpans()
+				return inst, err
+			}
+			base = withState
+			stateSels = nil
+		}
+		llm.mcp.SetSelfLLM(base)
+		resultMsgs = append(resultMsgs, llm.mcp.CallBatch(ctx, tools, continuationCalls, res.ToolCallDisplays)...)
+	}
 
 	// A tool may have returned an LLM: it acted as a continuation, and the turn
 	// resumes from THAT conversation — its env, tools, system prompts and
 	// history — instead of the one that made the call (see MCP.adoptLLM). Its ID
-	// records the transform, so replay lands on it.
-	//
-	// The swap subsumes the workspace/bound-tool persistence below: whatever the
-	// continuation binds is already part of its own ID. Persisting the calling
-	// LLM's mutated bindings on top would override the continuation's.
-	base := responded
-	cont := llm.mcp.Continuation()
-	if cont.Self() != nil {
+	// records the transform, so replay lands on it. The turn's state changes
+	// were folded into the conversation it derived from above, and adoptLLM
+	// refuses a continuation that would drop any, so nothing remains to persist
+	// on top of it.
+	if cont := llm.mcp.Continuation(); cont.Self() != nil {
 		base = cont
 	}
 
@@ -1761,56 +1792,12 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		toolNames[tc.CallID] = tc.Name
 	}
 	sels := toolResultSelectors(base.Self(), resultMsgs, toolNames)
-
-	if cont.Self() == nil {
-		// Persist an in-step workspace change (e.g. a tool returned a Changeset that
-		// was overlaid onto the bound workspace) so the edit survives the LLM history
-		// rebuild — a rebuild otherwise re-binds the original workspace (via NewLLM or
-		// the last recorded withWorkspace) and loses the overlay. Handle-safe compare
-		// (post-eval IDs are handle-form).
-		if wsAfter, err := llm.mcp.WorkspaceID(); err == nil && wsAfter != nil &&
-			stableIDDigest(wsAfter) != stableIDDigest(wsBefore) {
-			sels = append(sels, dagql.Selector{
-				Field: "withWorkspace",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "workspace",
-						Value: dagql.NewID[*Workspace](wsAfter),
-					},
-				},
-			})
-		}
-
-		// Persist an in-step state transition: a tool that returned its bound object's
-		// own type rebinds it (hack/designs/workspace-agents.md). Re-emit a withTools selector for
-		// each binding whose object changed, so the new state survives the history
-		// rebuild — the same shape as the withWorkspace persist above.
-		if toolsAfter, err := llm.mcp.BoundToolBindings(); err == nil {
-			for i, after := range toolsAfter {
-				if i < len(toolsBefore) &&
-					stableIDDigest(after.ID) == stableIDDigest(toolsBefore[i].ID) {
-					continue
-				}
-				sels = append(sels, dagql.Selector{
-					Field: "withTools",
-					Args: []dagql.NamedInput{
-						{
-							Name:  "object",
-							Value: dagql.NewAnyID(after.ID),
-						},
-						{
-							Name:  "except",
-							Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(after.Except...)),
-						},
-					},
-				})
-			}
-		}
-	}
+	sels = append(sels, stateSels...)
 
 	var stepped dagql.ObjectResult[*LLM]
 	if len(sels) == 0 {
-		// No tool calls this turn: the response is already materialized.
+		// Nothing left to record: base is already materialized, whether it is
+		// the bare response (no tool calls this turn) or a continuation.
 		endRemainingDisplaySpans()
 		return base, nil
 	}
@@ -1873,6 +1860,57 @@ func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]s
 				},
 			},
 		})
+	}
+	return sels
+}
+
+// stateDeltaSelectors builds the selectors that re-record what this step's tool
+// calls changed on the transient MCP clone, relative to the bindings captured
+// entering the step, so the change survives the LLM history rebuild:
+//
+//   - a workspace change (e.g. a tool returned a Changeset that was overlaid
+//     onto the bound workspace) as withWorkspace — a rebuild otherwise re-binds
+//     the original workspace (via NewLLM or the last recorded withWorkspace)
+//     and loses the overlay;
+//   - a state transition — a tool that returned its bound object's own type
+//     rebinds it (hack/designs/workspace-agents.md) — as a withTools selector
+//     for each binding whose object changed.
+//
+// Comparisons are handle-safe (post-eval IDs are handle-form).
+func stateDeltaSelectors(m *MCP, wsBefore *call.ID, toolsBefore []boundToolBinding) []dagql.Selector {
+	var sels []dagql.Selector
+	if wsAfter, err := m.WorkspaceID(); err == nil && wsAfter != nil &&
+		stableIDDigest(wsAfter) != stableIDDigest(wsBefore) {
+		sels = append(sels, dagql.Selector{
+			Field: "withWorkspace",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "workspace",
+					Value: dagql.NewID[*Workspace](wsAfter),
+				},
+			},
+		})
+	}
+	if toolsAfter, err := m.BoundToolBindings(); err == nil {
+		for i, after := range toolsAfter {
+			if i < len(toolsBefore) &&
+				stableIDDigest(after.ID) == stableIDDigest(toolsBefore[i].ID) {
+				continue
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withTools",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "object",
+						Value: dagql.NewAnyID(after.ID),
+					},
+					{
+						Name:  "except",
+						Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(after.Except...)),
+					},
+				},
+			})
+		}
 	}
 	return sels
 }

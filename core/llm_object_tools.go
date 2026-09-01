@@ -177,18 +177,24 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 // rebindBoundTool replaces the object for typeName's binding with newObj — the
 // same-type-return state transition. It mutates in place under the lock; step()
 // then persists the transition as a withTools selector on the LLM's ID.
-func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) {
+func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.continuation.Self() != nil {
+		// See errContinuationAdopted: the rebind would be dropped.
+		return errContinuationAdopted
+	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			id, _ := newObj.ID()
 			m.boundTools[i].object = newObj
 			m.boundTools[i].id = id
 			m.boundTools[i].objType = newObj.ObjectType()
-			return
+			m.stateChanged = true
+			return nil
 		}
 	}
+	return nil
 }
 
 // boundToolBinding is a flattened snapshot of a binding: the object's ID plus its
@@ -445,12 +451,15 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			// return replaces the whole conversation, and at most one may be
 			// adopted per turn. Changeset-returning methods run in parallel;
 			// CallBatch merges their results before applying them to the
-			// workspace.
+			// workspace. LLM-returning methods run last, in their own batch
+			// (MCP.SplitContinuationCalls), on the state the rest of the turn
+			// produced.
 			ReadOnly: retType != typeName &&
 				retType != "Changeset" &&
 				retType != workspaceTypeName &&
 				retType != llmTypeName,
 			ReturnsChangeset: retType == "Changeset",
+			ReturnsLLM:       retType == llmTypeName,
 			Call:             m.callObjectMethod(srv, typeName, field),
 			Server:           typeName,
 		})
@@ -931,7 +940,9 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 			// Same-type return: the result is the agent's new state. Rebind it
 			// (step() persists this as a withTools selector); the method's own print
 			// output is the response.
-			m.rebindBoundTool(typeName, obj)
+			if err := m.rebindBoundTool(typeName, obj); err != nil {
+				return nil, err
+			}
 			return m.logsOrDone(ctx), nil
 		}
 		// Any other object: force it so its side effects run, and surface whatever

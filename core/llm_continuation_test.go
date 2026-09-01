@@ -217,3 +217,60 @@ func TestToolResultSelectors(t *testing.T) {
 		require.Equal(t, "withToolResult", sels[0].Field)
 	})
 }
+
+func TestSplitContinuationCalls(t *testing.T) {
+	tools := []LLMTool{
+		{Name: "reload", ReturnsLLM: true},
+		{Name: "edit", ReturnsChangeset: true},
+		{Name: "read", ReadOnly: true},
+	}
+	calls := []*LLMToolCall{
+		{CallID: "c1", Name: "reload"},
+		{CallID: "c2", Name: "edit"},
+		{CallID: "c3", Name: "missing"},
+		{CallID: "c4", Name: "read"},
+	}
+	regular, continuations := newMCP().SplitContinuationCalls(tools, calls)
+
+	// Continuations are pulled out regardless of the order the model emitted
+	// them; everything else — including a call to an unknown tool, which must
+	// still fail through the normal path — keeps its relative order.
+	require.Equal(t, []*LLMToolCall{calls[0]}, continuations)
+	require.Equal(t, []*LLMToolCall{calls[1], calls[2], calls[3]}, regular)
+}
+
+func TestStateRingsAndContinuationsAreExclusiveOutOfOrder(t *testing.T) {
+	// Continuations normally run last (SplitContinuationCalls), with the turn's
+	// state folded into the conversation they receive. These guards cover a
+	// continuation reached out of order — e.g. through the timeout builtin —
+	// where whichever side runs second would otherwise be silently dropped.
+
+	t.Run("state rings refuse after a continuation", func(t *testing.T) {
+		m := newMCP()
+		require.NoError(t, m.guardStateChange())
+		require.NoError(t, m.rebindBoundTool("Doug", nil))
+
+		srv := newCoreDagqlServerForTest(t, &Query{})
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*LLM]{Typed: &LLM{}}))
+		cont, err := dagql.NewObjectResultForCall(&LLM{}, srv, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "continuation",
+			Type:        dagql.NewResultCallType((&LLM{}).Type()),
+		})
+		require.NoError(t, err)
+		m.continuation = cont
+		require.ErrorIs(t, m.guardStateChange(), errContinuationAdopted)
+		require.ErrorIs(t, m.rebindBoundTool("Doug", nil), errContinuationAdopted)
+	})
+
+	t.Run("SetSelfLLM resets the divergence flag", func(t *testing.T) {
+		m := newMCP()
+		require.False(t, m.stateChanged)
+		m.markStateChanged()
+		require.True(t, m.stateChanged)
+		// step() folds the change into the conversation it hands to the
+		// continuation phase, so the flag clears with it.
+		m.SetSelfLLM(dagql.ObjectResult[*LLM]{})
+		require.False(t, m.stateChanged)
+	})
+}
