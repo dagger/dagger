@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  The engine can now load a module runtime embedded as a generated Dang file
+  next to the module's `dagger-module.toml` (internal `embed:<filename>`
+  runtime source, produced by SDK codegen only). The file is evaluated
+  in-process by the native Dang interpreter, so no separate runtime module is
+  resolved or fetched — the fastest runtime-loading path available to SDKs.
+time: 2026-09-01T10:15:00Z
+custom:
+  Author: eunomie
+  PR: ""
