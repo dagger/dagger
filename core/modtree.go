@@ -751,7 +751,7 @@ func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([
 	if argName == "" {
 		return nil, nil
 	}
-	wsID, err := workspaceArgValue(ctx, srv)
+	wsID, err := WorkspaceArgValue(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -1011,7 +1011,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			// Engine-supplied ones (an @agent's `base: LLM!`, a `Workspace!`)
 			// are filled in at selection time, so a leaf declaring one must
 			// still be discovered — see boundWorkspaceArgs.
-			if functionRequiresCallerArgs(fn) {
+			if FunctionRequiresCallerArgs(fn) {
 				continue
 			}
 			returnType := fn.ReturnType.Self().ToType().Name()

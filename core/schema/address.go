@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/iancoleman/strcase"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -149,12 +151,19 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	// missing non-null argument in preselect, before the injection hook that
 	// fills workspace args runs (see core.WithBoundWorkspaceArgs). The value
 	// resolves the same way it does everywhere else — the workspace bound into
-	// the context, else the session's current one.
+	// the context, else the session's current one. An @agent function's
+	// required LLM! is engine-supplied the same way (see withAgentBaseArg).
+	// Together these are exactly the arguments core.FunctionRequiresCallerArgs
+	// exempts, so every function Workspace.addresses lists is callable here.
 	ctorArgs := core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil)
 	var fnArgs []dagql.NamedInput
 	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
 		if fnSpec, ok := objType.FieldSpec(functionField, srv.View); ok {
 			fnArgs = core.WithBoundWorkspaceArgs(ctx, srv, fnSpec.Args.Inputs(srv.View), nil)
+			fnArgs, err = withAgentBaseArg(ctx, srv, fnSpec, fnArgs)
+			if err != nil {
+				return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
+			}
 		}
 	}
 	selectors := []dagql.Selector{
@@ -165,6 +174,54 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
 	}
 	return true, nil
+}
+
+// withAgentBaseArg supplies the base for an @agent function's required LLM!
+// argument, if named doesn't already carry it. A bare "module:agent" reference
+// resolves to the agent composed onto the same seed AgentGroup.compose uses
+// when handed no base: a fresh LLM bound to the workspace in scope. Any other
+// function is returned unchanged.
+func withAgentBaseArg(ctx context.Context, srv *dagql.Server, fnSpec dagql.FieldSpec, named []dagql.NamedInput) ([]dagql.NamedInput, error) {
+	if ast.DirectiveList(fnSpec.Directives).ForName("agent") == nil {
+		return named, nil
+	}
+	for _, arg := range fnSpec.Args.Inputs(srv.View) {
+		if !arg.Type.Type().NonNull || inputSpecExpectedType(arg) != "LLM" {
+			continue
+		}
+		if slices.ContainsFunc(named, func(n dagql.NamedInput) bool { return n.Name == arg.Name }) {
+			return named, nil
+		}
+		ws, err := core.WorkspaceArgValue(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("agent base workspace: %w", err)
+		}
+		base, err := seedBaseLLM(ctx, srv, ws)
+		if err != nil {
+			return nil, fmt.Errorf("seed agent base: %w", err)
+		}
+		baseID, err := base.ID()
+		if err != nil {
+			return nil, fmt.Errorf("agent base id: %w", err)
+		}
+		return append(named, dagql.NamedInput{Name: arg.Name, Value: dagql.NewID[*core.LLM](baseID)}), nil
+	}
+	return named, nil
+}
+
+// inputSpecExpectedType returns the object type an ID-typed argument expects,
+// from the @expectedType directive a module function's object args carry (the
+// spec's own type only says "ID"), or "" when there is none.
+func inputSpecExpectedType(spec dagql.InputSpec) string {
+	d := ast.DirectiveList(spec.Directives).ForName("expectedType")
+	if d == nil {
+		return ""
+	}
+	name := d.Arguments.ForName("name")
+	if name == nil || name.Value == nil {
+		return ""
+	}
+	return name.Value.Raw
 }
 
 // demandLoadInstalledModule loads and serves the named workspace module when
@@ -303,6 +360,10 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
 			Doc(`Load a workspace from a module reference.`),
+		dagql.NodeFunc("llm", s.llm).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc(`Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.`),
 	}.Install(srv)
 }
 
@@ -848,6 +909,21 @@ func (s *addressSchema) workspace(
 		return inst, err
 	}
 	return inst, fmt.Errorf("workspace address %q must reference an installed module as <module>:<function>", addr)
+}
+
+func (s *addressSchema) llm(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.Address],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.LLM],
+	err error,
+) {
+	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
+	return inst, fmt.Errorf("LLM address %q must reference an installed module as <module>:<function>", addr)
 }
 
 func (s *addressSchema) volume(

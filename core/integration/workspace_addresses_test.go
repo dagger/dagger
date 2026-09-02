@@ -2,9 +2,10 @@ package core
 
 // These tests cover Workspace.addresses: discovery of module functions loadable
 // as bare "module:function" address references (hack/designs/sandboxes.md §5).
-// They verify return-type filtering, the required-arg rule (auto-injected
-// Workspace args are exempt), entrypoint-module exclusion, kebab-case value
-// rendering, and that a rendered value round-trips through Query.address.
+// They verify return-type filtering, the caller-arg rule (engine-supplied args
+// are exempt: an auto-injected Workspace, an @agent's base LLM),
+// entrypoint-module exclusion, kebab-case value rendering, and that a rendered
+// value round-trips through Query.address.
 //
 // See also:
 // - workspace_modules_test.go: installing and listing workspace modules.
@@ -57,6 +58,11 @@ type Sandboxes {
   greet: String! {
     "hello"
   }
+
+  """Coding agent; the base LLM is engine-supplied."""
+  coder(base: LLM!): LLM! @agent {
+    base.withTools(currentNode).withSystemPrompt("coder agent system prompt")
+  }
 }
 `
 
@@ -80,16 +86,16 @@ source = ".dagger/modules/sandboxes"
 source = ".dagger/modules/entry"
 entrypoint = true
 `).
-		WithNewFile(".dagger/modules/sandboxes/dagger.json", `{"name":"sandboxes","sdk":{"source":"dang"}}`).
+		WithNewFile(".dagger/modules/sandboxes/dagger.json", `{"name":"sandboxes","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
 		WithNewFile(".dagger/modules/sandboxes/main.dang", workspaceAddressesSandboxesSource).
-		WithNewFile(".dagger/modules/entry/dagger.json", `{"name":"entry","sdk":{"source":"dang"}}`).
+		WithNewFile(".dagger/modules/entry/dagger.json", `{"name":"entry","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
 		WithNewFile(".dagger/modules/entry/main.dang", workspaceAddressesEntrySource)
 
 	t.Run("container addresses", func(ctx context.Context, t *testctx.T) {
 		// go and plain appear (zero args); wsAware appears (its only required
 		// arg is an auto-injected Workspace); custom is dropped (required
-		// String arg); data and greet are dropped (wrong return type); entry's
-		// entryCtr is dropped (entrypoint modules are hoisted, not
+		// String arg); data, greet and coder are dropped (wrong return type);
+		// entry's entryCtr is dropped (entrypoint modules are hoisted, not
 		// addressable). Values are kebab-case and sorted; plain has no
 		// docstring, so its description is empty.
 		out, err := base.
@@ -113,6 +119,19 @@ entrypoint = true
 		]}}`, out)
 	})
 
+	t.Run("llm addresses", func(ctx context.Context, t *testctx.T) {
+		// coder's only required arg is its @agent base, which the engine
+		// supplies the same way it supplies a Workspace, so the agent is
+		// addressable.
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{addresses(type:"LLM"){value description}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"addresses":[
+			{"value":"sandboxes:coder","description":"Coding agent; the base LLM is engine-supplied."}
+		]}}`, out)
+	})
+
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerQuery(`{currentWorkspace{addresses(type:"Service"){value}}}`)).
@@ -130,5 +149,18 @@ entrypoint = true
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "platform")
+	})
+
+	t.Run("agent address resolves through Query.address", func(ctx context.Context, t *testctx.T) {
+		// A bare agent reference resolves to the agent composed onto the same
+		// seed Workspace.agents.compose uses with no base: a fresh LLM bound to
+		// the workspace in scope. The Sandboxes tools prove the middleware ran
+		// on that seed; the workspace's entries prove the seed is bound.
+		out, err := base.
+			With(daggerQuery(`{address(value:"sandboxes:coder"){llm{tools workspace{directory(path:"/"){entries}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "## custom")
+		require.Contains(t, out, "dagger.toml")
 	})
 }

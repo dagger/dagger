@@ -413,7 +413,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("addresses", s.addresses).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and whose required args (beyond an auto-injected Workspace) are none, rendered as bare \"module:function\" references.").
+			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and which take no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare \"module:function\" references.").
 			Args(
 				dagql.Arg("type").Doc(`Name of the type the function must return to be listed, e.g. "Container".`),
 			),
@@ -3561,8 +3561,9 @@ func (s *workspaceSchema) agents(
 // addresses lists module functions loadable as bare "module:function" address
 // references (hack/designs/sandboxes.md §5): top-level functions on each
 // installed module's main object — the only shape resolveModuleRef can load —
-// whose return type name matches the requested type and whose required args
-// (beyond an auto-injected Workspace) are none.
+// whose return type name matches the requested type and which take no
+// caller-supplied arguments. Engine-supplied ones (an auto-injected Workspace,
+// an @agent's base LLM) don't count, and resolveModuleRef fills both.
 func (s *workspaceSchema) addresses(
 	ctx context.Context,
 	parent *core.Workspace,
@@ -3627,7 +3628,7 @@ func (s *workspaceSchema) addresses(
 			if retType.ToType().Name() != args.Type {
 				continue
 			}
-			if core.FunctionRequiresArgsExceptWorkspace(fn) {
+			if core.FunctionRequiresCallerArgs(fn) {
 				continue
 			}
 			// Kebab-case both segments for consistency with CLI-facing names;
