@@ -1698,9 +1698,29 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\TerminalGroup",
+			"p": "Dagger/TerminalGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\TerminalId",
 			"p": "Dagger/TerminalId.html",
 			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\TerminalTarget",
+			"p": "Dagger/TerminalTarget.html",
+			"d": null,
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -7110,6 +7130,54 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\TerminalGroup::id",
+			"p": "Dagger/TerminalGroup.html#method_id",
+			"d": "<p>A unique identifier for this TerminalGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalGroup::list",
+			"p": "Dagger/TerminalGroup.html#method_list",
+			"d": "<p>Return the selected terminal targets and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalGroup::run",
+			"p": "Dagger/TerminalGroup.html#method_run",
+			"d": "<p>Open the selected terminal target</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::description",
+			"p": "Dagger/TerminalTarget.html#method_description",
+			"d": "<p>The description of the terminal target</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::id",
+			"p": "Dagger/TerminalTarget.html#method_id",
+			"d": "<p>A unique identifier for this TerminalTarget.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::name",
+			"p": "Dagger/TerminalTarget.html#method_name",
+			"d": "<p>Return the fully qualified name of the terminal target</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::originalModule",
+			"p": "Dagger/TerminalTarget.html#method_originalModule",
+			"d": "<p>The module in which the terminal target is defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::path",
+			"p": "Dagger/TerminalTarget.html#method_path",
+			"d": "<p>The path of the terminal target within its module</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\TypeDef::asEnum",
 			"p": "Dagger/TypeDef.html#method_asEnum",
 			"d": "<p>If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.</p>"
@@ -7455,6 +7523,12 @@
 			"n": "Dagger\\Workspace::services",
 			"p": "Dagger/Workspace.html#method_services",
 			"d": "<p>Return all services from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::terminals",
+			"p": "Dagger/Workspace.html#method_terminals",
+			"d": "<p>Return all terminal targets from modules loaded in the workspace.</p>"
 		},
 		{
 			"t": "M",

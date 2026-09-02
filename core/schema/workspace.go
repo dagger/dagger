@@ -404,6 +404,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
+		dagql.NodeFunc("terminals", s.terminals).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return all terminal targets from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include terminal targets matching the specified patterns"),
+			),
 		dagql.NodeFunc("agents", s.agents).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
@@ -3497,6 +3503,40 @@ func (s *workspaceSchema) services(
 	return &core.UpGroup{Ups: allUps, BoundWorkspace: parentResult}, nil
 }
 
+func (s *workspaceSchema) terminals(
+	ctx context.Context,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.TerminalGroup, error) {
+	parent := parentResult.Self()
+	if isSyntheticWorkspace(parent) {
+		return &core.TerminalGroup{}, nil
+	}
+
+	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	allTerminals, err := collectWorkspaceModuleTargets(
+		ctx,
+		include,
+		"terminal targets",
+		"terminal target",
+		terminalTargetsFromModule,
+		func(terminal *core.TerminalTarget) *core.ModTreeNode { return terminal.Node },
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.TerminalGroup{Terminals: allTerminals, BoundWorkspace: parentResult}, nil
+}
+
 func (s *workspaceSchema) agents(
 	ctx context.Context,
 	parentResult dagql.ObjectResult[*core.Workspace],
@@ -3516,7 +3556,29 @@ func (s *workspaceSchema) agents(
 		return nil, err
 	}
 
-	// agent composition is strict: a module that can't load is a failure.
+	allAgents, err := collectWorkspaceModuleTargets(
+		ctx,
+		include,
+		"agents",
+		"agent",
+		agentTargetsFromModule,
+		func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+}
+
+func collectWorkspaceModuleTargets[T any](
+	ctx context.Context,
+	include []string,
+	groupLabel string,
+	targetLabel string,
+	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
+	node func(T) *core.ModTreeNode,
+) ([]T, error) {
 	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
 		return nil, err
 	}
@@ -3525,28 +3587,49 @@ func (s *workspaceSchema) agents(
 		return nil, err
 	}
 
-	var allAgents []*core.Agent
+	var all []T
 	for _, mod := range mods {
-		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
+		root, targets, err := collect(ctx, mod)
 		if err != nil {
-			return nil, fmt.Errorf("agents from module %q: %w", mod.Self().Name(), err)
+			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
 		}
-		reparentWorkspaceTreeRoot(agentGroup.Node, mod.Self().Name())
+		reparentWorkspaceTreeRoot(root, mod.Self().Name())
 		filtered, err := filterNodesByInclude(
 			ctx,
-			agentGroup.Agents,
+			targets,
 			include,
-			func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
-			func(agent *core.Agent) string { return agent.Name() },
-			"agent",
+			node,
+			func(target T) string { return node(target).PathString() },
+			targetLabel,
 		)
 		if err != nil {
 			return nil, err
 		}
-		allAgents = append(allAgents, filtered...)
+		all = append(all, filtered...)
 	}
+	return all, nil
+}
 
-	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+func terminalTargetsFromModule(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+) (*core.ModTreeNode, []*core.TerminalTarget, error) {
+	group, err := core.NewTerminalGroup(ctx, mod, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return group.Node, group.Terminals, nil
+}
+
+func agentTargetsFromModule(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+) (*core.ModTreeNode, []*core.Agent, error) {
+	group, err := core.NewAgentGroup(ctx, mod, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return group.Node, group.Agents, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

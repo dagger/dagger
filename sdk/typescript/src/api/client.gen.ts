@@ -3265,6 +3265,13 @@ export type WorkspaceServicesOpts = {
   include?: string[]
 }
 
+export type WorkspaceTerminalsOpts = {
+  /**
+   * Only include terminal targets matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type WorkspaceWithConfigEnvOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
@@ -14535,6 +14542,149 @@ export class Terminal extends BaseClient {
   }
 }
 
+export class TerminalGroup extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this TerminalGroup.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the selected terminal targets and their details
+   */
+  list = async (): Promise<TerminalTarget[]> => {
+    type list = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new TerminalTarget(ctx.copy().selectNode(r.id, "TerminalTarget")),
+    )
+  }
+
+  /**
+   * Open the selected terminal target
+   */
+  run = (): TerminalGroup => {
+    const ctx = this._ctx.select("run")
+    return new TerminalGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current TerminalGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: TerminalGroup) => TerminalGroup) => {
+    return arg(this)
+  }
+}
+
+export class TerminalTarget extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this TerminalTarget.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the terminal target
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the terminal target
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module in which the terminal target is defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the terminal target within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
 /**
  * A definition of a parameter or return type in a Module.
  */
@@ -15447,6 +15597,15 @@ export class Workspace extends BaseClient {
   services = (opts?: WorkspaceServicesOpts): UpGroup => {
     const ctx = this._ctx.select("services", { ...opts })
     return new UpGroup(ctx)
+  }
+
+  /**
+   * Return all terminal targets from modules loaded in the workspace.
+   * @param opts.include Only include terminal targets matching the specified patterns
+   */
+  terminals = (opts?: WorkspaceTerminalsOpts): TerminalGroup => {
+    const ctx = this._ctx.select("terminals", { ...opts })
+    return new TerminalGroup(ctx)
   }
 
   /**

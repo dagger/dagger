@@ -16,11 +16,7 @@ func TestWriteCommandList(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	text := out.String()
-	require.Regexp(t, `(?m)^web\s+# Start the web server$`, text)
-	require.Regexp(t, `(?m)^worker$`, text)
-	require.Regexp(t, `(?m)^db\s+# Start postgres$`, text)
-	require.NotContains(t, text, "Description")
+	require.Equal(t, "web      # Start the web server\nworker\ndb       # Start postgres\n", out.String())
 }
 
 func TestGeneratedCheckComment(t *testing.T) {

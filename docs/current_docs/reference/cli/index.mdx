@@ -53,6 +53,7 @@ dagger [options] [subcommand | file...]
 * [dagger search](#dagger-search)	 - Search for modules you can install
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
+* [dagger terminal](#dagger-terminal)	 - Open a terminal for a container or directory in your project
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger update](#dagger-update)	 - Refresh installed-module state
@@ -2620,6 +2621,53 @@ login is skipped in non-interactive mode; run dagger login separately.
 
 ```
 dagger setup
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply a named env overlay; writes target it, creating it if missing
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger terminal
+
+Open a terminal for a container or directory in your project
+
+### Synopsis
+
+Open a terminal for a container or directory in your project.
+
+Examples:
+  dagger terminal -l                 # List all available terminal targets
+  dagger terminal go:dev             # Open the go:dev terminal target
+  dagger tty go:dev                  # Use the short command alias
+
+
+```
+dagger terminal [options] [pattern]
+```
+
+### Options
+
+```
+  -l, --list   List available terminal targets
 ```
 
 ### Options inherited from parent commands
